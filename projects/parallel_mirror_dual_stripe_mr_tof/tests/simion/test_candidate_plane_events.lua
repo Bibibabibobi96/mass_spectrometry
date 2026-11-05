@@ -35,7 +35,7 @@ local point={scientific_event_output={csv_writer_path=repo..'/common/simion/scie
   target_drift_period_ratio=25.5,target_half_oscillation_count=51,trajectory_quality=8,maximum_step_us=0.002,
   full_path_timeout_us=1000}
 loadfile=function(path)
-  if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/common/simion/voltage_waveforms.lua') end
+  if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/src/msplatform/backends/simion/resources/voltage_waveforms.lua') end
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
   if path=='virtual/source.mirror_cycle_counter.lua' then

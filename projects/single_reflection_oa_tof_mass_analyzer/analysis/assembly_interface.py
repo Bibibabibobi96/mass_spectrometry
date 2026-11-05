@@ -1,47 +1,10 @@
-"""Complete provider electrode identity and actual mechanical entry of oaTOF.
-
-Physical IDs come from the provider's final design projection, independently of
-native PA domains, solver electrode numbers and numerical detector markers.
-"""
-from __future__ import annotations
-
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_physical_geometry
-from typing import Any
-
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import (
-    ResolvedAcceleratorGeometry, _resolve_side_entry_port,
-)
+"""Project interface dispatch with explicit legacy native projection."""
+from msplatform.components.single_reflection_oa_tof.assembly_interface import resolve_assembly_interface as _resolve_current
+from msplatform.backends.simion.tof_assembly_interface import resolve_legacy_assembly_interface
 
 
-def resolve_assembly_interface(
-    resolved: dict[str, Any], *, projection: ResolvedAcceleratorGeometry,
-    geometry_profile_id: str | None, schema_version: int = 3,
-) -> dict[str, Any]:
-    """Publish the real outer side face of an already projected square shield.
-
-    Coordinates are in the existing oatof_global frame, in mm. The exact region
-    is also consumed by the native renderer; neither its geometry nor its port
-    is reconstructed here. Missing ports, curved faces and conflicting geometry
-    raise ValueError. No files are read/written and the projection is unchanged.
-    """
+def resolve_assembly_interface(resolved, *, projection, geometry_profile_id, schema_version=3):
     if type(schema_version) is not int or schema_version not in (1, 3):
         raise ValueError("oaTOF assembly interface requires explicit schema_version 1 or 3")
-    port = _resolve_side_entry_port(projection, geometry_profile_id=geometry_profile_id)
-    if schema_version == 3:
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import build_electrode_topology
-        topology = build_electrode_topology(resolved, projection=projection, geometry_profile_id=geometry_profile_id)
-        component_electrodes = [dict(electrode_group_id=row["electrode_group_id"], role=row["roles"][0])
-                                for row in topology["groups"]]
-    else:
-        component_electrodes = [
-            {key: item[key] for key in ("component_electrode_id", "role", "electrical_group_id")}
-            for item in resolve_physical_geometry(resolved, accelerator_projection=projection)["electrodes"]
-        ]
-    return {
-        "schema_version": schema_version, "role": "component_geometry_interface",
-        "project_id": "single_reflection_oa_tof_mass_analyzer",
-        "variant_id": projection.variant_id, "geometry_profile_id": geometry_profile_id,
-        "local_frame_id": projection.local_frame_id, "length_unit": "mm",
-        "ports": {"side_entry": port},
-        "component_electrodes": component_electrodes,
-    }
+    implementation = _resolve_current if schema_version == 3 else resolve_legacy_assembly_interface
+    return implementation(resolved, projection=projection, geometry_profile_id=geometry_profile_id, schema_version=schema_version)

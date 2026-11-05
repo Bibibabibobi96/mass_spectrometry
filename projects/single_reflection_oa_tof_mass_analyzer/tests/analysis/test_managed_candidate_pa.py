@@ -623,6 +623,9 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                     target = repo / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(REPO / relative, target)
+                from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+                from common.contracts.frozen_inputs import python_import_roots
+                copy_scientific_core(REPO, repo)
                 host = repo / "common/host_execution_lease.ps1"
                 host.write_text(host.read_text(encoding="utf-8") + r'''
 function Enter-HostExecutionLease {
@@ -700,6 +703,7 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
                 report = root / "report.json"
                 process = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(repo), sys.executable,
                     str(request_path), str(runtime_receipt), str(session), str(report)], cwd=repo,
+                    env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(repo))},
                     capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=90)
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
                 outcome = json.loads(report.read_text(encoding="utf-8-sig"))

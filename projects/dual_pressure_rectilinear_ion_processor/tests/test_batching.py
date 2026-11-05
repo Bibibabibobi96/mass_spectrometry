@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from msplatform.execution.resources import resource_path
+from msplatform.execution import manifest_records
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -261,7 +263,7 @@ class BatchingTests(unittest.TestCase):
         checkpoint = self.run/"results/native_field_preparation.json"
         checkpoint.write_text('{"status":"prepared"}', encoding="utf-8")
         runtime = (self.run/"simion/processor.lua").resolve()
-        with patch.object(write_run_manifest, "file_sha256", wraps=file_sha256) as reader:
+        with patch.object(manifest_records, "file_sha256", wraps=file_sha256) as reader:
             manifest = batching.publish_manifest(self.run,"success")
             self.assertEqual(sum(Path(call.args[0]).resolve()==runtime for call in reader.call_args_list),1)
             reader.reset_mock()
@@ -440,7 +442,7 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
         self.config['native_field']=dict(directory=str(self.run/'simion'),source_manifest=None)
         (self.run/'simion/processor.pa0').write_bytes(b'inert not PA')
         self.save_config();batching.prepare_request(self.run)
-        helper=PROJECT.parents[1]/'common/paths/native_run_path.lua'
+        helper=resource_path('native_run_path.lua')
         shutil.copyfile(helper,self.run/'simion/native_run_path.lua')
         target=self.run.parent/'execution'
         harness=self.run/'template_probe.lua'

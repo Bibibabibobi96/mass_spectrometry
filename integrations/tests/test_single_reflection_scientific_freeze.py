@@ -35,16 +35,16 @@ except SystemExit as completed:
  if completed.code not in (None,0):raise
 version=json.loads(Path(arguments[arguments.index('--request')+1]).read_text())['schema_version']
 required=(
- 'projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping',
- 'projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology',
- 'projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract',
- 'projects.rf_multipole_ion_optics.core.electrode_topology',
- 'projects.rf_multipole_ion_optics.simion.electrode_mapping',
+ 'msplatform.backends.simion.tof_electrode_mapping',
+ 'msplatform.components.single_reflection_oa_tof.electrode_topology',
+ 'msplatform.components.single_reflection_oa_tof.geometry_contract',
+ 'msplatform.components.rf_multipole.electrode_topology',
+ 'msplatform.backends.simion.rf_electrode_mapping',
  'msplatform.assembly.resolve_assembly',
 )
 if version==9:
- required=tuple(name for name in required if not name.endswith('single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping'))
- assert 'projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping' not in sys.modules
+ required=tuple(name for name in required if name != 'msplatform.backends.simion.tof_electrode_mapping')
+ assert 'msplatform.backends.simion.tof_electrode_mapping' not in sys.modules
 assert all(name in sys.modules for name in required), required
 origins={}
 for name,module in list(sys.modules.items()):
@@ -104,8 +104,19 @@ $frozen.execution_root
                 relative = "integrations/workflows/single_reflection_flight/" + version
                 self.assertIn(relative, source_paths)
                 self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
-            backend = snapshot / "projects/single_reflection_oa_tof_mass_analyzer/simion/electrode_mapping.py"
+            backend = snapshot / "src/msplatform/backends/simion/tof_electrode_mapping.py"
             self.assertTrue(backend.is_file())
+            required_sources = (
+                "src/msplatform/backends/simion/tof_electrode_mapping.py",
+                "src/msplatform/components/single_reflection_oa_tof/electrode_topology.py",
+                "src/msplatform/components/single_reflection_oa_tof/geometry_contract.py",
+                "src/msplatform/components/rf_multipole/electrode_topology.py",
+                "src/msplatform/backends/simion/rf_electrode_mapping.py",
+                "src/msplatform/assembly/resolve_assembly.py",
+            )
+            for relative in required_sources:
+                self.assertIn(relative, source_paths)
+                self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
             self.assertFalse((snapshot / "integrations/tests").exists())
             outside = root / "outside working directory 树外"
             outside.mkdir()
@@ -140,7 +151,7 @@ $frozen.execution_root
                 backend.unlink()
                 rejected, badrun = invoke("new10 missing backend")
                 self.assertNotEqual(rejected.returncode, 0)
-                self.assertIn("single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping", rejected.stderr)
+                self.assertIn("msplatform.backends.simion.tof_electrode_mapping", rejected.stderr)
                 self.assertFalse((badrun / "inputs/projected_source.csv").exists())
                 legacy, legacy_run = invoke("legacy9 without new backend", legacy_request)
                 self.assertEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)

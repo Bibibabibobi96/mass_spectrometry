@@ -6,9 +6,11 @@ import subprocess
 import tempfile
 import unittest
 
+from msplatform.backends.simion.resources import native_resource_path
+
 
 ROOT = Path(__file__).resolve().parent
-EXPORTER = ROOT / "export_detached_standalone_pa.lua"
+EXPORTER = native_resource_path("export_detached_standalone_pa.lua")
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
 

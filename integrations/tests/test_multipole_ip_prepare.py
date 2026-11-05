@@ -186,6 +186,9 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         self.assertEqual(plan["recipe"]["connections"], self.parent['recipe']["connections"])
 
     def test_one_pose_preserves_sparse_ids_species_birth_arrival_and_unknown_terminal(self):
+        from integrations.workflows.multipole_ip import prepare as handoff_adapter
+
+        self.assertEqual(handoff_adapter.prepare_handoff_states.__module__, "msplatform.assembly.handoff")
         receipt = self.execute()
         admission = load_injected_source(self.run / "results/multipole_ip/ip_injected_source.json")
         self.assertEqual((receipt["mother_count"], receipt["exit_count"]), (2, 1))

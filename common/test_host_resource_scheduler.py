@@ -646,7 +646,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
 
     def test_exact_completed_owner_release_preserves_foreign_unknown_and_does_not_admit(self) -> None:
         before, completed = self.foreign_unknown_release_fixture()
-        with patch("common.host_resource_scheduler._admit", side_effect=AssertionError("unknown foreign state must not admit")):
+        with patch("msplatform.execution.host_resource_scheduler._admit", side_effect=AssertionError("unknown foreign state must not admit")):
             result = self.call("release", token="1", completed_work_processes=[completed])
         self.assertEqual(result, {"status": "released", "token": "1"})
         with closing(sqlite3.connect(self.path)) as connection:
@@ -696,7 +696,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
         before, _ = self.foreign_unknown_release_fixture()
         self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB//8))
         self.snapshot["unknown_process_ids"] = [98]
-        with patch("common.host_resource_scheduler._admit", side_effect=AssertionError("unknown foreign state must not admit")):
+        with patch("msplatform.execution.host_resource_scheduler._admit", side_effect=AssertionError("unknown foreign state must not admit")):
             released = self.call("release", token="1")
         self.assertEqual(released["status"], "acquired")
         self.assertEqual(released["reason"], "owner_released_descendants_still_live")

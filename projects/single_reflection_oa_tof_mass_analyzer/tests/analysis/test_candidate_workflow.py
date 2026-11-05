@@ -16,7 +16,7 @@ from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from common.contracts.frozen_inputs import enumerate_python_sources
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import PYTHON_BOUND_SOURCES, RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import PYTHON_BOUND_SOURCES, RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import _registered_candidate_template, prepare_candidate_run, validate_artifact_capacity, validate_workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate as candidate_entry
@@ -504,6 +504,19 @@ def execute_prepared_run(*args):
                 self.assertEqual(before[phase], after[phase])
 
 
+    def test_execution_resource_declaration_rejects_missing_patterns_and_package_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src/msplatform/execution/resources").mkdir(parents=True)
+            shutil.copyfile(REPO_ROOT / "pyproject.toml", root / "pyproject.toml")
+            with self.assertRaisesRegex(FileNotFoundError, "Declared execution resource pattern has no files"):
+                _execution_resource_source_ids(root)
+            outside = root / "outside.ps1"
+            outside.write_text("# explicitly outside the declared execution package", encoding="utf-8")
+            with mock.patch.object(Path, "glob", return_value=[outside]):
+                with self.assertRaisesRegex(ValueError, "execution resource escapes its package"):
+                    _execution_resource_source_ids(root)
+
     def test_source_closure_explicit_workflow_extras_share_freezing_and_identity(self):
         extra = "common/simion/batch_continuation.py"
         with tempfile.TemporaryDirectory() as directory:
@@ -513,9 +526,24 @@ def execute_prepared_run(*args):
                 extra_source_ids=(extra, extra, RELATIVE_PATHS[0]),
             )
             records = {item["source_id"]: item for item in closure["sources"]}
-            self.assertEqual(len(records), len(RELATIVE_PATHS) + 1 + len(enumerate_python_sources(
-                REPO_ROOT, package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))))
+            self.assertEqual(len(records), len(set(RELATIVE_PATHS)
+                | set(_execution_resource_source_ids(REPO_ROOT)) | {extra}
+                | set(enumerate_python_sources(REPO_ROOT, package_roots=("src/msplatform",),
+                                               resource_suffixes=(".schema.json",)))))
             self.assertEqual(records[extra]["source_sha256"], sha256(REPO_ROOT / extra))
+            for source_id in _execution_resource_source_ids(REPO_ROOT):
+                resource = Path(frozen_source_path(closure, source_id))
+                self.assertEqual(resource.read_bytes(), (REPO_ROOT / source_id).read_bytes())
+                self.assertEqual(records[source_id]["source_sha256"], sha256(REPO_ROOT / source_id))
+            payload_id = "src/msplatform/execution/resources/payload_file_support.ps1"
+            payload = Path(frozen_source_path(closure, payload_id))
+            saved_payload = payload.read_bytes()
+            try:
+                payload.unlink()
+                with self.assertRaisesRegex(ValueError, "frozen candidate source changed: " + payload_id):
+                    verify_candidate_source_closure(closure)
+            finally:
+                payload.write_bytes(saved_payload)
             reducer = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m"
             reducer_path = Path(frozen_source_path(closure, reducer))
             self.assertEqual(reducer_path.read_bytes(), (REPO_ROOT / reducer).read_bytes())
@@ -686,7 +714,7 @@ def execute_prepared_run(*args):
             closure = plan["execution_source_closure"]
             verify_candidate_source_closure(closure)
             source_ids = {item["source_id"] for item in closure["sources"]}
-            self.assertEqual(source_ids, set(RELATIVE_PATHS) | set(enumerate_python_sources(
+            self.assertEqual(source_ids, set(RELATIVE_PATHS) | set(_execution_resource_source_ids(REPO_ROOT)) | set(enumerate_python_sources(
                 REPO_ROOT, package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))) | {
                 "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json",
@@ -1298,9 +1326,10 @@ def execute_prepared_run(*args):
 
 
     def test_terminal_publication_replays_summary_crash_on_finalize_retry(self):
+        from msplatform.execution import terminal_publication as terminal_owner
         with tempfile.TemporaryDirectory() as root:
             _, run_root, plan = self.materialize_candidate_run(Path(root))
-            original = terminal_publication.write_json_atomic
+            original = terminal_owner.write_json_atomic
 
             def crash_after_summary(path, value):
                 original(path, value)
@@ -1309,7 +1338,7 @@ def execute_prepared_run(*args):
 
             with (
                 mock.patch.object(
-                    terminal_publication,
+                    terminal_owner,
                     "write_json_atomic",
                     crash_after_summary,
                 ),
@@ -2313,7 +2342,7 @@ def execute_prepared_run(*args):
 
 
 
-def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_bytes=None, retain_model=False, save_state="raw_complete", legacy_save_complete=False, solution_times=None, resolved_alias=False):
+def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_bytes=None, retain_model=False, save_state="raw_complete", legacy_save_complete=False, solution_times=None, resolved_alias=False, request_record_transform=None):
     """Producer-shaped small records; no vendor process or model is fabricated."""
     import csv
     from common.contracts.capacity_ledger import record_capacity_object
@@ -2370,9 +2399,12 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
         "package":{"project":PROJECT_ROOT.name,"run_id":parent.name,"mode":"design_candidate"}}),encoding="utf-8")
     config["inputs"]["execution_request"] = str(request_path)
     config_path.write_text(json.dumps(config),encoding="utf-8")
+    request_record = file_record(request_path)
+    if request_record_transform is not None:
+        request_record = request_record_transform(request_record)
     completion.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_completion",
         "project":PROJECT_ROOT.name,"run_id":parent.name,"status":"failed","writer_completion":writer,
-        "execution_request":file_record(request_path),"run_config":file_record(config_path)}),encoding="utf-8")
+        "execution_request":request_record,"run_config":file_record(config_path)}),encoding="utf-8")
     outputs = [events,analysis,native,completion]
     if cold or retain_model:
         # Opaque three-byte admission fixture, never opened by a vendor tool.
@@ -2414,6 +2446,7 @@ def postprocess_public_entry(root, artifact):
     # The real CLI must perform its own runtime binding. Copy original authors,
     # not the transformed output of freeze_candidate_source_closure.
     selected=set(RELATIVE_PATHS)
+    selected.update(_execution_resource_source_ids(REPO_ROOT))
     selected.update(enumerate_python_sources(REPO_ROOT, package_roots=("src/msplatform",),
         resource_suffixes=(".schema.json",)))
     dependency=load_json(PROJECT_ROOT/"config/accelerator_dependency.json")
@@ -2449,8 +2482,13 @@ def postprocess_public_entry(root, artifact):
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(path,target)
         copied_bytes+=path.stat().st_size
-    print("POSTPROCESS_AUTHOR_FIXTURE="+json.dumps({"files":len(selected),"bytes":copied_bytes}), flush=True)
-    policy=author/"common/contracts/artifact_capacity_policy.json"
+    from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+    copy_scientific_core(REPO_ROOT, author)
+    copied_files = [path for path in author.rglob("*") if path.is_file()]
+    copied_bytes = sum(path.stat().st_size for path in copied_files)
+    print("POSTPROCESS_AUTHOR_FIXTURE="+json.dumps({"files":len(copied_files),"bytes":copied_bytes}), flush=True)
+    policy=author/"src/msplatform/execution/resources/artifact_capacity_policy.json"
     document=load_json(policy)
     document["minimum_free_gib"]=0
     policy.write_text(json.dumps(document),encoding="utf-8")
@@ -2664,6 +2702,42 @@ class CandidatePostprocessTests(unittest.TestCase):
             self.assertTrue(probe["writer_unchanged"])
             self.assertEqual(probe["run_root"],str(run.resolve()))
             self.assertEqual(before,{str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
+
+    def test_completion_request_content_identity_rejects_rebound_records(self):
+        from common.contracts.verify_run_manifest import verify_record
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
+
+        for case in ("role_only", "same_bytes_wrong_path", "wrong_bytes", "wrong_hash"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                def author_request(request):
+                    self.assertNotIn("retention_role", request)
+                    if case == "same_bytes_wrong_path":
+                        duplicate = Path(directory) / "same_request_bytes.json"
+                        duplicate.write_bytes(Path(request["path"]).read_bytes())
+                        self.assertEqual(duplicate.read_bytes(), Path(request["path"]).read_bytes())
+                        request["path"] = str(duplicate)
+                    elif case == "wrong_bytes":
+                        request["bytes"] += 1
+                    elif case == "wrong_hash":
+                        request["sha256"] = "0" * 64
+                    return request
+
+                artifact, parent, _, _ = postprocess_source_fixture(
+                    Path(directory), cold=True, request_record_transform=author_request)
+                manifest = load_json(parent / "run_manifest.json")
+                self.assertIn("retention_role", manifest["inputs"]["execution_request"])
+                completion_record = next(record for record in manifest["outputs"]
+                                         if Path(record["path"]).name == "execution_completion.json")
+                # Author before the first seal; test the nested binding, not outer corruption.
+                verify_record("published completion", completion_record, base_dir=parent)
+                if case == "role_only":
+                    self.assertIsNone(select_postprocess_parent(parent, artifact)["exports"])
+                elif case == "same_bytes_wrong_path":
+                    with self.assertRaisesRegex(ValueError, "Public completion and original request/config identity differ"):
+                        select_postprocess_parent(parent, artifact)
+                else:
+                    with self.assertRaisesRegex(AssertionError, "original completion request.*(?:byte count|SHA-256) changed"):
+                        select_postprocess_parent(parent, artifact)
 
     def test_saved_dependency_aliases_require_complete_identity_consensus(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
@@ -3079,6 +3153,12 @@ class CandidatePostprocessTests(unittest.TestCase):
                 self.assertEqual(cold_request["prepared"]["native_input_paths"],
                     [cold["model_record"]["path"],cold["context_record"]["path"]])
                 self.assertEqual(cold_request["capacity"]["source_references"],selected["source_references"])
+                self.assertIn("retention_role", selected["budget_record"])
+                for request in (csv_request, cold_request):
+                    budget_record = request["capacity"]["commitment_inputs"][1]
+                    self.assertEqual(set(budget_record), {"path", "exists", "bytes", "sha256"})
+                    for key in ("path", "exists", "bytes", "sha256"):
+                        self.assertEqual(budget_record[key], selected["budget_record"][key])
 
     def test_flat_exporter_cannot_substitute_another_science_owner(self):
         from common.contracts.capacity_ledger import record_capacity_object

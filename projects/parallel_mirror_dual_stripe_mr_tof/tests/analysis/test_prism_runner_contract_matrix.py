@@ -27,7 +27,7 @@ PRISM_CASES = {
             "common\\host_resource_python.py",
             "common\\host_resource_python.ps1",
             "common\\host_resource_scheduler.py",
-            "common\\host_resource_policy.json",
+            "src\\msplatform\\execution\\resources\\host_resource_policy.json",
             "FixedMirrorStripeRunManifest",
             "--fixed-mirror-stripe-manifest",
             "contract_current_initial_search_window",

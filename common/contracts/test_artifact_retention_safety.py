@@ -50,7 +50,7 @@ class RetentionSafetyTests(unittest.TestCase):
     def test_unlink_failure_leaves_pending_disposal_receipt(self) -> None:
         payload = self.run / "field.pa0"
         payload.write_bytes(b"transient")
-        with patch.object(retention, "remove_recorded_files", side_effect=OSError("busy")):
+        with patch("msplatform.execution.artifact_retention.remove_recorded_files", side_effect=OSError("busy")):
             with self.assertRaisesRegex(OSError, "busy"):
                 retention.apply_retention(self.config)
         action = json.loads((self.run / "retention_actions.json").read_text())

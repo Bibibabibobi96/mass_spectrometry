@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tomllib
 import unittest
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts.frozen_inputs import enumerate_python_sources
@@ -28,6 +29,19 @@ def copy_scientific_core(source_root: Path, destination_root: Path) -> None:
         destination = destination_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative, destination)
+    # Host/retention readers need the same declared resources in a writable
+    # fixture, never the installed policy when a test changes a local budget.
+    declaration = source_root / "pyproject.toml"
+    shutil.copyfile(declaration, destination_root / "pyproject.toml")
+    config = tomllib.loads(declaration.read_text(encoding="utf-8"))
+    package = source_root / "src/msplatform/execution"
+    for pattern in config["tool"]["setuptools"]["package-data"]["msplatform.execution"]:
+        for source in package.glob(pattern):
+            if not source.is_file():
+                continue
+            destination = destination_root / source.relative_to(source_root)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
 
 
 CALLBACK = '''import json, os, sys, time
@@ -148,12 +162,9 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
     def run_ps(self, root: Path, script: str, *, owned_diagnostics: Path | None = None,
                evidence_paths: tuple[Path, ...] = ()) -> subprocess.CompletedProcess[str]:
         path = root / "invoke.ps1"
-        if owned_diagnostics is not None:
-            script = "if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}\n" + script
+        script = "if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}\n" + script
         path.write_text(script, encoding="utf-8")
         command = [PWSH, "-NoProfile", "-File", str(path)]
-        if owned_diagnostics is None:
-            return subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=90)
         from common.contracts.test_support.fixture_process import run_fixture_process
 
         outcome = None
@@ -239,12 +250,13 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
             # after the actual unlink; no fake receipt or deletion is supplied.
             hooks = '''$script:retentionFailureCode=@'
 import common.contracts.artifact_retention as owner
-original = owner.write_json_atomic
+import msplatform.execution.artifact_retention as canonical_owner
+original = canonical_owner.write_json_atomic
 def crash(path, value):
     if value.get("status") == "pending" and value.get("removed_file_count") == 1:
         raise OSError("fixture retention progress failure")
     return original(path, value)
-owner.write_json_atomic = crash
+canonical_owner.write_json_atomic = crash
 owner.main()
 '@
 $needle=@'
@@ -255,7 +267,7 @@ Set-Item Function:Apply-RunArtifactRetention ([scriptblock]::Create($body))
 '''
         elif failure_stage == "publication_journal":
             hooks = '''$injection=@'
-import common.contracts.write_run_manifest as publisher_owner
+import msplatform.execution.terminal_publication as publisher_owner
 original_write = publisher_owner.write_json_atomic
 def crash(path, value):
     original_write(path, value)
@@ -270,7 +282,7 @@ Set-Item Function:Publish-WorkflowTerminal ([scriptblock]::Create($body))
         elif failure_stage == "seal":
             hooks = '''$script:realCapacityCommand=${function:Invoke-RunCapacityCommand}
 function Invoke-RunCapacityCommand {
-  param($Python,$RepoRoot,$Arguments,$FailureLabel)
+  param($Python,$RepoRoot,$Arguments,$FailureLabel,$StandardInputJson)
   if('seal-stopped-payload'-in$Arguments){throw 'fixture stopped payload seal failure'}
   & $script:realCapacityCommand @PSBoundParameters
 }
@@ -278,14 +290,33 @@ function Invoke-RunCapacityCommand {
         elif failure_stage == "release":
             hooks = "function Exit-ArtifactWorkflowCapacitySession { throw 'fixture capacity release failure' }"
         if capacity_trace is not None:
+            marker = "from msplatform.execution.capacity_session import create_capacity_session, renew_capacity_session, exit_capacity_session"
+            observer = """from msplatform.execution import capacity_session as observed_session
+_trace_path = Path(TRACE_PATH)
+def _observe_crud(name):
+    original = getattr(observed_session.protection, name)
+    def invoke(root, *args, **kwargs):
+        receipt = original(root, *args, **kwargs)
+        row = dict(operation=name, artifact_root=str(Path(root).resolve()),
+                   lease_id=kwargs["lease_id"], success=True)
+        with _trace_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row) + "\\n")
+        return receipt
+    setattr(observed_session.protection, name, invoke)
+_observe_crud("create_capacity_protection_lease")
+_observe_crud("delete_capacity_protection_lease")
+""".replace("TRACE_PATH", json.dumps(str(capacity_trace)))
             hooks += f"""
-$actualCapacityCommand=${{function:Invoke-RunCapacityCommand}}
-function Invoke-RunCapacityCommand {{
- param($Python,$RepoRoot,[string[]]$Arguments,$FailureLabel)
- $output=@(& $actualCapacityCommand @PSBoundParameters)
- ConvertTo-Json -InputObject @($Arguments) -Compress|Add-Content -LiteralPath '{capacity_trace}' -Encoding utf8
- return $output
-}}
+$crudMarker=@'
+{marker}
+'@
+$crudObserver=@'
+{observer}
+'@
+$body=${{function:Invoke-CanonicalCapacitySession}}.ToString()
+if(([regex]::Matches($body,[regex]::Escape($crudMarker))).Count-ne1){{throw 'Canonical capacity fixture marker is not unique'}}
+$body=$body.Replace($crudMarker,($crudMarker+"`n"+$crudObserver))
+Set-Item Function:Invoke-CanonicalCapacitySession ([scriptblock]::Create($body))
 """
         outcome = self.run_ps(root, f""". '{OWNER}'
 {state_setup}

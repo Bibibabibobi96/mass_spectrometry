@@ -31,6 +31,7 @@ FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "common/contracts/rigid_transform.py",
     "common/integration/resolve_assembly.py",
     "common/ion_release/release.py",
+    "common/simion/resource_scheduler.py",
 )
 
 
@@ -155,8 +156,8 @@ def freeze_code(repo: Path, inputs: Path) -> None:
         destination=inputs/"code"/relative
         destination.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(repo/relative,destination)
-    for relative in (POLICY_PATH.relative_to(repo),Path("common/host_resource_policy.json"),
-                     Path("common/contracts/artifact_retention.json"),Path("common/contracts/artifact_capacity_policy.json")):
+    for relative in (POLICY_PATH.relative_to(repo),Path("src/msplatform/execution/resources/host_resource_policy.json"),
+                     Path("src/msplatform/execution/resources/artifact_retention.json"),Path("src/msplatform/execution/resources/artifact_capacity_policy.json")):
         destination=inputs/"code"/relative
         destination.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(repo/relative,destination)
@@ -376,7 +377,7 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
         raise ValueError("native projection and coordinate transform source frames differ")
     for source_relative, current_relative in (
             ("simion/native_drive.lua", "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"),
-            ("simion/voltage_waveforms.lua", "common/simion/voltage_waveforms.lua")):
+            ("simion/voltage_waveforms.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua")):
         if file_record(inputs / source_relative)["sha256"] != file_record(repo / current_relative)["sha256"]:
             raise ValueError("current native voltage schedule differs from frozen source schedule: " + source_relative)
     shutil.copyfile(repo / "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",

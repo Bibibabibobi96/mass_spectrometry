@@ -18,6 +18,9 @@
 config/resolved_model.json`。MATLAB只消费resolved并绑定GUI参数，不从源码、环境或旧MPH回退物理值。
 build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭包回归只证明准备与身份链，
 不构成新的COMSOL求解或功能资格。运行与失败收尾见[COMSOL说明](COMSOL.md)。
+
+公共预算观测的冷加载回归同时执行入口已有的规范核心及包资源选择器，再从冻结资源加载唯一实现；
+不再把旧公共桥的文件位置当作函数正文位置。该定向软件验证通过，生产选择器与物理输入未改变。
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 
@@ -67,6 +70,13 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 绑定模块28项与IP上游admission联合45项通过（27.111秒）；加强后的实际冻结片段单项通过（6.216秒）。
 迁移期间缺公共上下文加载及锁旧`Push-Location`字符串的两项失败已修复，原失败事实保留。
 本轮未调用MATLAB、COMSOL或CAD，不改变既有构建资格或新增科学资格。
+
+2026-11-04，build-only 冻结片段进一步按 `pyproject.toml` 的真实 package-data 声明选择
+包资源（含 execution 的 PowerShell、Lua、JSON）；声明模式缺件立即拒绝，仍沿原公共复制入口
+记录来源及副本身份。实际冻结片段、来源字节／输入集合稳定性和缺额外文件拒绝三项软件回归
+通过（7.195 秒，无跳过）。测试不预种所需 PowerShell 资源来替代生产选择，也未执行 MATLAB、
+COMSOL 或原生几何验收；不新增商业构建、求解或几何资格。依赖边界见
+[公共主机资源](../../../common/README.md#主机资源实现)。
 
 普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由原resolver核对，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`verify_project.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
 

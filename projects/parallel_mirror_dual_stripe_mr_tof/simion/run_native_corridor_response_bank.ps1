@@ -296,7 +296,7 @@ function Build-DetachedResponse {
   try {
     $alias=New-RunExecutionAlias -TargetDirectory $BuildDirectory
     $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
-    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'common\simion\export_standalone_pa.lua') `
+    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua') `
       (Join-Path ([string]$alias.execution_alias) $nativeName) (Join-Path ([string]$alias.execution_alias) $detachedName)
     if($LASTEXITCODE-ne0){throw "Detached response export failed for ID $ResponseId"}
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
@@ -394,7 +394,7 @@ try {
     $responseReceiptPath=Join-Path $resultDir 'response_bank_receipt_recipe.json'
     Write-RunJson -Path $responseReceiptPath -Depth 20 -Value ([ordered]@{
       schema_version=2;source_location='payload';receipt_name='mrtof_analyzer_corridor.standalone_responses.json'
-      exporter_path=(Join-Path $repoRoot 'common\simion\export_standalone_pa.lua')
+      exporter_path=(Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua')
       exports=@(1..8|ForEach-Object{[ordered]@{
         response_id=$_;source_name=('mrtof_analyzer_corridor.pa{0}'-f$_)
         standalone_name=('mrtof_analyzer_corridor.response{0}.pa'-f$_)

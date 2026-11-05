@@ -131,7 +131,7 @@ useRecovery=false，不能称autosave checkpoint已验。原外命令105.427秒�
 可选`-Limits -RunDir -UsagePath`传入已冻结预算及其受管计量位置；普通耗时、进程树工作集、目录体积和
 可用内存预算越限只告警。目录计量沿公共采样间隔，不在每轮进程观测时递归扫描。
 未传`Limits`时仍观察物理危险，但不生成usage文件或虚构工程预算。危险保留量和持续时间只读取
-[主机策略](../host_resource_policy.json)；持续危险只停止本次受管进程并失败，不自动重试Compute。
+[主机策略](../../src/msplatform/execution/resources/host_resource_policy.json)；持续危险只停止本次受管进程并失败，不自动重试Compute。
 未知进程范围或未知内存不冒充已确认危险；计量写入失败告警，不抹去已确认危险或遮蔽科学异常。
 该机制由[`common/resource_budget_support.ps1`](../resource_budget_support.ps1)中的窄观察器提供，科学阶段、成功条件和终态发布仍由调用方拥有。
 

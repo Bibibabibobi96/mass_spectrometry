@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 from integrations.tests.test_single_reflection_preparation import fixture
+from common.contracts.frozen_inputs import python_import_roots
 
 REPO = Path(__file__).resolve().parents[2]
 EXECUTE = REPO / 'integrations/workflows/single_reflection_flight/execute.ps1'
@@ -282,7 +283,15 @@ $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot (Join-Path
                 self.assertEqual(Path(record['path']).parent, expected_parent)
             self.assertEqual((run / 'inputs/request.json').read_bytes(), request.read_bytes())
             snapshot = run / 'inputs/runtime_snapshot'
-            environment = dict(os.environ, PYTHONPATH=str(snapshot), PYTHONNOUSERSITE='1')
+            environment = dict(os.environ, PYTHONPATH=os.pathsep.join(python_import_roots(snapshot)),
+                               PYTHONNOUSERSITE='1')
+            origin_probe = subprocess.run([sys.executable, '-B', '-s', '-c',
+                "import importlib,pathlib,sys;root=pathlib.Path(sys.argv[1]).resolve();"
+                "[pathlib.Path(importlib.import_module(name).__file__).resolve().relative_to(root) "
+                "for name in ('integrations.workflows.single_reflection_flight.prepare',"
+                "'msplatform.backends.simion.accelerator_renderer')]", str(snapshot)],
+                cwd=snapshot, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(origin_probe.returncode, 0, origin_probe.stdout + origin_probe.stderr)
             command = [sys.executable, '-B', '-s', '-m',
                        'integrations.workflows.single_reflection_flight.prepare', '--help']
             imported = subprocess.run(command, cwd=snapshot, env=environment,
@@ -293,11 +302,11 @@ $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot (Join-Path
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding='utf-8',timeout=30)
             self.assertEqual(preflight_help.returncode,0,preflight_help.stderr)
             self.assertIn('--engineering-budget',preflight_help.stdout)
-            (snapshot / 'projects/orthogonal_accelerator/simion/sectioned_accelerator.py').unlink()
+            (snapshot / 'src/msplatform/backends/simion/accelerator_renderer.py').unlink()
             missing = subprocess.run(command, cwd=snapshot, env=environment,
                                      capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertNotEqual(missing.returncode, 0)
-            self.assertIn('sectioned_accelerator', missing.stderr)
+            self.assertIn('accelerator_renderer', missing.stderr)
             manifest = run / 'run_manifest.json'
             value = json.loads(manifest.read_text())
             value['status'] = 'success'

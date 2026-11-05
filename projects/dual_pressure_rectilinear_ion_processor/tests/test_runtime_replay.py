@@ -418,11 +418,11 @@ class RuntimeReplayTests(unittest.TestCase):
                     (folder / name).write_text(text.replace("adjustable ", ""), encoding="utf-8")
                 else:
                     shutil.copyfile(PROJECT / "simion" / name, folder / name)
-            shutil.copyfile(REPOSITORY / "common/simion/rf_drive.lua",
+            shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/rf_drive.lua",
                             folder / "simion_rf_drive.lua")
             shutil.copyfile(REPOSITORY / "common/simion/scientific_event_csv.lua",
                             folder / "scientific_event_csv.lua")
-            shutil.copyfile(REPOSITORY / "common/simion/voltage_waveforms.lua",
+            shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
                             folder / "voltage_waveforms.lua")
             (folder / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
             sources = [{"particle_id": index, "t": 0, "x": 1, "y": index * 0.01,

@@ -94,7 +94,7 @@ SummaryPath保存范围、命令、环境、状态、原因、日志和慢测试
 ### 主机资源调度
 
 门禁和商业运行通过同一公共入口申请资源；重、轻阶段及额度只由
-[`host_resource_policy.json`](../common/host_resource_policy.json)管理。资源等待时先查询状态：
+[`host_resource_policy.json`](../src/msplatform/execution/resources/host_resource_policy.json)管理。资源等待时先查询状态：
 
 ```powershell
 . .\common\host_execution_lease.ps1

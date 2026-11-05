@@ -1,50 +1,26 @@
-"""Resolve the human-edited oa-TOF design and run mode once."""
-
+"""Project file boundary; neutral design lives in installed components."""
 from __future__ import annotations
-
 import json
 import math
 from pathlib import Path
 from typing import Any
-
-from common.contracts.file_identity import file_sha256 as _sha256
-from projects.rf_multipole_ion_optics.core.grounded_shield import require_grounded_potential
-
-
+from msplatform.io.file_identity import file_sha256 as _sha256
+from msplatform.components.single_reflection_oa_tof.geometry_contract import (
+    _close as _close, _validate_science as _validate_science,
+    _require_exact_keys as _require_exact_keys,
+    resolve_electrode_geometry as resolve_electrode_geometry,
+    resolve_contract_documents as _resolve_documents, serialized as serialized,
+)
+from msplatform.backends.simion.tof_geometry import derive_simion_geometry as derive_simion_geometry, resolve_physical_geometry as resolve_physical_geometry
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
-MODE_PATH = PROJECT_ROOT / "config" / "modes" / "formal.json"
-NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
-RESOLVED_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
+BASELINE_PATH = PROJECT_ROOT / "config/baseline.json"
+MODE_PATH = PROJECT_ROOT / "config/modes/formal.json"
+NUMERICS_PATH = PROJECT_ROOT / "config/formal_solver_numerics.json"
+RESOLVED_PATH = PROJECT_ROOT / "config/resolved_geometry.json"
 
 
-def _close(label: str, actual: float, expected: float, tolerance: float = 1e-10) -> None:
-    if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=tolerance):
-        raise ValueError(f"inconsistent {label}: {actual} != {expected}")
-
-
-def _input_label(path: Path, run_role: str) -> str:
-    try:
-        return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
-    except ValueError:
-        return f"run_input:{run_role}"
-
-
-def _require_exact_keys(document: dict[str, Any], allowed: set[str], label: str) -> None:
-    unknown = set(document) - allowed
-    if unknown:
-        raise ValueError(f"{label} contains cross-layer or unknown fields: {sorted(unknown)}")
-
-
-def _validate_layers(baseline: dict[str, Any], science: dict[str, Any], numerics: dict[str, Any]) -> None:
-    require_grounded_potential(baseline["electrodes_V"]["shield"], "oaTOF shield")
-    if "seed" in baseline.get("particle_source", {}):
-        raise ValueError("science baseline must not contain particle_source.seed; freeze it in the run instance")
-    _require_exact_keys(science, {"schema_version", "role", "mode", "contract_layers", "particle"}, "science contract")
-    if science.get("role") != "oa_tof_formal_science_contract" or science.get("mode") != "formal":
-        raise ValueError("unsupported formal science contract")
-    if science.get("contract_layers") != ["science", "solver_numerics", "run_instance"]:
-        raise ValueError("formal science contract has an invalid layer declaration")
+def _validate_layers(baseline, science, numerics):
+    _validate_science(baseline, science)
     _require_exact_keys(numerics, {"schema_version", "role", "comsol", "simion"}, "solver numerics contract")
     if type(numerics["schema_version"]) is not int or numerics["schema_version"] != 1:
         raise ValueError("unsupported solver numerics schema_version; requires integer 1")
@@ -63,210 +39,26 @@ def _validate_layers(baseline: dict[str, Any], science: dict[str, Any], numerics
     if runtime.get("times_to_store") != "tlist":
         raise ValueError("comsol.times_to_store must be tlist for OA-TOF detector sampling")
 
-
-def derive_simion_geometry(
-    *, geometry: dict[str, Any], coordinate: dict[str, Any],
-    build: dict[str, Any], marker: dict[str, Any], source: dict[str, Any],
-) -> dict[str, Any]:
-    """Derive provider-local PA placements and samples from the final design.
-
-    These placements map native PA domains into oatof_global; cross-component
-    assembly transforms are applied separately by the consuming integration.
-    """
-    accelerator_half = geometry["accelerator_bore_half"] + geometry["accelerator_ring_width"] + geometry["accelerator_insulation_gap"] + geometry["accelerator_shield_wall"]
-    accelerator_local_z_min = -geometry["accelerator_repeller_thickness"] - geometry["accelerator_rear_clearance"] - geometry["accelerator_shield_wall"]
-    accelerator_local_z_max = geometry["L_accel"] + geometry["accelerator_front_vacuum_margin"]
-    detector_half = marker["active_radius_mm"] + build["detector"]["margin_xy_mm"]
-
-    instances = [
-        {"role": "flight_tube_shield", "workbench_index": 1, "priority_number": 1, "name": "flight_tube_ground.pa0", "x_mm": coordinate["reflectron_axis"][0], "y_mm": coordinate["reflectron_axis"][1], "z_mm": geometry["shield_outer_z_min"], "az_deg": -90.0,
-         "nx": math.ceil((geometry["L_flight"] - geometry["shield_outer_z_min"]) / build["flight_tube"]["cell_axial_mm"]) + 1,
-         "ny": math.ceil((geometry["flight_tube_r"] + geometry["flight_tube_wall"]) / build["flight_tube"]["cell_radial_mm"]) + 1, "nz": 1, "cell_mm": build["flight_tube"]["cell_axial_mm"]},
-        {"role": "reflectron", "workbench_index": 2, "priority_number": 2, "name": "reflectron.pa0", "x_mm": coordinate["reflectron_axis"][0], "y_mm": coordinate["reflectron_axis"][1], "z_mm": geometry["L_flight"], "az_deg": -90.0,
-         "nx": math.ceil((geometry["L_reflectron"] + geometry["ring_thickness"] + geometry["shield_axial_gap"] + geometry["shield_endcap_thickness"]) / build["reflectron"]["cell_axial_mm"]) + 1,
-         "ny": math.ceil((geometry["flight_tube_r"] + geometry["flight_tube_wall"]) / build["reflectron"]["cell_radial_mm"]) + 1, "nz": 1, "cell_mm": build["reflectron"]["cell_axial_mm"]},
-        {"role": "accelerator", "workbench_index": 3, "priority_number": 3, "name": "accelerator.pa0", "x_mm": coordinate["accelerator_axis_x"] - accelerator_half, "y_mm": -accelerator_half,
-         "z_mm": geometry["accelerator_repeller_z"] + accelerator_local_z_min, "az_deg": 0.0,
-         "nx": round(2 * accelerator_half / build["accelerator"]["cell_xy_mm"]) + 1,
-         "ny": round(2 * accelerator_half / build["accelerator"]["cell_xy_mm"]) + 1,
-         "nz": round((accelerator_local_z_max - accelerator_local_z_min) / build["accelerator"]["cell_z_mm"]) + 1,
-         "cell_mm": build["accelerator"]["cell_xy_mm"]},
-        {"role": "detector", "workbench_index": 4, "priority_number": 4, "name": "detector_ground.pa0", "x_mm": coordinate["detector_x"] - detector_half, "y_mm": -detector_half,
-         "z_mm": marker["active_plane_z_mm"] - marker["back_margin_z_mm"] - marker["absorber_thickness_mm"], "az_deg": 0.0,
-         # Match simion/workbench/build_detector_variant.lua at half-cell ties.
-         "nx": math.floor(2 * detector_half / marker["cell_xy_mm"] + 0.5) + 1,
-         "ny": math.floor(2 * detector_half / marker["cell_xy_mm"] + 0.5) + 1,
-         "nz": math.floor((marker["front_margin_z_mm"] + marker["absorber_thickness_mm"] + marker["back_margin_z_mm"]) / marker["cell_z_mm"] + 0.5) + 1,
-         "cell_mm": marker["cell_xy_mm"]},
-    ]
-
-    return {
-        "simion_instances": instances,
-        "field_sample_points_mm": {
-            "source_center": [coordinate["accelerator_axis_x"], 0.0, source["center_z_mm"]],
-            "accelerator_mid": [coordinate["accelerator_axis_x"], 0.0, (geometry["accelerator_grid1_z"] + geometry["accelerator_grid2_z"]) / 2],
-            "accelerator_exit": [coordinate["accelerator_axis_x"], 0.0, geometry["accelerator_grid2_z"] - build["accelerator"]["cell_z_mm"]],
-            "drift_mid": [coordinate["reflectron_axis"][0], coordinate["reflectron_axis"][1], (marker["active_plane_z_mm"] + geometry["L_flight"]) / 2],
-            "reflectron_stage1": [coordinate["reflectron_axis"][0], coordinate["reflectron_axis"][1], geometry["L_flight"] + geometry["L_stage1"] / 2],
-            "reflectron_stage2": [coordinate["reflectron_axis"][0], coordinate["reflectron_axis"][1], geometry["L_flight"] + geometry["L_stage1"] + geometry["L_stage2"] / 2],
-        },
-    }
+def resolve_contract_documents(baseline, mode, numerics, *, input_identity):
+    _validate_layers(baseline, mode, numerics)
+    build = numerics["simion"]["geometry_build"]
+    marker = numerics["simion"]["detector_marker"]
+    if not 0 < marker["capture_depth_mm"] < marker["absorber_thickness_mm"]:
+        raise ValueError("detector capture depth must lie inside the numerical absorber")
+    if marker["capture_arm_distance_mm"] <= marker["front_margin_z_mm"]:
+        raise ValueError("detector capture arm distance must exceed the PA front margin")
+    resolved = _resolve_documents(baseline, mode, input_identity=input_identity)
+    resolved.update(simion_runtime={**numerics["simion"], "routine_particles": mode["particle"]["statistical_count"]},
+        simion_geometry_build=build, comsol_runtime=numerics["comsol"], simion_detector_marker=marker)
+    resolved["derived"] = derive_simion_geometry(geometry=resolved["geometry_mm"], coordinate=resolved["coordinate_convention"], build=build, marker=marker, source=resolved["particle_source"])
+    return resolved
 
 
-
-def resolve_electrode_geometry(
-    contract: dict[str, Any], *, accelerator_projection: Any = None,
-) -> dict[str, Any]:
-    """Resolve physical electrode bodies and ON potentials without a backend.
-
-    Explicit local-frame regions preserve the original arithmetic for the
-    legacy native adapter; they are physical coordinates, not native labels.
-    Numerical detector markers and solver meshes are not required here.
-    """
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import resolve_accelerator_geometry
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import resolve_accelerator_electrical_design
-
-    if contract.get("role") != "oa_tof_resolved_contract_do_not_edit":
-        raise ValueError("physical geometry requires the final resolved oaTOF contract")
-    if contract["coordinate_convention"]["frame_id"] != "oatof_global":
-        raise ValueError("physical geometry requires oatof_global")
-    if accelerator_projection is None:
-        realization = contract["geometry_derivation"]["accelerator"].get("realization_id", "square_3d")
-        cross_section = {"square_3d": "square", "cylindrical_3d": "cylindrical"}[realization]
-        zones = "three_zone" if "accelerator_topology" in contract else "two_zone"
-        accelerator_projection = resolve_accelerator_geometry(contract, variant_id=zones + "_" + cross_section)
-    accelerator = accelerator_projection.local_region
-    electrical = resolve_accelerator_electrical_design(
-        contract, variant_id=accelerator_projection.variant_id, geometry_projection=accelerator_projection, schema_version=1)
-    g, coordinate = contract["geometry_mm"], contract["coordinate_convention"]
-    rings, voltage = contract["rings"], contract["electrodes_V"]
-    positive = ("flight_tube_r", "flight_tube_wall", "shield_endcap_thickness", "L_reflectron",
-        "ring_thickness", "shield_axial_gap", "L_stage1", "L_stage2", "bore_r", "ring_outer_r",
-        "detector_radius", "detector_thickness")
-    if any(isinstance(g[key], bool) or not isinstance(g[key], (int, float))
-           or not math.isfinite(g[key]) or g[key] <= 0 for key in positive):
-        raise ValueError("physical lengths and radii must be finite and positive")
-    if not g["bore_r"] < g["ring_outer_r"] < g["flight_tube_r"]:
-        raise ValueError("reflectron radii must be ordered")
-    _close("reflectron length", g["L_reflectron"], g["L_stage1"]+g["L_stage2"])
-    if g["L_flight"]-g["shield_outer_z_min"] <= g["shield_endcap_thickness"]:
-        raise ValueError("reflectron interface must lie beyond the near cap")
-    objects: list[dict[str, Any]] = []
-
-    def electrode(role: str, geometry: dict[str, Any], *, volts: float = 0,
-                  grounded: bool = False) -> dict[str, Any]:
-        body = dict(role=role, grounded=grounded, geometry=geometry, operating_voltage_v=volts)
-        objects.append(body)
-        return body
-
-    electrode("accelerator_side_shield", {"provider_region": "shield"}, grounded=True)
-    for role in electrical["planes_z_mm"]:
-        electrode("accelerator_" + role, {"provider_region": role},
-                  volts=electrical["operating_voltages_v"][role])
-    for index, volts in enumerate(electrical["operating_voltages_v"]["rings"], 1):
-        electrode("accelerator_ring_" + str(index),
-                  {"provider_region": "ring", "ring_index": index}, volts=volts)
-    outer_radius = g["flight_tube_r"] + g["flight_tube_wall"]
-    near = g["shield_outer_z_min"]
-    interface = g["L_flight"]
-    local_bore_end = g["L_reflectron"] + g["ring_thickness"] + g["shield_axial_gap"]
-    local_outer_end = local_bore_end + g["shield_endcap_thickness"]
-    bore_end, outer_end = interface + local_bore_end, interface + local_outer_end
-    shield_parts = [
-        dict(axial_mm=[near, near + g["shield_endcap_thickness"]], radius_mm=[0, outer_radius]),
-        dict(axial_mm=[near + g["shield_endcap_thickness"], bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
-        dict(axial_mm=[bore_end, outer_end], radius_mm=[0, outer_radius]),
-    ]
-    shield = electrode("flight_tube_shield", dict(primitive="cylindrical_union",
-        axis_xy_mm=list(coordinate["reflectron_axis"]), parts=shield_parts), grounded=True)
-    shield["flight_tube_local_regions"] = [
-        dict(axial_mm=[0, g["shield_endcap_thickness"]], radius_mm=[0, outer_radius]),
-        dict(axial_mm=[g["shield_endcap_thickness"], interface-near], radius_mm=[g["flight_tube_r"], outer_radius])]
-    def reflector_electrode(role: str, z0: float, z1: float, r0: float, r1: float,
-                            volts: float, *, grounded: bool = False) -> None:
-        body = electrode(role, dict(primitive="cylindrical_region",
-            axis_xy_mm=list(coordinate["reflectron_axis"]), axial_mm=[interface+z0, interface+z1],
-            radius_mm=[r0, r1]), volts=volts, grounded=grounded)
-        body["reflectron_local_regions"] = [dict(axial_mm=[z0, z1], radius_mm=[r0, r1])]
-
-    reflector_electrode("reflectron_entry_grid", 0, 0, 0, g["flight_tube_r"],
-        require_grounded_potential(voltage["entgrid"], "oaTOF reflectron entrance grid"), grounded=True)
-    counts = [rings["stage1_count"], rings["stage2_count"]]
-    if any(type(count) is not int or count < 1 for count in counts):
-        raise ValueError("reflectron ring counts must be positive integers")
-    for stage, count, start, length, v0, v1 in (
-        (1, counts[0], 0, g["L_stage1"], 0, voltage["midgrid"]),
-        (2, counts[1], g["L_stage1"], g["L_stage2"], voltage["midgrid"], voltage["backplate"]),
-    ):
-        for index in range(1, count+1):
-            center = start + index * (length / (count+1))
-            volts = v0 + (v1-v0) * index / (count+1)
-            reflector_electrode(f"reflectron_stage{stage}_ring_{index}",
-                center-g["ring_thickness"]/2, center+g["ring_thickness"]/2,
-                g["bore_r"], g["ring_outer_r"], volts)
-        if stage == 1:
-            reflector_electrode("reflectron_midgrid", g["L_stage1"], g["L_stage1"],
-                0, g["ring_outer_r"], voltage["midgrid"])
-    reflector_electrode("reflectron_backplate", g["L_reflectron"], g["L_reflectron"]+g["ring_thickness"],
-        0, g["ring_outer_r"], voltage["backplate"])
-    shield["reflectron_local_regions"] = [
-        dict(axial_mm=[0, local_bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
-        dict(axial_mm=[local_bore_end, local_outer_end], radius_mm=[0, outer_radius])]
-    electrode("detector", dict(primitive="cylinder", radius_mm=g["detector_radius"],
-        base_center_mm=[coordinate["detector_x"], 0, g["detector_z"]-g["detector_thickness"]],
-        height_mm=g["detector_thickness"], axis=[0, 0, 1]), grounded=True)
-    values = [*g.values(), *[item["operating_voltage_v"] for item in objects]]
-    if any(isinstance(value, (int, float)) and not math.isfinite(value) for value in values):
-        raise ValueError("physical geometry and electrode voltages must be finite")
-    return dict(schema_version=1, role="oatof_electrode_geometry", local_frame_id="oatof_global",
-        length_unit="mm", variant_id=accelerator_projection.variant_id,
-        accelerator=dict(geometry=accelerator, electrical=electrical), electrodes=objects,
-        detector_active_face=dict(role="detector",
-            center_mm=[coordinate["detector_x"], 0, g["detector_z"]], normal=[0, 0, 1], radius_mm=g["detector_radius"]),
-        local_extents=dict(flight_tube_axial_span_mm=interface-near,
-                          reflectron_axial_span_mm=local_outer_end, outer_radius_mm=outer_radius))
-
-
-def resolve_physical_geometry(
-    contract: dict[str, Any], *, accelerator_projection: Any = None,
-) -> dict[str, Any]:
-    """Keep the explicit legacy physical/native projection and label protocol.
-
-    Physics and potentials come from the one neutral resolver. Only this adapter
-    allocates legacy IDs and requires the numerical SIMION detector marker.
-    """
-    neutral = resolve_electrode_geometry(contract, accelerator_projection=accelerator_projection)
-    bodies = neutral["electrodes"]
-    ids = {body["role"]: index for index, body in enumerate(bodies, 1)}
-    objects = [dict(component_electrode_id=ids[body["role"]], role=body["role"],
-                    electrical_group_id=1 if body["grounded"] else ids[body["role"]],
-                    geometry=body["geometry"]) for body in bodies]
-    oa_ids = {"shield": ids["accelerator_side_shield"]}
-    oa_ids.update({role: ids["accelerator_" + role]
-                   for role in neutral["accelerator"]["electrical"]["planes_z_mm"]})
-    oa_ids["rings"] = [ids["accelerator_ring_" + str(index)]
-                       for index in range(1, len(neutral["accelerator"]["geometry"]["ring_z_mm"]) + 1)]
-    shield = next(body for body in bodies if body["role"] == "flight_tube_shield")
-    def native_row(body: dict[str, Any], label: int, regions: list[dict[str, Any]]) -> dict[str, Any]:
-        return dict(component_electrode_id=ids[body["role"]], local_electrode_id=label,
-                    voltage_v=body["operating_voltage_v"], regions=regions)
-    native = [native_row(body, index, body["reflectron_local_regions"])
-              for index, body in enumerate((body for body in bodies
-                                            if body["role"].startswith("reflectron_")), 1)]
-    native.append(native_row(shield, len(native) + 1, shield["reflectron_local_regions"]))
-    extent = neutral["local_extents"]
-    return dict(schema_version=1, role="oatof_physical_geometry", local_frame_id=neutral["local_frame_id"],
-        length_unit="mm", variant_id=neutral["variant_id"],
-        accelerator=dict(geometry=neutral["accelerator"]["geometry"], physical_electrode_ids=oa_ids,
-                         electrical=neutral["accelerator"]["electrical"]), electrodes=objects,
-        detector_active_face=dict(component_electrode_id=ids["detector"],
-                                  **{key: value for key, value in neutral["detector_active_face"].items() if key != "role"}),
-        simion=dict(flight_tube=dict(electrodes=[native_row(shield, 1, shield["flight_tube_local_regions"])],
-                                    axial_span_mm=extent["flight_tube_axial_span_mm"], outer_radius_mm=extent["outer_radius_mm"]),
-                    reflectron=dict(electrodes=native, axial_span_mm=extent["reflectron_axial_span_mm"],
-                                    outer_radius_mm=extent["outer_radius_mm"]),
-                    detector_marker=dict(contract["simion_detector_marker"])))
-
+def _input_label(path: Path, run_role: str) -> str:
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        return f"run_input:{run_role}"
 
 def resolve_contract(
     baseline_path: Path = BASELINE_PATH,
@@ -287,99 +79,3 @@ def resolve_contract(
         "solver_numerics": _input_label(numerics_path, "candidate_solver_numerics.json"),
         "solver_numerics_sha256": _sha256(numerics_path),
     })
-
-
-def resolve_contract_documents(
-    baseline: dict[str, Any], mode: dict[str, Any], numerics: dict[str, Any], *,
-    input_identity: dict[str, Any],
-) -> dict[str, Any]:
-    """Resolve already loaded inputs using the same physical projection.
-
-    The caller supplies the frozen input labels and hashes. This pure boundary
-    permits capacity planning before a managed run is admitted or created.
-    """
-    _validate_layers(baseline, mode, numerics)
-    geometry = baseline["geometry_mm"]
-    accelerator = baseline["geometry_derivation"]["accelerator"]
-    source = baseline["particle_source"]
-
-    _close("accelerator length", geometry["L_accel"], accelerator["d1_mm"] + accelerator["d2_mm"])
-    _close("accelerator grid1", geometry["accelerator_grid1_z"], geometry["accelerator_repeller_z"] + accelerator["d1_mm"])
-    _close("accelerator grid2", geometry["accelerator_grid2_z"], geometry["accelerator_grid1_z"] + accelerator["d2_mm"])
-    _close("focus plane", geometry["accelerator_focus_z"], geometry["accelerator_grid2_z"] + accelerator["focus_drift_after_grid2_mm"])
-    _close("reflectron length", geometry["L_reflectron"], geometry["L_stage1"] + geometry["L_stage2"])
-    source_rule = source["center_z_rule"]
-    if source_rule == "accelerator_repeller_z + accelerator_stage1_length_mm/2":
-        expected_source_z = geometry["accelerator_repeller_z"] + accelerator["d1_mm"] / 2
-        theory = accelerator.get("finite_interval_theory")
-        if theory is not None and not math.isclose(
-            source["center_z_mm"], expected_source_z, rel_tol=0.0, abs_tol=1e-10
-        ):
-            finite_interval_source_z = (
-                theory["canonical_repeller_z_mm"] + theory["source_center_mm"]
-            )
-            if math.isclose(
-                source["center_z_mm"], finite_interval_source_z,
-                rel_tol=0.0, abs_tol=1e-10,
-            ):
-                expected_source_z = finite_interval_source_z
-    elif source_rule == (
-        "geometry_derivation.accelerator.finite_interval_theory."
-        "canonical_repeller_z_mm + source_center_mm"
-    ):
-        theory = accelerator["finite_interval_theory"]
-        expected_source_z = theory["canonical_repeller_z_mm"] + theory["source_center_mm"]
-    else:
-        raise ValueError(f"unsupported source center rule: {source_rule}")
-    _close("source center z", source["center_z_mm"], expected_source_z)
-
-    build = numerics["simion"]["geometry_build"]
-    marker = numerics["simion"]["detector_marker"]
-    if not 0 < marker["capture_depth_mm"] < marker["absorber_thickness_mm"]:
-        raise ValueError("detector capture depth must lie inside the numerical absorber")
-    if marker["capture_arm_distance_mm"] <= marker["front_margin_z_mm"]:
-        raise ValueError("detector capture arm distance must exceed the PA front margin")
-    coordinate = baseline["coordinate_convention"]
-    if coordinate.get("frame_id") != "oatof_global":
-        raise ValueError("oa-TOF baseline coordinate frame must be oatof_global")
-
-    particle = mode["particle"]
-    return {
-        "schema_version": 1,
-        "role": "oa_tof_resolved_contract_do_not_edit",
-        "inputs": dict(input_identity),
-        "coordinate_convention": coordinate,
-        "geometry_derivation": baseline["geometry_derivation"],
-        "geometry_mm": geometry,
-        "particle_source": source,
-        "electrodes_V": baseline["electrodes_V"],
-        "rings": baseline["rings"],
-        "validation_target": {
-            "mass_amu": particle["mass_amu"],
-            "charge_state": particle["charge_state"],
-            "particles": particle["statistical_count"],
-            "initial_energy_mean_ev": particle["initial_energy_mean_ev"],
-            "initial_energy_sigma_ev": particle["initial_energy_sigma_ev"],
-        },
-        "particle_count_policy": {
-            "default_check_count": particle["default_check_count"],
-            "statistical_count": particle["statistical_count"],
-            "specialty_counts_require_explicit_purpose": True,
-        },
-        "simion_runtime": {
-            **numerics["simion"],
-            "routine_particles": particle["statistical_count"],
-        },
-        "simion_geometry_build": build,
-        "comsol_runtime": numerics["comsol"],
-        "simion_detector_marker": marker,
-        "grid_policy": baseline["grid_policy"],
-        "derived": derive_simion_geometry(
-            geometry=geometry, coordinate=coordinate, build=build,
-            marker=marker, source=source,
-        ),
-    }
-
-
-def serialized(contract: dict[str, Any]) -> str:
-    return json.dumps(contract, indent=2, ensure_ascii=False) + "\n"

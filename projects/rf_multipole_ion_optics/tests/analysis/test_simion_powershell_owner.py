@@ -52,7 +52,7 @@ if(-not$blocked-or$NativeOperations.Count-ne1){throw 'Unknown native exit was re
                 hook = "function Publish-WorkflowTerminal {throw 'RF_PUBLICATION_SENTINEL'}"
                 if failure == "seal":
                     hook = """$actualCapacity=${function:Invoke-RunCapacityCommand}
-function Invoke-RunCapacityCommand {param($Python,$RepoRoot,$Arguments,$FailureLabel)
+function Invoke-RunCapacityCommand {param($Python,$RepoRoot,$Arguments,$FailureLabel,$StandardInputJson)
  if('seal-stopped-payload'-in$Arguments){throw 'RF_SEAL_SENTINEL'}
  & $actualCapacity @PSBoundParameters
 }

@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from msplatform.execution.resources import resource_path
 from common.contracts.write_run_manifest import build_run_manifest, file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger, record_capacity_object
 from common.contracts.capacity_protection import create_capacity_protection_lease
@@ -178,7 +179,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
             path=Path(directory)/'stage_parameters.ps1'
             path.write_text(script,encoding='utf-8',newline='\n')
             result=subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(path),
-                str(WORKFLOW/'execute.ps1'),str(ROOT/'common/host_execution_lease.ps1')],
+                str(WORKFLOW/'execute.ps1'),str(resource_path('host_execution_lease.ps1'))],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('STAGE_PARAMETERS=PASS',result.stdout)

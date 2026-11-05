@@ -11,13 +11,13 @@ import copy
 import math
 from typing import Any
 
-from msplatform.analysis.particle_census import partition_cohort
+from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
 from msplatform.assembly.handoff import HandoffMother, _validate_mother
 from msplatform.contracts.clock import ClockIdentity, require_same_clock
-from msplatform.contracts.particle_state import validate_component_particle_state_rows
+from msplatform.contracts.particle_state import validate_component_particle_state_rows, _validate_lineage
 
 
-_IDENTITY = ("species_id", "mass_amu", "charge_state", "particle_weight", "particle_birth_time_us")
+_IDENTITY = ("parent_particle_id", "generation", "lineage_birth_time_us", "species_id", "mass_amu", "charge_state", "particle_weight", "particle_birth_time_us")
 _SCALARS = ("instrument_time_us", "particle_age_us", "lineage_age_us", "kinetic_energy_eV")
 
 
@@ -27,10 +27,18 @@ def _finite(value: Any) -> float:
     return float(value)
 
 
-def _serialized_equal(left: float, right: float) -> bool:
-    # Existing single_flight_source binary64 serialization contract, not a
-    # propagation/scientific agreement threshold. Never applied across runs.
-    return abs(left-right) <= 32 * math.ulp(max(1., abs(left), abs(right)))
+from msplatform.contracts.particle_state import binary64_serialization_close as _serialized_equal
+
+
+def _require_lineage_identity(mother):
+    for number, (pid, record) in enumerate(mother.records.items(), 2):
+        if any(key not in record for key in _IDENTITY):
+            raise ValueError("original mother lacks complete parent/generation/lineage identity")
+        if (type(record["generation"]) is not int or
+                (record["parent_particle_id"] is not None and type(record["parent_particle_id"]) is not int)):
+            raise ValueError("original mother lineage identity requires typed integers")
+        _finite(record["lineage_birth_time_us"])
+        _validate_lineage(dict(record, particle_id=pid), number)
 
 
 def _events(events: Sequence[Mapping[str, Any]], mother: set[int], selection: tuple) -> dict:
@@ -108,6 +116,7 @@ def compare_propagations(left_states: Sequence[Mapping[str, Any]], right_states:
     """
     require_same_clock(left_clock, right_clock)
     _validate_mother(mother)
+    _require_lineage_identity(mother)
     if (not isinstance(observation_id, str) or not observation_id or direction not in {"outward", "inward"}
             or type(occurrence) is not int or occurrence < 1 or not mother.records):
         raise ValueError("an explicit plane occurrence and full original mother are required")
@@ -140,3 +149,75 @@ def compare_propagations(left_states: Sequence[Mapping[str, Any]], right_states:
         fate_differences=[dict(particle_id=pid,left=left_fates[pid],right=right_fates[pid])
                           for pid in ids if left_fates[pid] != right_fates[pid]],
         pairs=pairs, claim="descriptive differences only; no threshold verdict or convergence qualification")
+
+
+def _observed_event_rows(rows, mother, event):
+    selected = {}
+    for row in rows:
+        if not isinstance(row, Mapping) or {"observation_id", "direction", "occurrence"} & row.keys():
+            raise ValueError("canonical event comparison rejects plane or mixed event identity")
+        pid = row["particle_id"]
+        if type(pid) is not int or pid not in mother or not isinstance(row["event"], str) or not row["event"]:
+            raise ValueError("canonical event identity differs from original mother")
+        values = {key: _finite(row[key]) for key in ("instrument_time_us", "x_mm", "y_mm", "z_mm")}
+        if row["event"] != event:
+            continue
+        if pid in selected:
+            raise ValueError("selected canonical event repeats an original particle ID; no first/last fallback")
+        selected[pid] = values
+    return selected
+
+
+def compare_observed_events(left_events, right_events, *, mother: HandoffMother,
+                            left_clock: ClockIdentity, right_clock: ClockIdentity,
+                            left_fates, right_fates, selected_particle_ids, event: str,
+                            left_frame_id: str | None, right_frame_id: str | None) -> dict:
+    """Describe actual canonical-event t/xyz only, without fabricating CSV1 state.
+
+    Complete mother metadata and caller classifications remain the denominator.
+    This method has no velocity, energy or phase observation. Completion means
+    calculation only, never equality, accuracy, convergence or Formal status.
+    """
+    _validate_mother(mother)
+    _require_lineage_identity(mother)
+    require_same_clock(left_clock, right_clock)
+    if not isinstance(event, str) or not event:
+        raise ValueError("an explicit canonical event is required")
+    ids = list(mother.records)
+    weights = {pid: row["particle_weight"] for pid, row in mother.records.items()}
+    population = subset_efficiency(ids, selected_particle_ids, ids, relative_weights=weights)
+    selected = population["numerator_particle_ids"]
+    partitions = [partition_cohort(ids, fates.items(), categories=list(dict.fromkeys(fates.values())),
+                                 relative_weights=weights) for fates in (left_fates, right_fates)]
+    events = [_observed_event_rows(rows, set(ids), event) for rows in (left_events, right_events)]
+    matched = [pid for pid in selected if pid in events[0] and pid in events[1]]
+    frames_known = all(isinstance(frame, str) and frame for frame in (left_frame_id, right_frame_id))
+    if frames_known and left_frame_id != right_frame_id:
+        raise ValueError("canonical event frames differ; transform explicitly before comparison")
+    if matched and not frames_known:
+        raise ValueError("matched canonical event positions require explicit actual frames")
+    pairs = []
+    for pid in matched:
+        left, right = events[0][pid], events[1][pid]
+        delta = [right[axis + "_mm"] - left[axis + "_mm"] for axis in "xyz"]
+        time_delta = right["instrument_time_us"] - left["instrument_time_us"]
+        if not all(math.isfinite(value) for value in [time_delta, *delta]):
+            raise ValueError("nonfinite observed event difference")
+        pairs.append(dict(particle_id=pid, right_minus_left=dict(instrument_time_us=time_delta,
+            position_components_mm=delta, position_norm_mm=math.hypot(*delta))))
+    missing = {name: [pid for pid in selected if pid not in rows]
+               for name, rows in zip(("left", "right"), events)}
+    coverage = {name: subset_efficiency(ids, [pid for pid in selected if pid in rows], ids, relative_weights=weights)
+                for name, rows in zip(("left", "right"), events)}
+    return dict(schema_version=1, role="observed_event_comparison", method="event_time_position",
+        status="insufficient_observations" if not matched or any(missing.values()) else "comparison_completed",
+        mother_records=copy.deepcopy(dict(mother.records)), mother_fates=copy.deepcopy(list(mother.fates)),
+        clock=dict(clock_epoch_id=left_clock.clock_epoch_id, authority_sha256=left_clock.authority_sha256),
+        frame_ids=dict(left=left_frame_id, right=right_frame_id), selected_population=population, coverage=coverage,
+        selection=dict(event=event, particle_ids=selected), matched_particle_ids=matched,
+        missing_observation_particle_ids=missing, pairs=pairs,
+        fates=dict(left=copy.deepcopy(dict(left_fates)), right=copy.deepcopy(dict(right_fates))), fate_partitions=partitions,
+        fate_differences=[dict(particle_id=pid, left=left_fates[pid], right=right_fates[pid])
+                          for pid in ids if left_fates[pid] != right_fates[pid]],
+        unavailable_quantities=["velocity", "kinetic_energy", "phase", "particle_age", "lineage_age"],
+        claim="actual event time/position differences only; no equality, accuracy or scientific qualification")

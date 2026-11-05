@@ -365,14 +365,14 @@ foreach($nested in @($false,$true)) {
             closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable))
             verify_candidate_source_closure(closure)
             self.assertTrue((code / "common/host_resource_scheduler.py").is_file())
-            self.assertTrue((code / "common/host_resource_policy.json").is_file())
+            self.assertTrue((code / "src/msplatform/execution/resources/host_resource_policy.json").is_file())
             self.assertTrue((code / "common/resource_budget_support.ps1").is_file())
             script = """
 $ErrorActionPreference='Stop'
 . ./common/host_execution_lease.ps1
 . ./common/resource_budget_support.ps1
 $observationSource=(Get-Command New-RepositoryProcessObservation).ScriptBlock.File
-if($observationSource -ne [IO.Path]::GetFullPath('./common/resource_budget_support.ps1')){
+if($observationSource -ne [IO.Path]::GetFullPath('./src/msplatform/execution/resources/resource_process_support.ps1')){
   throw 'Process observation did not load from the frozen closure'
 }
 $observation=New-RepositoryProcessObservation

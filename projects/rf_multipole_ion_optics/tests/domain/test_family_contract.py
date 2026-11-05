@@ -73,7 +73,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
             support.count("projects\\rf_multipole_ion_optics\\runtime\\run_simion_finite_3d_transport.ps1"),
             1,
         )
-        self.assertIn("common\\simion\\rf_drive.lua", runner)
+        self.assertIn("src\\msplatform\\backends\\simion\\resources\\rf_drive.lua", runner)
         self.assertIn("Copy-VerifiedRunInput", runner)
         self.assertIn("multipole_rf_drive_kernel.lua", runner)
         self.assertIn("simion_rf_drive_kernel=$rfDriveKernelLua", runner)

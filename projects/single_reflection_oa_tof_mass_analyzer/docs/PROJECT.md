@@ -869,3 +869,21 @@ GUI同路径保存的开始／完成事实沿现小context记录：唯一初始r
 同模型6934项库存／6933不同时间中，旧查询至少漏查4851个已存不同点。新冷读231000外层91.161秒／公共owner86.215秒（其中prepared后处理69.985秒），场／粒子求解0、父保存0，保留完整100-ID CSV；原科学门槛仍失败，73命中、7缺接近段、20冻结外推超出区间。相对旧85命中：65保持、8原未知获得证据、20转为未知；共同65命中ToF最大差3.4693ns。增加采样可提前发现冻结平台而收紧原外推时间区间，故命中数不保证递增；未证明实际20例的具体成因，不作物理损失或精度资格结论。原CLI后继232000独立CSV分析成功（外层28.903秒、原生启动0），失败父记录不变。
 
 冻结候选MATLAB行为套件29／29通过，用例合计23.861秒／MCP外层27.8秒：含全部旧查询和存储点、256边界两侧的穿面与冻结、N100／1000／5000母群、无效库存及重复异态拒绝。实际默认Code Analyzer因旧用户设置不可读先给CFERR；仅以-config=factory重试后两正式M文件均无问题，未改用户配置。该证据证明读取与恢复接线，不等于完整Candidate、GUI／CAD或最终Repository验收。
+
+### P3 完整 TOF 与真实几何例子
+
+`msplatform.components.single_reflection_oa_tof` 维护纯物理几何、电气、科学拓扑、
+组件接口及真实三区布局编译的唯一实现。布局数学从真实作者实现提升；原测试 support
+只调用规范实现并补其旧数值投影。项目文件入口继续负责原配置读取，旧 native 投影
+委托 `msplatform.backends.simion`，组件不反向导入 backend。
+
+`msplatform.examples.load_example("rf_oatof_functional_v1")` 提供已提交 RF 机械请求与
+原真实三区设计参数整理的自包含作者输入；不依赖历史 run、用户绝对路径、PA 或伪造 receipt。
+完整 TOF 保留加速器、flight-tube shield、reflectron 各环/网格/背板与 detector，
+侧孔为原 3 × 2.8 mm。新纯 provider 不带 solver runtime；geometry numerics 显式交给 backend。
+源设计包络仅参与原理论和几何编译，不产生粒子、release 或时钟。
+
+最终相邻十模块公共 GATE 93 项通过（10.420 秒、无 skip），含原数值/GEM 金标准、
+真实展开输入、完整科学组和树外 `-I` 无仓库/backend/host 导入。初轮真实例子中 ground
+实体数误当 pointer 数的断言失败、以及资源迁移期间旧 GEM 路径失败均保留；最终对应断言已通过。
+该结果不是普通 wheel/sdist、原生执行、Formal 或整个 P3 的验收，后续由统一安装/API 链验证。

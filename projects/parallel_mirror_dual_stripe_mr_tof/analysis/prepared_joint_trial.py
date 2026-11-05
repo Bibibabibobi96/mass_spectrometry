@@ -8,6 +8,7 @@ import re
 from common.paths.workspace_paths import project_native_run_path
 
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 import shutil
 import subprocess
 import sys
@@ -294,7 +295,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         freeze_file(path, frozen_runtime / path.name)
     current_program = Path(__file__).parents[1] / "simion/mrtof_candidate.lua"
     program_record = freeze_file(current_program, frozen_runtime / "joint.lua")
-    waveform_source, waveform_provenance = (Path(__file__).parents[3] / "common/simion/voltage_waveforms.lua", None)
+    waveform_source, waveform_provenance = (Path(__file__).parents[3] / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", None)
     if continuation_predecessor_manifest is not None:
         waveform_source, waveform_provenance = _continuation_waveforms(continuation_predecessor_manifest)
     waveforms_record = freeze_file(waveform_source,
@@ -316,7 +317,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         raise ValueError("Prepared JSON numerics differ from its default trajectory profile")
     numerics = dict(reference_numerics, trajectory_quality=trajectory_profile["trajectory_quality"],
                     maximum_step_us=trajectory_profile["maximum_step_us"])
-    freeze_file(Path(__file__).parents[3] / "common/paths/native_run_path.lua", frozen_runtime / "native_run_path.lua")
+    freeze_file(resource_path("native_run_path.lua"), frozen_runtime / "native_run_path.lua")
     sidecar = render_measured_operating_point(frozen_runtime / reference.name, source_copy,
         _native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True,
         native_path_projection=True)
@@ -327,7 +328,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     launcher = Path(__file__).parents[1] / "simion/run_iob_flight.lua"
     freeze_file(launcher, inputs / launcher.name)
     effective_launcher = inputs / launcher.name
-    projection = freeze_file(Path(__file__).parents[3] / "common/paths/native_run_path.lua", inputs / "native_run_path.lua")
+    projection = freeze_file(resource_path("native_run_path.lua"), inputs / "native_run_path.lua")
     if field_binding_path is not None:
         builder = Path(__file__).parents[1] / "simion/build_native_corridor_iob.lua"
         freeze_file(builder, inputs / builder.name)

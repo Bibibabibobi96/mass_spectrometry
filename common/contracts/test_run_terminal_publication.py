@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts.recorded_file_removal import write_json_atomic
-from common.contracts import write_run_manifest as publication
+from msplatform.execution import terminal_publication as publication
 
 
 class RunTerminalPublicationTests(unittest.TestCase):

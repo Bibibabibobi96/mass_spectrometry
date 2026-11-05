@@ -29,7 +29,10 @@ class SingleReflectionRunnerTests(unittest.TestCase):
                         destination = repo / relative
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copyfile(source, destination)
-            policy_path = repo / "common/contracts/artifact_capacity_policy.json"
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+            copy_scientific_core(REPO, repo)
+            policy_path = repo / "src/msplatform/execution/resources/artifact_capacity_policy.json"
             policy = json.loads(policy_path.read_text(encoding="utf-8"))
             policy["minimum_free_gib"] = 0
             policy_path.write_text(json.dumps(policy), encoding="utf-8")

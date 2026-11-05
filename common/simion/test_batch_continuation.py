@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
-from common.simion import batch_continuation
+from msplatform.execution import recovery as batch_continuation
 from common.simion.batch_continuation import (
     WholeUnitReplayUnit,
     build_whole_unit_replay_plan,
@@ -53,6 +53,32 @@ def _parent(root: Path, batches: list[list[int]], logs: list[list[str]]) -> tupl
 
 
 class BatchContinuationTests(unittest.TestCase):
+    def test_four_units_reuse_out_of_order_and_replay_interrupted_and_unstarted(self) -> None:
+        """F1 planner boundary: explicit completion facts, not native qualification."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = _parent(root, [[7], [42], [9001], [88]],
+                [["complete 7"], ["partial 42"], ["complete 9001"]])
+            paths = [Path(f"logs/simion__batch{index:02d}.stdout.log") for index in range(1, 5)]
+            order = (2, 0, 1, 3)
+            mother = {0: 7, 1: 42, 2: 9001, 3: 88}
+            with patch.object(batch_continuation, "file_sha256", wraps=file_sha256) as hashed:
+                plan = build_whole_unit_replay_plan(predecessor_run_dir=run, output_dir=root/'child',
+                    units=tuple(WholeUnitReplayUnit(f"batch{index+1}", (paths[index],), index in (0, 2))
+                                for index in order))
+            self.assertEqual([row['action'] for row in plan['units']], ['reuse', 'reuse', 'replay', 'replay'])
+            self.assertEqual((plan['reusable_unit_count'], plan['replay_unit_count']), (2, 2))
+            self.assertNotIn((run/paths[1]).resolve(), [call.args[0] for call in hashed.call_args_list])
+            self.assertNotIn((run/paths[3]).resolve(), [call.args[0] for call in hashed.call_args_list])
+            native_calls, reused, restored = [], [], []
+            for index, row in zip(order, plan['units'], strict=True):
+                (native_calls if row['action'] == 'replay' else reused).append(row['key'])
+                restored.append(mother[index])
+            self.assertEqual(native_calls, ['batch2', 'batch4'])
+            self.assertEqual(reused, ['batch3', 'batch1'])
+            self.assertEqual(sorted(restored), [7, 42, 88, 9001])
+            self.assertEqual(len(restored), len(set(restored)))
+
     def test_success_predecessor_reuses_complete_units_and_replays_missing_units(self) -> None:
         for missing in (False, True):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:

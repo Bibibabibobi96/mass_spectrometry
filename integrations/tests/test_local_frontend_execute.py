@@ -172,7 +172,7 @@ try{
         script = """param([string]$Source)
 . $Source
 $repo=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Source))
-$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'src/msplatform/execution/resources/simion_dispatch_support.ps1'),[ref]$null,[ref]$null)
 foreach($name in @('Invoke-ObservedPreparationFailureDrain','Invoke-SimionFormalObservation','Invoke-SimionBatchPhase')){
  $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq$name},$true)
  Invoke-Expression $helper.Extent.Text

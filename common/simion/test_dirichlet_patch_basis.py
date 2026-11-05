@@ -10,6 +10,7 @@ import unittest
 
 from common.contracts.test_support import fixture_process
 from common.host_resource_python import ensure_heavy_entry
+from msplatform.backends.simion.native_io import _ASYNC_IO_PRELUDE, apply_native_io_mode
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,17 +20,7 @@ BUILDER = Path(__file__).with_name("build_dirichlet_patch_basis.lua")
 GEM2PA = Path(__file__).with_name("run_gem2pa.ps1")
 
 
-# Installed SIMION documentation Issue468; this test run-control is explicit,
-# never a production/global default or a substitute for scientific assertions.
-_ASYNC_IO_PRELUDE = (
-    "local d=assert(simion.debug,'async IO debug interface unavailable'); "
-    "local before=d.allow_asynchronous_io; "
-    "assert(type(before)=='boolean','async IO flag getter unverified'); "
-    "print('ASYNC_IO_CONTROL before='..tostring(before)); io.stdout:flush(); "
-    "d.allow_asynchronous_io=false; "
-    "assert(d.allow_asynchronous_io==false,'async IO flag readback failed'); "
-    "print('ASYNC_IO_CONTROL applied=false'); io.stdout:flush()"
-)
+
 
 
 def _fixture_execution_command(command, *, disable_async_io):
@@ -41,11 +32,7 @@ def _fixture_execution_command(command, *, disable_async_io):
         return original
     if not original or Path(original[0]).resolve() != SIMION.resolve():
         raise ValueError('Explicit native I/O mode requires the configured SIMION executable')
-    if '--lua' in original:
-        raise ValueError('Explicit native I/O mode conflicts with an existing Lua prelude')
-    if original[1:4] != ['--nogui', '--noprompt', 'lua']:
-        raise ValueError('Explicit native I/O mode requires the tiny headless Lua fixture command')
-    return original[:3] + ['--lua', _ASYNC_IO_PRELUDE] + original[3:]
+    return apply_native_io_mode(original, allow_asynchronous_io=False)
 
 
 def _instrument_builder(root):

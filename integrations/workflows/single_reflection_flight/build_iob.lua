@@ -18,5 +18,5 @@ for _,key in ipairs({'instances','response_fields'}) do
 end
 -- Program/FLY2 companions share the projected output stem. The locator remains
 -- injected only for paths discovered while independently reopening an old IOB.
-local core=assert(loadfile(root..'/integrations/workflows/single_reflection_flight/build_iob_core.lua'))()
+local core=assert(loadfile(root..'/src/msplatform/backends/simion/resources/iob_core.lua'))()
 return core(spec,mode,native_path)

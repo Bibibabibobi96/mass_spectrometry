@@ -4,6 +4,10 @@
 [多极杆理论](../../rf_multipole_ion_optics/docs/theory/index.md)，碰撞模型分级见
 [碰撞模型](../../rf_multipole_ion_optics/docs/theory/collisions.md)。
 
+气流入口的运行依赖冻结沿原 `schedulerFiles`、复制及输入身份记录，增加由规范核心源码枚举和
+`pyproject.toml` 包资源声明实际展开的执行资源。冻结后的公共桥读取本次快照中的规范实现，
+不借作者源码补缺；独立加载预算观测的定向软件回归已通过。这不增加 COMSOL 求解或气流资格。
+
 ## 部件判断
 
 该结构最可能是三重四极杆 Q1 之前的“差分抽气双锥采样接口 + 两级高压 RF 四极杆离子导引组件”，

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 import shutil
 import subprocess
 import tempfile
@@ -135,7 +136,7 @@ class WorkbenchPathTests(unittest.TestCase):
             (solver / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
             builder = solver / "build_workbench.lua"
             shutil.copyfile(PROJECT / "simion/build_workbench.lua", builder)
-            shutil.copyfile(PROJECT.parents[1] / "common/paths/native_run_path.lua", solver / "native_run_path.lua")
+            shutil.copyfile(resource_path("native_run_path.lua"), solver / "native_run_path.lua")
             harness = root / "check_paths.lua"
             harness.write_text(LUA_HARNESS, encoding="utf-8")
             result = subprocess.run([executable, str(harness), str(builder)], cwd=unrelated,

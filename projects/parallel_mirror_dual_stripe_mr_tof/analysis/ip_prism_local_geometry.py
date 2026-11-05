@@ -14,7 +14,7 @@ import math
 import numpy as np
 from scipy.spatial import ConvexHull
 
-from common.simion.gem_primitives import format_number
+from msplatform.backends.simion.gem_primitives import format_number
 from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
     _extrude_polygon_bands, _prism_ground_shield_lines,

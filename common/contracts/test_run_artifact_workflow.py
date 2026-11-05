@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from common.contracts.capacity_ledger import load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.write_run_manifest import file_record
@@ -19,6 +20,69 @@ from common.contracts.test_support.run_artifact_workflow import OWNER, PROJECT, 
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
 class RunArtifactWorkflowTests(fixture.RunArtifactWorkflowFixture):
+    def test_default_script_route_owns_pipe_holding_child_and_preserves_timeout(self):
+        from common.contracts.test_support import fixture_process
+
+        actual = fixture_process.run_fixture_process
+        def short_timeout(command, **kwargs):
+            self.assertEqual(kwargs["timeout"], 90)
+            self.assertEqual(kwargs["mode"], "inherited-grant")
+            self.assertIsNone(kwargs["diagnostics_root"])
+            return actual(command, **dict(kwargs, timeout=3))
+
+        with tempfile.TemporaryDirectory(prefix="workflow-default-owned-") as directory:
+            root = Path(directory)
+            for code in (0, 7):
+                result = self.run_ps(root, f"[Console]::Out.WriteLine('DEFAULT_STDOUT');[Console]::Error.WriteLine('DEFAULT_STDERR');exit {code}")
+                self.assertEqual(result.returncode, code)
+                self.assertEqual(result.stdout.strip(), "DEFAULT_STDOUT")
+                self.assertEqual(result.stderr.strip(), "DEFAULT_STDERR")
+                self.assertTrue((Path(result.fixture_diagnostics) / "diagnostics.json").is_file())
+            unrelated = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(60)"],
+                                         cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for secondary in (False, True):
+                    with self.subTest(diagnostic_failure=secondary):
+                        child_fact = root / "child.json"
+                        child_fact.unlink(missing_ok=True)
+                        child_code = ("import json,os,time;from pathlib import Path;"
+                                      f"Path({str(child_fact)!r}).write_text(json.dumps(dict(pid=os.getpid())));"
+                                      "os.write(1,b'PIPE_CHILD_STDOUT\\xff');os.write(2,b'PIPE_CHILD_STDERR\\xfe');time.sleep(60)")
+                        launcher = root / "launcher.py"
+                        launcher.write_text("import subprocess,sys\nsubprocess.Popen([sys.executable,'-c'," + repr(child_code) + "])\n", encoding="utf-8")
+                        script = f"& '{sys.executable}' '{launcher}'\nexit 0"
+                        captured = {}
+                        saved = fixture_process._save_evidence
+                        def save(*args):
+                            captured["metadata"] = args[2]
+                            saved(*args)
+                            if secondary:
+                                raise OSError("DEFAULT_DIAGNOSTIC_SECONDARY")
+                        started = time.monotonic()
+                        with patch.object(fixture_process, "run_fixture_process", side_effect=short_timeout), patch.object(
+                                fixture_process, "_save_evidence", side_effect=save):
+                            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                                self.run_ps(root, script)
+                        self.assertLess(time.monotonic() - started, 30)
+                        error = caught.exception
+                        self.assertEqual(error.timeout, 3)
+                        evidence = Path(error.fixture_diagnostics)
+                        self.assertEqual((evidence / "stdout.bin").read_bytes(), error.output or b"")
+                        self.assertEqual((evidence / "stderr.bin").read_bytes(), error.stderr or b"")
+                        self.assertIn(b"PIPE_CHILD_STDOUT\xff", (evidence / "drained_stdout.bin").read_bytes())
+                        self.assertIn(b"PIPE_CHILD_STDERR\xfe", (evidence / "drained_stderr.bin").read_bytes())
+                        metadata = captured["metadata"]
+                        child_pid = json.loads(child_fact.read_text())["pid"]
+                        self.assertIn(child_pid, [row["pid"] for row in metadata["job_processes_at_failure"]])
+                        self.assertTrue(all(row["creation_filetime_100ns"] > 0 for row in metadata["job_processes_at_failure"]))
+                        self.assertEqual(metadata["primary_error"]["type"], "TimeoutExpired")
+                        self.assertEqual(metadata["remaining_job_processes"], [])
+                        self.assertEqual(any("DEFAULT_DIAGNOSTIC_SECONDARY" in note for note in error.fixture_secondary), secondary)
+                        self.assertIsNone(unrelated.poll(), "Cleanup stopped unrelated owned test sentinel")
+            finally:
+                unrelated.terminate()
+                unrelated.wait(timeout=5)
+
     def test_direct_powershell_release_keeps_actual_transaction_fields(self):
         script=r'''param($Repo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
@@ -220,10 +284,14 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
             controlled = root / "controlled-host"
             host_source = REPO / "common/host_execution_lease.ps1"
             original_host = host_source.read_bytes()
-            for name in ("host_execution_lease.ps1", "host_resource_scheduler.py", "host_resource_policy.json"):
+            for name in ("host_execution_lease.ps1", "host_resource_scheduler.py"):
                 target = controlled / "common" / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / "common" / name, target)
+            policy_source = REPO / "src/msplatform/execution/resources/host_resource_policy.json"
+            policy_copy = controlled / "src/msplatform/execution/resources/host_resource_policy.json"
+            policy_copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(policy_source, policy_copy)
             install_controlled_cpu_snapshot(REPO, controlled)
             _, run, _, _ = self.invoke_fixture(root, {}, host_state=str(root / "host.json"), failure_stage="retention_before")
             request_path = run / "inputs/execution_request.json"
@@ -433,7 +501,7 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
                 if lease_state != "active":
                     self.assertNotEqual(result["lease_id"], old_id)
                     self.assertEqual(result["recovery_session"]["committed_new_bytes"], 0)
-                    budget = json.loads((REPO / "common/contracts/artifact_capacity_policy.json").read_text())["light_evidence_budget_bytes"]
+                    budget = json.loads((REPO / "src/msplatform/execution/resources/artifact_capacity_policy.json").read_text())["light_evidence_budget_bytes"]
                     # Admission retains its original receipt; the live lease
                     # representation follows renewal through the final zero.
                     session = result["recovery_session"]

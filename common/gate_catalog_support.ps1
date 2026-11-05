@@ -126,6 +126,7 @@ function Invoke-ResolvedGateStage {
     $priorRuntime = [Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE', 'Process')
     try {
         $env:SIMULATION_PYTHON_EXE = $python
+        . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
         return Invoke-LoggedGateStage -Name $Stage -LogPath $LogPath -Action {
             Invoke-RecordedGateStage -Name $Stage -Reason $planned.reason -ResourceRole $resource.role -ResourceStage $resource.stage -Action {
                 Invoke-GateCatalogCommand -Command $planned.command -RepoRoot $RepoRoot -PythonExe $python

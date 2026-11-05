@@ -1,6 +1,8 @@
 """Four-slot preparation tests use inert PA objects, never native field evidence."""
 from __future__ import annotations
 
+from msplatform.execution.resources import resource_path
+
 import json
 import io
 from contextlib import redirect_stdout
@@ -206,14 +208,18 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         write_json(self.downstream_path, self.downstream)
         self.snapshot = self.root / "snapshot"
         for name in [*_SOURCES.values(), "integrations/workflows/single_reflection_flight/build_iob.lua",
-                     "integrations/workflows/single_reflection_flight/build_iob_core.lua", "common/paths/native_run_path.lua"]:
+                     "integrations/workflows/single_reflection_flight/build_iob_core.lua",
+                     "src/msplatform/backends/simion/resources/iob_core.lua", "common/paths/native_run_path.lua"]:
             target = self.snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / name, target)
+            shutil.copyfile(resource_path("native_run_path.lua") if name == "common/paths/native_run_path.lua" else ROOT / name, target)
         seed = self.snapshot / "common/simion/assets/iob_instance_seeds"
         seed.mkdir(parents=True)
         for name in ["4_instance_seed.iob", "5_instance_seed.iob", *(f"iob_seed_placeholder_{i:02d}.pa0" for i in range(1, 6))]:
-            (seed / name).write_bytes(b"INERT_SEED_RESOURCE__NOT_NATIVE_EVIDENCE")
+            target = (self.snapshot / "src/msplatform/backends/simion/resources" / name
+                      if name.endswith(".iob") else seed / name)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"INERT_SEED_RESOURCE__NOT_NATIVE_EVIDENCE")
 
     def publish_fields(self):
         """Create explicit inert publisher records, never native field evidence."""
@@ -1197,7 +1203,7 @@ if mode:match('^verify') then assert(reference_closed,'temporary path reference 
         arguments = [str(LUA), str(mock), str(spec_path), str(BUILDER), mode]
         environment = None
         if execution_root is not None:
-            arguments.append(str(BUILDER.parents[3] / "common/paths/native_run_path.lua"))
+            arguments.append(str(resource_path("native_run_path.lua")))
             environment = dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(self.root),
                 MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(execution_root))
         return subprocess.run(arguments, env=environment,

@@ -314,13 +314,15 @@ class FunctionalContractTests(unittest.TestCase):
             repository, package_roots=("src/msplatform",), provider_root="src/msplatform",
             resource_suffixes=(".schema.json",))
         scientific_sources.extend(enumerate_python_sources(
-            repository, module_paths=functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES))
+            repository, module_paths=(*functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES, *functional.FROZEN_RUNTIME_MODULES)))
         for relative in scientific_sources:
             target = repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(repository / relative, target)
-        shutil.copyfile(PROJECT.parents[1] / "common/host_resource_policy.json", repo / "common/host_resource_policy.json")
-        for relative in ("common/contracts/artifact_retention.json",):
+        host_policy = repo / "src/msplatform/execution/resources/host_resource_policy.json"
+        host_policy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(PROJECT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json", host_policy)
+        for relative in ("src/msplatform/execution/resources/artifact_retention.json",):
             target = repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(PROJECT.parents[1] / relative, target)
@@ -336,16 +338,18 @@ class FunctionalContractTests(unittest.TestCase):
         for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
-        fixture_paths = [repo / "common/simion/rf_drive.lua",
-                         repo / "common/simion/voltage_waveforms.lua",
+        fixture_paths = [repo / "src/msplatform/backends/simion/resources/rf_drive.lua",
+                         repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
                          repo / "common/simion/scientific_event_csv.lua",
-                         repo / "common/paths/native_run_path.lua",
+                         repo / "src/msplatform/execution/resources/native_run_path.lua",
                          repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
                          repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
         for path in fixture_paths:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("inert copy fixture\n", encoding="utf-8")
+        shutil.copyfile(repository / "src/msplatform/execution/resources/native_run_path.lua",
+                        repo / "src/msplatform/execution/resources/native_run_path.lua")
         (vendor / "examples/collision_hs1/collision_hs1.lua").write_text(HS1_SOURCE_FIXTURE, encoding="utf-8")
         functional.write_json(self.run / "run_config.json", {"schema_version": 1})
         return project, vendor
@@ -907,6 +911,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
 class NativeFieldReferenceTests(unittest.TestCase):
     def test_source_projection_and_child_publication_reference_owner_without_payload_rereads(self) -> None:
         from common.contracts import verify_run_manifest, write_run_manifest
+        from msplatform.execution import manifest_records
         from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -930,7 +935,7 @@ class NativeFieldReferenceTests(unittest.TestCase):
                 enumerate(("inputs/resolved_model.json", "inputs/numerics.json", "simion/processor.gem"))}))
             write_run_manifest.publish_run_manifest(parent / "run_config.json", "success",
                 output_paths=[*family, parent / "logs/refine.log"])
-            actual_hash = write_run_manifest.file_sha256
+            actual_hash = manifest_records.file_sha256
             actual_subprocess = functional.subprocess.run
 
             def no_payload_hash(path: Path) -> str:
@@ -943,7 +948,7 @@ class NativeFieldReferenceTests(unittest.TestCase):
 
             with patch.object(functional, "file_sha256", side_effect=no_payload_hash), \
                  patch.object(functional.subprocess, "run", side_effect=projected_verifier), \
-                 patch.object(write_run_manifest, "file_sha256", side_effect=no_payload_hash):
+                 patch.object(manifest_records, "file_sha256", side_effect=no_payload_hash):
                 external = functional._native_field_binding(child, copy.deepcopy(model), parent, PROJECT.parents[1])
                 self.assertEqual(set(external), {"native_field_manifest", "native_field_consumption"})
                 consumption = json.loads((child / "inputs/native_field_consumption.json").read_text())

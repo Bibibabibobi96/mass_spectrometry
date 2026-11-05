@@ -28,18 +28,36 @@ def render_legacy_iob_builder(core: str) -> str:
     Only current source is lowered; the historical builder is compared whole.
     An unknown envelope or additional locator primitive fails closed.
     """
-    header = "".join(core.splitlines(keepends=True)[:4])
+    header_lines = []
+    for line in core.splitlines(keepends=True):
+        stripped = line.strip()
+        # Only blank and single-line comment prefix is an ABI-neutral header.
+        # Long-comment syntax is not interpreted as a safe executable prelude.
+        if stripped and (not stripped.startswith("--") or stripped.startswith("--[")):
+            break
+        header_lines.append(line)
+    header = "".join(header_lines)
     prefix = header + "return function(spec,mode,native_path)\n"
     suffix = "end\n"
     if not core.startswith(prefix) or not core.endswith(suffix):
         raise ValueError("current IOB core ABI envelope differs")
     body = core[len(prefix):-len(suffix)]
-    primitive = "    path_reference.path=native_path(path)\n"
-    if body.count(primitive) != 1 or body.count("native_path(") != 1:
+    # These are the complete current, explicitly known locator call sites.
+    # The legacy address ABI is identity; preserve the entire body verbatim.
+    locator_sites = (
+        "native_path(assert(spec.empty_particle_control,",
+        "local projected=native_path(path)",
+        "reference.path=native_path(spec.bootstrap_paths[index])",
+        "simion.wb:load_particles(native_path(spec.empty_particle_control))",
+        "reference.path=native_path(row.path)",
+    )
+    if body.count("native_path(") != len(locator_sites) or any(
+        body.count(site) != 1 for site in locator_sites
+    ):
         raise ValueError("current IOB core path locator primitive differs")
-    body = body.replace(primitive, "    path_reference.path=path\n")
     cli = ("local spec=dofile(assert(arg[1], 'frozen IOB build specification is required'))\n"
-           "local mode=arg[2] or 'build'\n")
+           "local mode=arg[2] or 'build'\n"
+           "local function native_path(path) return path end\n")
     return header + cli + body
 
 

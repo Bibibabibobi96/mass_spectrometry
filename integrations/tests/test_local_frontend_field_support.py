@@ -78,10 +78,18 @@ class LocalFrontendFieldSupportTests(unittest.TestCase):
             runtime=root/'snapshot/integrations/runtime';runtime.mkdir(parents=True)
             for name in ('initialize_fast_adjust_pa_basis.lua','local_frontend_field_support.ps1','frontend_field_plan.py','verify_local_frontend_fields.lua'):
                 shutil.copyfile(RUNTIME/name,runtime/name)
-            common=runtime.parents[1]/'common/simion';common.mkdir(parents=True)
-            for name in ('export_standalone_pa.lua','standalone_pa_response_set.py'):
-                shutil.copyfile(ROOT/'common/simion'/name,common/name)
+            contract=runtime.parents[1]/'src/msplatform/backends/simion/standalone_pa_response_set.py'
+            contract.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT/'src/msplatform/backends/simion/standalone_pa_response_set.py', contract)
+            exporter = runtime.parents[1]/'src/msplatform/backends/simion/resources/export_standalone_pa.lua'
+            exporter.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT/'src/msplatform/backends/simion/resources/export_standalone_pa.lua', exporter)
             before=build_field_plan(prepared,Path(sys.executable),runtime)
+            self.assertEqual(before['identity']['builder_identity']['response_set_contract'],file_record(contract)['sha256'])
+            original_contract=contract.read_bytes()
+            contract.write_bytes(original_contract+b'\n# changed canonical response contract\n')
+            self.assertNotEqual(before['cache_key'],build_field_plan(prepared,Path(sys.executable),runtime)['cache_key'])
+            contract.write_bytes(original_contract)
             for path in (runtime/'local_frontend_field_support.ps1',runtime/'frontend_field_plan.py'):
                 path.write_text(path.read_text()+'\n# inert provenance change\n')
             after=build_field_plan(prepared,Path(sys.executable),runtime)
@@ -505,8 +513,10 @@ Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'ex
             common.mkdir(parents=True)
             for name in ('local_frontend_field_support.ps1', 'initialize_fast_adjust_pa_basis.lua', 'verify_local_frontend_fields.lua'):
                 shutil.copyfile(RUNTIME / name, runtime / name)
-            for name in ('export_standalone_pa.lua', 'compose_standalone_pa.lua'):
-                shutil.copyfile(ROOT / 'common/simion' / name, common / name)
+            shutil.copyfile(ROOT / 'common/simion/compose_standalone_pa.lua', common / 'compose_standalone_pa.lua')
+            exporter = root/'snapshot/src/msplatform/backends/simion/resources/export_standalone_pa.lua'
+            exporter.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT/'src/msplatform/backends/simion/resources/export_standalone_pa.lua', exporter)
             run = root / 'run'
             for name in ('inputs', 'logs'):
                 (run / name).mkdir(parents=True, exist_ok=True)

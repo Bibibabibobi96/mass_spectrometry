@@ -14,6 +14,7 @@ from unittest.mock import patch
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
 from common.contracts import run_capacity_lifecycle
+from msplatform.execution import run_capacity_lifecycle as execution_lifecycle
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.run_capacity_lifecycle import (
     assert_retention_complete,
@@ -235,7 +236,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             before_files = {path.relative_to(run).as_posix(): path.read_bytes()
                             for path in run.rglob("*") if path.is_file()}
             before_ledger = capacity_ledger.resolve_ledger_path(root).read_bytes()
-            with patch.object(run_capacity_lifecycle, "write_json_atomic", side_effect=OSError("TEST_ONLY ledger publication")):
+            with patch.object(execution_lifecycle, "write_json_atomic", side_effect=OSError("TEST_ONLY ledger publication")):
                 with self.assertRaisesRegex(OSError, "ledger publication"):
                     reseal_retired_payload(root, config, owner="p", writing_stopped=True)
             self.assertEqual(capacity_ledger.resolve_ledger_path(root).read_bytes(), before_ledger)
@@ -714,7 +715,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             initialize_capacity_ledger(root, objects=[])
             run, config = self.stopped_payload_fixture(root, "interrupted")
             ledger = load_capacity_ledger(root)
-            with patch("common.contracts.run_capacity_lifecycle.write_json_atomic", side_effect=OSError("interrupted")):
+            with patch("msplatform.execution.run_capacity_lifecycle.write_json_atomic", side_effect=OSError("interrupted")):
                 with self.assertRaises(OSError):
                     seal_checkpoint(root, config, owner="p", writing_stopped=True,
                                     retain_payload=True, retention_reason="GUI")
@@ -740,7 +741,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             register_writing(root, config)
             (run / "run_manifest.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
             before = load_capacity_ledger(root)
-            with patch("common.contracts.run_capacity_lifecycle.write_json_atomic", side_effect=OSError("interrupted")):
+            with patch("msplatform.execution.run_capacity_lifecycle.write_json_atomic", side_effect=OSError("interrupted")):
                 with self.assertRaisesRegex(OSError, "interrupted"):
                     seal_checkpoint(root, config, owner="p", writing_stopped=True)
             self.assertEqual(load_capacity_ledger(root), before)

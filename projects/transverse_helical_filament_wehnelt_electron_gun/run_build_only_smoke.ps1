@@ -314,7 +314,7 @@ try {
     gate_catalog = 'common\gate_catalog.json'
     host_resource_adapter = 'common\host_execution_lease.ps1'
     host_resource_scheduler = 'common\host_resource_scheduler.py'
-    host_resource_policy = 'common\host_resource_policy.json'
+    host_resource_policy = 'src\msplatform\execution\resources\host_resource_policy.json'
     resource_budget_support = 'common\resource_budget_support.ps1'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     manifest_writer = 'common\contracts\write_run_manifest.py'
@@ -341,12 +341,21 @@ try {
       -Destination (Join-Path $infrastructureRoot $entry.Value)
   }
   $selectCoreSources = @'
-import json, pathlib, sys
+import json, pathlib, sys, tomllib
 from common.contracts.frozen_inputs import enumerate_python_sources
 root = pathlib.Path(sys.argv[1]).resolve()
-print(json.dumps(enumerate_python_sources(
+selected = set(enumerate_python_sources(
     root, package_roots=("src/msplatform",), provider_root="src/msplatform",
-    resource_suffixes=(".schema.json",))))
+    resource_suffixes=(".schema.json",)))
+configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+for package, patterns in configuration["tool"]["setuptools"]["package-data"].items():
+    package_root = root / "src" / package.replace(".", "/")
+    for pattern in patterns:
+        resources = sorted(path for path in package_root.glob(pattern) if path.is_file())
+        if not resources:
+            raise ValueError(f"Declared package resource is unavailable: {package}/{pattern}")
+        selected.update(path.relative_to(root).as_posix() for path in resources)
+print(json.dumps(sorted(selected)))
 '@
   $coreSelection = Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
     & $package.python -B -c $selectCoreSources $repoRoot

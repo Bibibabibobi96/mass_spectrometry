@@ -54,7 +54,8 @@ def _namespace_error(module: str) -> str | None:
         return f"undeclared installed backend: {module}"
     if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution"}:
         return f"undeclared installed exporter: {module}"
-    if parts[1] == "applications" and len(parts) > 2 and parts[2] != "solidworks":
+    if parts[1] == "applications" and len(parts) > 2 and parts[2] not in {
+            "solidworks", "solidworks_worker", "model_execution", "simion", "simion_model_execution"}:
         return f"undeclared installed application: {module}"
     return None
 
@@ -73,7 +74,8 @@ def _target_error(target: str, dependencies: set[str], source_domain: str) -> st
         return f"{source_domain} imports optional CAD kernel: {target}"
     if parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain != "applications":
         return f"{source_domain} imports optional application machinery: {target}"
-    if parts[0] in HOST_MODULES and source_domain != "execution":
+    if (parts[0] in HOST_MODULES and source_domain != "execution"
+            and not (source_domain == "applications" and parts[0] == "subprocess")):
         return f"{source_domain} imports host/process machinery: {target}"
     if parts[0] not in sys.stdlib_module_names | set(sys.builtin_module_names) | dependencies:
         return f"scientific core imports an undeclared dependency: {target}"
@@ -139,7 +141,8 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
             if name:
                 aliases[node.targets[0].id] = name
         name = _qualified_name(node, aliases)
-        if source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform.")):
+        if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
+                and not (source_domain == "applications" and name == "os.environ")):
             errors.append(f"{node.lineno}: scientific core probes host/search-path state: {name}")
         if not isinstance(node, ast.Call):
             continue
@@ -292,6 +295,10 @@ lib.import_module('.helper', __package__)
             ("msplatform.applications.solidworks", "from msplatform.execution import owner"),
             ("msplatform.exporters.step", "import cadquery; from OCP.Precision import Precision"),
             ("msplatform.applications.solidworks", "import pythoncom"),
+            ("msplatform.applications.model_execution", "from msplatform.execution import owner"),
+            ("msplatform.applications.simion", "from msplatform.execution import run_session"),
+            ("msplatform.applications.simion_model_execution", "from msplatform.execution import run_session"),
+            ("msplatform.applications.solidworks_worker", "import subprocess; import os; child = os.environ.copy()"),
         )
         for module, source in allowed:
             with self.subTest(module=module, source=source):
@@ -316,6 +323,11 @@ lib.import_module('.helper', __package__)
             ("msplatform.contracts.clock", "import pythoncom"),
             ("msplatform.exporters.step", "from msplatform import applications"),
             ("msplatform.exporters.unreviewed", "import math"),
+            ("msplatform.applications.unreviewed", "import subprocess"),
+            ("msplatform.applications.solidworks_worker", "import ctypes"),
+            ("msplatform.applications.simion", "from msplatform.backends.simion import model"),
+            ("msplatform.applications.solidworks_worker", "import multiprocessing"),
+            ("msplatform.applications.solidworks_worker", "import sys; sys.path.append(author_checkout)"),
         )
         for module, source in rejected:
             with self.subTest(module=module, source=source):

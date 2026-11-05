@@ -145,10 +145,10 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         snapshot = self.workspace / "runtime_snapshot"
         relative = Path("integrations/workflows/local_frontend/runtime.py")
         resources = [relative, Path("integrations/runtime/build_single_flight_program.py"),
-                     Path("common/simion/rf_drive.lua"),
-                     Path("common/simion/voltage_waveforms.lua"),
-                     Path("integrations/runtime/single_flight_pulse_hook.lua"),
-                     Path("integrations/runtime/single_flight_frontend_hook.lua")]
+                     Path("src/msplatform/backends/simion/resources/rf_drive.lua"),
+                     Path("src/msplatform/backends/simion/resources/voltage_waveforms.lua"),
+                     Path("src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua"),
+                     Path("src/msplatform/backends/simion/resources/single_flight_frontend_hook.lua")]
         for name in resources:
             target = snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)

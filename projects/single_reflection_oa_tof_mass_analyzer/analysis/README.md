@@ -84,6 +84,18 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 
 阶段复用由既有stage context绑定实际合同、生成器、求解参数及`candidate_stage_execution.py`；完整入口仍冻结作来源。日志／收尾修改不使无关科学阶段失效，真实执行实现变化仍拒绝。旧阶段只在现有具名迁移器取得充分冻结证据时于新run派生，不改父receipt或用当前默认追认，范围见[已知旧Candidate阶段](../docs/PROJECT.md#已知旧-candidate-阶段的派生复用)。
 
+Candidate source snapshots also freeze `pyproject.toml` and expand its declared
+`msplatform.execution` package resources through `candidate_source_closure.py`.
+The existing source containment, byte identity, runtime binding and verification
+steps apply to these files; copying only the legacy PowerShell entry points is
+insufficient. Missing resources remain errors, without an installed-package fallback.
+
+Postprocessing verifies the completion's execution-request file and its original
+bound identity. Publication may add `retention_role`; this annotation is excluded
+from the identity comparison. Path, existence, bytes, SHA and all other record
+fields remain checked, alongside the original run/config, completion marker and
+writer-release requirements. This does not authorize rewriting a historical parent.
+
 ## 核心分析
 
 - `ideal_source_comparison.py`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。

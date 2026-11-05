@@ -16,6 +16,7 @@ import common.simion.cache_generation as cache_generation
 import common.simion.pa_family_cache as pa_family_cache
 import common.simion.standalone_pa_response_set as response_set
 from common.contracts import capacity_ledger, capacity_protection, reconcile_artifact_capacity
+from msplatform.execution import capacity_ledger as execution_capacity_ledger
 
 from common.simion.pa_family_cache import (
     CacheDisposition,
@@ -183,7 +184,7 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_abandon_empty_transaction_replays_owner_commit_after_ledger_failure(self):
         artifacts, cache, first, _, request = self._empty_failed_transaction(prepared=True)
-        with patch.object(capacity_ledger, "write_json_atomic", side_effect=OSError("fixture ledger interruption")):
+        with patch.object(execution_capacity_ledger, "write_json_atomic", side_effect=OSError("fixture ledger interruption")):
             with self.assertRaisesRegex(OSError, "interruption"):
                 advance_pa_family_cache_transaction(cache, identity(), self.names, abandon_empty_transaction=request)
         self.assertEqual(json.loads((first.transaction_directory / "transaction.json").read_text())["status"], "retired")
@@ -1064,7 +1065,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                             raise OSError("fixture handoff key owner write")
                         return original_record(root, **kwargs)
 
-                    with patch.object(capacity_ledger, "record_capacity_object", side_effect=fail_transfer):
+                    with patch.object(execution_capacity_ledger, "record_capacity_object", side_effect=fail_transfer):
                         with self.assertRaisesRegex(OSError, "handoff key owner write"):
                             advance_pa_family_cache_transaction(cache, identity(), fixture.names,
                                 owner="successor-owner", producer_run_config=successor, producer_handoff=request)
@@ -2559,7 +2560,7 @@ class PAFamilyCacheTest(unittest.TestCase):
             return original_record(root, **kwargs)
 
         with patch.object(Path, "mkdir", new=fail_generations), patch.object(
-            capacity_ledger, "record_capacity_object", side_effect=fail_landed_key_record
+            execution_capacity_ledger, "record_capacity_object", side_effect=fail_landed_key_record
         ):
             with self.assertRaises(OSError) as caught:
                 advance_pa_family_cache_transaction(cache, identity(), self.names,
@@ -2656,7 +2657,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                 raise OSError("fixture destination registration unavailable")
             return original_record(root, **kwargs)
 
-        with patch.object(capacity_ledger, "record_capacity_object", side_effect=reject_key):
+        with patch.object(execution_capacity_ledger, "record_capacity_object", side_effect=reject_key):
             with self.assertRaisesRegex(PAFamilyCacheError, "cannot record PA cache writing"):
                 advance_pa_family_cache_transaction(cache, identity(), self.names,
                     verification_evidence=self._verification_evidence(prepared))
@@ -3171,7 +3172,7 @@ class PAFamilyCacheTest(unittest.TestCase):
             verification_evidence=self._verification_evidence(prepared),
         )
         with patch.object(
-            capacity_ledger,
+            execution_capacity_ledger,
             "write_json_atomic",
             side_effect=OSError("fixture ledger write interruption"),
         ):

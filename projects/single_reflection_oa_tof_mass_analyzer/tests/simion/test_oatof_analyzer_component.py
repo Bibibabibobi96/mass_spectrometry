@@ -6,7 +6,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-COMPONENT = ROOT / "simion/workbench/candidates/oatof_analyzer_component.lua"
+from msplatform.backends.simion.resources import native_resource_path
+
+COMPONENT = native_resource_path("oatof_analyzer_component.lua")
 LUA_TEST = Path(__file__).with_suffix(".lua")
 SIMION_EXE = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 

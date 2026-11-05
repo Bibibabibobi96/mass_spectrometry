@@ -32,5 +32,27 @@ class WorkbenchSeedTests(unittest.TestCase):
                 freeze_workbench_seed(run, repo)
 
 
+    def test_large_declared_placeholder_keeps_contextual_classification_and_record_shape(self):
+        from common.contracts.artifact_retention import classify_file
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root/"source"
+            source = repo/"common/simion/assets/iob_instance_seeds"
+            source.mkdir(parents=True)
+            (source/"1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
+            placeholder = source/"iob_seed_placeholder_01.pa0"
+            placeholder.write_bytes(b"INERT_NOT_NATIVE!" * (1024 * 1024))
+            self.assertEqual(classify_file(placeholder), "solver_native_binary")
+            run = root/"artifacts/projects/example/runs/test"
+            first = freeze_workbench_seed(run, repo)
+            self.assertEqual(first, freeze_workbench_seed(run, repo))
+            frozen = Path(first["placeholder"]["frozen"]["path"])
+            self.assertEqual(frozen.read_bytes(), placeholder.read_bytes())
+            self.assertEqual(set(first["placeholder"]["frozen"]), {"path", "exists", "bytes", "sha256"})
+            content = frozen.read_bytes()
+            frozen.write_bytes(b"X" + content[1:])
+            with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+                freeze_workbench_seed(run, repo)
+
 if __name__ == "__main__":
     unittest.main()

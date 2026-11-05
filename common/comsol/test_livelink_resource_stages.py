@@ -135,13 +135,16 @@ class LiveLinkResourceStageTests(unittest.TestCase):
     ) -> tuple[int, list[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+            copy_scientific_core(ROOT, root)
             comsol = root / "common" / "comsol"
             comsol.mkdir(parents=True)
             (root / "common" / "require_powershell7.ps1").write_text("", encoding="utf-8")
             (root / "common" / "host_execution_lease.ps1").write_text(
                 (ROOT / "common/host_execution_lease.ps1").read_text(encoding="utf-8") + SCHEDULER,
                 encoding="utf-8")
-            shutil.copy2(ROOT / "common/host_resource_policy.json", root / "common")
+            shutil.copy2(ROOT / "src/msplatform/execution/resources/host_resource_policy.json", root / "common")
             shutil.copy2(ROOT / "common/resource_budget_support.ps1", root / "common")
             (comsol / "resolve_comsol_64.ps1").write_text(
                 "function Get-Comsol64Launcher { return $env:FAKE_LAUNCHER }", encoding="utf-8"
@@ -337,6 +340,7 @@ try { & $path @arguments } finally {
             self.assertIn(probe, completed.stderr, output)
             entries = events.read_text(encoding="utf-8-sig").splitlines() if events.exists() else []
             if completion:
+                self.assertTrue((root / 'completion.json').is_file(), output)
                 receipt = json.loads((root / 'completion.json').read_text(encoding='utf-8'))
                 self.assertEqual(receipt['schema_version'], 1)
                 self.assertEqual(receipt['role'], 'comsol_launcher_completion')

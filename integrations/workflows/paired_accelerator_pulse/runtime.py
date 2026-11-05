@@ -10,6 +10,7 @@ import csv
 import json
 import math
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 
 from common.analysis.particle_events import group_particle_events, iter_particle_event_fields
 from common.contracts.file_identity import canonical_json_sha256
@@ -90,8 +91,8 @@ print('PAIRED_ACCELERATOR_PULSE_IOB_'..mode:upper()..'=PASS INSTANCES=1 FLY=Fals
 def _program(config: dict, particle_ids: list[int], source_time: float, code_root: Path) -> str:
     project = code_root / "projects/single_reflection_oa_tof_mass_analyzer/simion"
     components = {
-        "pulse_math": code_root / "common/simion/voltage_waveforms.lua",
-        "pulse_hook": code_root / "integrations/runtime/single_flight_pulse_hook.lua",
+        "pulse_math": code_root / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+        "pulse_hook": code_root / "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua",
         "oa_adapter": project / "paired_accelerator_pulse.lua",
     }
     embedded = "\n".join(f"local {name}=(function()\n{path.read_text(encoding='utf-8')}\nend)()"
@@ -217,7 +218,7 @@ def materialize_simion_batches(
                     grid=shape,origin=grid["instance_origin_mm"],trajectory_quality=quality,seed_iob=seed_iob.resolve().as_posix(),
                     program=paths["paired_pulse.lua"].as_posix(),fly2=paths["paired_pulse.fly2"].as_posix(),iob=paths["paired_pulse.iob"].as_posix())
         _write(paths["build_spec.lua"],"return "+lua_value(spec)+"\n")
-        native_path_source = (code_root/"common/paths/native_run_path.lua").read_text(encoding="utf-8-sig")
+        native_path_source = resource_path("native_run_path.lua").read_text(encoding="utf-8-sig")
         _write(paths["build_iob.lua"], "local native_path=(function()\n"+native_path_source+"\nend)()\n"+_IOB_TASK)
         tasks.append(dict(batch_index=index,particle_ids=ids,particle_count=len(ids),
                           paths={key:str(value) for key,value in paths.items()},
@@ -608,7 +609,7 @@ def prepare_dispatch_request(run: Path,plan_path: Path,code_root: Path,field_pa:
         raise ValueError("original standalone field metadata is ambiguous")
     code={name:_fingerprint(file_record(code_root/name)) for name in (
         "integrations/workflows/paired_accelerator_pulse/runtime.py","integrations/runtime/single_flight_source.py",
-        "integrations/runtime/single_flight_pulse_hook.lua","common/simion/voltage_waveforms.lua",
+        "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua","src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "projects/single_reflection_oa_tof_mass_analyzer/simion/paired_accelerator_pulse.lua")}
     request=dict(solver="SIMION",field_kind="electrostatic",independent_particles=True,
                  particle_count=plan["particle_count"],trajectory_quality=plan["numerics"]["simion_trajectory_quality"],

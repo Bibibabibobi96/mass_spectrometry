@@ -322,6 +322,8 @@ if(-not$script:validated-or$null-ne$script:lease-or$null-ne$finalizationFailure-
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, destination)
             shutil.copyfile(ROOT/"common/paths/workspace_paths.py", root/"repo/common/paths/workspace_paths.py")
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+            copy_scientific_core(ROOT, root / "repo")
             command = ["pwsh", "-NoProfile", "-File", str(target/"execute_compensation.ps1"),
                 "-ResumeFinalization", "-RunId", run.name, "-ResultPath", str(root/"result.json"), "-PythonExe", sys.executable]
             environment["MASS_SPECTROMETRY_ARTIFACT_ROOT"] = str(root/"different-default-artifacts")
@@ -374,7 +376,7 @@ $caught=$false;try{Add-CompensationProducerCompletion $completion}catch{$caught=
 if(-not$caught-or$script:writersStopped){throw 'Unknown producer writer was accepted'}
 ''', encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
-                str(ADAPTER), str(ROOT / 'common/host_execution_lease.ps1')], cwd=ROOT,
+                str(ADAPTER), str(ROOT / 'src/msplatform/execution/resources/host_execution_lease.ps1')], cwd=ROOT,
                 text=True, encoding="utf-8", capture_output=True, check=False, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

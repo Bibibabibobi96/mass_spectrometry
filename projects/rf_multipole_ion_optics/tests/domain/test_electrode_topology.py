@@ -5,8 +5,8 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
+from msplatform.components.rf_multipole.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
 from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view, render_physical_gem
 from projects.rf_multipole_ion_optics.tests.domain.test_simion_geometry import resolved_design, shell

@@ -1,5 +1,6 @@
 """Run pure edge arithmetic with standalone Lua; no solver or workbench."""
 from pathlib import Path
+from msplatform.backends.simion.resources import native_resource_path
 import shutil
 import subprocess
 import tempfile
@@ -14,7 +15,7 @@ class VoltageWaveformsTests(unittest.TestCase):
         source = Path(__file__).parent
         with tempfile.TemporaryDirectory() as directory:
             frozen = Path(directory) / "voltage_waveforms.lua"
-            shutil.copyfile(source / frozen.name, frozen)
+            shutil.copyfile(native_resource_path(frozen.name), frozen)
             result = subprocess.run(
                 [lua, str(source / "test_voltage_waveforms.lua"), str(frozen)],
                 cwd=directory, capture_output=True, text=True, check=False, timeout=20,

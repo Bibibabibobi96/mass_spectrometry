@@ -17,7 +17,7 @@ class SimionTransportCallbackTests(unittest.TestCase):
             result = subprocess.run(
                 [str(SUPPLIER_LUA), str(Path(__file__).with_suffix('.lua')),
                  str(PROJECT / 'simion/simion_transport.lua'),
-                 str(ROOT / 'common/simion/rf_drive.lua'), output],
+                 str(ROOT / 'src/msplatform/backends/simion/resources/rf_drive.lua'), output],
                 cwd=ROOT, capture_output=True, text=True, encoding='utf-8',
                 errors='replace', check=False, timeout=20,
             )

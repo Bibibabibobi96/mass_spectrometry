@@ -26,7 +26,7 @@ class LocalFrontendOwnerRecoveryTests(unittest.TestCase):
                     target=facade/source.relative_to(ROOT);target.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copyfile(source,target)
             owner_fixture.copy_scientific_core(ROOT, facade)
-            policy_path=facade/'common/contracts/artifact_capacity_policy.json'
+            policy_path=facade/'src/msplatform/execution/resources/artifact_capacity_policy.json'
             policy=json.loads(policy_path.read_text(encoding='utf-8'));policy.update(target_gib=64/1024,minimum_free_gib=0)
             policy_path.write_text(json.dumps(policy),encoding='utf-8')
             (facade/'config').mkdir();shutil.copyfile(ROOT/'config/project_registry.json',facade/'config/project_registry.json')

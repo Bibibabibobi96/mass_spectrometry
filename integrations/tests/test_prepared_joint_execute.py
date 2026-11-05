@@ -131,6 +131,8 @@ function Exit-ArtifactWorkflowCapacitySession {$script:capacityReleased=$true}
 '''
         host_fixture = r'''
 # Explicit inert host admission; this fixture never creates a host ledger.
+function Assert-HostResourceHeavyStage {throw 'Analysis fixture must never request native heavy execution'}
+function Test-HostResourceConsoleProcess {return $false}
 function Enter-HostExecutionLease {
  param($Role,$Stage,$RunId)
  if($Role-ne'GATE'-or$Stage-ne'unclassified'){throw 'Analysis must request ordinary host admission'}
@@ -289,6 +291,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                                 raise
                             primary.add_note("PREPARED_ANALYSIS_EXTRA_EVIDENCE_ERROR=" + repr(diagnostic_error))
                 self.assertEqual(completed.returncode == 0, scenario == "success", completed.stdout + completed.stderr)
+                self.assertTrue((workspace / "host_events.txt").is_file(), completed.stdout + completed.stderr)
                 self.assertEqual((workspace / "host_events.txt").read_text().splitlines(),
                                  ["enter:GATE/unclassified", "exit:success" if scenario == "success" else "exit:failed"])
                 self.assertFalse((workspace / "artifacts/common/host_resources.sqlite3").exists())
@@ -471,7 +474,7 @@ $null = Set-StrictMode -Version Latest
 $pathContext=Resolve-WorkspacePaths -SourceRoot $Repository -ArtifactRoot (Join-Path $TestRoot 'artifacts') -ExecutionRoot (Join-Path $TestRoot 'execution') -HostResourceStatePath (Join-Path $TestRoot 'host.sqlite3') -Python $PythonRuntime
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
 $function=$ast.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-PreparedJointTrial'},$true)
-$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'src/msplatform/execution/resources/simion_dispatch_support.ps1'),[ref]$null,[ref]$null)
 $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
 Invoke-Expression $helper.Extent.Text
 $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionFormalObservation'},$true)
@@ -757,7 +760,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         runtime.mkdir()
         (runtime / "joint.iob").write_bytes(b"test IOB; never passed to a solver")
         shutil.copyfile(snapshot / relative / "mrtof_candidate.lua", runtime / "joint.lua")
-        waveform = snapshot / "common/simion/voltage_waveforms.lua"
+        waveform = snapshot / "src/msplatform/backends/simion/resources/voltage_waveforms.lua"
         shutil.copyfile(waveform, runtime / "joint.voltage_waveforms.lua")
         (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
         preparation = fixture.root / "preparation.json"

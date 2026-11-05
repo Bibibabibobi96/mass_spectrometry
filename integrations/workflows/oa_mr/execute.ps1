@@ -489,7 +489,7 @@ try{
   $trialTool=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py'
   $batchTool=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mrtof_batch_flight.py'
   $programSource=Join-Path $providerSimionRoot 'mrtof_candidate.lua'
-  $waveformsSource=Join-Path $script:pythonRoot 'common/simion/voltage_waveforms.lua'
+  $waveformsSource=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources/voltage_waveforms.lua'
   $counterSource=Join-Path $providerSimionRoot 'mirror_cycle_counter.lua'
   $mapSource=Join-Path $providerSimionRoot 'candidate_voltage_map.lua'
   $launcherSource=Join-Path $providerSimionRoot 'run_iob_flight.lua'
@@ -545,7 +545,7 @@ try{
     Copy-RequiredInput (Join-Path $providerSimionRoot 'scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
   }
   Copy-RequiredInput -Source (Join-Path $providerSimionRoot 'build_native_corridor_iob.lua') -Destination (Join-Path $solverDir 'build_native_corridor_iob.lua') -Label 'native corridor IOB builder'|Out-Null
-  Copy-RequiredInput -Source (Join-Path $script:pythonRoot 'common\simion\assets\iob_instance_seeds\4_instance_seed.iob') -Destination (Join-Path $solverDir '4_instance_seed.iob') -Label 'native four-instance seed'|Out-Null
+  Copy-RequiredInput -Source (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\4_instance_seed.iob') -Destination (Join-Path $solverDir '4_instance_seed.iob') -Label 'native four-instance seed'|Out-Null
   foreach($pair in @(@($programSource,'mrtof_three_component_candidate.lua'),@($waveformsSource,'mrtof_three_component_candidate.voltage_waveforms.lua'),@($counterSource,'mrtof_three_component_candidate.mirror_cycle_counter.lua'),@($mapSource,'mrtof_three_component_candidate.voltage_map.lua'),@($launcherSource,'run_iob_flight.lua'))){Copy-RequiredInput $pair[0] (Join-Path $solverDir $pair[1]) $pair[1]|Out-Null}
   $fly2Input=Join-Path $solverDir 'downstream_trial_source.input.fly2'
   $sidecar=Join-Path $solverDir 'mrtof_three_component_candidate.operating_point.lua'

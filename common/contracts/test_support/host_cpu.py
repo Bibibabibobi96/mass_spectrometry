@@ -5,6 +5,8 @@ import math
 from pathlib import Path
 import tempfile
 
+from msplatform.execution.resources import resource_path
+
 
 def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_percent: float = 0.0) -> None:
     """Control only CPU input in an isolated software fixture, never a solver run."""
@@ -20,9 +22,19 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
         raise ValueError("Controlled CPU snapshot cannot follow a link outside its fixture")
     original = (repository / "common/host_execution_lease.ps1").read_bytes()
     contents = target.read_bytes()
-    marker = b"    cpu_percent = $load\n"
-    if contents != original or contents.count(marker) != 1:
+    if contents != original:
         raise ValueError("Controlled CPU snapshot requires the exact unmodified copied entrypoint")
+    canonical = resource_path("host_execution_lease.ps1")
+    canonical_bytes = canonical.read_bytes()
+    marker = b"    cpu_percent = $load\n"
+    if canonical_bytes.count(marker) != 1:
+        raise ValueError("Controlled CPU snapshot requires the exact canonical host resource")
+    lookup = b"$hostResource=Join-Path $legacyRepo 'src/msplatform/execution/resources/host_execution_lease.ps1'"
+    if contents.count(lookup) != 1:
+        raise ValueError("Controlled CPU snapshot requires the exact installed-resource bridge")
+    private = fixture / "common/host_execution_lease.resource.ps1"
+    if private.exists():
+        raise ValueError("Controlled CPU snapshot private resource already exists")
     # Preserve invalid/missing real CPU observations so admission still rejects
     # them. All other fields and the complete real collection path stay intact.
     replacement = b"""    cpu_percent = $(
@@ -35,6 +47,9 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
       }
     )
 """
-    target.write_bytes(b"# TEST ONLY: controlled CPU input; no native solver authorization.\n"
-                       + f"$script:SoftwareFixtureCpuPercent={float(cpu_percent)!r}\n".encode("ascii")
-                       + contents.replace(marker, replacement))
+    parameter, body = canonical_bytes.split(b"\n", 1)
+    private.write_bytes(parameter+b"\n# TEST ONLY: controlled CPU; no native solver authorization.\n"
+                        + f"$script:SoftwareFixtureCpuPercent={float(cpu_percent)!r}\n".encode("ascii")
+                        + body.replace(marker, replacement))
+    target.write_bytes(contents.replace(lookup,
+        b"$hostResource=Join-Path $PSScriptRoot 'host_execution_lease.resource.ps1'"))

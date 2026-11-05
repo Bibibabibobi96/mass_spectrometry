@@ -256,6 +256,38 @@ $hostState=Get-HostResourceStatus -StatePath $fixtureHostState
 if(@($hostState.records).Count-ne0){{throw 'capacity fixture leaked a real host grant'}}
 Write-Output ('PRESSURE_RESULT='+($result|ConvertTo-Json -Depth 30 -Compress))
 '''
+                    from common.contracts.test_cross_root_protection import _canonical_session_hook
+                    # Keep CLI policy/maintenance probes and transport the actual
+                    # canonical session body unchanged, adding only private faults.
+                    script = script.replace("$fixtureCapacityCommand=${function:Invoke-RunCapacityCommand}",
+                                            "$script:realCapacity=${function:Invoke-RunCapacityCommand}")
+                    script = _canonical_session_hook(script, '''
+fixture_root=Path(fixture_request["options"]["root"] if fixture_request["action"] == "create"
+                  else fixture_request["session"]["artifact_root"])
+fixture_scenario=fixture_root.name
+fixture_action={"create":"create","renew":"renew","release":"delete"}[fixture_request["action"]]
+fixture_events=fixture_root/"events.jsonl"
+try:
+    fixture_active=sum(row.get("status") == "active" for row in fixture_protection.load_capacity_protection_leases(fixture_root)["audit"])
+except Exception:
+    fixture_active=None
+with fixture_events.open("a",encoding="utf-8") as fixture_stream:
+    fixture_stream.write(json.dumps({"action":fixture_action,"mode":None,"active_leases":fixture_active})+"\\n")
+if fixture_scenario == "renewal_failure" and fixture_action == "renew" and not (fixture_root/"disposable").exists():
+    def fixture_fail_renewal(*args,**kwargs):
+        raise ValueError("fixture lease renewal failure")
+    fixture_protection.renew_capacity_protection_lease=fixture_fail_renewal
+if fixture_scenario == "expired_before_renewal" and fixture_action == "renew" and not (fixture_root/"disposable").exists():
+    from datetime import datetime,timedelta
+    fixture_path=next((fixture_root/"common/capacity_protection_leases").glob("*.json"))
+    fixture_lease=json.loads(fixture_path.read_text(encoding="utf-8"))
+    fixture_lease["expires_at_utc"]=(datetime.fromisoformat(fixture_lease["created_at_utc"].replace("Z","+00:00"))+timedelta(milliseconds=1)).isoformat()
+    fixture_path.write_text(json.dumps(fixture_lease),encoding="utf-8")
+if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
+    def fixture_fail_cleanup(*args,**kwargs):
+        raise ValueError("fixture lease cleanup failure")
+    fixture_protection.delete_capacity_protection_lease=fixture_fail_cleanup
+''', noncanonical="& $script:realCapacity -Python Invoke-PressureFixturePython -RepoRoot $RepoRoot -Arguments $Arguments -FailureLabel $FailureLabel")
                     environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1",
                                        MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN="",
                                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"),
@@ -301,6 +333,7 @@ Write-Output ('PRESSURE_RESULT='+($result|ConvertTo-Json -Depth 30 -Compress))
                         self.assertIn("fixture lease cleanup failure", result["cleanup"]["error"])
 
     def test_startup_cli_apply_evaluates_admission_once(self) -> None:
+        from msplatform.execution import capacity_admission
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
@@ -310,10 +343,10 @@ Write-Output ('PRESSURE_RESULT='+($result|ConvertTo-Json -Depth 30 -Compress))
             )
             for free_bytes, accepted in ((10**15, True), (0, False)):
                 with (self.subTest(accepted=accepted),
-                      patch.object(capacity.shutil, "disk_usage", return_value=Mock(free=free_bytes)) as disk,
-                      patch.object(capacity_ledger, "load_capacity_ledger", wraps=capacity_ledger.load_capacity_ledger) as ledger,
-                      patch.object(capacity.protection, "load_capacity_protection_leases",
-                                   wraps=capacity.protection.load_capacity_protection_leases) as leases,
+                      patch.object(capacity_admission.shutil, "disk_usage", return_value=Mock(free=free_bytes)) as disk,
+                      patch.object(capacity_admission.capacity_ledger, "load_capacity_ledger", wraps=capacity_admission.capacity_ledger.load_capacity_ledger) as ledger,
+                      patch.object(capacity_admission.protection, "load_capacity_protection_leases",
+                                   wraps=capacity_admission.protection.load_capacity_protection_leases) as leases,
                       patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}),
                       patch.object(sys, "argv", [
                           "capacity", "--artifact-root", str(root), "--capacity-protection-lease-id", "current", "--apply",

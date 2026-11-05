@@ -555,7 +555,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common\\contracts\\strict_json.py",
             "common\\host_execution_lease.ps1",
             "common\\host_resource_scheduler.py",
-            "common\\host_resource_policy.json",
+            "src\\msplatform\\execution\\resources\\host_resource_policy.json",
             "common\\comsol\\run_comsol_r2025b.ps1",
             "common\\comsol\\resolve_comsol_64.ps1",
             "common\\comsol\\livelink_r2025b\\comsolstartup.m",
@@ -572,17 +572,29 @@ class MatlabContractBindingTests(unittest.TestCase):
     def test_actual_common_source_table_loads_frozen_budget_observation(self) -> None:
         start = self.build_runner.index('  $commonFrozenFiles = [ordered]@{')
         end = self.build_runner.index('  foreach ($entry in $commonFrozenFiles.GetEnumerator())', start)
-        # Evaluate the actual owner table, never the commercial owner/task.
+        # Execute the real table and real package selector, never a private resource list.
+        selection_start = self.build_runner.index("  $selectCoreSources = @'")
+        selection_end = self.build_runner.index("\nforeach ($entry in $bootstrapIdentity", selection_start)
+        selector = self.build_runner[selection_start:selection_end]
         script = "$ErrorActionPreference='Stop'\n" + self.build_runner[start:end] + r'''
 foreach($relative in $commonFrozenFiles.Values){
   $destination=Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT $relative
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
   Copy-Item -LiteralPath (Join-Path $env:DEPENDENCY_TEST_REPO $relative) -Destination $destination
 }
+& {
+  $repoRoot=$env:DEPENDENCY_TEST_REPO
+  $snapshotRoot=$env:FROZEN_DEPENDENCY_TEST_ROOT
+  $package=@{python=$env:DEPENDENCY_TEST_PYTHON}
+  $frozenInputs=@{}
+  $env:SIMULATION_PYTHON_EXE=$package.python
+  . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+''' + selector + r'''
+}
 Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
 . ./common/resource_budget_support.ps1
 if((Get-Command New-RepositoryProcessObservation).ScriptBlock.File -ne
-    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/resource_budget_support.ps1')){
+    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'src/msplatform/execution/resources/resource_process_support.ps1')){
   throw 'Observation did not load from the frozen source table'
 }
 $observation=New-RepositoryProcessObservation
@@ -594,7 +606,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
                 ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
                 cwd=directory,
                 env=dict(os.environ, FROZEN_DEPENDENCY_TEST_ROOT=directory,
-                         DEPENDENCY_TEST_REPO=str(REPO_ROOT)),
+                         DEPENDENCY_TEST_REPO=str(REPO_ROOT), DEPENDENCY_TEST_PYTHON=sys.executable),
                 capture_output=True, text=True, encoding='utf-8', timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -626,7 +638,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/gate_catalog.json",
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
-            "common/host_resource_policy.json",
+            "src/msplatform/execution/resources/host_resource_policy.json",
             "common/resource_budget_support.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
@@ -680,6 +692,17 @@ function Get-HostResourceSnapshot {
                 REPO_ROOT, package_roots=("src/msplatform",), provider_root="src/msplatform",
                 resource_suffixes=(".schema.json",),
             )
+            # The production selector must freeze every declared package resource,
+            # not merely Python/schema or privately preseeded host scripts.
+            import tomllib
+
+            package_data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+            for package, patterns in package_data["tool"]["setuptools"]["package-data"].items():
+                package_root = REPO_ROOT / "src" / package.replace(".", "/")
+                for pattern in patterns:
+                    expected_core.extend(path.relative_to(REPO_ROOT).as_posix()
+                                         for path in package_root.glob(pattern) if path.is_file())
+            expected_core = sorted(set(expected_core))
             selection_start = self.build_runner.index("  $selectCoreSources = @'")
             selection_end = self.build_runner.index(
                 "\nforeach ($entry in $bootstrapIdentity", selection_start

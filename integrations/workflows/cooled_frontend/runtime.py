@@ -50,8 +50,8 @@ def field_member_plans(run: Path, *, cache_root: Path | None = None, freeze: boo
     elif set(solver_identity) != {'release','executable_bytes','executable_sha256','file_version'}:
         raise ValueError('complete original frozen solver identity required')
     repository = Path(__file__).resolve().parents[3]
-    builders = {'operating_builder': repository / 'common/simion/build_dirichlet_patch_operating_pa.lua',
-                'exporter': repository / 'common/simion/export_detached_standalone_pa.lua'}
+    builders = {'operating_builder': repository / 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua',
+                'exporter': repository / 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua'}
     authority = dict(simion_identity=solver_identity,
         builder_identity={name: file_sha256(path) for name, path in builders.items()})
     dimensions, mesh, origin = front['dimensions'], front['cell_mm_xyz'], front['instance_origin_mm']

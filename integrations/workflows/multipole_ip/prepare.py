@@ -17,7 +17,9 @@ from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.component_particle_state import write_component_particle_state_csv
 from common.contracts.machine_contracts import validate_schema
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
-from common.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform, relative_transform
+from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
+from msplatform.contracts.clock import ClockIdentity, age_us, seconds_to_microseconds
+from msplatform.assembly.handoff import HandoffClock, HandoffMother, HandoffSelection, prepare_handoff_states
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.integration.resolve_assembly import derive_assembly_scope
@@ -121,25 +123,35 @@ def _canonical_rows(events: list[dict], source: dict, pose: RigidTransform,
             continue
         pid = int(event["particle_id"])
         original = source[pid]
-        position = pose.transform_position(FramedPosition(pose.from_frame_id,
-            (float(event["transverse_x_mm"]), float(event["transverse_y_mm"]), float(event["axial_z_mm"]))))
-        velocity = pose.transform_vector(FramedVector(pose.from_frame_id,
-            (float(event["velocity_x_m_s"]), float(event["velocity_y_m_s"]), float(event["velocity_axial_m_s"]))))
+        position = (float(event["transverse_x_mm"]), float(event["transverse_y_mm"]), float(event["axial_z_mm"]))
+        velocity = (float(event["velocity_x_m_s"]), float(event["velocity_y_m_s"]), float(event["velocity_axial_m_s"]))
         mass, charge = float(original["mass_amu"]), int(original["charge_state"])
-        birth, arrival = float(original["birth_time_s"]) * 1e6, float(event["time_us"])
+        birth, arrival = seconds_to_microseconds(float(original["birth_time_s"])), float(event["time_us"])
         row = dict(particle_id=pid, parent_particle_id=None, generation=0,
             species_id=request["species_id"], particle_weight=request["particle_weight"],
             source_component_id=connection["upstream"]["instance_id"],
             target_component_id=connection["downstream"]["instance_id"], state_event="mechanical_exit",
-            frame_id=FRAME, clock_epoch_id=clock["clock_epoch_id"], instrument_time_us=arrival,
-            lineage_age_us=arrival-birth, particle_age_us=arrival-birth, last_component_elapsed_time_us=arrival-birth,
+            frame_id=pose.from_frame_id, clock_epoch_id=clock["clock_epoch_id"], instrument_time_us=arrival,
+            lineage_age_us=age_us(arrival, birth_time_us=birth), particle_age_us=age_us(arrival, birth_time_us=birth),
+            last_component_elapsed_time_us=age_us(arrival, birth_time_us=birth),
             lineage_birth_time_us=birth, particle_birth_time_us=birth,
             mass_amu=mass, charge_state=charge, mass_to_charge_Th=mass_to_charge_th(mass, charge),
-            kinetic_energy_eV=kinetic_energy_ev(mass, *velocity.components), phase_reference_id=None, phase_rad=None)
-        row.update({f"position_{axis}_mm": value for axis, value in zip("xyz", position.coordinates_mm, strict=True)})
-        row.update({f"velocity_{axis}_m_s": value for axis, value in zip("xyz", velocity.components, strict=True)})
+            kinetic_energy_eV=kinetic_energy_ev(mass, *velocity), phase_reference_id=None, phase_rad=None)
+        row.update({f"position_{axis}_mm": value for axis, value in zip("xyz", position, strict=True)})
+        row.update({f"velocity_{axis}_m_s": value for axis, value in zip("xyz", velocity, strict=True)})
         rows.append(row)
-    return sorted(rows, key=lambda row: row["particle_id"])
+    identity = ClockIdentity(clock["clock_epoch_id"], clock["authority"]["sha256"])
+    # This workflow explicitly inherits the verified producer authority unchanged;
+    # the receiver's current epoch-zero schedule restriction is checked outside.
+    mother = HandoffMother(records={pid: dict(species_id=request["species_id"],
+        mass_amu=float(original["mass_amu"]), charge_state=int(original["charge_state"]),
+        particle_weight=request["particle_weight"],
+        particle_birth_time_us=seconds_to_microseconds(float(original["birth_time_s"])),
+        source_record=dict(original)) for pid, original in source.items()},
+        fates=tuple(dict(event, particle_id=int(event["particle_id"])) for event in events if event["event"] == "terminal"))
+    result = prepare_handoff_states(rows, transform=pose, clock=HandoffClock(identity, identity),
+        selection=HandoffSelection("plane_crossing", tuple(sorted(row["particle_id"] for row in rows))), mother=mother)
+    return list(result.rows)
 
 
 def prepare(request_path: Path, run: Path) -> dict[str, Any]:

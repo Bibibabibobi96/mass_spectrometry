@@ -13,6 +13,7 @@ import unittest
 from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
+from msplatform.execution.resources import resource_path
 from common.contracts.write_run_manifest import file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from projects.rf_multipole_ion_optics.tests.domain.test_analyze_comsol_transport_metrics import scenario
@@ -202,10 +203,10 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
                     self.assertEqual((REPO/'common/host_execution_lease.ps1').read_bytes(), production_before)
             install_controlled_cpu_snapshot(REPO, source)
             controlled = (source/'common/host_execution_lease.ps1').read_bytes()
-            self.assertIn(b'cpu_percent = $load\n', original)
-            self.assertNotIn(b'cpu_percent = $load\n', controlled)
-            self.assertEqual((source/'common/host_resource_policy.json').read_bytes(),
-                             (REPO/'common/host_resource_policy.json').read_bytes())
+            self.assertIn(b'cpu_percent = $load\n', resource_path('host_execution_lease.ps1').read_bytes())
+            self.assertNotIn(b'cpu_percent = $load\n', (source/'common/host_execution_lease.resource.ps1').read_bytes())
+            self.assertEqual((source/'src/msplatform/execution/resources/host_resource_policy.json').read_bytes(),
+                             (REPO/'src/msplatform/execution/resources/host_resource_policy.json').read_bytes())
             with self.assertRaisesRegex(ValueError, 'exact unmodified'):
                 install_controlled_cpu_snapshot(REPO, source)
             with self.assertRaisesRegex(ValueError, 'repository-external'):
@@ -221,7 +222,7 @@ $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $Root 'host.sqlite3'
 . (Join-Path $Repo 'common/host_execution_lease.ps1')
 . (Join-Path $Repo 'common/resource_budget_support.ps1')
 # Evaluate the copied entrypoint's actual CPU expression, not a reimplementation.
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/host_execution_lease.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/host_execution_lease.resource.ps1'),[ref]$null,[ref]$null)
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-ceq'Get-HostResourceSnapshot'},$true)
 $pairs=@($function.FindAll({param($n)$n-is[Management.Automation.Language.HashtableAst]},$true)|ForEach-Object{$_.KeyValuePairs}|Where-Object{$_.Item1.Extent.Text-ceq'cpu_percent'})
 if($pairs.Count-ne1){throw 'Actual controlled CPU field is missing or ambiguous'}
@@ -232,7 +233,7 @@ foreach($load in @($null,[double]::NaN,-1.,101.)){
  elseif($value-ne$load){throw 'Illegal real CPU was covered'}
 }
 Write-Output 'CONTROLLED_CPU_INVALID_REAL_INPUTS_PRESERVED'
-$policy=Get-Content (Join-Path $Repo 'common/host_resource_policy.json') -Raw|ConvertFrom-Json
+$policy=Get-Content (Join-Path $Repo 'src/msplatform/execution/resources/host_resource_policy.json') -Raw|ConvertFrom-Json
 if($policy.cpu_admission_percent-ne95){throw 'Production CPU threshold changed'}
 $budget=Get-HostResourceBudget -Role COMSOL -Stage postprocess
 $lease=$null
@@ -580,7 +581,7 @@ function Write-ColdFixtureEvent {
             code = run/'inputs/code'
             for relative in ('projects/rf_multipole_ion_optics/core/interface_geometry.py',
                              'projects/rf_multipole_ion_optics/runtime/finite_extraction_context.py',
-                             'common/host_execution_lease.ps1', 'common/host_resource_policy.json',
+                             'common/host_execution_lease.ps1', 'src/msplatform/execution/resources/host_resource_policy.json',
                              'common/host_resource_scheduler.py', 'common/require_powershell7.ps1'):
                 target = code/relative
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -689,13 +690,16 @@ Remove-RunPackageExecutionAlias -Package $package
                     timeline_ps+"\nWrite-ColdFixtureEvent 'script.acknowledged'")
             script_text = script_text.replace(parameter, gate, 1)
             # Diagnostic-only copy of the current public function; no liveness policy edits.
-            public_path = REPO/'common/resource_budget_support.ps1'
+            from msplatform.execution.resources import resource_path
+            public_path = resource_path('resource_process_support.ps1')
             public_text = public_path.read_text(encoding='utf-8-sig')
             function_start = 'function Invoke-ResourceBudgetedProcess {'
             if public_text.count(function_start) != 1:
                 raise AssertionError('Current public observer span is not unique')
             begin = public_text.index(function_start)
-            end = public_text.index('\nfunction ', begin+len(function_start))
+            end = public_text.find('\nfunction ', begin+len(function_start))
+            if end == -1:  # Canonical process resource ends with this function.
+                end = len(public_text)
             original_observer = public_text[begin:end]
             instrumented_observer = original_observer
             diagnostic_edits = [('    while($managedActive){', '    while($managedActive){\n      Write-WaitDiagnostic sample.begin $process'), ('      $trackedProcessIds=@($sample.tracked_process_ids)', '      Write-WaitDiagnostic sample.end $process $sample\n      $trackedProcessIds=@($sample.tracked_process_ids)'), ('      $managedActive=Test-RepositoryManagedProcessIsActive', '      Write-WaitDiagnostic liveness.begin $process $sample\n      $managedActive=Test-RepositoryManagedProcessIsActive'), ('      $observed=Update-RepositoryProcessObservation', '      Write-WaitDiagnostic liveness.end $process $sample $managedActive\n      Write-WaitDiagnostic update.begin $process $sample $managedActive\n      $observed=Update-RepositoryProcessObservation'), ('      if($observed.physical_danger-and$managedActive){', '      Write-WaitDiagnostic update.end $process $sample $managedActive\n      if($observed.physical_danger-and$managedActive){'), ('\n    $process.WaitForExit();$rootExitConfirmed=$process.HasExited', '\n    Write-WaitDiagnostic wait.begin $process $sample\n    $process.WaitForExit();$rootExitConfirmed=$process.HasExited\n    Write-WaitDiagnostic wait.end $process $sample'), ('    $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final', '    Write-WaitDiagnostic final_update.begin $process $sample\n    $null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample -Final\n    Write-WaitDiagnostic final_update.end $process $sample'), ('        $process.WaitForExit();$rootExitConfirmed=$process.HasExited', '        Write-WaitDiagnostic finally_wait.begin $process\n        $process.WaitForExit();$rootExitConfirmed=$process.HasExited\n        Write-WaitDiagnostic finally_wait.end $process')]

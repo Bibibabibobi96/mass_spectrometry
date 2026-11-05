@@ -610,8 +610,9 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 snapshot = root/"snapshot"
                 assets = snapshot/"common/simion/assets/iob_instance_seeds"
                 assets.mkdir(parents=True)
-                seed = assets/f"{count}_instance_seed.iob"
-                shutil.copyfile(REPO/"common/simion/assets/iob_instance_seeds"/seed.name, seed)
+                seed = snapshot/"src/msplatform/backends/simion/resources"/f"{count}_instance_seed.iob"
+                seed.parent.mkdir(parents=True)
+                shutil.copyfile(REPO/"src/msplatform/backends/simion/resources"/seed.name, seed)
                 payload = assets/"iob_seed_placeholder_01.pa0"
                 payload.write_bytes(b"inert shared PA fixture; not a SIMION field")
                 originals = {path: path.read_bytes() for path in (seed, payload)}
@@ -619,8 +620,9 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 scripts.mkdir(parents=True)
                 for name in ("mrtof_candidate.lua", "mirror_cycle_counter.lua", "scalar_field_adapter.lua", "build_native_corridor_iob.lua"):
                     (scripts/name).write_text("-- inert frozen script fixture")
-                waveform = snapshot/"common/simion/voltage_waveforms.lua"
-                waveform.write_bytes((REPO/"common/simion/voltage_waveforms.lua").read_bytes())
+                waveform = snapshot/"src/msplatform/backends/simion/resources/voltage_waveforms.lua"
+                waveform.parent.mkdir(parents=True, exist_ok=True)
+                waveform.write_bytes((REPO/"src/msplatform/backends/simion/resources/voltage_waveforms.lua").read_bytes())
                 design, fields, actual = (root/name for name in ("design", "fields", "actual"))
                 for path in (design/"inputs", design/"results/joint_flight", fields/"results", actual/"inputs"):
                     path.mkdir(parents=True)
@@ -767,7 +769,9 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 self.assertTrue(all(os.path.samefile(path, payload) for path in aliases))
                 self.assertEqual(len({path.stat().st_ino for path in [payload, *aliases]}), 1)
                 self.assertEqual({path: path.read_bytes() for path in originals}, originals)
-                self.assertEqual(sorted(path.name for path in assets.iterdir()), sorted(path.name for path in originals))
+                self.assertEqual(sorted(path.name for path in assets.iterdir()), [payload.name])
+                self.assertEqual(sorted(path.name for path in seed.parent.iterdir()),
+                                 sorted([seed.name, waveform.name]))
                 self.assertIn(module._lua(str(runtime/seed.name)), (runtime/"workbench_build.lua").read_text())
                 self.assertEqual(result["guard_paths"], sorted({item["pa_path"] for item in binding["instances"]} | {binding["sources"]["scalar_pa"]}))
 
@@ -1074,7 +1078,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         self.assertEqual(receipt['numerics'],references['numerics'])
         projection = json.loads((inputs/'provider_voltage_projection.json').read_text())
         self.assertEqual(Path(projection['source_voltage_waveforms']['path']).read_bytes(),
-            (REPO/'common/simion/voltage_waveforms.lua').read_bytes())
+            (REPO/'src/msplatform/backends/simion/resources/voltage_waveforms.lua').read_bytes())
         self.assertTrue(Path(receipt['field_plan']['path']).is_file())
         self.assertEqual(Path(receipt['assembly']['assembly_geometry_path']).read_bytes(),geometry_bytes)
         for path,content in frozen_configs.items(): self.assertEqual(path.read_bytes(),content)

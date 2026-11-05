@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from common.simion.gem_primitives import centered_box3d, format_number
+from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
 from projects.dual_pressure_rectilinear_ion_processor.analysis.electrode_contours import apply_contours
 from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes
 

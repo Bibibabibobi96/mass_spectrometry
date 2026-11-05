@@ -24,6 +24,7 @@ from common.contracts.capacity_protection import (
 )
 from common.contracts import capacity_ledger
 from common.contracts import reconcile_artifact_capacity as normal_capacity
+from msplatform.execution import capacity_admission
 from common.contracts import legacy_capacity_backfill as capacity
 from common.contracts.legacy_capacity_backfill import (
     _current_generation_pointers,
@@ -1312,7 +1313,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
         for field, value in (("target_gib", 0), ("minimum_free_gib", -1),
                              ("target_gib", float("nan")), ("minimum_free_gib", True)):
             with self.subTest(field=field, value=value), \
-                    patch.object(normal_capacity, "_load_object", return_value={**original, field: value}), \
+                    patch.object(capacity_admission, "_load_object", return_value={**original, field: value}), \
                     self.assertRaisesRegex(RuntimeError, field):
                 normal_capacity._capacity_policy()
 

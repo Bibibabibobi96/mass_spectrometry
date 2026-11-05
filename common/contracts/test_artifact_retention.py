@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from common.contracts import artifact_retention as retention_owner
+from msplatform.execution import artifact_retention as execution_artifact_retention
 
 from common.contracts.artifact_retention import (
     apply_retention,
@@ -62,14 +62,14 @@ class ArtifactRetentionTests(unittest.TestCase):
         second.write_bytes(b"second")
         proof = self.run / "completion.json"
         proof.write_text('{"writers":"stopped"}', encoding="utf-8")
-        writer = retention_owner.write_json_atomic
+        writer = execution_artifact_retention.write_json_atomic
 
         def fail_progress(path, value):
             if value.get("status") == "pending" and value.get("removed_file_count") == 1:
                 raise OSError("fixture retention progress publication failed")
             writer(path, value)
 
-        with mock.patch.object(retention_owner, "write_json_atomic", fail_progress):
+        with mock.patch.object(execution_artifact_retention, "write_json_atomic", fail_progress):
             with self.assertRaisesRegex(OSError, "progress publication"):
                 apply_retention(self.config, recovery_inputs=[proof])
         self.assertFalse(first.exists())
@@ -92,7 +92,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         payload.write_bytes(b"field")
         proof = self.run / "completion.json"
         proof.write_text("original", encoding="utf-8")
-        with mock.patch.object(retention_owner, "remove_recorded_files", side_effect=OSError("fixture before unlink")):
+        with mock.patch.object(execution_artifact_retention, "remove_recorded_files", side_effect=OSError("fixture before unlink")):
             with self.assertRaises(OSError):
                 apply_retention(self.config, recovery_inputs=[proof])
         receipt = self.run / "retention_actions.json"
@@ -115,7 +115,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         payload.write_bytes(b"field")
         proof = self.run / "completion.json"
         proof.write_text("original", encoding="utf-8")
-        with mock.patch.object(retention_owner, "remove_recorded_files", side_effect=OSError("before unlink")):
+        with mock.patch.object(execution_artifact_retention, "remove_recorded_files", side_effect=OSError("before unlink")):
             with self.assertRaises(OSError):
                 apply_retention(self.config, recovery_inputs=[proof])
         receipt = self.run / "retention_actions.json"
@@ -375,14 +375,20 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.write_config("compact", None)
         copy = Path(self.temporary.name) / "frozen/common/contracts"
         copy.mkdir(parents=True)
-        for name in ("artifact_retention.py", "artifact_retention.json", "recorded_file_removal.py", "file_identity.py"):
+        for name in ("artifact_retention.py", "recorded_file_removal.py", "file_identity.py"):
             shutil.copyfile(REPO_ROOT / "common/contracts" / name, copy / name)
+        from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+        snapshot = copy.parents[1]
+        copy_scientific_core(REPO_ROOT, snapshot)
         payload = self.run / "field.pa0"
         payload.write_bytes(b"original field")
         environment = dict(os.environ, PYTHONNOUSERSITE="1")
         environment.pop("PYTHONPATH", None)
         result = subprocess.run(
-            [sys.executable, str(copy / "artifact_retention.py"), "apply",
+            [sys.executable, "-I", "-c",
+             "import sys,runpy; from pathlib import Path; root=Path(sys.argv[1]); "
+             "sys.path[:0]=[str(root/'src'),str(root),str(Path(sys.argv[2]).parent)]; sys.argv=sys.argv[2:]; "
+             "runpy.run_path(sys.argv[0],run_name='__main__')", str(snapshot), str(copy / "artifact_retention.py"), "apply",
              "--run-config", str(self.config), "--failed-run"],
             cwd=self.temporary.name, env=environment, capture_output=True,
             text=True, encoding="utf-8", timeout=30,

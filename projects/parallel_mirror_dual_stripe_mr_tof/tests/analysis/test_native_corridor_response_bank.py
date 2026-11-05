@@ -5,6 +5,8 @@ import json
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+from common.contracts.file_identity import file_sha256
 
 from common.simion.pa_family_cache import PAFamilyCacheError, advance_pa_family_cache_transaction
 
@@ -225,6 +227,37 @@ if($fallbackCalls){throw 'Registered receipt was written outside the public owne
                 self.assertEqual(sealed.action_required, 'verify')
                 self.assertEqual(json.loads((state.build_directory / RECEIPT_NAME).read_text())['schema_version'], 2)
                 self.assertEqual(json.loads(transaction_path.read_text())['response_receipt'], legacy)
+
+    def test_response_contract_identity_tracks_canonical_body(self) -> None:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
+            derive_response_bank_identity, FROZEN_NAMES,
+        )
+        from common.simion.pa_family_cache import canonical_pa_family_cache_key
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = {"geometry": {}, "gem": {}, "basis_namespace": {}, "mesh": {},
+                      "grid_phase": {}, "surface": "none", "simion_identity": {},
+                      "refine_policy": {}, "builder_identity": {}}
+            documents = [values, {"role": "mrtof_analyzer_full_flight_native_corridor", "response_ids": list(range(1, 9))},
+                         {"role": "mrtof_native_corridor_response_recipe",
+                          "response_recipes": [{"local_id": i} for i in range(1, 9)]}]
+            for name, document in zip(FROZEN_NAMES[:3], documents):
+                (root / name).write_text(json.dumps(document), encoding="utf-8")
+            records = [{"name": name, "bytes": (root / name).stat().st_size,
+                        "sha256": file_sha256(root / name)} for name in FROZEN_NAMES[:3]]
+            (root / FROZEN_NAMES[3]).write_text(json.dumps({"role": "mrtof_native_corridor_frozen_inputs",
+                                                       "status": "frozen", "files": records}), encoding="utf-8")
+            kwargs = {"simion_executable": Path(__file__), "simion_release": "identity-only inert fixture"}
+            before = derive_response_bank_identity(root, **kwargs)
+            contract = PROJECT.parents[1] / "src/msplatform/backends/simion/standalone_pa_response_set.py"
+            self.assertEqual(before["builder_identity"]["response_set_contract_sha256"], file_sha256(contract).upper())
+            def changed_contract(path):
+                return "A" * 64 if Path(path) == contract else file_sha256(path)
+            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank.file_sha256",
+                       side_effect=changed_contract):
+                after = derive_response_bank_identity(root, **kwargs)
+            self.assertNotEqual(canonical_pa_family_cache_key(before), canonical_pa_family_cache_key(after))
+            self.assertEqual(before["geometry"], after["geometry"])
 
     def test_cache_identity_excludes_run_specific_freeze_manifest_hash(self) -> None:
         source = (PROJECT / 'analysis/native_corridor_response_bank.py').read_text(encoding='utf-8-sig')

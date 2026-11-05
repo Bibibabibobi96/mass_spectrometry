@@ -6,6 +6,7 @@ import csv
 import json
 import os
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 import shutil
 import subprocess
 import tempfile
@@ -201,10 +202,10 @@ class FieldDiagnosticsTests(unittest.TestCase):
             folder=Path(temporary);config["native_field"]={"directory":str(folder)}
             for name in ("native_drive.lua","probe_native_field.lua"):
                 shutil.copyfile(PROJECT/"simion"/name,folder/name)
-            shutil.copyfile(REPOSITORY/"common/simion/rf_drive.lua",folder/"simion_rf_drive.lua")
-            shutil.copyfile(REPOSITORY/"common/simion/voltage_waveforms.lua",folder/"voltage_waveforms.lua")
+            shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/rf_drive.lua",folder/"simion_rf_drive.lua")
+            shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/voltage_waveforms.lua",folder/"voltage_waveforms.lua")
             (folder/"frozen_config.lua").write_text("return "+lua_literal(config),encoding="utf-8")
-            shutil.copyfile(PROJECT.parents[1] / "common/paths/native_run_path.lua", folder / "native_run_path.lua")
+            shutil.copyfile(resource_path("native_run_path.lua"), folder / "native_run_path.lua")
             harness=r'''
 local pa={}
 local function amplitude(v) return v[1]+v[3]+v[5] end

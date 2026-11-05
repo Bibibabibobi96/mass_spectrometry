@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,7 +23,15 @@ class ProjectContractTests(unittest.TestCase):
         start = source.index('  $schedulerFiles=[ordered]@{')
         end = source.index('  foreach($key in $sourceFiles.Keys)', start)
         # Evaluate the actual owner table, never the commercial owner/task.
-        script = "$ErrorActionPreference='Stop'\n" + source[start:end] + r'''
+        script = "$ErrorActionPreference='Stop'\n" + r'''
+$schedulerFiles=& {
+  $repoRoot=$env:DEPENDENCY_TEST_REPO
+  $python=$env:DEPENDENCY_TEST_PYTHON
+  $env:SIMULATION_PYTHON_EXE=$python
+  . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+''' + source[start:end] + r'''
+  $schedulerFiles
+}
 foreach($relative in $schedulerFiles.Values){
   $destination=Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT $relative
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
@@ -31,7 +40,7 @@ foreach($relative in $schedulerFiles.Values){
 Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
 . ./common/resource_budget_support.ps1
 if((Get-Command New-RepositoryProcessObservation).ScriptBlock.File -ne
-    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/resource_budget_support.ps1')){
+    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'src/msplatform/execution/resources/resource_process_support.ps1')){
   throw 'Observation did not load from the frozen source table'
 }
 $observation=New-RepositoryProcessObservation
@@ -43,7 +52,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
                 ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
                 cwd=directory,
                 env=dict(os.environ, FROZEN_DEPENDENCY_TEST_ROOT=directory,
-                         DEPENDENCY_TEST_REPO=str(REPO_ROOT)),
+                         DEPENDENCY_TEST_REPO=str(REPO_ROOT), DEPENDENCY_TEST_PYTHON=sys.executable),
                 capture_output=True, text=True, encoding='utf-8', timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

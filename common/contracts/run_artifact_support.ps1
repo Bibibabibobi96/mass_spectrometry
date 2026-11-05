@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'require_powershell7.ps1')
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'host_execution_lease.ps1')
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'src/msplatform/execution/resources/run_paths.ps1')
 
 if(-not('RunTerminalSharedReadGuard'-as[type])){
   Add-Type -TypeDefinition @'
@@ -343,6 +344,9 @@ function Invoke-ArtifactCapacityGate {
   # Capacity work uses shared host admission and inherits the caller's permit.
   # Light admission is not a cache-consumption or deletion lock; the reconciler
   # must separately enforce artifact protection and retention rules.
+  # This legacy adapter receives the actual explicit interpreter from its caller.
+  # Keep the installed context explicit; do not infer a tool from later environment changes.
+  $script:HostResourceExecutionContext.python_executable=$Python
   $capacityLease=Enter-HostExecutionLease -Role GATE
   $capacityFailure=$null
   try{
@@ -486,189 +490,120 @@ function Invoke-RunCapacityLifecycleAdapter {
   return ((@($output)-join "`n")|ConvertFrom-Json)
 }
 
-function Add-ArtifactWorkflowSourceProtection {
-  <# Source references use their frozen owner; they never become new payload
-     reservations in the consumer root. Hold publication guards until pinned. #>
-  param([string]$Python,[string]$RepoRoot,[pscustomobject]$Session,[object[]]$SourceReferences=@(),
-    [Parameter(Mandatory)][AllowEmptyCollection()][Collections.Generic.List[object]]$Guards)
-  $groups=@{};$touched=[Collections.Generic.HashSet[string]]::new()
-  $resolver=@'
+function Invoke-CanonicalCapacitySession {
+  <# JSON transport only. The installed session owns source/own lease changes. #>
+  param([string]$Python,[string]$RepoRoot,[hashtable]$Request,$Session=$null)
+  $adapter=@'
 import json,sys
 from pathlib import Path
-from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
-print(json.dumps(resolve_consumed_run_capacity_owner(json.loads(sys.argv[1]),consumer_artifact_root=Path(sys.argv[2]),stopped_receipt_record=json.loads(sys.argv[3]))))
+from msplatform.execution.capacity_session import create_capacity_session, renew_capacity_session, exit_capacity_session
+request=json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
+sys.stdout.reconfigure(encoding="utf-8")
+session=request.get("session")
+try:
+    action=request["action"]
+    options=request.get("options", {})
+    if action == "create":
+        options["root"]=Path(options["root"])
+        options["run_directory"]=Path(options["run_directory"])
+        options["protected_paths"]=[Path(value) for value in options["protected_paths"]]
+        session=create_capacity_session(**options)
+        result=session
+    elif action == "renew":
+        options["protected_paths"]=[Path(value) for value in options["protected_paths"]]
+        # The existing explicit PS admission runs after a larger reservation
+        # becomes durable; its original callback and failure handling remain.
+        result=renew_capacity_session(session, admission=lambda current: current["startup_gate"], **options)
+    elif action == "release":
+        result=exit_capacity_session(session)
+    else:
+        raise ValueError("Unknown capacity session action")
+    response=dict(ok=True, session=session, result=result)
+except BaseException as failure:
+    response=dict(ok=False, session=getattr(failure,"capacity_session",session),
+        error=dict(type=type(failure).__name__,message=str(failure),notes=list(getattr(failure,"__notes__",[])),
+                   cleanup=getattr(failure,"capacity_lease_cleanup",None)))
+print(json.dumps(response,ensure_ascii=False))
 '@
-    foreach($reference in $SourceReferences){
-      if($reference-isnot[Collections.IDictionary]-or-not$reference.Contains('manifest_record')){
-        throw 'Source protection requires an explicit manifest_record.'
-      }
-      $record=$reference.manifest_record
-      $Guards.Add((Enter-RunTerminalConsumptionGuard -RunDirectory (Split-Path -Parent $record.path)))
-      $text=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot `
-        -Arguments @('-B','-c',$resolver,($record|ConvertTo-Json -Depth 16 -Compress),$Session.artifact_root,$(if($reference.Contains('stopped_receipt_record')){$reference.stopped_receipt_record|ConvertTo-Json -Depth 16 -Compress}else{'null'})) -FailureLabel 'Source capacity owner verification failed')
-      $source=($text-join"`n")|ConvertFrom-Json
-      $root=[string]$source.artifact_root
-      if(-not$groups.ContainsKey($root)){$groups[$root]=@{paths=@();keys=@()}}
-      $groups[$root].paths+=@([string]$source.run_directory)
-      if($reference.Contains('protected_paths')){$groups[$root].paths+=@($reference.protected_paths)}
-      if($reference.Contains('protected_cache_keys')){$groups[$root].keys+=@($reference.protected_cache_keys)}
-    }
-    foreach($root in @($groups.Keys|Sort-Object)){
-      $paths=@($groups[$root].paths|Select-Object -Unique);$keys=@($groups[$root].keys|Select-Object -Unique)
-      if($root-ieq$Session.artifact_root){
-        $Session.protected_paths=@(@($Session.protected_paths)+$paths|Select-Object -Unique)
-        $Session.protected_cache_keys=@(@($Session.protected_cache_keys)+$keys|Select-Object -Unique)
+  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @('-B','-c',$adapter) `
+    -StandardInputJson ($Request|ConvertTo-Json -Depth 64 -Compress) -FailureLabel 'Canonical workflow capacity session transport failed')
+  $answer=($output-join"`n")|ConvertFrom-Json -Depth 64
+  if($null-ne$Session-and$null-ne$answer.session){
+    foreach($property in $answer.session.PSObject.Properties){
+      if($property.Name-eq'source_protection_leases'-and$Session.PSObject.Properties.Name-contains'source_protection_leases'){
+        $items=@(foreach($updated in @($property.Value)){
+          $prior=@($Session.source_protection_leases|Where-Object{$_.lease_id-ceq$updated.lease_id-and$_.artifact_root-ceq$updated.artifact_root})
+          if($prior.Count-eq1){foreach($field in $updated.PSObject.Properties){$prior[0]|Add-Member -NotePropertyName $field.Name -NotePropertyValue $field.Value -Force};$prior[0]}
+          else{$updated}
+        })
+        $Session.source_protection_leases=$items
         continue
       }
-      $existing=@($Session.source_protection_leases|Where-Object{$_.artifact_root-ieq$root-and$_.status-eq'active'})
-      if($existing.Count){
-        $lease=$existing[0];$operation='--renew-protection-lease'
-      }else{
-        $lease=[pscustomobject]@{artifact_root=$root;lease_id=($Session.lease_id+'-source-'+$Session.source_protection_leases.Count);
-          status='active';protected_paths=@();protected_cache_keys=@()}
-        $Session.source_protection_leases=@($Session.source_protection_leases)+@($lease)
-        $operation='--create-protection-lease'
-      }
-      $arguments=@('-m','common.contracts.reconcile_artifact_capacity','--artifact-root',$root,
-        $operation,$lease.lease_id,'--lease-owner',$Session.owner,'--lease-ttl-seconds',([string]$Session.lease_ttl_seconds),
-        '--committed-new-bytes','0')
-      foreach($path in $paths){$arguments+=@('--protect-path',$path)}
-      foreach($key in $keys){$arguments+=@('--protect-cache-key',$key)}
-      $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments $arguments -FailureLabel 'Source capacity protection failed')
-      $document=($output-join"`n")|ConvertFrom-Json
-      $lease.protected_paths=@($document.protected_paths|ForEach-Object{Join-Path $root $_})
-      $lease.protected_cache_keys=@($document.protected_cache_keys)
-      $null=$touched.Add([string]$lease.lease_id)
+      $Session|Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value -Force
     }
-  return [pscustomobject]@{renewed_source_lease_ids=@($touched)}
+  }
+  if(-not$answer.ok){
+    $failure=[InvalidOperationException]::new([string]$answer.error.message)
+    $failure.Data['capacity_session']=$(if($null-ne$Session){$Session}else{$answer.session})
+    $failure.Data['capacity_release_errors']=@([string]$answer.error.message)+@($answer.error.notes)
+    if($null-ne$answer.error.cleanup){$failure.Data['capacity_lease_cleanup']=$answer.error.cleanup}
+    throw $failure
+  }
+  return $answer.result
 }
 
 function Enter-ArtifactWorkflowCapacitySession {
   [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+  param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][long]$CommittedNewBytes,[string]$Owner='',
-    [int]$LeaseTtlSeconds=21600,[string[]]$ProtectedPaths=@(),
-    [string[]]$ProtectedCacheKeys=@(),[object[]]$SourceReferences=@()
-  )
+    [int]$LeaseTtlSeconds=21600,[string[]]$ProtectedPaths=@(),[string[]]$ProtectedCacheKeys=@(),[object[]]$SourceReferences=@())
   if($CommittedNewBytes-lt0-or$LeaseTtlSeconds-le0){throw 'Workflow capacity session requires nonnegative bytes and a positive TTL.'}
-  $leaseId='workflow-'+[guid]::NewGuid().ToString('N')
   if([string]::IsNullOrWhiteSpace($Owner)){$Owner="run-artifact-support:$([IO.Path]::GetFileName($RunDirectory))"}
   if(-not(Get-Command Resolve-WorkspacePaths -ErrorAction SilentlyContinue)){
     . (Join-Path $PSScriptRoot '../paths/workspace_paths.ps1')
   }
   $ArtifactRoot=(Resolve-WorkspacePaths -SourceRoot $RepoRoot -ArtifactRoot $ArtifactRoot -Python $Python).artifact_root
-  $paths=@([IO.Path]::GetFullPath($RunDirectory))+$ProtectedPaths|Select-Object -Unique
-  $session=[pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session';status='active';
-    artifact_root=$ArtifactRoot;lease_id=$leaseId;owner=$Owner;lease_ttl_seconds=$LeaseTtlSeconds;
-    committed_new_bytes=$CommittedNewBytes;protected_paths=@($paths);protected_cache_keys=@($ProtectedCacheKeys|Select-Object -Unique);
-    source_protection_leases=@();lease=$null;startup_gate=$null}
-  $sourceGuards=[Collections.Generic.List[object]]::new()
+  $session=Invoke-CanonicalCapacitySession -Python $Python -RepoRoot $RepoRoot -Request @{
+    action='create';options=@{root=$ArtifactRoot;run_directory=$RunDirectory;owner=$Owner;
+      committed_new_bytes=$CommittedNewBytes;lease_ttl_seconds=$LeaseTtlSeconds;protected_paths=@($ProtectedPaths);
+      protected_cache_keys=@($ProtectedCacheKeys);source_references=@($SourceReferences)}}
   try{
-  $null=Add-ArtifactWorkflowSourceProtection -Python $Python -RepoRoot $RepoRoot -Session $session -SourceReferences $SourceReferences -Guards $sourceGuards
-  $arguments=@('-m','common.contracts.reconcile_artifact_capacity','--artifact-root',$ArtifactRoot,
-    '--create-protection-lease',$leaseId,'--lease-owner',$Owner,
-    '--lease-ttl-seconds',([string]$LeaseTtlSeconds),'--committed-new-bytes',([string]$CommittedNewBytes))
-  foreach($path in $session.protected_paths){$arguments+=@('--protect-path',$path)}
-  foreach($key in $session.protected_cache_keys){$arguments+=@('--protect-cache-key',$key)}
-    $leaseOutput=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments $arguments `
-      -FailureLabel 'Workflow capacity lease creation failed')
-    # The active lease is the single reservation source, including pressure relief.
-    $session.lease=(@($leaseOutput)-join"`n")|ConvertFrom-Json
-    $session.protected_paths=@($session.lease.protected_paths|ForEach-Object{Join-Path $ArtifactRoot $_})
-    $session.protected_cache_keys=@($session.lease.protected_cache_keys)
     $session.startup_gate=Invoke-ArtifactWorkflowCapacityAdmission -Python $Python -RepoRoot $RepoRoot -Session $session
     return $session
   }catch{
-    $sessionFailure=$_
-    try{
-      Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $session|Out-Null
-      $sessionFailure.Exception.Data['capacity_lease_cleanup']=@{lease_id=$leaseId;status='released'}
-    }catch{
-      $sessionFailure.Exception.Data['capacity_lease_cleanup']=@{lease_id=$leaseId;status='failed';error=$_.Exception.Message}
-      $sessionFailure.Exception.Data['capacity_session']=$session
-      Write-Warning "CAPACITY_WORKFLOW_LEASE_CLEANUP_FAILED lease_id=$leaseId error=$($_.Exception.Message)"
-    }
-    throw $sessionFailure
-  }finally{foreach($guard in $sourceGuards){$guard.Dispose()}}
+    $primary=$_
+    try{Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $session|Out-Null
+      $primary.Exception.Data['capacity_lease_cleanup']=@{lease_id=$session.lease_id;status='released'}}
+    catch{$primary.Exception.Data['capacity_lease_cleanup']=@{lease_id=$session.lease_id;status='failed';error=$_.Exception.Message}
+      $primary.Exception.Data['capacity_session']=$session
+      Write-Warning -WarningAction Continue "CAPACITY_WORKFLOW_LEASE_CLEANUP_FAILED lease_id=$($session.lease_id) error=$($_.Exception.Message)"}
+    throw $primary
+  }
 }
 
 function Update-ArtifactWorkflowCapacitySession {
   [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+  param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][pscustomobject]$Session,[string[]]$ProtectedPaths=@(),
-    [string[]]$ProtectedCacheKeys=@(),[Nullable[long]]$RemainingCommittedNewBytes=$null,[object[]]$SourceReferences=@()
-  )
+    [string[]]$ProtectedCacheKeys=@(),[Nullable[long]]$RemainingCommittedNewBytes=$null,[object[]]$SourceReferences=@())
   if([string]$Session.status-ne'active'){throw 'Workflow capacity session is not active.'}
-  if($null-ne$RemainingCommittedNewBytes-and$RemainingCommittedNewBytes-lt0){throw 'Remaining committed bytes must be nonnegative.'}
-  [int64]$priorCommitment=$Session.committed_new_bytes
-  if($null-eq$Session.PSObject.Properties['source_protection_leases']){$Session|Add-Member -NotePropertyName source_protection_leases -NotePropertyValue @()}
-  $sourceGuards=[Collections.Generic.List[object]]::new()
-  try{
-  $sourceUpdate=Add-ArtifactWorkflowSourceProtection -Python $Python -RepoRoot $RepoRoot -Session $Session -SourceReferences $SourceReferences -Guards $sourceGuards
-  foreach($source in $Session.source_protection_leases){
-    if($source.status-ne'active'-or$sourceUpdate.renewed_source_lease_ids-contains$source.lease_id){continue}
-    $null=Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @(
-      '-m','common.contracts.reconcile_artifact_capacity','--artifact-root',$source.artifact_root,
-      '--renew-protection-lease',$source.lease_id,'--lease-owner',$Session.owner,
-      '--lease-ttl-seconds',([string]$Session.lease_ttl_seconds),'--committed-new-bytes','0') -FailureLabel 'Source protection renewal failed'
-  }
-  $arguments=@('-m','common.contracts.reconcile_artifact_capacity','--artifact-root',[string]$Session.artifact_root,
-    '--renew-protection-lease',[string]$Session.lease_id,'--lease-owner',[string]$Session.owner,
-    '--lease-ttl-seconds',([string]$Session.lease_ttl_seconds))
-  if($null-ne$RemainingCommittedNewBytes){$arguments+=@('--committed-new-bytes',([string]$RemainingCommittedNewBytes))}
-  foreach($path in @($Session.protected_paths)+@($ProtectedPaths)){$arguments+=@('--protect-path',$path)}
-  foreach($key in @($Session.protected_cache_keys)+@($ProtectedCacheKeys)){$arguments+=@('--protect-cache-key',$key)}
-  $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments $arguments `
-    -FailureLabel 'Workflow capacity lease renewal failed')
-  if($null-ne$RemainingCommittedNewBytes){$Session.committed_new_bytes=[int64]$RemainingCommittedNewBytes}
-  $renewal=($output-join"`n")|ConvertFrom-Json
-  $Session.lease=$renewal
-  $Session.protected_paths=@($renewal.protected_paths|ForEach-Object{Join-Path $Session.artifact_root $_})
-  $Session.protected_cache_keys=@($renewal.protected_cache_keys)
+  [long]$priorCommitment=$Session.committed_new_bytes
+  $renewal=Invoke-CanonicalCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session -Request @{
+    action='renew';session=$Session;options=@{remaining_committed_new_bytes=$RemainingCommittedNewBytes;
+      protected_paths=@($ProtectedPaths);protected_cache_keys=@($ProtectedCacheKeys);source_references=@($SourceReferences)}}
   $gate=$null
-  if($null-ne$RemainingCommittedNewBytes-and[int64]$RemainingCommittedNewBytes-gt$priorCommitment){
-    # The larger commitment is already durable.  Re-admission may fail, but
-    # failure leaves the conservative larger reservation visible to peers.
+  if($null-ne$RemainingCommittedNewBytes-and$RemainingCommittedNewBytes-gt$priorCommitment){
     $gate=Invoke-ArtifactWorkflowCapacityAdmission -Python $Python -RepoRoot $RepoRoot -Session $Session
   }
   return [pscustomobject]@{session=$Session;renewal=$renewal;admission_gate=$gate}
-  }finally{foreach($guard in $sourceGuards){$guard.Dispose()}}
 }
 
 function Exit-ArtifactWorkflowCapacitySession {
   [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][pscustomobject]$Session
-  )
-  if([string]$Session.status-ne'active'){return [pscustomobject]@{deleted=$false;status=[string]$Session.status}}
-  $errors=[Collections.Generic.List[object]]::new();$output=@()
-  if($null-ne$Session.PSObject.Properties['source_protection_leases']){
-    foreach($source in $Session.source_protection_leases){
-      if($source.status-ne'active'){continue}
-      try{
-        $null=Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @(
-          '-m','common.contracts.reconcile_artifact_capacity','--artifact-root',$source.artifact_root,
-          '--delete-protection-lease',$source.lease_id) -FailureLabel 'Source protection release failed'
-        $source.status='released'
-      }catch{$errors.Add($_)}
-    }
-  }
-  try{
-    $output=@(Invoke-RunCapacityCommand -Python $Python -RepoRoot $RepoRoot -Arguments @(
-      '-m','common.contracts.reconcile_artifact_capacity','--artifact-root',[string]$Session.artifact_root,
-      '--delete-protection-lease',[string]$Session.lease_id) -FailureLabel 'Workflow capacity lease deletion failed')
-  }catch{$errors.Add($_)}
-  if($errors.Count){
-    $failure=$errors[0];$failure.Exception.Data['capacity_session']=$Session
-    $failure.Exception.Data['capacity_release_errors']=@($errors|ForEach-Object{$_.Exception.Message})
-    throw $failure
-  }
-  $Session.status='released'
-  return ((@($output)-join"`n")|ConvertFrom-Json)
+  param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][pscustomobject]$Session)
+  return Invoke-CanonicalCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $Session -Request @{action='release';session=$Session}
 }
 
 function Write-RunJson {
@@ -816,39 +751,7 @@ function Get-RunPackagePathCapacity {
     [string[]]$AdditionalDirectories=@(),
     [string[]]$ExpectedExecutionRelativePaths=@()
   )
-  # 259 is the largest path accepted by legacy Win32 callers (MAX_PATH minus
-  # the terminating NUL).  This is deliberately a compatibility diagnostic,
-  # not a claim about a particular solver's own path limit.
-  $legacyWindowsPathLimit=259
-  $relativePaths=@(
-    'inputs','results','logs','run_config.json','summary.json','run_manifest.json'
-  )
-  $relativePaths+=$AdditionalDirectories
-  $relativePaths+=$ExpectedExecutionRelativePaths
-  $entries=foreach($relative in $relativePaths|Sort-Object -Unique){
-    if([string]::IsNullOrWhiteSpace($relative)){
-      throw 'Execution path capacity entries must not be empty.'
-    }
-    if([IO.Path]::IsPathRooted($relative)-or
-       $relative.Split([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)-contains'..'){
-      throw "Execution path capacity entry must be a contained relative path: $relative"
-    }
-    $path=[IO.Path]::GetFullPath((Join-Path $RunDirectory $relative))
-    [pscustomobject]@{
-      relative_path=$relative.Replace('\','/');path=$path;length=$path.Length
-      legacy_windows_path_limit=$legacyWindowsPathLimit
-      remaining_legacy_windows_characters=$legacyWindowsPathLimit-$path.Length
-      legacy_windows_compatible=($path.Length-le$legacyWindowsPathLimit)
-    }
-  }
-  $longest=@($entries|Sort-Object length -Descending|Select-Object -First 1)
-  return [pscustomobject]@{
-    schema_version=1;role='run_package_execution_path_capacity'
-    run_directory=[IO.Path]::GetFullPath($RunDirectory)
-    legacy_windows_path_limit=$legacyWindowsPathLimit
-    entries=@($entries);longest_path=$longest[0]
-    legacy_windows_compatible=(@($entries|Where-Object{-not$_.legacy_windows_compatible}).Count-eq 0)
-  }
+  return Get-ExecutionPathCapacity @PSBoundParameters
 }
 
 function Get-RunPackageCopiedSourcePaths {
@@ -881,12 +784,7 @@ function Get-RunPackageCopiedSourcePaths {
 function Assert-RunPackagePathCapacity {
   [CmdletBinding()]
   param([Parameter(Mandatory)][pscustomobject]$Report)
-  if($Report.legacy_windows_compatible){return $Report}
-  $overLimit=@($Report.entries|Where-Object{-not$_.legacy_windows_compatible}|Select-Object -First 1)[0]
-  $message=('EXECUTION_PATH_CAPACITY=FAIL PATH={0} LENGTH={1} LEGACY_WINDOWS_LIMIT={2} '+
-    'REMEDIATION=choose a shorter MASS_SPECTROMETRY_EXECUTION_ROOT or shorten the declared relative path.') -f
-    $overLimit.path,$overLimit.length,$overLimit.legacy_windows_path_limit
-  throw $message
+  return Assert-ExecutionPathCapacity @PSBoundParameters
 }
 
 function New-RunExecutionAlias {
@@ -898,10 +796,6 @@ function New-RunExecutionAlias {
     [string]$ExecutionRoot='',
     [string]$AliasName=''
   )
-  $target=[IO.Path]::GetFullPath($TargetDirectory)
-  if(-not(Test-Path -LiteralPath $target -PathType Container)){
-    throw "Execution alias target directory is missing: $target"
-  }
   if([string]::IsNullOrWhiteSpace($ExecutionRoot)){
     $ExecutionRoot=if($env:MASS_SPECTROMETRY_EXECUTION_ROOT){
       $env:MASS_SPECTROMETRY_EXECUTION_ROOT
@@ -912,28 +806,8 @@ function New-RunExecutionAlias {
       Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'artifacts\common\execution_aliases'
     }
   }
-  $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
-  if($AliasName-and$AliasName-notmatch'^source_[a-f0-9]{64}_[1-9][0-9]*$'){throw 'Explicit source alias name must bind its request identity and ordinal.'}
-  $alias=Join-Path $executionRootPath $(if($AliasName){$AliasName}else{'run_'+[guid]::NewGuid().ToString('N')})
-  if(Test-Path -LiteralPath $alias){
-    $existing=Get-Item -LiteralPath $alias -Force
-    if($existing.LinkType-ne'Junction'-or
-       [IO.Path]::GetFullPath([string]@($existing.Target)[0])-ine$target){throw 'Existing execution alias target or owner differs.'}
-    throw 'Same-owner execution alias already exists; retain it and return to its original owner context.'
-  }
-  $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $alias `
-    -AdditionalDirectories $AdditionalDirectories `
-    -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
-  $null=Assert-RunPackagePathCapacity -Report $pathCapacity
-  New-Item -ItemType Directory -Force -Path $executionRootPath|Out-Null
-  try{
-    New-Item -ItemType Junction -Path $alias -Target $target|Out-Null
-  }catch{
-    throw "Could not create short execution alias $alias for target ${target}: $($_.Exception.Message)"
-  }
-  return [pscustomobject]@{
-    target_directory=$target;execution_alias=$alias;execution_path_capacity=$pathCapacity
-  }
+  $PSBoundParameters['ExecutionRoot']=$ExecutionRoot
+  return New-ManagedExecutionAlias @PSBoundParameters
 }
 
 function Remove-RunExecutionAlias {
@@ -942,18 +816,7 @@ function Remove-RunExecutionAlias {
     [Parameter(Mandatory)][string]$ExecutionAlias,
     [Parameter(Mandatory)][string]$TargetDirectory
   )
-  $alias=[IO.Path]::GetFullPath($ExecutionAlias)
-  $targetDirectory=[IO.Path]::GetFullPath($TargetDirectory)
-  if(-not(Test-Path -LiteralPath $alias -PathType Container)){return}
-  $item=Get-Item -LiteralPath $alias -Force
-  if($item.LinkType-ne'Junction'){
-    throw "Execution alias is not a junction: $alias"
-  }
-  $target=[IO.Path]::GetFullPath([string]@($item.Target)[0])
-  if(-not $target.Equals($targetDirectory,[StringComparison]::OrdinalIgnoreCase)){
-    throw "Execution alias target differs from expected target: $alias"
-  }
-  [IO.Directory]::Delete($alias)
+  return Remove-ManagedExecutionAlias @PSBoundParameters
 }
 
 function Resolve-RunSourceExecutionInputs {
@@ -1306,7 +1169,7 @@ function New-RunPackage {
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})}
   }
   if($CapacityLedgerLifecycleEnabled){
-    $capacityPolicy=Get-Content -LiteralPath (Join-Path $RepoRoot 'common\contracts\artifact_capacity_policy.json') `
+    $capacityPolicy=Get-Content -LiteralPath (Join-Path $RepoRoot 'src\msplatform\execution\resources\artifact_capacity_policy.json') `
       -Raw -Encoding UTF8|ConvertFrom-Json
     [int64]$lightBudget=$capacityPolicy.light_evidence_budget_bytes
     if($lightBudget-le0){throw 'Artifact capacity policy light-evidence budget must be positive.'}

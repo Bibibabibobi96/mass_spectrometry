@@ -178,7 +178,7 @@ try {
     'common\host_resource_python.ps1',
     'common\host_execution_lease.ps1',
     'common\host_resource_scheduler.py',
-    'common\host_resource_policy.json',
+    'src\msplatform\execution\resources\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_two_prism_segmented_coverage.ps1'
   )
   $sourceInputs = [ordered]@{}

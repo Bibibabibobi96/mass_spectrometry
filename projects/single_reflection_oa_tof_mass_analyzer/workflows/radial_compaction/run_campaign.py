@@ -13,6 +13,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 from typing import Any
 
 
@@ -1525,7 +1526,7 @@ def main() -> None:
         campaign_path=args.campaign,
         pa_producer_handoffs=args.pa_producer_handoff, pa_handoff_output=args.pa_handoff_output,
     )
-    policy_path = REPO_ROOT / "common/contracts/artifact_capacity_policy.json"
+    policy_path = resource_path("artifact_capacity_policy.json")
     commitment = (load_json(policy_path)["light_evidence_budget_bytes"]
                   if args.dry_run else payload["committed_new_bytes"])
     request = {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from projects.rf_multipole_ion_optics.core.connector_geometry import resolve_connector_section
+from msplatform.components.rf_multipole.connector_geometry import resolve_connector_section
 
 
 class ConnectorGeometryTests(unittest.TestCase):

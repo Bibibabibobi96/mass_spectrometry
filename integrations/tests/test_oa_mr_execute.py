@@ -343,7 +343,7 @@ $repoRoot=$Repo;$script:pythonRoot=$Repo;$python=$Python
 $simion=if($Case-eq'zero'){Join-Path $Root 'missing_simion.exe'}else{$Python}
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 """ + path_import + r"""
-$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/resource_budget_support.ps1'),[ref]$null,[ref]$null)
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/simion_dispatch_support.ps1'),[ref]$null,[ref]$null)
 $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
 Invoke-Expression $helper.Extent.Text
 $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionFormalObservation'},$true)
@@ -448,7 +448,7 @@ Register-AssemblyFixtureInputs checkpointInputs $checkpointConfig
 Write-RunJson -Path $runConfig -Depth 100 -Value $checkpointConfig
 Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status checkpoint -Software @('inert publication fixture')|Out-Null
 $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -Raw|ConvertFrom-Json -AsHashtable).inputs
-""" + python_helper + "\ntry{\n" + stages + r"""
+""" + python_helper + "\n$failureStage='continuation_plan'\ntry{\n" + stages + r"""
  $config=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable
  Register-AssemblyFixtureInputs flightInputs $config
  if(-not$config.Contains('provenance')){$config['provenance']=[ordered]@{}}
@@ -458,6 +458,11 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
  Write-RunJson -Path $summary -Value @{status='success';qualification='inert_vendor_fixture__workflow_mechanism_only'}
  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('inert vendor fixture') -Outputs @($summary,$rawLog,$batchMergeReceipt)|Out-Null
  @{checkpoint_inputs=$checkpointAssemblyInputs;vendor=@($script:vendor);replay=@($replayBatchIndexes);shared_session=$NativeCorridorRuntimeSession;records=@($batchRecords.Values|ForEach-Object{@{index=$_.index;offset=$_.offset;count=$_.count;log=$_.stdout}})}|ConvertTo-Json -Depth 20 -Compress
+} catch {
+ $fixtureFailure=$_
+ $fixtureFailureStage=if(Get-Variable -Name failureStage -ErrorAction SilentlyContinue){[string]$failureStage}else{'continuation_plan'}
+ Write-Host ('OA_MR_FIXTURE_REJECTION='+(@{stage=$fixtureFailureStage;base_exception_type=$fixtureFailure.Exception.GetBaseException().GetType().FullName}|ConvertTo-Json -Compress))
+ throw $fixtureFailure
 } finally {
  foreach($guard in $staticPaGuards){$guard.Dispose()}
  foreach($path in @($temporarySolverDir,$batchRuntimeRoot)){
@@ -472,6 +477,19 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
                 output = completed.stdout + completed.stderr
                 if case in ("science_changed", "gui_missing", "mixed_missing"):
                     self.assertNotEqual(completed.returncode, 0, output)
+                    rejection_lines = [line.removeprefix("OA_MR_FIXTURE_REJECTION=")
+                                       for line in completed.stdout.splitlines()
+                                       if line.startswith("OA_MR_FIXTURE_REJECTION=")]
+                    self.assertEqual(len(rejection_lines), 1, output)
+                    rejection = json.loads(rejection_lines[0])
+                    if case == "science_changed":
+                        self.assertEqual(rejection["stage"], "continuation_plan", output)
+                        self.assertIn("MR-TOF frozen scientific identity differs", output)
+                    else:
+                        self.assertEqual(rejection["stage"], "protect_static_iob_pa_inputs", output)
+                        self.assertEqual(rejection["base_exception_type"],
+                                         "System.IO.FileNotFoundException", output)
+                        self.assertIn(str(Path(descriptor["parent"]["pa_path"])), output)
                     self.assertNotIn("MRTOF_BATCH_LOG_MERGE=PASS", output)
                     self.assertFalse((root / 'vendor.txt').exists(), output)
                     self.assertEqual(parent_before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})

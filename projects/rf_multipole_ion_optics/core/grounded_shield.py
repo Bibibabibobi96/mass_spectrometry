@@ -10,19 +10,11 @@ from common.simion.aperture import (
 )
 
 
-GROUND_POTENTIAL_V = 0.0
+from msplatform.components.rf_multipole.grounded_shield import (
+    GROUND_POTENTIAL_V as GROUND_POTENTIAL_V, require_grounded_potential as require_grounded_potential,
+)
 
 
-def require_grounded_potential(value: Any, label: str) -> float:
-    """Return 0 V or reject values that would expose a biased shield."""
-    if (
-        not isinstance(value, (int, float))
-        or isinstance(value, bool)
-        or not math.isfinite(float(value))
-        or float(value) != GROUND_POTENTIAL_V
-    ):
-        raise ValueError(f"{label} must be exactly 0 V (grounded)")
-    return GROUND_POTENTIAL_V
 
 
 def render_fixed_upstream_shield_connector(

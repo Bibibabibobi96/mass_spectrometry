@@ -447,11 +447,13 @@ function Publish-WorkflowTerminal {{
             self.assertFalse((consumer / "callback_count.txt").exists())
             self.assertFalse(run.exists())
             calls = [json.loads(line) for line in trace.read_text(encoding="utf-8-sig").splitlines()]
-            successful = [(call[call.index("--artifact-root") + 1], call) for call in calls if "--artifact-root" in call]
-            self.assertTrue(any(Path(owner).resolve() == first_root.resolve() and "--create-protection-lease" in call
-                                for owner, call in successful))
-            self.assertTrue(any(Path(owner).resolve() == first_root.resolve() and "--delete-protection-lease" in call
-                                for owner, call in successful))
+            successful = [call for call in calls
+                          if Path(call["artifact_root"]).resolve() == first_root.resolve() and call["success"]]
+            self.assertEqual([call["operation"] for call in successful],
+                             ["create_capacity_protection_lease", "delete_capacity_protection_lease"])
+            self.assertEqual(successful[0]["lease_id"], successful[1]["lease_id"])
+            self.assertIn("protected path must remain below the artifact root",
+                          str(result) + process.stdout + process.stderr)
             for parent_run, source_root, snapshot in parents:
                 self.assertFalse(load_capacity_protection_leases(source_root)["protected_paths"])
                 self.assertEqual(snapshot, {path: path.read_bytes() for path in snapshot})

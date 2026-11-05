@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mass-spectrometry-analysis"
-version = "0.3.0"
-description = "Scientific source, assembly, contract and analysis core for mass spectrometry"
+version = "0.4.0"
+description = "Composable scientific components, assembly and staged mass spectrometry simulation"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "jsonschema>=4.26,<5",
@@ -19,7 +19,11 @@ dependencies = [
 
 [project.optional-dependencies]
 cad = ["pywin32>=306; platform_system == 'Windows'"]
+cad-step = ["cadquery==2.8.0", "cadquery-ocp==7.9.3.1.1"]
 dev = ["ruff==0.15.22", "packaging==26.2"]
+
+[tool.msplatform.optional-dependency-locks]
+cad-step = "requirements-cad-step-lock.txt"
 
 # Scientific implementations have one source owner, isolated from repository
 # runners and temporary legacy import bridges.
@@ -34,6 +38,9 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "msplatform.contracts" = ["schemas/*.schema.json"]
+"msplatform.examples" = ["*.json"]
+"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob"]
+"msplatform.execution" = ["resources/*.ps1", "resources/*.lua", "resources/*.json"]
 
 [tool.ruff]
 target-version = "py311"

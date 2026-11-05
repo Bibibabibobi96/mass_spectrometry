@@ -34,7 +34,7 @@ class PropagationComparisonTests(unittest.TestCase):
     def setUp(self):
         self.left = [state(), state(99)]
         self.right = [state(time=14., position=(4., 6., 3.), velocity=(0., 4000., 3000.), phase=2*math.pi-.2)]
-        keys = ("species_id", "mass_amu", "charge_state", "particle_weight", "particle_birth_time_us")
+        keys = ("parent_particle_id", "generation", "lineage_birth_time_us", "species_id", "mass_amu", "charge_state", "particle_weight", "particle_birth_time_us")
         self.mother = HandoffMother({r["particle_id"]: {k: r[k] for k in keys} for r in self.left},
             ({"particle_id": 7, "terminal_reason": "unknown"}, {"particle_id": 99, "terminal_reason": "censored"}))
         self.clock = ClockIdentity("epoch", "A"*64)
@@ -67,6 +67,20 @@ class PropagationComparisonTests(unittest.TestCase):
         self.assertEqual(result["fate_differences"], [dict(particle_id=7, left="detected", right="censored")])
         result["mother_records"][7]["particle_weight"] = 88
         self.assertEqual((self.left, self.right, self.mother), before)
+
+    def test_original_parent_generation_and_lineage_birth_cannot_be_reshaped(self):
+        for row in self.left + self.right:
+            row.update(parent_particle_id=1000, generation=1, lineage_birth_time_us=1.,
+                       lineage_age_us=row["instrument_time_us"] - 1.)
+        self.mother = HandoffMother({row["particle_id"]: copy.deepcopy(row) for row in self.left}, self.mother.fates)
+        self.compare()
+        for field, value in (("parent_particle_id", 2000), ("generation", 2), ("lineage_birth_time_us", 0.)):
+            row = copy.deepcopy(self.right[0])
+            row[field] = value
+            if field == "lineage_birth_time_us":
+                row["lineage_age_us"] = row["instrument_time_us"] - value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.compare(right_states=[row], right_events=[event(row)])
 
     def test_nonzero_residual_and_changed_fate_do_not_create_failure_verdict(self):
         result = self.compare(left_states=self.left[:1], mother=HandoffMother(
@@ -150,3 +164,53 @@ class PropagationComparisonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class ObservedEventComparisonTests(unittest.TestCase):
+    def setUp(self):
+        from msplatform.analysis.propagation_comparison import compare_observed_events
+        self.function = compare_observed_events
+        rows = [state(),state(99)]
+        records = {row["particle_id"]:copy.deepcopy(row) for row in rows}
+        records[99]["particle_weight"] = 3.
+        self.mother = HandoffMother(records,[dict(particle_id=7,status="unknown"),dict(particle_id=99,status="censored")])
+        self.clock = ClockIdentity("epoch","A"*64)
+        self.left = [dict(particle_id=7,event="detector_crossing",instrument_time_us=10.,x_mm=1.,y_mm=2.,z_mm=3.),
+                     dict(particle_id=99,event="detector_crossing",instrument_time_us=12.,x_mm=2.,y_mm=3.,z_mm=4.)]
+        self.right = [dict(particle_id=7,event="detector_crossing",instrument_time_us=12.,x_mm=4.,y_mm=6.,z_mm=3.)]
+    def compare(self,**changes):
+        args = dict(mother=self.mother,left_clock=self.clock,right_clock=self.clock,
+            left_fates={7:"detected",99:"unknown"},right_fates={7:"censored",99:"unknown"},
+            selected_particle_ids=[7,99],event="detector_crossing",left_frame_id="world",right_frame_id="world")
+        args.update(changes)
+        return self.function(self.left,self.right,**args)
+    def test_independent_time_position_delta_and_full_weighted_missing_denominator(self):
+        before=copy.deepcopy((self.left,self.right,self.mother))
+        result=self.compare()
+        self.assertEqual(result["status"],"insufficient_observations")
+        self.assertEqual(result["pairs"][0]["right_minus_left"],dict(instrument_time_us=2.,
+            position_components_mm=[3.,4.,0.],position_norm_mm=5.))
+        self.assertEqual(result["missing_observation_particle_ids"]["right"],[99])
+        self.assertEqual(result["coverage"]["right"]["denominator_weight_sum"],5.)
+        self.assertEqual(result["coverage"]["right"]["relative_weight_fraction"],2/5)
+        self.assertIn("velocity",result["unavailable_quantities"])
+        self.assertNotIn("velocity_components_m_s",result["pairs"][0]["right_minus_left"])
+        self.assertEqual((self.left,self.right,self.mother),before)
+    def test_duplicate_plane_identity_clock_frame_or_selection_are_rejected(self):
+        with self.subTest("duplicate"):
+            self.right.append(copy.deepcopy(self.right[0]))
+            with self.assertRaisesRegex(ValueError,"repeats"):self.compare()
+            self.right.pop()
+        with self.subTest("plane"):
+            self.right[0]["observation_id"]="exit"
+            with self.assertRaisesRegex(ValueError,"mixed event identity"):self.compare()
+            del self.right[0]["observation_id"]
+        for changes in (dict(right_clock=ClockIdentity("epoch","B"*64)),dict(right_frame_id="other"),
+                        dict(selected_particle_ids=[999])):
+            with self.subTest(changes=changes),self.assertRaises(ValueError):self.compare(**changes)
+    def test_complete_comparison_is_computational_even_when_values_differ(self):
+        result=self.compare(selected_particle_ids=[7])
+        self.assertEqual(result["status"],"comparison_completed")
+        self.assertEqual(result["pairs"][0]["right_minus_left"]["instrument_time_us"],2.)
+        self.assertEqual(result["fate_partitions"][0]["mother_weight_sum"],5.)

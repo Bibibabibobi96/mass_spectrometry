@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from common.contracts import verify_run_manifest, write_run_manifest
+from msplatform.execution import manifest_records, manifest_publication
 
 
 VERIFIER = Path(__file__).with_name("verify_run_manifest.py")
@@ -266,7 +267,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
 
                 with self.subTest(replacement=replacement), patch.object(sys, "argv", arguments), \
                         patch.object(write_run_manifest, "write_json_atomic", side_effect=corrupt), \
-                        patch.object(write_run_manifest, "file_sha256", wraps=file_sha256) as reader:
+                        patch.object(manifest_records, "file_sha256", wraps=file_sha256) as reader:
                     with self.assertRaisesRegex(SystemExit, "published manifest differs"):
                         write_run_manifest.main()
                     self.assertEqual(sum(Path(call.args[0]) == output for call in reader.call_args_list), 1)
@@ -332,13 +333,13 @@ class ManifestPayloadReadTests(unittest.TestCase):
             project="fixture", mode="fixture", inputs={"first": "field.pa", "alias": "./field.pa"},
             artifact_retention={"policy_version": 1, "class": "solver_review", "reason": "identity fixture"},
         )), encoding="utf-8")
-        reader = write_run_manifest.file_record
+        reader = manifest_publication.file_record
 
         def uncached(*args, **options):
             options.pop("_identity_cache", None)
             return reader(*args, **options)
 
-        with patch.object(write_run_manifest, "file_record", reader if cached else uncached):
+        with patch.object(manifest_publication, "file_record", reader if cached else uncached):
             return write_run_manifest.build_run_manifest(
                 config, "success", output_paths=[self.payload, self.payload], **kwargs)
 
@@ -350,7 +351,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             return file_sha256(path)
 
         destination = self.payload.parent / "published"
-        with patch.object(write_run_manifest, "file_sha256", side_effect=read):
+        with patch.object(manifest_records, "file_sha256", side_effect=read):
             original = self.repeated_manifest(cached=False, recorded_root=destination)
             self.assertEqual(calls.count(self.payload.resolve()), 4)
             calls.clear()
@@ -360,8 +361,25 @@ class ManifestPayloadReadTests(unittest.TestCase):
             document.pop("recorded_at_utc")
         self.assertEqual(reused, original)
         self.assertEqual(reused["inputs"]["first"]["path"], str(destination / "field.pa"))
-        self.assertNotIn("retention_role", reused["inputs"]["first"])
+        self.assertEqual(reused["inputs"]["first"]["retention_role"], "solver_native_binary")
         self.assertEqual(reused["outputs"][0]["retention_role"], "solver_native_binary")
+
+    def test_new_v2_input_role_reopens_large_payload_without_current_policy(self) -> None:
+        with (
+            patch.object(manifest_records, "os", SimpleNamespace(name="nt")),
+            patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(manifest_records, "file_sha256", return_value="B" * 64),
+            patch.object(manifest_records, "file_sha256_unbuffered", return_value="A" * 64) as direct,
+        ):
+            manifest = self.repeated_manifest()
+            record = manifest["inputs"]["first"]
+            self.assertEqual(record["retention_role"], "solver_native_binary")
+            self.assertEqual(record["sha256"], "A" * 64)
+            self.assertEqual(direct.call_count, 1)
+            with patch.object(write_run_manifest, "retention_api", side_effect=AssertionError("read-only must not load policy")):
+                manifest_records.verify_record("reopened input", record)
+            self.assertEqual(direct.call_count, 2)
+            self.assertEqual(self.payload.read_bytes(), b"fixture!")
 
     def test_build_and_verify_each_read_fresh_and_reject_conflicting_declarations(self) -> None:
         calls = []
@@ -371,7 +389,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             return file_sha256(path)
 
         manifest_path = self.payload.parent / "run_manifest.json"
-        with patch.object(write_run_manifest, "file_sha256", side_effect=read):
+        with patch.object(manifest_records, "file_sha256", side_effect=read):
             manifest = self.repeated_manifest()
             self.repeated_manifest()
             self.assertEqual(calls.count(self.payload.resolve()), 2)
@@ -394,7 +412,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
 
     def test_same_call_metadata_changes_invalidate_identity_and_missing_files_fail(self) -> None:
         cache = {}
-        with patch.object(write_run_manifest, "file_sha256", wraps=file_sha256) as reader:
+        with patch.object(manifest_records, "file_sha256", wraps=file_sha256) as reader:
             original = write_run_manifest.file_record(self.payload, _identity_cache=cache)
             metadata = self.payload.stat()
             self.payload.write_bytes(b"changed!")
@@ -412,10 +430,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
     def test_same_call_keeps_buffered_unbuffered_and_virtual_identities_separate(self) -> None:
         cache = {}
         with (
-            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
-            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
-            patch.object(write_run_manifest, "file_sha256", return_value="B" * 64) as buffered,
-            patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="A" * 64) as direct,
+            patch.object(manifest_records, "os", SimpleNamespace(name="nt")),
+            patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(manifest_records, "file_sha256", return_value="B" * 64) as buffered,
+            patch.object(manifest_records, "file_sha256_unbuffered", return_value="A" * 64) as direct,
         ):
             for _ in range(2):
                 ordinary = write_run_manifest.file_record(self.payload, "diagnostic_data", _identity_cache=cache)
@@ -446,10 +464,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
     def test_writer_and_verifier_share_one_unbuffered_selection(self) -> None:
         self.payload = self.payload.rename(self.payload.with_suffix(".pa15"))
         with (
-            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
-            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
-            patch.object(write_run_manifest, "file_sha256", return_value="B" * 64) as buffered,
-            patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="A" * 64) as direct,
+            patch.object(manifest_records, "os", SimpleNamespace(name="nt")),
+            patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(manifest_records, "file_sha256", return_value="B" * 64) as buffered,
+            patch.object(manifest_records, "file_sha256_unbuffered", return_value="A" * 64) as direct,
         ):
             cache = {}
             item = write_run_manifest.file_record(self.payload, _identity_cache=cache)
@@ -476,10 +494,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
         for platform_name, role, threshold in cases:
             with (
                 self.subTest(platform=platform_name, role=role, threshold=threshold),
-                patch.object(write_run_manifest, "os", SimpleNamespace(name=platform_name)),
-                patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", threshold),
-                patch.object(write_run_manifest, "file_sha256", return_value="A" * 64) as buffered,
-                patch.object(write_run_manifest, "file_sha256_unbuffered") as direct,
+                patch.object(manifest_records, "os", SimpleNamespace(name=platform_name)),
+                patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", threshold),
+                patch.object(manifest_records, "file_sha256", return_value="A" * 64) as buffered,
+                patch.object(manifest_records, "file_sha256_unbuffered") as direct,
                 patch.object(write_run_manifest, "retention_api", side_effect=AssertionError("unneeded policy read")),
             ):
                 item = write_run_manifest.file_record(self.payload, role)
@@ -490,10 +508,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
     def test_unbuffered_failure_propagates_without_retry_or_fallback(self) -> None:
         item = dict(path=str(self.payload), bytes=8, sha256="A" * 64)
         with (
-            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
-            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
-            patch.object(write_run_manifest, "file_sha256") as buffered,
-            patch.object(write_run_manifest, "file_sha256_unbuffered", side_effect=OSError("read failed")) as direct,
+            patch.object(manifest_records, "os", SimpleNamespace(name="nt")),
+            patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(manifest_records, "file_sha256") as buffered,
+            patch.object(manifest_records, "file_sha256_unbuffered", side_effect=OSError("read failed")) as direct,
         ):
             with self.assertRaisesRegex(OSError, "read failed"):
                 write_run_manifest.file_record(self.payload)
@@ -507,10 +525,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
     def test_mismatching_unbuffered_bytes_fail_existing_identity(self) -> None:
         item = dict(path=str(self.payload), bytes=8, sha256="A" * 64)
         with (
-            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
-            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
-            patch.object(write_run_manifest, "file_sha256") as buffered,
-            patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="B" * 64) as direct,
+            patch.object(manifest_records, "os", SimpleNamespace(name="nt")),
+            patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(manifest_records, "file_sha256") as buffered,
+            patch.object(manifest_records, "file_sha256_unbuffered", return_value="B" * 64) as direct,
         ):
             with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
                 verify_run_manifest.verify_record("output", item)
@@ -518,7 +536,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             buffered.assert_not_called()
 
     def test_size_mismatch_rejects_before_reading_payload(self) -> None:
-        with patch.object(verify_run_manifest, "file_record") as reader:
+        with patch.object(manifest_records, "file_record") as reader:
             with self.assertRaisesRegex(AssertionError, "byte count changed"):
                 verify_run_manifest.verify_record("output", dict(path=str(self.payload), bytes=9))
             reader.assert_not_called()

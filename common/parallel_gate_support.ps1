@@ -19,7 +19,7 @@ function Get-GateResourceDeclaration {
         throw 'Invalid gate resource role/stage.'
     }
     if($values.role-ne'GATE'){
-        $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'host_resource_policy.json') -Raw|ConvertFrom-Json
+        $policy=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'src/msplatform/execution/resources/host_resource_policy.json') -Raw|ConvertFrom-Json
         if($null-eq$policy.stages.PSObject.Properties[($values.role+'/'+$values.stage)]){
             throw 'Gate native resource stage must be explicitly registered.'
         }

@@ -128,7 +128,7 @@ try{. $production}catch{$failure=$_.Exception.Message}
         builder=root/'simion'/'build_component_focus_pa.lua'
         executable=Path(__file__) # identity only requires stable existing file for this static unit test
         value=identity(plan,builder,executable)
-        contract=root.parents[1]/'common/simion/standalone_pa_response_set.py'
+        contract=root.parents[1]/'src/msplatform/backends/simion/standalone_pa_response_set.py'
         self.assertEqual(value['builder_identity']['response_set_contract_sha256'],file_sha256(contract))
         def changed_contract(path):
             return 'A'*64 if Path(path)==contract else file_sha256(path)

@@ -480,8 +480,11 @@ class HeavyConsumerEntryTests(unittest.TestCase):
             root = Path(directory)
             (root / "common").mkdir()
             for name in ("host_resource_python.py", "host_resource_python.ps1", "host_execution_lease.ps1",
-                         "host_resource_scheduler.py", "host_resource_policy.json"):
+                         "host_resource_scheduler.py"):
                 (root / "common" / name).write_text("fixture-original", encoding="utf-8")
+            policy = root / "src/msplatform/execution/resources/host_resource_policy.json"
+            policy.parent.mkdir(parents=True)
+            policy.write_text("fixture-original", encoding="utf-8")
             config = root / "config.json"
             config.write_text('{"scope":"fixture"}', encoding="utf-8")
             with patch.object(module, "REPO_ROOT", root), \
@@ -492,7 +495,7 @@ class HeavyConsumerEntryTests(unittest.TestCase):
                     config, seed=1, run_id="20260914_180000__analysis__python__host-entry-a",
                     resume_from=None, artifact_root=root / "artifacts",
                 )
-                (root / "common/host_resource_policy.json").write_text("fixture-updated", encoding="utf-8")
+                policy.write_text("fixture-updated", encoding="utf-8")
                 second, resumed_identity = module._prepare_run(
                     config, seed=1, run_id="20260914_180001__analysis__python__host-entry-b",
                     resume_from=first, artifact_root=root / "artifacts",
@@ -592,7 +595,7 @@ if($null-ne(Exit-HostResourceStage -Lease $lease -PassThru)){throw 'Inherited ca
                 shutil.copyfile(Path(adapter.__file__).with_suffix(suffix), common / ("host_resource_python" + suffix))
             facade = _FACADE
             if real_scheduler:
-                for name in ("host_resource_scheduler.py", "host_resource_policy.json"):
+                for name in ("host_resource_scheduler.py",):
                     shutil.copyfile(Path(adapter.__file__).with_name(name), common / name)
                 source = str(Path(adapter.__file__).with_name("host_execution_lease.ps1")).replace("'", "''")
                 # Retain actual process identities and the actual scheduler;

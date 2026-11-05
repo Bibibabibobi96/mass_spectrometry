@@ -7,36 +7,24 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from msplatform.execution import manifest_records as _manifest_records
 
 try:
-    from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication, retention_api
+    from common.contracts.write_run_manifest import file_record as file_record, require_completed_terminal_publication, retention_api
 except ModuleNotFoundError:
-    from write_run_manifest import file_record, require_completed_terminal_publication, retention_api
+    from write_run_manifest import file_record as file_record, require_completed_terminal_publication, retention_api
 
 
-def record_path(record: dict, *, base_dir: Path | None = None) -> Path:
-    """Resolve an absolute record or a historical run-relative record."""
-
-    path = Path(record["path"])
-    if not path.is_absolute() and base_dir is not None:
-        path = base_dir / path
-    return path.resolve()
+record_path = _manifest_records.record_path
 
 
 def verify_record(
     name: str, record: dict, *, base_dir: Path | None = None,
     _identity_cache: dict[tuple[Any, ...], tuple[int, str]] | None = None,
 ) -> None:
-    path = record_path(record, base_dir=base_dir)
-    if not path.is_file():
-        raise AssertionError(f"manifest {name} is missing: {path}")
-    if path.stat().st_size != record.get("bytes"):
-        raise AssertionError(f"manifest {name} byte count changed: {path}")
-    actual = file_record(path, record.get("retention_role"), _identity_cache=_identity_cache)
-    if actual["bytes"] != record.get("bytes"):
-        raise AssertionError(f"manifest {name} byte count changed: {path}")
-    if actual["sha256"] != str(record.get("sha256", "")).upper():
-        raise AssertionError(f"manifest {name} SHA-256 changed: {path}")
+    return _manifest_records.verify_record(name, record, base_dir=base_dir,
+        _identity_cache=_identity_cache,
+        retention_classifier=lambda *args, **kwargs: retention_api()[0](*args, **kwargs))
 
 
 def require_equal(name: str, actual: Any, expected: str, *, sha256: bool = False) -> None:

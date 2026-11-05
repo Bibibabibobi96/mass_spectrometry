@@ -18,7 +18,7 @@
     "resolved_geometry": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
       "bytes": 10543,
-      "sha256": "F9C2152E5B1216242D6605A990BA40DC4586D5A278DFE3B1B3D59ABD9DC941A3"
+      "sha256": "FC82DEBD947C23AA80D29A5BCF9B2A2D5D47A044CC92C3218211E0D040677503"
     },
     "analysis_contract": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json",
@@ -32,13 +32,13 @@
     },
     "two_zone_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
-      "bytes": 31943,
-      "sha256": "420F35749934D595990219D0D0A7F9B36B57F27F58861A48A7D964FC3F9C00D4"
+      "bytes": 7356,
+      "sha256": "0D5D37C11D35A98E494DD2A76A152F2FA0AEDD36D9669978154676DD2F1395A2"
     },
     "reflectron_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
-      "bytes": 25371,
-      "sha256": "13854076A4162D1E64BE8A4FA11B2447694DB2D958E0834F6CF12179456A9EA3"
+      "bytes": 6832,
+      "sha256": "EE7D5D21F8E34A0601451FC79054A048452307CD304E67161978F7CD8F21591D"
     },
     "three_zone_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_theory.py",
@@ -87,8 +87,8 @@
     },
     "accelerator_two_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-      "bytes": 50064,
-      "sha256": "C0C4103F3975F1349C0075535F88051337733F0121FE98C256022AF2E8A3778D"
+      "bytes": 6750,
+      "sha256": "A9EDE0749AC6CA068615CFB148F48404976F11ECE8BF5345463A78E16F5ADC65"
     },
     "accelerator_three_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
@@ -97,8 +97,8 @@
     },
     "accelerator_geometry": {
       "path": "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
-      "bytes": 18012,
-      "sha256": "4CF1AC6F4B6D6F52693BD06CB3FDEF050B376AFDEBF63FB2DB3819EF863CDB60"
+      "bytes": 1909,
+      "sha256": "C85505DF65FB9ACD0C19085EDE5CC802A6F5729C33181AE0C4A69947B1D93D3C"
     }
   },
   "identity": {

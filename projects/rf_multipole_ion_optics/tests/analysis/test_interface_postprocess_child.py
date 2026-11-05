@@ -171,13 +171,9 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
                         target = facade / file.relative_to(repo)
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copyfile(file, target)
-            from common.contracts.frozen_inputs import enumerate_python_sources
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
-            for relative in enumerate_python_sources(repo, package_roots=('src/msplatform',),
-                    provider_root='src/msplatform', resource_suffixes=('.schema.json',)):
-                destination = facade / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(repo / relative, destination)
+            copy_scientific_core(repo, facade)
             from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
             install_controlled_cpu_snapshot(repo, facade)
@@ -192,7 +188,7 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
                 destination = facade / descriptor["path"]
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(repo / descriptor["path"], destination)
-            policy = facade / "common/contracts/artifact_capacity_policy.json"
+            policy = facade / "src/msplatform/execution/resources/artifact_capacity_policy.json"
             document = json.loads(policy.read_text(encoding="utf-8"))
             document.update(target_gib=.125, minimum_free_gib=0)
             policy.write_text(json.dumps(document), encoding="utf-8")
@@ -271,7 +267,7 @@ $badStopped=Join-Path ROOT 'bad_stopped.json';'{}'|Set-Content $badStopped
 $badId='20261031_230050__analysis__python__invalid-source';$caught=$false
 $leaseDirectory=Join-Path $artifact 'common/capacity_protection_leases'
 $leasesBefore=@(Get-ChildItem $leaseDirectory -File -ErrorAction SilentlyContinue|ForEach-Object Name)
-try{& ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $badStopped -LimitsPath LIMITS -RunId $badId -ResultPath (Join-Path ROOT 'bad_result.json') -PythonExe $python}catch{if($_.Exception.Message-notlike'*Source capacity owner verification failed*'){throw};$caught=$true}
+try{& ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $badStopped -LimitsPath LIMITS -RunId $badId -ResultPath (Join-Path ROOT 'bad_result.json') -PythonExe $python}catch{if($_.Exception.Message-cne'checkpoint source stopped payload receipt differs'){throw};$caught=$true}
 $leasesAfter=@(Get-ChildItem $leaseDirectory -File -ErrorAction SilentlyContinue|ForEach-Object Name)
 if(($leasesBefore-join',')-cne($leasesAfter-join',')){throw 'invalid source leaked a new capacity lease'}
 if(-not$caught-or(Test-Path (Join-Path $artifact ('projects/rf_multipole_ion_optics/runs/'+$badId)))){throw 'invalid checkpoint source was accepted or created a new run'}

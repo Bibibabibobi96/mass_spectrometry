@@ -631,7 +631,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
     def test_local_pa_is_hashed_once_and_parent_retention_scans_nested_payload(self):
         from common.contracts.file_identity import file_sha256
         run, plan = self.candidate()
-        with patch("common.contracts.write_run_manifest.file_sha256", wraps=file_sha256) as hashing:
+        with patch("msplatform.execution.manifest_records.file_sha256", wraps=file_sha256) as hashing:
             self.assertEqual(self.publish(run)["status"], "success")
         paths = [Path(call.args[0]) for call in hashing.call_args_list]
         for window in plan["refinement_windows"]:

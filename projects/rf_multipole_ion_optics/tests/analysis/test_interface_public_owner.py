@@ -249,7 +249,10 @@ foreach($case in @('gui_failed','gui_succeeded','metadata_missing')){
                 target = facade/descriptor["path"]
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(repo/descriptor["path"], target)
-            policy = facade/"common/contracts/artifact_capacity_policy.json"
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+            copy_scientific_core(repo, facade)
+            policy = facade/"src/msplatform/execution/resources/artifact_capacity_policy.json"
             document = json.loads(policy.read_text(encoding="utf-8"))
             document.update(target_gib=.125, minimum_free_gib=0)
             policy.write_text(json.dumps(document), encoding="utf-8")

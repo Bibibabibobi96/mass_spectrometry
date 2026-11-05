@@ -368,8 +368,8 @@ if($Role-eq'accelerator'){
 elseif($Role-eq'reflectron'){
 $reflectronStem = Join-Path $Directory 'reflectron.pa#'
 $maxReflectronElectrode = 4 + [int]$contract.rings.stage1_count + [int]$contract.rings.stage2_count
-  Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
-  (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'), $reflectronStem,
+  Invoke-SimionLua -Refines (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/build_reflectron_variant.lua') @(
+  (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_reflectron_ideal_10_5.gem'), $reflectronStem,
   (Join-Path $textDir 'oatof_resolved.lua'),
   'initialize-only'
   )
@@ -378,15 +378,15 @@ $maxReflectronElectrode = 4 + [int]$contract.rings.stage1_count + [int]$contract
 }
 elseif($Role-eq'flight_tube'){
   $flightTubeStem = Join-Path $Directory 'flight_tube_ground.pa#'
-  Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
-  (Join-Path $projectRoot 'simion\workbench\oatof_flight_tube_ground.gem'), $flightTubeStem,
+  Invoke-SimionLua -Refines (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/build_flight_tube_variant.lua') @(
+  (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_flight_tube_ground.gem'), $flightTubeStem,
   (Join-Path $textDir 'oatof_resolved.lua')
   )
 }
 elseif($Role-eq'detector'){
   $detectorStem = Join-Path $Directory 'detector_ground.pa#'
-  Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
-  (Join-Path $projectRoot 'simion\workbench\oatof_detector_ground.gem'), $detectorStem,
+  Invoke-SimionLua -Refines (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/build_detector_variant.lua') @(
+  (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_detector_ground.gem'), $detectorStem,
   (Join-Path $textDir 'oatof_resolved.lua')
   )
 }
@@ -459,7 +459,7 @@ foreach($component in $componentPlan.components){
     $receiptName=$stem+'.standalone_responses.json'
     Write-RunJson -Path $recipePath -Depth 12 -Value @{
       schema_version=2;receipt_name=$receiptName;
-      exporter_path=(Join-Path $repoRoot 'common/simion/export_standalone_pa.lua');source_location='build_scratch';
+      exporter_path=(Join-Path $repoRoot 'src/msplatform/backends/simion/resources/export_standalone_pa.lua');source_location='build_scratch';
       exports=@($component.response_ids|ForEach-Object{@{response_id=[int]$_;source_name=($stem+'.pa'+$_);standalone_name=($stem+'.response'+$_+'.pa')}})
     }
     $transactionArgs=$cacheArgs+@('--action','advance-transaction','--owner',$RunId,
@@ -518,7 +518,7 @@ foreach($component in $componentPlan.components){
           $responseOperationStart=$nativeOperations.Count
           Build-OwnedComponent $role $nativeScratch
           foreach($id in $component.response_ids){
-            Invoke-SimionLua (Join-Path $repoRoot 'common/simion/export_standalone_pa.lua') @(
+            Invoke-SimionLua (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/export_standalone_pa.lua') @(
               (Join-Path $nativeScratch ($stem+'.pa'+$id)),(Join-Path $nativeScratch ($stem+'.response'+$id+'.pa')))
           }
           $producerComponent.response_build_operation_ids=@($nativeOperations.ToArray()|Select-Object -Skip $responseOperationStart|ForEach-Object{$_.operation_id})

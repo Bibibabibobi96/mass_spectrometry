@@ -836,10 +836,20 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
         raise ValueError("NATIVE_COMPLETION_MISSING: original public completion is required")
     verify_record("original completion", completions[0], base_dir=parent)
     completion = load_json(record_path(completions[0], base_dir=parent))
+    completion_request = completion.get("execution_request")
+    if not isinstance(completion_request, dict) or completion_request.get("exists") is not True:
+        raise ValueError("Public completion request identity is missing")
+    verify_record("original completion request", completion_request, base_dir=parent)
+    # Publication retention metadata does not change the bound content identity.
+    completion_request_identity = {key: value for key, value in completion_request.items()
+                                   if key != "retention_role"}
+    request_identity = {key: value for key, value in request_record.items() if key != "retention_role"}
+    completion_request_identity["path"] = str(record_path(completion_request, base_dir=parent))
+    request_identity["path"] = str(record_path(request_record, base_dir=parent))
     if (completion.get("role") != "run_artifact_workflow_completion" or completion.get("schema_version") != 1
             or completion.get("run_id") != parent.name or completion.get("project") != PROJECT_ROOT.name
             or completion.get("status") != manifest["status"]
-            or completion.get("execution_request") != request_record
+            or completion_request_identity != request_identity
             or completion.get("run_config", {}).get("sha256") != manifest["run_config"]["sha256"]):
         raise ValueError("Public completion and original request/config identity differ")
     import subprocess
@@ -1022,7 +1032,9 @@ def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
                             closure, code_relative_root=Path("inputs/code"), cold=True)}
                            if selection["exports"] is None else {})},
             "capacity": {"committed_new_bytes": selection["new_bytes"],
-                         "commitment_inputs": [file_record(selection_path), selection["budget_record"]],
+                         "commitment_inputs": [file_record(selection_path),
+                                               {key: selection["budget_record"][key]
+                                                for key in ("path", "exists", "bytes", "sha256")}],
                          "protected_paths": [str(planning)], "protected_cache_keys": [],
                          "source_references": selection["source_references"]},
             "prepared": prepared,

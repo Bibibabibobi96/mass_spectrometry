@@ -34,6 +34,33 @@ print(metrics["mean_tof_us"], metrics["std_tof_ns"])
 该纯入口不读文件、不认证clock文件、不推断类别含义，也不授予收敛或科学资格；来源验证由外层负责。
 
 
+## 两份已发布轨迹的描述比较
+
+`api.compare_trajectories`接受两个已打开的`trajectory_result`或显式manifest/product引用；
+它复用同一已发布数据校验，不创建owner、不写文件、不调用工具，也不要求PA或旧源码。
+例如`left`、`right`已经指向实际发布产物时：
+
+```python
+from msplatform import api
+
+comparison = api.compare_trajectories(
+    left, right,
+    selection={"schema_version": 1, "particle_ids": original_selected_ids,
+               "observation": {"kind": "canonical_event", "event": "detector_crossing"},
+               "unexecuted_fate_label_field": "status"},
+    method={"schema_version": 1, "kind": "event_time_position"},
+)
+```
+
+选择ID来自完整原母群，`status`须是该来源真实fate字段；没有可用字段时保留
+`insufficient_classification`，不默认推断unknown或loss。两产物必须绑定同一field manifest内容／product、
+model、完整母群（含谱系）与原始钟；合法run-local路径不同不改变内容身份。相同选定事件每ID重复即拒绝，
+不默认first／last。返回右减左的实际仪器时间、位置向量及距离，保留完整母群加权分母、缺测ID与原分类。
+这里只比较实际`t/xyz`，速度、能量、phase及年龄明确不可用，不借native terminal伪造detector状态。
+`comparison_completed`只表示声明字段的计算完成；缺观测／零匹配为`insufficient_observations`，
+都不裁决两者相等、收敛、精度或Formal资格。完整6D穿面比较仍调用唯一
+`msplatform.analysis.propagation_comparison.compare_propagations`，不可与此partial方法混称。
+
 ## 按问题定位
 
 | 任务 | 模块与入口 | 输入和边界 |

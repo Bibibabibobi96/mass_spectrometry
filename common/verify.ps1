@@ -45,7 +45,6 @@ if ($repositoryScope -or $ownerScope) {
 . (Join-Path $PSScriptRoot 'gate_catalog_support.ps1')
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
 $script:GateResourceWaitTimeoutSeconds=$ResourceWaitTimeoutSeconds
 if ($InternalStage) {
     $passed = Invoke-ResolvedGateStage -RepoRoot $repoRoot -Stage $InternalStage `
@@ -89,6 +88,7 @@ $gateSummary = $null
 $gateFailure = $null
 try {
 $env:SIMULATION_PYTHON_EXE = $PythonExe
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
 $requestedConcurrency=$MaxConcurrency
 $MaxConcurrency = Resolve-GateConcurrency -Requested $MaxConcurrency

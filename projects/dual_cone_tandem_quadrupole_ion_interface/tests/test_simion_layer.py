@@ -216,7 +216,7 @@ class GasPreparationTests(unittest.TestCase):
                 content = target.read_bytes()
                 target.write_bytes(bytes([content[0] ^ 1]) + content[1:])
 
-            with mock.patch("common.contracts.frozen_inputs.shutil.copyfile", side_effect=corrupt_copy):
+            with mock.patch("msplatform.execution.inputs.shutil.copyfile", side_effect=corrupt_copy):
                 with self.assertRaisesRegex(AssertionError, "frozen input SHA-256 changed"):
                     prepare(root / "changed_copy", mode="c0_gem_smoke")
             self.assertFalse((root / "changed_copy/preparation_receipt.json").exists())
@@ -233,6 +233,14 @@ class GasPreparationTests(unittest.TestCase):
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
                             and Path(name).suffix not in {".py", ".json", ".lua"})])
             from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+            copy_scientific_core(repo, snapshot)
+            kernel = Path("src/msplatform/backends/simion/resources/rf_drive.lua")
+            (snapshot / kernel).parent.mkdir(parents=True, exist_ok=True)
+            kernel_record = freeze_file(repo / kernel, snapshot / kernel)
+            self.assertEqual(kernel_record["sha256"], file_sha256(repo / kernel))
+            self.assertEqual((snapshot / kernel).read_bytes(), (repo / kernel).read_bytes())
 
             rf_modules = tuple("projects/rf_multipole_ion_optics/" + relative for relative in (
                 "core/round_rod_geometry.py", "core/connector_geometry.py",
@@ -258,39 +266,45 @@ import sys
 for name, module in tuple(sys.modules.items()):
     if name.startswith('projects.rf_multipole_ion_optics') and getattr(module, '__file__', None):
         assert Path(module.__file__).resolve().is_relative_to(Path.cwd()), (name, module.__file__)
-c0 = p.prepare(Path('c0'), mode='c0_gem_smoke')
-export_uniform_runtime(Path('field.lua').resolve(), Path('manifest.json').resolve())
-sds = Path('sds'); sds.mkdir()
+case = Path(sys.argv[2]); case.mkdir()
+c0 = p.prepare(case / 'c0', mode='c0_gem_smoke')
+export_uniform_runtime((case / 'field.lua').resolve(), (case / 'manifest.json').resolve())
+sds = case / 'sds'; sds.mkdir()
 for name in p.SDS_FILES:
     (sds/name).write_text('inert fixture\n', encoding='utf-8')
-gas = p.prepare(Path('gas'), mode='gas_assisted_transport',
-                collision_sds_dir=sds, gas_field_manifest=Path('manifest.json'))
+gas = p.prepare(case / 'gas', mode='gas_assisted_transport',
+                collision_sds_dir=sds, gas_field_manifest=case / 'manifest.json')
 for receipt in (c0, gas):
     record = receipt['inputs']['resolved_geometry']
     assert set(record) == {'source_path', 'frozen_path', 'sha256', 'bytes'}
     assert Path(record['frozen_path']).read_bytes() == Path(record['source_path']).read_bytes()
 assert gas['inputs']['cylindrical_ion_source_receipt']['identity']['particle_count'] == 100
 assert not list(Path.cwd().rglob('*.pa*'))
+for name, module in tuple(sys.modules.items()):
+    if name.startswith('msplatform') and getattr(module, '__file__', None):
+        assert Path(module.__file__).resolve().is_relative_to(Path.cwd() / 'src'), (name, module.__file__)
 print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
 """
             # -I ignores inherited author/PYTHONPATH entries; only this selected
             # frozen root is added for project and shared-runtime sources.
-            code = "import sys; sys.path.insert(0, sys.argv[1]);\n" + code
-            command = [sys.executable, "-I", "-B", "-c", code, str(snapshot)]
+            code = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+                    "from common.contracts.frozen_inputs import python_import_roots; "
+                    "sys.path[:0] = python_import_roots(Path(sys.argv[1]));\n") + code
+            command = [sys.executable, "-I", "-B", "-c", code, str(snapshot), str(snapshot / "positive")]
             result = subprocess.run(command, cwd=snapshot,
                 env={**os.environ, "PYTHONPATH": str(repo)}, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("DETACHED_DUAL_CONE_PREPARE=PASS MODES=2", result.stdout)
-            adapter = snapshot/'projects/rf_multipole_ion_optics/simion/electrode_mapping.py'
+            adapter = snapshot/'src/msplatform/backends/simion/rf_electrode_mapping.py'
             adapter_bytes = adapter.read_bytes()
             adapter.unlink()
             try:
-                missing = subprocess.run(command, cwd=snapshot,
+                missing = subprocess.run([*command[:-1], str(snapshot / "missing-provider")], cwd=snapshot,
                     env={**os.environ, "PYTHONPATH": str(repo)}, capture_output=True, text=True,
                     encoding="utf-8", errors="replace", timeout=30, check=False)
                 self.assertNotEqual(missing.returncode, 0)
-                self.assertIn("No module named 'projects.rf_multipole_ion_optics.simion.electrode_mapping'",
+                self.assertIn("No module named 'msplatform.backends.simion.rf_electrode_mapping'",
                               missing.stderr)
             finally:
                 adapter.write_bytes(adapter_bytes)

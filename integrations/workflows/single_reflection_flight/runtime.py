@@ -12,6 +12,8 @@ import argparse
 import json
 import math
 from pathlib import Path
+from msplatform.execution.resources import resource_path
+from msplatform.backends.simion.source import execution_particle_ids, validate_consumed_plane_events
 import shutil
 import stat
 from typing import Any, Mapping
@@ -38,11 +40,11 @@ from integrations.workflows.single_reflection_flight.downstream_fields import (
 from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
 _SOURCES = {
-    "analyzer_component_source": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua",
-    "pulse_hook_source": "integrations/runtime/single_flight_pulse_hook.lua",
-    "frontend_hook_source": "integrations/runtime/single_flight_frontend_hook.lua",
-    "rf_drive_kernel_source": "common/simion/rf_drive.lua",
-    "voltage_waveforms_source": "common/simion/voltage_waveforms.lua",
+    "analyzer_component_source": "src/msplatform/backends/simion/resources/oatof_analyzer_component.lua",
+    "pulse_hook_source": "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua",
+    "frontend_hook_source": "src/msplatform/backends/simion/resources/single_flight_frontend_hook.lua",
+    "rf_drive_kernel_source": "src/msplatform/backends/simion/resources/rf_drive.lua",
+    "voltage_waveforms_source": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
 }
 
 
@@ -191,101 +193,7 @@ def _instance_rows(geometry: dict, metadata: dict, carriers: dict) -> list[dict]
     return result
 
 
-def native_priority_occupancy_probes(geometry: dict, design: dict, *,
-                                    terminal_observations: list[dict] | None = None) -> list[dict]:
-    """Freeze declared native point checks; terminal neighborhoods are observations.
-
-    Every field sample retains its source integer-node electrode check. Node
-    positions are observations in continuous collision space. Metal must support
-    an adjacent full cell in its unmasked domain; fine samples verify metal that
-    masks a parent sample. Ideal sheets need no volume.
-    Exact numerical faces retain world-query observations without asserting boundary instance choice;
-    these checks do not qualify boundary-field continuity or dynamic fields.
-    """
-    if design.get("surface") != "none":
-        raise ValueError("adjacent electrode-node cell checks require surface=none")
-    domains = {row["domain_id"]: row for row in design["domains"]}
-    parent, fine = domains["parent"], domains.get("entrance_refinement")
-    fine_samples = {(row['label'], row['kind'], row['electrode_id'])
-                    for row in fine['physical_samples']} if fine else set()
-
-    def selected(point):
-        return 5 if fine and all(fine["bounds_mm"][axis + "_min"] < value <
-                                 fine["bounds_mm"][axis + "_max"]
-                                 for axis, value in zip("xyz", point, strict=True)) else 3
-
-    probes = []
-    for domain in domains.values():
-        for sample in domain["physical_samples"]:
-            point = [domain["instance_origin_mm"][axis] + domain["cell_mm_xyz"][axis] * gu
-                     for axis, gu in zip("xyz", sample["gu"], strict=True)]
-            on_boundary = any(gu in (0, domain["dimensions"]["n" + axis] - 1)
-                              for axis, gu in zip("xyz", sample["gu"], strict=True)) or any(
-                all(other["bounds_mm"][axis + "_min"] <= value <= other["bounds_mm"][axis + "_max"]
-                    for axis, value in zip("xyz", point, strict=True)) and
-                any(value in (other["bounds_mm"][axis + "_min"], other["bounds_mm"][axis + "_max"])
-                    for axis, value in zip("xyz", point, strict=True)) for other in domains.values())
-            probe = dict(label=domain["domain_id"] + ":" + sample["label"], point_mm=point,
-                expected_node_electrode=True,
-                basis=dict(kind="resolved_physical_sample", domain_id=domain["domain_id"],
-                           sample_label=sample["label"], sample_kind=sample["kind"],
-                           electrode_id=sample["electrode_id"], gu=sample["gu"],
-                           world_query_scope="numerical_boundary_observation" if on_boundary else "source_node_location_observation"))
-            if sample["kind"] != "ideal_sheet":
-                if domain['domain_id'] == 'parent' and fine and all(
-                        fine['active_bounds_mm'][axis+'_min'] < value < fine['active_bounds_mm'][axis+'_max']
-                        for axis, value in zip('xyz', point, strict=True)):
-                    if (sample['label'], sample['kind'], sample['electrode_id']) not in fine_samples:
-                        raise ValueError('masked parent metal lacks its fine physical sample: ' + sample['label'])
-                else:
-                    probe["expected_adjacent_metal_cell"] = True
-            if not on_boundary:
-                probe["expected_instance"] = selected(point)
-            probes.append(probe)
-    accelerator = geometry["accelerator_projection"]
-    if accelerator.get("numerical_port_width_mm", 0) > 0 and accelerator.get("numerical_port_height_mm", 0) > 0:
-        point = [accelerator["negative_x_face_mm"] + accelerator["shield_wall_mm"] / 2,
-                 accelerator["port_center_y_mm"], accelerator["port_center_z_mm"]]
-        probes.append(dict(label="provider_side_opening_center", point_mm=point,
-            expected_instance=selected(point), basis=dict(kind="provider_side_opening_center",
-                occupancy="observe_only_no_independent_point_in_metal_classifier")))
-    if fine:
-        anchor = [(fine["bounds_mm"][axis + "_min"] + fine["bounds_mm"][axis + "_max"]) / 2
-                  for axis in "xyz"]
-        for index, axis in enumerate("xyz"):
-            for side, sign in (("min", -1), ("max", 1)):
-                edge = fine["bounds_mm"][axis + "_" + side]
-                gap = sign * (parent["bounds_mm"][axis + "_" + side] - edge)
-                if gap <= 0:
-                    continue
-                for location, displacement, instance in (
-                        ("inside", -sign * fine["cell_mm_xyz"][axis], 5),
-                        ("outside", sign * min(parent["cell_mm_xyz"][axis], gap / 2), 3)):
-                    point = list(anchor)
-                    point[index] = edge + displacement
-                    probes.append(dict(label=f"fine_{axis}_{side}_{location}", point_mm=point,
-                        expected_instance=instance, basis=dict(kind="declared_numerical_domain_transition",
-                            axis=axis, side=side, location=location, boundary_mm=edge,
-                            displacement_mm=displacement, occupancy="observe_only")))
-    for terminal in terminal_observations or ():
-        instance = int(terminal["instance"])
-        if instance not in (3, 5) or (instance == 5 and fine is None):
-            raise ValueError("terminal neighborhoods require the declared parent or fine Cartesian domain")
-        domain = fine if instance == 5 else parent
-        center = [terminal[axis + "_mm"] for axis in "xyz"]
-        offsets = [("center", [0., 0., 0.])]
-        for index, axis in enumerate("xyz"):
-            for sign in (-1, 1):
-                offset = [0., 0., 0.]
-                offset[index] = sign * domain["cell_mm_xyz"][axis]
-                offsets.append((axis + ("_minus_cell" if sign < 0 else "_plus_cell"), offset))
-        for name, offset in offsets:
-            probes.append(dict(label=f"terminal_{terminal['particle_id']}_{name}",
-                point_mm=[value + delta for value, delta in zip(center, offset, strict=True)],
-                basis=dict(kind="observed_native_terminal_neighborhood", particle_id=terminal["particle_id"],
-                    recorded_instance=instance, instrument_time_us=terminal["instrument_time_us"],
-                    offset_mm=offset, occupancy="observe_only_no_physical_object_attribution")))
-    return probes
+from msplatform.backends.simion.field_validation import native_priority_occupancy_probes
 
 
 def _prepare_context(preparation: dict, field_receipt_path: Path,
@@ -359,8 +267,16 @@ def _prepare_context(preparation: dict, field_receipt_path: Path,
         source = list(reader)
     ids = [int(row["particle_id"]) for row in source]
     restart_source = provenance.get("source_kind") == "recorded_pre_pulse_state"
-    expected_ids = (provenance.get("continued_particle_ids") if restart_source
-                    else list(range(1, preparation["particle_count"] + 1)))
+    if provenance.get("schema_version") == 2:
+        for name in ("clock_authority", "instrument_epoch"):
+            authority = preparation["input_records"][name]
+            _small_record(authority, "canonical source " + name)
+            declared = provenance["clock_records"][name]
+            if declared.get("bytes") != authority.get("bytes") or declared.get("sha256", "").upper() != authority["sha256"].upper():
+                raise ValueError("canonical source original clock record differs")
+        if authority["sha256"].upper() != provenance.get("clock_authority_sha256", "").upper():
+            raise ValueError("canonical source original clock authority differs")
+    expected_ids = execution_particle_ids(provenance, preparation["particle_count"])
     if (not isinstance(expected_ids, list) or ids != expected_ids
             or len(source) != provenance["particle_count"]
             or provenance["target_frame_id"] != geometry["native_frame_id"]):
@@ -370,6 +286,8 @@ def _prepare_context(preparation: dict, field_receipt_path: Path,
         raise ValueError("recorded pre-pulse continuation ledger differs from projected source")
     if any(not math.isfinite(float(value)) for row in source for value in row.values()):
         raise ValueError("projected source contains non-finite states")
+    if provenance.get("schema_version") == 2:
+        validate_consumed_plane_events(provenance["consumed_plane_events"], state_kind=provenance["state_kind"], source_rows=source)
     fields, dynamic = _frontend_fields(field_receipt_path, design)
     carriers, static, guards = load_downstream_fields(
         downstream_receipt_record, instance_design_record(preparation, oatof_id),
@@ -400,43 +318,7 @@ def iob_pa_copies(context: dict) -> list[dict]:
 
 
 
-def interface_field_probes(geometry: dict, oatof: dict) -> list[dict]:
-    """Declare bounded checks at the provider's grounded ideal-grid interfaces.
-
-    These are screening boundaries of the supported split-field model, not a
-    certificate of the omitted finite-grid edge coupling. Normal field jumps
-    across an ideal electrode are permitted. No PA payload is read here.
-    """
-    g = geometry['accelerator_projection']
-    parent = geometry['numerical_domains']['parent']
-    downstream = {row['role']: row for row in geometry['downstream_pa_instances']}
-    reflectron = downstream['reflectron']
-    coord = oatof['coordinate_convention']
-    definitions = (
-        ('accelerator_exit', 3, [g['axis_x_mm'], g['axis_y_mm'], g['grid2_z_mm']],
-         g['bore_width_mm'] / 4, parent['cell_mm_xyz']['z'],
-         min(parent['cell_mm_xyz']['x'], parent['cell_mm_xyz']['y'])),
-        ('reflectron_entry', 2, [coord['reflectron_axis'][0], coord['reflectron_axis'][1],
-                               oatof['geometry_mm']['L_flight']],
-         oatof['geometry_mm']['bore_r'] / 2,
-         reflectron['grid_numerics']['cell_axial_mm'],
-         reflectron['grid_numerics']['cell_radial_mm']),
-    )
-    probes = []
-    for label, instance, center, radius, axial_step, tangent_step in definitions:
-        points = [list(center)]
-        for axis in (0, 1):
-            for sign in (-1, 1):
-                point = list(center)
-                point[axis] += sign * radius
-                points.append(point)
-        probes.append(dict(label=label, instance_index=instance, grounded_instance_index=1,
-            normal=[0., 0., 1.], points_mm=points, axial_step_mm=axial_step,
-            tangent_step_mm=tangent_step, physical_surface='zero_thickness_grounded_ideal_grid',
-            expected_potential_v=0., voltage_tolerance_v=1e-8,
-            tolerance_basis='bounded imposed-zero-electrode binary64/interpolation audit; not field accuracy',
-            validity_scope='declared interior grid samples only; finite-grid edge coupling unqualified'))
-    return probes
+from msplatform.backends.simion.field_validation import interface_field_probes
 
 
 
@@ -448,6 +330,22 @@ def compile_case_controls(context: dict, source: list[dict], *, native_path_proj
     observation = context.get('field_observation')
     if observation is not None and observation['specification']['eligible_batch_anchor_particle_id'] not in ids:
         observation = None
+    modern = {}
+    provenance = context["provenance"]
+    if provenance.get("schema_version") == 2:
+        validate_consumed_plane_events(provenance["consumed_plane_events"], state_kind=provenance["state_kind"], source_rows=context["source"])
+        mother = {row["particle_id"]: row for row in provenance["mother_records"]}
+        deadlines = context.get("absolute_deadline_instrument_us_by_particle_id")
+        if not isinstance(deadlines, dict) or set(deadlines) != set(provenance["mother_particle_ids"]):
+            raise ValueError("modern tracking requires explicit absolute deadlines for the full original mother")
+        full_rows = {int(row["particle_id"]): row for row in context["source"]}
+        if any(row != full_rows.get(int(row["particle_id"])) for row in source):
+            raise ValueError("modern batch source differs from its frozen source context")
+        modern = dict(original_birth_times_us=[mother[pid]["particle_birth_time_us"] for pid in ids],
+            absolute_deadlines_us=[deadlines[pid] for pid in ids],
+            consumed_plane_events=[row for row in provenance["consumed_plane_events"] if row["particle_id"] in ids])
+    if context.get("propagation_stop") is not None and (provenance.get("schema_version") != 2 or provenance.get("state_kind") != "source_birth"):
+        raise ValueError("cut stop requires a modern source_birth execution")
     program = build_successor_program(context["multipoles_by_instance"], context["design"], context["oatof"],
         frontend_geometry=context["geometry"],
         birth_times_us=[float(r["instrument_time_us"]) for r in source], particle_ids=ids,
@@ -460,9 +358,11 @@ def compile_case_controls(context: dict, source: list[dict], *, native_path_proj
                if row.get('pulse_delta_pa_basename') else {}))
             for row in context["dynamic"]["dynamic_roles"]},
         downstream_static_fields=context["static"],
-        build_metadata=metadata, native_path_projection=native_path_projection,
+        build_metadata=metadata, native_path_projection=native_path_projection, **modern,
         **({'field_observation':observation} if observation is not None else {}),
-        native_path_source=(snapshot_root/"common/paths/native_run_path.lua").read_text(encoding="utf-8-sig") if native_path_projection else None,
+        **({'plane_observations':context['plane_observations']} if context.get('plane_observations') is not None else {}),
+        propagation_stop=context.get("propagation_stop"),
+        native_path_source=resource_path("native_run_path.lua").read_text(encoding="utf-8-sig") if native_path_projection else None,
         **{key: (snapshot_root / name).read_text(encoding="utf-8-sig") for key, name in _SOURCES.items()})
     return program, metadata, _instance_rows(context["geometry"], metadata, context["carriers"])
 
@@ -495,7 +395,9 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
     seed = directory / "iob_seed"
     iob = directory / "instrument.iob"
     cache = context.setdefault("_continuation_seed_records", {})
-    seed_paths = [Path(context["snapshot_root"]) / "common/simion/assets/iob_instance_seeds" / name for name in seed_names]
+    seed_paths = [Path(context["snapshot_root"]) /
+                  ("src/msplatform/backends/simion/resources" if name.endswith(".iob") else
+                   "common/simion/assets/iob_instance_seeds") / name for name in seed_names]
     seed_records = []
     for path in seed_paths:
         record = cache.get(path)
@@ -515,9 +417,9 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
             native_priority_occupancy_probes=probes,
             seed_iob=(seed / seed_names[0]).as_posix(), output_iob=iob.as_posix())) + "\n",
         builder_path=str(Path(context["snapshot_root"]) / "integrations/workflows/single_reflection_flight/build_iob.lua"),
-        builder_core_path=str(Path(context["snapshot_root"])/"integrations/workflows/single_reflection_flight/build_iob_core.lua"),
+        builder_core_path=str(Path(context["snapshot_root"])/"src/msplatform/backends/simion/resources/iob_core.lua"),
         program_path_projection_record=context.setdefault("_program_path_projection_record",
-            file_record(Path(context["snapshot_root"])/"common/paths/native_run_path.lua")),
+            file_record(resource_path("native_run_path.lua"))),
         seed_paths=[str(path) for path in seed_paths], seed_records=seed_records)
 
 
@@ -555,8 +457,10 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
     seed_root = snapshot_root / "common/simion/assets/iob_instance_seeds"
     count = len(rows)
     seed_names = [f"{count}_instance_seed.iob", *(f"iob_seed_placeholder_{i:02d}.pa0" for i in range(1, count + 1))]
+    seed_sources = {name: (snapshot_root / "src/msplatform/backends/simion/resources" / name
+                           if name.endswith(".iob") else seed_root / name) for name in seed_names}
     for name in seed_names:
-        if not (seed_root / name).is_file():
+        if not seed_sources[name].is_file():
             raise ValueError(f"frozen public IOB seed resource is missing: {name}")
     builder = snapshot_root / "integrations/workflows/single_reflection_flight/build_iob.lua"
     if not builder.is_file():
@@ -565,7 +469,7 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
     seed = directory / "iob_seed"
     seed.mkdir()
     for name in seed_names:
-        shutil.copyfile(seed_root / name, seed / name)
+        shutil.copyfile(seed_sources[name], seed / name)
     iob = directory / "instrument.iob"
     iob.with_suffix(".lua").write_text(program, encoding="utf-8", newline="\n")
     numerical_path = directory / "numerical_program.lua"

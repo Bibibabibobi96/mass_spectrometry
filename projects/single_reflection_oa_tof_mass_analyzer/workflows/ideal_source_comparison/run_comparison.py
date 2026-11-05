@@ -369,6 +369,26 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
             dictionary.keys, dictionary.values = [item[0] for item in kept], [item[1] for item in kept]
         prepared_body.append(node)
     expected_prepare.body = prepared_body
+    class OriginalPolicyResourceLocations(ast.NodeTransformer):
+        """Project only the three moved policy resources to their original locations."""
+        locations = {
+            "src/msplatform/execution/resources/host_resource_policy.json": "common/host_resource_policy.json",
+            "src/msplatform/execution/resources/artifact_retention.json": "common/contracts/artifact_retention.json",
+            "src/msplatform/execution/resources/artifact_capacity_policy.json": "common/contracts/artifact_capacity_policy.json",
+        }
+
+        def visit_Call(self, node):
+            current = ast.parse('file_sha256(REPO_ROOT / ("src/msplatform/execution/resources/host_resource_policy.json" if name == "host_resource_policy.json" else "common/" + name))', mode="eval").body
+            if ast.dump(node, include_attributes=False) == ast.dump(current, include_attributes=False):
+                return ast.parse('file_sha256(REPO_ROOT / "common" / name)', mode="eval").body
+            return self.generic_visit(node)
+
+        def visit_Constant(self, node):
+            if isinstance(node.value, str) and node.value in self.locations:
+                return ast.copy_location(ast.Constant(value=self.locations[node.value]), node)
+            return node
+
+    expected_prepare = OriginalPolicyResourceLocations().visit(expected_prepare)
     equal(function(source, "_prepare_run"), expected_prepare, "complete original freeze/identity constructor")
     known_functions = {"_write_json", "_digest", "_command", "_inputs", "_settings", "_working_points", "_run_case",
                        "_reuse_case", "_publish_manifest", "_write_report", "_prepare_run", "execute", "main"}
@@ -605,7 +625,8 @@ def _prepare_run(config_path: Path, *, seed: int, run_id: str, resume_from: Path
                 "input_sha256": identities, "numerical_input_sha256": numerical_inputs, "numerical_identity": identity,
                 # Execution provenance is deliberately outside numerical/resume identity.
                 "execution_source_sha256": {
-                    name: file_sha256(REPO_ROOT / "common" / name)
+                    name: file_sha256(REPO_ROOT / ("src/msplatform/execution/resources/host_resource_policy.json"
+                        if name == "host_resource_policy.json" else "common/" + name))
                     for name in ("host_resource_python.py", "host_resource_python.ps1",
                                  "host_execution_lease.ps1", "host_resource_scheduler.py", "host_resource_policy.json")
                 },

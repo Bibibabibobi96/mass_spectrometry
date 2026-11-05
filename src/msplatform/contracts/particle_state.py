@@ -318,3 +318,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def binary64_serialization_close(a: float, b: float) -> bool:
+    """Binary64 serialization allowance, not a physical matching tolerance."""
+    return abs(a - b) <= 32 * math.ulp(max(1., abs(a), abs(b)))

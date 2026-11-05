@@ -17,20 +17,22 @@ from common.contracts.write_run_manifest import file_record
 from integrations.runtime.single_flight_source import lua_value as _lua_value
 from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
 from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry, resolve_physical_geometry
+from msplatform.backends.simion.tof_geometry import derive_simion_geometry, resolve_physical_geometry
+from msplatform.backends.simion.downstream import _validate_provider_inputs
+from msplatform.backends.simion.resources import gem_template_path
 
 _SLOTS = {"flight_tube": 1, "reflectron": 2, "accelerator": 3, "detector": 4}
 
-_PROVIDER = "projects/single_reflection_oa_tof_mass_analyzer/simion"
+_PROVIDER = "src/msplatform/backends/simion/resources"
 _RESOURCES = {
-    "tube_builder": f"{_PROVIDER}/workbench/build_flight_tube_variant.lua",
-    "tube_gem": f"{_PROVIDER}/workbench/oatof_flight_tube_ground.gem",
-    "detector_builder": f"{_PROVIDER}/workbench/build_detector_variant.lua",
-    "detector_gem": f"{_PROVIDER}/workbench/oatof_detector_ground.gem",
-    "reflectron_builder": f"{_PROVIDER}/reflectron/build_reflectron_variant.lua",
-    "reflectron_gem": f"{_PROVIDER}/reflectron/oatof_reflectron_ideal_10_5.gem",
-    "exporter": "common/simion/export_standalone_pa.lua",
-    "audit": "integrations/workflows/single_reflection_flight/audit_downstream_fields.lua",
+    "tube_builder": f"{_PROVIDER}/build_flight_tube_variant.lua",
+    "tube_gem": "src/msplatform/backends/simion/resources/oatof_flight_tube_ground.gem",
+    "detector_builder": f"{_PROVIDER}/build_detector_variant.lua",
+    "detector_gem": "src/msplatform/backends/simion/resources/oatof_detector_ground.gem",
+    "reflectron_builder": f"{_PROVIDER}/build_reflectron_variant.lua",
+    "reflectron_gem": "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem",
+    "exporter": "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
+    "audit": "src/msplatform/backends/simion/resources/audit_downstream_fields.lua",
 }
 
 
@@ -145,51 +147,6 @@ def _live_run(run: Path) -> Path:
     return run
 
 
-def _validate_provider_inputs(g: dict, b: dict, m: dict, rings: dict, v: dict) -> None:
-    """Apply the three provider builders' numeric preconditions before staging."""
-    # Sources: simion/workbench/build_{flight_tube,detector}_variant.lua and
-    # simion/reflectron/build_reflectron_variant.lua under the oaTOF provider.
-    positive = [
-        ("geometry_mm", g, ("flight_tube_r", "flight_tube_wall", "shield_endcap_thickness",
-                            "L_reflectron", "ring_thickness", "shield_axial_gap", "L_stage1",
-                            "L_stage2", "bore_r", "ring_outer_r")),
-        ("flight_tube", b["flight_tube"], ("cell_axial_mm", "cell_radial_mm", "max_gib")),
-        ("reflectron", b["reflectron"], ("cell_axial_mm", "cell_radial_mm", "max_gib")),
-        ("detector", b["detector"], ("margin_xy_mm", "max_mib")),
-        ("simion_detector_marker", m, ("cell_xy_mm", "cell_z_mm", "active_radius_mm",
-                                      "absorber_thickness_mm", "front_margin_z_mm", "back_margin_z_mm")),
-    ]
-    for label, values, keys in positive:
-        for key in keys:
-            value = values[key]
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-                raise ValueError(f"downstream {label}.{key} must be finite and positive")
-    for label, values, keys in (("geometry_mm", g, ("shield_outer_z_min", "L_flight")),
-                                ("electrodes_V", v, ("midgrid", "backplate"))):
-        for key in keys:
-            value = values[key]
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-                raise ValueError(f"downstream {label}.{key} must be finite")
-    if g["L_flight"] - g["shield_outer_z_min"] <= g["shield_endcap_thickness"]:
-        raise ValueError("downstream flight_tube interface must lie beyond the near cap")
-    if not g["bore_r"] < g["ring_outer_r"] < g["flight_tube_r"]:
-        raise ValueError("downstream reflectron radii must be ordered")
-    if abs(g["L_reflectron"] - g["L_stage1"] - g["L_stage2"]) >= 1e-9:
-        raise ValueError("downstream reflectron length must equal stage1 + stage2")
-    for key in ("stage1_count", "stage2_count"):
-        value = rings[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 1 or value != math.floor(value):
-            raise ValueError(f"downstream rings.{key} must be a positive integer")
-    middle = g["L_stage1"] / b["reflectron"]["cell_axial_mm"]
-    if abs(middle - math.floor(middle + 0.5)) > 1e-8:
-        raise ValueError("downstream reflectron midgrid zero-width sheet must lie on a raw PA row")
-    for key, minimum in (("absorber_thickness_mm", 5 * m["cell_z_mm"]),
-                          ("front_margin_z_mm", 10 * m["cell_z_mm"]),
-                          ("back_margin_z_mm", 5 * m["cell_z_mm"])):
-        if m[key] < minimum:
-            raise ValueError(f"downstream detector {key} is below its provider cell-span minimum")
-    if b["detector"]["margin_xy_mm"] < m["cell_xy_mm"]:
-        raise ValueError("downstream detector margin_xy_mm must span at least one xy cell")
 
 
 def preflight_frontend_resources(design: dict, limits: dict, *, reused_member_ids: tuple[str, ...] | list[str] = ()) -> dict:
@@ -300,6 +257,11 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
     _validate_provider_inputs(g, b, m, rings, v)
     snapshot_root = snapshot_root.absolute()
     resources = {key: snapshot_root / name for key, name in _RESOURCES.items()}
+    for key, role in (("tube_gem", "flight_tube"), ("detector_gem", "detector"), ("reflectron_gem", "reflectron")):
+        resource = gem_template_path(role)
+        if resource.resolve() != resources[key].resolve():
+            raise ValueError("downstream GEM resource does not originate in the frozen snapshot")
+        resources[key] = resource
     if any(not path.is_file() for path in resources.values()):
         raise ValueError("frozen downstream provider resources are incomplete")
     # A declared source is a frozen scientific input, never an opportunistic

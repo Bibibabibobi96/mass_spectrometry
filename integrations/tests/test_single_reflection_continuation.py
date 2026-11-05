@@ -223,6 +223,21 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             prepare_phase_continuation(self.preparation,current,self.run,'baseline')
 
 
+    def test_legacy_iob_projection_accepts_only_comment_header_and_known_path_abi(self):
+        core = (runtime_tests.ROOT / 'src/msplatform/backends/simion/resources/iob_core.lua').read_text(encoding='utf-8')
+        expected = render_legacy_iob_builder(core)
+        self.assertIn("local spec=dofile(assert(arg[1]", expected)
+        self.assertNotIn('return function(spec,mode,native_path)', expected)
+        comment = '-- bounded fixture comment header\n\n'
+        self.assertEqual(render_legacy_iob_builder(comment + core), comment + expected)
+        for bad in ("print('side effect')\n" + core,
+                    "--[[ comment ]] print('side effect')\n" + core,
+                    core.replace('return function(spec,mode,native_path)', 'return function(spec,mode,unknown_path)'),
+                    core.replace('    local projected=native_path(path)\n',
+                                 "    local projected=native_path(path)\n    native_path('extra')\n")):
+            with self.subTest(prefix=bad[:80]), self.assertRaises(ValueError):
+                render_legacy_iob_builder(bad)
+
     def test_pre_projection_program_requires_exact_compiler_output_in_both_paths(self):
         current = self._current_workbench()
         parent = self._parent(current)

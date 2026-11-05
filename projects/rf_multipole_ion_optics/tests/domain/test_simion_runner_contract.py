@@ -263,7 +263,7 @@ try {{
         source = RUNNER.read_text(encoding="utf-8-sig")
         block = source[source.index("    $resourceUsage=if($name-eq$primaryName)"):
                        source.index("    if($batchRuns.Count-gt 1-or($continuationPredecessor-and-not$caseRunsNative[$name])){")]
-        support = (REPO_ROOT / "common/resource_budget_support.ps1").read_text(encoding="utf-8-sig")
+        support = (REPO_ROOT / "src/msplatform/execution/resources/simion_dispatch_support.ps1").read_text(encoding="utf-8-sig")
         observation = support[support.index("  if($ExistingProcessRecords.Count-gt 0-and\n      $ExistingProcessRecords[0].PSObject.Properties.Name-contains'completed_during_observation'){"):
                               support.index("  Write-ResourceUsage -Usage $usage -Path $UsagePath", support.index("    $usage.first_formal_observation="))]
         terminal = source[source.index("  $caseResourceUsage=[ordered]@{}"):
@@ -357,7 +357,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
 
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
-            "common/host_resource_policy.json", "common/require_powershell7.ps1",
+            "src/msplatform/execution/resources/host_resource_policy.json", "common/require_powershell7.ps1",
             "common/analysis/particle_census.py",
         }
         for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
@@ -901,7 +901,7 @@ if($scenario-eq'inherited_light'){
         self.assertLess(source.index("-Stage prepare -RunId"), source.index("  $codeRoot=Join-Path"))
         self.assertLess(source.index("-Stage flight `"), source.index("$primary=Invoke-TransportCase"))
         self.assertLess(source.rindex("$control=Invoke-TransportCase"), source.index("-Stage postprocess `"))
-        policy = json.loads((REPO_ROOT / "common/host_resource_policy.json").read_text(encoding="utf-8"))
+        policy = json.loads((REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json").read_text(encoding="utf-8"))
         for stage in ("pa_refine", "flight"):
             self.assertTrue(policy["profiles"][policy["stages"]["SIMION/" + stage]]["heavy_stage"])
         self.assertNotIn("SIMION/prepare", policy["stages"])
@@ -996,8 +996,9 @@ $rectangular=$false;$segmentedRodGeometry=($null-ne$design.segmentation.segmente
 
     def test_build_and_fly_are_serialized_without_nested_reentry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        watchdog = (REPO_ROOT / "common/resource_budget_support.ps1").read_text(
-            encoding="utf-8"
+        watchdog = "\n".join(
+            (REPO_ROOT / "src/msplatform/execution/resources" / name).read_text(encoding="utf-8")
+            for name in ("resource_process_support.ps1", "simion_dispatch_support.ps1")
         )
         self.assertIn("Invoke-ResourceBudgetedProcess", source)
         self.assertIn("Start-Process @startArguments", watchdog)
@@ -1056,7 +1057,7 @@ exit 0
         self.assertNotIn("$request[$name]=[int]$automaticDispatch.$name", source)
 
     def test_scheduler_rejects_reused_process_ids(self) -> None:
-        support = (REPO_ROOT / "common/resource_budget_support.ps1").read_text(
+        support = (REPO_ROOT / "src/msplatform/execution/resources/resource_process_support.ps1").read_text(
             encoding="utf-8"
         )
         self.assertIn("TrackedProcessStartedAtUtcTicks", support)
@@ -1315,7 +1316,7 @@ exit 0
             self.assertIn(field, source)
         self.assertIn("transport_waveform == 'sine'", lua)
         self.assertIn("transport_waveform == 'cosine'", lua)
-        kernel = (REPO_ROOT / "common/simion/rf_drive.lua").read_text(encoding="utf-8")
+        kernel = (REPO_ROOT / "src/msplatform/backends/simion/resources/rf_drive.lua").read_text(encoding="utf-8")
         self.assertIn("RF drive waveform must be sine or cosine", kernel)
         self.assertIn("config.waveform == 'sine' and math.sin or math.cos", kernel)
 
@@ -1545,7 +1546,7 @@ exit 0
 
     def test_parallel_batching_is_single_wave_and_revalidates_the_merged_state(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
-        support = (REPO_ROOT / "common/resource_budget_support.ps1").read_text(encoding="utf-8")
+        support = (REPO_ROOT / "src/msplatform/execution/resources/simion_dispatch_support.ps1").read_text(encoding="utf-8")
         self.assertIn("common.simion.particle_batching", runner)
         self.assertIn("SIMION shared single-wave batch plan differs from the canonical source.", runner)
         self.assertIn("--particle-id-min", runner)

@@ -16,6 +16,7 @@ import math
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -248,6 +249,20 @@ def _prepare_analysis_request(inputs: Path, results: Path) -> tuple[Path, dict[s
         destination.parent.mkdir(parents=True, exist_ok=True)
         record = freeze_file(REPOSITORY_ROOT / relative, destination)
         frozen_inputs["analysis_support_" + Path(relative).stem] = record["path"]
+    declaration = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    execution_package = REPOSITORY_ROOT / "src/msplatform/execution"
+    execution_resources: set[Path] = set()
+    for pattern in declaration["tool"]["setuptools"]["package-data"]["msplatform.execution"]:
+        matches = {source for source in execution_package.glob(pattern) if source.is_file()}
+        if not matches:
+            raise FileNotFoundError(f"Declared execution resource pattern has no files: {pattern}")
+        execution_resources.update(matches)
+    for source in sorted(execution_resources):
+        relative = source.relative_to(REPOSITORY_ROOT)
+        destination = support_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        record = freeze_file(source, destination)
+        frozen_inputs["analysis_support_" + relative.as_posix()] = record["path"]
     python_packages = [
         "common/contracts", "common/analysis",
         prefix + "core", prefix + "workflows/mass_filter_reference",
@@ -314,7 +329,8 @@ if ($env:RF_MASS_RESPONSE_PREPARE -eq '1') {
 }
 """
     request = load_json(request_path)
-    environment = {**os.environ, "RF_MASS_RESPONSE_REQUEST": str(request_path),
+    environment = {**os.environ, "SIMULATION_PYTHON_EXE": request["python"],
+                   "RF_MASS_RESPONSE_REQUEST": str(request_path),
                    "RF_MASS_RESPONSE_PREPARE": "1" if prepare_only else "0"}
     try:
         subprocess.run(

@@ -15,9 +15,11 @@ import statistics
 import sys
 import subprocess
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.artifact_retention import classify_file
 from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
 from common.contracts.canonical_clock_authority import validate_clock_authority
@@ -45,6 +47,12 @@ FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "common/contracts/particle_physics.py",
     "common/contracts/rigid_transform.py",
     "common/ion_release/release.py",
+)
+# Actual runtime dependencies, independent of incidental imports in the author process.
+FROZEN_RUNTIME_MODULES = (
+    "common/simion/resource_scheduler.py",
+    "common/simion/resource_profile.py",
+    "common/simion/particle_batching.py",
 )
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENTS = ["source", "hp_enter", "capture", "transfer", "pre_extraction", "extraction_exit", "terminal"]
@@ -341,12 +349,13 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     runtime_resources = [project / "simion" / name for name in
         ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")]
     runtime_resources.extend(repo / relative for relative in (
-        "common/contracts/artifact_retention.json",
-        "common/contracts/particle_count_policy.json", "common/host_resource_policy.json",
-        "common/simion/rf_drive.lua", "common/simion/voltage_waveforms.lua",
-        "common/simion/scientific_event_csv.lua", "common/paths/native_run_path.lua",
+        "src/msplatform/execution/resources/artifact_retention.json",
+        "common/contracts/particle_count_policy.json", "src/msplatform/execution/resources/host_resource_policy.json",
+        "src/msplatform/backends/simion/resources/rf_drive.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+        "common/simion/scientific_event_csv.lua",
         "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
         "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
+    runtime_resources.append(repo / "src/msplatform/execution/resources/native_run_path.lua")
     core_sources = [repo / relative for relative in enumerate_python_sources(
         repo, package_roots=("src/msplatform",), provider_root="src/msplatform",
         resource_suffixes=(".schema.json",))]
@@ -416,9 +425,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         freeze_file(project / "simion" / name, solver / name)
     freeze_file(repo / "common/simion/scientific_event_csv.lua", solver / "scientific_event_csv.lua")
-    freeze_file(repo / "common/paths/native_run_path.lua", solver / "native_run_path.lua")
-    freeze_file(repo / "common/simion/rf_drive.lua", solver / "simion_rf_drive.lua")
-    freeze_file(repo / "common/simion/voltage_waveforms.lua", solver / "voltage_waveforms.lua")
+    freeze_file(resource_path("native_run_path.lua"), solver / "native_run_path.lua")
+    freeze_file(repo / "src/msplatform/backends/simion/resources/rf_drive.lua", solver / "simion_rf_drive.lua")
+    freeze_file(repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", solver / "voltage_waveforms.lua")
     collision_original = freeze_file(simion_dir / "examples/collision_hs1/collision_hs1.lua", inputs / "collision_hs1_original.lua")
     original=(inputs/"collision_hs1_original.lua").read_text(encoding="utf-8")
     (solver/"collision_hs1.lua").write_text(adapt_hs1_for_repeat_fly(original),encoding="utf-8")
@@ -481,7 +490,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     # Solver inputs remain independent of an editable working tree.
     source_paths = {path for path in core_sources if path.suffix == ".py"}
     source_paths.update(repo / relative for relative in enumerate_python_sources(
-        repo, module_paths=FROZEN_SCIENTIFIC_BRIDGE_MODULES))
+        repo, module_paths=(*FROZEN_SCIENTIFIC_BRIDGE_MODULES, *FROZEN_RUNTIME_MODULES)))
     for module in tuple(sys.modules.values()):
         file=getattr(module,"__file__",None)
         if not file:
@@ -505,7 +514,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     for source in runtime_resources:
         target = inputs / "code" / source.relative_to(repo)
         target.parent.mkdir(parents=True, exist_ok=True)
-        freeze_file(source, target)
+        freeze_file(source, target, retention_classifier=classify_file)
     # Preserve the selected author inputs at the package's normal project location.
     # An external candidate remains the authority; current repository defaults never fill it.
     configuration_resources = [configuration / name for name in selected_config_files.values()]

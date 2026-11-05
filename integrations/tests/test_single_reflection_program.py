@@ -1,6 +1,9 @@
 """Native field design feeds the existing full-flight builder and callbacks."""
 from __future__ import annotations
 
+from msplatform.execution.resources import resource_path
+from msplatform.backends.simion.resources import native_resource_path
+
 import copy
 import hashlib
 import json
@@ -63,13 +66,240 @@ def field_observation_spec(*, anchor=11, clock='test-clock', source_instance='mu
 
 
 class SingleReflectionProgramTests(unittest.TestCase):
+    def test_installed_serializers_and_neutral_lua_validator_keep_exact_legacy_protocol(self):
+        from msplatform.backends.simion.source import canonical_clock_lua, lua_number, lua_value, render_restart_fly2
+        from msplatform.backends.simion.tracking_program import BoundaryContractError, validate_pure_lua_component_source
+        from integrations.runtime.single_flight_source import canonical_clock_lua as old_clock, render_restart_fly2 as old_fly
+        self.assertIs(old_clock, canonical_clock_lua)
+        self.assertIs(old_fly, render_restart_fly2)
+        self.assertEqual(lua_value({"a": [True, False, None, 1.25], "name": "中文"}), '{a={true,false,nil,1.25},name="\\u4e2d\\u6587"}')
+        self.assertEqual(lua_number(0.001), "0.001")
+        self.assertIn("return origin+ion_time_of_flight", canonical_clock_lua())
+        pure = "return {apply_at=function(t) return t end}"
+        self.assertEqual(validate_pure_lua_component_source(pure, "pure"), pure)
+        for token in ("simion.workbench_program", "segment.initialize", "adj_elect", "ion_time_of_birth", "ion_time_of_flight", "simion.wb", "os.clock"):
+            with self.subTest(token=token), self.assertRaises(BoundaryContractError):
+                validate_pure_lua_component_source(token, "bad")
+        for source, name in (("", "pure"), (pure, "")):
+            with self.assertRaises(BoundaryContractError):
+                validate_pure_lua_component_source(source, name)
+
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_plane_wire_keeps_directions_occurrences_nonmonotonic_guard_and_cap(self):
+        from msplatform.backends.simion.tracking_program import _instrument_plane_observations
+        from integrations.workflows.single_reflection_flight.census import read_plane_observations
+        geometry = dict(native_frame_id="world", composition_plan=dict(scope=dict(instance_ids=["rf"]),
+            components=dict(rf=dict(local_frame_id="world", ports=dict(exit=dict(center_mm=[0,0,0], outward_normal=[1,0,0])))),
+            recipe=dict(instances=[dict(instance_id="rf", transform=dict(schema_version=1, role="rigid_transform", from_frame_id="world", to_frame_id="world", rotation=[[1,0,0],[0,1,0],[0,0,1]], translation_mm=[0,0,0]))])))
+        definition = dict(schema_version=1, observation_id="rf_exit", source_instance_id="rf", port_id="exit", max_records=4)
+        skeleton = """segment={}
+local single_flight_reported={}
+local function single_flight_canonical_particle_id() return 1009 end
+local function single_flight_write_trace(line) print(line) end
+function segment.other_actions()
+ local p=previous
+ local time=now
+  local reported=single_flight_reported[ion_number] or {}
+end
+"""
+        program = _instrument_plane_observations(skeleton, [definition], geometry)
+        tail = """ion_number=1
+local function cross(t,sign)
+ previous={t=t,x=-sign,y=2,z=3,vx=sign,vy=0,vz=0}
+ now=t+2;ion_px_mm=sign;ion_py_mm=2;ion_pz_mm=3;ion_vx_mm=sign;ion_vy_mm=0;ion_vz_mm=0
+ segment.other_actions()
+end
+cross(1,1);cross(3,-1);cross(5,1)
+previous={t=20,x=-1,y=2,z=3,vx=1,vy=0,vz=0};now=19;segment.other_actions()
+cross(7,-1);cross(9,1)
+"""
+        script = self.root / "plane_wire.lua"
+        script.write_text(program + tail, encoding="utf-8", newline="\n")
+        result = subprocess.run([str(LUA), str(script)], cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.root / "plane_wire.log"
+        log.write_text(result.stdout, encoding="utf-8")
+        observed = read_plane_observations([log], [1009], [1], [definition])
+        self.assertEqual([(row["direction"], row["occurrence"]) for row in observed["rows"]], [("outward",1),("inward",1),("outward",2),("inward",2)])
+        self.assertEqual(observed["status"], "incomplete")
+        self.assertEqual([row["instrument_time_us"] for row in observed["rows"]], [2,4,6,8])
+        self.assertEqual(len(observed["incomplete"]), 1)
+        for bad in (dict(definition, schema_version=True), dict(definition, port_id="missing"), dict(definition, max_records=0)):
+            with self.assertRaises(ValueError):
+                _instrument_plane_observations(skeleton, [bad], geometry)
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_explicit_cut_stop_only_stops_unsplatted_current_ion_at_endpoint(self):
+        from msplatform.backends.simion.tracking_program import _instrument_plane_observations, validate_propagation_stop
+        geometry=dict(native_frame_id="world",composition_plan=dict(scope=dict(instance_ids=["rf"]),
+            components=dict(rf=dict(local_frame_id="world",ports=dict(exit=dict(center_mm=[0,0,0],outward_normal=[1,0,0])))),
+            recipe=dict(instances=[dict(instance_id="rf",transform=dict(schema_version=1,role="rigid_transform",from_frame_id="world",to_frame_id="world",rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0]))])))
+        definition=dict(schema_version=1,observation_id="cut",source_instance_id="rf",port_id="exit",max_records=10)
+        policy=dict(schema_version=1,scope="segmented_upstream",observation_id="cut",direction="outward",occurrence=1)
+        skeleton="""segment={}
+local single_flight_absolute_deadline_us={100,100}
+local single_flight_reported={}
+local function single_flight_source_row_index() return ion_number end
+local function single_flight_canonical_particle_id() return ion_number==1 and 1009 or 77 end
+local function single_flight_instrument_time_us() return now end
+local function single_flight_write_trace(line) print(line) end
+function segment.other_actions()
+ local p=previous
+ local time=now
+  local reported=single_flight_reported[ion_number] or {}
+ local result={splat=physical}
+  if result.splat then ion_splat=1 end
+ print('ordinary_tail '..ion_number)
+end
+function segment.terminate()
+ print('physical_terminal '..ion_number)
+end
+"""
+        program=_instrument_plane_observations(skeleton,[definition],geometry,propagation_stop=policy)
+        tail="""ion_instance=3;ion_time_step=2;ion_py_mm=0;ion_pz_mm=0;ion_vx_mm=1;ion_vy_mm=0;ion_vz_mm=0
+local function step(ion,pre_splat,collision)
+ ion_number=ion;ion_splat=pre_splat;physical=collision
+ previous={t=1,x=-1,y=0,z=0,vx=1,vy=0,vz=0};now=3;ion_px_mm=1
+ segment.other_actions();now=1;ion_px_mm=-1;segment.terminate()
+end
+step(1,0,false);assert(ion_splat==1)
+step(2,1,false);assert(ion_splat==1)
+print('endpoint_current_ion_only')
+"""
+        script=self.root/'cutstop.lua';script.write_text(program+tail,encoding='utf-8',newline='\n')
+        result=subprocess.run([str(LUA),str(script)],cwd=self.root,capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stdout.count('HANDOFF_CUT_STOP_V2:'),1)
+        self.assertIn('particle_id=1009 direction=outward occurrence=1 event_instrument_time_us=2 endpoint_instrument_time_us=1',result.stdout)
+        self.assertIn('HANDOFF_ACCEPTED_ENDPOINT_V1:',result.stdout)
+        self.assertIn('endpoint_instrument_time_us=3 instance=3 x_mm=1',result.stdout)
+        self.assertIn('raw_ion_splat=0 time_step_us=2',result.stdout)
+        self.assertIn('physical_terminal 2',result.stdout)
+        self.assertNotIn('physical_terminal 1',result.stdout)
+        self.assertNotIn('ordinary_tail 1',result.stdout)
+        # Analyzer physical decision on a fresh ion also wins over a recorded candidate.
+        physical_script=self.root/'cutstop_physical.lua'
+        physical_script.write_text(program+tail.replace('step(1,0,false)','step(1,0,true)'),encoding='utf-8',newline='\n')
+        physical_result=subprocess.run([str(LUA),str(physical_script)],cwd=self.root,capture_output=True,text=True,timeout=30)
+        self.assertEqual(physical_result.returncode,0,physical_result.stderr)
+        self.assertNotIn('HANDOFF_CUT_STOP_V2:',physical_result.stdout)
+        for change in (dict(scope='continuous_assembly'),dict(direction='inward'),dict(occurrence=2),dict(occurrence=True),dict(schema_version=True),dict(observation_id='missing')):
+            with self.subTest(change=change),self.assertRaises(ValueError): validate_propagation_stop(dict(policy,**change),[definition])
+        with self.assertRaises(ValueError): self.build(propagation_stop=policy)
+        plan=self.geometry['composition_plan']
+        instance=next(key for key,value in plan['components'].items() if value['project_id']=='rf_multipole_ion_optics')
+        declared=dict(definition,source_instance_id=instance,port_id='mechanical_exit')
+        metadata={}
+        actual=self.build(propagation_stop=policy,plane_observations=[declared],original_birth_times_us=[.25,2.5],absolute_deadlines_us=[200.25,202.5],build_metadata=metadata)
+        self.assertIn('HANDOFF_CUT_STOP_V2:',actual)
+        self.assertEqual(metadata['propagation_stop'],policy)
+
+    def test_explicit_plane_wire_uses_actual_provider_and_rejects_inexact_native_ids(self):
+        plan = self.geometry["composition_plan"]
+        instance = next(key for key, value in plan["components"].items() if value["project_id"] == "rf_multipole_ion_optics")
+        definition = dict(schema_version=1, observation_id="rf_exit", source_instance_id=instance, port_id="mechanical_exit", max_records=1000)
+        metadata = {}
+        program = self.build(plane_observations=[definition], build_metadata=metadata)
+        self.assertIn("PLANE_OBSERVATION_V1:", program)
+        self.assertEqual(metadata["plane_observations"], [definition])
+        with self.assertRaises(ValueError):
+            self.build(particle_ids=[11,2**53+1])
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_absolute_deadline_uses_each_arrival_once_and_preserves_original_age(self):
+        from msplatform.backends.simion.source import canonical_clock_lua, lua_value
+        metadata = {}
+        program = self.build(birth_times_us=[2.,5.],original_birth_times_us=[.25,.75],
+            absolute_deadlines_us=[200.25,200.75],build_metadata=metadata)
+        match = re.search(r"function segment.tstep_adjust\(\)\n(.*?)  local analyzer_dt=nil",program,re.S)
+        self.assertIsNotNone(match)
+        prefix = match.group(1)
+        self.assertIn("time>=single_flight_absolute_deadline_us[single_flight_source_row_index()]",program)
+        self.assertIn("time-single_flight_original_birth_us[single_flight_source_row_index()]",program)
+        script = self.root / "absolute_deadline.lua"
+        code = "local single_flight_time_origin_us="+lua_value([2.,5.])+"\nlocal single_flight_source_particle_id={11,77}\nlocal single_flight_particle_id_offset=0\n"
+        code += "local single_flight_absolute_deadline_us="+lua_value([200.25,200.75])+"\n"+canonical_clock_lua()
+        code += "local function cap()\n"+prefix+"end\n"
+        code += """for _,row in ipairs({{1,198.24975},{2,0},{1,0},{2,195.74975}}) do
+ ion_number=row[1];ion_time_of_flight=row[2];ion_time_step=1
+ cap()
+ if row[2]==0 then assert(ion_time_step<=0.002 and single_flight_instrument_time_us()==(row[1]==1 and 2 or 5))
+ else assert(math.abs(ion_time_step-0.00025)<1e-12,'absolute deadline was reset at arrival') end
+end
+print('absolute_deadline_oracle_ok')
+"""
+        script.write_text(code,encoding="utf-8",newline="\n")
+        result = subprocess.run([str(LUA),str(script)],cwd=self.root,capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn("absolute_deadline_oracle_ok",result.stdout)
+        self.assertEqual(metadata["source_clock"]["original_birth_times_us"],[.25,.75])
+        for updates in (dict(absolute_deadlines_us=[2.,10.]),dict(absolute_deadlines_us=[1.,10.]),
+                        dict(original_birth_times_us=[3.,.75]),dict(absolute_deadlines_us=[200.25]),dict(original_birth_times_us=None)):
+            kwargs=dict(birth_times_us=[2.,5.],original_birth_times_us=[.25,.75],absolute_deadlines_us=[200.25,200.75]);kwargs.update(updates)
+            with self.subTest(updates=updates),self.assertRaises(ValueError): self.build(**kwargs)
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_consumed_boundary_never_hides_reverse_or_relabels_initial_state_as_crossing(self):
+        from msplatform.backends.simion.tracking_program import _instrument_plane_observations
+        from integrations.workflows.single_reflection_flight.census import read_plane_observations
+        geometry = dict(native_frame_id="world",composition_plan=dict(scope=dict(instance_ids=["rf"]),
+            components=dict(rf=dict(local_frame_id="world",ports=dict(exit=dict(center_mm=[10,0,0],outward_normal=[1,0,0])))),
+            recipe=dict(instances=[dict(instance_id="rf",transform=dict(schema_version=1,role="rigid_transform",from_frame_id="world",to_frame_id="world",rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0]))])))
+        definition=dict(schema_version=1,observation_id="exit",source_instance_id="rf",port_id="exit",max_records=10)
+        skeleton="""segment={}
+local single_flight_reported={}
+local function single_flight_canonical_particle_id() return 1009 end
+local function single_flight_write_trace(line) print(line) end
+function segment.initialize()
+ local time=now
+  single_flight_reported[ion_number]={}
+end
+function segment.other_actions()
+ local p=previous
+ local time=now
+  local reported=single_flight_reported[ion_number] or {}
+end
+"""
+        for scenario in ("outward_roundoff","reverse","unconsumed"):
+            start=10-2**-49 if scenario=="outward_roundoff" else 10.
+            consumed=[] if scenario=="unconsumed" else [dict(particle_id=1009,observation_id="exit",direction="outward",occurrence=1,instrument_time_us=2.,position_mm=[start,0.,0.])]
+            program=_instrument_plane_observations(skeleton,[definition],geometry,consumed_plane_events=consumed,particle_ids=[1009],start_times_us=[2.])
+            tail="ion_number=1;now=2;ion_px_mm="+format(start,".17g")+";ion_py_mm=0;ion_pz_mm=0;segment.initialize()\n"
+            tail+="""local function step(t,x,vx,next_t,next_x,next_vx)
+ previous={t=t,x=x,y=0,z=0,vx=vx,vy=0,vz=0};now=next_t;ion_px_mm=next_x;ion_py_mm=0;ion_pz_mm=0;ion_vx_mm=next_vx;ion_vy_mm=0;ion_vz_mm=0
+ segment.other_actions()
+end
+"""
+            if scenario=="reverse": tail+="step(2,10,1,4,9,-1);step(4,9,-1,6,11,1);step(6,11,1,8,9,-1)\n"
+            elif scenario=="unconsumed": tail+="step(2,10,1,4,11,1)\n"
+            else: tail+="step(2,"+format(start,".17g")+",1,4,11,1);step(4,11,1,6,9,-1);step(6,9,-1,8,11,1)\n"
+            script=self.root/(scenario+".lua");script.write_text(program+tail,encoding="utf-8",newline="\n")
+            result=subprocess.run([str(LUA),str(script)],cwd=self.root,capture_output=True,text=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+            log=self.root/(scenario+".log");log.write_text(result.stdout,encoding="utf-8")
+            evidence=read_plane_observations([log],[1009],[1],[definition],consumed_plane_events=consumed)
+            if scenario=="reverse":
+                self.assertEqual(evidence["status"],"incomplete")
+                fact=evidence["unlocalized_boundary_returns"][0]
+                self.assertEqual((fact["interval_start_us"],fact["interval_end_us"]),(2.,4.))
+                self.assertEqual((fact["step_start_vx_mm_per_us"],fact["step_end_vx_mm_per_us"]),(1.,-1.))
+                self.assertNotIn("instrument_time_us",fact)
+                self.assertEqual([(r["direction"],r["occurrence"]) for r in evidence["rows"]],[("outward",2),("inward",1)])
+            elif scenario=="unconsumed": self.assertEqual(evidence["rows"],[])
+            else: self.assertEqual([(r["direction"],r["occurrence"]) for r in evidence["rows"]],[("inward",1),("outward",2)])
+        valid=dict(particle_id=1009,observation_id="exit",direction="outward",occurrence=1,instrument_time_us=2.,position_mm=[10.,0.,0.])
+        for bad in (dict(valid,observation_id="other"),dict(valid,particle_id=11),dict(valid,occurrence=0),dict(valid,instrument_time_us=3.),dict(valid,position_mm=[11.,0.,0.])):
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                _instrument_plane_observations(skeleton,[definition],geometry,consumed_plane_events=[bad],particle_ids=[1009],start_times_us=[2.])
+
     def test_default_program_and_metadata_retain_pre_observer_exact_bytes(self):
         metadata = {}
         program = self.build(native_path_projection=False,build_metadata=metadata,
             standalone_dynamic_field_paths={'accelerator_main':dict(rf_differential_pa_paths=['C:/inert/rf.pa'],
                                                                    pulse_delta_pa_path='C:/inert/delta.pa')})
         self.assertEqual(hashlib.sha256(program.encode()).hexdigest(),
-                         '93308e19db482b9ba6955c3820320873ac5195e2974978e043d1666e7104b0ec')
+                         'd894419a5c5a687208ff1975c63a0d50337743c9dc9da18c7e09c70a2d3b7969')
         self.assertEqual(hashlib.sha256((json.dumps(metadata,sort_keys=True,indent=2)+'\n').encode()).hexdigest(),
                          'dbaf3c73e1670ef3a8e56ebebb3b5e42b861c177f23dc7e342cccefb674162d9')
 
@@ -210,11 +440,107 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
                 **({} if name=="reflectron" else dict(family_members=[name+suffix for suffix in (".pa#", ".pa0", ".pa1", ".pa-surf")])))
                 for index,name in ((1,"flight_tube"),(2,"reflectron"),(4,"detector"))])
         self.sources = dict(
-            analyzer_component_source=(ROOT/"projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua").read_text(),
-            pulse_hook_source=(ROOT/"integrations/runtime/single_flight_pulse_hook.lua").read_text(),
-            voltage_waveforms_source=(ROOT/"common/simion/voltage_waveforms.lua").read_text(),
-            frontend_hook_source=(ROOT/"integrations/runtime/single_flight_frontend_hook.lua").read_text(),
-            rf_drive_kernel_source=(ROOT/"common/simion/rf_drive.lua").read_text())
+            analyzer_component_source=native_resource_path("oatof_analyzer_component.lua").read_bytes().decode("utf-8-sig"),
+            pulse_hook_source=native_resource_path("single_flight_pulse_hook.lua").read_bytes().decode("utf-8-sig"),
+            voltage_waveforms_source=native_resource_path("voltage_waveforms.lua").read_bytes().decode("utf-8-sig"),
+            frontend_hook_source=native_resource_path("single_flight_frontend_hook.lua").read_bytes().decode("utf-8-sig"),
+            rf_drive_kernel_source=native_resource_path("rf_drive.lua").read_bytes().decode("utf-8-sig"))
+
+    def test_prepared_model_real_public_example_is_the_only_tracking_drive(self):
+        from msplatform import api
+        from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive, model_geometry
+        from msplatform.backends.simion.native_plans import plan_solve_fields
+        from msplatform.backends.simion.tracking_program import build_successor_program as canonical_build
+        from msplatform.backends.simion.artifacts import CompiledPreparedModel
+        from msplatform.backends.simion.compiler import _content_sha256
+
+        case = api.load_example('rf_oatof_functional_v1')
+        parts = {key:api.resolve_component(value) for key,value in case.component_requests.items()}
+        assembly = api.compile_assembly(case.recipe,parts)
+        compiled = api.compile_geometry(assembly,backend='simion',numerics=case.geometry_numerics)
+        components = {key:compiled.components_resolved[key] for key in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
+        drive = project_resolved_drive(compiled,components,pulse=self.flight['pulse'],
+            clock=dict(clock_epoch_id='tracking_model_test',authority_sha256='A'*64,phase_reference_instrument_time_us=0.))
+        for groups in drive['groups'].values():
+            for row in groups.values():
+                if row['kind']=='rf':
+                    row.update(waveform='cosine',frequency_hz=1700000.,phase_rad=.625,rf_amplitude_v=3210.,common_mode_v=7.)
+                elif row['kind']=='pulse' and row['on_voltage_v']!=0:
+                    row['on_voltage_v']+=123.
+        model = compile_prepared_model(compiled,components,drive=drive,physics=PHYSICS)
+        actual = model_geometry(model,downstream_drive=True)
+        domains = copy.deepcopy(case.geometry_numerics['frontend_domains'])
+        for domain in domains.values(): domain['refine_convergence_v']=dict(carrier_off=.001,rf_reference=.001,pulse_delta=.001)
+        design = plan_solve_fields(model,numerics=dict(frontend_domains=domains,rf_reference_voltage_v=10000.))['field_design']
+        rf_ids,tof = native_frontend_instances(actual.frontend_geometry['composition_plan'])
+        providers = {key:components[key] for key in rf_ids}
+        self.assertIn('particle_source',components[tof])  # Real design envelope, not a sampled source.
+        self.assertNotIn('simion_geometry_build',components[tof])
+        metadata = {}
+        kwargs = dict(frontend_geometry=actual.frontend_geometry,flight=self.flight,
+            birth_times_us=[.25,2.5],particle_ids=[11,77],initial_velocities_mm_per_us=[[0.,0.,1.],[0.,0.,1.]],
+            standalone_dynamic_field_bank=self.dynamic,standalone_dynamic_field_paths=response_paths(self.dynamic,self.root),
+            downstream_static_fields=self.static,**self.sources,build_metadata=metadata,
+            native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8'),prepared_model=model)
+        before = copy.deepcopy((components,drive,model.document,design))
+        with patch('msplatform.backends.simion.tracking_program.derive_simion_geometry',side_effect=AssertionError('legacy source-derived projection called')):
+            program = canonical_build(providers,design,components[tof],**kwargs)
+        self.assertIn('frequency_hz=1700000',program)
+        self.assertIn('phase_rad=0.625',program)
+        self.assertIn('rf_amplitude_v=3210',program)
+        self.assertEqual(metadata['prepared_model_identity_sha256'],model.document['model_identity_sha256'])
+        self.assertEqual(metadata['drive_authority'],'compiler_bound_prepared_model')
+        self.assertEqual((components,drive,model.document,design),before)
+        if LUA.is_file():
+            probe = self.root/'bound_model_probe.lua'
+            tail = r"""
+single_flight_initialize_rf_drives()
+local pulse=single_flight_pulse_component.new{canonical_clock=function() return 0 end,
+ voltage_waveforms=single_flight_voltage_waveforms,pulse_time_us=handoff_pulse_time_us,
+ pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}
+for _,t in ipairs({0,.137,9,10,12,13,10.5,.25}) do
+ print(string.format('MODEL_DRIVE_PROBE %.17g %.17g %.17g %s',t,
+ single_flight_rf_drives[1].phase_at(t),single_flight_rf_drives[1].differential_at(t),tostring(pulse.state_at(t).active)))
+end
+"""
+            probe.write_text('simion={workbench_program=function() end,early_access=function() end};segment={}\n'+
+                re.sub(r'\badjustable\s+','',program)+tail,encoding='utf-8',newline='\n')
+            result=subprocess.run([str(LUA),str(probe)],cwd=self.root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            rows=[line.split()[1:] for line in result.stdout.splitlines() if line.startswith('MODEL_DRIVE_PROBE ')]
+            self.assertEqual(len(rows),8)
+            from integrations.runtime.single_flight_source import binary64_serialization_close
+            for t,phase,value,active in rows:
+                t=float(t)
+                expected=t*(1700000.*1e-6*2*math.pi)+.625
+                self.assertTrue(binary64_serialization_close(float(phase),expected))
+                self.assertTrue(binary64_serialization_close(float(value),3210.*math.cos(expected)))
+                self.assertEqual(active=='true',10.<=t<13.)
+
+        changed = dict(kwargs,birth_times_us=[3.,4.],particle_ids=[101,901])
+        self.assertNotEqual(canonical_build(providers,design,components[tof],**changed),program)
+        self.assertEqual(model.document,before[2])
+        for change in ('projection','native_map','schema','duplicate','missing','extra'):
+            document = model.document
+            if change=='projection': document['electrical_projection']['accelerator_on']['999']=1.
+            elif change=='native_map': document['native_drive_rows'][0]['native_targets'][0]['electrode_id']=999
+            elif change=='schema': document['schema_version']=2
+            elif change=='duplicate': document['native_drive_rows'].append(copy.deepcopy(document['native_drive_rows'][0]))
+            elif change=='missing': document['native_drive_rows'].pop()
+            else:
+                extra=copy.deepcopy(document['native_drive_rows'][0]);extra['electrode_group_id']='unbound_extra'
+                document['native_drive_rows'].append(extra)
+            document.pop('model_identity_sha256')
+            document['model_identity_sha256']=_content_sha256(document)
+            forged=CompiledPreparedModel(json.dumps(document))
+            with self.subTest(change=change),self.assertRaisesRegex(ValueError,'compiler-bound'):
+                canonical_build(providers,design,components[tof],**dict(kwargs,prepared_model=forged))
+        with self.assertRaisesRegex(ValueError,'pulse differs'):
+            canonical_build(providers,design,components[tof],**dict(kwargs,flight=dict(self.flight,pulse=dict(mode='held_off'))))
+        wrong = copy.deepcopy(actual.frontend_geometry)
+        wrong['electrode_bindings'][rf_ids[0]][next(iter(wrong['electrode_bindings'][rf_ids[0]]))]=999
+        with self.assertRaisesRegex(ValueError,'geometry differ'):
+            canonical_build(providers,design,components[tof],**dict(kwargs,frontend_geometry=wrong))
 
     def build(self, **updates):
         kwargs = dict(frontend_geometry=self.geometry,birth_times_us=[.25,2.5],particle_ids=[11,77],
@@ -297,7 +623,7 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
     def test_numerical_controls_ignore_path_projection_but_keep_physical_changes(self):
         numeric = self.build(native_path_projection=False)
         native = self.build()
-        helper = ROOT/'common/paths/native_run_path.lua'
+        helper = resource_path('native_run_path.lua')
         original_read = Path.read_text
 
         def changed_transport(path, *args, **kwargs):

@@ -63,7 +63,8 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 这些结果验证软件接线与来源，未新增飞行、场求解或科学资格。
 
 IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
-`particle_physics`、`rigid_transform`、`resolve_assembly`、`release` 四个兼容桥。
+`particle_physics`、`rigid_transform`、`resolve_assembly`、`release` 及
+`resource_profile` 仍导入的 `resource_scheduler` 五个兼容桥。
 runner 使用公共导入根，并在每次 Python 调用前校验核心及目标模块来自本次快照；
 缺少冻结核心时拒绝宿主安装补齐。上述桥随具名调用迁移退出，最迟 P4 删除。
 MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒），包括真实冻结源码、

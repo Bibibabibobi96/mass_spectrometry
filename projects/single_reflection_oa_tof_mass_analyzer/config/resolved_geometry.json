@@ -134,6 +134,11 @@
     "statistical_count": 1000,
     "specialty_counts_require_explicit_purpose": true
   },
+  "grid_policy": {
+    "baseline": "zero-grid-unit-thick one-row full-aperture 100%-transmission ideal electrode sheet",
+    "nonideal_grid": "separate high-resolution local wire-cell model plus transmission/kick map",
+    "forbidden_baseline_approximation": "solid plate with a large aperture"
+  },
   "simion_runtime": {
     "trajectory_quality": 8,
     "ideal_grid_model": "simion_one_row_zero_width_native_transmission",
@@ -236,11 +241,6 @@
     "crossing_step_control_enabled": true,
     "capture_arm_distance_mm": 100.0,
     "capture_depth_mm": 0.02
-  },
-  "grid_policy": {
-    "baseline": "zero-grid-unit-thick one-row full-aperture 100%-transmission ideal electrode sheet",
-    "nonideal_grid": "separate high-resolution local wire-cell model plus transmission/kick map",
-    "forbidden_baseline_approximation": "solid plate with a large aperture"
   },
   "derived": {
     "simion_instances": [

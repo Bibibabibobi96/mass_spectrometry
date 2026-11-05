@@ -118,7 +118,7 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
 if($env:TEST_FIELD_FAILURE-eq'planning'){
  # Deliberately corrupt only this inert fixture's already-frozen closure.
  $snapshot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
- Remove-Item -LiteralPath (Join-Path $snapshot 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_detector_ground.gem')
+ Remove-Item -LiteralPath (Join-Path $snapshot 'src/msplatform/backends/simion/resources/oatof_detector_ground.gem')
 }
 function Enter-ArtifactWorkflowCapacitySession { param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths)
  if($env:TEST_BORROWED_CAPACITY-eq'1'){throw 'borrowed workflow created a second capacity session'}
@@ -768,7 +768,9 @@ try {
                         self.assertEqual((run/'simion/full_instrument/instrument.fly2').read_text(),render_restart_fly2(rows))
                     continue
                 if failure in ('population','old_budget','planning','disk_floor','ram_floor'):
-                    self.assertIn({'population':'population differs','old_budget':'omits stage: instrument_field_design','planning':'frozen downstream provider resources are incomplete','disk_floor':'frontend mandatory PA lower bound transient_run_directory_bytes','ram_floor':'frontend mandatory PA lower bound process_tree_working_set_bytes'}[failure],result.stderr)
+                    self.assertIn({'population':'population differs','old_budget':'omits stage: instrument_field_design','planning':'FileNotFoundError: installed SIMION GEM resource is missing: oatof_detector_ground.gem','disk_floor':'frontend mandatory PA lower bound transient_run_directory_bytes','ram_floor':'frontend mandatory PA lower bound process_tree_working_set_bytes'}[failure],result.stderr)
+                    if failure == 'planning':
+                        self.assertIn('Downstream field planning failed.', result.stderr)
                     if borrowed_capacity:
                         events=(run/'boundary.txt').read_text()
                         self.assertNotIn('lease_entered',events)

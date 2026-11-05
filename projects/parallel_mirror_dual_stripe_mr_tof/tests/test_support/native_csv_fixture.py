@@ -10,7 +10,7 @@ def prepare(repo: Path, root: Path) -> None:
     project = repo / "projects/parallel_mirror_dual_stripe_mr_tof"
     copies = {
         "program_current.lua": project / "simion/mrtof_candidate.lua",
-        "program_current.voltage_waveforms.lua": repo / "common/simion/voltage_waveforms.lua",
+        "program_current.voltage_waveforms.lua": repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "program_current.mirror_cycle_counter.lua": project / "simion/mirror_cycle_counter.lua",
         "voltage_map_current.lua": project / "simion/candidate_voltage_map.lua",
         "scientific_event_csv.lua": repo / "common/simion/scientific_event_csv.lua",

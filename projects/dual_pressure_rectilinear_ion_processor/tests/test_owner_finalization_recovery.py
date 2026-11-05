@@ -41,7 +41,7 @@ class OwnerFinalizationRecoveryTests(unittest.TestCase):
                 if failure == "seal":
                     hook = """$actualCapacity=${function:Invoke-RunCapacityCommand}
 function Invoke-RunCapacityCommand {
- param($Python,$RepoRoot,$Arguments,$FailureLabel)
+ param($Python,$RepoRoot,$Arguments,$FailureLabel,$StandardInputJson)
  if('seal-stopped-payload'-in$Arguments){throw 'IP_SEAL_SENTINEL'}
  & $actualCapacity @PSBoundParameters
 }

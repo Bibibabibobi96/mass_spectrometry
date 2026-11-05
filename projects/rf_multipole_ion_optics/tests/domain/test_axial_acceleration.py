@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.axial_acceleration import (
+from msplatform.components.rf_multipole.axial_acceleration import (
     MAX_SEGMENT_COUNT,
     AxialAccelerationError,
     resolve_axial_acceleration,

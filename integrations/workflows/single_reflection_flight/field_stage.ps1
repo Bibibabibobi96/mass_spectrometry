@@ -31,9 +31,9 @@ function Invoke-SingleReflectionFrontendFieldStage {
   if($null-eq$HostLease.Value-or$null-eq$CapacitySession.Value){throw 'Active host and workflow capacity sessions required.'}
   if(-not$CacheRoot){$CacheRoot=Join-Path (Split-Path -Parent $RepoRoot) 'artifacts/common/simion/pa_family_cache'}
   $workflow=Join-Path $RepoRoot 'integrations/workflows/single_reflection_flight'
-  $builder=Join-Path $RepoRoot 'common/simion/build_dirichlet_patch_operating_pa.lua'
-  $exporter=Join-Path $RepoRoot 'common/simion/export_detached_standalone_pa.lua'
-  $verifier=Join-Path $workflow 'audit_frontend_working_fields.lua'
+  $builder=Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua'
+  $exporter=Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua'
+  $verifier=Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/audit_frontend_working_fields.lua'
   $inputs=Join-Path $run 'inputs';$logs=Join-Path $run 'logs'
   $output=Join-Path $run 'simion/frontend_working_fields'
   $wallClockWarningNames=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

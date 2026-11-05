@@ -144,8 +144,11 @@ ConvertTo-Json -InputObject $records -Compress
                 target = source / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / relative, target)
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+            copy_scientific_core(REPO, source)
             install_controlled_cpu_snapshot(REPO, source)
-            policy = source/"common/contracts/artifact_capacity_policy.json"
+            policy = source/"src/msplatform/execution/resources/artifact_capacity_policy.json"
             policy_document = json.loads(policy.read_text(encoding="utf-8"))
             # The family arm declares up to 4 GiB total new commitment.
             # A fixed 8 GiB fixture ceiling includes 4 GiB of metadata/headroom;
@@ -386,11 +389,14 @@ try{{$null=Complete-FiniteComsolOwner -Context $context -State $state -RunId '{r
                 "common/require_powershell7.ps1",
                 "common/host_execution_lease.ps1",
                 "common/host_resource_scheduler.py",
-                "common/host_resource_policy.json",
+                "src/msplatform/execution/resources/host_resource_policy.json",
             ):
                 destination = tree / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / relative, destination)
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+            copy_scientific_core(REPO, tree)
             before = (root / "callback_count.txt").read_bytes()
             env = os.environ.copy()
             env.pop("PYTHONPATH", None)

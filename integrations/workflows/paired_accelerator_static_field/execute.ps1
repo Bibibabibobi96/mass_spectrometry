@@ -221,11 +221,11 @@ try{
       $lease=Update-HostResourceStage -Lease $lease -Stage pa_refine -Budget $budget.host_budgets.simion_refine -RetainedMemoryBytes 0
       Assert-HostResourceHeavyStage
       Invoke-PairedNative -Name refine_static_on -Directory $short -Arguments @('--nogui','--noprompt','lua',
-        (Join-Path $frozen.execution_root 'common/simion/build_dirichlet_patch_operating_pa.lua'),
+        (Join-Path $frozen.execution_root 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua'),
         (Join-Path $short 'working.pa#'),(Join-Path $short 'working.pa0'),'zero_neumann',$build.origin,$build.origin,$build.voltages)
       $lease=Update-HostResourceStage -Lease $lease -Stage prepare -Budget $budget.host_budgets.simion_prepare -RetainedMemoryBytes 0
       Invoke-PairedNative -Name detach_static_on -Directory $short -Arguments @('--nogui','--noprompt','lua',
-        (Join-Path $frozen.execution_root 'common/simion/export_detached_standalone_pa.lua'),(Join-Path $short 'working.pa0'),(Join-Path $short 'working.pa'))
+        (Join-Path $frozen.execution_root 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua'),(Join-Path $short 'working.pa0'),(Join-Path $short 'working.pa'))
       Close-PairedHostStage
       Move-Item -LiteralPath (Join-Path $short 'working.pa') -Destination (Join-Path $progress.build_directory 'paired_static_on.pa')
       Remove-RunExecutionAlias -ExecutionAlias $buildAlias.execution_alias -TargetDirectory $scratch;$buildAlias=$null

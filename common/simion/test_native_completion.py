@@ -2,7 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from common.simion.native_completion import (
+from msplatform.backends.simion.native_completion import (
     FlyCompletion, has_recoverable_batch_completion, parse_fly_completed_line,
     recoverable_batch_logs, require_one_fly_completion,
 )
@@ -75,3 +75,42 @@ class NativeCompletionTests(unittest.TestCase):
                 (logs / "simion__batch01.trace.log").resolve(),
                 (logs / "simion__batch01.stdout.log").resolve(),
             })
+
+
+class DetachedCompletionLoaderTests(unittest.TestCase):
+    def test_direct_file_bridge_requires_actual_canonical_parser(self):
+        import subprocess
+        import sys
+        import shutil
+
+        repo = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            canonical = root / "src/msplatform/backends/simion/native_completion.py"
+            canonical.parent.mkdir(parents=True)
+            shutil.copyfile(repo / "src/msplatform/backends/simion/native_completion.py", canonical)
+            bridge = root / "legacy_native_completion.py"
+            shutil.copyfile(repo / "common/simion/native_completion.py", bridge)
+            statement = r"""
+import importlib.util,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+sys.path[:]=[str(root/'src'),*[p for p in sys.path if 'site-packages' not in p.lower()]]
+spec=importlib.util.spec_from_file_location('direct_completion_adapter',root/'legacy_native_completion.py')
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert module.FlyCompletion.__module__=='msplatform.backends.simion.native_completion'
+assert module.parse_fly_completed_line('status,Fly completed. 9 splats').splats==9
+assert module.parse_fly_completed_line('status,Fly completed.') is None
+assert Path(sys.modules[module.FlyCompletion.__module__].__file__).resolve()==(root/'src/msplatform/backends/simion/native_completion.py').resolve()
+print('DIRECT_COMPLETION_CANONICAL_PASS')
+"""
+            command = [sys.executable, "-I", "-S", "-B", "-c", statement, str(root)]
+            success = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+            self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
+            self.assertIn("DIRECT_COMPLETION_CANONICAL_PASS", success.stdout)
+            canonical.unlink()
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("ModuleNotFoundError", missing.stderr)
+            self.assertIn("msplatform.backends.simion.native_completion", missing.stderr)

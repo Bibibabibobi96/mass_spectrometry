@@ -18,6 +18,19 @@ from projects.orthogonal_accelerator.simion.two_zone_candidate import (
 
 
 class TwoZoneGeometryTest(unittest.TestCase):
+    def test_installed_geometry_uses_explicit_physical_profile_and_one_implementation(self):
+        from dataclasses import asdict
+        from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile, resolve_closed_two_zone_geometry
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry as resolve_installed
+        request = self.requirements()
+        actual = resolve_installed(request, geometry_profile=load_geometry_profile())
+        self.assertEqual(asdict(actual), asdict(resolve_closed_two_zone_geometry(request)))
+        self.assertTrue(type(actual).__module__.startswith("msplatform.components."))
+        profile = dict(load_geometry_profile())
+        profile["guard_wall_thickness_mm"] = float("nan")
+        with self.assertRaises(TwoZoneGeometryError):
+            resolve_installed(request, geometry_profile=profile)
+
     def test_body_is_exact_full_gem_electrode_block_without_storage_placement(self) -> None:
         for version in (1, 2):
             request = self.requirements()

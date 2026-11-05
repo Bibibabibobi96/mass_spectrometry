@@ -78,19 +78,18 @@ def mass_analysis_fixture(root):
                 if p.is_file() and p.suffix in ('.py', '.ps1', '.json')
                 and not p.name.startswith('test_') and '__pycache__' not in p.parts]
     selected += [REPO / relative for relative in CODE_PATHS]
-    from common.contracts.frozen_inputs import enumerate_python_sources
-    selected += [REPO / relative for relative in enumerate_python_sources(REPO,
-        package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))]
+    from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
     selected += [PROJECT/'workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1']
     for path in selected:
         target = fixture / path.relative_to(REPO)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
+    copy_scientific_core(REPO, fixture)
     config = fixture/f'projects/{PROJECT.name}/config'
     config.mkdir(parents=True)
     (config/'project.json').write_text(json.dumps({'project_id': PROJECT.name,
         'lifecycle_status': 'formal_revalidation_pending'}), encoding='utf-8')
-    policy = fixture/'common/contracts/artifact_capacity_policy.json'
+    policy = fixture/'src/msplatform/execution/resources/artifact_capacity_policy.json'
     document = json.loads(policy.read_text(encoding='utf-8-sig'))
     document['minimum_free_gib'] = 0
     policy.write_text(json.dumps(document), encoding='utf-8')

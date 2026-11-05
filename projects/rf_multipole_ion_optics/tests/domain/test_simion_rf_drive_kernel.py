@@ -3,10 +3,11 @@ from __future__ import annotations
 import subprocess
 import unittest
 from pathlib import Path
+from msplatform.backends.simion.resources import native_resource_path
 
 
 ROOT = Path(__file__).resolve().parent
-KERNEL = ROOT.parents[3] / "common/simion/rf_drive.lua"
+KERNEL = native_resource_path("rf_drive.lua")
 LUA_TEST = ROOT / "test_simion_rf_drive.lua"
 SIMION_EXE = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 

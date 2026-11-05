@@ -43,10 +43,13 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
                         target = facade / source.relative_to(REPO)
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copyfile(source, target)
+                from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+                copy_scientific_core(REPO, facade)
                 # Exercise real admission using an isolated MiB-scale policy.
                 # Production's 295 GiB free-space threshold is unrelated to
                 # this inert fixture and must never be changed for a test.
-                policy_path = facade / "common/contracts/artifact_capacity_policy.json"
+                policy_path = facade / "src/msplatform/execution/resources/artifact_capacity_policy.json"
                 policy = json.loads(policy_path.read_text(encoding="utf-8"))
                 policy.update(target_gib=64 / 1024, minimum_free_gib=0)
                 policy_path.write_text(json.dumps(policy), encoding="utf-8")

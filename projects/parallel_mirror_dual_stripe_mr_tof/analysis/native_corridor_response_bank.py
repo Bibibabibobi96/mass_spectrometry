@@ -114,7 +114,7 @@ def derive_response_bank_identity(
         raise CandidateContractError("native corridor identity fields differ")
     project_root = Path(__file__).resolve().parents[1]
     repository_root = project_root.parents[1]
-    simion_root = repository_root / "common" / "simion"
+    simion_root = repository_root / "src" / "msplatform" / "backends" / "simion"
     frozen_root = frozen_input_directory.resolve()
     identity = {
         "geometry": {
@@ -149,7 +149,7 @@ def derive_response_bank_identity(
             "response_bank_adapter_sha256": file_sha256(Path(__file__)).upper(),
             "geometry_generator_sha256": file_sha256(project_root / "analysis" / "native_corridor_geometry.py").upper(),
             "legacy_private_worker_sha256": file_sha256(project_root / "simion" / "run_native_corridor_qualification.ps1").upper(),
-            "standalone_exporter_sha256": file_sha256(simion_root / "export_standalone_pa.lua").upper(),
+            "standalone_exporter_sha256": file_sha256(project_root.parents[1] / 'src/msplatform/backends/simion/resources/export_standalone_pa.lua').upper(),
             "response_set_contract_sha256": file_sha256(simion_root / "standalone_pa_response_set.py").upper(),
         },
     }
@@ -182,7 +182,7 @@ def write_response_bank_receipt(directory: Path) -> dict[str, Any]:
     project_root = Path(__file__).resolve().parents[1]
     return write_standalone_pa_response_set(
         directory,
-        project_root.parents[1] / "common" / "simion" / "export_standalone_pa.lua",
+        project_root.parents[1] / "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
         [
             ResponseExport(identifier, NATIVE_RESPONSE_NAMES[identifier - 1], STANDALONE_RESPONSE_NAMES[identifier - 1])
             for identifier in range(1, 9)

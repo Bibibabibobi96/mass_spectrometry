@@ -58,7 +58,7 @@ try{
         builder = (PROJECT/'simion/build_native_corridor_iob.lua').read_text()
         copies = builder[builder.index('local function copy(source, target)'):]
         native_path = builder[builder.index('local native_path='):builder.index('local seed, paths, output')]
-        waveform = PROJECT.parents[1]/'common/simion/voltage_waveforms.lua'
+        waveform = PROJECT.parents[1]/'src/msplatform/backends/simion/resources/voltage_waveforms.lua'
         with TemporaryDirectory() as directory:
             root = Path(directory)
             original = root/'original'
@@ -225,7 +225,7 @@ try{
     $guards+=,[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
   }
   $build=@('--nogui','--noprompt','lua',(Join-Path $project 'simion/build_native_corridor_iob.lua'),'--',
-    (Join-Path $Repo 'common/simion/assets/iob_instance_seeds/4_instance_seed.iob'),
+    (Join-Path $Repo 'src/msplatform/backends/simion/resources/4_instance_seed.iob'),
     (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $Root 'accelerator.pa'),(Join-Path $Root 'detector.pa'),
     (Join-Path $Root 'fixture.iob'),(Join-Path $Root 'program.lua'),(Join-Path $Root 'source.fly2'),
     (Join-Path $Root 'operating.lua'),(Join-Path $Root 'voltage_map.lua'),(Join-Path $Root 'priority.lua'),
@@ -248,7 +248,7 @@ try{
   & $python -B $helper prepare --repo $Repo --root $Root
   if($LASTEXITCODE-ne0){throw 'Complete current program fixture preparation failed'}
   $currentBuild=@('--nogui','--noprompt','lua',(Join-Path $project 'simion/build_native_corridor_iob.lua'),'--',
-    (Join-Path $Repo 'common/simion/assets/iob_instance_seeds/4_instance_seed.iob'),
+    (Join-Path $Repo 'src/msplatform/backends/simion/resources/4_instance_seed.iob'),
     (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $accelerator 'fixture.pa0'),(Join-Path $Root 'detector.pa'),
     (Join-Path $Root 'current.iob'),(Join-Path $Root 'program_current.lua'),(Join-Path $Root 'source_current.fly2'),
     (Join-Path $Root 'operating_current.lua'),(Join-Path $Root 'voltage_map_current.lua'),(Join-Path $Root 'priority.lua'),

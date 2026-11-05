@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from common.contracts import write_run_manifest as manifest_records
+from msplatform.execution import manifest_records
 from common.contracts.write_run_manifest import file_record
 from integrations.tests.test_cooled_frontend import cooled_request_fixture, publish_inert_fields
 from integrations.tests.test_local_frontend_workflow import REPO

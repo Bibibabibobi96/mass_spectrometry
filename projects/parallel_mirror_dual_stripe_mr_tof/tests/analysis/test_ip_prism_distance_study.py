@@ -389,8 +389,8 @@ class ContourPreparationTests(unittest.TestCase):
             native = root/'projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua'
             native.parent.mkdir(parents=True); native.write_text('return {}')
             (inputs/'simion/native_drive.lua').write_text('return {}')
-            (root/'common/simion').mkdir(parents=True)
-            (root/'common/simion/voltage_waveforms.lua').write_text('return {changed=true}')
+            (root/'src/msplatform/backends/simion/resources').mkdir(parents=True)
+            (root/'src/msplatform/backends/simion/resources/voltage_waveforms.lua').write_text('return {changed=true}')
             (inputs/'simion/voltage_waveforms.lua').write_text('return {producer=731}')
             case = dict(config=dict(coordinate_transform=dict(from_frame_id='native',to_frame_id='IP-world'),
                 native_projection=dict(frame_id='native')))
@@ -475,8 +475,8 @@ class ContourPreparationTests(unittest.TestCase):
             native=root/"projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"
             native.parent.mkdir(parents=True);native.write_text("return {}")
             (inputs/"simion/native_drive.lua").write_text("return {}")
-            (root/"common/simion").mkdir(parents=True)
-            (root/"common/simion/voltage_waveforms.lua").write_text("return {}")
+            (root/"src/msplatform/backends/simion/resources").mkdir(parents=True)
+            (root/"src/msplatform/backends/simion/resources/voltage_waveforms.lua").write_text("return {}")
             (inputs/"simion/voltage_waveforms.lua").write_text("return {}")
             dependency=root/"projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json"
             dependency.parent.mkdir(parents=True);dependency.write_text("{}")

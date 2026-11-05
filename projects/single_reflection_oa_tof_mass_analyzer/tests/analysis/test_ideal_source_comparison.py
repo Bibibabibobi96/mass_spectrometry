@@ -74,7 +74,10 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 destination = fixture_repo / source.relative_to(repository)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
-        policy_path = fixture_repo / "common/contracts/artifact_capacity_policy.json"
+        from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+        copy_scientific_core(repository, fixture_repo)
+        policy_path = fixture_repo / "src/msplatform/execution/resources/artifact_capacity_policy.json"
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
         policy.update(target_gib=1, minimum_free_gib=0)
         policy_path.write_text(json.dumps(policy), encoding="utf-8")

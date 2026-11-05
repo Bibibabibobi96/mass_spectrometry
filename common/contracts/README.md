@@ -402,7 +402,7 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 
 ### 运行终态保留
 
-`artifact_retention.json`和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
+[`artifact_retention.json`](../../src/msplatform/execution/resources/artifact_retention.json)和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
 入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`
 必须在运行前给出理由。终态前`apply`只清除本次未闭合run中策略禁止的可重建文件并写
 `retention_actions.json`，只复核精确路径、常规文件类型和字节数，不读取待丢弃内容；不会处理既有最终run。
@@ -420,7 +420,7 @@ PowerShell入口使用精确RepoRoot上下文。独立writer/verifier的直接�
 
 ### 容量准入与维护
 
-`reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`实现日常容量治理，只有三项职责：
+`reconcile_artifact_capacity.py`与[`artifact_capacity_policy.json`](../../src/msplatform/execution/resources/artifact_capacity_policy.json)实现日常容量治理，只有三项职责：
 启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](capacity_ledger.py)维护的
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
 artifact布局检查接受该精确台账文件并复用台账校验器；租约目录的既有decision lock由公共租约读取器识别，
@@ -611,7 +611,7 @@ maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`�
 `light_evidence/ready`。同请求可重放owner已落盘而台账未落盘的中断；`physical_bytes_removed=0`明确表示仅
 纠正失准占用，不能报告为物理释放，也不授权非空事务退休或删除。
 
-当前工作站的受管产物目标和物理空闲底线只由[`artifact_capacity_policy.json`](artifact_capacity_policy.json)配置。前者允许原生 SIMION PA family 在
+当前工作站的受管产物目标和物理空闲底线只由[`artifact_capacity_policy.json`](../../src/msplatform/execution/resources/artifact_capacity_policy.json)配置。前者允许原生 SIMION PA family 在
 旧代际完成等价验证前短期共存，后者仍为系统盘、求解器暂存和其他已登记工作流保留硬余量。该水位不授权
 调用方省略完整峰值预算：大型 family 必须采用同卷原子发布，GUI/solver 可写副本应延迟到旧代际退休后
 物化；若活动承诺后的预测空闲低于该配置底线，startup仍须失败关闭。不得把空闲底线设为零来绕过容量规划。
@@ -784,6 +784,18 @@ clock epoch ID、species ID和phase reference ID是开放的受控标识，不�
 `phase_reference_id`与`phase_rad`必须同时为空或同时有值；因此无周期驱动器件不必伪造RF相位。
 所有新生产者统一调用`write_component_particle_state_csv`按Schema列序写出并立即校验；生产者仍负责
 事件选择、坐标变换和状态构造，不得在项目内复制canonical CSV序列化规则。
+内存typed行使用`msplatform.contracts.particle_state.validate_component_particle_state_rows`，与CSV loader
+共用同一Schema、谱系、时钟及派生量校验；不为验证而生成临时CSV，wire version 1保持。
+typed整数列`particle_id`／`parent_particle_id`／`generation`／`charge_state`只接受Python `int`，
+不接受`bool`、浮点`7.0`或数字字符串；仅`parent_particle_id`允许`None`。有效typed行写出再读回
+保持原整数值与类型，包含超出binary64精确范围的大整数；原生后端的ID表示上限仍须另行验证。
+`msplatform.assembly.handoff.prepare_handoff_states`接受明确的plane crossing或time snapshot选择、
+刚体变换、来源/接收方epoch与authority SHA，以及独立完整母群的原species/weight/birth记录和fates。
+它复制并验证状态、仅变换位置/速度、以唯一公式更新派生动能，保留原出生、谱系和上段elapsed；
+不传播、裁孔、重采样、重定位事件或把unknown判为loss。零交接保留完整母群/fates及显式空内存结果，
+不得写空canonical CSV或启动native空源。MP/IP实际准备入口已调用该纯边界；其epoch0限制仍属IP后端能力。
+`msplatform.contracts.clock`只处理显式us anchors、原birth年龄及源seconds到us的已有转换，
+同epoch标签但authority SHA不同仍拒绝；来源文件/hash和producer终态校验继续由外层负责。
 需要消费状态的入口调用[`load_component_particle_state_csv`](../../src/msplatform/contracts/particle_state.py)，一次读取、解析和校验后
 返回按原行序的typed `rows`及原有`report`；整数、实数与可空字段按Schema解析，标识字符串不转数值。
 `validate_component_particle_state_csv`复用同一入口并仅返回报告；读取不会重写输入字节。

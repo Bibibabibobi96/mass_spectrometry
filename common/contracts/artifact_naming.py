@@ -8,20 +8,17 @@ from __future__ import annotations
 
 import argparse
 import re
-from datetime import datetime
+from msplatform.execution import artifact_naming as _run_naming
 
 
-MAX_ID_LENGTH = 96
-ACTIVITIES = frozenset({"sim", "test", "analysis", "build", "benchmark", "gate", "migration"})
-SCOPES = frozenset({"comsol", "simion", "cross", "cad", "python", "repo"})
+MAX_ID_LENGTH = _run_naming.MAX_ID_LENGTH
+ACTIVITIES = _run_naming.ACTIVITIES
+SCOPES = _run_naming.SCOPES
 ARCHIVE_REASONS = frozenset({"superseded", "legacy", "milestone", "failed-evidence", "migration-snapshot"})
-TOKEN = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+TOKEN = _run_naming.TOKEN
 PROJECT_ID = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
-STAMP = r"\d{8}_\d{6}"
-RUN_PATTERN = re.compile(
-    rf"^(?P<stamp>{STAMP})__(?P<activity>{TOKEN})__(?P<scope>{TOKEN})__"
-    rf"(?P<subject>{TOKEN})(?:__(?P<detail>{TOKEN}))?(?:__r(?P<retry>\d{{2}}))?$"
-)
+STAMP = _run_naming.STAMP
+RUN_PATTERN = _run_naming.RUN_PATTERN
 ARCHIVE_PATTERN = re.compile(
     rf"^(?P<stamp>{STAMP})__(?P<reason>{TOKEN})__(?P<scope>{TOKEN})__"
     rf"(?P<subject>{TOKEN})(?:__(?P<detail>{TOKEN}))?$"
@@ -31,31 +28,13 @@ TASK_PATTERN = re.compile(
 )
 
 
-def _validate_stamp(value: str) -> None:
-    datetime.strptime(value, "%Y%m%d_%H%M%S")
+_validate_stamp = _run_naming._validate_stamp
 
 
-def _common(identifier: str) -> None:
-    if len(identifier) > MAX_ID_LENGTH:
-        raise ValueError(f"identifier exceeds {MAX_ID_LENGTH} characters")
-    if identifier != identifier.lower() or not identifier.isascii():
-        raise ValueError("identifier must be lowercase ASCII")
+_common = _run_naming._common
 
 
-def validate_run_id(identifier: str) -> dict[str, str | None]:
-    _common(identifier)
-    match = RUN_PATTERN.fullmatch(identifier)
-    if not match:
-        raise ValueError("run_id must be TIMESTAMP__ACTIVITY__SCOPE__SUBJECT[__DETAIL][__rNN]")
-    values = match.groupdict()
-    _validate_stamp(values["stamp"] or "")
-    if values["activity"] not in ACTIVITIES:
-        raise ValueError(f"unsupported activity: {values['activity']}")
-    if values["scope"] not in SCOPES:
-        raise ValueError(f"unsupported scope: {values['scope']}")
-    if values["retry"] == "00":
-        raise ValueError("retry numbering starts at r01")
-    return values
+validate_run_id = _run_naming.validate_run_id
 
 
 def validate_archive_id(identifier: str) -> dict[str, str | None]:

@@ -19,6 +19,8 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import lua_value, render_resolved_lua
 
+from msplatform.backends.simion.resources import gem_template_path, gem_template_text
+
 LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
 
 
@@ -101,9 +103,8 @@ class PhysicalGeometryTests(unittest.TestCase):
             snapshot = Path(directory) / "resolved.lua"
             snapshot.write_text(render_resolved_lua(resolved), encoding="utf-8")
             actual = {}
-            for role, relative in (("flight_tube", "workbench/oatof_flight_tube_ground.gem"),
-                                    ("reflectron", "reflectron/oatof_reflectron_ideal_10_5.gem")):
-                source = (PROJECT_ROOT / "simion" / relative).read_text()
+            for role in ("flight_tube", "reflectron"):
+                source = gem_template_text(role)
                 mesh = resolved["simion_geometry_build"][role]
                 prefix = ("local contract=dofile(" + json.dumps(str(snapshot)) + ")\n"
                     "_G.var={component=contract.physical_geometry.simion." + role + ",mmgu_axial="
@@ -143,7 +144,7 @@ class PhysicalGeometryTests(unittest.TestCase):
             builder = PROJECT_ROOT / "simion/reflectron/build_reflectron_variant.lua"
             script = Path(directory) / "drive.lua"
             output = directory.joinpath(*(["long directory with spaces"] * 12), "reflectron.pa#") if long_output else directory / "reflectron.pa#"
-            argv = [str(PROJECT_ROOT / "simion/reflectron/oatof_reflectron_ideal_10_5.gem"),
+            argv = [str(gem_template_path("reflectron")),
                     str(output), str(snapshot), "adjust-only"]
             controller = str(output).removesuffix("#") + "0"
             script.write_text("arg={" + ",".join(map(json.dumps, argv)) + "}\n"
@@ -215,7 +216,7 @@ simion={command=function() error('Fast Adjust must not use a command string') en
                     mmgu_axial=old_vars["mmgu_axial"], mmgu_radial=old_vars["mmgu_radial"]))
                 outputs = []
                 for label, template, variables in (("old", old_payload.decode(), old_vars),
-                    ("new", (PROJECT_ROOT / "simion" / relative).read_text(), new_vars)):
+                    ("new", gem_template_text(role), new_vars)):
                     script = Path(directory) / (label + ".lua")
                     script.write_text("_G.var=" + lua_value(variables) + "\n" + expand_gem(template), encoding="utf-8")
                     result = subprocess.run([str(LUA), str(script)], capture_output=True, text=True,

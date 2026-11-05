@@ -50,7 +50,7 @@ def cache_plan(run: Path, code: Path, native: Path, cache_root: Path) -> dict:
     """Use the public non-RF working-field identity; sampling/COMSOL mesh are absent."""
     plan = read(run/'inputs/bvp/paired_accelerator_static_field_plan.json')
     grid = plan['native_geometry_compilation']['grid']
-    builders = {name: code/'common/simion'/name for name in (
+    builders = {name: code/'src/msplatform/backends/simion/resources'/name for name in (
         'build_dirichlet_patch_operating_pa.lua', 'export_detached_standalone_pa.lua')}
     executable = file_record(native)
     identity = dict(geometry=plan['accelerator_geometry'], gem=file_sha256(run/'inputs/bvp/paired_accelerator.gem'),

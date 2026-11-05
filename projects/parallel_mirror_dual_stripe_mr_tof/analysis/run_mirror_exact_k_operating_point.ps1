@@ -89,7 +89,7 @@ try {
     'common\host_resource_python.py',
     'common\host_resource_python.ps1',
     'common\host_resource_scheduler.py',
-    'common\host_resource_policy.json',
+    'src\msplatform\execution\resources\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',

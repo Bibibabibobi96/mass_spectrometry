@@ -1,0 +1,1280 @@
+{
+  "schema_version": 1,
+  "name": "rf_oatof_functional_v1",
+  "component_requests": {
+    "multipole": {
+      "provider_id": "rf_multipole",
+      "design": {
+        "schema_version": 4,
+        "role": "multipole_design_request",
+        "request_id": "octupole_bare_mechanical_base",
+        "identity": {
+          "project_id": "rf_multipole_ion_optics",
+          "family_id": "rf_multipole_ion_optics",
+          "radial_order_n": 4,
+          "electrode_count": 8
+        },
+        "units": {
+          "length": "mm",
+          "voltage": "V",
+          "frequency": "Hz",
+          "phase": "rad",
+          "energy": "eV"
+        },
+        "coordinate": {
+          "coordinate_id": "multipole.cartesian.z_axis.v1",
+          "axial_axis": "+z",
+          "orientation_rad": 0.0
+        },
+        "geometry_mm": {
+          "inscribed_radius_r0": 4.0,
+          "rod_radius_ratio": 0.5,
+          "rod_z_min": 0.0,
+          "rod_z_max": 79.6,
+          "numerical_domain": {
+            "radius_mm": 21.0,
+            "z_min_mm": -2.5,
+            "z_max_mm": 82.1,
+            "working_region_radius_mm": 3.6
+          },
+          "observations": {
+            "release_plane_z_mm": -1.5,
+            "handoff_plane_z_mm": 80.6,
+            "census_plane_z_mm": 81.1,
+            "acceptance_radius_mm": 3.6
+          }
+        },
+        "drive": {
+          "waveform": "cosine",
+          "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+          "dc_amplitude_V_per_group": 0.0,
+          "common_mode_offset_V": 0.0,
+          "frequency_Hz": 1100000.0,
+          "phase_rad": 0.0
+        },
+        "axial_drive": {
+          "topology": "none"
+        },
+        "static_electrodes_V": {
+          "role": "bare_multipole_static_electrodes"
+        },
+        "particle_source": {
+          "energy_model": {
+            "kind": "monoenergetic",
+            "kinetic_energy_eV": 2.0
+          },
+          "charge_state": 1
+        },
+        "segmentation": {
+          "strategy": "uniform",
+          "segment_count": 4,
+          "intersegment_gap_mm": 0.4,
+          "entrance_common_mode_V": 0.0,
+          "exit_common_mode_V": 0.0,
+          "output_reference_V": 0.0
+        }
+      }
+    },
+    "oatof": {
+      "provider_id": "single_reflection_oa_tof",
+      "design": {
+        "baseline": {
+          "schema_version": 2,
+          "source": "Physics-derived oa-TOF project baseline; solver and CAD implementations must conform to this contract",
+          "naming_convention": "Code variables use <component>_<feature>_<quantity>_<unit>; global positions include the axis (for example accelerator_grid2_z_mm), local coordinates include local, counts end in _count, voltages end in _v. Keys inside geometry_mm inherit millimetres from the section name.",
+          "coordinate_convention": {
+            "frame_id": "oatof_global",
+            "units": "mm",
+            "origin": "detector active-plane center and exact first-order accelerator time-focus plane",
+            "reflectron_axis": [
+              0,
+              0
+            ],
+            "accelerator_axis_x": -48.8,
+            "detector_x": 48.8,
+            "z_axis": "positive from accelerator toward reflectron",
+            "software_contract": "COMSOL and CAD use this global frame directly; SIMION PA files may use local coordinates only when their IOB instance transforms map exactly into this frame"
+          },
+          "geometry_derivation": {
+            "accelerator": {
+              "geometry_quantum_mm": 0.1,
+              "reference_d1_mm": 3.0,
+              "reference_d2_mm": 16.83,
+              "d1_mm": 3.0,
+              "d2_mm": 16.8,
+              "reference_frame_translation_z_mm": -0.09864213722372406,
+              "canonical_repeller_z_mm": -19.92918680341103,
+              "canonical_grid1_z_mm": -16.92918680341103,
+              "canonical_grid2_z_mm": -0.12918680341102995,
+              "canonical_focus_z_mm": 0.0,
+              "focus_drift_after_grid2_mm": 0.12918680341102995,
+              "rule": "Keep d1=3.0 mm; set d2=16.8 mm so all six grid1-to-grid2 pitches are 2.8 mm; retain voltages; translate the accelerator and source rigidly so the derived first-order global focus exactly matches the former 16.83 mm engineering baseline"
+            },
+            "reflectron": {
+              "total_field_free_length_mm": 1200.0,
+              "outbound_field_free_length_mm": 600.0,
+              "return_field_free_length_mm": 600.0,
+              "stage1_length_mm": 120.0,
+              "stage2_margin_fraction": 1.0,
+              "engineering_length_decimals_mm": 4,
+              "engineering_voltage_decimals_V": 4,
+              "rule": "Solve the coupled accelerator-to-detector first- and second-order conditions for U_R1 and F_2; derive the source-correlated full energy envelope from accelerator E_A1 and source z width; set L_stage2=((W_max-U_R1)/F_2)*(1+margin_fraction)+margin_absolute; derive V_backplate=U_R1+F_2*L_stage2_raw; round only final engineering lengths and voltages.",
+              "model_id": "oatof.oaaccelerator_reflectron_coupled.ideal_1d.v1",
+              "nominal_energy_per_charge_V": 2000.0,
+              "source_release_full_width_mm": 1.0,
+              "spatial_energy_half_range_V": 80.0,
+              "intrinsic_axial_energy_per_charge_half_range_V": 0.0,
+              "energy_min_V": 1920.0,
+              "energy_max_V": 2080.0,
+              "stage2_margin_basis": "full_energy_envelope_high_tail_penetration",
+              "stage2_margin_absolute_mm": 0.0
+            }
+          },
+          "geometry_mm": {
+            "L_accel": 19.8,
+            "accelerator_repeller_z": -19.92918680341103,
+            "accelerator_grid1_z": -16.92918680341103,
+            "accelerator_grid2_z": -0.12918680341102995,
+            "accelerator_focus_z": 0.0,
+            "detector_z": 0.0,
+            "L_flight": 600.0,
+            "L_stage1": 120.0,
+            "L_stage2": 96.1563,
+            "L_reflectron": 216.1563,
+            "detector_radius": 40.0,
+            "detector_thickness": 1.0,
+            "bore_r": 250.0,
+            "ring_outer_r": 300.0,
+            "flight_tube_r": 350.0,
+            "flight_tube_wall": 10.0,
+            "shield_endcap_thickness": 10.0,
+            "shield_near_endcap_gap": 20.0,
+            "ring_thickness": 5.0,
+            "shield_axial_gap": 50.0,
+            "accelerator_shield_wall": 4.0,
+            "accelerator_rear_clearance": 5.0,
+            "accelerator_repeller_thickness": 1.0,
+            "accelerator_ring_thickness": 1.0,
+            "accelerator_front_vacuum_margin": 0.2,
+            "accelerator_bore_half": 5.0,
+            "accelerator_ring_width": 5.0,
+            "accelerator_insulation_gap": 5.0,
+            "accelerator_exit_grid_half_width": 15.0,
+            "shield_bore_z_min": -49.92918680341103,
+            "shield_bore_z_max": 871.1563,
+            "shield_outer_z_min": -59.92918680341103,
+            "shield_outer_z_max": 881.1563
+          },
+          "particle_source": {
+            "center_x_mm": -48.8,
+            "center_y_mm": 0.0,
+            "center_z_mm": -18.42918680341103,
+            "center_z_rule": "accelerator_repeller_z + accelerator_stage1_length_mm/2",
+            "size_x_mm": 1.0,
+            "size_y_mm": 1.0,
+            "size_z_mm": 1.0,
+            "direction_x": 1.0,
+            "direction_y": 0.0,
+            "direction_z": 0.0
+          },
+          "electrodes_V": {
+            "repeller": 2240.0,
+            "grid1": 1760.0,
+            "grid2": 0.0,
+            "entgrid": 0.0,
+            "midgrid": 1628.8001,
+            "backplate": 2531.1999,
+            "shield": 0.0
+          },
+          "rings": {
+            "accelerator_count": 5,
+            "stage1_count": 10,
+            "stage2_count": 5,
+            "stage1_voltage_rule": "V_mid*k/(N1+1), k=1..N1",
+            "stage2_voltage_rule": "V_mid+(V_mirror-V_mid)*k/(N2+1), k=1..N2",
+            "stage1_center_rule_mm": "L_flight+k*L_stage1/(N1+1), k=1..N1",
+            "stage2_center_rule_mm": "L_flight+L_stage1+k*L_stage2/(N2+1), k=1..N2"
+          },
+          "grid_policy": {
+            "baseline": "zero-grid-unit-thick one-row full-aperture 100%-transmission ideal electrode sheet",
+            "nonideal_grid": "separate high-resolution local wire-cell model plus transmission/kick map",
+            "forbidden_baseline_approximation": "solid plate with a large aperture"
+          }
+        },
+        "science": {
+          "schema_version": 1,
+          "role": "oa_tof_formal_science_contract",
+          "mode": "formal",
+          "contract_layers": [
+            "science",
+            "solver_numerics",
+            "run_instance"
+          ],
+          "particle": {
+            "mass_amu": 524.0,
+            "charge_state": 1,
+            "default_check_count": 100,
+            "statistical_count": 1000,
+            "initial_energy_mean_ev": 5.0,
+            "initial_energy_sigma_ev": 0.4
+          }
+        },
+        "layout_profile": {
+          "layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1",
+          "architecture_generation_id": "three_zone_ideal_acceptance_300mm_kinematic_envelope_v1",
+          "method": "t5_frozen_three_zone_candidate_v1",
+          "reference_injection_energy_eV": 5.0,
+          "target_injection_energy_eV": 10.0,
+          "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+          "topology_id": "three_zone_accelerator_ideal_v1",
+          "geometry_id": "three_zone_focus_origin_planes_v1",
+          "frontend_electrode_topology_id": "three_zone_frontend_contract_derived_v1",
+          "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+          "accelerator_realization_id": "square_3d",
+          "accelerator_ring_placement_policy": {
+            "policy_id": "three_zone_zonewise_equal_subdivision_v1",
+            "zone2_ring_count": 4,
+            "zone3_ring_count": 16,
+            "minimum_grid_to_ring_edge_clearance_mm": 1.0
+          },
+          "design_overrides": [
+            {
+              "variable": "accelerator_ring_count",
+              "value": 20,
+              "unit": "count"
+            },
+            {
+              "variable": "accelerator_bore_half_width",
+              "value": 60.0,
+              "unit": "mm"
+            },
+            {
+              "variable": "accelerator_exit_grid_half_width",
+              "value": 60.0,
+              "unit": "mm"
+            }
+          ],
+          "source_release_full_width_mm": 4.0,
+          "focus_to_reflectron_mm": 600.0,
+          "claim_status": "CANDIDATE_ONLY"
+        },
+        "base_port": {
+          "schema_version": 1,
+          "role": "component_port",
+          "project_id": "single_reflection_oa_tof_mass_analyzer",
+          "port_id": "oatof_accelerator_entry",
+          "direction": "required",
+          "profile_scope": {
+            "scope_id": "formal_reference",
+            "scope_kind": "formal_reference",
+            "family_experiment_port": false
+          },
+          "authority": {
+            "source_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+            "source_sha256": "F9C2152E5B1216242D6605A990BA40DC4586D5A278DFE3B1B3D59ABD9DC941A3",
+            "bindings": [
+              {
+                "port_json_pointer": "/coordinate_frame/frame_id",
+                "source_json_pointer": "/coordinate_convention/frame_id"
+              },
+              {
+                "port_json_pointer": "/mating_surface/center_mm/1",
+                "source_json_pointer": "/particle_source/center_y_mm"
+              },
+              {
+                "port_json_pointer": "/mating_surface/center_mm/2",
+                "source_json_pointer": "/particle_source/center_z_mm"
+              },
+              {
+                "port_json_pointer": "/mating_surface/aperture_radius_mm",
+                "source_json_pointer": "/geometry_mm/accelerator_bore_half"
+              },
+              {
+                "port_json_pointer": "/mating_surface/potential_V",
+                "source_json_pointer": "/electrodes_V/shield"
+              }
+            ]
+          },
+          "state_contract": {
+            "schema_id": "component_particle_state",
+            "schema_version": 1
+          },
+          "coordinate_frame": {
+            "frame_id": "oatof_global",
+            "length_unit": "mm",
+            "handedness": "right_handed"
+          },
+          "mating_surface": {
+            "center_mm": [
+              -67.8,
+              0.0,
+              -18.42918680341103
+            ],
+            "outward_normal": [
+              -1.0,
+              0.0,
+              0.0
+            ],
+            "aperture_radius_mm": 5.0,
+            "potential_V": 0.0
+          },
+          "clock": {
+            "time_unit": "s",
+            "origin_id": "instrument_clock_epoch_v1"
+          },
+          "field_boundary": {
+            "field_reaches_surface": true
+          }
+        },
+        "three_zone_candidate": {
+          "schema_version": 1,
+          "role": "oatof_three_zone_simion_candidate_resolved",
+          "project_id": "single_reflection_oa_tof_mass_analyzer",
+          "qualification": "CANDIDATE_ONLY",
+          "compiler_mode": "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+          "campaign": {
+            "campaign_id": "ideal_acceptance_300mm"
+          },
+          "ideal_acceptance_evidence": {
+            "selected_design_id": "theory_002255_r01",
+            "full_width_mm": 4.0,
+            "total_acceleration_length_mm": 300.0
+          },
+          "source_identity": {
+            "authority": "ideal_acceptance.selected_point",
+            "campaign_id": "ideal_acceptance_300mm",
+            "campaign_sha256": "73955A963B68234465C0830DB3D007308D771548DCEBBA63DDE651EB1593B4E2",
+            "frozen_source": {
+              "mass_to_charge_th": 100.0,
+              "charge_sign": 1,
+              "center_x_mm": 3.5,
+              "center_velocity_m_per_s": -2.9323518410018137,
+              "velocity_slope_m_per_s_per_mm": 228.80604377795845,
+              "nominal_energy_per_charge_v": 2000.0
+            }
+          },
+          "identities": {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "geometry_id": "three_zone_focus_origin_planes_v1",
+            "field_id": "three_zone_piecewise_uniform_ideal_field_v1"
+          },
+          "accelerator_topology": {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {
+              "repeller": -342.74261546154855,
+              "intermediate1": -335.74261546154855,
+              "intermediate2": -279.64261546154853,
+              "exit": -42.742615461548496
+            },
+            "potentials_v": {
+              "repeller": 2140.0,
+              "intermediate1": 1860.0,
+              "intermediate2": 372.96685170832035,
+              "exit": 0.0
+            }
+          },
+          "accelerator_physics": {
+            "lengths_mm": {
+              "d1": 7.0,
+              "d2": 56.1,
+              "d3": 236.9
+            },
+            "fields_v_per_mm": {
+              "e1": 40.0,
+              "e2": 26.5068297378196,
+              "e3": 1.5743640848810483
+            },
+            "focus_drift_after_exit_mm": 42.742615461548496
+          },
+          "reflectron": {
+            "u_r1_v": 1714.19374978549,
+            "f_r2_v_per_mm": 8.713805465160904
+          },
+          "claim_limit": "Exploration-only 300 mm/4 mm ideal-field Candidate whose plane locations and third-order focus equations were re-closed on a declared 0.1 mm axial grid. Square and cylindrical real fields, collection, numerical convergence, and Formal qualification remain unverified.",
+          "numerical_grid_realization": {
+            "axial_grid_z_mm": 0.1,
+            "zone_lengths_mm": {
+              "d1": 7.0,
+              "d2": 56.1,
+              "d3": 236.9
+            },
+            "scaled_focus_equation_residual_ns": [
+              8.991188579934345e-14,
+              9.990209533260383e-15,
+              1.9512127994649183e-15
+            ],
+            "method": "three_zone_a1_a2_a3_root_on_grid_realized_lengths_v1"
+          },
+          "provenance": {
+            "original_document_sha256": "b25eef7e5f37403bc9ac1ce5cad8f3c80036c0e606912ec11bc7c9076bc7b77f",
+            "compiler": "ideal_acceptance_300mm_simion_candidate.compile_grid_realized_ideal_acceptance_300mm_candidate",
+            "selected_design_id": "theory_002255_r01",
+            "publication_scope": "scientific_input_only_not_a_solver_receipt"
+          }
+        },
+        "design_catalog": {
+          "schema_version": 1,
+          "role": "project_design_variable_catalog",
+          "project_id": "single_reflection_oa_tof_mass_analyzer",
+          "optimization_strategy": "expandable_reference_envelope_compaction",
+          "envelope_contract": "config/optimization_envelope.json",
+          "range_policy": "Variables move bidirectionally inside static compilation-safety bounds. TOF candidates must also remain inside the separately versioned optimization envelope; accelerator variables are exempt from the TOF compaction envelope. Bounds are not a validated feasible or optimal physics domain.",
+          "manufacturing_constraints": {
+            "reflectron_minimum_axial_ring_gap_mm": 1.0
+          },
+          "variables": [
+            {
+              "variable_id": "accelerator_ring_thickness",
+              "label": "Accelerator ring axial thickness",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_ring_thickness",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 10.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_ring_width",
+              "label": "Accelerator ring radial width",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_ring_width",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 50.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_insulation_gap",
+              "label": "Accelerator radial insulation gap",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_insulation_gap",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 50.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_stage1_length",
+              "label": "Accelerator repeller-to-grid1 distance",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_derivation/accelerator/d1_mm",
+              "unit": "mm",
+              "minimum": 0.2,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_stage2_length",
+              "label": "Accelerator grid1-to-grid2 distance",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_derivation/accelerator/d2_mm",
+              "unit": "mm",
+              "minimum": 0.2,
+              "maximum": 300.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_ring_count",
+              "label": "Accelerator intermediate ring count",
+              "kind": "integer",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/rings/accelerator_count",
+              "unit": "count",
+              "minimum": 1,
+              "maximum": 100,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_bore_half_width",
+              "label": "Accelerator clear-aperture half width",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_bore_half",
+              "unit": "mm",
+              "minimum": 0.5,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_shield_wall_thickness",
+              "label": "Accelerator shield wall thickness",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_shield_wall",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_rear_clearance",
+              "label": "Accelerator rear insulation clearance",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_rear_clearance",
+              "unit": "mm",
+              "minimum": 0.0,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_repeller_thickness",
+              "label": "Accelerator repeller thickness",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_repeller_thickness",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 20.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_front_vacuum_margin",
+              "label": "Accelerator front vacuum margin",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_front_vacuum_margin",
+              "unit": "mm",
+              "minimum": 0.0,
+              "maximum": 50.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "simion"
+              ]
+            },
+            {
+              "variable_id": "accelerator_exit_grid_half_width",
+              "label": "Accelerator exit-grid half width",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/geometry_mm/accelerator_exit_grid_half_width",
+              "unit": "mm",
+              "minimum": 0.5,
+              "maximum": 200.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "flight_length",
+              "label": "One-way field-free flight length",
+              "kind": "continuous",
+              "optimization_role": "tof_envelope",
+              "json_pointer": "/geometry_mm/L_flight",
+              "unit": "mm",
+              "minimum": 250.0,
+              "maximum": 5000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "source_release_full_width",
+              "label": "Source release full width along acceleration z",
+              "kind": "continuous",
+              "optimization_role": "tof_envelope",
+              "json_pointer": "/particle_source/size_z_mm",
+              "unit": "mm",
+              "minimum": 0.01,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion"
+              ]
+            },
+            {
+              "variable_id": "reflectron_stage1_length",
+              "label": "Reflectron first-stage length",
+              "kind": "continuous",
+              "optimization_role": "tof_envelope",
+              "json_pointer": "/geometry_mm/L_stage1",
+              "unit": "mm",
+              "minimum": 1.0,
+              "maximum": 2000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_bore_radius",
+              "label": "Reflectron clear bore radius",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/bore_r",
+              "unit": "mm",
+              "minimum": 1.0,
+              "maximum": 1000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_ring_outer_radius",
+              "label": "Reflectron ring outer radius",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/ring_outer_r",
+              "unit": "mm",
+              "minimum": 2.0,
+              "maximum": 1200.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_ring_thickness",
+              "label": "Shared reflectron ring axial thickness",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/ring_thickness",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 20.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_stage1_electrode_count",
+              "label": "Stage-1 intermediate ring count",
+              "kind": "integer",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/rings/stage1_count",
+              "unit": "count",
+              "minimum": 1,
+              "maximum": 100,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_stage2_electrode_count",
+              "label": "Stage-2 intermediate ring count",
+              "kind": "integer",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/rings/stage2_count",
+              "unit": "count",
+              "minimum": 1,
+              "maximum": 100,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_shield_inner_radius",
+              "label": "Flight-tube and reflectron shield inner radius",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/flight_tube_r",
+              "unit": "mm",
+              "minimum": 3.0,
+              "maximum": 1500.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_shield_wall_thickness",
+              "label": "Flight-tube shield wall thickness",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/flight_tube_wall",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_shield_endcap_thickness",
+              "label": "Reflectron shield endcap thickness",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/shield_endcap_thickness",
+              "unit": "mm",
+              "minimum": 0.1,
+              "maximum": 100.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_shield_near_endcap_gap",
+              "label": "Near shield endcap axial gap",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/shield_near_endcap_gap",
+              "unit": "mm",
+              "minimum": 0.0,
+              "maximum": 500.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "reflectron_shield_axial_gap",
+              "label": "Far shield endcap axial gap",
+              "kind": "continuous",
+              "optimization_role": "tof_internal",
+              "json_pointer": "/geometry_mm/shield_axial_gap",
+              "unit": "mm",
+              "minimum": 0.0,
+              "maximum": 500.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "resolved",
+                "comsol",
+                "simion",
+                "cad"
+              ]
+            },
+            {
+              "variable_id": "accelerator_repeller_voltage",
+              "label": "Accelerator repeller voltage",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/electrodes_V/repeller",
+              "unit": "V",
+              "minimum": -10000.0,
+              "maximum": 10000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion"
+              ]
+            },
+            {
+              "variable_id": "accelerator_grid1_voltage",
+              "label": "Accelerator first-grid voltage",
+              "kind": "continuous",
+              "optimization_role": "accelerator_bidirectional",
+              "json_pointer": "/electrodes_V/grid1",
+              "unit": "V",
+              "minimum": -10000.0,
+              "maximum": 10000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion"
+              ]
+            },
+            {
+              "variable_id": "reflectron_midgrid_voltage",
+              "label": "Reflectron inter-stage grid voltage",
+              "kind": "continuous",
+              "optimization_role": "compensation",
+              "json_pointer": "/electrodes_V/midgrid",
+              "unit": "V",
+              "minimum": -10000.0,
+              "maximum": 10000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion"
+              ]
+            },
+            {
+              "variable_id": "reflectron_backplate_voltage",
+              "label": "Reflectron backplate voltage",
+              "kind": "continuous",
+              "optimization_role": "compensation",
+              "json_pointer": "/electrodes_V/backplate",
+              "unit": "V",
+              "minimum": -10000.0,
+              "maximum": 10000.0,
+              "compile_status": "candidate_contract",
+              "rebuild_effects": [
+                "theory",
+                "resolved",
+                "comsol",
+                "simion"
+              ]
+            }
+          ],
+          "invariants": [
+            "reflectron_radial_order",
+            "detector_inside_shield",
+            "reflectron_ring_nonoverlap",
+            "reflectron_minimum_axial_ring_gap",
+            "reflectron_length_identity",
+            "accelerator_length_identity",
+            "shield_axial_bounds_derived"
+          ]
+        },
+        "side_opening": {
+          "center_mm": [
+            -88.01362184380704,
+            0,
+            -18.429186803411028
+          ],
+          "width_mm": 3.0,
+          "height_mm": 2.8
+        }
+      }
+    }
+  },
+  "recipe": {
+    "schema_version": 1,
+    "role": "assembly_recipe",
+    "integration_id": "instrument_assembly",
+    "recipe_id": "bare_octupole_oatof_continuous_representative",
+    "assembly_frame_id": "oatof_global",
+    "position_tolerance_mm": 1e-08,
+    "angular_tolerance_rad": 1e-10,
+    "instances": [
+      {
+        "instance_id": "multipole",
+        "project_id": "rf_multipole_ion_optics",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "multipole.cartesian.z_axis.v1",
+          "to_frame_id": "oatof_global",
+          "rotation": [
+            [
+              0,
+              0,
+              1
+            ],
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ]
+          ],
+          "translation_mm": [
+            -168.61362184380704,
+            0,
+            -18.429186803411028
+          ]
+        }
+      },
+      {
+        "instance_id": "oatof",
+        "project_id": "single_reflection_oa_tof_mass_analyzer",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "oatof_global",
+          "to_frame_id": "oatof_global",
+          "rotation": [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "translation_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "connection_id": "multipole_oatof",
+        "upstream": {
+          "instance_id": "multipole",
+          "port_id": "mechanical_exit"
+        },
+        "downstream": {
+          "instance_id": "oatof",
+          "port_id": "side_entry"
+        },
+        "gap_mm": 1.0,
+        "coupling_mode": "monolithic_joint_solve"
+      }
+    ]
+  },
+  "numerics": {
+    "geometry": {
+      "frontend_domains": {
+        "parent": {
+          "cell_mm_xyz": {
+            "x": 2.0,
+            "y": 2.0,
+            "z": 0.1
+          },
+          "pa_bounds_mm": {
+            "x_min": -172.01362184380704,
+            "x_max": 61.986378156192956,
+            "y_min": -75.0,
+            "y_max": 75.0,
+            "z_min": -41.92918680341103,
+            "z_max": 278.070813196589
+          }
+        }
+      },
+      "geometry_build": {
+        "accelerator": {
+          "cell_xy_mm": 0.25,
+          "cell_z_mm": 0.05,
+          "vacuum_margin_mm": 0.0,
+          "back_domain_margin_mm": 0.0,
+          "front_domain_margin_mm": 0.0,
+          "grid_phase_z_mm": 0.0,
+          "max_gib": 3.5
+        },
+        "reflectron": {
+          "cell_axial_mm": 0.25,
+          "cell_radial_mm": 1.0,
+          "max_gib": 0.5
+        },
+        "flight_tube": {
+          "cell_axial_mm": 1.0,
+          "cell_radial_mm": 1.0,
+          "max_gib": 0.1
+        },
+        "detector": {
+          "margin_xy_mm": 1.0,
+          "max_mib": 64.0
+        }
+      },
+      "detector_marker": {
+        "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
+        "active_plane_z_mm": 0.0,
+        "active_radius_mm": 40.0,
+        "absorber_thickness_mm": 0.1,
+        "front_margin_z_mm": 0.2,
+        "back_margin_z_mm": 0.05,
+        "cell_xy_mm": 0.5,
+        "cell_z_mm": 0.01,
+        "crossing_step_control_enabled": true,
+        "capture_arm_distance_mm": 100.0,
+        "capture_depth_mm": 0.02
+      }
+    },
+    "fields": {
+      "frontend_refine_convergence_v": {
+        "parent": {
+          "carrier_off": 1e-05,
+          "rf_reference": 1e-05,
+          "pulse_delta": 1e-05
+        }
+      },
+      "rf_reference_voltage_v": 139.81792,
+      "downstream_convergence_v": {
+        "flight_tube": 1e-05,
+        "reflectron": 1e-05,
+        "detector": 1e-05
+      }
+    }
+  },
+  "cad_export": {
+    "representation": "physical_solids",
+    "write_pcurves": true,
+    "precision_mode": 0
+  },
+  "claim_limit": "Versioned geometry/CAD design inputs. No sampled source, field solve, tracking, native or Formal qualification.",
+  "drive": {
+    "pulse": {
+      "mode": "timed",
+      "time_us": 80.0513730009902,
+      "width_us": 7.2727272727272725
+    },
+    "clock": {
+      "phase_reference_instrument_time_us": 0.0
+    },
+    "clock_authority": {
+      "example_resource": "instrument_clock_authority_v1.json"
+    }
+  },
+  "physics": {
+    "field_model": "external_electrostatic_linear",
+    "boundary_policy": "native_zero_neumann",
+    "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1"
+  },
+  "model_input_sources": {
+    "clock_epoch": "Versioned 32-byte zero epoch; unchanged bytes from 20261025 single-reflection-recovery-preflight; authority path reauthored for this package example.",
+    "pulse": "Explicit timing retained from 20261103 phase02-v6-map-a request10; not an accuracy or optimization claim.",
+    "release": "Physical MT19937 disk/cone/RF specification unchanged from RF octupole family_complete_mother_n100.json; this new birth realization explicitly authors sparse IDs. Historical P2 rows and IDs are not renamed.",
+    "field_numerics": "Frontend stopping settings and RF reference retained from phase02-v6-map-a request SHA256 aa6f33a05f9d3470ac12102f49506c74757181aceab0a558e67cc897d58b1393; grid comes only from geometry numerics. Downstream convergence is a new explicit 1e-5 V fixed-field functional policy; historical native defaults are not claimed equal. No field-grid or trajectory accuracy qualification."
+  },
+  "release": {
+    "schema_version": 1,
+    "role": "canonical_birth_source_request",
+    "release_spec": {
+      "schema_version": 1,
+      "role": "repository_ion_release",
+      "frame_id": "multipole.cartesian.z_axis.v1",
+      "particle_count": 100,
+      "mother_particle_count": 100,
+      "geometry": {
+        "shape": "disk",
+        "center_mm": [
+          0.0,
+          0.0,
+          -1.5
+        ],
+        "radius_mm": 0.5
+      },
+      "species": {
+        "mass_amu": 100.0,
+        "charge_state": 1
+      },
+      "sampling": {
+        "strategy": "mt19937_uniform_disk_filled_cone_rf_phase_v1",
+        "seed": 2026072801,
+        "rf_frequency_hz": 1100000.0,
+        "kinetic_energy_ev": 2.0,
+        "cone_half_angle_deg": 5.0
+      }
+    },
+    "clock": {
+      "clock_epoch_id": "instrument_clock_epoch_v1",
+      "authority_sha256": "6A035131B2BDBA6F7F20CBF6B6FD20EDAA5DCB3D7EC8EB7349F74F7AC35238A0"
+    },
+    "instrument_origin_us": 0.0,
+    "species_id": "ion_100amu_charge_plus_1",
+    "source_component_id": "multipole",
+    "relative_weights": null,
+    "particle_ids": [
+      1000003,
+      1000020,
+      1000037,
+      1000054,
+      1000071,
+      1000088,
+      1000105,
+      1000122,
+      1000139,
+      1000156,
+      1000173,
+      1000190,
+      1000207,
+      1000224,
+      1000241,
+      1000258,
+      1000275,
+      1000292,
+      1000309,
+      1000326,
+      1000343,
+      1000360,
+      1000377,
+      1000394,
+      1000411,
+      1000428,
+      1000445,
+      1000462,
+      1000479,
+      1000496,
+      1000513,
+      1000530,
+      1000547,
+      1000564,
+      1000581,
+      1000598,
+      1000615,
+      1000632,
+      1000649,
+      1000666,
+      1000683,
+      1000700,
+      1000717,
+      1000734,
+      1000751,
+      1000768,
+      1000785,
+      1000802,
+      1000819,
+      1000836,
+      1000853,
+      1000870,
+      1000887,
+      1000904,
+      1000921,
+      1000938,
+      1000955,
+      1000972,
+      1000989,
+      1001006,
+      1001023,
+      1001040,
+      1001057,
+      1001074,
+      1001091,
+      1001108,
+      1001125,
+      1001142,
+      1001159,
+      1001176,
+      1001193,
+      1001210,
+      1001227,
+      1001244,
+      1001261,
+      1001278,
+      1001295,
+      1001312,
+      1001329,
+      1001346,
+      1001363,
+      1001380,
+      1001397,
+      1001414,
+      1001431,
+      1001448,
+      1001465,
+      1001482,
+      1001499,
+      1001516,
+      1001533,
+      1001550,
+      1001567,
+      1001584,
+      1001601,
+      1001618,
+      1001635,
+      1001652,
+      1001669,
+      1001686
+    ]
+  }
+}

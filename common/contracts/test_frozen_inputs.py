@@ -41,10 +41,36 @@ class FrozenInputTests(unittest.TestCase):
                 incoming.write_bytes(b"modified")
                 outgoing.write_bytes(incoming.read_bytes())
 
-            with patch("common.contracts.frozen_inputs.shutil.copyfile", side_effect=changing_copy):
+            with patch("msplatform.execution.inputs.shutil.copyfile", side_effect=changing_copy):
                 with self.assertRaisesRegex(AssertionError, "frozen input SHA-256 changed"):
                     freeze_file(source, target)
 
+
+    def test_large_input_requires_explicit_classifier_at_both_identity_boundaries(self):
+        from msplatform.execution.inputs import freeze_file as installed_freeze_file
+        with tempfile.TemporaryDirectory() as directory:
+            source, target = (Path(directory)/name for name in ("inert.bin", "copy.bin"))
+            source.write_bytes(b"INERT_NOT_NATIVE!" * (1024 * 1024))
+            if os.name == "nt":
+                with self.assertRaisesRegex(ValueError, "explicit retention classifier"):
+                    installed_freeze_file(source, target)
+                self.assertFalse(target.exists())
+            if os.name == "nt":
+                classifier = lambda path, **kwargs: "required_evidence"
+                with patch("msplatform.execution.inputs.file_record", wraps=__import__(
+                        "msplatform.execution.manifest_records", fromlist=["file_record"]).file_record) as recorded:
+                    frozen = freeze_file(source, target, retention_classifier=classifier)
+                self.assertIs(recorded.call_args.kwargs["retention_classifier"], classifier)
+                self.assertEqual(source.read_bytes(), target.read_bytes())
+                self.assertNotIn("retention_role", frozen)
+                with self.assertRaises(FileExistsError):
+                    freeze_file(source, target, retention_classifier=classifier)
+                target.unlink()
+                def corrupt_copy(incoming, outgoing):
+                    outgoing.write_bytes(b"X" + incoming.read_bytes()[1:])
+                with patch("msplatform.execution.inputs.shutil.copyfile", side_effect=corrupt_copy):
+                    with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+                        freeze_file(source, target, retention_classifier=classifier)
 
 class PythonPackageSelectionTests(unittest.TestCase):
     def test_import_root_bootstrap_does_not_import_scientific_or_lifecycle_packages(self):

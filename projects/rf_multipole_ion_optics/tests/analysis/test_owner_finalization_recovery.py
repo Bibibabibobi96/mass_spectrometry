@@ -40,6 +40,7 @@ Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema
             self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
             fixture_repo = root / "simulation_repo"
             shutil.copytree(REPO / "common", fixture_repo / "common", ignore=shutil.ignore_patterns("__pycache__"))
+            owner_fixture.copy_scientific_core(REPO, fixture_repo)
             relative = Path("projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_simion.ps1")
             cli = fixture_repo / relative
             cli.parent.mkdir(parents=True)

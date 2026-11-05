@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from common.contracts.artifact_retention import classify_file
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
@@ -21,7 +22,7 @@ def freeze_workbench_seed(run: Path, repo: Path) -> dict:
             verify_record("official frozen IOB seed", dict(original, path=str(frozen)))
             target = dict(original, path=str(frozen.resolve()))
         else:
-            record = freeze_file(source, frozen)
+            record = freeze_file(source, frozen, retention_classifier=classify_file)
             original = dict(path=record["source_path"],
                 **{key: record[key] for key in ("exists", "bytes", "sha256")})
             target = dict(original, path=record["path"])

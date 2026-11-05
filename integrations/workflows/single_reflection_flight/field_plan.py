@@ -1,116 +1,47 @@
 """Resolve direct working-field cache inputs; never read particle sources or PA data."""
 from __future__ import annotations
+from msplatform.backends.simion.field_bank import field_bank as field_bank
+
+from msplatform.backends.simion.field_audit import (
+    audit_input_identity as audit_input_identity,
+    reusable_audit as reusable_audit,
+    write_audit_spec as write_audit_spec,
+)
 
 import json
 import math
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256, canonical_json_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from common.contracts.file_identity import file_sha256
+from common.contracts.verify_run_manifest import record_path
 from common.simion.pa_family_cache import (
     canonical_pa_family_cache_key,
-    load_pa_family_cache_transaction,
     validate_pa_family_cache_generation,
 )
-from integrations.runtime.build_single_flight_program import (
-    STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,
-    STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
-    STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
-)
+
 from integrations.runtime.single_flight_frontend import frontend_electrode_maps
 from integrations.runtime.single_flight_electrode_contract import multipole_rod_pieces, scientific_multipole_rod_pieces
 
 KINDS = ('carrier_off', 'rf_reference', 'pulse_delta')
 
 
-def working_point_member_id(point: dict) -> str:
-    """Stable PA member name: labels identify repeated RF responses only."""
-    kind = point.get('kind')
-    member = point.get('working_point_id') or kind
-    if not isinstance(member, str) or not member or (member != kind and kind != 'rf_reference'):
-        raise ValueError('working point member identity is invalid')
-    return member
 
 
 AUDIT_NAME = 'frontend_working_fields_audit.json'
 _SOURCE_RECEIPT = 'frontend_field_source_receipt.json'
 
 
-def _require_sha256(value: object, label: str) -> str:
-    if not isinstance(value, str) or len(value) != 64 or any(ch not in '0123456789abcdefABCDEF' for ch in value):
-        raise ValueError(f'{label} must be a SHA-256')
-    return value.upper()
-
-
-def _member_projection(identity: dict, member: dict, *, member_id: str) -> dict:
-    """Project explicit historical evidence onto one unchanged physical solve."""
-    result = dict(identity)
-    result['geometry'] = {key: value for key, value in identity['geometry'].items() if key != 'physical_samples'}
-    result['working_points'] = [member]
-    result['builder_identity'] = {key: identity['builder_identity'][key] for key in ('operating_builder', 'exporter')}
-    if member['kind'] != 'rf_reference':
-        result.pop('rf_reference_voltage_v', None)
-    boundary = identity['boundary_policy']
-    if isinstance(boundary, dict):
-        filename = 'frontend.' + member_id + '.pa'
-        parents = [row for row in boundary['parent_working_points'] if row['name'] == filename]
-        if len(parents) != 1:
-            raise ValueError('fine source does not bind its same-member parent')
-        result['boundary_policy'] = dict(boundary, parent_working_points=parents)
-    return result
-
-
-def laplace_member_identity(*, dimensions: dict, bounds_mm: dict, gem_sha256: str,
-                            cell_mm_xyz: dict, instance_origin_mm: dict, surface: str,
-                            boundary_policy: str | dict, point: dict,
-                            refine_convergence_v: float, rf_reference_voltage_v: float | None = None) -> dict:
-    """Identity of one linear working solve, independent of source and member label.
-
-    Callers retain ownership of endpoint/geometry validation and boundary policy:
-    zero Dirichlet and native zero Neumann are deliberately different operators.
-    """
-    identity = dict(geometry=dict(dimensions=dimensions, bounds_mm=bounds_mm), gem=gem_sha256,
-        working_points=[dict(kind=point['kind'], electrode_voltages_v=point['electrode_voltages_v'],
-                             refine_convergence_v=refine_convergence_v)],
-        mesh=cell_mm_xyz, grid_phase=instance_origin_mm, surface=surface, boundary_policy=boundary_policy)
-    if point['kind'] == 'rf_reference':
-        identity['rf_reference_voltage_v'] = rf_reference_voltage_v
-    return identity
 
 
 
-def _domain_inputs(design: dict, domain: dict, point: dict) -> dict:
-    return laplace_member_identity(dimensions=domain['dimensions'], bounds_mm=domain['bounds_mm'],
-        gem_sha256=domain['gem_sha256'], cell_mm_xyz=domain['cell_mm_xyz'],
-        instance_origin_mm=domain['instance_origin_mm'], surface=design['surface'],
-        boundary_policy=domain['boundary_policy'], point=point,
-        refine_convergence_v=domain['refine_convergence_v'][point['kind']],
-        rf_reference_voltage_v=design.get('rf_reference_voltage_v'))
 
 
-def _parent_boundary(parent_origin: dict, parent: dict) -> dict:
-    record = parent['record']
-    if (not isinstance(parent.get('cache_key'), str) or len(parent['cache_key']) != 64
-            or type(record.get('bytes')) is not int or record['bytes'] <= 0):
-        raise ValueError('fine domain requires its published same-member parent')
-    _require_sha256(record.get('sha256'), 'parent PA')
-    row = dict(kind=record['kind'], name=Path(record['path']).name, bytes=record['bytes'], sha256=record['sha256'])
-    if record.get('working_point_id'):
-        row['working_point_id'] = record['working_point_id']
-    return dict(kind='parent_dirichlet', parent_cache_key=parent['cache_key'],
-                parent_origin_mm=parent_origin, parent_working_points=[row])
 
 
-def frontend_field_identity(design: dict, domain_id: str, *, member_id: str, parent_fields: dict | None = None) -> dict:
-    domains = {row['domain_id']: row for row in design['domains']}
-    point = next(point for point in design['working_points'] if working_point_member_id(point) == member_id)
-    identity = _domain_inputs(design, domains[domain_id], point)
-    if domain_id == 'entrance_refinement':
-        identity['boundary_policy'] = _parent_boundary(domains['parent']['instance_origin_mm'], parent_fields[member_id])
-    elif parent_fields is not None:
-        raise ValueError('parent domain cannot depend on fine fields')
-    return identity
+
+
+
+
 
 
 def bind_parent_fields(domain_plan: dict, parent_fields: dict) -> dict:
@@ -288,8 +219,8 @@ def build_field_plan(prepared: Path, executable: Path, repo: Path) -> dict:
     if has_rf and (type(reference) not in (int, float) or not math.isfinite(reference) or reference <= 0):
         raise ValueError('RF reference must be finite and positive')
     builders = {
-        'operating_builder': repo / 'common/simion/build_dirichlet_patch_operating_pa.lua',
-        'exporter': repo / 'common/simion/export_detached_standalone_pa.lua',
+        'operating_builder': repo / 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua',
+        'exporter': repo / 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua',
     }
     authority = dict(simion_identity=dict(release='SIMION 2020', executable_bytes=executable.stat().st_size,
                                          executable_sha256=file_sha256(executable)),
@@ -350,66 +281,19 @@ def build_field_plan(prepared: Path, executable: Path, repo: Path) -> dict:
 
 
 
-def audit_input_identity(plan: dict) -> str:
-    return canonical_json_sha256(dict(domain_id=plan['domain_id'], grid=plan['grid'],
-        boundary_policy=plan['boundary_policy'], gem=plan['identity']['gem'],
-        physical_electrode_ids=plan['physical_electrode_ids'],
-        physical_samples=[{key: row[key] for key in ('electrode_id', 'gu')} for row in plan['physical_samples']],
-        working_points=[{key: row[key] for key in ('kind', 'voltage_argument')} for row in plan['working_points']]))
 
 
-def reusable_audit(plan: dict, generation: Path, verifier: Path) -> dict | None:
-    source = plan.get('frozen_field_source')
-    if source is not None:
-        record = source.get('audit_record')
-        if record is None:
-            return None
-        verify_record('source field audit', record)
-    else:
-        transaction = load_pa_family_cache_transaction(generation.parent.parent.parent, plan['cache_key'])
-        evidence = transaction.get('verification')
-        if evidence is None:
-            return None
-        audit_path = Path(evidence['verification_output_path'])
-        if not audit_path.is_file():
-            return None
-        record = dict(path=str(audit_path), bytes=audit_path.stat().st_size,
-                      sha256=evidence['verification_output_sha256'])
-        verify_record('published field audit', record)
-    report = json.loads(Path(record['path']).read_text(encoding='utf-8-sig'))
-    if (report.get('status') != 'pass' or report.get('audit_input_sha256') != audit_input_identity(plan)
-            or report.get('audit_verifier_sha256') != file_sha256(verifier)):
-        return None
-    return file_record(Path(record['path']))
 
 
-def write_audit_spec(plan: dict, raw: Path, payload: Path, output: Path) -> None:
-    """Write only bounded native sample instructions, with actual volts and grid."""
-    rows = ['frontend_working_fields_audit_v2', 'domain\t'+plan['domain_id'], 'boundary\t'+plan['boundary_policy'], 'grid\t'+'\t'.join(map(str, plan['grid'])), 'raw\t'+str(raw), 'electrodes\t'+','.join(map(str, plan['physical_electrode_ids']))]
-    for sample in plan['physical_samples']:
-        rows.append('\t'.join(map(str, ['physical', sample['label'], sample['electrode_id'], *sample['gu']])))
-    for point in plan['working_points']:
-        rows.append('\t'.join(['working', point['kind'], str(point.get('path', payload / point['filename']))]))
-        rows.append('\t'.join(['voltages', point['kind'], point['voltage_argument']]))
-    output.write_text('\n'.join(rows)+'\n', encoding='utf-8', newline='\n')
 
 
-def field_bank(design: dict, domain_ids: list[str]) -> dict:
-    """Project the actual working members; no independent field-selection flag."""
-    points = design['working_points']
-    members = [working_point_member_id(point) for point in points]
-    rf_member_ids = [member for member, point in zip(members, points, strict=True)
-                     if point['kind'] == 'rf_reference']
-    rows = []
-    for index, name in enumerate(domain_ids, 1):
-        stem = 'frontend' if name == 'parent' else 'frontend_entrance_refinement'
-        row = dict(role='coarse_frontend' if name == 'parent' else 'entrance_refinement',
-            instance_index=index, carrier_pa_basename=stem+'.carrier_off.pa')
-        if any(point['kind'] == 'pulse_delta' for point in points):
-            row['pulse_delta_pa_basename'] = stem+'.pulse_delta.pa'
-        if rf_member_ids:
-            row.update(rf_differential_pa_basenames=[stem+'.'+member+'.pa' for member in rf_member_ids],
-                       rf_reference_voltage_v=design['rf_reference_voltage_v'])
-        rows.append(row)
-    return dict(schema_version=STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, role=STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
-        runtime_representation=STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION, dynamic_roles=rows)
+
+from msplatform.backends.simion.field_identity import (
+    working_point_member_id as working_point_member_id,
+    _require_sha256 as _require_sha256,
+    _member_projection as _member_projection,
+    laplace_member_identity as laplace_member_identity,
+    _domain_inputs as _domain_inputs,
+    _parent_boundary as _parent_boundary,
+    frontend_field_identity as frontend_field_identity,
+)

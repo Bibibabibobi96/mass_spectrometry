@@ -314,6 +314,187 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         write_json(path, collection)
         return file_record(path)
 
+    def test_segmented_cut_stop_is_nonloss_and_deadline_censored_with_raw_facts(self):
+        selected=copy.deepcopy(self.source[:2])
+        for row,pid in zip(selected,(11,1009),strict=True): row['particle_id']=str(pid)
+        source_path=self.run/'inputs/projected_source.csv'
+        with source_path.open('w',encoding='utf-8',newline='') as stream:
+            writer=csv.DictWriter(stream,fieldnames=selected[0].keys(),lineterminator='\n');writer.writeheader();writer.writerows(selected)
+        source_record=file_record(source_path)
+        self.preparation['outputs']['projected_source']=source_record
+        provenance_path=self.run/'inputs/source_provenance.json'
+        old=json.loads(provenance_path.read_text())
+        clocks={key:self.preparation['input_records'][key] for key in ('clock_authority','instrument_epoch')}
+        records=[dict(particle_id=int(row['particle_id']),species_id='ion',mass_amu=100.,charge_state=1,particle_weight=.5,
+                      particle_birth_time_us=float(row['instrument_time_us']),lineage_birth_time_us=float(row['instrument_time_us']),parent_particle_id=None,generation=0) for row in selected]
+        provenance=dict(schema_version=2,role='single_reflection_canonical_source_provenance',state_kind='source_birth',
+            particle_count=2,execution_particle_ids=[11,1009],mother_particle_ids=[11,1009],mother_records=records,
+            mother_fates=[dict(particle_id=pid,status='not_propagated') for pid in (11,1009)],
+            clock_epoch_id=old['clock_epoch_id'],clock_authority_sha256=clocks['instrument_epoch']['sha256'],clock_records=clocks,
+            consumed_plane_events=[],target_frame_id=old['target_frame_id'],state_time_semantics='original_birth_instrument_time')
+        write_json(provenance_path,provenance);self.preparation['outputs']['source_provenance']=file_record(provenance_path)
+        self.workbench.update(particle_count=2,source_record=source_record)
+        definition=dict(schema_version=1,observation_id='cut',source_instance_id='multipole',port_id='mechanical_exit',max_records=10)
+        policy=dict(schema_version=1,scope='segmented_upstream',observation_id='cut',direction='outward',occurrence=1)
+        self.workbench['build_metadata']=dict(plane_observations=[definition],propagation_stop=policy,
+            source_clock=dict(original_birth_times_us=[float(r['instrument_time_us']) for r in selected],absolute_deadlines_us=[float(r['instrument_time_us'])+2 for r in selected]))
+        lines=[]
+        for native,row in enumerate(selected,1):
+            pid,t=int(row['particle_id']),float(row['instrument_time_us'])
+            state=' '.join(f'{a}_mm={float(row[f"position_{a}_mm"]):.17g}' for a in 'xyz')+' '+' '.join(f'v{a}_mm_per_us={float(row[f"velocity_{a}_m_s"])/1000:.17g}' for a in 'xyz')
+            lines.append(f'TRACE: source_release ion={native} particle_id={pid} instrument_time_us={t:.17g} {state}')
+            if native==1:
+                lines.append(f'TRACE: handoff_terminal_raw ion=1 instance=3 instrument_time_us={t:.17g} x_mm=-1 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0')
+                fields=dict(observation_id='cut',ion=1,particle_id=pid,direction='outward',occurrence=1,instrument_time_us=t+1,x_mm=0,y_mm=0,z_mm=0,vx_mm_per_us=1,vy_mm_per_us=0,vz_mm_per_us=0,
+                    step_start_instrument_time_us=t,step_end_instrument_time_us=t+2,signed_distance_before_mm=-1,signed_distance_after_mm=1,method='accepted_step_linear_interpolation')
+                for end,x in (('start',-1),('end',1)):
+                    fields.update({f'step_{end}_{a}_mm':(x if a=='x' else 0) for a in 'xyz'})
+                    fields.update({f'step_{end}_v{a}_mm_per_us':(1 if a=='x' else 0) for a in 'xyz'})
+                lines.append('PLANE_OBSERVATION_V1: '+' '.join(f'{k}={v}' for k,v in fields.items()))
+                lines.append(f'TRACE: single_flight_handoff ion=1 particle_id={pid} instrument_time_us={t+1:.17g} x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0 step_start_instrument_time_us={t:.17g} step_end_instrument_time_us={t+2:.17g} step_start_x_mm=-1 step_end_x_mm=1')
+                lines.append(f'HANDOFF_ACCEPTED_ENDPOINT_V1: observation_id=cut ion=1 particle_id={pid} direction=outward occurrence=1 event_instrument_time_us={t+1:.17g} endpoint_instrument_time_us={t+2:.17g} instance=3 x_mm=1 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0 method=other_actions_accepted_step_end raw_ion_splat=0 time_step_us=2')
+                lines.append(f'HANDOFF_CUT_STOP_V2: observation_id=cut ion=1 particle_id={pid} direction=outward occurrence=1 event_instrument_time_us={t+1:.17g} endpoint_instrument_time_us={t:.17g} instance=3 x_mm=-1 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0 method=accepted_step_dual_boundary_stop')
+            else:
+                lines.append(f'TRACE: handoff_terminal_raw ion=2 instance=3 instrument_time_us={t+2:.17g} {state}')
+                xyz=' '.join(f'{a}_mm={float(row[f"position_{a}_mm"]):.17g}' for a in 'xyz')
+                lines.append(f'TRACE: timeout_splat ion=2 instance=3 instrument_time_us={t+2:.17g} {xyz} zmax_mm=0')
+        lines.append('status,Fly completed. 2 splats')
+        result=self.collect(self.write_log(lines))
+        outcomes=result['census']['terminal_taxonomy']['particle_outcomes']
+        self.assertEqual([r['category'] for r in outcomes],['handoff_cut_stop','censored_no_handoff_by_deadline'])
+        self.assertEqual(outcomes[1]['raw_terminal_category'],'timeout_splat')
+        self.assertEqual(outcomes[0]['event_instrument_time_us']-1,outcomes[0]['terminal_instrument_time_us'])
+        self.assertEqual(result['plane_observations']['rows'][0]['x_mm'],0)
+        self.assertEqual(result['native_terminals'][0]['x_mm'],-1)
+        self.assertEqual(result['original_mother']['mother_records'],records)
+        self.assertTrue(result['observation_complete'])
+        self.assertEqual(result['census']['terminal_taxonomy']['role'],'segmented_upstream_terminal_taxonomy')
+        self.assertTrue(compare_collections(result,self.collect())['passed'])
+        # Declared diagnostic cap stays incomplete, not evidence of no crossing.
+        capped=lines[:-1]+['PLANE_OBSERVATION_INCOMPLETE_V1: observation_id=cut reason=declared_record_cap',lines[-1]]
+        self.assertFalse(self.collect(self.write_log(capped))['observation_complete'])
+        for bad in (lines+[lines[-2]], [line.replace('endpoint_instrument_time_us=', 'bad_endpoint=') for line in lines],
+                    [line.replace('particle_id=11 direction=outward','particle_id=12 direction=outward') for line in lines]):
+            with self.assertRaises(ValueError): self.collect(self.write_log(bad))
+        for prefix in ('HANDOFF_ACCEPTED_ENDPOINT_V1:', 'HANDOFF_CUT_STOP_V2:'):
+            for before, after in (('occurrence=1', 'occurrence=2'), ('particle_id=11', 'particle_id=12'),
+                                  ('x_mm=1 ', 'x_mm=2 '), ('x_mm=-1 ', 'x_mm=-2 '),
+                                  ('y_mm=0 ', 'y_mm=2 '), ('z_mm=0 ', 'z_mm=2 '),
+                                  ('vx_mm_per_us=1 ', 'vx_mm_per_us=2 '),
+                                  ('vy_mm_per_us=0 ', 'vy_mm_per_us=2 '),
+                                  ('vz_mm_per_us=0 ', 'vz_mm_per_us=2 '),
+                                  ('endpoint_instrument_time_us=', 'endpoint_instrument_time_us=9'),
+                                  ('instance=3', 'instance=4'),
+                                  ('event_instrument_time_us=', 'event_instrument_time_us=9')):
+                changed=[line.replace(before,after) if line.startswith(prefix) else line for line in lines]
+                if changed != lines:
+                    with self.subTest(prefix=prefix, change=before), self.assertRaises(ValueError):
+                        self.collect(self.write_log(changed))
+        for replacement in ('raw_ion_splat=1', 'raw_ion_splat=unknown', 'time_step_us=0'):
+            changed=[line.replace('raw_ion_splat=0',replacement) if replacement.startswith('raw_') else
+                     line.replace('time_step_us=2',replacement) for line in lines]
+            with self.subTest(replacement=replacement), self.assertRaises(ValueError): self.collect(self.write_log(changed))
+        with self.assertRaisesRegex(ValueError,'endpoint record'):
+            self.collect(self.write_log([line for line in lines if not line.startswith('HANDOFF_ACCEPTED_ENDPOINT_V1:')]))
+        physical=lines[:-1]+[f'TRACE: non_detector_splat ion=1 instance=3 t={float(selected[0]["instrument_time_us"])+2:.17g} x=1 y=0 z=0 zmax=0',lines[-1]]
+        with self.assertRaisesRegex(ValueError,'physical terminal'): self.collect(self.write_log(physical))
+        self.workbench['build_metadata']['source_clock']['absolute_deadlines_us'][1]+=1
+        with self.assertRaisesRegex(ValueError,'deadline censor'): self.collect(self.write_log(lines))
+        self.workbench['build_metadata']['source_clock']['absolute_deadlines_us'][1]-=1
+        self.workbench['build_metadata'].pop('propagation_stop')
+        with self.assertRaisesRegex(ValueError,'undeclared'): self.collect(self.write_log(lines))
+
+    def test_real_v2_cut_wire_preserves_raw_start_and_only_original_plane_window(self):
+        from msplatform.backends.simion.tracking_collection import (
+            read_native_evidence, read_plane_observations, read_cut_stop_events, _validate_states)
+
+        # Exact six wire rows from SDK14 upstream02 PID1000003, not a new native run.
+        lines = ['TRACE: source_release ion=1 particle_id=1000003 instrument_time_us=0.57225318875429465 x_mm=-170.11362184380704 y_mm=-0.081660003573429091 z_mm=-18.321709055243165 vx_mm_per_us=1.9595682006629771 vy_mm_per_us=-0.10535913222607861 vz_mm_per_us=-0.091679913138928329 simion_native_kinetic_energy_eV=1.9999999107680824 source_instance=3', 'PLANE_OBSERVATION_V1: observation_id=case_c_rf_mechanical_exit_v1 ion=1 particle_id=1000003 direction=outward occurrence=1 instrument_time_us=43.073491218580166 x_mm=-89.013621843807044 y_mm=-1.0333156801556351 z_mm=-17.585043912978673 vx_mm_per_us=2.0038979786977649 vy_mm_per_us=-0.08380463899423142 vz_mm_per_us=0.30612644357667668 step_start_instrument_time_us=43.072181818181825 step_end_instrument_time_us=43.074181818181827 signed_distance_before_mm=-0.0026242189904053248 signed_distance_after_mm=0.0013840568490195437 step_start_x_mm=-89.01624606279745 step_start_y_mm=-1.033205727053351 step_start_z_mm=-17.585444887121891 step_end_x_mm=-89.012237786958025 step_end_y_mm=-1.0333736712550228 step_end_z_mm=-17.584832432530117 step_start_vx_mm_per_us=2.004906647938911 step_start_vy_mm_per_us=-0.084508696918616108 step_start_vz_mm_per_us=0.30655007652319227 step_end_vx_mm_per_us=2.0033659897224898 step_end_vy_mm_per_us=-0.083433307106186294 step_end_vz_mm_per_us=0.30590301249747215 method=accepted_step_linear_interpolation', 'TRACE: single_flight_handoff ion=1 particle_id=1000003 instrument_time_us=43.073491218580166 tof_since_pulse_us=-36.97788178241003 x_mm=-89.013621843807044 y_mm=-1.0333156801556351 z_mm=-17.585043912978673 vx_mm_per_us=2.0038979786977649 vy_mm_per_us=-0.08380463899423142 vz_mm_per_us=0.30612644357667668 kinetic_energy_eV=2.1331448179706545 survival_status=alive step_start_instrument_time_us=43.072181818181825 step_end_instrument_time_us=43.074181818181827 step_start_x_mm=-89.01624606279745 step_end_x_mm=-89.012237786958025', 'HANDOFF_ACCEPTED_ENDPOINT_V1: observation_id=case_c_rf_mechanical_exit_v1 ion=1 particle_id=1000003 direction=outward occurrence=1 event_instrument_time_us=43.073491218580166 endpoint_instrument_time_us=43.074181818181827 instance=3 x_mm=-89.012237786958025 y_mm=-1.0333736712550228 z_mm=-17.584832432530117 vx_mm_per_us=2.0033659897224898 vy_mm_per_us=-0.083433307106186294 vz_mm_per_us=0.30590301249747215 method=other_actions_accepted_step_end raw_ion_splat=0 time_step_us=0.002', 'TRACE: handoff_terminal_raw ion=1 instance=3 instrument_time_us=43.072181818181825 x_mm=-89.01624606279745 y_mm=-1.033205727053351 z_mm=-17.585444887121891 vx_mm_per_us=2.004906647938911 vy_mm_per_us=-0.084508696918616108 vz_mm_per_us=0.30655007652319227', 'HANDOFF_CUT_STOP_V2: observation_id=case_c_rf_mechanical_exit_v1 ion=1 particle_id=1000003 direction=outward occurrence=1 event_instrument_time_us=43.073491218580166 endpoint_instrument_time_us=43.072181818181825 instance=3 x_mm=-89.01624606279745 y_mm=-1.033205727053351 z_mm=-17.585444887121891 vx_mm_per_us=2.004906647938911 vy_mm_per_us=-0.084508696918616108 vz_mm_per_us=0.30655007652319227 method=accepted_step_dual_boundary_stop']
+        source = {1000003: {'particle_id': 1000003, 'parent_particle_id': None, 'generation': 0, 'species_id': 'ion_100amu_charge_plus_1', 'particle_weight': 1.0, 'source_component_id': 'multipole', 'target_component_id': 'multipole', 'state_event': 'source_birth', 'frame_id': 'oatof_global', 'clock_epoch_id': 'instrument_clock_epoch_v1', 'instrument_time_us': 0.5722531887542947, 'lineage_birth_time_us': 0.5722531887542947, 'particle_birth_time_us': 0.5722531887542947, 'lineage_age_us': 0.0, 'particle_age_us': 0.0, 'last_component_elapsed_time_us': 0.0, 'mass_amu': 100.0, 'charge_state': 1, 'mass_to_charge_Th': 100.0, 'position_x_mm': -170.11362184380704, 'position_y_mm': -0.08166000357342909, 'position_z_mm': -18.321709055243165, 'velocity_x_m_s': 1959.568200662977, 'velocity_y_m_s': -105.35913222607861, 'velocity_z_m_s': -91.67991313892833, 'kinetic_energy_eV': 2.0, 'phase_reference_id': None, 'phase_rad': None}}
+        log = self.write_log(lines + ['status,Fly completed. 1 splats'])
+        flight = dict(pulse=dict(mode='timed', time_us=80.0513730009902, width_us=7.2727272727272725))
+        terminals, locations, _, _ = read_native_evidence(log, source, flight)
+        definition = dict(schema_version=1, observation_id='case_c_rf_mechanical_exit_v1',
+                          source_instance_id='multipole', port_id='mechanical_exit', max_records=100000)
+        observations = read_plane_observations([log], [1000003], [1], [definition])
+        stops = read_cut_stop_events([log], [1000003], [1],
+            dict(observation_id=definition['observation_id']), observations, terminals)
+        row = next(row for row in read_native_events([log], 100., [1000003])['rows']
+                   if row['event'] == 'multipole_handoff')
+        window = observations['rows'][0]
+        self.assertEqual(terminals[1000003]['instrument_time_us'], 43.072181818181825)
+        self.assertEqual(float(stops[1000003]['accepted_endpoint']['endpoint_instrument_time_us']), 43.074181818181827)
+        self.assertEqual(row['instrument_time_us'], 43.073491218580166)
+        with self.assertRaisesRegex(ValueError, 'outside native lifetime'):
+            _validate_states([row], source, terminals, locations, log)
+        windows = {1000003: window}
+        _validate_states([row], source, terminals, locations, log, cut_observation_windows=windows)
+        for key in ('instrument_time_us', 'x_mm', 'y_mm', 'z_mm', 'vx_mm_per_us',
+                    'vy_mm_per_us', 'vz_mm_per_us', 'step_start_instrument_time_us',
+                    'step_end_instrument_time_us', 'step_start_x_mm', 'step_end_x_mm'):
+            bad = dict(row, **{key: math.nextafter(row[key], math.inf)})
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'outside native lifetime'):
+                _validate_states([bad], source, terminals, locations, log, cut_observation_windows=windows)
+        for event in ('pre_pulse_state', 'native_shared_time', 'local_accelerator_exit'):
+            with self.subTest(event=event), self.assertRaisesRegex(ValueError, 'outside native lifetime'):
+                _validate_states([dict(row, event=event)], source, terminals, locations, log,
+                                 cut_observation_windows=windows)
+        with self.assertRaisesRegex(ValueError, 'outside native lifetime'):
+            _validate_states([dict(row, particle_id=1000004)],
+                {1000004: source[1000003]}, {1000004: terminals[1000003]}, {}, log,
+                cut_observation_windows=windows)
+
+    def test_modern_sparse_source_collection_binds_full_mother_weight_birth_and_both_clock_records(self):
+        selected = copy.deepcopy(self.source[:2])
+        for row, pid, arrival in zip(selected, (11,1009), (2.,5.), strict=True):
+            row.update(particle_id=str(pid), instrument_time_us=str(arrival))
+        source_path = self.run / "inputs/projected_source.csv"
+        with source_path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=selected[0].keys(), lineterminator="\n")
+            writer.writeheader(); writer.writerows(selected)
+        source_record = file_record(source_path)
+        self.preparation["outputs"]["projected_source"] = source_record
+        provenance_path = self.run / "inputs/source_provenance.json"
+        old = json.loads(provenance_path.read_text())
+        mother_ids = [11,1009,3007]
+        records = [dict(particle_id=pid,species_id="ion",mass_amu=100.,charge_state=1,particle_weight=weight,
+                        particle_birth_time_us=birth,lineage_birth_time_us=birth,parent_particle_id=None,generation=0)
+                   for pid,weight,birth in ((11,.5,.25),(1009,2.,.75),(3007,3.,1.))]
+        clocks = {key:self.preparation["input_records"][key] for key in ("clock_authority","instrument_epoch")}
+        provenance = dict(schema_version=2,role="single_reflection_canonical_source_provenance",state_kind="plane_crossing",
+            particle_count=2,execution_particle_ids=[11,1009],mother_particle_ids=mother_ids,mother_records=records,
+            mother_fates=[dict(particle_id=pid,category="upstream_observation" if pid!=3007 else "unknown") for pid in mother_ids],
+            clock_epoch_id=old["clock_epoch_id"],clock_authority_sha256=clocks["instrument_epoch"]["sha256"],
+            clock_records=clocks,consumed_plane_events=[dict(particle_id=int(row["particle_id"]),observation_id="exit",direction="outward",occurrence=1,
+                instrument_time_us=float(row["instrument_time_us"]),position_mm=[float(row[f"position_{a}_mm"]) for a in "xyz"]) for row in selected],
+            target_frame_id=old["target_frame_id"],state_time_semantics="per_particle_arrival_instrument_time_without_original_birth_reset")
+        write_json(provenance_path,provenance)
+        self.preparation["outputs"]["source_provenance"] = file_record(provenance_path)
+        self.workbench.update(particle_count=2,source_record=source_record)
+        lines = []
+        for native, row in enumerate(selected,1):
+            pid,t=int(row["particle_id"]),float(row["instrument_time_us"])
+            state=" ".join(f'{a}_mm={float(row[f"position_{a}_mm"]):.17g}' for a in "xyz")+" "+" ".join(f'v{a}_mm_per_us={float(row[f"velocity_{a}_m_s"])/1000:.17g}' for a in "xyz")
+            xyz=" ".join(f'{a}={float(row[f"position_{a}_mm"]):.17g}' for a in "xyz")
+            lines.extend((f'TRACE: source_release ion={native} particle_id={pid} instrument_time_us={t} {state}',
+                          f'TRACE: handoff_terminal_raw ion={native} instance=3 instrument_time_us={t+1} {state}',
+                          f'TRACE: non_detector_splat ion={native} instance=3 t={t+1} {xyz} zmax=0'))
+        lines.append("status,Fly completed. 2 splats")
+        result = self.collect(self.write_log(lines))
+        self.assertEqual(result["schema_version"],2)
+        self.assertEqual(result["role"],"single_reflection_canonical_source_collection")
+        self.assertEqual([row["particle_id"] for row in result["native_terminals"]],[11,1009])
+        self.assertEqual(result["original_mother"]["mother_records"],records)
+        self.assertEqual(result["original_mother"]["mother_particle_ids"],mother_ids)
+        changed = copy.deepcopy(result);changed["original_mother"]["mother_records"][0]["particle_weight"]=7.
+        self.assertFalse(compare_collections(result,changed)["passed"])
+        self.assertTrue(compare_collections(result,self.collect())["passed"])
+        provenance["clock_records"]["clock_authority"] = dict(clocks["clock_authority"],sha256="0"*64)
+        write_json(provenance_path,provenance)
+        self.preparation["outputs"]["source_provenance"]=file_record(provenance_path)
+        with self.assertRaisesRegex(ValueError,"clock record"):
+            self.collect()
+
     def test_recorded_pre_pulse_continuation_keeps_parent_ledger_and_replay(self):
         selected = [self.source[7], self.source[6]]
         for row in selected:
@@ -622,6 +803,95 @@ class CanonicalCensusTests(unittest.TestCase):
                 self.assertEqual(summary["terminal_taxonomy"]["terminal_outcome_count"], 1)
                 self.assertEqual(evidence['rows'][1]["step_start_instrument_time_us"], 1.)
                 self.assertEqual(summary["census"]["accelerator_axis_forward"], 1)
+
+
+class CanonicalPlaneHandoffTests(unittest.TestCase):
+    def oracle(self):
+        from msplatform.assembly.handoff import HandoffClock, HandoffMother
+        from msplatform.contracts.clock import ClockIdentity
+        from msplatform.contracts.rigid_transform import RigidTransform
+        records = {11:dict(parent_particle_id=None, generation=0, species_id="ion", mass_amu=100., charge_state=1,
+                       particle_weight=.5, particle_birth_time_us=.25, lineage_birth_time_us=.25, source_component_entry_time_us=.25),
+                   1009:dict(parent_particle_id=None, generation=0, species_id="ion", mass_amu=100., charge_state=1,
+                       particle_weight=2., particle_birth_time_us=.75, lineage_birth_time_us=.75, source_component_entry_time_us=.75)}
+        mother = HandoffMother(records, [dict(particle_id=pid, category="observed_upstream") for pid in records])
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        epoch = root / "instrument_epoch.json"
+        epoch.write_text('{"epoch_us":0}\n', encoding="utf-8")
+        authority = root / "clock_authority.json"
+        authority.write_text(json.dumps({"authority":file_record(epoch)}), encoding="utf-8")
+        self.clock_records = dict(clock_authority=file_record(authority), instrument_epoch=file_record(epoch))
+        identity = ClockIdentity("epoch", self.clock_records["instrument_epoch"]["sha256"])
+        transform = RigidTransform.from_contract(dict(schema_version=1,role="rigid_transform",from_frame_id="world",to_frame_id="world",rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0]))
+        definition = dict(schema_version=1, observation_id="exit", source_instance_id="rf", port_id="mechanical_exit", max_records=10)
+        rows = []
+        for pid, t in ((11,2.),(1009,5.)):
+            rows.append(dict(particle_id=pid, observation_id="exit", direction="outward", occurrence=1,
+                instrument_time_us=t, x_mm=0., y_mm=2., z_mm=3., vx_mm_per_us=1.,vy_mm_per_us=0.,vz_mm_per_us=0.,
+                method="accepted_step_linear_interpolation", step_start_instrument_time_us=t-.1,step_end_instrument_time_us=t+.1,
+                signed_distance_before_mm=-.1,signed_distance_after_mm=.1))
+        table = dict(schema_version=1,role="single_reflection_plane_observations",status="complete",definitions=[definition],rows=rows)
+        self.consumed_events = [dict(particle_id=row["particle_id"],observation_id="exit",direction="outward",occurrence=1,
+            instrument_time_us=row["instrument_time_us"],position_mm=[row[a+"_mm"] for a in "xyz"]) for row in rows]
+        return table, dict(observation_id="exit",direction="outward",occurrence=1,source_instance_id="rf",target_instance_id="tof",
+            frame_id="world",transform=transform,clock=HandoffClock(identity,identity),mother=mother,producer_completed=True)
+
+    def test_sparse_weighted_non_simultaneous_plane_states_preserve_original_mother(self):
+        from msplatform.backends.simion.source import prepare_plane_handoff_states, project_handoff_source, render_restart_fly2, execution_particle_ids
+        table, args = self.oracle()
+        original = copy.deepcopy(args["mother"])
+        # Later/other-direction events are retained and do not replace the declared occurrence.
+        table["rows"].append(dict(table["rows"][0], direction="inward", occurrence=1, instrument_time_us=3.))
+        table["rows"].append(dict(table["rows"][0], occurrence=2, instrument_time_us=4.))
+        result = prepare_plane_handoff_states(table, **args)
+        rows, provenance = project_handoff_source(result, clock_records=self.clock_records, consumed_plane_events=self.consumed_events)
+        self.assertEqual(execution_particle_ids(provenance,999), [11,1009])
+        self.assertEqual([float(row["instrument_time_us"]) for row in rows], [2.,5.])
+        self.assertEqual([row["particle_birth_time_us"] for row in result.rows], [.25,.75])
+        self.assertEqual([row["particle_age_us"] for row in result.rows], [1.75,4.25])
+        self.assertEqual([row["particle_weight"] for row in result.rows], [.5,2.])
+        self.assertEqual([row["velocity_x_m_s"] for row in result.rows], [1000.,1000.])
+        self.assertEqual(args["mother"], original)
+        self.assertEqual(provenance["mother_particle_ids"], [11,1009])
+        self.assertEqual(render_restart_fly2(rows).count("tob = 0"), 2)
+
+    def test_source_birth_uses_same_projector_without_fake_handoff_or_reindex(self):
+        from msplatform.backends.simion.source import prepare_plane_handoff_states, project_source_states, GLOBAL_COLUMNS
+        table, args = self.oracle()
+        selected = prepare_plane_handoff_states(table, **args)
+        states = copy.deepcopy(list(selected.rows))
+        for row in states:
+            row.update(instrument_time_us=row["particle_birth_time_us"],particle_age_us=0.,lineage_age_us=0.,
+                       last_component_elapsed_time_us=0.,state_event="source_birth")
+        projected, provenance = project_source_states(states,mother=args["mother"],clock=args["clock"].target,
+            state_kind="source_birth",clock_records=self.clock_records)
+        self.assertEqual(list(projected[0]),GLOBAL_COLUMNS)
+        self.assertEqual([float(row["instrument_time_us"]) for row in projected],[.25,.75])
+        self.assertEqual(provenance["execution_particle_ids"],[11,1009])
+        self.assertEqual(provenance["state_kind"],"source_birth")
+        with self.assertRaises(ValueError):
+            project_source_states(states[:1],mother=args["mother"],clock=args["clock"].target,state_kind="source_birth",clock_records=self.clock_records)
+        with self.assertRaises(ValueError):
+            project_source_states(selected.rows,mother=args["mother"],clock=args["clock"].target,state_kind="source_birth",clock_records=self.clock_records)
+
+    def test_zero_transfer_and_invalid_completion_occurrence_clock_or_id_fail_closed(self):
+        from msplatform.backends.simion.source import prepare_plane_handoff_states, project_handoff_source, execution_particle_ids, validate_native_particle_ids
+        table, args = self.oracle()
+        empty = prepare_plane_handoff_states(dict(table,rows=[]), **args)
+        rows, provenance = project_handoff_source(empty, clock_records=self.clock_records)
+        self.assertEqual(rows, [])
+        self.assertEqual(provenance["mother_particle_ids"], [11,1009])
+        self.assertEqual(execution_particle_ids(provenance,0), [])
+        for bad in (dict(table,status="incomplete"), dict(table,rows=[table["rows"][0],table["rows"][0]])):
+            with self.assertRaises(ValueError): prepare_plane_handoff_states(bad, **args)
+        with self.assertRaises(ValueError): prepare_plane_handoff_states(table, **dict(args,producer_completed=False))
+        self.assertEqual(validate_native_particle_ids([11,2**53-1]), [11,2**53-1])
+        for ids in ([2**53], [2**53+1], [True], [11,11], [1.5]):
+            with self.subTest(ids=ids), self.assertRaises(ValueError): validate_native_particle_ids(ids)
+        broken = dict(provenance);broken.pop("mother_records")
+        with self.assertRaises(ValueError): execution_particle_ids(broken,0)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
-from common.contracts.frozen_inputs import enumerate_python_sources
+from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
 
 def capacity_fixture_source(repository: Path, destination: Path) -> Path:
@@ -19,20 +19,14 @@ def capacity_fixture_source(repository: Path, destination: Path) -> Path:
     for relative in ("common", "config", "projects/rf_multipole_ion_optics"):
         shutil.copytree(repository / relative, destination / relative,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.mph", "*.pa0", "*.pa#"))
-    for relative in enumerate_python_sources(
-        repository, package_roots=("src/msplatform",), provider_root="src/msplatform",
-        resource_suffixes=(".schema.json",),
-    ):
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(repository / relative, target)
+    copy_scientific_core(repository, destination)
     registry = json.loads((repository / "config/project_registry.json").read_text(encoding="utf-8"))
     project = next(row for row in registry["projects"] if row["project_id"] == "rf_multipole_ion_optics")
     for record in project["retired_project_descriptors"]:
         target = destination / record["path"]
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(repository / record["path"], target)
-    policy = destination / "common/contracts/artifact_capacity_policy.json"
+    policy = destination / "src/msplatform/execution/resources/artifact_capacity_policy.json"
     document = json.loads(policy.read_text(encoding="utf-8"))
     document.update(target_gib=.125, minimum_free_gib=0)
     policy.write_text(json.dumps(document), encoding="utf-8")

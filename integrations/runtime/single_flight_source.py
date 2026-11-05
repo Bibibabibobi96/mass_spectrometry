@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+from msplatform.backends.simion.source import (
+    GLOBAL_COLUMNS as GLOBAL_COLUMNS,
+    canonical_clock_lua as canonical_clock_lua,
+    lua_number as lua_number,
+    lua_value as lua_value,
+    render_restart_fly2 as render_restart_fly2,
+)
+
 import math
-import json
-import re
 from pathlib import Path
 from typing import Any, Mapping
 
-from common.contracts.particle_physics import (
+from msplatform.assembly.handoff import select_state_rows
+from msplatform.contracts.clock import seconds_to_microseconds
+from msplatform.contracts.particle_physics import (
     kinetic_energy_ev,
 )
-from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
+from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 
 
 SOURCE_COLUMNS = [
@@ -28,9 +36,7 @@ SOURCE_COLUMNS = [
 ]
 
 
-def binary64_serialization_close(a: float, b: float) -> bool:
-    """Binary64 serialization allowance, not a physical matching tolerance."""
-    return abs(a - b) <= 32 * math.ulp(max(1., abs(a), abs(b)))
+from msplatform.contracts.particle_state import binary64_serialization_close as binary64_serialization_close
 
 
 _CANONICAL_PRE_PULSE_COLUMNS = {
@@ -130,18 +136,18 @@ def select_timed_pre_pulse_states(
     if not selected_id_set <= set(mother_ids):
         raise ValueError("selected timed source is outside the canonical mother cohort")
 
-    selected_by_id: dict[int, dict[str, Any]] = {}
-    for row in rows:
-        if row["event"] != "pre_pulse_state" or int(row["particle_id"]) not in selected_id_set:
-            continue
-        particle_id = int(row["particle_id"])
-        if particle_id in selected_by_id:
-            raise ValueError("canonical collection repeats a selected timed source particle")
-        selected_by_id[particle_id] = row
-    missing = [particle_id for particle_id in particle_ids if particle_id not in selected_by_id]
-    if missing:
-        raise ValueError("canonical collection lacks a selected timed source pre-pulse particle")
-    selected_rows = [selected_by_id[particle_id] for particle_id in particle_ids]
+    candidates = [dict(row, particle_id=int(row["particle_id"])) for row in rows
+                  if row["event"] == "pre_pulse_state"]
+    try:
+        selected_rows = select_state_rows(candidates, particle_ids=particle_ids, mother_particle_ids=mother_ids)
+    except ValueError as error:
+        context = {
+            "handoff repeats a selected particle state": "canonical collection repeats a selected timed source particle",
+            "handoff lacks a selected particle state": "canonical collection lacks a selected timed source pre-pulse particle",
+        }
+        if str(error) not in context:
+            raise
+        raise ValueError(context[str(error)]) from error
     state_times = {float(row["instrument_time_us"]) for row in selected_rows}
     if any(not math.isfinite(value) for value in state_times):
         raise ValueError("canonical event instrument_time_us must be finite")
@@ -234,38 +240,8 @@ def require_producer_manifest_binding(
         raise ValueError("SIMION producer manifest does not publish the frozen pulse decision")
 
 
-GLOBAL_COLUMNS = [
-    "particle_id",
-    "instrument_time_us",
-    "mass_amu",
-    "charge_state",
-    "position_x_mm",
-    "position_y_mm",
-    "position_z_mm",
-    "velocity_x_m_s",
-    "velocity_y_m_s",
-    "velocity_z_m_s",
-    "kinetic_energy_eV",
-]
 
 
-def render_restart_fly2(rows: list[dict[str, str]]) -> str:
-    """Render official individual-particle FLY2 direct-velocity definitions."""
-    lines = ["particles {", "  coordinates = 0,"]
-    for row in rows:
-        position = ", ".join(row[f"position_{axis}_mm"] for axis in "xyz")
-        velocity = ", ".join(
-            format(float(row[f"velocity_{axis}_m_s"]) / 1000.0, ".17g")
-            for axis in "xyz"
-        )
-        lines.append(
-            "  standard_beam { tob = 0, mass = "
-            + row["mass_amu"] + ", charge = " + row["charge_state"]
-            + ", cwf = 1, color = 0, position = vector(" + position
-            + "), velocity = vector(" + velocity + ") },"
-        )
-    lines.append("}")
-    return "\n".join(lines) + "\n"
 
 
 def transform_source_rows(
@@ -290,7 +266,7 @@ def transform_source_rows(
             transform.from_frame_id,
             tuple(float(row[f"{axis}_mm"]) for axis in "xyz"),
             tuple(float(row[f"v{axis}_m_s"]) for axis in "xyz"),
-            float(row["birth_time_s"]) * 1e6,
+            seconds_to_microseconds(float(row["birth_time_s"])),
         ))
         x, y, z = state.position_mm
         vx, vy, vz = state.velocity_m_s
@@ -314,58 +290,3 @@ def transform_source_rows(
             }
         )
     return global_rows
-
-
-def canonical_clock_lua() -> str:
-    """Retain row identity and source-origin-plus-elapsed instrument time."""
-    return """local function single_flight_source_row_index()
-  return ion_number+single_flight_particle_id_offset
-end
-local function single_flight_canonical_particle_id()
-  local particle_id=single_flight_source_particle_id[single_flight_source_row_index()]
-  assert(particle_id~=nil,'explicit single-flight row map is missing a source particle ID')
-  return particle_id
-end
-local function single_flight_instrument_time_us()
-  local origin=single_flight_time_origin_us[single_flight_source_row_index()]
-  assert(origin~=nil,'absolute single-flight clock is missing particle time origin')
-  return origin+ion_time_of_flight
-end
-local function single_flight_restore_source_velocity(velocities)
-  local velocity=assert(velocities[single_flight_source_row_index()],
-    'frozen source velocity row is missing')
-  ion_vx_mm,ion_vy_mm,ion_vz_mm=velocity[1],velocity[2],velocity[3]
-end
-handoff_instrument_time_us=single_flight_instrument_time_us
-"""
-
-
-def lua_number(value: float) -> str:
-    result = float(value)
-    if not math.isfinite(result):
-        raise ValueError("Lua numeric value must be finite")
-    return format(result, ".17g")
-
-
-def lua_value(value: object) -> str:
-    """Serialize a validated Python contract fragment as deterministic Lua."""
-    if value is None:
-        return "nil"
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return lua_number(value)
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=True)
-    if isinstance(value, list):
-        return "{" + ",".join(lua_value(item) for item in value) + "}"
-    if isinstance(value, dict):
-        items = []
-        for key, item in value.items():
-            if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-                raise ValueError(f"Lua contract key is not one identifier: {key!r}")
-            items.append(f"{key}={lua_value(item)}")
-        return "{" + ",".join(items) + "}"
-    raise ValueError(f"unsupported Lua contract value: {type(value).__name__}")

@@ -170,7 +170,7 @@ Formal继续归原项目，联合发布不自动授予或替换它们的资格�
 ### run产物保留合同
 
 新建或实质修改的run入口必须使用
-[`common/contracts/artifact_retention.json`](../common/contracts/artifact_retention.json)和run manifest
+[`artifact_retention.json`](../src/msplatform/execution/resources/artifact_retention.json)和run manifest
 schema v2冻结保留类别；默认类别是`compact`。保留类别在`run_config.json`运行前确定，manifest逐项记录
 输出的`retention_role`，不得在看见结果或磁盘占用后改类。现有schema v1历史run保持可读、可复核，
 但不得作为新入口绕过保留合同的模板。
@@ -316,7 +316,7 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 ### 工作区容量水位线
 
 工作区`artifacts/`的受管目标上限和所在卷预计峰值后的最小空闲，其唯一配置来源是
-[`artifact_capacity_policy.json`](../common/contracts/artifact_capacity_policy.json)。台账记录逻辑字节，
+[`artifact_capacity_policy.json`](../src/msplatform/execution/resources/artifact_capacity_policy.json)。台账记录逻辑字节，
 磁盘检查读取真实空闲量；二者含义不同。
 
 容量台账只区分：必要轻量证据`light_evidence`、公共可复用重型资产`published_cache`、可重建载荷

@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import copy
 from dataclasses import FrozenInstanceError
+import json
 import math
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-from projects.rf_multipole_ion_optics.core.face_sections import local_face_conductor_sections
+from msplatform.components.rf_multipole.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.face_sections import local_face_conductor_sections
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 
 
@@ -31,6 +36,43 @@ def compiled(*, version=4, segmented=True, shell=False, recessed=False, caps=Fal
 
 
 class FaceSectionTests(unittest.TestCase):
+    def test_package_provider_runs_without_repository_or_backend_imports(self):
+        source = compiled(shell=True)
+        script = r'''
+import builtins, dataclasses, json, sys
+sys.path.insert(0, sys.argv[1])
+original_import = builtins.__import__
+def guarded(name, *args, **kwargs):
+    if name == 'common' or name.startswith('common.') or name == 'projects' or name.startswith('projects.'):
+        raise AssertionError('installed provider imported repository host: ' + name)
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = guarded
+from msplatform.components.rf_multipole.compile_design_request import compile_design_request, validate_resolved_design_contract
+from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
+from msplatform.components.rf_multipole.face_sections import local_face_conductor_sections
+payload = json.loads(sys.stdin.read())
+source = payload['resolved']
+request = payload['request']
+assert compile_design_request(request, expected_identity=request['identity']) == payload['compiled']
+validate_resolved_design_contract(source)
+interface = build_assembly_interface(source, geometry_profile_id=None)
+assert interface['schema_version'] == 3
+assert local_face_conductor_sections.__module__ == 'msplatform.components.rf_multipole.face_sections'
+print(json.dumps([dataclasses.asdict(r) for r in local_face_conductor_sections(source, side='exit')]))
+'''
+        src = Path(__file__).resolve().parents[4] / "src"
+        request = design_request()
+        request["schema_version"] = 4
+        payload = dict(resolved=source, request=request,
+                       compiled=compile_design_request(request, expected_identity=request["identity"]))
+        with tempfile.TemporaryDirectory() as directory:
+            child = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", script, str(src)],
+                input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8",
+                cwd=directory, timeout=15, check=True)
+        from dataclasses import asdict
+        expected = json.loads(json.dumps([asdict(r) for r in local_face_conductor_sections(source, side="exit")]))
+        self.assertEqual(json.loads(child.stdout), expected)
+
     def test_neutral_direct_request_has_independent_circle_and_member_oracle(self):
         source = compiled()
         before = copy.deepcopy(source)

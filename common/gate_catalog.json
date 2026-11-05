@@ -12,7 +12,7 @@
           "reason": "host_scheduler_changed"
         },
         {
-          "exact": "common/host_resource_policy.json",
+          "exact": "src/msplatform/execution/resources/host_resource_policy.json",
           "reason": "host_policy_changed"
         },
         {
@@ -42,6 +42,10 @@
         {
           "exact": "common/test_observed_preparation_drain.py",
           "reason": "observed_preparation_drain_tests_changed"
+        },
+        {
+          "prefix": "src/msplatform/execution/",
+          "reason": "installed_execution_dependency_changed"
         }
       ],
       "command": {
@@ -66,7 +70,7 @@
           "reason": "host_scheduler_changed"
         },
         {
-          "exact": "common/host_resource_policy.json",
+          "exact": "src/msplatform/execution/resources/host_resource_policy.json",
           "reason": "host_policy_changed"
         },
         {
@@ -76,6 +80,10 @@
         {
           "exact": "common/test_host_execution_lease.ps1",
           "reason": "host_adapter_tests_changed"
+        },
+        {
+          "prefix": "src/msplatform/execution/",
+          "reason": "installed_execution_dependency_changed"
         }
       ],
       "command": {
@@ -156,10 +164,20 @@
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "discover", "-s", "common/paths", "-p", "test_*.py"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "common/paths",
+          "-p",
+          "test_*.py"
+        ]
       },
       "test_selection": {
-        "roots": ["common/paths/"]
+        "roots": [
+          "common/paths/"
+        ]
       },
       "owner": "common/paths"
     },
@@ -518,6 +536,22 @@
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/rf_multipole/",
+          "reason": "installed_rf_provider_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/(?:rf_[^/]+|numerics)\\.py$",
+          "reason": "installed_rf_backend_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+          "reason": "common_simion_direct_dependency_changed"
         }
       ],
       "command": {
@@ -546,7 +580,7 @@
           "reason": "workspace_path_transport_changed"
         },
         {
-          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
+          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
           "reason": "installed_scientific_core_changed"
         },
         {
@@ -910,7 +944,11 @@
                 "reason": "python_dependency_lock_changed"
               },
               {
-                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
+                "exact": "requirements-cad-step-lock.txt",
+                "reason": "optional_cad_dependency_lock_changed"
+              },
+              {
+                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
                 "reason": "installed_scientific_core_changed"
               }
             ],
@@ -928,7 +966,7 @@
                 "reason": "frozen_input_mechanism_changed"
               },
               {
-                "exact": "src/msplatform/contracts/frozen_inputs.py",
+                "exact": "src/msplatform/execution/inputs.py",
                 "reason": "frozen_input_mechanism_changed"
               }
             ],
@@ -936,6 +974,161 @@
               "common/contracts/test_frozen_inputs.py"
             ],
             "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/(?:api\\.py|assembly/port_mating\\.py|examples/|components/|backends/simion/)",
+                "reason": "installed_stage_api_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_platform_api.py",
+              "common/contracts/test_platform_capabilities.py",
+              "common/contracts/test_simion_geometry_compiler.py",
+              "common/contracts/test_simion_native_plans.py",
+              "common/contracts/test_geometry_execution.py",
+              "common/contracts/test_simion_prepared_model.py",
+              "common/contracts/test_simion_model_execution.py",
+              "common/contracts/test_simion_field_workbench.py",
+              "common/contracts/test_simion_field_action.py",
+              "common/contracts/test_simion_fields_execution.py",
+              "common/contracts/test_simion_field_worker.py",
+              "common/contracts/test_simion_field_transport.py",
+              "common/contracts/test_simion_field_guards.py",
+              "common/contracts/test_simion_tracking_execution.py",
+              "common/contracts/test_simion_tracking_units.py",
+              "common/contracts/test_simion_trajectory_analysis.py",
+              "common/contracts/test_simion_trajectory_comparison.py",
+              "common/contracts/test_native_io.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/(?:api\\.py|applications/)",
+                "reason": "explicit_model_view_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_solidworks_application.py",
+              "common/contracts/test_open_model_execution.py",
+              "common/contracts/test_simion_model_open.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/(?:exporters/|components/[^/]+/geometry_members\\.py)",
+                "reason": "assembly_cad_projection_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_geometry_members.py",
+              "common/contracts/test_step_export.py",
+              "common/contracts/test_cad_execution.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/execution/(?:payload_inputs\\.py|payload_identity\\.py|resources/payload_[^/]+\\.ps1)$",
+                "reason": "native_payload_materialization_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_payload_materialization.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/execution/clock_authority.py",
+                "reason": "canonical_clock_authority_io_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_canonical_clock_authority.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/propagation_comparison.py",
+                "reason": "descriptive_propagation_comparison_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_propagation_comparison.py",
+              "common/contracts/test_simion_trajectory_comparison.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "prefix": "src/msplatform/execution/",
+                "reason": "installed_execution_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_execution_runtime.py",
+              "common/contracts/test_execution_accounting_hold.py",
+              "common/contracts/test_immutable_input_process.py",
+              "common/contracts/test_batch_processes.py",
+              "common/contracts/test_process_family_identity.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/assembly/handoff.py",
+                "reason": "canonical_handoff_or_clock_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/clock.py",
+                "reason": "canonical_handoff_or_clock_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/particle_state.py",
+                "reason": "canonical_handoff_or_clock_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_handoff.py",
+              "common/contracts/test_component_particle_state.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/(?:api\\.py|execution/(?:artifact_reader|manifest_records|terminal_publication)\\.py)$",
+                "reason": "published_artifact_reader_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_artifact_reader.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/(?:api\\.py|ion_release/(?:authoring|release|cylinder|mt19937_disk_cone_rf_phase)\\.py|contracts/(?:clock|particle_state|particle_physics)\\.py)$",
+                "reason": "canonical_birth_authoring_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_release_authoring.py"
+            ],
+            "dependency_profile": "locked"
           },
           {
             "matches": [
@@ -1023,6 +1216,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "regex": "^src/msplatform/(?:backends/simion/(?:pa_family_cache|standalone_pa_response_set)|execution/(?:cache_generation|immutable_pa_parity|capacity_ledger|artifact_cache_contract)|io/file_identity)\\.py$",
+          "reason": "installed_simion_cache_closure_changed"
+        },
+        {
           "regex": "^common/simion/(?!(?:test_dirichlet_patch_basis\\.py|test_dirichlet_patch_basis_fixture\\.lua|build_dirichlet_patch_basis\\.lua)$)",
           "reason": "common_simion_changed"
         },
@@ -1035,8 +1232,24 @@
           "reason": "managed_process_completion_dependency_changed"
         },
         {
-          "exact": "src/msplatform/contracts/frozen_inputs.py",
+          "exact": "src/msplatform/execution/inputs.py",
           "reason": "frozen_workbench_seed_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/recovery.py",
+          "reason": "canonical_whole_unit_recovery_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/(?:gem_primitives|aperture)\\.py$",
+          "reason": "canonical_simion_compilation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "common_simion_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+          "reason": "common_simion_changed"
         }
       ],
       "command": {
@@ -1059,11 +1272,27 @@
           {
             "matches": [
               {
+                "regex": "^src/msplatform/(?:backends/simion/(?:pa_family_cache|standalone_pa_response_set)|execution/(?:cache_generation|immutable_pa_parity|capacity_ledger|artifact_cache_contract)|io/file_identity)\\.py$",
+                "reason": "installed_simion_cache_closure_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_pa_family_cache.py",
+              "common/simion/test_cache_generation.py",
+              "common/simion/test_immutable_pa_parity.py",
+              "common/simion/test_standalone_pa_response_set.py",
+              "common/simion/test_operating_pa_cache.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "exact": "common/contracts/frozen_inputs.py",
                 "reason": "frozen_workbench_seed_dependency_changed"
               },
               {
-                "exact": "src/msplatform/contracts/frozen_inputs.py",
+                "exact": "src/msplatform/execution/inputs.py",
                 "reason": "frozen_workbench_seed_dependency_changed"
               }
             ],
@@ -1123,7 +1352,7 @@
           "reason": "dirichlet_native_resource_dependency_changed"
         },
         {
-          "exact": "common/host_resource_policy.json",
+          "exact": "src/msplatform/execution/resources/host_resource_policy.json",
           "reason": "dirichlet_native_resource_dependency_changed"
         },
         {
@@ -1181,6 +1410,22 @@
         {
           "exact": "projects/rf_multipole_ion_optics/tests/__init__.py",
           "reason": "rf_multipole_test_package_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/rf_multipole/",
+          "reason": "installed_rf_provider_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/(?:rf_[^/]+|numerics)\\.py$",
+          "reason": "installed_rf_backend_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "common_simion_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+          "reason": "common_simion_dependency_changed"
         }
       ],
       "command": {
@@ -1254,6 +1499,10 @@
         {
           "prefix": "src/msplatform/assembly/",
           "reason": "common_integration_changed"
+        },
+        {
+          "exact": "src/msplatform/assembly/port_mating.py",
+          "reason": "canonical_port_mating_changed"
         }
       ],
       "command": {
@@ -1358,6 +1607,18 @@
         {
           "prefix": "src/msplatform/assembly/",
           "reason": "assembly_compiler_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/",
+          "reason": "installed_provider_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/backends/simion/",
+          "reason": "installed_backend_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/assembly/handoff.py",
+          "reason": "canonical_handoff_changed"
         }
       ],
       "command": {
@@ -1493,7 +1754,8 @@
               "integrations/tests/test_single_reflection_runner.py",
               "integrations/tests/test_single_reflection_runtime.py",
               "integrations/tests/test_single_reflection_scientific_freeze.py",
-              "integrations/tests/test_single_reflection_source_protection.py"
+              "integrations/tests/test_single_reflection_source_protection.py",
+              "integrations/tests/test_single_reflection_zero_gap.py"
             ],
             "dependency_profile": "locked"
           },
@@ -1580,6 +1842,14 @@
         {
           "exact": "src/msplatform/contracts/expected_values.py",
           "reason": "reference_comparison_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/orthogonal_accelerator/",
+          "reason": "installed_oa_provider_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/oa_geometry.py",
+          "reason": "installed_oa_backend_changed"
         }
       ],
       "command": {
@@ -1868,6 +2138,14 @@
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/single_reflection_oa_tof/",
+          "reason": "installed_tof_provider_changed"
+        },
+        {
+          "prefix": "src/msplatform/backends/simion/",
+          "reason": "installed_tof_backend_changed"
         }
       ],
       "command": {
@@ -2118,6 +2396,22 @@
         {
           "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_response_peak_metrics_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/rf_multipole/",
+          "reason": "installed_rf_provider_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/(?:rf_[^/]+|numerics)\\.py$",
+          "reason": "installed_rf_backend_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+          "reason": "common_simion_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2358,6 +2652,22 @@
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/rf_multipole/",
+          "reason": "installed_rf_provider_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/(?:rf_[^/]+|numerics)\\.py$",
+          "reason": "installed_rf_backend_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+          "reason": "common_simion_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2455,6 +2765,22 @@
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/rf_multipole/",
+          "reason": "installed_rf_provider_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/(?:rf_[^/]+|numerics)\\.py$",
+          "reason": "installed_rf_backend_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+          "reason": "common_simion_direct_dependency_changed"
         }
       ],
       "command": {
@@ -2557,6 +2883,10 @@
         {
           "exact": "src/msplatform/contracts/test_support/__init__.py",
           "reason": "shared_lifecycle_test_fixture_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "shared_rf_drive_changed"
         }
       ],
       "command": {
@@ -2617,6 +2947,10 @@
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
+          "reason": "shared_simion_rf_drive_dependency_changed"
         }
       ],
       "command": {

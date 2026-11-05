@@ -29,6 +29,54 @@ def load(path: Path) -> dict:
 
 class DependencyTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_frozen_legacy_process_loader_requires_its_canonical_dispatch_body(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="frozen PS dispatch 工作 ") as directory:
+            root = Path(directory)
+            inputs = root / "inputs"
+            freeze_script = root / "freeze.ps1"
+            freeze_script.write_text("""param($Repo,$Destination,$Python)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId local_frontend
+""", encoding="utf-8", newline="\n")
+            environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1",
+                               SIMULATION_PYTHON_EXE=sys.executable,
+                               MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
+            frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(freeze_script),
+                str(REPO_ROOT), str(inputs), sys.executable], cwd=root, env=environment,
+                capture_output=True, text=True, encoding="utf-8", timeout=120)
+            self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+            snapshot = inputs / "runtime_snapshot"
+            relative = "src/msplatform/execution/resources/simion_dispatch_support.ps1"
+            dispatch = snapshot / relative
+            self.assertEqual(dispatch.read_bytes(), (REPO_ROOT / relative).read_bytes())
+            loader = root / "load.ps1"
+            loader.write_text("""param($Snapshot)
+$ErrorActionPreference='Stop'
+. (Join-Path $Snapshot 'common/resource_budget_support.ps1')
+$expected=[IO.Path]::GetFullPath((Join-Path $Snapshot 'src/msplatform/execution/resources/simion_dispatch_support.ps1'))
+foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invoke-ResourceBudgetedProcesses')){
+ $command=Get-Command -Name $name -CommandType Function -ErrorAction Stop
+ $actual=[IO.Path]::GetFullPath([string]$command.ScriptBlock.File)
+ if(-not $actual.Equals($expected,[StringComparison]::OrdinalIgnoreCase)){throw "Dispatch function escaped frozen source: $name"}
+}
+'FROZEN_DISPATCH_BODY=PASS'
+""", encoding="utf-8", newline="\n")
+            command = [shutil.which("pwsh"), "-NoProfile", "-File", str(loader), str(snapshot)]
+            loaded = subprocess.run(command, cwd=snapshot, env=environment,
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(loaded.returncode, 0, loaded.stdout + loaded.stderr)
+            self.assertIn("FROZEN_DISPATCH_BODY=PASS", loaded.stdout)
+            # A new process cannot retain the previously loaded function or
+            # fall back to the author checkout/installed resource after deletion.
+            dispatch.unlink()
+            missing = subprocess.run(command, cwd=snapshot, env=environment,
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+            self.assertIn("simion_dispatch_support.ps1", missing.stdout + missing.stderr)
+            self.assertNotIn("FROZEN_DISPATCH_BODY=PASS", missing.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_scientific_core_provider_freezes_src_resources_without_installed_fallback(self) -> None:
         with tempfile.TemporaryDirectory(prefix='src dependency 工作 ') as directory:
             root = Path(directory)
@@ -185,7 +233,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                               for path in parent.rglob("*") if path.is_file()}, parent_before)
             shutil.rmtree(fixture.run / "inputs/continuation")
             # An actual numerical Program source change is still a dependency.
-            generator = fixture.snapshot / "integrations/runtime/single_flight_pulse_hook.lua"
+            generator = fixture.snapshot / "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua"
             self.assertTrue(generator.is_file())
             generator.write_text(generator.read_text() + "\n-- changed numerical Program implementation\n", encoding="utf-8")
             shutil.rmtree(fixture.run / "simion/full_instrument")
@@ -573,7 +621,7 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
             self.assertEqual(json.loads(planned.stdout)["status"], "FROZEN_DOWNSTREAM_PLAN_PASS")
             # Remove a non-Python provider resource. A new detached process
             # must fail before execution instead of searching the live tree.
-            resource = snapshot / "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem"
+            resource = snapshot / "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem"
             resource.unlink()
             refused = subprocess.run([sys.executable, "-B", "-s", "-c",
                 "import json,sys; from pathlib import Path; "
@@ -582,7 +630,8 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
                 str(run / "preparation_for_dependency_test.json"), str(run)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn("frozen downstream provider resources are incomplete", refused.stderr)
+            self.assertIn("FileNotFoundError: installed SIMION GEM resource is missing: "
+                          "oatof_reflectron_ideal_10_5.gem", refused.stderr)
 
     def test_cooled_prepare_imports_shared_assembly_from_declared_snapshot(self) -> None:
         # Exercise the actual freeze and the runtime-only reference imports;

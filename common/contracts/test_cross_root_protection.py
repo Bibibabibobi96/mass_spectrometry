@@ -16,6 +16,46 @@ from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacit
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _canonical_session_hook(script, prefix, *, condition="$true", after="",
+                            noncanonical="& $script:realCapacity @PSBoundParameters"):
+    """Instrument the actual current adapter, preserving its stdin and body."""
+    start = script.index("function Invoke-RunCapacityCommand {")
+    end = script.index("\n}\n", start) + 3
+    original = script[start:end]
+    if "param($Python,$RepoRoot,$Arguments,$FailureLabel)" not in original:
+        raise AssertionError("Cross-root fixture transport span changed")
+    header = """import io,json,sys
+from pathlib import Path
+from msplatform.execution import capacity_protection as fixture_protection
+fixture_stdin=sys.stdin.buffer.read()
+fixture_request=json.loads(fixture_stdin.decode("utf-8-sig"))
+sys.stdin=io.TextIOWrapper(io.BytesIO(fixture_stdin),encoding="utf-8")
+"""
+    replacement = """$script:canonicalSessionPrefix=@'
+""" + header + prefix + """
+'@
+function Invoke-RunCapacityCommand {
+ param($Python,$RepoRoot,$Arguments,$FailureLabel,$StandardInputJson)
+ if($Arguments.Count-ge3-and$Arguments[0]-ceq'-B'-and$Arguments[1]-ceq'-c'){
+  $actualArguments=@($Arguments)
+  if(""" + condition + """ ){
+   $actualArguments[2]=$script:canonicalSessionPrefix+"`n"+$actualArguments[2]
+   """ + after + """
+  }
+  $lines=@(& $script:realCapacity -Python $Python -RepoRoot $RepoRoot -Arguments $actualArguments -FailureLabel $FailureLabel -StandardInputJson $StandardInputJson)
+  foreach($line in $lines){
+   if(([string]$line).StartsWith('CAPACITY_FIXTURE_EVENT=')){
+    $event=([string]$line).Substring(23)|ConvertFrom-Json -AsHashtable
+    if($event.Contains('created_root')){$script:createdRoots+=@([string]$event.created_root)}
+    if($event.Contains('pin_check')){$script:pinChecks++}
+   }else{$line}
+  }
+ }else{""" + noncanonical + """}
+}
+"""
+    return script[:start] + replacement + script[end:]
+
+
 @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows shared reader required")
 class CrossRootProtectionTests(unittest.TestCase):
     def source(self, root):
@@ -110,6 +150,15 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
 $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session
 if($session.status-ne'released'-or$source.status-ne'released'){throw 'Repeated finalization did not release the original leases'}
 ''', encoding="utf-8")
+            script.write_text(_canonical_session_hook(script.read_text(encoding="utf-8"), """
+fixture_delete=fixture_protection.delete_capacity_protection_lease
+fixture_source_id=fixture_request["session"]["source_protection_leases"][0]["lease_id"]
+def fixture_release(root, *, lease_id):
+    if lease_id == fixture_source_id:
+        raise ValueError("fixture source release failure")
+    return fixture_delete(root, lease_id=lease_id)
+fixture_protection.delete_capacity_protection_lease=fixture_release
+""", condition="$script:rejectSourceRelease", after="$script:rejectSourceRelease=$false"), encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(ROOT), sys.executable, str(request)],
                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -177,6 +226,17 @@ try{
  }
 }finally{if(Test-Path -LiteralPath $data.alias){Remove-Item -LiteralPath $data.alias -Force}}
 ''', encoding="utf-8")
+                script.write_text(_canonical_session_hook(script.read_text(encoding="utf-8"),
+                    "fixture_scenario=" + repr(scenario) + "\nfixture_second=" + repr(str(second)) + "\n" + """
+fixture_create=fixture_protection.create_capacity_protection_lease
+def fixture_pin(root, **options):
+    if fixture_scenario == "second_pin_failure" and Path(root).resolve() == Path(fixture_second).resolve():
+        raise ValueError("fixture second source pin failure")
+    value=fixture_create(root, **options)
+    print("CAPACITY_FIXTURE_EVENT="+json.dumps({"created_root": str(Path(root).resolve())}))
+    return value
+fixture_protection.create_capacity_protection_lease=fixture_pin
+"""), encoding="utf-8")
                 result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(ROOT), sys.executable, str(request)],
                                         cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=45)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -224,6 +284,27 @@ $null=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Se
 if($script:pinChecks-ne2){throw 'Initial or expanded source pin did not execute'}
 $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session
 ''', encoding="utf-8")
+            script.write_text(_canonical_session_hook(script.read_text(encoding="utf-8"),
+                "fixture_run=" + repr(str(run)) + "\n" + """
+from msplatform.execution.file_lock import process_file_lock
+fixture_create=fixture_protection.create_capacity_protection_lease
+fixture_renew=fixture_protection.renew_capacity_protection_lease
+def fixture_probe():
+    try:
+        with process_file_lock(Path(fixture_run)/".run_terminal_publication.lock", timeout_seconds=0):
+            raise AssertionError("Same-root source guard was released before actual pin publication")
+    except TimeoutError:
+        pass
+    print("CAPACITY_FIXTURE_EVENT="+json.dumps({"pin_check": True}))
+def fixture_pin(root, **options):
+    fixture_probe()
+    return fixture_create(root, **options)
+def fixture_expand(root, **options):
+    fixture_probe()
+    return fixture_renew(root, **options)
+fixture_protection.create_capacity_protection_lease=fixture_pin
+fixture_protection.renew_capacity_protection_lease=fixture_expand
+""", condition="$script:requireGuard"), encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(ROOT), sys.executable, str(request)],
                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -26,18 +26,19 @@
 
 ## 科学核心发行与旧入口
 
-`mass-spectrometry-analysis` 0.3 的实现位于 `src/msplatform/`，使用 Python 3.11 与标准
+`mass-spectrometry-analysis` 0.4开发版的实现位于 `src/msplatform/`，使用 Python 3.11 与标准
 setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请求校验、生成、物化和读回，
 `msplatform.assembly.resolve_assembly` 的完整布局与局部范围派生，
 `msplatform.analysis.peak_metrics` 的 `AnalysisSettings`、`compute_time_peak_metrics`、`half_height_width`，
 以及 `msplatform.contracts` 的刚体变换、粒子物理和本地 schema 校验。
 0.3新增规范母群计数、中立转移状态、版本化电极绑定及强制方法元数据的名义质量峰入口；
 电极组公开字段使用`electrode_group_id`，component3/plan5/binding2显式升版，旧资源含义保持。
-普通文件摘要位于 `msplatform.io.file_identity`；原生路径、运行生命周期及求解器执行仍由仓库机制维护。
+普通文件摘要位于 `msplatform.io.file_identity`；P3开始实迁所选链的器件、SIMION编译和唯一执行机制，
+当前已验证范围及尚未闭合的原生／恢复出口只查[集成状态](../integrations/docs/INTEGRATION.md#当前边界)。
 参数、单位和资格边界查上述离子释放、连接和分析说明；安装不授予原生或科学资格。
 
-根 `pyproject.toml` 是发行边界的唯一声明：发行完整 `msplatform` 实现和模块相邻的 schema，
-不发行 `common`、项目、运行器、测试或商业载荷。旧科学入口仅单向转发到新实现；冻结快照使用
+根 `pyproject.toml` 是发行边界的唯一声明：发行实际 `msplatform` 实现及显式schema／例子／GEM／PS资源，
+不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
 本批保留发行名`mass-spectrometry-analysis`与import名`msplatform`，描述覆盖源、装配、合同和分析核心，
@@ -45,7 +46,364 @@ setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请�
 发行维护者须依据外部索引所有权、锁和metadata消费者、旧wheel、冻结恢复以及同一import包的安装冲突
 决定保留或迁名；本次不指定未经核实可用的新发行名，也不上传包索引。
 
-以下为当前有限生产消费者清单，按Python AST直接导入（包括函数内导入）归类；路径均相对仓库根，
+### 独立导出 STEP：普通安装后的最短完整例子
+
+本例使用已验证的`rf_oatof_functional_v1`完整RF＋三区OA／单反射装配，输出mm单位的
+`physical_solids` STEP；理想零厚栅／数值面按导出报告明确排除，不凭一个代表实体替代整套装配。
+这是一条headless CAD出口，不采样、不求场、不Fly，也不启动SolidWorks、COMSOL或SIMION。
+它仍使用Python／CadQuery／OCCT和公共PowerShell运行owner；不是没有进程或没有文件副作用。
+
+先准备Windows、Python 3.11、PowerShell 7，以及**同一指定发行版本**的wheel和配套锁文件。
+CAD可选依赖实际锁在[`requirements-cad-step-lock.txt`](../requirements-cad-step-lock.txt)，当前为
+CadQuery 2.8.0／cadquery-ocp 7.9.3.1.1；基础依赖锁见[`requirements-lock.txt`](../requirements-lock.txt)。
+由发行提供者一起交付wheel和这两份锁，在新目录创建虚拟环境后安装：
+
+```powershell
+py -3.11 -m venv .venv
+# 将 wheel 路径替换为你收到的指定发行文件；两份锁须来自同一发行。
+.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt -r requirements-cad-step-lock.txt
+.\.venv\Scripts\python.exe -m pip install 'C:\releases\mass_spectrometry_analysis-0.4.0-py3-none-any.whl'
+```
+
+`pip -c`只约束版本，不会安装锁中列出的工具／依赖，不能代替上述`-r`安装。无需editable、
+PYTHONPATH或作者checkout。下面代码保存为新工作目录的`export_step.py`，用该虚拟环境的
+`python.exe -I export_step.py`运行。只需设置两个本机配置：实际PowerShell路径，以及部署时已确定的
+**同机共享**host账本绝对路径；后者与该机器其他平台任务相同，不按study另建以绕过准入。
+示例通过环境变量显式传入该路径，变量只是本次调用输入，不是新的配置权威：
+
+```powershell
+# 下面是本工作区已有部署位置；另一机器应换成其实际共享账本路径。
+$env:MSPLATFORM_HOST_STATE = 'C:\Users\Liao\mass_spectrometry\artifacts\common\host_resources.sqlite3'
+.\.venv\Scripts\python.exe -I export_step.py
+```
+
+```python
+import json
+import os
+from pathlib import Path
+import sys
+from msplatform import api
+
+workspace = (Path.cwd() / "my_study").resolve()
+workspace.mkdir(parents=True, exist_ok=True)
+study = api.load_example("rf_oatof_functional_v1")
+components = {name: api.resolve_component(request)
+              for name, request in study.component_requests.items()}
+assembly = api.compile_assembly(study.recipe, components)
+# 可打印 study.to_dict() 查看／另存完整版本化请求、配方、位姿与数值。
+options = study.cad_export
+print(json.dumps(options, indent=2))
+# 当前展开值：representation="physical_solids", write_pcurves=True, precision_mode=0。
+# 这是CAD表示／STEP写出选项，不是场网格或求解精度。
+
+policy_path = workspace / "export-stage-policy.json"
+stage_policy = {
+    "schema_version": 1, "role": "execution_stage_policy",
+    "stages": {"export_cad": {
+        "limits": {
+            "wall_clock_seconds": 600,
+            "transient_run_directory_bytes": 104857600,
+            "process_tree_working_set_bytes": 4294967296,
+            "minimum_system_available_memory_bytes": 1073741824,
+            "compact_final_retained_bytes": 104857600,
+            "automatic_retry_count": 0,
+        },
+        "artifact_retention": {
+            "policy_version": 1, "class": "solver_review",
+            "reason": "Retain independent STEP and its complete source/report",
+        },
+    }},
+}
+# 独立新study首次运行；不覆盖已有输入或引用。
+with policy_path.open("x", encoding="utf-8") as stream:
+    json.dump(stage_policy, stream, indent=2)
+context = api.execution_context(
+    workspace=workspace,
+    tools={"python": Path(sys.executable),
+           "powershell": Path("C:/Program Files/PowerShell/7/pwsh.exe")},
+    policy={"host_state_path": Path(os.environ["MSPLATFORM_HOST_STATE"]),
+            "stage_policy_path": policy_path},
+)
+cad = api.export_cad(assembly, format="step", options=options, context=context)
+with (workspace / "cad-reference.json").open("x", encoding="utf-8") as stream:
+    json.dump(cad.reference, stream, indent=2)
+print(cad.data_path("step"))
+print(cad.data_path("report"))
+```
+
+上述预算沿本批实际导出使用的600秒／100MiB载荷与保留／4GiB进程树内存／1GiB可用内存，
+重试0；是显式工程申报，不是适用于所有装配的测得峰值。更改规模前按实际成本调整这份输入，
+不把科学尺寸放进context。owner在`my_study/artifacts/projects/instrument_assembly/runs/<新run_id>/`
+保存冻结装配、选项、STEP、报告、日志与manifest；不要移动单个STEP后仍使用原ref冒充完整闭包。
+教程本身不改库内文件，也无需Agent或商业软件操作。重复实践使用新study目录，原输入和产物保留。
+
+导出进程退出后，新进程可独立做已发布数据的完整性检查：
+
+```python
+import json
+from pathlib import Path
+from msplatform import api
+ref = json.loads(Path("my_study/cad-reference.json").read_text(encoding="utf-8"))
+cad = api.open_artifact(ref, expected_kind="cad_geometry")
+print(cad.data_path("step"))  # 原manifest发布绑定及文件bytes/SHA复核
+print(cad.metadata)
+```
+
+`open_artifact`不运行CAD引擎／GUI，只验证发布记录与文件身份。装有上述可选CAD依赖后，
+可在同一独立进程调用实际STEP冷读检查，无需重新导出、执行owner、点击或启动SolidWorks：
+
+```python
+inspection = api.inspect_cad(cad, checks={
+    "schema_version": 1, "kind": "physical_solids_step_v1", "probes": [],
+})
+print(inspection["status"], inspection["failed_checks"])
+```
+
+检查将实际冷读的B-rep有效性、实体数和总体积与冻结装配的唯一CSG来源比较，复用导出时的
+OCCT序列化精度profile；体积界不是物理／制造公差。可显式给出
+`{"probe_id": "具名点", "point_mm": [x, y, z]}`世界坐标点，比较来源CSG与实际STEP的内外关系；
+不自动发明点、不承诺逐孔／逐构件拓扑配对或完整尺寸认证。`consistent`只表示所列检查一致，
+`mismatch`报告实测差异；两者均不授予科学或制造资格。搬迁后使用显式resolver打开的`cad`，
+检查消费其已验证实际位置，不尝试重新打开报告中的历史绝对路径。
+
+几何构造、STEP导出、只读检查与可选应用查看是独立动作；本批既有SolidWorks冷打开证据不代替
+这些语义检查，也不代表任意器件／姿态已支持。准确能力和GUI验收范围查
+[集成状态](../integrations/docs/INTEGRATION.md#当前边界)。
+
+SolidWorks兼容查看是后续显式可选动作`api.open_model(cad, application="solidworks", context=...)`，
+另需应用、配对模板与`open_model`预算，见本节下文；不是生成STEP的前置，也不自动保存／转存。
+同一`assembly`可并列传给`api.compile_geometry(assembly, backend="simion", numerics=study.geometry_numerics)`，
+纯编译不采样、不写工作目录、不Refine／Fly或开GUI；不经STEP导入来反建后端几何。
+其原生build／prepare／solve另行显式调用，不能从CAD完成推出模型或场资格。
+端口便利连接用显式rotation与gap的`api.mate_ports`；分域与副作用边界见
+[仓库架构](../docs/REPOSITORY_ARCHITECTURE.md#可安装科学核心与迁移边界)。
+
+同一示例的`cad_export`、`drive`和`physics`均可展开查看；驱动电极组缺省从同一解析提供者展开，
+可显式覆盖完整科学组映射，不要求作者填写SIMION编号。示例pulse保留既有功能输入的明确时序，
+时钟使用发行包内版本化authority及原32字节零epoch。模型输入来源说明保存在示例的
+`model_input_sources`；这不是新的精度或优化基线。
+`api.prepare_model(geometry, drive=study.drive, physics=study.physics, context=context)`将驱动绑定到
+既有几何，单独申请`prepare_model`工程预算和保留政策。自定义clock authority可显式提供
+`drive["clock_authority"]={"contract": <文件record>, "data_root": <绝对数据根>}`；`drive["clock"]`
+仅给`phase_reference_instrument_time_us`，epoch ID与SHA由唯一authority验证器读取，不由作者重复抄写。
+完整原生模型／GUI及后续求场验收状态仍以集成正文为准，接口存在不代表该链已经完成。
+
+`api.solve_fields(model, numerics=..., context=context, reuse_fields=None)`使用已发布未求解模型及其唯一驱动。
+求场数值显式提供`frontend_domains`（含各成员`refine_convergence_v`）、RF模型的
+`rf_reference_voltage_v`及三角色`downstream_convergence_v`；它们不放进执行context。
+`solve_fields`工程policy另要求`reserved_run_payload_bytes`，为原总commitment以内的非负整数，
+从cache实际入账量扣减commitment时仍保留该run载荷额度；缺值或越界在启动前拒绝。
+可选`reuse_fields`只指定一个已发布场的引用，后端按真实空间输入判断适用性，新产品仍绑定本次模型／钟；
+不能传latest、改变源来暗中求场，或把未求解PA当已有场。普通安装和 worker 运输已有分阶段证据；
+完整场包发布、后续Fly及搬迁后继续执行的范围仍查集成正文，不能从接口存在推定完成。
+
+`api.open_artifact(reference, expected_kind=...)`读取显式manifest record和`product_id`，校验已完成发布的
+所选数据闭包；不恢复执行环境、不运行求解器。发布者在原manifest的`products`字段绑定版本1产品：
+`schema_version/kind/status/metadata/data`，其中`status="complete"`，`data`每个具名成员是同一manifest
+inputs／outputs中的原文件record。reference为`{"manifest": <文件record>, "product_id": <具名产品>}`。
+返回的`OpenedArtifact`提供metadata／原producer状态／data_records的独立视图，`data_path(name)`在
+后续消费前核对该成员身份。读取不授予场映射适用性或科学资格，实际track／analysis仍执行其领域合同。
+新产物的数据成员可用manifest相对路径；旧绝对引用搬迁需显式`resolver(record, base_directory)`返回
+精确绝对路径，保留原record/hash，不按latest搜索。`data_locations`与`manifest_location`返回打开时已验证的
+实际位置快照，不替代后续`data_path`复核或原owner的写入保护。搬迁后的数据可读不自动改变原容量owner；
+真实三进程链的完成状态仍查集成正文。
+
+`api.sample_release`消费版本1的`canonical_birth_source_request`：显式`release_spec`（原生成器合同）、
+`clock`（epoch与authority SHA）、`instrument_origin_us`、`species_id`、`source_component_id`与
+`relative_weights`，可另给首次作者`particle_ids`。`relative_weights=None`明确使用单位权重；映射则
+精确覆盖实际作者ID，JSON十进制ID键与整数ID键不能重复。返回`ReleaseRealization`的`rows`是原CSV1
+出生状态，`mother`覆盖本次实际释放的全部粒子，`to_dict()`展开原spec、生成器原始行及初始ID映射。
+所有公开嵌套视图返回副本；生成族`mother_particle_count`用于原采样前缀关系，不虚构本run未释放母粒子。
+此入口不重编号已有handoff，不把snapshot重标为birth，也不声明未观测相位；原低层
+`msplatform.ion_release.release.generate_release_states`合同和采样次序保持。实际原生执行仍须验证相同
+clock authority的真实发布record，并由backend检查原生ID表示范围。
+
+`api.track(fields, particles, propagation=..., observations=..., numerics=..., context=...,
+source_reference=None, unit_size=None, recovery_reference=None, dispatch_profiles=())`
+将已发布SIMION FieldBundle接到同一运行owner；未求解model直接拒绝。
+`particles`为`ReleaseRealization`、其完整`to_dict()`或纯handoff的`HandoffResult`。handoff必须显式提供
+已发布`trajectory_result`的`source_reference`，backend从其原始观测复核实际来源，不仅信任调用者6D状态。
+propagation版本1显式给出`scope`、`end_policy`、`consumed_plane_events`与`stop`；截止规则选择原出生以来
+的`maximum_particle_age_us`或共同仪器钟的`absolute_instrument_end_us`，不重置出生或RF相位。
+observations给出`plane_observations`及可选`observation_times_us`；numerics给出`maximum_step_us`、
+`trajectory_quality`及存在RF时的`rf_steps_per_period`。工程limits/retention来自独立`track` stage policy。
+`unit_size=None`保留一个完整cohort单元；正整数按源行ordinal划分重放单元，不重编号原ID、不切割完整母群。
+`recovery_reference`为明确前驱`run_manifest.json`的完整文件record，不是Result或粒子checkpoint。
+原planner逐项验证直接前驱绑定、实际完成与输入字节，只复用完整单元；不完整单元整批重放，原失败保持。
+`dispatch_profiles`为显式已有资源profile列表；科学numerics不混入worker／调度设置，重计算仍受原公共准入控制。
+公共接线与原owner的四单元软件恢复已有分层回归；零handoff保完整母群且无原生调用。
+普通安装后的真实Fly、真实SIMION角色的多单元派发与跨进程分析仍待验收，不能据接口存在宣布完成。
+
+`api.analyze(result, selection=..., method=...)`只读已发布SIMION轨迹数据，不启动owner或工具。
+selection版本1明确`particle_ids`、`observation`与`unexecuted_fate_label_field`；完整母群继续作为分母，
+未执行粒子的原fate字段由调用者明确指定，缺分类返回`insufficient_classification`，不猜作loss。
+observation可为census的null、`{"kind":"canonical_event","event":...}`，或具名plane的
+`observation_id/direction/occurrence`。method版本1选择`census`，或`time_peak`加显式`time_reference`
+（epoch、authority SHA、`instrument_time_us`）及`settings`（原AnalysisSettings字段或显式null）。
+峰使用共同仪器参考，保留原算法metadata；缺测／非等权分别报告不足／不支持，不补飞或授予精度资格。
+
+`api.open_model(cad, application="solidworks", context=context)`是独立、同步的STEP查看动作。
+`open_model` stage runtime明确`com_class="SldWorks.Application.30"`、现有clean `part_template`及`assembly_template`绝对路径与
+`lifecycle="document_close"`；显式工具路径使用`tools["solidworks"]`。它拒绝接管已有应用，复制已发布
+STEP与模板后打开自己的文档；导入完成后、进入查看等待前恢复并读回临时导入偏好，
+在原回执保留导入前值。关闭文档后按原owner收尾；若整个自有应用先正常退出，
+只有同一原Popen句柄的PID／终态与已完成偏好恢复均确认后，才跳过对已断开COM的重复清理。
+最后一次文档计数查询不可用时，仅在此前已确认自有文档关闭、无其他文档且无原始错误的特定懒属性访问边界，
+保留结构化诊断并等待同一原句柄的真实终态；属性缺失本身不证明应用退出。等待告警期限不释放保护或强停进程。
+非零退出、未知身份或未恢复仍报告失败；原进程家族排空与输入保护保持，不要求编辑内部ACK文件。
+不调用SaveAs、Refine或Fly；已取得普通安装后的实际打开／关闭／配置恢复证据，但启动仍需处理已识别提示，
+内部尺寸／孔槽验收与自动启动修复继续保留，准确范围见集成正文。
+可选`checks={"schema_version":1,"kind":"selected_solid_geometry_v1","selected_step_members":[...]}`
+选择该CadArtifact导出报告中的1至7个明确`step_name`。原worker直接检查本次LoadFile4返回的文档，
+冻结并保护来源报告；未保存装配的路径可以为空，不按标题或ActiveDoc寻找替代对象。
+返回`selected_geometry`中的原生实体／质心／表面观测，getter不可用或超出界限记`incomplete`；
+这些观测不是孔形、尺寸或科学资格通过。SIMION查看不接受此SolidWorks检查选项。
+
+`api.open_model(model, application="simion", context=context)`接受已发布的未求解PreparedModel；
+已打开的PreparedModel省略application时也选择SIMION，裸引用应明确application。
+它沿唯一模型writer复制完整raw／surface／clock／drive并执行容器build、冷读回verify，再显式打开新IOB；
+四个操作为`materialize_geometry/build_model/verify_model/view_model`。这是同设计的新查看容器，不是原IOB字节搬迁，
+不调用Refine／Fly、不给模型补粒子，不重新生成PA。GUI保持原进程保护直到正常退出；没有内部ACK文件。
+显式GUI调用沿原process owner传递`window_style="Normal"`并记入查看请求；其他进程仍默认`Hidden`，
+仅接受这两个精确值，不按stage名称推断可见性，也不改变进程身份、输入保护或资源释放规则。
+`open_model`策略的SIMION runtime仅接受可选布尔`simion_allow_asynchronous_io`，工具路径显式给出`simion.exe`。
+普通SDK11已取得真实SIMION可见窗口、四个PA实例以及正常关闭的证据；具体范围见集成正文，
+不能用headless读回或进程退出码推定GUI检查、场精度或Formal资格。
+
+公共process owner的早期观测沿原`usage_path`写入`process_start`：同一启动句柄的实际PID和出生ticks、
+原run／role／stage、请求的程序／窗口模式，以及可取得或明确unknown的实际image。
+这是启动时事实，不代表持续存活、窗口可见、模型加载或计算完成；最终退出与保护释放仍以原owner收据为准。
+该新增记录已完成定向软件测试、独立复核及普通SDK12真实SIMION调用核验，不回填旧运行；
+启动事实与最终退出收据的各自适用范围见集成正文。
+
+`api.resume_run(result_path, mode="finalization", context=context)`接原owner的停止后收尾，
+只读核对原request／completion／容量权威后继续原发布，不回调科学动作。Result是可变运输文件，
+传入明确绝对路径；它不能通过删除自身hold字段或标complete解除原容量保护。
+完整终态重复调用还校验原manifest／seal及lease实际释放，随后只读返回。
+不完整单元重跑用`track(..., recovery_reference=...)`的新运行身份，不能将其冒充收尾或native checkpoint。
+
+`api.capabilities({"schema_version":1,"operation":...,"arguments":...}, environment=None)`复用实际纯
+provider／compiler／planner检验明确输入，不执行原生动作。规划参数及`software_scope`明确区别于执行API；
+缺真实输入返回`insufficient_request`，原validator异常保类型／原因返回`rejected`，未提供纯查询适配的动作
+返回`unsupported`，不据函数存在推定可启动。可选environment只接受调用者明确的版本1工具观测，
+不搜索PATH或探测许可；合同接受、环境声明、执行未评估及原生资格未授予分别返回。
+
+### P3 有限桥与局部适配件的退出责任
+
+本轮核对保留 **55个单向模块／CLI／资源桥、18个局部职责适配件**。下表是迁移审查的有限路径清单，
+不是运行配置、支持白名单或已完成退役声明；同一旧文件可委托多个具名规范所有者。所有者均须最迟P4
+迁移真实活动调用、旧CLI和冻结声明，保留普通安装、树外冷快照、缺资源拒绝与原失败语义回归后，才移除旧入口。
+局部适配件还承担作者文件、profile、来源／receipt或治理职责，不能因科学函数已迁走就整文件删除。
+
+表内“引用”是本轮源码的精确module/path字面引用；JSON库存条目只证明声明，代码引用也不证明该次运行实际调用。
+仅basename命中的Lua／PS引用在表内单列为待核候选，不算已确认消费者；退出前仍由列出的所有者核对动态／跨语言入口。
+F5与continuous03的已发布inputs选择规范正文／资源，不证明其余旧调用已退出，也不替代逐调用验证。
+历史run、冻结快照和只读reader不列为必须重写的活动桥；没有字面命中不证明没有动态或外部用户。
+
+路径均相对仓库根；“目录／：文件名”逐一组成有限完整路径，不表示通配目录。规范模块从`src/`发行；
+资源项按包内实际路径列出。责任列适用于该行全部引用及尚待核实的旧入口，期限统一最迟P4。
+
+
+<details>
+<summary>55个单向桥：精确路径、规范所有者与生产字面引用</summary>
+
+|旧路径|规范所有者／资源|本轮精确生产引用|退出责任|
+|---|---|---|---|
+|`common/contracts/artifact_cache_contract.py`|`msplatform.execution`|`common/contracts/`：`legacy_capacity_calibration.py`、`verify_artifact_layout.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/contracts/recorded_file_removal.py`|`msplatform.execution`|`common/contracts/`：`capacity_ledger.py`、`historical_source_scratch_retirement.py`、`legacy_capacity_backfill.py`、`legacy_capacity_calibration.py`、`legacy_owner_disposition.py`、`reconcile_artifact_capacity.py`、`run_artifact_workflow.ps1`、`run_capacity_lifecycle.py`、`solver_review_retirement.py`、`write_run_manifest.py`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_run_lifecycle.py`、`candidate_source_closure.py`、`prepare_candidate_run.py`、`simion_component_pa_plan.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_candidate_flight.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`run_candidate_workflow.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`analysis.py`、`run_campaign.py`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`|公共执行／缓存／钟所有者；最迟P4|
+|`common/host_execution_lease.ps1`|`msplatform/execution/resources/host_execution_lease.ps1`<br>`msplatform/execution/host_resource_scheduler.py`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`common/`：`gate_catalog.json`、`host_resource_python.ps1`、`resource_budget_support.ps1`、`verify.ps1`、`verify_documentation.ps1`、`verify_repository_hygiene.ps1`、`verify_toolchain.ps1`<br>`common/comsol/`：`run_comsol_r2025b.ps1`<br>`common/contracts/`：`invoke_solver_review_retirement.ps1`、`run_artifact_support.ps1`<br>`projects/apertured_tube_electron_impact_ion_source/`：`verify_project.ps1`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/`：`verify_project.ps1`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/`：`run_axisymmetric_gas_flow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/`：`verify_project.ps1`<br>`projects/orthogonal_accelerator/`：`verify_project.ps1`<br>`projects/orthogonal_accelerator/simion/`：`run_component_focus_flight.ps1`、`run_component_focus_pa.ps1`、`run_component_focus_workflow.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/`：`verify_project.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`run_downstream_workpoint_iteration.ps1`、`run_dual_stripe_operating_seed.ps1`、`run_mirror_exact_k_operating_point.ps1`、`run_mirror_fixed_grid_voltage_correction.ps1`、`run_mirror_l0_l1_candidate.ps1`、`run_resolved_cad_export.ps1`、`run_two_prism_segmented_continuation.ps1`、`run_two_prism_segmented_coverage.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_static_field_provider.ps1`<br>`projects/rf_multipole_ion_optics/`：`verify_project.ps1`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_finite_3d_transport.ps1`、`run_simion_finite_3d_transport.ps1`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_comsol.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_finite_length.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_candidate_flight.ps1`、`run_parameterized_geometry_smoke.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`run_formal_validation.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`run_comparison.py`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`、`verify_project.ps1`<br>`integrations/`：`verify_integration.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/oa_mr/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_pulse/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_static_field/`：`execute.ps1`<br>`integrations/workflows/prepared_joint/`：`execute.ps1`|公共执行／缓存／钟所有者；最迟P4|
+|`common/paths/native_run_path.lua`|`msplatform/execution/resources/native_run_path.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`functional.py`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`build_workbench.lua`、`probe_native_field.lua`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`joint_flight_preparation.py`、`prepared_joint_trial.py`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/runtime/`：`build_single_flight_program.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`build_iob.lua`、`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/resource_budget_support.ps1`|`msplatform/execution/resources/resource_process_support.ps1`<br>`msplatform/execution/resources/simion_dispatch_support.ps1`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`common/`：`gate_catalog.json`、`host_resource_python.ps1`<br>`common/comsol/`：`run_comsol_r2025b.ps1`<br>`common/contracts/`：`run_artifact_workflow.ps1`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/`：`run_axisymmetric_gas_flow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`prepare_gui_replay.ps1`、`run_functional.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`run_ip_prism_distance_study.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/comsol/`：`run_corridor_field_provider.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_static_field_provider.ps1`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_finite_3d_transport.ps1`、`run_simion_finite_3d_transport.ps1`、`simion_execution.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_candidate_flight.ps1`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/cooled_frontend/`：`execute.ps1`<br>`integrations/workflows/local_frontend/`：`execute.ps1`<br>`integrations/workflows/oa_mr/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_pulse/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_static_field/`：`execute.ps1`<br>`integrations/workflows/prepared_joint/`：`execute.ps1`<br>`integrations/workflows/single_reflection_flight/`：`execute.ps1`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/aperture.py`|`msplatform.backends.simion`|`projects/rf_multipole_ion_optics/core/`：`grounded_shield.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`<br>`integrations/runtime/`：`single_flight_frontend.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/batch_continuation.py`|`msplatform.execution`|`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`mrtof_batch_continuation.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`simion_batch_continuation.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`continuation.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/build_dirichlet_patch_operating_pa.lua`|`msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/cooled_frontend/`：`execute.ps1`、`runtime.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`execute.ps1`、`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`field_plan.py`、`field_stage.ps1`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/cache_generation.py`|`msplatform.execution`|`common/contracts/`：`solver_review_retirement.py`、`verify_artifact_layout.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`ip_prism_distance_study.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/export_detached_standalone_pa.lua`|`msplatform/backends/simion/resources/export_detached_standalone_pa.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/cooled_frontend/`：`execute.ps1`、`runtime.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`execute.ps1`、`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`field_plan.py`、`field_stage.ps1`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/export_standalone_pa.lua`|`msplatform/backends/simion/resources/export_standalone_pa.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`projects/orthogonal_accelerator/simion/`：`run_component_focus_pa.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`native_corridor_response_bank.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_corridor_response_bank.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`simion_component_pa_plan.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/runtime/`：`frontend_field_plan.py`、`local_frontend_field_support.ps1`<br>`integrations/workflows/single_reflection_flight/`：`downstream_fields.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/gem_primitives.py`|`msplatform.backends.simion`|`common/`：`gate_catalog.json`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`native_static_field_provider.py`<br>`integrations/runtime/`：`single_flight_frontend.py`<br>`integrations/workflows/accelerator_interface/`：`geometry.py`<br>`integrations/workflows/cooled_frontend/`：`geometry.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/immutable_pa_parity.py`|`msplatform.execution`|`common/contracts/`：`verify_artifact_layout.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/native_completion.py`|`msplatform.backends.simion.native_completion`|`common/contracts/`：`run_artifact_workflow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`mrtof_batch_continuation.py`、`mrtof_batch_flight.py`、`prepared_joint_trial.py`、`simion_event_analysis.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_finite_3d_transport.ps1`、`simion_batch_completion.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`continuation.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/pa_family_cache.py`|`msplatform.backends.simion`|`common/contracts/`：`legacy_capacity_calibration.py`、`legacy_owner_disposition.py`、`reconcile_artifact_capacity.py`、`verify_artifact_layout.py`<br>`common/simion/`：`native_fast_adjust_runtime_support.ps1`、`operating_pa_cache.py`<br>`projects/orthogonal_accelerator/analysis/`：`component_focus_mr_runtime_receipt.py`、`component_focus_pa_cache.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`native_analyzer_coarse_raw.py`、`native_corridor_coarse_basis_bank.py`、`native_corridor_freeze.py`、`native_corridor_response_bank.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_analyzer_coarse_raw.ps1`、`run_native_corridor_qualification.ps1`、`run_native_corridor_response_bank.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`prepare_candidate_run.py`、`simion_component_pa_plan.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`<br>`integrations/runtime/`：`frontend_field_plan.py`、`local_frontend_field_support.ps1`<br>`integrations/workflows/cooled_frontend/`：`runtime.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_static_field/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`execute.ps1`、`field_plan.py`、`field_stage.ps1`、`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/resource_scheduler.py`|`msplatform.execution`|`common/simion/`：`resource_profile.py`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`functional.py`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`run_functional.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`mrtof_batch_continuation.py`、`run_ip_prism_distance_study.ps1`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_simion_finite_3d_transport.ps1`、`simion_execution.ps1`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_simion.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`execute_compensation.ps1`、`run_compensation.py`<br>`integrations/runtime/`：`frontend_flight_support.ps1`<br>`integrations/workflows/oa_mr/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/prepared_joint/`：`execute.ps1`<br>`integrations/workflows/single_reflection_flight/`：`continuation.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/rf_drive.lua`|`msplatform/backends/simion/resources/rf_drive.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`common/`：`gate_catalog.json`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/simion/`：`prepare.py`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`functional.py`、`gui_replay.py`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`probe_native_field.lua`、`runtime.lua`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`joint_flight_preparation.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_simion_finite_3d_transport.ps1`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_simion.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/standalone_pa_response_set.py`|`msplatform.backends.simion`|`common/simion/`：`native_fast_adjust_runtime_support.ps1`<br>`projects/orthogonal_accelerator/analysis/`：`component_focus_mr_runtime_receipt.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`native_corridor_response_bank.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_corridor_response_bank.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`integrations/runtime/`：`standalone_pa_family.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/simion/voltage_waveforms.lua`|`msplatform/backends/simion/resources/voltage_waveforms.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`common/`：`gate_catalog.json`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`functional.py`、`gui_replay.py`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`probe_native_field.lua`、`runtime.lua`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`ip_prism_distance_study.py`、`joint_flight_preparation.py`、`prepared_joint_trial.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/config/`：`ion_processor_dependency.json`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`build_native_corridor_iob.lua`、`mrtof_candidate.lua`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/accelerator_interface/`：`prepare.py`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/oa_mr/`：`execute.ps1`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
+|`integrations/runtime/pure_boundary_validator.py`|`msplatform.backends.simion.tracking_program`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|integration所有者；最迟P4|
+|`integrations/runtime/single_flight_electrode_contract.py`|`msplatform.backends.simion`|`integrations/runtime/`：`frontend_field_plan.py`、`single_flight_frontend.py`、`standalone_field_bank.py`<br>`integrations/workflows/cooled_frontend/`：`runtime.py`<br>`integrations/workflows/local_frontend/`：`prepare.py`<br>`integrations/workflows/single_reflection_flight/`：`field_plan.py`|integration所有者；最迟P4|
+|`integrations/runtime/single_flight_frontend_hook.lua`|`msplatform/backends/simion/resources/single_flight_frontend_hook.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|integration所有者；最迟P4|
+|`integrations/runtime/single_flight_pulse_hook.lua`|`msplatform/backends/simion/resources/single_flight_pulse_hook.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/audit_downstream_fields.lua`|`msplatform/backends/simion/resources/audit_downstream_fields.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`downstream_fields.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/audit_frontend_working_fields.lua`|`msplatform/backends/simion/resources/audit_frontend_working_fields.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/cooled_frontend/`：`verify_cooled_fields.lua`<br>`integrations/workflows/single_reflection_flight/`：`field_stage.ps1`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/build_iob.lua`|`msplatform/backends/simion/resources/build_geometry_iob.lua`<br>`msplatform/backends/simion/resources/build_model_iob.lua`<br>`msplatform/backends/simion/resources/build_field_iob.lua`<br>`msplatform/backends/simion/resources/build_tracking_iob.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`continuation.py`、`runtime.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/build_iob_core.lua`|`msplatform/backends/simion/resources/iob_core.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/census.py`|`msplatform.backends.simion`|`integrations/workflows/single_reflection_flight/`：`continuation.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/fields.py`|`msplatform.backends.simion`|`integrations/workflows/single_reflection_flight/`：`prepare.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/geometry.py`|`msplatform.backends.simion`|`integrations/workflows/paired_accelerator_static_field/`：`prepare.py`<br>`integrations/workflows/single_reflection_flight/`：`prepare.py`|integration所有者；最迟P4|
+|`projects/orthogonal_accelerator/analysis/electrode_topology.py`|`msplatform.components.orthogonal_accelerator.electrode_topology`|`projects/orthogonal_accelerator/analysis/`：`assembly_interface.py`|OA所有者；最迟P4|
+|`projects/orthogonal_accelerator/analysis/sectioned_geometry.py`|`msplatform.components.orthogonal_accelerator.sectioned_geometry`|`projects/orthogonal_accelerator/analysis/`：`assembly_interface.py`<br>`integrations/runtime/`：`single_flight_frontend.py`|OA所有者；最迟P4|
+|`projects/orthogonal_accelerator/simion/sectioned_accelerator.py`|`msplatform.backends.simion`|`projects/orthogonal_accelerator/simion/`：`bare_three_zone_component.py`|OA所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/axial_acceleration.py`|`msplatform.components.rf_multipole.axial_acceleration`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/connector_geometry.py`|`msplatform.components.rf_multipole.connector_geometry`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/electrode_topology.py`|`msplatform.components.rf_multipole.electrode_topology`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/face_sections.py`|`msplatform.components.rf_multipole.face_sections`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/interface_geometry.py`|`msplatform.components.rf_multipole.interface_geometry`|`projects/rf_multipole_ion_optics/analysis/`：`analyze_comsol_transport_metrics.py`、`analyze_source_model_comparison.py`、`generate_official_particle_table.py`、`numerical_observables.py`、`stationary_field_sampling.py`、`transport_diagnostics.py`<br>`projects/rf_multipole_ion_optics/core/`：`component_port.py`、`family_contract.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`finite_extraction_context.py`、`particle_source_preflight.py`、`simion_batch_continuation.py`、`simion_particle_source.py`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_comsol.ps1`、`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_simion.ps1`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/round_rod_geometry.py`|`msplatform.components.rf_multipole.round_rod_geometry`|`common/`：`gate_catalog.json`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/analysis/`：`resolve_geometry.py`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/`：`run_axisymmetric_gas_flow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`guide_interface.py`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/runtime/simion_numerics.py`|`msplatform.backends.simion`|`projects/rf_multipole_ion_optics/runtime/`：`runtime_profile.py`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/simion/assembly_interface.py`|`msplatform.backends.simion`|`integrations/workflows/multipole_ip/`：`prepare.py`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/simion/electrode_mapping.py`|`msplatform.backends.simion`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/simion/simion_geometry.py`|`msplatform.backends.simion`|`common/`：`gate_catalog.json`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/simion/`：`geometry.py`<br>`projects/rf_multipole_ion_optics/analysis/`：`sync_simion_geometry.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_simion_finite_3d_transport.ps1`<br>`integrations/runtime/`：`single_flight_frontend.py`|RF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py`|`msplatform.components.single_reflection_oa_tof.accelerator_electrical`|`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`prepare.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py`|`msplatform.components.single_reflection_oa_tof.accelerator_geometry`<br>`msplatform.backends.simion.accelerator_projection`|`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`prepare.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/assembly_interface.py`|`msplatform.components.single_reflection_oa_tof.assembly_interface`<br>`msplatform.backends.simion.tof_assembly_interface`|`integrations/workflows/paired_accelerator_static_field/`：`prepare.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/electrode_topology.py`|`msplatform.components.single_reflection_oa_tof.electrode_topology`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py`|`msplatform.components.single_reflection_oa_tof.finite_interval_design_compiler`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/simion/electrode_mapping.py`|`msplatform.backends.simion`|`integrations/config/`：`runtime_dependencies.json`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/build_reflectron_variant.lua`|`msplatform/backends/simion/resources/build_reflectron_variant.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`simion_component_pa_plan.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_parameterized_geometry_smoke.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`verify_geometry_contract.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`downstream_fields.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_detector_variant.lua`|`msplatform/backends/simion/resources/build_detector_variant.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`simion_component_pa_plan.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`downstream_fields.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_flight_tube_variant.lua`|`msplatform/backends/simion/resources/build_flight_tube_variant.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`simion_component_pa_plan.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`verify_geometry_contract.ps1`<br>`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`downstream_fields.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua`|`msplatform/backends/simion/resources/oatof_analyzer_component.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|单反射TOF所有者；最迟P4|
+|`common/contracts/canonical_clock_authority.py`|`msplatform.execution.clock_authority`|`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`component_exit.py`、`functional.py`、`upstream_admission.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`measured_component_analysis.py`、`measured_component_source.py`<br>`projects/rf_multipole_ion_optics/core/`：`component_port.py`<br>`integrations/workflows/local_frontend/`：`prepare.py`<br>`integrations/workflows/multipole_ip/`：`prepare.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`prepare.py`<br>`integrations/workflows/single_reflection_flight/`：`prepare.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/host_resource_scheduler.py`|`msplatform.execution.host_resource_scheduler`<br>`msplatform.execution.resources`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|公共执行／缓存／钟所有者；最迟P4|
+
+</details>
+
+<details>
+<summary>18个局部适配件（仍保留外层职责）：精确路径、规范所有者与生产字面引用</summary>
+
+|旧路径|规范所有者／资源|本轮精确生产引用|退出责任|
+|---|---|---|---|
+|`common/contracts/artifact_naming.py`|`msplatform.execution`|`common/contracts/`：`artifact_identity_archive.py`、`compile_execution_plan.py`、`plan_design_request.py`、`run_artifact_support.ps1`、`solver_review_retirement.py`、`stage_reuse.py`、`verify_artifact_layout.py`、`write_formal_asset_manifest.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`register_simion_layout_template.ps1`、`run_finite_3d_transport.ps1`、`run_round_rod_field_screen.ps1`、`run_round_rod_transport.py`、`run_simion_finite_3d_transport.ps1`、`_transport_run_artifacts.py`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/no_collision_transport/`：`run_simion.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_run_lifecycle.py`、`candidate_source_closure.py`、`experiment_campaign.py`、`ideal_acceptance_300mm_simion_candidate.py`、`paper1_c3_j3_publish.py`、`prepare_candidate_run.py`、`publish_formal_release.py`、`publish_ideal_acceptance_aperture_comparison.py`、`three_zone_t5_simion_candidate.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`register_candidate_layout_template.ps1`、`run_ideal_field_diagnostic.ps1`、`run_parameterized_geometry_smoke.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/accelerator_transverse_field_uniformity/`：`run_accelerator_transverse_field_uniformity.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`run_candidate.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`run_comparison.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/`：`run_theory.py`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`<br>`integrations/workflows/accelerator_interface/`：`execute.ps1`<br>`integrations/workflows/cooled_frontend/`：`prepare.py`<br>`integrations/workflows/local_frontend/`：`prepare.py`<br>`integrations/workflows/single_reflection_flight/`：`execute.ps1`|公共执行／缓存／钟所有者；最迟P4|
+|`common/contracts/artifact_retention.py`|`msplatform.execution.resources`<br>`msplatform.execution`|`common/contracts/`：`legacy_capacity_backfill.py`、`legacy_capacity_calibration.py`、`legacy_owner_disposition.py`、`reconcile_interrupted_compact_runs.py`、`run_artifact_support.ps1`、`run_capacity_lifecycle.py`、`solver_review_retirement.py`、`stage_reuse.py`、`verify_artifact_layout.py`、`write_run_manifest.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/contracts/frozen_inputs.py`|`msplatform.execution.inputs`|`common/`：`gate_catalog.json`<br>`common/simion/`：`workbench_seed.py`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/simion/`：`prepare.py`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`functional.py`<br>`projects/orthogonal_accelerator/simion/`：`run_component_focus_flight.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`downstream_workpoint_iteration.py`、`ip_prism_aperture_diagnostics.py`、`ip_prism_distance_study.py`、`joint_flight_preparation.py`、`prepared_joint_trial.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`frozen_python_package.ps1`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_comsol.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_finite_length.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`ideal_acceptance_300mm_simion_candidate.py`、`mass_spectrum_reanalysis.py`、`paper1_c3_j3_publish.py`、`prepare_candidate_run.py`、`three_zone_t5_simion_candidate.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`candidate_comsol_stage.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`<br>`integrations/runtime/`：`dependencies.ps1`<br>`integrations/workflows/accelerator_interface/`：`prepare.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`prepare.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/contracts/run_capacity_lifecycle.py`|`msplatform.execution`|`common/contracts/`：`invoke_solver_review_retirement.ps1`、`legacy_owner_disposition.py`、`reconcile_artifact_capacity.py`、`run_artifact_support.ps1`、`run_artifact_workflow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`finalize_gui_replay.ps1`、`prepare_gui_replay.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`、`run_downstream_workpoint_iteration.ps1`、`run_ip_prism_distance_study.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_static_field_provider.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`mass_spectrum_reanalysis.py`、`prepare_candidate_run.py`<br>`integrations/workflows/single_reflection_flight/`：`continuation.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/contracts/write_run_manifest.py`|`msplatform.execution`<br>`msplatform.execution.terminal_publication`|`common/contracts/`：`run_artifact_support.ps1`、`run_artifact_workflow.ps1`、`run_capacity_lifecycle.py`、`stage_reuse.py`、`verify_run_manifest.py`<br>`common/simion/`：`workbench_seed.py`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`component_exit.py`、`extraction_phase_space_comparison.py`、`geometry_comparison.py`、`gui_replay.py`、`upstream_admission.py`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`run_functional.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`、`downstream_workpoint_iteration.py`、`ion_processor_assembly.py`、`ip_prism_aperture_diagnostics.py`、`ip_prism_distance_study.py`、`ip_prism_field_theory.py`、`ip_prism_local_field_diagnostics.py`、`ip_prism_mesh_diagnostics.py`、`joint_flight_preparation.py`、`mrtof_batch_continuation.py`、`mrtof_batch_flight.py`、`prepared_joint_diagnostics.py`、`prepared_joint_trial.py`、`two_prism_simion_trial.py`<br>`projects/rf_multipole_ion_optics/analysis/`：`plot_transport_phase_diagnostics.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`register_simion_layout_template.ps1`、`run_finite_3d_transport.ps1`、`run_round_rod_field_screen.ps1`、`simion_batch_continuation.py`、`simion_field_checkpoint.py`、`_transport_run_artifacts.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_run_lifecycle.py`、`candidate_source_closure.py`、`experiment_campaign.py`、`ideal_acceptance_300mm_simion_candidate.py`、`mass_spectrum_reanalysis.py`、`paper1_c3_j3_publish.py`、`prepare_candidate_run.py`、`publish_ideal_acceptance_aperture_comparison.py`、`stage_formal_simion_runtime.py`、`three_zone_t5_simion_candidate.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`register_candidate_layout_template.ps1`、`run_ideal_field_diagnostic.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/accelerator_transverse_field_uniformity/`：`run_accelerator_transverse_field_uniformity.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/cross_solver_diagnostics/`：`run_cross_solver_diagnostics.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`candidate_comsol_stage.py`、`run_candidate_workflow.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`run_formal_validation.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`run_comparison.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/`：`run_theory.py`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`<br>`integrations/runtime/`：`paired_accelerator_model.py`、`standalone_field_bank.py`<br>`integrations/workflows/accelerator_interface/`：`execute.ps1`、`prepare.py`<br>`integrations/workflows/cooled_frontend/`：`execute.ps1`、`field_design.py`、`mesh_check.py`、`prepare.py`、`reference.py`、`reference_support.ps1`、`runtime.py`<br>`integrations/workflows/local_frontend/`：`analyze.py`、`execute.ps1`、`prepare.py`、`replay.py`、`runtime.py`<br>`integrations/workflows/multipole_ip/`：`prepare.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`execute.ps1`、`prepare.py`、`runtime.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`prepare.py`、`runtime.py`<br>`integrations/workflows/prepared_joint/`：`analysis.py`、`execute.ps1`<br>`integrations/workflows/single_reflection_flight/`：`collect.py`、`continuation.py`、`downstream_fields.py`、`execute.ps1`、`prepare.py`、`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
+|`common/host_resource_python.py`|`msplatform.execution.process_transport`|`common/`：`gate_catalog.json`、`host_resource_python.ps1`<br>`common/contracts/`：`run_artifact_workflow.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`mirror_exact_k_operating_point.py`、`mirror_fixed_grid_voltage_correction.py`、`mirror_l0_hardware_candidate.py`、`mirror_l0_l1_hardware_candidate.py`、`run_mirror_exact_k_operating_point.ps1`、`run_mirror_l0_l1_candidate.ps1`、`run_two_prism_segmented_continuation.ps1`、`run_two_prism_segmented_coverage.ps1`、`two_prism_segmented_coverage.py`、`two_prism_segmented_voltage_continuation.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_ideal_transport.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_candidate_flight.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`run_comparison.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`integrations/config/`：`runtime_dependencies.json`|公共执行／缓存／钟所有者；最迟P4|
+|`integrations/runtime/build_single_flight_program.py`|`msplatform.execution.resources`<br>`msplatform.backends.simion.tracking_program`|`integrations/runtime/`：`local_frontend_field_support.ps1`、`standalone_field_bank.py`<br>`integrations/workflows/cooled_frontend/`：`program.py`、`runtime.py`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`collect.py`、`continuation.py`、`prepare.py`、`pulse.py`、`runtime.py`|integration所有者；最迟P4|
+|`integrations/runtime/frontend_field_plan.py`|`msplatform.backends.simion.physical_samples`|`integrations/runtime/`：`local_frontend_field_support.ps1`<br>`integrations/workflows/cooled_frontend/`：`runtime.py`|integration所有者；最迟P4|
+|`integrations/runtime/single_flight_source.py`|`msplatform.backends.simion.source`<br>`msplatform.assembly.handoff`<br>`msplatform.contracts.clock`<br>`msplatform.contracts.particle_physics`<br>`msplatform.contracts.rigid_transform`<br>`msplatform.contracts.particle_state`|`integrations/analysis/`：`build_comsol_prepulse_replay.py`、`compare_paired_accelerator_pulse.py`<br>`integrations/runtime/`：`paired_accelerator_model.py`<br>`integrations/workflows/cooled_frontend/`：`prepare.py`、`program.py`<br>`integrations/workflows/local_frontend/`：`analyze.py`、`prepare.py`、`runtime.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`prepare.py`、`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`collect.py`、`continuation.py`、`downstream_fields.py`、`prepare.py`、`pulse.py`、`runtime.py`|integration所有者；最迟P4|
+|`integrations/workflows/single_reflection_flight/field_plan.py`|`msplatform.backends.simion.field_bank`<br>`msplatform.backends.simion.field_audit`<br>`msplatform.backends.simion.field_identity`|`common/`：`gate_catalog.json`<br>`integrations/workflows/cooled_frontend/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`downstream_fields.py`、`field_stage.ps1`、`runtime.py`|integration所有者；最迟P4|
+|`projects/orthogonal_accelerator/analysis/accelerator_time_focus.py`|`msplatform.components.orthogonal_accelerator.accelerator_time_focus`|`projects/orthogonal_accelerator/analysis/`：`component_focus_analysis.py`、`component_focus_pa_plan.py`、`component_focus_workflow.py`、`three_zone_ideal_theory.py`、`two_zone_theory.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`run_mirror_l0_l1_candidate.ps1`、`simion_candidate_reference.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`oatof_oaaccelerator_coupling.py`、`three_zone_ideal_theory.py`、`three_zone_t5_simion_candidate.py`、`three_zone_theory_experiment.py`、`validate_longitudinal_prediction.py`、`verify_axial_ideal_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/candidates/`：`accelerator_grid_aligned_strict_focus.json`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/experiments/`：`three_zone_solver_free_funnel_v1.json`、`three_zone_solver_free_funnel_v2.json`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`verify_geometry_derivation.py`<br>`integrations/workflows/local_frontend/`：`prepare.py`|OA所有者；最迟P4|
+|`projects/orthogonal_accelerator/analysis/two_zone_geometry.py`|`msplatform.components.orthogonal_accelerator.two_zone_geometry`|`projects/orthogonal_accelerator/analysis/`：`assembly_interface.py`、`component_focus_analysis.py`、`component_focus_fast_adjust.py`、`component_focus_pa_plan.py`、`component_focus_workflow.py`、`execution_binding.py`<br>`projects/orthogonal_accelerator/simion/`：`rectangular_accelerator.py`、`run_component_focus_flight.ps1`、`two_zone_candidate.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`run_mirror_l0_l1_candidate.ps1`、`simion_candidate_reference.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`three_zone_t5_simion_candidate.py`、`three_zone_theory_experiment.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/experiments/`：`three_zone_solver_free_funnel_v1.json`、`three_zone_solver_free_funnel_v2.json`|OA所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/compile_design_request.py`|`msplatform.components.rf_multipole.compile_design_request`|`projects/rf_multipole_ion_optics/analysis/`：`resolve_contract.py`、`rfquad_contract.py`、`verify_resolved_design.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`design_profile.py`、`resource_budget.py`、`runtime_profile.py`、`run_finite_3d_transport.ps1`、`run_round_rod_field_screen.ps1`、`run_simion_finite_3d_transport.ps1`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/component_port.py`|`msplatform.analysis.particle_census`<br>`msplatform.components.rf_multipole.assembly_interface`|`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`upstream_admission.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_simion_finite_3d_transport.ps1`<br>`integrations/workflows/multipole_ip/`：`prepare.py`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/grounded_shield.py`|`msplatform.components.rf_multipole.grounded_shield`|`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`|RF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py`|`msplatform.io.file_identity`<br>`msplatform.components.single_reflection_oa_tof.geometry_contract`<br>`msplatform.backends.simion.tof_geometry`|`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`compile_candidate_design.py`、`resolve_geometry.py`、`simion_component_pa_plan.py`、`sync_geometry_contract.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py`|`msplatform.components.single_reflection_oa_tof.oatof_oaaccelerator_coupling`|`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`ideal_source_comparison.py`、`validate_longitudinal_prediction.py`、`verify_axial_ideal_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/experiments/`：`three_zone_solver_free_funnel_v1.json`、`three_zone_solver_free_funnel_v2.json`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`verify_geometry_derivation.py`|单反射TOF所有者；最迟P4|
+|`projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py`|`msplatform.components.single_reflection_oa_tof.reflectron_dual_stage_solver`|`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`oatof_oaaccelerator_coupling.py`、`validate_longitudinal_prediction.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/experiments/`：`three_zone_solver_free_funnel_v1.json`、`three_zone_solver_free_funnel_v2.json`|单反射TOF所有者；最迟P4|
+
+</details>
+
+退出时沿唯一原实现与包资源入口更新调用、实际source hash和冻结闭包，不能以旧桥正文hash代表已迁算法，
+也不能用当前安装填补旧快照缺件。Python alias保留共享globals／monkeypatch语义；PS保留仓库部署上下文、
+Lua保留已冻结根的加载职责，均不是installed侧反向依赖作者树的许可。
+公共执行／缓存／钟所有者负责显式Context、账本／事务与CLI回归；RF/OA/TOF所有者负责原几何、版本与数值保证；
+integration所有者负责组合入口、source/clock、程序与冻结资源声明同步。历史协议reader只读边界继续保留。
+性能与正式模型／科学资格、COMSOL后续迁移及P5新使用者验证不由桥清单关闭；阶段责任仍查[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
+
+### P1／P2 迁移时的旧入口索引
+
+下述为原迁移审查记录的有限调用索引，不作为P3当前消费者全集或运行证明；P3本轮路径与责任见上表。
+原清单按Python AST直接导入（包括函数内导入）归类；路径均相对仓库根，
 每行目录前缀与列出的文件名组合为完整路径，不表示整个目录或通配范围。排除测试、历史与测试辅助文件；
 同一文件可能消费多座桥，数量不相加解释为独立消费者。各类责任由对应项目／集成／公共模块所有者承担。
 
@@ -202,6 +560,13 @@ setuptools65.5.0/wheel0.38.4与已核对离线依赖；原wheel和sdist重建whe
 运行、安装及冻结依赖规则由[操作指南](../docs/OPERATIONS.md#工具链与执行入口)维护。
 
 ## 门禁编排
+
+公开门禁先解析本次 Python，内部阶段先校验冻结请求，再用该解释器加载主机资源上下文；
+调用结束恢复原 `SIMULATION_PYTHON_EXE`。旧环境值不能覆盖显式解释器或使只读规划提前失败。
+
+公共 workflow 的纯软件 PowerShell 夹具统一使用已有 ACK／Job 归属入口：启动脚本取得归属后才执行，
+90 秒测试硬超时后清理本夹具子树并有限排空输出，保留原超时、原始输出与次要诊断错误。
+这关闭了仅结束 PowerShell、遗留子 Python 持有管道而无限等待的默认分支；不改变商业求解器的告警与退出策略。
 
 容量压力回归保留真实解释器与路径解析，仅在测试容量命令边界注入故障；使用私有主机账本和受控观测，不重复真实主机故障矩阵。收尾恢复分别核对入场预算收据与最终零承诺及释放，不能将已更新的 lease 当作入场快照。对应两项旧夹具失败保留于 CI 41142387491（373.131 秒）和 41142659947（302.116 秒）；定向修复通过不代替新提交的整轮 CI。
 
@@ -422,7 +787,7 @@ PA等昂贵阶段复用及中断恢复遵循[统一复用与恢复规则](../doc
 不同工作树必须显式部署到同一绝对账本，不能各建一份而重复分配资源。环境路径只用于受控部署或隔离测试，
 生产调用不得用它绕过正在运行的申请。切换部署路径前必须等待原账本的owner、后代和等待者全部结束，
 不能复制活跃SQLite或让两个账本并行准入。资源配置、已分类阶段及测量依据只维护在
-[`host_resource_policy.json`](host_resource_policy.json)，不在项目脚本复制容量阈值。
+[`host_resource_policy.json`](../src/msplatform/execution/resources/host_resource_policy.json)，不在项目脚本复制容量阈值。
 
 CIM不可用时，原生观测每轮只用一次
 [Toolhelp进程快照](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot)
@@ -593,7 +958,7 @@ Python向PowerShell传递派生预算可使用任务临时JSON，解析后由调
 已经运行的健康同级自然结束。只有持续低于中央策略的物理内存危险保留量才进入受管停止，并记录危险原因。
 
 `New-RepositoryProcessObservation`和`Update-RepositoryProcessObservation`供包装器和COMSOL入口复用观测；
-它们不启动进程、调度、重试或发布科学终态。物理危险阈值只来自[主机策略](host_resource_policy.json)，
+它们不启动进程、调度、重试或发布科学终态。物理危险阈值只来自[主机策略](../src/msplatform/execution/resources/host_resource_policy.json)，
 无Limits时不写usage；目录或usage写入失败只告警，不能遮蔽已经确认的物理危险。
 
 RF 资源预算的两个调度用例改由真实 admission-pause 事件释放短测试 worker，纯报告矩阵合批执行。

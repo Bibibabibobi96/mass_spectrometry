@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from common.contracts.file_identity import file_sha256
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import (
@@ -47,6 +49,22 @@ class ComponentPaPlanTests(unittest.TestCase):
             self.assertEqual(by_role[role]["expected_files"], [])
             self.assertIsNone(by_role[role]["cache_key"])
             self.assertGreater(by_role[role]["bytes"]["private_runtime"], 0)
+
+    def test_response_contract_identity_tracks_canonical_body(self):
+        contract = "src/msplatform/backends/simion/standalone_pa_response_set.py"
+        before = {item["role"]: item for item in self.plan()["components"]}
+        for role in ("accelerator", "reflectron"):
+            self.assertEqual(before[role]["identity"]["builder_identity"][contract],
+                             file_sha256(REPO / contract))
+        def changed_contract(path):
+            return "A" * 64 if Path(path) == REPO / contract else file_sha256(path)
+        with patch("projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan.file_sha256",
+                   side_effect=changed_contract):
+            after = {item["role"]: item for item in self.plan()["components"]}
+        for role in ("accelerator", "reflectron"):
+            self.assertNotEqual(before[role]["cache_key"], after[role]["cache_key"])
+        for role in ("flight_tube", "detector"):
+            self.assertEqual(before[role]["identity"], after[role]["identity"])
 
     def test_operating_voltages_do_not_invalidate_geometry_response_basis(self):
         changed = deepcopy(self.contract)

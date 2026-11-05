@@ -145,7 +145,7 @@ print(json.dumps(advance_field_cache(run,data,report)))
     $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage pa_refine -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     try{
      $null=Invoke-CooledNative @native -Name ('field_refine_'+$kind) -Arguments @('--nogui','--noprompt','lua',
-      (Join-Path $FrozenRepoRoot 'common/simion/build_dirichlet_patch_operating_pa.lua'),$raw,$working,'zero_dirichlet','0,0,0',$origin,$voltages,
+      (Join-Path $FrozenRepoRoot 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua'),$raw,$working,'zero_dirichlet','0,0,0',$origin,$voltages,
       ([double]$plan.refine_convergence_v).ToString('G17',[Globalization.CultureInfo]::InvariantCulture))
      $refined=$true
      $nativeCalls++
@@ -153,7 +153,7 @@ print(json.dumps(advance_field_cache(run,data,report)))
     $pendingPath=Join-Path $status.scratch_directory 'pending.pa'
     if(Test-Path -LiteralPath $pendingPath){Remove-Item -LiteralPath $pendingPath -Force}
     $null=Invoke-CooledNative @native -Name ('field_export_'+$kind) -Arguments @('--nogui','--noprompt','lua',
-     (Join-Path $FrozenRepoRoot 'common/simion/export_detached_standalone_pa.lua'),$working,$pendingPath)
+     (Join-Path $FrozenRepoRoot 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua'),$working,$pendingPath)
     $nativeCalls++;$exportCalls++
     if(-not(Test-Path -LiteralPath $pendingPath -PathType Leaf)-or(Get-Item -LiteralPath $pendingPath).Length-lt56){throw 'Standalone member export is incomplete.'}
     Move-Item -LiteralPath $pendingPath -Destination (Join-Path $status.build_directory $point.output_basename)
@@ -252,12 +252,12 @@ function Invoke-CooledFieldDesign {
   $voltages=($ordered|ForEach-Object{([double]$_.Value).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage refine -Budget (Get-HostResourceBudget -Role SIMION -Stage refine) -RetainedMemoryBytes 0
   Invoke-CooledNative @native -Name ('field_refine_'+$point.kind) -Arguments @('--nogui','--noprompt','lua',
-   (Join-Path $FrozenRepoRoot 'common/simion/build_dirichlet_patch_operating_pa.lua'),$raw,$working,[string]$parent,$parentOrigin,$origin,$voltages,
+   (Join-Path $FrozenRepoRoot 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua'),$raw,$working,[string]$parent,$parentOrigin,$origin,$voltages,
    ([double]$fieldPlan.refine_convergence_v).ToString('G17',[Globalization.CultureInfo]::InvariantCulture))
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
   $output=Join-Path $directory ([string]$point.output_basename)
   Invoke-CooledNative @native -Name ('field_export_'+$point.kind) -Arguments @('--nogui','--noprompt','lua',
-   (Join-Path $FrozenRepoRoot 'common/simion/export_detached_standalone_pa.lua'),$working,$output)
+   (Join-Path $FrozenRepoRoot 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua'),$working,$output)
   if(-not(Test-Path -LiteralPath $output -PathType Leaf)){throw "Standalone field missing: $($point.kind)"}
   (Get-Item -LiteralPath $output).IsReadOnly=$true
   if($meshCheck){

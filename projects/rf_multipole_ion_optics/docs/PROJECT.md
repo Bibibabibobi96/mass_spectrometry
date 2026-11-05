@@ -5,6 +5,10 @@
 跨器件结果由[集成状态](../../../integrations/docs/INTEGRATION.md)维护。
 本文汇合原四、六、八极杆项目仍有效的结论；身份迁移和代码合并本身不产生新的物理资格。
 
+有限长度质量过滤器的分析支持目录按 `pyproject.toml` 的执行包资源声明冻结规范资源，
+并在专属子进程显式使用本次 Python；旧公共桥不依赖另一代码根或作者安装补件。
+四项原分析冷加载与一项原 CLI 收尾恢复定向验证通过，未运行商业求解器，也不改变原物理资格。
+
 ## 科学核心 P1 接线
 
 `core/ideal_transport.py` 直接从 `msplatform.ion_release` 与
@@ -28,6 +32,19 @@ analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导�
 没有更改原科学参数、状态机或原生数值文本。
 
 ## 当前结论
+
+P3 RF提供者的圆杆、连接截面、壳/端盖、轴向分段、科学topology、机械面截面及component3发布实现
+实迁至`msplatform.components.rf_multipole`。文档编译入口`compile_design_request`接受已读request、
+expected identity及由外层验证的`source_records`；只读随发行包提供的规范schema，不读取作者树、
+注册表或启动后端。原request3/4、axial2/3、array1/2及序列化compiler身份保持；44个实现符号的AST
+在明确的provenance参数/绑定调整外相同，不改变尺寸、驱动公式或算序。
+原`core`纯模块仅单向转发，最迟P4退出活动消费；原compiler文件保留文件/注册表/治理输入适配，
+`component_port`保留producer/观测接纳，`grounded_shield`保留后端孔口渲染，不把这些宿主职责搬入发行包。
+10个实际领域模块84项纯软件回归通过（4.899秒，无skip），169条父/子outcome全部成功；
+包含工作树外`-I`子进程在拒绝common/projects导入时执行真实document compiler、component3与face provider。
+一次误列不存在测试模块的loader错误和一次旧backend mock定位的3family失败均保留；后者仅将patch对象
+迁到实际canonical函数globals，原科学/GEM断言保持。该软件切片不是普通wheel安装、完整P3链或原生资格；
+安装资源、冻结消费者及全范围验收由统一入口另行验证。
 
 资源目录采样的纯软件回归在 `0466341a` 远端完整轮中，外层 PowerShell 在原15秒截止未返回；
 同源码在947本机／远端分别3.540／2.548秒通过。本次失败没有留下其临时usage、partial输出或具体调用阶段，

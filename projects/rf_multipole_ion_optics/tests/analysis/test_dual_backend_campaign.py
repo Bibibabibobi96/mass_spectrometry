@@ -72,6 +72,9 @@ class DualBackendCampaignTests(unittest.TestCase):
                     target = cls.tree / source.relative_to(REPO)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, target)
+        from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+        copy_scientific_core(REPO, cls.tree)
         target = cls.tree / "config/project_registry.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / "config/project_registry.json", target)
@@ -79,7 +82,7 @@ class DualBackendCampaignTests(unittest.TestCase):
             "common/require_powershell7.ps1",
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
-            "common/host_resource_policy.json",
+            "src/msplatform/execution/resources/host_resource_policy.json",
             "common/resource_budget_support.ps1",
         ):
             target = cls.tree / relative

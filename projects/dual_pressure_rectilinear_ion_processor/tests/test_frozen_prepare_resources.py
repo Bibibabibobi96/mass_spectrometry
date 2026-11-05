@@ -88,15 +88,15 @@ class FrozenPrepareResourceTests(unittest.TestCase):
                     "extraction_force_audit.lua",
                 )
             ],
-            Path("common/simion/rf_drive.lua"),
-            Path("common/simion/voltage_waveforms.lua"),
+            Path("src/msplatform/backends/simion/resources/rf_drive.lua"),
+            Path("src/msplatform/backends/simion/resources/voltage_waveforms.lua"),
             Path("common/simion/scientific_event_csv.lua"),
-            Path("common/paths/native_run_path.lua"),
+            Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("common/simion/assets/iob_instance_seeds/1_instance_seed.iob"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
-            Path("common/contracts/artifact_retention.json"),
+            Path("src/msplatform/execution/resources/artifact_retention.json"),
             Path("common/contracts/particle_count_policy.json"),
-            Path("common/host_resource_policy.json"),
+            Path("src/msplatform/execution/resources/host_resource_policy.json"),
         ]
         resources.extend(Path(relative) for relative in enumerate_python_sources(
             ROOT, package_roots=("src/msplatform",), provider_root="src/msplatform",
@@ -105,7 +105,8 @@ class FrozenPrepareResourceTests(unittest.TestCase):
         functional = importlib.import_module(
             "projects.dual_pressure_rectilinear_ion_processor.analysis.functional")
         resources.extend(Path(relative) for relative in enumerate_python_sources(
-            ROOT, module_paths=functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES))
+            ROOT, module_paths=(*functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES,
+                                *functional.FROZEN_RUNTIME_MODULES)))
         resources.extend(
             (PROJECT_RELATIVE / "config" / name)
             for name in (
@@ -203,7 +204,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             for run in (first, second):
                 manifest = json.loads((run / "run_config.json").read_text())
                 for relative in (
-                    "common/paths/native_run_path.lua",
+                    "src/msplatform/execution/resources/native_run_path.lua",
                     "common/simion/scientific_event_csv.lua",
                     "projects/dual_pressure_rectilinear_ion_processor/config/source.json",
                 ):
@@ -214,6 +215,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
     def test_missing_dynamic_resource_fails_before_materialization(self):
         for relative in (
             PROJECT_RELATIVE / "simion/runtime.lua",
+            Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
         ):
             with (

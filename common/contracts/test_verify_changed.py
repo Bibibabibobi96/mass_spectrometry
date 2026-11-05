@@ -561,7 +561,7 @@ exit 0
     def test_host_scheduler_and_adapters_keep_regression_routes(self) -> None:
         for path, expected in (
             ("common/host_resource_scheduler.py", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
-            ("common/host_resource_policy.json", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
+            ("src/msplatform/execution/resources/host_resource_policy.json", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
             ("common/comsol/run_comsol_r2025b.ps1", {"livelink_resource_stages_tests"}),
         ):
             with self.subTest(path=path):
@@ -999,7 +999,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         cases = (
             (("common/contracts/README.md",), False, True),
             (("docs/DEVELOPMENT_STANDARDS.md",), False, False),
-            (("common/contracts/artifact_capacity_policy.json",), False, False),
+            (("src/msplatform/execution/resources/artifact_capacity_policy.json",), False, False),
             (("config/unknown_scope.json",), False, False),
             ((project + "docs/CAD.md", snapshot), False, True),
             ((snapshot,), False, True),
@@ -1427,7 +1427,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "dual_pressure_rectilinear_ion_processor_static",
             "dual_cone_tandem_quadrupole_ion_interface_static",
         }
-        self.assertTrue(rf_consumers <= self.routed_stages("common/simion/rf_drive.lua").keys())
+        self.assertTrue(rf_consumers <= self.routed_stages("src/msplatform/backends/simion/resources/rf_drive.lua").keys())
         serialized = json.dumps(self.route_contract)
         self.assertNotIn("common/multipole", serialized)
         self.assertNotIn("common.multipole", serialized)
@@ -1694,6 +1694,11 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
             for name in ("verify.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
                          "host_execution_lease.ps1", "require_powershell7.ps1"):
                 shutil.copyfile(REPO_ROOT / "common" / name, repo / "common" / name)
+            for name in ("host_execution_lease.ps1", "host_resource_policy.json"):
+                relative = Path("src/msplatform/execution/resources") / name
+                destination = repo / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO_ROOT / relative, destination)
             gate = repo / "integrations/verify_integration.ps1"
             gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
             inventory_path = "integrations/config/runtime_dependencies.json"

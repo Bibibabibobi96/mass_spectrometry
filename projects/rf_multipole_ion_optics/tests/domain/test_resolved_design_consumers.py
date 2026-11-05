@@ -78,7 +78,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             self.assertIn(field, comsol)
             self.assertIn(field, simion)
         lua = (ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(encoding="utf-8")
-        kernel = (ROOT / "common/simion/rf_drive.lua").read_text(encoding="utf-8")
+        kernel = (ROOT / "src/msplatform/backends/simion/resources/rf_drive.lua").read_text(encoding="utf-8")
         self.assertIn("config.waveform == 'sine' and math.sin or math.cos", kernel)
         self.assertIn("rf_drive.apply_at(ion_time_of_flight", lua)
         self.assertNotIn("ion_time_of_flight * omega", lua)

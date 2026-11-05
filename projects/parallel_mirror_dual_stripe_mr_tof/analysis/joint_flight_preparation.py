@@ -494,7 +494,8 @@ def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
     if overlay is not None:
         priority["collision_overlay"] = dict(overlay, pa_path=binding["instances"][4]["pa_path"])
     return dict(roles=roles, priority=priority,
-        seed=str(REPO / f"common/simion/assets/iob_instance_seeds/{len(roles)}_instance_seed.iob"))
+        seed=str(REPO / ("src/msplatform/backends/simion/resources" if len(roles) in (4, 5) else
+                         "common/simion/assets/iob_instance_seeds") / f"{len(roles)}_instance_seed.iob"))
 
 
 def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *, numerics: dict[str, float],
@@ -614,7 +615,7 @@ def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_exe
     schedule = freeze_file(schedule_source,
                            inputs / "provider_native_drive.lua")
     waveforms_source = (REPO / dependency["provider_voltage_waveforms"]).resolve()
-    if waveforms_source != (REPO / "common/simion/voltage_waveforms.lua").resolve():
+    if waveforms_source != (REPO / "src/msplatform/backends/simion/resources/voltage_waveforms.lua").resolve():
         raise ValueError("provider voltage waveforms must be the declared common module")
     waveforms = freeze_file(waveforms_source, inputs / "provider_voltage_waveforms.lua")
     when = max(baseline["schedule"]["lift_end_us"], source["native_timing"]["pulse_start_us"])

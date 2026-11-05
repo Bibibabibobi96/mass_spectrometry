@@ -95,7 +95,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                 inputs=dict(field_audit=durable), outputs=[dict(durable, retention_role='lightweight_optional')])
             bound = _bound_source_audit(manifest, stale)
             audit_plan['frozen_field_source'] = dict(audit_record=bound)
-            with patch('integrations.workflows.single_reflection_flight.field_plan.load_pa_family_cache_transaction',
+            with patch('msplatform.backends.simion.field_audit.load_pa_family_cache_transaction',
                        side_effect=AssertionError('explicit source must not reread cache or PA')):
                 self.assertEqual(reusable_audit(audit_plan, root/'unused_generation', verifier)['path'], str(audit))
             for mutation in ('missing', 'identity', 'ambiguous', 'content'):

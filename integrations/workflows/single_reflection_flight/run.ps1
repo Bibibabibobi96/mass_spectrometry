@@ -77,7 +77,7 @@ try {
     -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $retentionReason -CapacityLedgerLifecycleEnabled -PathContext $pathContext `
     -AdditionalDirectories @('simion') `
     -ExpectedExecutionRelativePaths @(
-      'inputs/runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem'
+      'inputs/runtime_snapshot/src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem'
     )
  $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
  foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}

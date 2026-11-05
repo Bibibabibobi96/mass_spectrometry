@@ -722,7 +722,7 @@ function Invoke-FiniteComsolAnalysisChild {
     $analysisAdditional=@()
     if($ReextractFromModel){
       $analysisAreas+=@('common/comsol','projects/rf_multipole_ion_optics/comsol')
-      $analysisAdditional=@('common/host_execution_lease.ps1','common/host_resource_scheduler.py','common/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
+      $analysisAdditional=@('common/host_execution_lease.ps1','common/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
     }
     $copiedPaths=@(Get-RunPackageCopiedSourcePaths -RepoRoot $RepoRoot -SourceRelativeDirectories $analysisAreas -Extensions @('.py','.json','.ps1','.m','.lua'))
     $copiedPaths+=@($analysisAdditional|ForEach-Object{"inputs/code/$_"})
@@ -950,7 +950,7 @@ try{
 }
 $hostRuntimeSourcePaths=@(
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
-  'common/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
+  'src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('common/analysis/particle_census.py','common/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `

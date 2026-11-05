@@ -10,6 +10,7 @@ import marshal
 import struct
 import sys
 import types
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +37,8 @@ RELATIVE_PATHS = (
     "common/contracts/artifact_cache_contract.py",
     "common/contracts/gui_source_protection.py",
     "common/contracts/artifact_retention.py",
-    "common/contracts/artifact_retention.json",
-    "common/contracts/artifact_capacity_policy.json",
+    "src/msplatform/execution/resources/artifact_retention.json",
+    "src/msplatform/execution/resources/artifact_capacity_policy.json",
     "common/contracts/capacity_ledger.py",
     "common/contracts/capacity_protection.py",
     "common/contracts/execution_aliases.py",
@@ -64,7 +65,7 @@ RELATIVE_PATHS = (
     "common/simion/short_pa_path_support.ps1",
     "common/simion/native_fast_adjust_runtime_support.ps1",
     "common/simion/assemble_native_fast_adjust_family.lua",
-    "common/simion/export_standalone_pa.lua",
+    "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
     "common/simion/voltageize_pa0.lua",
     "common/contracts/run_artifact_workflow.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_source_closure.py",
@@ -87,9 +88,15 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/config/candidate_consumers.json",
     "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_ideal_grounded.lua",
+    "pyproject.toml",
+    "src/msplatform/execution/resources/host_execution_lease.ps1",
+    "src/msplatform/execution/resources/resource_process_support.ps1",
+    "src/msplatform/execution/resources/process_owner.ps1",
+    "src/msplatform/execution/resources/run_paths.ps1",
+    "src/msplatform/execution/resources/run_paths_owner.ps1",
     "common/host_execution_lease.ps1",
     "common/host_resource_scheduler.py",
-    "common/host_resource_policy.json",
+    "src/msplatform/execution/resources/host_resource_policy.json",
     "common/resource_budget_support.ps1",
     "common/comsol/add_comsol_size_feature.m",
     "common/comsol/livelink_environment.ps1",
@@ -158,18 +165,18 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/build_reflectron_variant.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_detector_variant.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_flight_tube_variant.lua",
+    "src/msplatform/backends/simion/resources/build_reflectron_variant.lua",
+    "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem",
+    "src/msplatform/backends/simion/resources/build_detector_variant.lua",
+    "src/msplatform/backends/simion/resources/build_flight_tube_variant.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_iob.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_detector_ground.gem",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_flight_tube_ground.gem",
+    "src/msplatform/backends/simion/resources/oatof_detector_ground.gem",
+    "src/msplatform/backends/simion/resources/oatof_flight_tube_ground.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
@@ -190,7 +197,7 @@ PYTHON_BOUND_SOURCES = frozenset({
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
 })
 PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
-HOST_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n    Join-Path $repo '.venv/Scripts/python.exe'\n  }"
+HOST_PYTHON_ASSIGNMENT = "$legacyPython=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $legacyRepo '.venv/Scripts/python.exe'}"
 ANALYSIS_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n  Join-Path $repoRoot '.venv\\Scripts\\python.exe'\n}"
 
 GENERATOR_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) {\n  [IO.Path]::GetFullPath($PythonExe)\n} elseif ($env:SIMULATION_PYTHON_EXE) {\n  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)\n} else {\n  Join-Path $repoRoot '.venv\\Scripts\\python.exe'\n}"
@@ -211,8 +218,26 @@ def _bind_python_runtime(payload: bytes, python_executable: Path, assignment: st
     if text.count(assignment) != 1:
         raise ValueError("candidate PowerShell source has an unexpected Python binding")
     escaped = str(python_executable).replace("'", "''")
-    replacement = f"$python = '{escaped}' # frozen candidate runtime binding"
+    variable = "$legacyPython" if assignment == HOST_PYTHON_ASSIGNMENT else "$python"
+    replacement = f"{variable} = '{escaped}' # frozen candidate runtime binding"
     return text.replace(assignment, replacement).encode("utf-8")
+
+
+def _execution_resource_source_ids(repo_root: Path) -> tuple[str, ...]:
+    """Expand only the authoritative execution package-data, without imports/probes."""
+    declaration = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    package = (repo_root / "src/msplatform/execution").resolve(strict=True)
+    selected: set[str] = set()
+    for pattern in declaration["tool"]["setuptools"]["package-data"]["msplatform.execution"]:
+        matches = [source for source in package.glob(pattern) if source.is_file()]
+        if not matches:
+            raise FileNotFoundError(f"Declared execution resource pattern has no files: {pattern}")
+        for source in matches:
+            actual = source.resolve(strict=True)
+            if not actual.is_relative_to(package):
+                raise ValueError(f"Declared execution resource escapes its package: {source}")
+            selected.add(source.relative_to(repo_root).as_posix())
+    return tuple(sorted(selected))
 
 
 def freeze_candidate_source_closure(
@@ -240,6 +265,9 @@ def freeze_candidate_source_closure(
     ):
         raise ValueError("extra candidate source ids must be a tuple of relative paths")
     declarations = list(RELATIVE_PATHS)
+    for source_id in _execution_resource_source_ids(REPO_ROOT):
+        if source_id not in declarations:
+            declarations.append(source_id)
     declarations.extend(enumerate_python_sources(REPO_ROOT,
         package_roots=("src/msplatform",), resource_suffixes=(".schema.json",)))
     for source_id in extra_source_ids:

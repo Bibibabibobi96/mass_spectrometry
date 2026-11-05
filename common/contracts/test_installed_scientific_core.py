@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # This runs with -I in a clean installed environment, without repository imports.
 INSTALLED_PROBE = r'''
-import copy, csv, hashlib, importlib, importlib.metadata, json, math, pathlib, shutil, sys, sysconfig
+import copy, csv, hashlib, importlib, importlib.metadata, json, math, os, pathlib, shutil, sys, sysconfig
 import numpy as np
 from urllib.parse import urljoin
 from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
@@ -39,6 +39,20 @@ from msplatform.contracts import machine_contracts
 root = pathlib.Path.cwd()
 fixture = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
 assert not root.is_relative_to(pathlib.Path(fixture['repo_root']))
+blocked_source_roots = [pathlib.Path(fixture['repo_root']).resolve(),
+                       (root/'source-offline').resolve(), (root/'sdist-offline').resolve()]
+def reject_author_files(event, arguments):
+    if event == 'open' and arguments and isinstance(arguments[0], (str, bytes)):
+        candidate = pathlib.Path(os.fsdecode(arguments[0])).resolve()
+        if any(candidate.is_relative_to(source) for source in blocked_source_roots):
+            raise AssertionError('installed action accessed an author tree: ' + str(candidate))
+sys.addaudithook(reject_author_files)
+import importlib.abc
+class RejectRepositoryImports(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'common','projects','integrations'}:
+            raise AssertionError('installed action imported a repository owner: ' + fullname)
+sys.meta_path.insert(0, RejectRepositoryImports())
 assert sys.version_info[:2] == (3, 11)
 assert sys.prefix != sys.base_prefix
 assert all(shutil.which(tool) is None for tool in ('pwsh', 'powershell', 'simion', 'comsol', 'matlab'))
@@ -200,6 +214,156 @@ for path in schemas:
     schema = json.loads(path.read_text(encoding='utf-8'))
     check_references(schema, schema['$id'])
 assert reference_count > 0
+
+# The real new user slice runs from installed providers and package resources.
+from unittest.mock import patch
+from msplatform import api
+with patch('subprocess.Popen', side_effect=AssertionError('hidden native action')), \
+     patch.object(pathlib.Path, 'mkdir', side_effect=AssertionError('hidden workspace creation')), \
+     patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('hidden file write')):
+    study = api.load_example('rf_oatof_functional_v1')
+    actual_components = {name:api.resolve_component(request) for name,request in study.component_requests.items()}
+    actual_assembly = api.compile_assembly(study.recipe, actual_components)
+    actual_geometry = api.compile_geometry(actual_assembly, backend='simion', numerics=study.geometry_numerics)
+    changed = study.to_dict()
+    original_release = copy.deepcopy(changed['release'])
+    changed['release'] = {'deliberately_invalid_release_not_a_geometry_input': True}
+    independent = api.StudyDefinition(changed)
+    independent_components = {name:api.resolve_component(request) for name,request in independent.component_requests.items()}
+    independent_assembly = api.compile_assembly(independent.recipe, independent_components)
+    independent_geometry = api.compile_geometry(independent_assembly, backend='simion', numerics=independent.geometry_numerics)
+    assert independent_geometry == actual_geometry
+    assert study.to_dict()['release'] == original_release
+    from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
+    from msplatform.backends.simion.field_execution import plan_fields_execution
+    selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
+    model_components = {name:actual_geometry.components_resolved[name] for name in selected}
+    model_drive = project_resolved_drive(actual_geometry, model_components, pulse=study.drive['pulse'],
+        clock=dict(clock_epoch_id='installed-software-fixture', authority_sha256='A'*64,
+            phase_reference_instrument_time_us=0.))
+    planned_model = compile_prepared_model(actual_geometry, model_components, drive=model_drive, physics=study.physics)
+    planned_fields = plan_fields_execution(planned_model, numerics=study.field_numerics)
+    assert len(planned_fields['expected_operation_ids']) == 8
+    assert planned_fields['expected_operation_ids'][-2:] == ['build_fields','verify_fields']
+assert len(actual_components['oatof'].assembly_interface['component_electrodes']) == 42
+assert len(actual_geometry.downstream_specs) == 3 and all(actual_geometry.frontend_gems.values())
+from msplatform.backends.simion.resources import gem_template_path, native_resource_path, structural_seed_path
+from msplatform.execution.resources import resource_path
+from msplatform.execution.manifest_records import file_record
+from msplatform.execution.terminal_publication import publish_terminal_state
+# A declared software data fixture checks installed reading, not native science.
+read_root = root/('published_contract_fixture_' + sys.argv[2])
+read_root.mkdir()
+state_record = file_record(root/'neutral-state.csv')
+read_manifest = dict(schema_version=2, role='simulation_run_manifest',
+    run_id='installation-software-fixture', project='software_fixture', mode='data_reading', status='failed',
+    inputs={}, outputs=[state_record], products={'contract':dict(schema_version=1, kind='trajectory_result',
+        status='complete', metadata={'scope':'software_contract_fixture_not_native'}, data={'state':state_record})})
+publish_terminal_state(read_root, {'status':'failed'}, read_manifest)
+artifact_reference = dict(manifest=file_record(read_root/'run_manifest.json'),product_id='contract')
+with patch('subprocess.Popen', side_effect=AssertionError('read started native action')), \
+     patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('read wrote data')):
+    reopened = api.open_artifact(artifact_reference,expected_kind='trajectory_result')
+    assert reopened.data_path('state') == (root/'neutral-state.csv').resolve()
+    assert reopened.producer['status'] == 'failed'
+# Reuse the repository's manifest-bound comparison fixture as plain data.
+# All identities/records below are newly bound to consumer-owned small files.
+comparison = fixture['comparison']
+def comparison_mother_records(records):
+    decoded = {}
+    for key, row in records.items():
+        if (not isinstance(key,str) or not key.isascii() or not key.isdecimal()
+                or str(int(key)) != key or int(key) <= 0
+                or type(row['particle_id']) is not int or row['particle_id'] != int(key)
+                or int(key) in decoded):
+            raise ValueError('installed fixture mother ID must be a canonical decimal key matching its original row')
+        decoded[int(key)] = row
+    return decoded
+comparison_root = root/('comparison_fixture_' + sys.argv[2])
+comparison_root.mkdir()
+def comparison_write(name, value):
+    path = comparison_root/name
+    path.write_text(json.dumps(value),encoding='utf-8')
+    return file_record(path)
+comparison_write('clock_authority.json',comparison['authority'])
+(comparison_root/'instrument_epoch_v1.json').write_bytes(bytes.fromhex(comparison['epoch_hex']))
+clock_records = dict(clock_authority=file_record(comparison_root/'clock_authority.json'),
+    instrument_epoch=file_record(comparison_root/'instrument_epoch_v1.json'))
+from msplatform.assembly.handoff import HandoffMother
+from msplatform.contracts.clock import ClockIdentity
+from msplatform.backends.simion.source import project_source_states
+clock = ClockIdentity(comparison['authority']['clock_epoch_id'],comparison['authority']['authority']['sha256'])
+mother = HandoffMother(comparison_mother_records(comparison['mother_records']),comparison['mother_fates'])
+_, provenance = project_source_states(comparison['states'],mother=mother,clock=clock,
+    state_kind='time_snapshot',clock_records=clock_records)
+data = dict(clock_records)
+data['source_provenance'] = comparison_write('source_provenance.json',provenance)
+data['canonical_source_states'] = comparison_write('canonical_source_states.json',comparison['states'])
+field_manifest = comparison_write('field_manifest.json',{'role':'software_field_identity_fixture'})
+field_reference = dict(manifest=field_manifest,product_id='fields')
+data['field_reference'] = comparison_write('field_reference.json',field_reference)
+collection = comparison['collection']
+collection['source_provenance_record'] = data['source_provenance']
+collection['field_reference'] = field_reference
+collection['original_mother'] = {key:copy.deepcopy(provenance[key]) for key in
+    ('mother_particle_ids','mother_records','mother_fates','clock_authority_sha256','clock_records')}
+for event in collection['canonical_events']: event.update(x_mm=1.,y_mm=2.,z_mm=3.)
+data['collection'] = comparison_write('collection.json',collection)
+comparison_manifest = dict(schema_version=2,role='simulation_run_manifest',status='failed',inputs={},
+    outputs=list(data.values()),products={'trajectory':dict(schema_version=1,kind='trajectory_result',status='complete',
+        metadata=dict(backend='simion',clock=dict(clock_epoch_id=clock.clock_epoch_id,authority_sha256=clock.authority_sha256),
+                      model_identity_sha256='B'*64),data=data)})
+comparison_run = comparison_root/'publication';comparison_run.mkdir()
+publish_terminal_state(comparison_run,{'status':'failed'},comparison_manifest)
+comparison_ref = dict(manifest=file_record(comparison_run/'run_manifest.json'),product_id='trajectory')
+with patch('subprocess.Popen',side_effect=AssertionError('comparison launched tool')), \
+     patch.object(pathlib.Path,'mkdir',side_effect=AssertionError('comparison created workspace')), \
+     patch.object(pathlib.Path,'write_text',side_effect=AssertionError('comparison wrote data')):
+    described = api.compare_trajectories(comparison_ref,comparison_ref,selection=comparison['selection'],
+        method=dict(schema_version=1,kind='event_time_position'))
+assert described['status']=='comparison_completed' and described['matched_particle_ids']==[7,99,123]
+assert described['coverage']['left']['denominator_count']==4
+assert all(pair['right_minus_left']['instrument_time_us']==0. and
+           pair['right_minus_left']['position_components_mm']==[0.,0.,0.] for pair in described['pairs'])
+assert described['scientific_qualification']=='not_granted' and 'velocity' in described['unavailable_quantities']
+print('INSTALLED_PUBLIC_COMPARISON=PASS')
+import msplatform.examples
+example_path = pathlib.Path(msplatform.examples.__file__).with_name('rf_oatof_functional_v1.json')
+missing_rejected = []
+for label, missing_path, action in (
+    ('example', example_path, lambda:api.load_example('rf_oatof_functional_v1')),
+    ('gem', gem_template_path('reflectron'), lambda:api.compile_geometry(actual_assembly,backend='simion',numerics=study.geometry_numerics)),
+    ('powershell', resource_path('process_owner.ps1'), lambda:resource_path('process_owner.ps1')),
+    ('lua', native_resource_path('build_geometry_iob.lua'), lambda:native_resource_path('build_geometry_iob.lua')),
+    ('execution_lua', resource_path('native_run_path.lua'), lambda:resource_path('native_run_path.lua')),
+    ('policy', resource_path('host_resource_policy.json'), lambda:resource_path('host_resource_policy.json')),
+    ('structural_seed', structural_seed_path(4), lambda:structural_seed_path(4)),
+):
+    assert missing_path.resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+    hidden_path = missing_path.with_name(missing_path.name+'.missing')
+    missing_path.rename(hidden_path)
+    try:
+        try: action()
+        except FileNotFoundError: missing_rejected.append(label)
+        else: raise AssertionError('missing installed resource accepted: ' + label)
+    finally: hidden_path.rename(missing_path)
+schema_path = machine_contracts.SCHEMA_DIR/'multipole_design_request_v4.schema.json'
+hidden_schema = schema_path.with_name(schema_path.name+'.missing')
+schema_path.rename(hidden_schema)
+try:
+    import subprocess
+    failed = subprocess.run([sys.executable,'-I','-c',
+        "from msplatform import api; api.resolve_component(api.load_example('rf_oatof_functional_v1').component_requests['multipole'])"],
+        cwd=root, capture_output=True, timeout=30)
+    failed_output = (failed.stdout+failed.stderr).decode('utf-8', errors='backslashreplace')
+    assert failed.returncode != 0 and schema_path.name in failed_output, failed_output
+    missing_rejected.append('schema')
+finally: hidden_schema.rename(schema_path)
+for name,module in tuple(sys.modules.items()):
+    if name.startswith('msplatform.') and getattr(module,'__file__',None):
+        origin = pathlib.Path(module.__file__).resolve()
+        assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name,origin)
+        origins[name] = str(origin)
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -207,7 +371,12 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      actual_providers=sorted({item['project_id'] for item in real['components'].values()}),
                      component_version=3, plan_version=real_plan['schema_version'], binding_version=bindings['schema_version'],
                      strict_peak_metadata_version=strict_metadata['schema_version'], neutral_state_count=state_report['particles'],
-                     census_weight_fraction=efficiency['relative_weight_fraction'])))
+                     census_weight_fraction=efficiency['relative_weight_fraction'],
+                     installed_platform_components=sorted(actual_components), downstream_spec_count=3,
+                     geometry_only_native_calls=0, release_independent_geometry=True,
+                     prepared_model_compile_only=True, field_plan_only=True, field_execution_performed=False,
+                     author_tree_reads_blocked=True,
+                     missing_resources_rejected=missing_rejected)))
 '''
 
 
@@ -215,18 +384,128 @@ class InstalledScientificCoreTests(unittest.TestCase):
     def run_command(self, arguments: list[str], *, cwd: Path, environment: dict[str, str],
                     timeout: int = 120) -> str:
         started = time.perf_counter()
-        result = subprocess.run(arguments, cwd=cwd, env=environment, capture_output=True,
-                                text=True, encoding='utf-8', timeout=timeout, check=False)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        try:
+            result = subprocess.run(arguments, cwd=cwd, env=environment, capture_output=True,
+                                    timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as error:
+            for name, payload in (("stdout", error.stdout), ("stderr", error.stderr)):
+                if payload:
+                    text = payload.decode('utf-8', errors='backslashreplace') if isinstance(payload, bytes) else payload
+                    print(f'INSTALLED_CORE_TIMEOUT_{name.upper()}={text}', flush=True)
+            raise
+        stdout = result.stdout.decode('utf-8', errors='backslashreplace')
+        stderr = result.stderr.decode('utf-8', errors='backslashreplace')
+        self.assertEqual(result.returncode, 0, stdout + stderr)
         print(f'INSTALLED_CORE_COMMAND_SECONDS={time.perf_counter() - started:.3f} COMMAND={arguments[:3]}')
-        return result.stdout
+        return stdout
+
+    def test_command_transport_preserves_non_utf8_diagnostics_and_failure_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            program = "import sys;sys.stdout.write('accepted');sys.stderr.buffer.write(bytes.fromhex('b5'))"
+            output = self.run_command([sys.executable,'-I','-c',program], cwd=Path(directory),
+                                      environment=dict(os.environ), timeout=30)
+            self.assertEqual(output, 'accepted')
+            with self.assertRaises(AssertionError) as failure:
+                self.run_command([sys.executable,'-I','-c',program+';sys.exit(3)'], cwd=Path(directory),
+                                 environment=dict(os.environ), timeout=30)
+            self.assertIn('3 != 0', str(failure.exception))
+            self.assertIn('\\xb5', str(failure.exception))
+
+    def test_probe_published_fixture_isolates_both_installed_rounds(self) -> None:
+        import ast
+        from types import SimpleNamespace
+
+        statements = ast.parse(INSTALLED_PROBE).body
+        index = next(index for index, node in enumerate(statements)
+                     if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                         and target.id == 'read_root' for target in node.targets))
+        # Execute the actual installed probe's path/mkdir statements, not a
+        # second approximation or a whole new installation for this guard.
+        code = compile(ast.Module(body=statements[index:index + 2], type_ignores=[]), '<actual-installed-probe>', 'exec')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            locations = []
+            for round_id in ('0', '1'):
+                namespace = dict(root=root, sys=SimpleNamespace(argv=['probe', 'fixture.json', round_id]))
+                exec(code, namespace)
+                locations.append(namespace['read_root'])
+            self.assertNotEqual(*locations)
+            self.assertTrue(all(path.is_dir() and path.parent == root for path in locations))
+            self.assertEqual(set(root.iterdir()), set(locations))
+            with self.assertRaises(FileExistsError):
+                exec(code, dict(root=root, sys=SimpleNamespace(argv=['probe', 'fixture.json', '0'])))
+
+    def test_actual_installed_comparison_probe_uses_manifest_bound_fixture(self) -> None:
+        import ast
+        import copy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform import api
+        from msplatform.execution.manifest_records import file_record
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        statements = ast.parse(INSTALLED_PROBE).body
+        start = next(i for i,node in enumerate(statements) if isinstance(node,ast.Assign)
+                     and any(isinstance(target,ast.Name) and target.id=='comparison' for target in node.targets))
+        end = next(i for i,node in enumerate(statements[start:],start) if isinstance(node,ast.Import)
+                   and any(alias.name=='msplatform.examples' for alias in node.names))
+        code = compile(ast.Module(body=statements[start:end],type_ignores=[]),'<actual-installed-comparison-probe>','exec')
+        with tempfile.TemporaryDirectory() as directory:
+            namespace = dict(root=Path(directory),fixture=json.loads(json.dumps({'comparison':self.comparison_probe_fixture()})),
+                sys=SimpleNamespace(argv=['probe','fixture.json','0']),file_record=file_record,
+                publish_terminal_state=publish_terminal_state,json=json,copy=copy,pathlib=__import__('pathlib'),patch=patch,api=api)
+            exec(code,namespace)
+            self.assertEqual(namespace['described']['status'],'comparison_completed')
+            self.assertTrue(all(type(pid) is int and pid==row['particle_id'] for pid,row in namespace['mother'].records.items()))
+
+    def test_installed_comparison_fixture_id_decode_rejects_noncanonical_or_reshaped_ids(self) -> None:
+        import ast
+        tree = ast.parse(INSTALLED_PROBE)
+        helper = next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=='comparison_mother_records')
+        namespace = {}
+        exec(compile(ast.Module(body=[helper],type_ignores=[]),'<actual-installed-fixture-ID-decoder>','exec'),namespace)
+        decode = namespace['comparison_mother_records']
+        original = {'7':{'particle_id':7},'9007199254740993':{'particle_id':9007199254740993}}
+        self.assertEqual(decode(json.loads(json.dumps(original))),{int(key):row for key,row in original.items()})
+        self.assertEqual(original,{'7':{'particle_id':7},'9007199254740993':{'particle_id':9007199254740993}})
+        invalid = [{'07':{'particle_id':7}},{'+7':{'particle_id':7}},{'7.0':{'particle_id':7}},
+                   {'0':{'particle_id':0}},{'-7':{'particle_id':-7}},{'７':{'particle_id':7}},
+                   {'7':{'particle_id':'7'}},{'7':{'particle_id':7.0}},{'1':{'particle_id':True}},
+                   {'7':{'particle_id':99}},{7:{'particle_id':7}}]
+        for records in invalid:
+            with self.subTest(records=records),self.assertRaisesRegex(ValueError,'canonical decimal key'):
+                decode(records)
+
+    def comparison_probe_fixture(self) -> dict:
+        from common.contracts import test_simion_trajectory_analysis as fixtures
+        case = fixtures.PublishedTrajectoryAnalysisTests()
+        case.setUp()
+        try:
+            return dict(authority=case.contract,epoch_hex=(case.root/'instrument_epoch_v1.json').read_bytes().hex(),
+                mother_records=dict(case.mother.records),mother_fates=list(case.mother.fates),states=case.states,
+                collection=case.collection,selection=case.selection)
+        finally:
+            case.doCleanups()
 
     def assert_distribution_member(self, name: str) -> None:
         self.assertNotRegex(name, r'(^|/)(tests?|test_support|__pycache__|history|runs)(/|_)')
-        self.assertNotRegex(name, r'\.(pa\d*|mph|iob|dll|exe|pyc)$')
+        # Only the two reviewed, already tracked structural source templates
+        # migrate into the wheel. Generated/native payloads remain forbidden.
+        template = any(name == path or name.endswith('/' + path) for path in (
+            'msplatform/backends/simion/resources/4_instance_seed.iob',
+            'msplatform/backends/simion/resources/5_instance_seed.iob'))
+        if not template:
+            self.assertNotRegex(name, r'\.(pa\d*|pa#|pa-surf|mph|iob|dll|exe|pyc)$')
 
     def inspect_wheel(self, wheel: Path) -> list[str]:
         expected_schemas = sorted(path.name for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json'))
+        config = tomllib.loads((REPO_ROOT/'pyproject.toml').read_text(encoding='utf-8'))
+        expected_resources = {
+            path.relative_to(REPO_ROOT/'src').as_posix()
+            for package,patterns in config['tool']['setuptools']['package-data'].items()
+            for pattern in patterns
+            for path in (REPO_ROOT/'src'/Path(*package.split('.'))).glob(pattern)
+            if path.is_file()
+        }
         with zipfile.ZipFile(wheel) as archive:
             inventory = archive.namelist()
             actual_schemas = sorted(Path(name).name for name in inventory if name.endswith('.schema.json'))
@@ -236,15 +515,25 @@ class InstalledScientificCoreTests(unittest.TestCase):
                 for path in (REPO_ROOT / 'src/msplatform').rglob('*.py')
             }
             actual_sources = set()
+            actual_resources = set()
             for name in inventory:
                 self.assert_distribution_member(name)
                 if '.dist-info/' in name:
                     continue
                 self.assertTrue(name.startswith('msplatform/'), name)
-                self.assertTrue(name.endswith(('.py', '.schema.json')), name)
                 if name.endswith('.py'):
                     actual_sources.add(name)
+                else:
+                    self.assertIn(name, expected_resources)
+                    actual_resources.add(name)
+                    self.assertEqual(archive.read(name), (REPO_ROOT / 'src' / name).read_bytes(), name)
+                    if name.endswith('_instance_seed.iob'):
+                        from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
+                        payload = archive.read(name)
+                        count = int(Path(name).name.split('_', 1)[0])
+                        self.assertEqual((len(payload), hashlib.sha256(payload).hexdigest()), STRUCTURAL_SEEDS[count])
             self.assertEqual(actual_sources, expected_sources)
+            self.assertEqual(actual_resources, expected_resources)
             print('INSTALLED_CORE_WHEEL_INVENTORY=' + json.dumps(inventory))
         return expected_schemas
 
@@ -274,6 +563,14 @@ class InstalledScientificCoreTests(unittest.TestCase):
     def test_wheel_and_sdist_install_and_compute_outside_worktree(self) -> None:
         self.assertEqual(sys.version_info[:2], (3, 11), 'Python 3.11 is required')
         config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+        retained = os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
+        if retained:
+            retained = Path(retained)
+            self.assertTrue(retained.is_absolute(), 'Retained build directory must be explicit and absolute')
+            self.assertFalse(retained.resolve().is_relative_to(REPO_ROOT), 'Retained builds must stay outside source')
+            retained.mkdir(parents=True, exist_ok=False)
+            (retained / 'acceptance.json').write_text(json.dumps(dict(status='not_completed',
+                purpose='ordinary_installation_acceptance', test_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())), encoding='utf-8')
         with tempfile.TemporaryDirectory(prefix='installed-scientific-core-') as directory:
             root = Path(directory).resolve()
             self.assertFalse(root.is_relative_to(REPO_ROOT))
@@ -380,8 +677,13 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
                                               schemas=expected_schemas, provider_layout=provider_layout,
-                                              rf_oa_layout=rf_oa_layout, neutral_state=neutral_state)), encoding='utf-8')
+                                              rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
+                                              comparison=self.comparison_probe_fixture())), encoding='utf-8')
             consumer_python = str(consumer / python_name)
+            # Remove both private author trees from their original locations;
+            # the isolated probe also forbids reads from these and the live checkout.
+            source.rename(root/'source-offline')
+            (root/'sdist').rename(root/'sdist-offline')
             for index, candidate in enumerate((wheel, rebuilt_wheel)):
                 # The rebuilt wheel has identical metadata and production bytes;
                 # replace that distribution without reinstalling unchanged dependencies.
@@ -390,9 +692,28 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                   *replacement, '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
                                  cwd=root, environment=environment, timeout=300)
                 probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
-                result = self.run_command([consumer_python, '-I', '-c', INSTALLED_PROBE, str(fixture)],
+                result = self.run_command([consumer_python, '-I', '-c', INSTALLED_PROBE, str(fixture), str(index)],
                                           cwd=root, environment=probe_environment)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
+            if retained:
+                files = []
+                for label, artifact in (('wheel', wheel), ('sdist', sdist), ('sdist-rebuilt-wheel', rebuilt_wheel)):
+                    destination = retained / label / artifact.name
+                    destination.parent.mkdir()
+                    shutil.copyfile(artifact, destination)
+                    files.append(dict(kind=label, path=str(destination), bytes=destination.stat().st_size,
+                        sha256=hashlib.sha256(destination.read_bytes()).hexdigest()))
+                actual_source = root / 'source-offline'
+                source_files = [actual_source / name for name in ('pyproject.toml', 'requirements-lock.txt',
+                                'requirements-cad-step-lock.txt', 'README.md') if (actual_source / name).is_file()]
+                source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
+                source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,
+                    sha256=hashlib.sha256(path.read_bytes()).hexdigest()) for path in sorted(source_files)]
+                report = dict(status='success', purpose='ordinary_installation_acceptance',
+                    test_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    artifacts=files, actual_build_source=source_records)
+                (retained / 'acceptance.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+                print('INSTALLED_CORE_RETAINED=' + json.dumps(report))
 
 
 if __name__ == '__main__':

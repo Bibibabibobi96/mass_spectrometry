@@ -293,6 +293,9 @@ try {
             frozen_helper = frozen / "common/simion/short_pa_path_support.ps1"
             frozen_helper.parent.mkdir(parents=True)
             shutil.copyfile(HELPER, frozen_helper)
+            payload_resource = frozen / "src/msplatform/execution/resources/payload_file_support.ps1"
+            payload_resource.parent.mkdir(parents=True)
+            shutil.copyfile(HELPER.parents[2] / "src/msplatform/execution/resources/payload_file_support.ps1", payload_resource)
             identity_module = frozen / "common/contracts/file_identity.py"
             identity_module.parent.mkdir()
             shutil.copyfile(HELPER.parents[1] / "contracts/file_identity.py", identity_module)

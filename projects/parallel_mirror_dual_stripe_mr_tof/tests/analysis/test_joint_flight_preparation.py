@@ -1,5 +1,6 @@
 """Preparation must bind replacement fields and preserve OA builder behavior."""
 from pathlib import Path
+from msplatform.execution.resources import resource_path
 import shutil
 import subprocess
 import tempfile
@@ -37,7 +38,7 @@ class JointPreparationTests(unittest.TestCase):
             result = project_provider_voltages(source, request, inputs, Path(lua))
             self.assertEqual(result['values_v15'][4:8], [3100,4900,3100,4900])
             self.assertEqual(Path(result['source_voltage_waveforms']['path']).read_bytes(),
-                (REPO / 'common/simion/voltage_waveforms.lua').read_bytes())
+                (REPO / 'src/msplatform/backends/simion/resources/voltage_waveforms.lua').read_bytes())
             self.assertEqual(json.loads((inputs / 'provider_voltage_projection.json').read_text()), result)
 
     def test_five_role_builder_checks_saved_patch_occupancy_and_boundary_priority(self):
@@ -156,7 +157,7 @@ print('FIVE_ROLE_BUILDER_MOCK=PASS')
             canonical.mkdir()
             reference = canonical/'reference.lua'
             reference.write_text('return {mirror_voltages_v={0,1,2,3,4}}', encoding='utf-8')
-            mapper = PROJECT.parents[1]/'common/paths/native_run_path.lua'
+            mapper = resource_path('native_run_path.lua')
             source = canonical/'source'
             generated = canonical/'generated.lua'
             first_bytes = None
@@ -612,7 +613,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
                     native=dict(refinement_windows=[dict(mode='native_static_pa', scalar_pa='fine.pa', **grid)]),
                     runtime=runtime, output=output)
                 if case in ('outputs_only', 'inputs_only', 'split', 'identical', 'relative', 'fresh_declared', 'reused'):
-                    with patch('common.contracts.write_run_manifest.file_sha256', wraps=file_sha256) as hash_file:
+                    with patch('msplatform.execution.manifest_records.file_sha256', wraps=file_sha256) as hash_file:
                         result = prepare_interface_field_audit(**arguments)
                     self.assertFalse(any(Path(call.args[0]).name.startswith('processor.pa')
                                          for call in hash_file.call_args_list))

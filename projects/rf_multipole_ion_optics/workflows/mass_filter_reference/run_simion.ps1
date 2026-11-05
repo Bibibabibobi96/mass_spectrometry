@@ -188,7 +188,7 @@ try {
     $programSource = Copy-VerifiedRunInput `
         -Source (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\simion\simion_transport.lua') `
         -Destination (Join-Path $candidateDir 'multipole_runtime_program.lua')
-    $rfDriveKernel=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'common/simion/rf_drive.lua') `
+    $rfDriveKernel=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/rf_drive.lua') `
         -Destination (Join-Path $inputDir 'multipole_rf_drive_kernel.lua')
     $iobBuilder = Copy-VerifiedRunInput `
         -Source (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\simion\build_simion_runtime_iob.lua') `

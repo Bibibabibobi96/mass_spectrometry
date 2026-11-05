@@ -16,6 +16,7 @@ from common.contracts.write_run_manifest import (
     publish_run_manifest, publish_terminal_state, replay_terminal_publication,
 )
 from common.contracts import write_run_manifest
+from msplatform.execution import terminal_publication
 
 
 class TerminalPublicationLockTests(unittest.TestCase):
@@ -155,7 +156,7 @@ try {
                 lock = root / TERMINAL_LOCK_NAME
                 self.assertEqual(lock.stat().st_size, 0)
                 # Shorten only the real lock's fixture wait, not its behavior.
-                with patch.object(write_run_manifest, "process_file_lock",
+                with patch.object(terminal_publication, "process_file_lock",
                                   side_effect=lambda path: process_file_lock(path, timeout_seconds=.2)):
                     with self.assertRaises(TimeoutError):
                         publish_terminal_state(root, summary, manifest)
@@ -218,7 +219,7 @@ try {
                 if path.name == "summary.json":
                     raise OSError("injected publication failure")
                 return write(path, document)
-            with patch.object(write_run_manifest, "write_json_atomic", side_effect=fail_summary):
+            with patch.object(terminal_publication, "write_json_atomic", side_effect=fail_summary):
                 with self.assertRaisesRegex(OSError, "injected"):
                     publish_terminal_state(root, summary, manifest)
             self.assertTrue((root / TERMINAL_JOURNAL_NAME).is_file())

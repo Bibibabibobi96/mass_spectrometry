@@ -244,6 +244,8 @@ class RoundRodGeometryTest(unittest.TestCase):
                     render_axis_mapped_segmented_rod_array_gem(segmented, **kwargs)
 
     def test_production_render_gem_uses_shared_local_segmented_primitive(self):
+        from msplatform.backends.simion import rf_geometry
+
         for family in ("quadrupole", "hexapole", "octupole"):
             resolved = json.loads(
                 (
@@ -252,7 +254,7 @@ class RoundRodGeometryTest(unittest.TestCase):
                 ).read_text(encoding="utf-8")
             )
             with self.subTest(family=family), patch.object(
-                simion_geometry,
+                rf_geometry,
                 "_render_local_segmented_rod_array_gem",
                 wraps=simion_geometry._render_local_segmented_rod_array_gem,
             ) as renderer:

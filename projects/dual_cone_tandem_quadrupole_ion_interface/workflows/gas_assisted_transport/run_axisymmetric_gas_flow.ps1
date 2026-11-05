@@ -55,16 +55,43 @@ try{
     matlab_task='comsol\run_axisymmetric_gas_flow.m'
   }
   $schedulerFiles=[ordered]@{
+    python_project_config='pyproject.toml'
+    frozen_input_selector='common/contracts/frozen_inputs.py'
     powershell_preflight='common\require_powershell7.ps1'
     host_resource_support='common\host_execution_lease.ps1'
     host_resource_scheduler='common\host_resource_scheduler.py'
-    host_resource_policy='common\host_resource_policy.json'
+    host_resource_policy='src\msplatform\execution\resources\host_resource_policy.json'
     resource_budget_support='common\resource_budget_support.ps1'
     comsol_launcher='common\comsol\run_comsol_r2025b.ps1'
     comsol_bootstrap='common\comsol\livelink_r2025b\comsolstartup.m'
     comsol_failure_classifier='common\comsol\livelink_failure_classification.ps1'
     comsol_environment_preflight='common\comsol\livelink_environment.ps1'
     comsol_launcher_resolver='common\comsol\resolve_comsol_64.ps1'
+  }
+  $selectCoreSources = @'
+import json, pathlib, sys, tomllib
+from common.contracts.frozen_inputs import enumerate_python_sources
+root = pathlib.Path(sys.argv[1]).resolve()
+selected = set(enumerate_python_sources(
+    root, package_roots=("src/msplatform",), provider_root="src/msplatform",
+    resource_suffixes=(".schema.json",)))
+configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+for package, patterns in configuration["tool"]["setuptools"]["package-data"].items():
+    package_root = root / "src" / package.replace(".", "/")
+    for pattern in patterns:
+        resources = sorted(path for path in package_root.glob(pattern) if path.is_file())
+        if not resources:
+            raise ValueError(f"Declared package resource is unavailable: {package}/{pattern}")
+        selected.update(path.relative_to(root).as_posix() for path in resources)
+print(json.dumps(sorted(selected)))
+'@
+  $coreSelection = Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -B -c $selectCoreSources $repoRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Scientific core source selection failed.' }
+  }
+  foreach ($relative in @($coreSelection | ConvertFrom-Json)) {
+    $key = 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_')
+    $schedulerFiles[$key] = $relative
   }
   foreach($key in $sourceFiles.Keys){
     $source=Join-Path $projectRoot $sourceFiles[$key]

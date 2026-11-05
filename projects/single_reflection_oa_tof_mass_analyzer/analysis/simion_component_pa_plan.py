@@ -32,18 +32,18 @@ COMPONENTS = {
     ),
     "reflectron": (
         "reflectron", "reflectron", True,
-        PROJECT + "/simion/reflectron/build_reflectron_variant.lua",
-        PROJECT + "/simion/reflectron/oatof_reflectron_ideal_10_5.gem",
+        "src/msplatform/backends/simion/resources/build_reflectron_variant.lua",
+        "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem",
     ),
     "flight_tube": (
         "flight_tube_shield", "flight_tube_ground", False,
-        PROJECT + "/simion/workbench/build_flight_tube_variant.lua",
-        PROJECT + "/simion/workbench/oatof_flight_tube_ground.gem",
+        "src/msplatform/backends/simion/resources/build_flight_tube_variant.lua",
+        "src/msplatform/backends/simion/resources/oatof_flight_tube_ground.gem",
     ),
     "detector": (
         "detector", "detector_ground", False,
-        PROJECT + "/simion/workbench/build_detector_variant.lua",
-        PROJECT + "/simion/workbench/oatof_detector_ground.gem",
+        "src/msplatform/backends/simion/resources/build_detector_variant.lua",
+        "src/msplatform/backends/simion/resources/oatof_detector_ground.gem",
     ),
 }
 
@@ -111,7 +111,7 @@ def compile_component_pa_plan(
         if role == "reflectron":
             source_ids.append(PROJECT + "/simion/reflectron/refine_single_pa.lua")
         if cacheable:
-            source_ids += ["common/simion/export_standalone_pa.lua", "common/simion/standalone_pa_response_set.py"]
+            source_ids += ["src/msplatform/backends/simion/resources/export_standalone_pa.lua", "src/msplatform/backends/simion/standalone_pa_response_set.py"]
         identity = {
             "geometry": {"role": role, "physical_geometry": geometry},
             "gem": {"path": gem, "sha256": file_sha256(repo / gem)},

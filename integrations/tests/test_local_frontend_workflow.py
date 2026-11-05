@@ -347,8 +347,8 @@ class LocalFrontendTests(unittest.TestCase):
         self.assertAlmostEqual(pulse["candidate_step_us"], pulse["rf_period_us"] / 8)
 
     def test_source_identity_is_read_once_per_consumption_and_freeze_boundary(self):
-        from common.contracts import write_run_manifest as records
-        from common.contracts import canonical_clock_authority as clock_contract
+        from msplatform.execution import manifest_records as records
+        from msplatform.execution import clock_authority as clock_contract
         output = self.workspace / "single_identity_read"
         with (patch.object(records, "file_sha256", wraps=records.file_sha256) as digest,
               patch.object(clock_contract, "file_sha256", wraps=clock_contract.file_sha256) as clock_digest):
@@ -510,7 +510,7 @@ class LocalFrontendTests(unittest.TestCase):
                                    self.workspace, run_id="20261022_120000__test__python__bad-parent")
 
     def test_parent_consumption_reads_and_verifies_only_the_frozen_copy(self):
-        from common.contracts import write_run_manifest as records
+        from msplatform.execution import manifest_records as records
         from integrations.workflows.local_frontend import prepare as compiler
         output = self.workspace / "frozen_parent_only"
         original = Path(self.request["composition_plan"]["path"]).resolve()

@@ -13,25 +13,26 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 class PythonDependencyContractTests(unittest.TestCase):
     def test_declared_dependencies_have_compatible_unique_lock_entries(self) -> None:
-        project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
-            "project"
-        ]
+        configuration = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        project = configuration["project"]
         self.assertEqual(project["requires-python"], ">=3.11,<3.12")
         declared_lines = list(project["dependencies"])
         for optional_lines in project.get("optional-dependencies", {}).values():
             declared_lines.extend(optional_lines)
 
+        optional_locks = configuration.get("tool", {}).get("msplatform", {}).get("optional-dependency-locks", {})
+        self.assertLessEqual(set(optional_locks), set(project.get("optional-dependencies", {})))
+        lock_paths = ["requirements-lock.txt", *optional_locks.values()]
         locked: dict[str, Requirement] = {}
-        for line in (REPO_ROOT / "requirements-lock.txt").read_text(
-            encoding="utf-8"
-        ).splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            requirement = Requirement(stripped)
-            name = canonicalize_name(requirement.name)
-            self.assertNotIn(name, locked, f"duplicate locked dependency: {name}")
-            locked[name] = requirement
+        for lock_path in lock_paths:
+            for line in (REPO_ROOT / lock_path).read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                requirement = Requirement(stripped)
+                name = canonicalize_name(requirement.name)
+                self.assertNotIn(name, locked, f"duplicate locked dependency: {name}")
+                locked[name] = requirement
 
         for declared_line in declared_lines:
             declared = Requirement(declared_line)

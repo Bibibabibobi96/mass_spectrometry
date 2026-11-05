@@ -25,11 +25,28 @@ HOST_PERMIT_FIXTURE = "function Assert-HostResourceHeavyStage {};"
 
 def _watchdog_observation_copy(root: Path) -> Path:
     """Copy one real observer function, adding only removable flushed checkpoints."""
-    public = REPO_ROOT / 'common/resource_budget_support.ps1'
+    from msplatform.execution.resources import resource_path
+
+    public = resource_path('resource_process_support.ps1')
     source = public.read_bytes()
-    begin = source.index(b'function Invoke-ResourceBudgetedProcess {')
-    end = source.index(b'\nfunction Assert-RepositoryProcessSpecification {', begin)
-    original = source[begin:end]
+    parser = (
+        "$tokens=$null;$errors=$null;"
+        "$ast=[System.Management.Automation.Language.Parser]::ParseFile($args[0],[ref]$tokens,[ref]$errors);"
+        "if($errors.Count){throw 'Observer source parse failed'};"
+        "$matches=@($ast.FindAll({param($node)"
+        "$node-is[System.Management.Automation.Language.FunctionDefinitionAst]-and"
+        "$node.Name-ceq'Invoke-ResourceBudgetedProcess'},$true));"
+        "if($matches.Count-ne1){throw 'Observer function must be unique'};"
+        "[Console]::Out.Write($matches[0].Extent.Text)"
+    )
+    # Parse the actual canonical owner, without relying on its neighboring functions.
+    encoded = base64.b64encode(("& {" + parser + "} '" +
+                               str(public).replace("'", "''") + "'").encode('utf-16le')).decode('ascii')
+    parsed = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                            capture_output=True, check=True, timeout=15, cwd=REPO_ROOT)
+    original = parsed.stdout.decode('utf-8-sig').encode('utf-8')
+    if source.count(original) != 1:
+        raise AssertionError('Parsed observer must identify exact unique source bytes')
     anchors = (
         b'  $observation=New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath',
         b'  $process=Start-Process @startArguments',
@@ -837,7 +854,7 @@ foreach($scenario in @('success','child_failure','postprocess_denied','receipt_u
 
     def test_scheduler_suppresses_checkpoint_callback_pipeline_output(self) -> None:
         """A manifest-publishing callback must not turn the wave receipt into an array."""
-        source = (REPO_ROOT / "common/resource_budget_support.ps1").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "src/msplatform/execution/resources/simion_dispatch_support.ps1").read_text(encoding="utf-8")
         self.assertEqual(source.count("$null = & $OnProcessCompleted $record"), 2)
         self.assertNotIn("      & $OnProcessCompleted $record", source)
 
@@ -901,7 +918,7 @@ function New-TestProcess($Id,$Working,$Private,$Cpu,$Path) {
 $root=New-TestProcess 101 10 30 7 ''
 $child=New-TestProcess 102 40 20 11 ''
 $console=New-TestProcess 103 5 8 3 (Join-Path $env:SystemRoot 'System32/conhost.exe')
-$unknown=[pscustomobject]@{Id=104;Path=''}
+$unknown=[pscustomobject]@{Id=104;Path='';WorkingSet64=0;PrivateMemorySize64=0;TotalProcessorTime=[timespan]::Zero}
 $unknown|Add-Member ScriptProperty StartTime {throw 'TEST_ONLY inaccessible birth'}
 $script:unrelatedPathReads=0
 $unrelated=New-TestProcess 105 0 0 0 ''
@@ -986,7 +1003,9 @@ $results|ConvertTo-Json -Depth 12 -Compress
                     self.assertEqual(sample["active_process_ids"], [])
                     continue
                 expected_ids = [101, 103] if case["scenario"] == "reused_tracked" else [101, 102, 103]
-                self.assertEqual(sample["active_process_ids"], expected_ids)
+                expected_active_ids = expected_ids + ([104] if case["scenario"] == "owned_unknown" else [])
+                self.assertEqual(sample["active_process_ids"], expected_active_ids)
+                self.assertNotIn("104", sample["tracked_process_started_at_utc_ticks"])
                 self.assertEqual(sample["system_console_host_process_ids"], [103])
                 for pid in expected_ids:
                     self.assertIn(pid, sample["tracked_process_ids"])
@@ -1104,9 +1123,9 @@ foreach($count in @(1,4,8)){
 . '{support}'
 function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial'}}
 $realOwner=Get-Process -Id $PID
-$protected=[pscustomobject]@{{Id=424242;Path=''}}
+$protected=[pscustomobject]@{{Id=424242;Path='';WorkingSet64=0;PrivateMemorySize64=0;TotalProcessorTime=[timespan]::Zero}}
 $protected|Add-Member -MemberType ScriptProperty -Name StartTime -Value {{throw 'TEST_ONLY inaccessible creation time'}}
-$grandchild=[pscustomobject]@{{Id=424243;Path=''}}
+$grandchild=[pscustomobject]@{{Id=424243;Path='';WorkingSet64=0;PrivateMemorySize64=0;TotalProcessorTime=[timespan]::Zero}}
 $grandchild|Add-Member -MemberType ScriptProperty -Name StartTime -Value {{throw 'TEST_ONLY inaccessible creation time'}}
 function Get-Process {{@($realOwner,$protected,$grandchild)}}
 function Get-HostResourceNativeProcessCreationTicks {{param($ProcessId);return $null}}
@@ -1122,7 +1141,8 @@ if(-not$sample.ancestry_complete-or$sample.unknown_ancestry_process_ids.Count-ne
 $script:ownedCandidate=$true
 $sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID)
 if($sample.ancestry_complete-or($sample.unknown_ancestry_process_ids-join',')-ne'424242,424243'){{throw 'Unresolved owned candidate chain disappeared'}}
-if($sample.active_process_ids-contains424242-or$sample.active_process_ids-contains424243){{throw 'Unknown identities became verified owned processes'}}
+if($sample.active_process_ids-notcontains424242-or$sample.active_process_ids-notcontains424243){{throw 'Unknown live candidates disappeared from fail-closed drain'}}
+if($sample.tracked_process_started_at_utc_ticks.ContainsKey('424242')-or$sample.tracked_process_started_at_utc_ticks.ContainsKey('424243')){{throw 'Unknown candidates received verified birth identities'}}
 """
         result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
             cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=15)
@@ -1996,9 +2016,9 @@ Write-Output 'TERMINATION_FAILURE=PASS'
 
     def test_single_process_meter_carries_descendant_birth_identities(self) -> None:
         """The lightweight meter must not confuse a reused helper PID with SIMION."""
-        support = (REPO_ROOT / "common/resource_budget_support.ps1").read_text(encoding="utf-8")
+        support = (REPO_ROOT / "src/msplatform/execution/resources/resource_process_support.ps1").read_text(encoding="utf-8")
         start = support.index("function Invoke-ResourceBudgetedProcess")
-        end = support.index("function Assert-RepositoryProcessSpecification", start)
+        end = len(support)
         meter = support[start:end]
         self.assertIn(
             "-TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks",

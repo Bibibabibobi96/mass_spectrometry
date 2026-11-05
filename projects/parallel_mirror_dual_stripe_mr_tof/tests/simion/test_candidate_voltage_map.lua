@@ -78,7 +78,7 @@ simion={wb={instances={
   {filename='virtual/mrtof_detector.pa#',pa=pa(4)}}}}
 function simion.workbench_program() segment={} end
 loadfile=function(path)
-  if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/common/simion/voltage_waveforms.lua') end
+  if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/src/msplatform/backends/simion/resources/voltage_waveforms.lua') end
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
   if path=='virtual/source.mirror_cycle_counter.lua' then return original_loadfile(directory..'mirror_cycle_counter.lua') end

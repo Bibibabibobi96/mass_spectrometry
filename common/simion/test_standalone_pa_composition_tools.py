@@ -7,11 +7,13 @@ import subprocess
 import tempfile
 import unittest
 
+from msplatform.backends.simion.resources import native_resource_path
+
 
 ROOT = Path(__file__).resolve().parent
 FAST_ADJUST_EXPORTER = ROOT / "export_fast_adjusted_standalone_pa.lua"
 COMPOSER = ROOT / "compose_standalone_pa.lua"
-DIRICHLET_OPERATING_PATCH = ROOT / "build_dirichlet_patch_operating_pa.lua"
+DIRICHLET_OPERATING_PATCH = native_resource_path("build_dirichlet_patch_operating_pa.lua")
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
 LUA = Path(shutil.which("lua") or r"C:\Program Files\SIMION-2020\lua.exe")

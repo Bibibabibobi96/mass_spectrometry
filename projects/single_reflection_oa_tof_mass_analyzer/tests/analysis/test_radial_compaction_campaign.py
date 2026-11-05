@@ -556,17 +556,26 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             controlled_host.parent.mkdir(parents=True)
             shutil.copyfile(host_source, controlled_host)
             install_controlled_cpu_snapshot(radial.REPO_ROOT, controlled)
+            private_host_id = "common/host_execution_lease.resource.ps1"
+            private_host = controlled / private_host_id
             # Author the controlled input before the real compiler hashes and binds it.
             with patch.object(source_closure, "_source_path", side_effect=lambda source_id:
-                              controlled_host if source_id == host_id else original_resolver(source_id)):
+                              controlled_host if source_id == host_id else
+                              private_host if source_id == private_host_id else original_resolver(source_id)):
                 closure = radial.freeze_candidate_source_closure(
-                    code_root, artifacts, Path(sys.executable), extra_source_ids=radial.EXTRA_SOURCE_IDS,
+                    code_root, artifacts, Path(sys.executable),
+                    extra_source_ids=(*radial.EXTRA_SOURCE_IDS, private_host_id),
                 )
             source_closure.verify_candidate_source_closure(closure)
             host_record = next(record for record in closure["sources"] if record["source_id"] == host_id)
             self.assertEqual(host_record["source_sha256"], source_closure.sha256(controlled_host))
             self.assertEqual(host_record["sha256"], source_closure.sha256(code_root / host_id))
             self.assertEqual(host_record["transformations"], ["python_runtime_binding"])
+            private_record = next(record for record in closure["sources"]
+                                  if record["source_id"] == private_host_id)
+            self.assertEqual(private_record["source_sha256"], source_closure.sha256(private_host))
+            self.assertEqual(private_record["sha256"], source_closure.sha256(code_root / private_host_id))
+            self.assertEqual(private_record["transformations"], [])
             self.assertEqual(host_source.read_bytes(), original_host)
             case_root = run / "cases/shield260"
             (case_root / "simion").mkdir(parents=True)

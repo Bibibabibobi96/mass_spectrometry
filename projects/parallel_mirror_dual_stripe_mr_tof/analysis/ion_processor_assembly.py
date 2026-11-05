@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.verify_run_manifest import verify_record
-from common.simion.gem_primitives import centered_box3d, format_number
+from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import _analyzer_geometry_lines
 
 
