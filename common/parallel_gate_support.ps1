@@ -991,7 +991,7 @@ function Invoke-IndependentGateStageGroup {
             $primaryFailure = if ($null -ne $groupFailure) { $groupFailure } else { $finalizationFailure }
             if ($null -ne $primaryFailure) {
                 $primaryFailure.Exception.Data['gate_group_cleanup_error'] = $cleanupFailure.Exception.Message
-                Write-Warning "Gate cleanup failed; original group/finalization failure is retained: $cleanupFailure"
+                Write-Warning "Gate cleanup failed; original group/finalization failure is retained: $cleanupFailure" -WarningAction Continue
             } else {
                 $groupSucceeded = $false
             }

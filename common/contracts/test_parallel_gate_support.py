@@ -1658,8 +1658,9 @@ if (Get-Process -Id $script:childId -ErrorAction SilentlyContinue) {{ throw 'chi
             self.assertEqual(records["third"]["reason_code"], "PREREQUISITE_NOT_PASSED")
 
     def test_group_cleanup_failure_preserves_published_outcomes_and_primary(self):
-        for child_exit in (7, 0):
-            with self.subTest(child_exit=child_exit), tempfile.TemporaryDirectory(
+        for child_exit, mode in ((7, "normal"), (0, "normal"),
+                                 (7, "warning_stop"), (0, "partial_delete")):
+            with self.subTest(child_exit=child_exit, mode=mode), tempfile.TemporaryDirectory(
                 prefix="gate_cleanup_primary_"
             ) as directory:
                 root = Path(directory)
@@ -1689,14 +1690,21 @@ function Remove-GateTemporaryDirectory {{
  if($row.child_exit_code-ne{child_exit}-or$row.test_outcomes.Count-ne1-or$row.test_outcomes[0].outcome-ne'success'){{throw 'OUTCOMES_NOT_PUBLISHED_BEFORE_CLEANUP'}}
  if({child_exit}-eq7-and[IO.Path]::GetFileName($Path)-ne'matplotlib'){{throw 'wrong failed-group cleanup target'}}
  if({child_exit}-eq0-and[IO.Path]::GetFileName($Path)-notlike'gate_cleanup_test_*'){{throw 'wrong successful-group cleanup target'}}
+ if({quote(mode)}-eq'partial_delete'){{
+  $deleted=$persisted.stages[0].log_path
+  Remove-Item -LiteralPath $deleted -ErrorAction Stop
+  if(Test-Path -LiteralPath $deleted){{throw 'partial deletion did not happen'}}
+ }}
  throw 'INJECTED_CLEANUP_FAILURE'
 }}
 $items=@('actual','peer')|ForEach-Object{{[pscustomobject]@{{Name=$_;Run=$true;Reason='fixture'}}}}
 $summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
 $failure=$null
+$priorWarningPreference=$WarningPreference
+if({quote(mode)}-eq'warning_stop'){{$WarningPreference='Stop'}}
 try{{
  Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 -Summary $summary -GateScriptPath {quote(child)} -PythonExe {quote(sys.executable)} -ChildBaseArguments @() -TempNamePrefix gate_cleanup_test_ -FailureMessage 'original group failure' -InvokeSkipStage {{throw 'unexpected skip'}} -InvokeInlineStage {{throw 'unexpected fallback'}}
-}}catch{{$failure=$_}}finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+}}catch{{$failure=$_}}finally{{$WarningPreference=$priorWarningPreference;Complete-GateRunSummary -Summary $summary -Failure $failure}}
 if($null-eq$failure){{throw 'cleanup failure was swallowed'}}
 if({child_exit}-eq7){{
  if($failure.Exception.Message-ne'original group failure: actual=7'){{throw ('PRIMARY_REPLACED: '+$failure.Exception.Message)}}
@@ -1711,12 +1719,93 @@ Write-Output 'CLEANUP_PRIMARY_BOUNDARY=PASS'
                 self.assertEqual(document["status"], "FAIL")
                 row = document["stages"][0]
                 self.assertEqual(row["child_exit_code"], child_exit)
-                self.assertTrue(row["log_retained"])
+                self.assertEqual(row["log_retained"], mode != "partial_delete")
                 self.assertEqual(row["status"], "FAIL" if child_exit else "PASS")
                 self.assertEqual([x["outcome"] for x in row["test_outcomes"]], ["success"])
                 started = re.search(r"GATE_PROCESS=START NAME=actual PID=(\d+) LOG_PATH=(.+)", completed.stdout)
                 self.assertIsNotNone(started, completed.stdout)
-                self.assertTrue(Path(started.group(2).strip()).is_file())
+                self.assertEqual(Path(started.group(2).strip()).is_file(), mode != "partial_delete")
+                peer = document["stages"][1]
+                self.assertTrue(peer["log_retained"])
+                self.assertTrue(Path(peer["log_path"]).is_file())
+                self.assertEqual(peer["child_exit_code"], 0)
+
+        # NON_NATIVE exact-finally branch fixture, not a public-group E2E claim.
+        with self.subTest(mode="finalization_and_cleanup"), tempfile.TemporaryDirectory(
+            prefix="gate_finalization_cleanup_"
+        ) as directory:
+            root = Path(directory)
+            log = root / "actual.log"
+            (root / "test_probe.py").write_text(
+                "import unittest\nclass Probe(unittest.TestCase):\n"
+                " def test_actual(self): self.assertTrue(True)\n", encoding="utf-8"
+            )
+            child = root / "child.ps1"
+            child.write_text(f"""
+$env:PYTHONPATH={quote(ROOT)}
+Set-Location -LiteralPath {quote(root)}
+& {quote(sys.executable)} -m common.gate_unittest test_probe *> {quote(log)}
+$code=$LASTEXITCODE
+$null=[Console]::ReadLine()
+exit $code
+""", encoding="utf-8")
+            summary = root / "summary.json"
+            completed = self.run_script(self.prelude() + f"""
+$functionAst=(Get-Command Invoke-IndependentGateStageGroup).ScriptBlock.Ast
+$blocks=@($functionAst.FindAll({{
+ param($node)
+ $node-is[Management.Automation.Language.TryStatementAst]-and$null-ne$node.Finally-and
+ $node.Finally.Extent.Text.Contains('# Do not release the work/log directory while a child is alive.')
+}},$true))
+if($blocks.Count-ne1){{throw 'unique actual finally AST not found'}}
+$extent=$blocks[0].Finally.Extent.Text
+$actualFinally=[scriptblock]::Create($extent.Substring(1,$extent.Length-2))
+$items=@([pscustomobject]@{{Name='actual';Run=$true;Reason='branch fixture'}})
+$summary=New-GateRunSummary -Items $items -GateName fixture -PythonExe {quote(sys.executable)} -RepoRoot {quote(ROOT)} -SummaryPath {quote(summary)}
+$info=[Diagnostics.ProcessStartInfo]::new()
+$info.FileName=(Get-Command pwsh).Source;$info.UseShellExecute=$false
+$info.RedirectStandardInput=$true
+foreach($argument in @('-NoProfile','-File',{quote(child)})){{$info.ArgumentList.Add($argument)}}
+$process=[Diagnostics.Process]::new();$process.StartInfo=$info
+$null=$process.Start()
+if($process.HasExited){{throw 'owned child ended before explicit input release'}}
+$records=@{{actual=[pscustomobject]@{{Process=$process;LogPath={quote(log)}}}}}
+$groupFailure=$null;$groupSucceeded=$false
+$groupRoot={quote(root)};$TempNamePrefix='gate_finalization_cleanup_'
+$originalMatplotlibConfig=$env:MPLCONFIGDIR
+$script:reporterCalls=0;$script:cleanupCalls=0
+$reportCompletions={{
+ $script:reporterCalls++
+ if(-not$process.HasExited-or$process.ExitCode-ne0){{throw 'natural owned process drain not confirmed'}}
+ $evidence=Read-GateTestOutcomeEvidence -LogPath {quote(log)} -Stage actual -RequireInvocation
+ Set-GateStageResult -Summary $summary -Name actual -Result @{{status='PASS';exit_code=0;child_exit_code=0;log_path={quote(log)};log_retained=$true;test_outcomes=@($evidence.outcomes);test_outcome_invocations=@($evidence.invocations)}}
+ throw 'OWNED_FINALIZATION_PRIMARY'
+}}
+function Remove-GateTemporaryDirectory {{
+ param($Path,$ExpectedNamePrefix)
+ $script:cleanupCalls++
+ if([IO.Path]::GetFileName($Path)-ne'matplotlib'){{throw 'wrong branch cleanup target'}}
+ throw 'OWNED_FINALIZATION_CLEANUP_SECONDARY'
+}}
+$process.StandardInput.WriteLine('release')
+$process.StandardInput.Close()
+$failure=$null
+try{{& $actualFinally}}catch{{$failure=$_}}
+finally{{Complete-GateRunSummary -Summary $summary -Failure $failure}}
+if($null-eq$failure-or$failure.Exception.Message-ne'OWNED_FINALIZATION_PRIMARY'){{throw 'finalization primary replaced'}}
+if($failure.Exception.Data['gate_group_cleanup_error']-ne'OWNED_FINALIZATION_CLEANUP_SECONDARY'){{throw 'branch cleanup secondary lost'}}
+if($script:reporterCalls-ne1-or$script:cleanupCalls-ne1){{throw 'branch invocation counts differ'}}
+Write-Output 'NON_NATIVE_FINALIZATION_BRANCH=PASS'
+""")
+            self.assertIn("NON_NATIVE_FINALIZATION_BRANCH=PASS", completed.stdout)
+            document = json.loads(summary.read_text(encoding="utf-8-sig"))
+            self.assertEqual(document["status"], "FAIL")
+            self.assertEqual(document["error"], "OWNED_FINALIZATION_PRIMARY")
+            row = document["stages"][0]
+            self.assertEqual(row["child_exit_code"], 0)
+            self.assertEqual([x["outcome"] for x in row["test_outcomes"]], ["success"])
+            self.assertTrue(row["log_retained"])
+            self.assertTrue(log.is_file())
 
     def test_failed_group_keeps_reported_logs_until_explicit_cleanup(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:

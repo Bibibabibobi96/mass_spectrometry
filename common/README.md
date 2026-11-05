@@ -726,8 +726,10 @@ CI两种范围上传独立的`*_gate_test_outcomes.json`，与原摘要、精确
 复核完成后沿[操作指南](../docs/OPERATIONS.md#软件验证与科学证据)清理，不按年龄自动删除失败证据。
 Group cleanup follows natural child exit and outcome publication. A cleanup
 failure is secondary to an existing group/finalization error; otherwise it
-fails the gate after log-retention metadata is reconciled. Summary outcomes
-and the original gate exit remain distinct from raw-log archival: terminal-only
+fails the gate after log-retention metadata is reconciled, including partial
+log deletion. The secondary diagnostic preserves the primary failure even when
+caller warnings are errors. Summary outcomes and the original gate exit remain
+distinct from raw-log archival: terminal-only
 collection cannot recover normally deleted logs, and an archival failure must
 not overwrite the original execution result.
 改动选择器回归中的八个mini场景在同一PowerShell host内调用真实PlanOnly与InternalStage委托，
