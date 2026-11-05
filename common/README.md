@@ -41,6 +41,13 @@ setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请�
 不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
+The canonical SIMION GEM resolver normally reads installed package resources.
+Downstream planning supplies its explicit frozen source root instead: registered
+templates must exist inside that tree, with canonical containment checked and the
+execution alias preserved for native paths. Missing frozen resources never fall
+back to the installed package. This selects source provenance without changing
+geometry, native mappings or scientific inputs.
+
 本批保留发行名`mass-spectrometry-analysis`与import名`msplatform`，描述覆盖源、装配、合同和分析核心，
 不宣称仓库运行器或商业后端均可安装。正式对外发行或发行边界重整前，最迟P4发行收口时，
 发行维护者须依据外部索引所有权、锁和metadata消费者、旧wheel、冻结恢复以及同一import包的安装冲突

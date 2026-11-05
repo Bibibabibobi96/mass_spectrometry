@@ -630,7 +630,7 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
                 str(run / "preparation_for_dependency_test.json"), str(run)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn("FileNotFoundError: installed SIMION GEM resource is missing: "
+            self.assertIn("FileNotFoundError: frozen SIMION GEM resource is missing: "
                           "oatof_reflectron_ideal_10_5.gem", refused.stderr)
 
     def test_cooled_prepare_imports_shared_assembly_from_declared_snapshot(self) -> None:

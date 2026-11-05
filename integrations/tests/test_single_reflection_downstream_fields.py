@@ -5,6 +5,7 @@ import copy
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -180,6 +181,73 @@ class DownstreamFieldsTests(unittest.TestCase):
         self.planned = plan_downstream_fields(self.preparation, self.run, snapshot_root=ROOT)
         self.plan_path = Path(self.planned["plan_record"]["path"])
         self.plan = json.loads(self.plan_path.read_text())
+
+    def test_explicit_frozen_resources_do_not_consult_installed_origin(self):
+        from integrations.workflows.single_reflection_flight.downstream_fields import _RESOURCES
+        from msplatform.backends.simion import resources as canonical_resources
+
+        snapshot = self.root / "resource_snapshot"
+        for relative in _RESOURCES.values():
+            destination = snapshot / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, destination)
+        self.assertFalse(Path(canonical_resources.__file__).resolve().is_relative_to(snapshot))
+        run, preparation = self.unplanned_provider("explicit_snapshot", [])
+        with patch.object(canonical_resources, "files", side_effect=AssertionError("installed fallback")), \
+                patch("subprocess.run") as native:
+            planned = plan_downstream_fields(preparation, run, snapshot_root=snapshot)
+            native.assert_not_called()
+        document = json.loads(Path(planned["plan_record"]["path"]).read_text(encoding="utf-8"))
+        for key, relative in _RESOURCES.items():
+            self.assertEqual(document["resource_records"][key], file_record(snapshot / relative))
+        # The corresponding installed resource still exists. The explicit tree
+        # must nevertheless fail closed before creating any replacement plan.
+        missing = snapshot / _RESOURCES["reflectron_gem"]
+        missing.unlink()
+        self.assertTrue(canonical_resources.gem_template_path("reflectron").is_file())
+        with patch.object(canonical_resources, "files", side_effect=AssertionError("installed fallback")), \
+                patch("subprocess.run") as native:
+            with self.assertRaisesRegex(FileNotFoundError,
+                                        "frozen SIMION GEM resource is missing: oatof_reflectron_ideal_10_5.gem"):
+                plan_downstream_fields(preparation, run, snapshot_root=snapshot)
+            native.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "unsupported downstream GEM role"):
+            canonical_resources.gem_template_path("unknown", source_root=snapshot)
+
+    @unittest.skipUnless(os.name == "nt", "Windows execution junction semantics")
+    def test_frozen_gem_rejects_junction_escape_and_preserves_root_alias(self):
+        from integrations.workflows.single_reflection_flight.downstream_fields import _RESOURCES
+        from msplatform.backends.simion.resources import gem_template_path
+
+        relative = Path(_RESOURCES["reflectron_gem"])
+        snapshot = self.root / "escaping_snapshot"
+        resource_parent = snapshot / relative.parent.parent
+        resource_parent.mkdir(parents=True)
+        outside = self.root / "outside_resource_directory"
+        outside.mkdir()
+        shutil.copyfile(ROOT / relative, outside / relative.name)
+        junction = snapshot / relative.parent
+        linked = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+                                cwd=self.root, timeout=30, capture_output=True, text=True, check=False)
+        self.assertEqual(linked.returncode, 0, linked.stdout + linked.stderr)
+        self.addCleanup(junction.rmdir)
+        self.assertEqual(junction.resolve(), outside.resolve())
+        with self.assertRaisesRegex(ValueError, "escapes the frozen snapshot"):
+            gem_template_path("reflectron", source_root=snapshot)
+
+        contained = self.root / "contained_snapshot"
+        target = contained / relative
+        target.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / relative, target)
+        alias = self.root / "frozen_execution_alias"
+        linked = subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(contained)],
+                                cwd=self.root, timeout=30, capture_output=True, text=True, check=False)
+        self.assertEqual(linked.returncode, 0, linked.stdout + linked.stderr)
+        self.addCleanup(alias.rmdir)
+        actual = gem_template_path("reflectron", source_root=alias)
+        self.assertEqual(actual, alias / relative)
+        self.assertEqual(actual.resolve(), target.resolve())
+        self.assertEqual(actual.read_bytes(), target.read_bytes())
 
     def unplanned_provider(self, name, edits):
         run = self.root / name

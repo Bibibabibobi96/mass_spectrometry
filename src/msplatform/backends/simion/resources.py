@@ -31,15 +31,29 @@ def native_resource_path(name: str) -> Path:
     return Path(str(resource))
 
 
-def gem_template_path(role: str) -> Path:
-    """Return an installed filesystem resource, failing explicitly if absent."""
+def gem_template_path(role: str, *, source_root: Path | None = None) -> Path:
+    """Read the installed resource or an explicit contained frozen source tree.
+
+    An explicit source tree is authoritative: absence never falls back to the
+    installed package. Preserve its execution-alias spelling in native argv.
+    """
     try:
         name = GEM_TEMPLATES[role]
     except (KeyError, TypeError) as error:
         raise ValueError(f"unsupported downstream GEM role: {role}") from error
-    resource = files("msplatform.backends.simion").joinpath("resources", name)
+    if source_root is None:
+        resource = files("msplatform.backends.simion").joinpath("resources", name)
+    else:
+        root = Path(source_root).absolute()
+        canonical_root = root.resolve(strict=True)
+        if not canonical_root.is_dir():
+            raise ValueError("frozen SIMION source root must be a directory")
+        resource = root / "src/msplatform/backends/simion/resources" / name
+        if not resource.resolve().is_relative_to(canonical_root):
+            raise ValueError("SIMION GEM resource escapes the frozen snapshot")
     if not resource.is_file():
-        raise FileNotFoundError(f"installed SIMION GEM resource is missing: {name}")
+        origin = "installed" if source_root is None else "frozen"
+        raise FileNotFoundError(f"{origin} SIMION GEM resource is missing: {name}")
     return Path(str(resource))
 
 

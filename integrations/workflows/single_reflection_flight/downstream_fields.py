@@ -258,7 +258,7 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
     snapshot_root = snapshot_root.absolute()
     resources = {key: snapshot_root / name for key, name in _RESOURCES.items()}
     for key, role in (("tube_gem", "flight_tube"), ("detector_gem", "detector"), ("reflectron_gem", "reflectron")):
-        resource = gem_template_path(role)
+        resource = gem_template_path(role, source_root=snapshot_root)
         if resource.resolve() != resources[key].resolve():
             raise ValueError("downstream GEM resource does not originate in the frozen snapshot")
         resources[key] = resource
