@@ -7,193 +7,111 @@
 
 ## 当前边界
 
-P3 remains **NOT COMPLETE**. SDK23 ordinary wheel/sdist/rebuilt-wheel acceptance,
-235 payload members, 54 locked distributions and the fresh installed 23-method
-consumer check have passed. Its committed package/source byte join is recorded;
-the STEP exporter and all 86 non-Python resources remain unchanged from SDK22.
+P3 remains **NOT COMPLETE**, pending final publication and reconciliation of
+Dot’s specific findings. Checkpoint 85e53e passed the complete local Repository:
+50 PASS / 12 NOT_APPLICABLE, with all 2792 clean source paths/bytes unchanged.
+Actual session 16447 exited 0; this is complete local evidence, not final publication.
 
-The latest complete local Repository run used ordinary SDK23 at clean `8127a6dd`
-with eight workers: 49 PASS / 1 FAIL / 12 NOT_APPLICABLE. Its 6802 parent methods
-recorded 6780 successes, 21 skips and one failure; 7698 subtests recorded 7697
-successes and one failure. All six native Dirichlet parents succeeded. Public wall
-time was 2487.944 seconds; all 2792 source paths/bytes, HEAD and clean status stayed
-exact. The sole failed planning subcase still expected the old `installed` error
-label, while production correctly refused the missing `frozen` GEM. The same
-assertion caused the push CI failure. The one-word correction passed the original
-15-case method on ordinary SDK23: one parent and 15 subtests, zero skips, 270.173
-seconds, unchanged helper/parent bytes and confirmed lease release. Scoped Ruff
-and standards passed; current-tree complete acceptance remains open. The original
-summary, outcomes and 98 available raw group files are retained unchanged.
+The user requires correct 3D files and independent geometry checks. SolidWorks
+repair, unattended startup, template repair and viewer refinement are **deferred
+and do not block this goal**. Original crashes and unconfirmed preferences remain
+historical facts; Formal CAD requirements are unchanged. Case C is functional
+comparison, not accuracy/equality or convergence qualification.
 
-The preceding clean commit `fcbc6388` passed the complete local Repository
-gate with eight workers: 50 PASS / 12 NOT_APPLICABLE, 6800 unique parent methods
-(6779 success / 21 skip), and 7696 successful subtests. All six native Dirichlet
-parent methods recorded success. Public wall time was 2422.664 seconds; the exact
-2792 source paths and bytes, HEAD and clean status matched before and after.
-The evidence wrapper then exited 1 because the successful public owner had already
-cleaned its temporary stage logs. The original public summary, outcomes and full
-replay log remain; missing raw temporary logs are an evidence limitation, not a
-test failure. The public gate itself exited 0.
+### Selected installed scope
 
-Ordinary-install CI at the same commit failed in integration shards 02 and 04
-([run 41961409012](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/41961409012));
-the Repository job was skipped. A collector test assumes a source-layout path,
-and downstream planning mixes an explicit frozen root with installed GEM origins.
-Those origin/resource corrections have passed ordinary SDK23 acceptance. The
-subsequent `8127a6dd` push failed only the stale shared oracle described above;
-the preceding local PASS does not certify that successor or close its final gate.
+The real RF plus full three-zone OA/single-reflection Assembly uses canonical
+providers, physical ports and explicit poses. TOF reuses its internal OA through
+the provider DAG. Scientific electrode groups and native labels are separate.
+CAD and SIMION are parallel projections; STEP is not a mandatory intermediate
+for solving fields. Ideal zero-thickness surfaces are not made mechanical solids.
 
-The preceding complete-scope attempt exited 1 after atomic summary replacement reported
-AccessDenied: 32 stages passed, 18 were blocked and 12 were not applicable. Its
-5041 recorded parent methods contain 5027 successes and 14 skips; all 6006 subtests
-recorded success, with no failed test record. The six native Dirichlet methods were
-blocked and receive no credit. Public wall time was 2294.102 seconds; all 2792 source
-files remained unchanged. The tested tree was code `abaaa03a` plus two frozen status
-documents, not a clean HEAD checkout. The bounded summary-publication fix has passed
-focused real-reader tests and independent review; the original actor remains unknown.
-A successful full successor remains required; passing child partitions are not a complete PASS.
-The work continues from D01 `bf19145c95925088002fc3f526b0e0394c99b50c`;
-P1/P2 evidence keeps its original commit and qualification boundaries.
-
-The user requires correct 3D file generation and independent geometry checks.
-SolidWorks repair, unattended startup, template repair and viewer refinement are
-**deferred and do not block this goal**. Previous crashes and unconfirmed original
-preferences remain historical failures; this does not weaken Formal CAD rules.
-The user also requests functional Case C comparison, **not accuracy/equality
-thresholds**. No new convergence, manufacturing or Formal qualification is granted.
-
-### Selected installed capabilities
-
-One real RF plus full three-zone OA/single-reflection Assembly uses canonical physical
-providers, explicit ports/poses and component data. CAD and SIMION are parallel
-projections; neither requires a random source or a solved field to construct geometry.
-TOF reuses its internal OA through the component DAG rather than duplicating it as an
-external instance. Scientific groups and native labels remain separate authorities.
-
-| Public stage | Current supported behavior and side-effect boundary |
+| Public stage | Supported behavior and side-effect boundary |
 |---|---|
-| Resolve / assemble / compile | Explicit versioned design and geometry; no solver, release or field solve |
-| Export CAD | Headless STEP from all physical members; ideal exclusions explicit; no default GUI |
-| Build geometry / prepare model | Governed native geometry/configuration and readback; no sampling, Refine or Fly |
-| Solve fields | Explicit governed field computation/reuse; no particle release or Fly |
-| Track | Actual native Fly from explicit source, mother, birth/clock and observations |
-| Compare / inspect | Read published data; no solver rerun or hidden resampling |
+| Resolve / assemble / compile | Versioned designs/interfaces/geometry; no solver, source sampling or field solve |
+| Export CAD | Governed headless STEP; physical members/ideal exclusions explicit; no default commercial GUI |
+| Build geometry / prepare model | Governed native geometry/configuration/readback; no sampling, Refine or Fly |
+| Solve fields | Explicit governed solve/reuse; no particle release or Fly |
+| Track | Native Fly from explicit source, full mother, birth/clock and observations |
+| Compare / inspect | Published-artifact reads; no hidden resampling or solver rerun |
 
-The ordinary-installed tutorial and full configuration are in [common usage](../../common/README.md).
-Optional CAD requires the separately locked CadQuery/OCCT dependencies. Core import,
-source generation and pure analysis do not probe commercial licenses. The supported
-slice is not a promise for arbitrary components, backends or self-consistent physics.
+Use the [ordinary-installed public tutorial](../../common/README.md) for canonical
+API usage and separately locked optional CadQuery/OCCT dependencies. Core imports
+and pure science do not probe commercial licenses. This selected slice does not
+promise arbitrary providers, backends or self-consistent physics.
 
-### Installed delivery and resource provenance
+### Installation and independent 3D delivery
 
-SDK20 ordinary wheel/sdist/rebuild and fresh runtime passed with245 source/control
-records unchanged;235 installed payload members and54 locked distributions were
-verified. Its wheel SHA is
-`1d7e804e03e8330a443c1592634db4c4fffebe41785da35705b3272b7a45b591`.
-The resource join covers original42 declarations plus actual Python/non-Python and
-indirect consumers; it is not an all-resource native fault-test claim. Actual producer
-epochs remain distinct. SDK21 verified the corrected LF source through ordinary
-wheel/sdist installation and a fresh dual-lock runtime: 235 payload members, 54 locked
-distributions, raw metadata and site-packages origins passed; 245 source/control
-records stayed exact. The public pipeline exited zero in 210.754 seconds and its
-original host lease released. Its wheel SHA is
-`6e93c62ad3fcda829f7d63620a090d69f01fe89b7e7447be3745da91e2daf9f7`.
-This is a new byte identity, not a relabeling of SDK20 or the native producers.
+SDK23 passed ordinary wheel/sdist/rebuilt-wheel acceptance, fresh dual-lock runtime
+verification and 23 installed consumer parents/68 subtests (91 successes, zero skips).
+Actual source/archive/installed byte joins cover 235 payload members and 54 locked
+distributions, raw metadata and site-packages origins. Only the explicit frozen
+GEM locator changed from SDK22; all 86 non-Python resources and the STEP exporter
+are byte-identical. Counts are not substitutes for member/resource joins or proof
+that every resource received native fault testing.
 
-SDK22 subsequently verified the explicit root/member-name preflight guard: 235 actual
-source/wheel/sdist/rebuilt/installed payload files, 54 locked distributions and 245
-unchanged source/control records. Only `exporters/step.py` changed from SDK21; all
-86 non-Python resources stayed byte-identical. The ordinary pipeline exited zero in
-197.372 seconds, with original resource release confirmed. Wheel SHA:
-`ba9bcd6796028361a8b0b91a7a016b1e0a560931bde707b1b8bd70acc9b85d75`.
+Latest STEP run 20261105_112005__build__cad__assembly-9f4c6bac1531 used ordinary
+SDK22 to publish a fresh named 1122132-byte file, SHA
+141b511aa9fb94a78e3b0e078adfe05920d92c2956453f4020e0f71e1f58aac2.
+An independent installed cold read verified 72 named solids, five exclusions and
+ten preregistered geometry probes; source/artifact bytes stayed unchanged.
+Public export/read walls 15.384/6.918 seconds include confirmed owner/host/capacity
+closure; source generation/Refine/Fly/GUI were zero. Root/member-name collisions
+are rejected before CAD loading; choose another root name. Finite probes do not
+prove every hole/dimension. Controlled U06 is distinct from P5 colleague acceptance.
 
-The installed independent U06 tutorial used a fresh study, public API/owner and a new
-`-I` integrity reader with System32-only PATH. It produced72 solids/5 exclusions with
-installed origins and confirmed writer/host/capacity closure. This controlled task is
-complete within its selected scope; P5 real-colleague/new-machine acceptance is separate.
+### Model, fields and functional Case C
 
-### Actual geometry and native chain
+F5 directly consumes model 20261104_174513__build__simion__model-d490a283b98f,
+manifest 9E91D7DAF35AC9EC5CA1AC4FEDF429FBC9B69DBBBDEA055E6D6042AF35ECB6E0.
+Its governed geometry/configuration and clock are not relabeled as a later model.
+Field run 20261104_214825__sim__simion__fields-9070fe95d6aa published manifest
+F0E42A382483CC1557AF715206112D6B927C141F8A29D686998007E6F6D8E450:
+five downstream native operations (three Refines, one export and one audit),
+frontend cache reuse, no particle release/Fly.
+Producer package, source, field and model identities keep their original epochs.
 
-Latest SDK22 run `20261105_112005__build__cad__assembly-9f4c6bac1531` generated a
-fresh 1122132-byte STEP, SHA
-`141b511aa9fb94a78e3b0e078adfe05920d92c2956453f4020e0f71e1f58aac2`.
-Its independent cold read passed all 72 named solids, five exclusions and ten existing
-geometry probes, with unchanged input/output bytes and confirmed owner/capacity closure.
-Public export/cold-read walls were 15.384/6.918 seconds; source/Refine/Fly/GUI counts
-were zero. An explicit root name equal to a physical member label is rejected before
-CAD loading; choose another name. Defaults and scientific member identities are unchanged.
+Case C completed nine continuous/upstream/relaunch runs across three levels using
+this same F5, the frozen sparse-ID 100 mother, weights, non-simultaneous births and
+absolute clock. There were 99 handoffs and one physical loss; relaunch retained
+the full mother without reviving that particle or shifting the initial boundary.
+Three canonical reports published original comparison bytes with zero native
+operations. comparison_completed means **descriptive computation completed only**:
+detector comparison has 36 pairs/64 missing, cut comparison 99 pairs/one missing,
+statistical subresults remain insufficient_observations and phase is unavailable.
+Downstream not_propagated is not an extra physical loss. No accuracy, equality,
+convergence, manufacturing or Formal PASS is inferred.
 
-SDK21 run `20261105_102020__build__cad__assembly-4120ed890691` independently
-exported and cold-read a fresh named STEP: 1122132 bytes, SHA
-`f8201284c57fd132fe6088ffdf64f7ca27d803035b1d85ba2b783ae89483253c`.
-All 72 named solids, five ideal exclusions and ten existing geometry probes passed.
-API export took 13.353 seconds; public export/cold-read walls were 15.008/6.554
-seconds. Both processes exited zero, the owner confirmed writers stopped and the
-host lease released; capacity was ready/pinned with no remaining protection lease.
-No source sampling, Refine, Fly, GUI or commercial application ran.
+### Safety evidence and remaining responsibilities
 
-SDK20 run `20261105_084020__build__cad__assembly-5c9ce088a996` published
-`RF to TOF Assembly.step`:1122132 bytes, SHA
-`4ce951aa4d7feaa56ee814ef88aec133289497f17bbcd57d6453ed087dba2ba1`.
-A separate installed cold reader confirmed exact English root/member names,72 valid
-solids,5 exclusions and10 preregistered world-space CSG probes under the original
-OCCT representation budget. These finite checks do not prove every hole or dimension.
-Source generation/Refine/Fly/GUI were0. API export13.293s and cold read3.799s are
-observed costs, not controlled performance claims. Capacity was ready/pinned and the
-protection lease absent after confirmed worker exit and host release.
+The final fixed-source local run recorded 6802 parent methods: 6781 successes
+and 21 skips; all 7698 subtests and six native Dirichlet parents succeeded.
+Public wall was 2533.3892523 seconds (internal 2530.617221); all 60 host releases
+were released and the runner retired. The batch-test split also passed its single
+seven-parent check: real-role admission/replan/cancellation/guards/release and
+separately controlled live-peer drain. Inert Python transport is not native
+solver evidence; these scopes remain distinct.
 
-Actual ordinary-installed PreparedModel construction and reopen retained geometry,
-scientific-to-native mapping, DC/RF/pulse consumers and original clock authority while
-Refine/Fly stayed0. New-process explicit field solve then published F5:
-`20261104_214825__sim__simion__fields-9070fe95d6aa`, manifest SHA
-`F0E42A382483CC1557AF715206112D6B927C141F8A29D686998007E6F6D8E450`.
-F5 performed five downstream native operations and reused frontend fields; it did not Fly.
-No missing input was manufactured and no failed cache generation was promoted.
+Whole-unit recovery retains actual fresh/resumed/all-reuse operation counts
+12/6/0, complete-output/direct-parent validation, sparse IDs/full mother/clock,
+hash rejection and refusal with unknown writers. Analysis-only and finalization
+recovery use the same owner without new Fly; state relaunch is new propagation,
+not a native checkpoint.
 
-Case C completed nine actual continuous/upstream/relaunch runs across three levels,
-using this same F5, the frozen sparse-ID100 mother, weights, non-simultaneous births
-and absolute clock. There were99 handoffs and one physical loss; relaunch preserved
-that full mother without reviving the lost particle or shifting the initial boundary.
-Three canonical analysis runs published the original report bytes with0 native calls.
-`comparison_completed` means **descriptive computation completed only**; detector
-comparison has36 pairs/64 missing, cut comparison99 pairs/one missing, and statistical
-subresults remain `insufficient_observations`. Phase is unavailable. No accuracy,
-equality or convergence PASS is inferred. The scoped `not_propagated` downstream
-fate is not a new physical loss. Original birth, consumed-event occurrence and
-accepted-step bracket/native terminal facts remain distinct from a native checkpoint.
+Earlier full/CI, atomic-summary, stale-origin/oracle, remote sleep-order and local
+same-clock assertion failures remain original evidence. Detailed attempts belong
+to the [tested checkpoint](https://github.com/Bibibabibobi96/mass_spectrometry/blob/85e53efa2869f6d32a528c60924c4a5656152c32/integrations/docs/INTEGRATION.md); final history publication remains pending. P2 natural eight-bucket
+results remain **INCONCLUSIVE**, and software success grants no scientific status.
+F2 obligation workflow-16a7aa13eed041db91b45f2fca6b96bf retains unknown-writer
+protection; goal closure does not release it.
 
-### Recovery, safety and remaining closure
-
-Software evidence covers whole-unit12/6/0-operation paths, complete/partial/not-started
-units, source/clock/full-mother identity, hash rejection, analysis/finalization replay
-and unknown-writer protection. Primitive inert processes are not native SIMION proof.
-Actual Case C trajectory-cache cleanup and finalization used the existing public
-mechanisms without new Fly; original failures and completion/config bytes were retained.
-
-SDK17/18/20 complete Repository attempts remain FAIL. Latest SDK20 was46 PASS /
-4 FAIL /12 NOT_APPLICABLE with source-after unchanged; successor focused repairs are
-separate evidence and do not constitute the final complete PASS. Historical SW crashes,
-P2 natural eight-bucket INCONCLUSIVE and unproved unique observer causes remain visible.
-F2 obligation `workflow-16a7aa13eed041db91b45f2fca6b96bf` retains unknown-writer
-protection; no historical obligation is released merely to close P3.
-
-Remote push run `41954713607` on `abaaa03a` failed its Changed documentation stage
-because the committed status page still linked the old capacity-policy location.
-This page now links the canonical installed resource below. That remote failure
-remains recorded; its Repository job was skipped. A successor CI result must be
-reported at its actual scope and SHA, separately from the local full acceptance.
-
-Still required: successful fixed-source complete Repository with actual outcomes
-and skips, final documentation/CLOC/cost/retirement receipts, then scoped commits,
-ordinary push and clean tracking identity. No final gate, SDK21 or publication PASS is
-claimed here. The prospective history destination is
-`docs/history/20261105__phase03-installed-pipeline.md` (not yet published at proposal time);
-Root must create it and bind selected small evidence before replacing this note.
-
-P4 retains finite bridge removal, broader supported backend/workflow promotion and the
-original15-minute/owner performance responsibilities; no target is lowered. P5 retains
-real colleagues, new machines and new-device pressure. R01–R20 are not globally closed
-by this selected delivery. Subsequent sections retain their original non-P3 scope.
+Still required: final publication, reconciliation of Dot’s specific findings,
+final documentation/CLOC/cost/retirement and clean committed/pushed identity.
+Dot owns the broad audit; no duplicate scan or new complete run is implied.
+Remote results retain their actual scope/SHA separately. P4 owns finite bridge
+exit, broader backend promotion and the original 15-minute/owner performance
+obligations; no target or coverage is reduced. P5 owns real colleagues/new
+machines/device pressure. R01–R20 are not globally closed by this delivery.
 
 ## 当前多极杆几何边界
 
