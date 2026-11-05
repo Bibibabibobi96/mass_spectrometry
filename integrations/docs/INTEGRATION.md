@@ -7,9 +7,25 @@
 
 ## 当前边界
 
-P3 remains **NOT COMPLETE**. This is the current selected capability statement, not a
-chronology of every attempt. SDK22 ordinary installation and independent STEP checks
-have passed. Clean commit `fcbc6388` subsequently passed the complete local Repository
+P3 remains **NOT COMPLETE**. SDK23 ordinary wheel/sdist/rebuilt-wheel acceptance,
+235 payload members, 54 locked distributions and the fresh installed 23-method
+consumer check have passed. Its committed package/source byte join is recorded;
+the STEP exporter and all 86 non-Python resources remain unchanged from SDK22.
+
+The latest complete local Repository run used ordinary SDK23 at clean `8127a6dd`
+with eight workers: 49 PASS / 1 FAIL / 12 NOT_APPLICABLE. Its 6802 parent methods
+recorded 6780 successes, 21 skips and one failure; 7698 subtests recorded 7697
+successes and one failure. All six native Dirichlet parents succeeded. Public wall
+time was 2487.944 seconds; all 2792 source paths/bytes, HEAD and clean status stayed
+exact. The sole failed planning subcase still expected the old `installed` error
+label, while production correctly refused the missing `frozen` GEM. The same
+assertion caused the push CI failure. The one-word correction passed the original
+15-case method on ordinary SDK23: one parent and 15 subtests, zero skips, 270.173
+seconds, unchanged helper/parent bytes and confirmed lease release. Scoped Ruff
+and standards passed; current-tree complete acceptance remains open. The original
+summary, outcomes and 98 available raw group files are retained unchanged.
+
+The preceding clean commit `fcbc6388` passed the complete local Repository
 gate with eight workers: 50 PASS / 12 NOT_APPLICABLE, 6800 unique parent methods
 (6779 success / 21 skip), and 7696 successful subtests. All six native Dirichlet
 parent methods recorded success. Public wall time was 2422.664 seconds; the exact
@@ -23,8 +39,9 @@ Ordinary-install CI at the same commit failed in integration shards 02 and 04
 ([run 41961409012](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/41961409012));
 the Repository job was skipped. A collector test assumes a source-layout path,
 and downstream planning mixes an explicit frozen root with installed GEM origins.
-Repairs and their ordinary-install acceptance are in progress; the local PASS does
-not close these CI defects or certify the subsequent changed tree.
+Those origin/resource corrections have passed ordinary SDK23 acceptance. The
+subsequent `8127a6dd` push failed only the stale shared oracle described above;
+the preceding local PASS does not certify that successor or close its final gate.
 
 The preceding complete-scope attempt exited 1 after atomic summary replacement reported
 AccessDenied: 32 stages passed, 18 were blocked and 12 were not applicable. Its

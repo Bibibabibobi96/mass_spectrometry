@@ -76,18 +76,20 @@ SIMION纯编译及必要执行基础，公共API与普通wheel／sdist树外实�
 [集成状态](../integrations/docs/INTEGRATION.md#当前边界)。后继已取得普通安装的无GUI STEP、未求解模型独立求场、
 同场同源三档连续／接续共九个轨迹产品、无商业工具重分析及独立审查者教程的有界证据。
 P3尚未完成：当前源码完整软件门禁及最终发行／文档／提交仍须闭合。
-SDK21 ordinary installation and independent named STEP checks have passed. The latest
-full local attempt ended with a summary-publication AccessDenied (32 PASS / 18 BLOCKED /
-12 NOT_APPLICABLE), without a recorded test failure. The original actor remains unproven;
-complete software acceptance remains open.
-SDK22 has now passed ordinary installation and fresh named STEP/cold-read checks after
-the narrow naming preflight fix. The summary writer's bounded Windows replacement
-handling passed focused tests and independent review. Clean `fcbc6388` subsequently
-passed the complete local eight-worker gate (50 PASS / 12 NOT_APPLICABLE, 2422.664 s),
-including all six native Dirichlet parent methods. The same commit's ordinary-install
-CI failed in integration shards 02 and 04; the collector origin test and frozen GEM
-resource selection require correction. Final installation and acceptance of those
-repairs remain open; the local result does not certify the subsequent changed tree.
+SDK23 ordinary installation and the fresh installed 23-method consumer check passed;
+all 235 package files join to committed bytes at `8127a6dd`. Its local complete
+eight-worker run recorded 49 PASS / 1 FAIL / 12 NOT_APPLICABLE, with all six native
+Dirichlet methods successful and unchanged source. The only failure is a shared
+test oracle retaining the old `installed` label for a correctly rejected `frozen`
+GEM. The one-word correction passed the original 15-case method on ordinary SDK23,
+with source unchanged and lease release confirmed; final complete acceptance is
+still required. The push CI failure has the same single parent/subtest cause.
+Earlier SDK21/22 installation and independent STEP checks retain their original
+identities. The publication AccessDenied attempt (32 PASS / 18 BLOCKED / 12 NA)
+and clean `fcbc6388` successor (50 PASS / 12 NA, 2422.664 s, six native successes)
+remain separate records; the original blocking actor is unproven. The fcbc
+ordinary-install origin defects were corrected and accepted in SDK23. Details and
+current closure are maintained in the [integration status](../integrations/docs/INTEGRATION.md#当前边界).
 User clarification on 2026-11-05: correct 3D file generation and independent geometry checks are the
 current CAD acceptance scope. SolidWorks repair and refinement are deferred, without blocking this goal;
 historical native failures and Formal publication requirements remain unchanged.

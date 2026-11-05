@@ -768,7 +768,7 @@ try {
                         self.assertEqual((run/'simion/full_instrument/instrument.fly2').read_text(),render_restart_fly2(rows))
                     continue
                 if failure in ('population','old_budget','planning','disk_floor','ram_floor'):
-                    self.assertIn({'population':'population differs','old_budget':'omits stage: instrument_field_design','planning':'FileNotFoundError: installed SIMION GEM resource is missing: oatof_detector_ground.gem','disk_floor':'frontend mandatory PA lower bound transient_run_directory_bytes','ram_floor':'frontend mandatory PA lower bound process_tree_working_set_bytes'}[failure],result.stderr)
+                    self.assertIn({'population':'population differs','old_budget':'omits stage: instrument_field_design','planning':'FileNotFoundError: frozen SIMION GEM resource is missing: oatof_detector_ground.gem','disk_floor':'frontend mandatory PA lower bound transient_run_directory_bytes','ram_floor':'frontend mandatory PA lower bound process_tree_working_set_bytes'}[failure],result.stderr)
                     if failure == 'planning':
                         self.assertIn('Downstream field planning failed.', result.stderr)
                     if borrowed_capacity:
