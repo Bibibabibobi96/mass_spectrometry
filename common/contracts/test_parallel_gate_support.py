@@ -851,17 +851,37 @@ function Exit-HostResourceStage {param($Lease)}
                 (common / 'verify_repository_hygiene.ps1').write_text("Write-Output 'HYGIENE_OK'\n", encoding='utf-8')
                 (common / 'verify_repository_text_bytes.py').write_text("print('BYTES_OK')\n", encoding='utf-8')
                 (common / 'changed.ps1').write_text('# fixture\n', encoding='utf-8')
+                # Cap2 must start its genuine sibling before publishing failure;
+                # cap1 never waits for a sibling which cannot yet be admitted.
+                rendezvous = (
+                    "import time\n"
+                    "ready = pathlib.Path(__file__).with_name('registry-started.json')\n"
+                    "deadline = time.monotonic() + 30\n"
+                    "while not ready.is_file():\n"
+                    " if time.monotonic() >= deadline: raise RuntimeError('registry start missing')\n"
+                    " time.sleep(.01)\n"
+                    "started = json.loads(ready.read_text(encoding='utf-8'))\n"
+                    "assert started['stage'] == 'project_registry'\n"
+                    "assert type(started['pid']) is int and started['pid'] > 0\n"
+                    "print('REGISTRY_START_OBSERVED=' + json.dumps(started), flush=True)\n"
+                ) if concurrency == 2 else ''
                 (common / 'verify_development_standards.py').write_text(
                     "import json, pathlib, sys\n"
                     "assert sys.argv[1] == '--changed-paths-file'\n"
-                    "assert json.loads(pathlib.Path(sys.argv[2]).read_text()) == ['common/changed.ps1']\n"
+                    "assert json.loads(pathlib.Path(sys.argv[2]).read_text()) == ['common/changed.ps1']\n" +
+                    rendezvous +
                     "print('SCOPED_STANDARD_PATHS_OK')\nraise SystemExit(7)\n", encoding='utf-8')
                 routes = []
                 for name in ('project_registry', 'rf_multipole_generated_publications', 'fixture_regression'):
                     program = "print('STAGE_DONE')\n"
                     if name == 'project_registry':
                         program = (
-                            "import json, pathlib, time\n"
+                            "import json, os, pathlib, time\n"
+                            "ready = pathlib.Path(__file__).with_name('registry-started.json')\n"
+                            "candidate = ready.with_suffix('.candidate')\n"
+                            "candidate.write_text(json.dumps(dict(stage='project_registry', pid=os.getpid())), encoding='utf-8')\n"
+                            "candidate.replace(ready)\n"
+                            "print('REGISTRY_STARTED=' + ready.read_text(encoding='utf-8'), flush=True)\n"
                             "signal = pathlib.Path(__file__).with_name('failure-collected.json')\n"
                             "deadline = time.monotonic() + 30\n"
                             "while not signal.is_file():\n"
@@ -902,10 +922,18 @@ function Exit-HostResourceStage {param($Lease)}
                 self.assertNotEqual(signal['exit_code'], 0)
                 self.assertIn('exit code 7', signal['error'])
                 if concurrency == 2:
+                    self.assertIn('REGISTRY_START_OBSERVED=', completed.stdout)
+                    started = json.loads((common / 'registry-started.json').read_text(encoding='utf-8'))
+                    self.assertEqual(started['stage'], 'project_registry')
+                    self.assertGreater(started['pid'], 0)
+                    self.assertIn('REGISTRY_STARTED=' + json.dumps(started), completed.stdout)
+                    self.assertIn('REGISTRY_START_OBSERVED=' + json.dumps(started), completed.stdout)
                     self.assertIn('FAILURE_COLLECTION_OBSERVED', completed.stdout)
                     self.assertEqual(records['project_registry']['status'], 'PASS')
                 else:
                     self.assertNotIn('START NAME=project_registry', completed.stdout)
+                    self.assertFalse((common / 'registry-started.json').exists())
+                    self.assertNotIn('REGISTRY_START_OBSERVED=', completed.stdout)
 
     def test_failed_child_receipt_cannot_be_overridden_by_zero_process_exit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_receipt_") as directory:
