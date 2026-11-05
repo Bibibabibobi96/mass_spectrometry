@@ -1,5 +1,6 @@
 """Installed batch transport with controlled PS telemetry and real inert Python children."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -18,6 +19,96 @@ from msplatform.execution.simion_dispatch import FORMAL_OBSERVATION_SECONDS,LAUN
 
 @unittest.skipUnless(os.name=='nt' and shutil.which('pwsh'),'Windows PowerShell required')
 class BatchProcessTests(unittest.TestCase):
+    def _inert_payload_code(self):
+        # Test-only publication rendezvous;600s expiry is failure, never readiness.
+        return r'''import sys,time,json,os,hashlib
+from pathlib import Path
+started_monotonic=time.monotonic()
+data=Path(sys.argv[1]);target=Path(sys.argv[2])
+protocol=json.loads(sys.argv[5]);mode=protocol["mode"]
+facts=dict(pid=os.getpid(),actual_python_pid=os.getpid(),executable=sys.executable,started_ns=time.time_ns())
+try:
+    blocked=False
+    try:data.write_bytes(b"UNSAFE")
+    except PermissionError:blocked=True
+    facts["locked"]=blocked
+    target.write_text(json.dumps(facts),encoding="utf-8")
+    print("INERT_PYTHON_STARTED",flush=True)
+    if mode=="sleep":
+        time.sleep(float(sys.argv[3]))
+    elif mode in ("replan","peer_receipt"):
+        publication=Path(protocol["path"])
+        deadline=started_monotonic+600
+        while True:
+            if time.monotonic()>=deadline:
+                raise TimeoutError("INERT_"+mode.upper()+"_PUBLICATION_NOT_OBSERVED_WITHIN_600S")
+            if publication.is_file():
+                raw=publication.read_bytes()
+                record=json.loads(raw.decode("utf-8-sig"))
+                if mode=="replan":
+                    assert record["particle_count"]==3
+                    assert record["waves"][0]["batches"]==protocol["fixed_batches"]
+                    kind=record["estimation"]["kind"]
+                    if kind=="formal_first_batch_observation":
+                        time.sleep(.1)
+                        continue
+                    assert kind=="observed_formal_batch"
+                    assert record["estimation"]["recovered_missing_observation_completed"] is True
+                    assert record["estimation"]["observed_missing_batch_index"]==1
+                    capacity=record["limits"]["maximum_concurrency"]
+                    assert type(capacity) is int and capacity>=1
+                    assert record["limits"]["formal_observation_seconds"]==protocol["formal_observation_seconds"]
+                    assert record["limits"]["launch_stagger_seconds"]==protocol["launch_stagger_seconds"]
+                    facts["replan"]=record
+                    facts["replan_sha256"]=hashlib.sha256(raw).hexdigest()
+                    facts["replan_observed_ns"]=time.time_ns()
+                else:
+                    observation=record["observation"]
+                    assert record["operation_id"]=="failure" and record["host_release"] is None
+                    assert type(observation["exit_code"]) is int and observation["exit_code"]==7
+                    for key in ("root_process_id","root_process_started_at_utc_ticks"):
+                        assert type(observation[key]) is int and observation[key]>0
+                    facts["failure_receipt"]=record
+                    facts["failure_receipt_observed_ns"]=time.time_ns()
+                still_blocked=False
+                try:data.write_bytes(b"UNSAFE_AFTER_PUBLICATION")
+                except PermissionError:still_blocked=True
+                facts["locked_after_publication"]=still_blocked
+                assert still_blocked,"Immutable input guard ended before live payload"
+                break
+            time.sleep(.1)
+    else:
+        raise ValueError("Unknown inert fixture protocol")
+except BaseException as error:
+    facts["protocol_error"]=type(error).__name__+": "+str(error)
+    raise
+finally:
+    facts["ended_ns"]=time.time_ns()
+    target.write_text(json.dumps(facts),encoding="utf-8")
+print("INERT_PYTHON_FINISHED",flush=True)
+sys.exit(int(sys.argv[4]))
+'''
+
+    def _publish_batch_fixture_facts(self,root,receipt,dispatch_name,prefix):
+        # Preserve small actual facts before assertions and TemporaryDirectory cleanup.
+        evidence=dict(receipt=receipt,files={},diagnostic_errors=[])
+        names=[name+suffix for name in ('healthy','failure','pending')
+               for suffix in ('.json','.receipt.json')]
+        for name in names+[dispatch_name]:
+            path=root/name
+            try:
+                if not path.is_file():
+                    evidence['files'][name]=dict(exists=False)
+                    continue
+                raw=path.read_bytes()
+                evidence['files'][name]=dict(exists=True,bytes=len(raw),
+                    sha256=hashlib.sha256(raw).hexdigest(),
+                    text=raw[:65536].decode('utf-8',errors='backslashreplace'),
+                    truncated=len(raw)>65536)
+            except OSError as error:
+                evidence['diagnostic_errors'].append(name+': '+str(error))
+        print(prefix+json.dumps(evidence,sort_keys=True),flush=True)
+
     def _unmodified_simion_role(self,root,*,failure):
         """Actual heavy admission; Python payloads are not native solver evidence."""
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'shared public GATE required')
@@ -29,28 +120,23 @@ class BatchProcessTests(unittest.TestCase):
                'host_execution_lease.ps1','payload_file_support.ps1','host_resource_policy.json')
         before={name:resource_path(name).read_bytes() for name in names}
         data=root/'immutable.bin';data.write_bytes(b'INERT_NOT_PA_REAL_ROLE')
-        code=(
-            'import sys,time,json,os;from pathlib import Path;data=Path(sys.argv[1]);blocked=False\n'
-            'try:data.write_bytes(b"UNSAFE")\n'
-            'except PermissionError:blocked=True\n'
-            'facts=dict(actual_python_pid=os.getpid(),executable=sys.executable,locked=blocked,started_ns=time.time_ns());'
-            'target=Path(sys.argv[2]);target.write_text(json.dumps(facts));'
-            'print("INERT_PYTHON_STARTED",flush=True);time.sleep(float(sys.argv[3]));'
-            'facts["ended_ns"]=time.time_ns();target.write_text(json.dumps(facts));'
-            'print("INERT_PYTHON_FINISHED",flush=True);sys.exit(int(sys.argv[4]))'
-        )
+        code=self._inert_payload_code()
         compile(code,'inert-real-role-payload','exec')
         specifications=[]
+        batches=[dict(index=index,count=1,particle_id_min=index,particle_id_max=index,
+                      simion_particle_id_offset=index-1) for index in range(1,4)]
         for index,name in enumerate(('healthy','failure','pending'),1):
-            # Keep the real first observation alive through its normal window
-            # and two unchanged staggers so the failure can precede healthy exit.
-            delay=FORMAL_OBSERVATION_SECONDS+2*LAUNCH_STAGGER_SECONDS+2 if failure and index==1 else (LAUNCH_STAGGER_SECONDS if index==1 else .2)
+            # Real policy may serialize; completed replan does not need a second lane.
+            delay=LAUNCH_STAGGER_SECONDS if index==1 else .2
+            protocol=(dict(mode='replan',path=str(root/'actual.dispatch.json'),fixed_batches=batches,
+                           formal_observation_seconds=FORMAL_OBSERVATION_SECONDS,
+                           launch_stagger_seconds=LAUNCH_STAGGER_SECONDS)
+                      if failure and name=='healthy' else dict(mode='sleep'))
             specifications.append(dict(operation_id=name,executable=Path(sys.executable),
                 arguments=['-I','-B','-c',code,str(data),str(root/(name+'.json')),str(delay),
-                           '7' if failure and name=='failure' else '0'],working_directory=root,
+                           '7' if failure and name=='failure' else '0',json.dumps(protocol)],working_directory=root,
                 stdout_path=root/(name+'.out'),stderr_path=root/(name+'.err'),receipt_path=root/(name+'.receipt.json'),
-                environment={},scheduler_batch=dict(index=index,count=1,particle_id_min=index,
-                    particle_id_max=index,simion_particle_id_offset=index-1)))
+                environment={},scheduler_batch=batches[index-1]))
         original=plan_simion_dispatch(dict(solver='SIMION',field_kind='electrostatic',particle_count=3,
             independent_particles=True),[])
         fixed=dict(role='simion_single_wave_particle_batch_plan',coverage='complete_population',particle_count=3,
@@ -69,15 +155,26 @@ class BatchProcessTests(unittest.TestCase):
         # real SIMION flight lease on the SAME shared ledger, without inheritance.
         clear={name:'' for name in ('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',
             'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE')}
-        with patch.dict(os.environ,clear):
-            kwargs=dict(specifications=specifications,dispatch_plan=plan,run_directory=root,usage_path=root/'actual.json',
-                role='SIMION',stage='flight',run_id='inert-real-role-failure' if failure else 'inert-real-role-success',
-                formal_operation_id='healthy',immutable_input_records=[file_record(data,'solver_native_binary')])
-            if failure:
-                with self.assertRaisesRegex(ProcessExecutionError,'batch wave failed') as caught:
-                    run_observed_process_group(context,**kwargs)
-                receipt=caught.exception.receipt
-            else:receipt=run_observed_process_group(context,**kwargs)
+        receipt=None
+        try:
+            with patch.dict(os.environ,clear):
+                kwargs=dict(specifications=specifications,dispatch_plan=plan,run_directory=root,usage_path=root/'actual.json',
+                    role='SIMION',stage='flight',run_id='inert-real-role-failure' if failure else 'inert-real-role-success',
+                    formal_operation_id='healthy',immutable_input_records=[file_record(data,'solver_native_binary')])
+                if failure:
+                    with self.assertRaisesRegex(ProcessExecutionError,'batch wave failed') as caught:
+                        try:
+                            run_observed_process_group(context,**kwargs)
+                        except ProcessExecutionError as error:
+                            receipt=error.receipt
+                            raise
+                    receipt=caught.exception.receipt
+                else:receipt=run_observed_process_group(context,**kwargs)
+        except ProcessExecutionError as error:
+            receipt=error.receipt
+            raise
+        finally:
+            self._publish_batch_fixture_facts(root,receipt,'actual.dispatch.json','UNMODIFIED_SIMION_ROLE_RAW_FACTS=')
         self.assertEqual(receipt['host_release'],dict(inherited=False,token=receipt['host_release']['token'],
             error=None,result=dict(status='released',token=receipt['host_release']['token'])))
         self.assertTrue(receipt['host_release']['token'])
@@ -102,7 +199,11 @@ class BatchProcessTests(unittest.TestCase):
             self.assertEqual(receipt['observations']['healthy']['exit_code'],0)
             self.assertEqual(receipt['not_started'],['pending'])
             self.assertFalse((root/'pending.json').exists())
-            self.assertGreater(children['healthy']['ended_ns'],children['failure']['ended_ns'])
+            self.assertEqual(children['healthy']['replan'],actual)
+            self.assertEqual(children['healthy']['replan_sha256'],hashlib.sha256((root/'actual.dispatch.json').read_bytes()).hexdigest())
+            self.assertTrue(children['healthy']['locked_after_publication'])
+            # Replan consumption -> denied write -> finally is causal; wall-clock ticks can coincide.
+            self.assertGreaterEqual(children['healthy']['ended_ns'],children['healthy']['replan_observed_ns'])
         else:
             self.assertEqual(set(receipt['observations']),{'healthy','failure','pending'})
             self.assertTrue(all(row['exit_code']==0 for row in receipt['observations'].values()))
@@ -112,13 +213,15 @@ class BatchProcessTests(unittest.TestCase):
             attempts=receipt['attempts'],host_release=receipt['host_release'],children=children,
             not_started=receipt['not_started'],actual_estimation=actual['estimation'],
             launch_stagger_seconds=LAUNCH_STAGGER_SECONDS,guard_write_after_exit=True,
-            unmodified_resources=True),sort_keys=True))
+            unmodified_resources=True,scope='real_admission_replan_failure_pending_guard_release',
+            live_overlap_claimed=False),sort_keys=True))
 
     def test_unmodified_simion_role_inert_success_real_admission_and_guards(self):
         with tempfile.TemporaryDirectory() as directory:
             self._unmodified_simion_role(Path(directory),failure=False)
 
-    def test_unmodified_simion_role_failure_drains_live_sibling_and_stops_pending(self):
+    def test_unmodified_simion_role_failure_replans_stops_pending_and_releases_guards(self):
+        """Unmodified real admission/cancellation; concurrency is policy-selected."""
         with tempfile.TemporaryDirectory() as directory:
             self._unmodified_simion_role(Path(directory),failure=True)
 
@@ -144,10 +247,12 @@ class BatchProcessTests(unittest.TestCase):
         plan['limits']['launch_stagger_seconds']=1  # bounded declared fixture cadence
         specs=[]
         for index,name in enumerate(('healthy','failure','pending'),1):
-            code='import sys,time,json;from pathlib import Path;p=Path(sys.argv[1]);blocked=False\ntry:p.write_bytes(b"BAD")\nexcept PermissionError:blocked=True\nPath(sys.argv[2]).write_text(json.dumps(dict(pid=__import__("os").getpid(),locked=blocked)));time.sleep(float(sys.argv[3]));sys.exit(int(sys.argv[4]))'
+            code=self._inert_payload_code()
             delay=3 if name=='healthy' else .2
             exit_code=7 if fault=='exit7' and name=='failure' else 0
-            specs.append(dict(operation_id=name,executable=Path(sys.executable),arguments=['-I','-c',code,str(data),str(root/(name+'.json')),str(delay),str(exit_code)],
+            protocol=(dict(mode='peer_receipt',path=str(root/'failure.receipt.json'))
+                      if fault=='exit7' and name=='healthy' else dict(mode='sleep'))
+            specs.append(dict(operation_id=name,executable=Path(sys.executable),arguments=['-I','-c',code,str(data),str(root/(name+'.json')),str(delay),str(exit_code),json.dumps(protocol)],
                 working_directory=root,stdout_path=root/(name+'.out'),stderr_path=root/(name+'.err'),receipt_path=root/(name+'.receipt.json'),
                 environment={},scheduler_batch=dict(index=index,count=1,particle_id_min=index,particle_id_max=index)))
         return context,data,owner,before,plan,specs
@@ -155,15 +260,26 @@ class BatchProcessTests(unittest.TestCase):
     def run_fixture(self,root,*,fault=None):
         context,data,folder,before,plan,specs=self.fixture(root,fault=fault)
         real_resource=resource_path
-        with patch('msplatform.execution.processes.resource_path',side_effect=lambda name:folder/name if name=='batch_process_owner.ps1' else real_resource(name)):
-            if fault=='exit7':
-                with self.assertRaisesRegex(ProcessExecutionError,'batch wave failed') as caught:
-                    run_observed_process_group(context,specifications=specs,dispatch_plan=plan,run_directory=root,usage_path=root/'wave.json',
+        receipt=None
+        try:
+            with patch('msplatform.execution.processes.resource_path',side_effect=lambda name:folder/name if name=='batch_process_owner.ps1' else real_resource(name)):
+                if fault=='exit7':
+                    with self.assertRaisesRegex(ProcessExecutionError,'batch wave failed') as caught:
+                        try:
+                            run_observed_process_group(context,specifications=specs,dispatch_plan=plan,run_directory=root,usage_path=root/'wave.json',
+                                role='GATE',stage='unclassified',run_id='inert-batch',immutable_input_records=[file_record(data,'solver_native_binary')])
+                        except ProcessExecutionError as error:
+                            receipt=error.receipt
+                            raise
+                    receipt=caught.exception.receipt
+                else:
+                    receipt=run_observed_process_group(context,specifications=specs,dispatch_plan=plan,run_directory=root,usage_path=root/'wave.json',
                         role='GATE',stage='unclassified',run_id='inert-batch',immutable_input_records=[file_record(data,'solver_native_binary')])
-                receipt=caught.exception.receipt
-            else:
-                receipt=run_observed_process_group(context,specifications=specs,dispatch_plan=plan,run_directory=root,usage_path=root/'wave.json',
-                    role='GATE',stage='unclassified',run_id='inert-batch',immutable_input_records=[file_record(data,'solver_native_binary')])
+        except ProcessExecutionError as error:
+            receipt=error.receipt
+            raise
+        finally:
+            self._publish_batch_fixture_facts(root,receipt,'wave.dispatch.json','CONTROLLED_BATCH_RAW_FACTS=')
         for name,body in before.items():self.assertEqual(resource_path(name).read_bytes(),body)
         self.assertEqual(data.read_bytes(),b'INERT_NOT_PA')
         data.write_bytes(b'RELEASED')  # real final guard release
@@ -191,6 +307,16 @@ class BatchProcessTests(unittest.TestCase):
             self.assertEqual(receipt['not_started'],['pending'])
             self.assertFalse((root/'pending.json').exists())
             self.assertEqual(len(receipt['attempts']),2)
+            children={name:json.loads((root/(name+'.json')).read_text(encoding='utf-8'))
+                      for name in ('healthy','failure')}
+            observed=json.loads((root/'failure.receipt.json').read_text(encoding='utf-8'))
+            self.assertEqual(children['healthy']['failure_receipt'],observed)
+            self.assertEqual(observed['observation'],receipt['observations']['failure'])
+            self.assertTrue(children['healthy']['locked_after_publication'])
+            self.assertGreater(children['healthy']['failure_receipt_observed_ns'],children['failure']['ended_ns'])
+            # Receipt consumption -> denied write -> finally is causal; wall-clock ticks can coincide.
+            self.assertGreaterEqual(children['healthy']['ended_ns'],children['healthy']['failure_receipt_observed_ns'])
+            self.assertGreater(children['healthy']['ended_ns'],children['failure']['ended_ns'])
 
     def test_invalid_metadata_and_wrong_hash_do_not_launch_inert_payload(self):
         with tempfile.TemporaryDirectory() as directory:

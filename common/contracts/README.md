@@ -4,6 +4,15 @@
 单位是否完整；Python语义层判断项目选择、能力成熟度、模式、指标、设计变量和约束是否成立。
 二者不能互相取代。
 
+Batch-process regression coverage uses real inert child processes. The unmodified
+SIMION-role fixture checks actual formal replanning, failure cancellation, input
+guards and lease release without assuming that resource policy permits overlap.
+The controlled two-lane fixture separately checks live-sibling draining against
+an actual owner-written failure receipt. Child completion is synchronized by
+publications rather than a fixed sleep; equal within-child wall-clock ticks are
+valid. Both fixtures retain available small receipts before temporary cleanup.
+These tests do not constitute native solver qualification.
+
 ## 按任务导航
 
 只读本次任务对应的章节；本页说明公共 API，生命周期政策仍以[生命周期](../../docs/LIFECYCLE.md)为准。
