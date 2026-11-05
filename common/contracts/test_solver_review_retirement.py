@@ -1092,6 +1092,153 @@ function Exit-HostExecutionLease { param($Lease) }
             self.assertEqual(planner.call_args.kwargs["approved_stopped_consumers"], [consumer])
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_checkpoint_seal_verifies_nonempty_stopped_consumers_under_held_lock(self, _scan):
+        from contextlib import contextmanager
+        from common.contracts import capacity_protection as common_protection
+        from msplatform.execution import capacity_protection as canonical_protection
+
+        checkpoint = self._checkpoint_runtime()
+        # This compact fixture retains no IOB after native runtime retirement.
+        (self.target / "simion/seed.iob").unlink()
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["capacity_ledger_lifecycle"] = dict(
+            schema_version=1, enabled=True, artifact_root=str(self.artifacts),
+            light_evidence_budget_bytes=26_214_400)
+        config_path.write_text(json.dumps(config))
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        manifest_path.write_text(json.dumps(manifest))
+        consumer = self._stopped_consumer(checkpoint)
+        original_consumer = {path.name: path.read_bytes() for path in consumer.iterdir()}
+        register_writing(self.artifacts, config_path)
+        seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                        retain_payload=True, retention_reason="stopped callback fixture")
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        self.assertEqual(len(plan["approved_stopped_consumers"]), 1)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        original_manifest = manifest_path.read_bytes()
+        real_lock = canonical_protection.capacity_decision_lock
+        real_reader = common_protection._load_capacity_protection_leases_unlocked
+        held = []
+        reads = []
+
+        @contextmanager
+        def checked_lock(root, **kwargs):
+            self.assertFalse(held, "checkpoint callback reacquired the same decision lock")
+            with real_lock(root, **kwargs):
+                held.append(root.resolve())
+                try:
+                    yield
+                finally:
+                    held.pop()
+
+        def checked_reader(root, **kwargs):
+            self.assertEqual(held, [self.artifacts.resolve()])
+            reads.append(root.resolve())
+            return real_reader(root, **kwargs)
+
+        lease_id = "approved-consumer-seal-guard"
+        canonical_protection.create_capacity_protection_lease(
+            self.artifacts, lease_id=lease_id, owner="fixture-stopped-consumer",
+            ttl_seconds=60, protected_paths=[consumer])
+        ledger_path = self.artifacts / "common/capacity_ledger.json"
+        ledger_before_rejection = ledger_path.read_bytes()
+        try:
+            with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
+                    common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader):
+                with self.assertRaisesRegex(RetirementError, "active protection lease"):
+                    seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True)
+            self.assertEqual(reads, [self.artifacts.resolve()])
+            self.assertEqual(held, [])
+            self.assertEqual(manifest_path.read_bytes(), original_manifest)
+            self.assertEqual(original_consumer, {path.name: path.read_bytes() for path in consumer.iterdir()})
+            self.assertEqual(ledger_path.read_bytes(), ledger_before_rejection)
+        finally:
+            canonical_protection.delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
+        reads.clear()
+        with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
+                common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader):
+            result = seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True)
+        self.assertEqual(result["action"], "seal_checkpoint")
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(reads, [self.artifacts.resolve()])
+        self.assertEqual(held, [])
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+        self.assertEqual(original_consumer, {path.name: path.read_bytes() for path in consumer.iterdir()})
+        entry = next(item for item in load_capacity_ledger(self.artifacts)["objects"]
+                     if item["path"] == self.target.relative_to(self.artifacts).as_posix())
+        self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "light_evidence", False))
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_retired_remainder_seal_uses_held_snapshot_and_rejects_active_lease(self, _scan):
+        from contextlib import contextmanager
+        from common.contracts import capacity_protection as common_protection
+        from msplatform.execution import capacity_protection as canonical_protection
+
+        receipt_bytes, manifest_bytes = self._first_partial_batch(reseal=False)
+        receipt = json.loads(receipt_bytes)
+        self.assertEqual(receipt.get("approved_stopped_consumers", []), [])
+        self.assertIsNone(receipt.get("stopped_checkpoint_runtime"))
+        config_path = self.target / "run_config.json"
+        self.assertEqual(json.loads(config_path.read_text())["artifact_retention"]["class"], "solver_review")
+        ledger_path = self.artifacts / "common/capacity_ledger.json"
+        ledger_before = ledger_path.read_bytes()
+        real_lock = canonical_protection.capacity_decision_lock
+        real_reader = common_protection._load_capacity_protection_leases_unlocked
+        held = []
+        reads = []
+
+        @contextmanager
+        def checked_lock(root, **kwargs):
+            self.assertFalse(held, "retired-remainder callback reacquired decision lock")
+            with real_lock(root, **kwargs):
+                held.append(root.resolve())
+                try:
+                    yield
+                finally:
+                    held.pop()
+
+        def checked_reader(root, **kwargs):
+            self.assertEqual(held, [self.artifacts.resolve()])
+            reads.append(root.resolve())
+            return real_reader(root, **kwargs)
+
+        lease_id = "retired-remainder-seal-guard"
+        canonical_protection.create_capacity_protection_lease(
+            self.artifacts, lease_id=lease_id, owner="fixture-remainder",
+            ttl_seconds=60, protected_paths=[self.target])
+        try:
+            with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock):
+                with self.assertRaisesRegex(ValueError, "active protection lease"):
+                    self._seal_partial_batch()
+            self.assertEqual(held, [])
+            self.assertEqual(ledger_path.read_bytes(), ledger_before)
+            self.assertEqual((self.target / "run_manifest.json").read_bytes(), manifest_bytes)
+            self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), receipt_bytes)
+        finally:
+            canonical_protection.delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
+        with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
+                common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader), mock.patch(
+                "common.contracts.run_capacity_lifecycle.verify_retirement",
+                side_effect=AssertionError("locked remainder used standalone public verifier")):
+            result = self._seal_partial_batch()
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["action"], "seal_stopped_payload")
+        self.assertEqual(reads, [self.artifacts.resolve()])
+        self.assertEqual(held, [])
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), manifest_bytes)
+        self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), receipt_bytes)
+        entry = next(item for item in load_capacity_ledger(self.artifacts)["objects"]
+                     if item["path"] == self.target.relative_to(self.artifacts).as_posix())
+        self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "rebuildable_payload", True))
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_approved_stopped_consumer_requires_owner_scope_and_new_consumers_still_block(self, _scan: mock.Mock) -> None:
         checkpoint = self._checkpoint_runtime()
         consumer = self._stopped_consumer(checkpoint)

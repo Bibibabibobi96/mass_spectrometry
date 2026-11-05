@@ -445,6 +445,11 @@ PowerShell入口使用精确RepoRoot上下文。独立writer/verifier的直接�
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
 artifact布局检查接受该精确台账文件并复用台账校验器；租约目录的既有decision lock由公共租约读取器识别，
 它是内核互斥所用的保留文件，不是JSON证据。其他未登记common文件仍拒绝。
+Lease snapshot reads take the existing capacity decision lock across enumeration and
+validation, so they cannot observe an in-progress create, renewal, or deletion by
+the same protocol. Already-locked internal callers use the single unlocked parser;
+the lock is not reentrant. Malformed records still fail closed. A coherent snapshot
+alone does not make a later exclusivity check and transaction update atomic.
 公共租约按解析后的路径身份比较保护范围，保留父／子覆盖和未创建子路径的保护；不改写已有租约路径表示或key保护。
 公共PA布局检查复用owner的只读事务校验入口，接受严格事务元数据及具名key锁；未完成的非空payload、
 build-scratch或未知文件仍不能作为干净缓存布局通过，不调用会修改台账的maintenance审计。

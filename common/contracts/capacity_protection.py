@@ -29,6 +29,7 @@ from msplatform.execution.capacity_protection import (
     _delete_capacity_protection_lease_unlocked as _delete_capacity_protection_lease_unlocked,
     _lease_closure_deadline as _lease_closure_deadline,
     _lease_path as _lease_path,
+    _load_capacity_protection_leases_unlocked as _load_capacity_protection_leases_unlocked,
     _pending_disposal_targets as _pending_disposal_targets,
     _pending_disposal_targets_from_receipts as _pending_disposal_targets_from_receipts,
     _relative_protected_path as _relative_protected_path,
@@ -233,7 +234,7 @@ def _prune_expired_capacity_protection_leases_unlocked(
         raise CapacityProtectionLeaseError(lease_root, "lease root is not a real directory")
     # Validate the entire active view first.  A malformed active lease must not
     # be hidden by deleting unrelated expired evidence in the same pass.
-    load_capacity_protection_leases(root, now=observed)
+    _load_capacity_protection_leases_unlocked(root, now=observed)
     for path in sorted(lease_root.iterdir(), key=lambda item: item.name):
         if path.name == CAPACITY_DECISION_LOCK_NAME and path.is_file():
             continue

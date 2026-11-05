@@ -337,7 +337,7 @@ def _renew_capacity_protection_lease_unlocked(
         _relative_protected_path(root, Path(path)) for path in protected_paths
     }
     observed = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    leases = load_capacity_protection_leases(root, now=observed)
+    leases = _load_capacity_protection_leases_unlocked(root, now=observed)
     audit = next(
         (item for item in leases["audit"] if item.get("lease_id") == lease_id),
         None,
@@ -491,19 +491,33 @@ def delete_capacity_protection_lease(root: Path, *, lease_id: str) -> dict[str, 
         return _delete_capacity_protection_lease_unlocked(root, lease_id=lease_id)
 
 
-def load_capacity_protection_leases(
-    root: Path, *, now: datetime | None = None,
-) -> dict[str, Any]:
-    """Load and union active leases, failing closed on an ambiguous document."""
-
-    lease_root = root / PROTECTION_LEASE_DIRECTORY
-    result: dict[str, Any] = {
+def _empty_capacity_protection_view() -> dict[str, Any]:
+    return {
         "protected_cache_keys": set(),
         "protected_paths": set(),
         "audit": [],
         "committed_new_bytes": 0,
         "legacy_unknown_commitment_count": 0,
     }
+
+
+def load_capacity_protection_leases(
+    root: Path, *, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Read one writer-serialized lease view; absent roots remain an empty view."""
+    if not (root / PROTECTION_LEASE_DIRECTORY).exists():
+        return _empty_capacity_protection_view()
+    with capacity_decision_lock(root):
+        return _load_capacity_protection_leases_unlocked(root, now=now)
+
+
+def _load_capacity_protection_leases_unlocked(
+    root: Path, *, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Load and union active leases, failing closed on an ambiguous document."""
+
+    lease_root = root / PROTECTION_LEASE_DIRECTORY
+    result = _empty_capacity_protection_view()
     if not lease_root.exists():
         return result
     if not lease_root.is_dir() or lease_root.is_symlink():

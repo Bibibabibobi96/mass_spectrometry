@@ -664,6 +664,7 @@ def _runtime_scope_path(document: dict[str, Any], target: Path) -> Path | None:
 
 def _freeze_stopped_consumers(
     paths: Iterable[Path], artifact_root: Path, target: Path, owner: str,
+    *, _leases: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Bind stopped consumers to this owner decision without changing their state.
 
@@ -676,7 +677,7 @@ def _freeze_stopped_consumers(
     if not paths:
         return result
     seen = set()
-    leases = protection.load_capacity_protection_leases(artifact_root)
+    leases = _leases if _leases is not None else protection.load_capacity_protection_leases(artifact_root)
     for path in paths:
         run = _under(path, artifact_root)
         if (run in seen or run == target or path.is_symlink() or not run.is_dir()
@@ -718,7 +719,9 @@ def _freeze_stopped_consumers(
     return sorted(result, key=lambda item: item["run_path"])
 
 
-def _verify_stopped_consumers(document: dict[str, Any], target: Path) -> list[dict[str, Any]]:
+def _verify_stopped_consumers(
+    document: dict[str, Any], target: Path, *, _leases: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Recheck the same frozen list for apply, pending replay and verification."""
     approved = document.get("approved_stopped_consumers", [])
     if not isinstance(approved, list):
@@ -730,7 +733,8 @@ def _verify_stopped_consumers(document: dict[str, Any], target: Path) -> list[di
     if any(not isinstance(item, dict) or not isinstance(item.get("run_path"), str) for item in approved):
         raise RetirementError("approved stopped consumer record is invalid")
     refreshed = _freeze_stopped_consumers(
-        [Path(item["run_path"]) for item in approved], Path(document["artifact_root"]), target, document["owner"])
+        [Path(item["run_path"]) for item in approved], Path(document["artifact_root"]), target, document["owner"],
+        _leases=_leases)
     if refreshed != approved:
         raise RetirementError("approved stopped consumer evidence changed")
     return refreshed
@@ -1101,10 +1105,10 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
         if (_selected_heavy_paths(plan.get("selected_heavy_paths")) is not None
                 and (plan.get("retirement_mode") != "completed_experiment" or runtime_checkpoint_path is not None or gui_mode)):
             raise RetirementError("selected heavy scope requires ordinary owner completion")
-        approved_consumers = _verify_stopped_consumers(plan, target)
+        leases = protection._load_capacity_protection_leases_unlocked(artifact_root)
+        approved_consumers = _verify_stopped_consumers(plan, target, _leases=leases)
         if runtime_checkpoint_path is not None or gui_mode:
             _assert_runtime_retirement_unprotected(artifact_root, target)
-        leases = protection.load_capacity_protection_leases(artifact_root)
         if protection.path_is_protected(target, leases["protected_paths"]):
             raise RetirementError(
                 "target gained an active capacity protection lease before apply"
@@ -1364,7 +1368,7 @@ def _payload_owner_lock(path: Path):
 def _assert_payload_repair_capacity(root: Path, source: Path, audit: Path,
                                     owner: str, lease_id: str, budget: int) -> None:
     """Check only lease metadata; caller holds the short capacity decision lock."""
-    leases = protection.load_capacity_protection_leases(root)
+    leases = protection._load_capacity_protection_leases_unlocked(root)
     active = [v for v in leases["audit"] if v.get("status") == "active"]
     own = [v for v in active if v["lease_id"] == lease_id]
     if len(own) != 1 or own[0]["owner"] != f"owned-payload-view-repair:{owner}:{audit.name}":
@@ -1602,6 +1606,7 @@ def _verify_retirement_receipt(
     run_dir: Path, receipt: dict[str, Any], *, retired_paths: set[Path],
     removed_records: list[dict[str, Any]],
     consumed_paths: set[Path] | None = None,
+    _leases: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     owner_mode = receipt.get("retirement_mode") == "completed_experiment"
     expected_status = "completed_experiment_payload_retired" if owner_mode else "superseded_payload_retired"
@@ -1661,7 +1666,7 @@ def _verify_retirement_receipt(
             _prepared_gui_inventory(replacement_state, replacement_records)
         if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
             raise RetirementError("replacement run manifest changed")
-    _verify_stopped_consumers(receipt, run_dir)
+    _verify_stopped_consumers(receipt, run_dir, _leases=_leases)
     records = {}
     if gui_mode:
         state = _load_run(run_dir, allowed_statuses=("checkpoint",), prepared_gui_checkpoint=True)
@@ -1723,6 +1728,14 @@ def _verify_retirement_receipt(
 
 
 def verify_retirement(run_dir: Path, *, consumed_paths: Iterable[str] | None = None) -> dict[str, Any]:
+    """Verify using the standalone public protection reader when needed."""
+    return _verify_retirement_with_leases(run_dir, consumed_paths=consumed_paths, _leases=None)
+
+
+def _verify_retirement_with_leases(
+    run_dir: Path, *, consumed_paths: Iterable[str] | None = None,
+    _leases: dict[str, Any] | None,
+) -> dict[str, Any]:
     """Verify complete retirement, or an explicit preserved-file consumption scope."""
     _, _, history = select_retirement_receipt(run_dir)
     if not history:
@@ -1766,7 +1779,7 @@ def verify_retirement(run_dir: Path, *, consumed_paths: Iterable[str] | None = N
         removed_records.extend(receipt["removed_files"])
         previous = (path, receipt)
     result = _verify_retirement_receipt(
-        run_dir, history[-1][1], retired_paths=retired, removed_records=removed_records, consumed_paths=consumed)
+        run_dir, history[-1][1], retired_paths=retired, removed_records=removed_records, consumed_paths=consumed, _leases=_leases)
     if consumed is not None:
         result.update(scope="consumer_projection", consumed_paths=sorted(names))
     if len(history) > 1:

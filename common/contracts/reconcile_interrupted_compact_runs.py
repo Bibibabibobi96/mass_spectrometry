@@ -59,11 +59,28 @@ def inspect_run(
     verify_manifest_records: bool = True,
     permit_preflight_marker: bool = False,
 ) -> dict[str, Any]:
+    """Inspect with the public locked protection view; no caller snapshot override."""
+    run_dir = run_dir.resolve()
+    artifact_root = _artifact_root_for_run(run_dir)
+    return _inspect_run_with_leases(
+        run_dir, permit_manifest_drift=permit_manifest_drift,
+        verify_manifest_records=verify_manifest_records,
+        permit_preflight_marker=permit_preflight_marker,
+        _leases=protection.load_capacity_protection_leases(artifact_root),
+    )
+
+
+def _inspect_run_with_leases(
+    run_dir: Path, *, permit_manifest_drift: bool = False,
+    verify_manifest_records: bool = True,
+    permit_preflight_marker: bool = False,
+    _leases: dict[str, Any],
+) -> dict[str, Any]:
     """Return a fail-closed reconciliation plan for one terminal compact run."""
 
     run_dir = run_dir.resolve()
     artifact_root = _artifact_root_for_run(run_dir)
-    leases = protection.load_capacity_protection_leases(artifact_root)
+    leases = _leases
     if protection.path_is_protected(run_dir, leases["protected_paths"]):
         raise ValueError("run is covered by an active capacity protection lease")
     config_path = run_dir / "run_config.json"
@@ -198,11 +215,12 @@ def apply_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> Path:
         raise RuntimeError("apply requires the shared HostExecutionLease")
     artifact_root = _artifact_root_for_run(run_dir.resolve())
     with protection.capacity_decision_lock(artifact_root):
-        report = inspect_run(
+        report = _inspect_run_with_leases(
             run_dir,
             permit_manifest_drift=permit_manifest_drift,
             verify_manifest_records=False,
             permit_preflight_marker=True,
+            _leases=protection._load_capacity_protection_leases_unlocked(artifact_root),
         )
         directory, retention = load_run_retention(run_dir / "run_config.json")
         removed = [

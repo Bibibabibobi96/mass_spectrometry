@@ -716,7 +716,7 @@ def handoff_prepared_cache_stage(
 
 
 def _assert_unleased(root: Path, target: Path) -> None:
-    leases = protection.load_capacity_protection_leases(root)
+    leases = protection._load_capacity_protection_leases_unlocked(root)
     if (
         protection.path_is_protected(target, leases["protected_paths"])
         or target.name.lower() in leases["protected_cache_keys"]
@@ -829,7 +829,7 @@ def _assert_abandoned_pa_transaction_allowed(
                     or (entry.get("status") == "ready" and entry.get("class") == "light_evidence"))):
         raise ValueError("abandonment requires the unpinned writing stage owner")
     _assert_unleased(root, target)
-    leases = protection.load_capacity_protection_leases(root)
+    leases = protection._load_capacity_protection_leases_unlocked(root)
     if cache_key.lower() in leases["protected_cache_keys"]:
         raise ValueError("abandonment cache key has an active protection lease")
     for consumer in entry.get("consumers", []):

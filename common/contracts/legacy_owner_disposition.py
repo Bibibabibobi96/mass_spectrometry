@@ -23,7 +23,7 @@ from common.contracts import capacity_ledger, capacity_protection
 from common.contracts.artifact_retention import classify_file
 from common.contracts.run_capacity_lifecycle import (
     HEAVY_RETENTION_ROLES,
-    partial_retirement_is_protected,
+    _partial_retirement_is_protected_with_leases,
     recorded_heavy_identity,
 )
 from common.contracts.recorded_file_removal import write_json_atomic
@@ -161,7 +161,10 @@ def _partial_run_records(
             raise ValueError("owner disposition heavy file is not an eligible owner-managed writing entry")
         if path.stat().st_size != int(entry["bytes"]):
             raise ValueError("owner disposition heavy file differs from its registered bytes")
-        if partial_retirement_is_protected(root, ledger, entry, path):
+        if _partial_retirement_is_protected_with_leases(
+            root, ledger, entry, path,
+            _leases=capacity_protection._load_capacity_protection_leases_unlocked(root),
+        ):
             raise ValueError("owner disposition heavy file has active protection")
         identity = recorded_heavy_identity(target, path, int(entry["bytes"]))
         if identity is None:
@@ -485,7 +488,10 @@ def _activate_partial_candidate(
                 "structured_nonterminal_run_reference", "run_contract_missing_or_invalid",
             }
             or classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES
-            or partial_retirement_is_protected(root, ledger, entry, path)
+            or _partial_retirement_is_protected_with_leases(
+                root, ledger, entry, path,
+                _leases=capacity_protection._load_capacity_protection_leases_unlocked(root),
+            )
             or recorded_heavy_identity(target, path, int(entry["bytes"])) is None
         ):
             raise ValueError("owner disposition partial file is no longer eligible")

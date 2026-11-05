@@ -849,5 +849,194 @@ for name in (
             self.assertEqual(receipt["candidate_count"], 2)
 
 
+class CapacityProtectionReadSynchronizationTest(unittest.TestCase):
+    def test_public_read_serializes_create_renew_and_delete(self):
+        import threading
+        from contextlib import contextmanager
+        from datetime import datetime, timezone
+        from msplatform.execution import capacity_protection as protection
+
+        for operation in ('create', 'renew', 'delete'):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                now = datetime(2026, 11, 5, tzinfo=timezone.utc)
+                lease = dict(lease_id='synchronized', owner='fixture', ttl_seconds=60,
+                             protected_cache_keys=['a' * 64], now=now)
+                if operation != 'create':
+                    protection.create_capacity_protection_lease(root, **lease)
+                target = root / protection.PROTECTION_LEASE_DIRECTORY / 'synchronized.json'
+                paused = threading.Event()
+                release = threading.Event()
+                read_lock_requested = threading.Event()
+                read_done = threading.Event()
+                outcomes = {}
+                real_dump = protection.json.dump
+                real_unlink = Path.unlink
+                real_lock = protection.capacity_decision_lock
+
+                def pause_writer():
+                    paused.set()
+                    if not release.wait(10):
+                        raise TimeoutError('fixture writer was not released')
+
+                def dump(document, stream, *args, **kwargs):
+                    if threading.current_thread().name == 'lease-writer':
+                        # Create's final x-open and renewal's temporary x-open
+                        # already happened under the real decision lock.
+                        pause_writer()
+                    return real_dump(document, stream, *args, **kwargs)
+
+                def unlink(path, *args, **kwargs):
+                    result = real_unlink(path, *args, **kwargs)
+                    if threading.current_thread().name == 'lease-writer' and path == target:
+                        pause_writer()  # actual deletion, still inside writer lock
+                    return result
+
+                @contextmanager
+                def lock(path, **kwargs):
+                    if threading.current_thread().name == 'lease-reader':
+                        read_lock_requested.set()
+                    with real_lock(path, **kwargs):
+                        yield
+
+                def writer():
+                    try:
+                        if operation == 'create':
+                            outcomes['writer'] = protection.create_capacity_protection_lease(root, **lease)
+                        elif operation == 'renew':
+                            outcomes['writer'] = protection.renew_capacity_protection_lease(
+                                root, **dict(lease, ttl_seconds=120))
+                        else:
+                            outcomes['writer'] = protection.delete_capacity_protection_lease(
+                                root, lease_id=lease['lease_id'])
+                    except BaseException as error:
+                        outcomes['writer_error'] = error
+
+                def reader():
+                    try:
+                        outcomes['reader'] = protection.load_capacity_protection_leases(root, now=now)
+                    except BaseException as error:
+                        outcomes['reader_error'] = error
+                    finally:
+                        read_done.set()
+
+                first = threading.Thread(target=writer, name='lease-writer')
+                second = threading.Thread(target=reader, name='lease-reader')
+                with patch.object(protection.json, 'dump', side_effect=dump), patch.object(
+                        Path, 'unlink', unlink), patch.object(protection, 'capacity_decision_lock', lock):
+                    first.start()
+                    try:
+                        self.assertTrue(paused.wait(10), outcomes)
+                        second.start()
+                        self.assertTrue(read_lock_requested.wait(10), outcomes)
+                        self.assertFalse(read_done.is_set(), 'reader bypassed paused writer lock')
+                    finally:
+                        release.set()
+                        first.join(10)
+                        if second.ident is not None:
+                            second.join(10)
+                    self.assertFalse(first.is_alive())
+                    self.assertFalse(second.is_alive())
+                self.assertNotIn('writer_error', outcomes)
+                self.assertNotIn('reader_error', outcomes)
+                view = outcomes['reader']
+                self.assertEqual(len(view['audit']), 0 if operation == 'delete' else 1)
+                self.assertEqual(view['protected_cache_keys'], set() if operation == 'delete' else {'a' * 64})
+                if operation == 'renew':
+                    self.assertEqual(view['audit'][0]['expires_at_utc'], '2026-11-05T00:02:00Z')
+
+    def test_public_read_preserves_absent_root_without_creating_lock(self):
+        from msplatform.execution import capacity_protection as protection
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'not-created'
+            view = protection.load_capacity_protection_leases(root)
+            self.assertEqual(view['audit'], [])
+            self.assertEqual(view['protected_paths'], set())
+            self.assertEqual(view['committed_new_bytes'], 0)
+            self.assertFalse(root.exists())
+            existing = Path(directory)
+            self.assertEqual(protection.load_capacity_protection_leases(existing), view)
+            self.assertFalse((existing / protection.PROTECTION_LEASE_DIRECTORY).exists())
+
+    def test_absent_directory_read_linearizes_before_concurrent_lease_creation(self):
+        import threading
+        from datetime import datetime, timezone
+        from msplatform.execution import capacity_protection as protection
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime(2026, 11, 5, tzinfo=timezone.utc)
+            absence_observed = threading.Event()
+            release_reader = threading.Event()
+            writer_done = threading.Event()
+            outcomes = {}
+            real_empty = protection._empty_capacity_protection_view
+
+            def empty_view():
+                if threading.current_thread().name == 'absent-lease-reader':
+                    # Public read has observed absence; creation after this point
+                    # does not invalidate its already-linearized empty snapshot.
+                    absence_observed.set()
+                    if not release_reader.wait(10):
+                        raise TimeoutError('fixture absent-directory reader was not released')
+                return real_empty()
+
+            def reader():
+                try:
+                    outcomes['reader'] = protection.load_capacity_protection_leases(root, now=now)
+                except BaseException as error:
+                    outcomes['reader_error'] = error
+
+            def writer():
+                try:
+                    outcomes['writer'] = protection.create_capacity_protection_lease(
+                        root, lease_id='created-after-absence', owner='fixture',
+                        ttl_seconds=60, protected_cache_keys=['c' * 64], now=now)
+                except BaseException as error:
+                    outcomes['writer_error'] = error
+                finally:
+                    writer_done.set()
+
+            first = threading.Thread(target=reader, name='absent-lease-reader')
+            second = threading.Thread(target=writer, name='concurrent-lease-writer')
+            self.assertFalse((root / protection.PROTECTION_LEASE_DIRECTORY).exists())
+            with patch.object(protection, '_empty_capacity_protection_view', side_effect=empty_view):
+                first.start()
+                try:
+                    self.assertTrue(absence_observed.wait(10), outcomes)
+                    second.start()
+                    self.assertTrue(writer_done.wait(10), outcomes)
+                    self.assertNotIn('writer_error', outcomes)
+                    self.assertNotIn('reader', outcomes, 'reader returned before explicit release')
+                    self.assertTrue((root / protection.PROTECTION_LEASE_DIRECTORY /
+                                     'created-after-absence.json').is_file())
+                finally:
+                    release_reader.set()
+                    first.join(10)
+                    if second.ident is not None:
+                        second.join(10)
+                self.assertFalse(first.is_alive())
+                self.assertFalse(second.is_alive())
+            self.assertNotIn('reader_error', outcomes)
+            self.assertEqual(outcomes['reader'], real_empty())
+            fresh = protection.load_capacity_protection_leases(root, now=now)
+            self.assertEqual(fresh['protected_cache_keys'], {'c' * 64})
+            self.assertEqual([item['lease_id'] for item in fresh['audit']], ['created-after-absence'])
+            self.assertEqual(fresh['audit'][0]['status'], 'active')
+
+    def test_public_read_still_rejects_corrupt_or_unknown_lease_files(self):
+        from msplatform.execution import capacity_protection as protection
+        for filename, text in (('broken.json', ''), ('broken.json', '{'), ('unrecognized.renewing', '{}')):
+            with self.subTest(filename=filename, text=text), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                protection.create_capacity_protection_lease(root, lease_id='valid', owner='fixture',
+                    ttl_seconds=60, protected_cache_keys=['b' * 64])
+                path = root / protection.PROTECTION_LEASE_DIRECTORY / filename
+                path.write_text(text, encoding='utf-8')
+                with self.assertRaises(protection.CapacityProtectionLeaseError):
+                    protection.load_capacity_protection_leases(root)
+                self.assertEqual(path.read_text(encoding='utf-8'), text)
+
+
 if __name__ == "__main__":
     unittest.main()

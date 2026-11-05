@@ -306,7 +306,7 @@ def seal_checkpoint(
             entry["status"] == "ready" and entry.get("retention_reason") == reason
         ):
             raise ValueError("checkpoint range is not writing or already sealed")
-        leases = capacity_protection.load_capacity_protection_leases(root)
+        leases = capacity_protection._load_capacity_protection_leases_unlocked(root)
         if capacity_protection.path_is_protected(run_dir, leases["protected_paths"]):
             raise ValueError("checkpoint has an active protection lease; defer sealing")
         manifest = _load_json(run_dir / "run_manifest.json", "run manifest")

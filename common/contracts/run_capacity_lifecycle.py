@@ -14,7 +14,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from msplatform.execution import run_capacity_lifecycle as _runtime_lifecycle
 from common.contracts import capacity_ledger
@@ -26,6 +26,7 @@ from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
 from common.contracts.solver_review_retirement import (
     RECEIPT_NAME, _assert_runtime_retirement_unprotected, verify_retirement, select_retirement_receipt,
+    _verify_retirement_with_leases,
 )
 
 
@@ -85,6 +86,7 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
 def _verify_retired_payload_remainder(
     run_dir: Path, config: dict[str, Any], owner: str,
     entry: dict[str, Any], records: list[dict[str, Any]],
+    *, _verify_retirement: Callable[[Path], dict[str, Any]] | None = None,
 ) -> dict[str, int] | None:
     """Verify the complete retired range independently of its old accounting.
 
@@ -132,7 +134,8 @@ def _verify_retired_payload_remainder(
     original = inventory(receipt.get("original_file_inventory"))
     removed = inventory(receipt.get("removed_files"))
     preserved = inventory(receipt.get("preserved_files"))
-    verify_retirement(run_dir)
+    verifier = verify_retirement if _verify_retirement is None else _verify_retirement
+    verifier(run_dir)
     removed_bytes = sum(size for size, _ in removed.values())
     if (not removed or removed.keys() & preserved.keys()
             or original != {**removed, **preserved}
@@ -153,12 +156,25 @@ def _verify_retired_payload_remainder(
 def seal_checkpoint(artifact_root: Path, run_config: Path, *, owner: str,
                     writing_stopped: bool = False, retain_payload: bool = False,
                     retention_reason: str | None = None) -> dict[str, Any]:
+    # These callbacks are invoked only inside the canonical owner's same-root
+    # capacity decision lock; standalone verification remains the public route.
+    def verify_locked(run_dir: Path) -> dict[str, Any]:
+        return _verify_retirement_with_leases(
+            run_dir, _leases=capacity_protection._load_capacity_protection_leases_unlocked(artifact_root),
+        )
+
+    def verify_remainder_locked(run_dir, config, selected_owner, entry, records):
+        return _verify_retired_payload_remainder(
+            run_dir, config, selected_owner, entry, records,
+            _verify_retirement=verify_locked,
+        )
+
     return _runtime_lifecycle.seal_checkpoint(artifact_root, run_config, owner=owner,
         writing_stopped=writing_stopped, retain_payload=retain_payload,
         retention_reason=retention_reason, classify_file=classify_file,
-        retirement_receipt_name=RECEIPT_NAME, verify_retirement=verify_retirement,
+        retirement_receipt_name=RECEIPT_NAME, verify_retirement=verify_locked,
         assert_retirement_unprotected=_assert_runtime_retirement_unprotected,
-        verify_retired_payload_remainder=_verify_retired_payload_remainder,
+        verify_retired_payload_remainder=verify_remainder_locked,
         retention_complete=assert_retention_complete)
 
 
@@ -412,11 +428,25 @@ def partial_retirement_is_protected(
     root: Path, ledger: dict[str, Any], entry: dict[str, Any], path: Path,
     *, by_path: dict[str, dict[str, Any]] | None = None,
 ) -> bool:
+    """Check protection with the public locked lease view."""
+    if entry.get("pin") is True:
+        return True
+    return _partial_retirement_is_protected_with_leases(
+        root, ledger, entry, path, by_path=by_path,
+        _leases=capacity_protection.load_capacity_protection_leases(root),
+    )
+
+
+def _partial_retirement_is_protected_with_leases(
+    root: Path, ledger: dict[str, Any], entry: dict[str, Any], path: Path,
+    *, by_path: dict[str, dict[str, Any]] | None = None,
+    _leases: dict[str, Any],
+) -> bool:
     """Reject any live reference or lease before a physical removal."""
 
     if entry.get("pin") is True:
         return True
-    leases = capacity_protection.load_capacity_protection_leases(root)
+    leases = _leases
     if capacity_protection.path_is_protected(path, leases["protected_paths"]):
         return True
     if by_path is None:
@@ -482,7 +512,10 @@ def _eligible_partial_entries(
             continue
         if classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
             continue
-        if partial_retirement_is_protected(root, ledger, entry, path, by_path=by_path):
+        if _partial_retirement_is_protected_with_leases(
+            root, ledger, entry, path, by_path=by_path,
+            _leases=capacity_protection._load_capacity_protection_leases_unlocked(root),
+        ):
             continue
         sha256 = recorded_heavy_identity(run_dir, path, int(entry["bytes"]))
         if sha256 is None:
@@ -556,7 +589,10 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
                             and path.is_file()
                             and classify_file(path, bytes_count=int(entry["bytes"])) in HEAVY_RETENTION_ROLES
                             and (
-                                partial_retirement_is_protected(root, ledger, entry, path, by_path=by_path)
+                                _partial_retirement_is_protected_with_leases(
+                                    root, ledger, entry, path, by_path=by_path,
+                                    _leases=capacity_protection._load_capacity_protection_leases_unlocked(root),
+                                )
                                 or recorded_heavy_identity(run_dir, path, int(entry["bytes"])) is None
                             )
                         ):
@@ -589,7 +625,10 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
                     if entry is None:
                         raise ValueError("partial retirement ledger entry disappeared")
                     if absolute.exists():
-                        if partial_retirement_is_protected(root, ledger, entry, absolute, by_path=by_path):
+                        if _partial_retirement_is_protected_with_leases(
+                            root, ledger, entry, absolute, by_path=by_path,
+                            _leases=capacity_protection._load_capacity_protection_leases_unlocked(root),
+                        ):
                             raise ValueError("partial retirement approved file is protected")
                         current = absolute.stat()
                         if (

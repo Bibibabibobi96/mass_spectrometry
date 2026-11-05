@@ -2866,12 +2866,13 @@ def _validate_publication_correction_journal(document: Mapping[str, Any]) -> Non
 def _require_exclusive_cache_lease(
     root: Path, key: str, request: Mapping[str, Any], operation_lease: str | None, *,
     label: str = "publication metadata correction", extra_paths: Sequence[Path] = (),
-    workflow_run: Path | None = None,
+    workflow_run: Path | None = None, lease_snapshot: dict | None = None,
 ) -> None:
     artifact_root = _artifact_root_for_cache(root)
     if artifact_root is None:
         return
-    active = capacity_protection.load_capacity_protection_leases(artifact_root)["audit"]
+    active = (lease_snapshot if lease_snapshot is not None else
+              capacity_protection.load_capacity_protection_leases(artifact_root))["audit"]
     selected = request.get("capacity_lease_id")
     found = selected is None
     for lease in active:
@@ -3000,7 +3001,9 @@ def _advance_publication_metadata_correction(
     decision_lock = (capacity_protection.capacity_decision_lock(binding.artifact_root)
                      if binding is not None else nullcontext())
     with decision_lock:
-        _require_exclusive_cache_lease(root, key, request or {}, operation_lease)
+        lease_snapshot = (capacity_protection._load_capacity_protection_leases_unlocked(binding.artifact_root)
+                          if binding is not None else None)
+        _require_exclusive_cache_lease(root, key, request or {}, operation_lease, lease_snapshot=lease_snapshot)
         if pointer.exists():
             pointer.unlink()
         if location == old:
