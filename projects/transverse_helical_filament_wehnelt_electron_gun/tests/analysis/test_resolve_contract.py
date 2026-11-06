@@ -14,12 +14,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     ELECTRON_MASS_KG,
     ELECTRON_MASS_U,
     ELEMENTARY_CHARGE_C,
 )
-from projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract import (
+from msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract import (
     ContractError,
     contract_sha256,
     derive_geometry,
@@ -57,26 +57,34 @@ class ResolveContractTests(unittest.TestCase):
         resolved = resolve_contract(self.baseline, self.modes, "build_only_smoke", 1)
         self.assertEqual(resolved, tracked)
 
-    def test_resolver_runs_with_only_frozen_shared_dependencies(self) -> None:
+    def test_resolver_runs_with_only_frozen_package_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory)
-            for relative in (
-                "analysis/resolve_contract.py", "config/baseline.json",
-                "config/numerical_modes.json", "config/resolved_model.json",
-            ):
-                destination = snapshot / relative
+            shutil.copytree(
+                REPO_ROOT / "src" / "msplatform",
+                snapshot / "msplatform",
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
+            for name in ("baseline.json", "numerical_modes.json", "resolved_model.json"):
+                destination = snapshot / "config" / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(PROJECT_ROOT / relative, destination)
-            for name in ("file_identity", "strict_json", "particle_physics"):
-                destination = snapshot / "common" / "contracts" / (name + ".py")
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(REPO_ROOT / "common" / "contracts" / (name + ".py"), destination)
+                shutil.copy2(PROJECT_ROOT / "config" / name, destination)
             completed = subprocess.run(
-                [sys.executable, "-m", "analysis.resolve_contract",
-                 "--baseline", "config/baseline.json", "--modes", "config/numerical_modes.json",
-                 "--mode", "build_only_smoke", "--evidence-particle-count", "1",
-                 "--check", "config/resolved_model.json"],
-                cwd=snapshot, capture_output=True, text=True, encoding="utf-8", timeout=10,
+                [
+                    sys.executable,
+                    "-m",
+                    "msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract",
+                    "--baseline", "config/baseline.json",
+                    "--modes", "config/numerical_modes.json",
+                    "--mode", "build_only_smoke",
+                    "--evidence-particle-count", "1",
+                    "--check", "config/resolved_model.json",
+                ],
+                cwd=snapshot,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=10,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
@@ -95,7 +103,7 @@ class ResolveContractTests(unittest.TestCase):
         command = [
             sys.executable,
             "-m",
-            "projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract",
+            "msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract",
             *arguments,
         ]
         try:

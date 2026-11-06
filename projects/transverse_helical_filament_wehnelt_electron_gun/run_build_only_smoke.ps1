@@ -24,8 +24,6 @@ $bootstrapFiles = [ordered]@{
   manifest_verifier = 'common\contracts\verify_run_manifest.py'
   artifact_naming = 'common\contracts\artifact_naming.py'
   file_identity = 'common\contracts\file_identity.py'
-  particle_physics = 'common\contracts\particle_physics.py'
-  strict_json = 'common\contracts\strict_json.py'
 }
 . (Join-Path $repoRoot $bootstrapFiles.artifact_support)
 $bootstrapIdentity = [ordered]@{}
@@ -281,8 +279,6 @@ try {
     mode = 'config\modes\build_only_smoke.json'
     execution_profiles = 'config\execution_profiles.json'
     project_descriptor = 'config\project.json'
-    analysis_package = 'analysis\__init__.py'
-    resolver = 'analysis\resolve_contract.py'
   }
   $compiledInputs=$null
   if($ResolvedInputsPath){
@@ -324,8 +320,6 @@ try {
     artifact_naming = 'common\contracts\artifact_naming.py'
     file_identity = 'common\contracts\file_identity.py'
     artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
-    particle_physics = 'common\contracts\particle_physics.py'
-    strict_json = 'common\contracts\strict_json.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
     machine_contracts = 'common\contracts\machine_contracts.py'
     frozen_input_selector = 'common\contracts\frozen_inputs.py'
@@ -394,7 +388,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
 
   $failureStage = 'input_freshness'
   Invoke-RunToolRootContext -RepoRoot $snapshotRoot -Operation {
-    & $package.python -m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract `
+    & $package.python -m msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract `
       --baseline $frozenInputs.baseline `
       --modes $frozenInputs.numerical_modes `
       --mode build_only_smoke `

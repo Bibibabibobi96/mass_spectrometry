@@ -27,7 +27,7 @@ if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
 
 Push-Location $repoRoot
 try {
-  & $PythonExe -m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract `
+  & $PythonExe -m msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract `
     --baseline projects/transverse_helical_filament_wehnelt_electron_gun/config/baseline.json `
     --modes projects/transverse_helical_filament_wehnelt_electron_gun/config/numerical_modes.json `
     --mode build_only_smoke `
@@ -46,7 +46,8 @@ try {
   if ($RuffHandledByParent) {
     'RUFF=HANDLED_BY_PARENT PROJECT=transverse_helical_filament_wehnelt_electron_gun'
   } else {
-    & $PythonExe -m ruff check projects/transverse_helical_filament_wehnelt_electron_gun/analysis `
+    & $PythonExe -m ruff check `
+      src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun `
       projects/transverse_helical_filament_wehnelt_electron_gun/tests/analysis
     if ($LASTEXITCODE -ne 0) {
       throw 'Wehnelt Ruff checks failed.'

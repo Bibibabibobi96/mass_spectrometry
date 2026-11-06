@@ -14,8 +14,10 @@
 2. `../phase2_electrostatics_coil_transverse.m`；
 3. `../phase4_thermal_emission_coil_transverse.m`。
 
-机器参数链为`config/baseline.json + config/numerical_modes.json → analysis/resolve_contract.py →
-config/resolved_model.json`。MATLAB只消费resolved并绑定GUI参数，不从源码、环境或旧MPH回退物理值。
+机器参数链为`config/baseline.json + config/numerical_modes.json →
+msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract →
+config/resolved_model.json`。唯一解析与派生几何实现位于安装包组件；电子质量、电荷与元电荷常量直接来自
+`msplatform.contracts.particle_physics`。MATLAB只消费resolved并绑定GUI参数，不从源码、环境或旧MPH回退物理值。
 build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭包回归只证明准备与身份链，
 不构成新的COMSOL求解或功能资格。运行与失败收尾见[COMSOL说明](COMSOL.md)。
 
@@ -78,7 +80,7 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 COMSOL 或原生几何验收；不新增商业构建、求解或几何资格。依赖边界见
 [公共主机资源](../../../common/README.md#主机资源实现)。
 
-普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由原resolver核对，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`verify_project.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
+普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由安装包resolver核对，resolver及其`msplatform`依赖由现有科学核心选择器冻结，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`verify_project.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
 
 普通build-only编译结果固定baseline、numerical_modes、resolved_model及原build-only mode，经`ResolvedInputsPath`交原runner复制，不再选当前默认。profile的action=build且科学结果未评价；本owner测试只验真实描述符／接线，完整注册表新鲜度归公共owner一次检查。该解析接线不改变原输入防写、商业构建、生命周期或既有不合格边界。
 

@@ -4,25 +4,116 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import canonical_json_sha256
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     ELECTRON_MASS_KG,
     ELECTRON_MASS_U,
     ELEMENTARY_CHARGE_C,
 )
-from common.contracts.strict_json import (
-    StrictJsonError as ContractError,
-    load_json_object as load_json,
-    require_bool as _require_bool,
-    require_dict as _require_dict,
-    require_exact_keys as _require_exact_keys,
-    require_number as _require_number,
-    require_positive_integer as _require_positive_integer,
-    require_string as _require_string,
-)
+from msplatform.io.file_identity import canonical_json_sha256
+
+
+class ContractError(ValueError):
+    """Raised when the machine contract is not strict, valid JSON."""
+
+
+def _require_exact_keys(
+    value: dict[str, Any], expected: set[str], context: str
+) -> None:
+    actual = set(value)
+    missing = sorted(expected - actual)
+    unknown = sorted(actual - expected)
+    if missing or unknown:
+        raise ContractError(
+            f"{context} keys mismatch; missing={missing}, unknown={unknown}"
+        )
+
+
+def _require_dict(value: Any, context: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ContractError(f"{context} must be an object")
+    return value
+
+
+def _require_bool(value: Any, context: str) -> bool:
+    if not isinstance(value, bool):
+        raise ContractError(f"{context} must be boolean")
+    return value
+
+
+def _require_string(value: Any, context: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ContractError(f"{context} must be a non-empty string")
+    return value
+
+
+def _require_number(
+    value: Any,
+    context: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    strict_minimum: bool = False,
+) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContractError(f"{context} must be numeric")
+    try:
+        numeric = float(value)
+    except OverflowError as exc:
+        raise ContractError(f"{context} must be finite") from exc
+    if not math.isfinite(numeric):
+        raise ContractError(f"{context} must be finite")
+    if minimum is not None:
+        if strict_minimum and numeric <= minimum:
+            raise ContractError(f"{context} must be > {minimum}")
+        if not strict_minimum and numeric < minimum:
+            raise ContractError(f"{context} must be >= {minimum}")
+    if maximum is not None and numeric > maximum:
+        raise ContractError(f"{context} must be <= {maximum}")
+    return numeric
+
+
+def _require_positive_integer(value: Any, context: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ContractError(f"{context} must be a positive integer")
+    return value
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    """Load one strict UTF-8 JSON object with unique keys and finite numbers."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ContractError(f"{path}: duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    def finite_float(token: str) -> float:
+        value = float(token)
+        if not math.isfinite(value):
+            raise ContractError(f"{path}: non-finite JSON number {token}")
+        return value
+
+    def reject_constant(token: str) -> None:
+        raise ContractError(f"{path}: non-finite JSON number {token}")
+
+    try:
+        with path.open("r", encoding="utf-8-sig") as stream:
+            value = json.load(
+                stream,
+                object_pairs_hook=unique_object,
+                parse_float=finite_float,
+                parse_constant=reject_constant,
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ContractError(f"cannot read {path}: {exc}") from exc
+    return _require_dict(value, str(path))
+
 
 PROJECT_ID = "transverse_helical_filament_wehnelt_electron_gun"
 MODEL_ID = "wehnelt.transverse_helical_filament.thermal_transport.v1"

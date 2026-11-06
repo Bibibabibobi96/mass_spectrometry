@@ -6,6 +6,8 @@ from types import MappingProxyType
 PROVIDER_DEPENDENCIES = MappingProxyType({
     "rf_multipole": (),
     "orthogonal_accelerator": (),
+    "apertured_tube_electron_impact_ion_source": (),
+    "transverse_helical_filament_wehnelt_electron_gun": (),
     # OA owns the acceleration model; RF's existing grounded-shield validator
     # supplies the same physical zero-potential constraint, not another RF body.
     "single_reflection_oa_tof": ("orthogonal_accelerator", "rf_multipole"),

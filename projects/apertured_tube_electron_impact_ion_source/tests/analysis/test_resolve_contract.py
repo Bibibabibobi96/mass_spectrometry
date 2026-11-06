@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT_ROOT = REPO_ROOT / "projects" / "apertured_tube_electron_impact_ion_source"
 
-from projects.apertured_tube_electron_impact_ion_source.analysis.resolve_contract import (
+from msplatform.components.apertured_tube_electron_impact_ion_source.resolve_contract import (
     ContractError,
     load_json,
     resolve_contract,
@@ -39,7 +39,7 @@ class ResolveContractTests(unittest.TestCase):
         command = [
             sys.executable,
             "-m",
-            "projects.apertured_tube_electron_impact_ion_source.analysis.resolve_contract",
+            "msplatform.components.apertured_tube_electron_impact_ion_source.resolve_contract",
             *arguments,
         ]
         try:

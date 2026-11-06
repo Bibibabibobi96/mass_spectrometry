@@ -43,9 +43,14 @@ class MatlabContractBindingTests(unittest.TestCase):
         cls.build_runner = (
             PROJECT_ROOT / "run_build_only_smoke.ps1"
         ).read_text(encoding="utf-8")
-        cls.resolver = (PROJECT_ROOT / "analysis" / "resolve_contract.py").read_text(
-            encoding="utf-8"
-        )
+        cls.resolver = (
+            REPO_ROOT
+            / "src"
+            / "msplatform"
+            / "components"
+            / "transverse_helical_filament_wehnelt_electron_gun"
+            / "resolve_contract.py"
+        ).read_text(encoding="utf-8")
 
     def invoke_runner_functions(
         self, function_names: tuple[str, ...], command: str
@@ -252,7 +257,7 @@ class MatlabContractBindingTests(unittest.TestCase):
         self,
     ) -> None:
         required = (
-            "-m projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_contract",
+            "-m msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract",
             "--baseline $frozenInputs.baseline",
             "--modes $frozenInputs.numerical_modes",
             "--check $frozenInputs.resolved_contract",
@@ -266,21 +271,14 @@ class MatlabContractBindingTests(unittest.TestCase):
             self.build_runner,
         )
 
-    def test_frozen_resolver_has_its_shared_particle_physics_dependency(self) -> None:
+    def test_frozen_resolver_uses_core_without_legacy_json_dependencies(self) -> None:
         self.assertIn(
-            "from common.contracts.particle_physics import (", self.resolver
+            "from msplatform.contracts.particle_physics import (", self.resolver
         )
-        self.assertIn(
-            "particle_physics = 'common\\contracts\\particle_physics.py'",
-            self.build_runner,
-        )
+        self.assertNotIn("common.contracts.strict_json", self.resolver)
+        self.assertNotIn("common\\contracts\\particle_physics.py", self.build_runner)
+        self.assertNotIn("common\\contracts\\strict_json.py", self.build_runner)
         self.assertIn("$infrastructureRoot = $snapshotRoot", self.build_runner)
-
-    def test_frozen_resolver_has_its_shared_strict_json_dependency(self) -> None:
-        self.assertIn("from common.contracts.strict_json import (", self.resolver)
-        self.assertIn(
-            "strict_json = 'common\\contracts\\strict_json.py'", self.build_runner
-        )
 
     def test_report_parser_accepts_only_one_exact_value_per_known_key(self) -> None:
         valid = self.invoke_runner_functions(
@@ -351,8 +349,6 @@ class MatlabContractBindingTests(unittest.TestCase):
             "manifest_verifier = 'common\\contracts\\verify_run_manifest.py'",
             "artifact_naming = 'common\\contracts\\artifact_naming.py'",
             "file_identity = 'common\\contracts\\file_identity.py'",
-            "particle_physics = 'common\\contracts\\particle_physics.py'",
-            "strict_json = 'common\\contracts\\strict_json.py'",
         )
         for token in required:
             with self.subTest(token=token):
@@ -545,14 +541,11 @@ class MatlabContractBindingTests(unittest.TestCase):
         required = (
             "config\\execution_profiles.json",
             "config\\project.json",
-            "analysis\\resolve_contract.py",
             "common\\contracts\\run_artifact_support.ps1",
             "common\\contracts\\write_run_manifest.py",
             "common\\contracts\\capacity_protection.py",
             "common\\contracts\\recorded_file_removal.py",
             "common\\contracts\\verify_run_manifest.py",
-            "common\\contracts\\particle_physics.py",
-            "common\\contracts\\strict_json.py",
             "common\\host_execution_lease.ps1",
             "common\\host_resource_scheduler.py",
             "src\\msplatform\\execution\\resources\\host_resource_policy.json",
@@ -628,8 +621,6 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "config/modes/build_only_smoke.json",
             "config/execution_profiles.json",
             "config/project.json",
-            "analysis/__init__.py",
-            "analysis/resolve_contract.py",
         )
         common_relatives = (
             "pyproject.toml",
@@ -648,8 +639,6 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/contracts/artifact_naming.py",
             "common/contracts/file_identity.py",
             "common/contracts/artifact_identity_archive.py",
-            "common/contracts/particle_physics.py",
-            "common/contracts/strict_json.py",
             "common/contracts/build_project_registry.py",
             "common/contracts/machine_contracts.py",
             "common/contracts/frozen_inputs.py",

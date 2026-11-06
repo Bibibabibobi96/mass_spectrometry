@@ -10,7 +10,7 @@
 | 开始项目工作 | [仓库 README](../../README.md) → [PROJECT](docs/PROJECT.md) |
 | 构建、模型树与 GUI 验收 | [COMSOL 实施说明](docs/COMSOL.md) |
 | 物理输入与数值模式 | [baseline](config/baseline.json)、[numerical_modes](config/numerical_modes.json) |
-| 生成唯一 MATLAB 输入 | [resolve_contract.py](analysis/resolve_contract.py) → [resolved_model.json](config/resolved_model.json) |
+| 生成唯一 MATLAB 输入 | [安装包 resolve_contract.py](../../src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/resolve_contract.py) → [resolved_model.json](config/resolved_model.json) |
 | 项目发现与可执行能力 | [project.json](config/project.json)、[execution_profiles.json](config/execution_profiles.json) |
 | 静态检查 | [verify_project.ps1](verify_project.ps1) |
 | 选型及旧谱系 | [历史索引](docs/history/README.md) |

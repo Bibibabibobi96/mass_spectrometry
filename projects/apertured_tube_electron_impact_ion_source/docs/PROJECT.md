@@ -31,7 +31,8 @@ oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形�
   `20260722_120000__test__comsol__build-only-smoke`已在真实MATLAB R2025b/COMSOL 6.4连接中完成
   几何、网格、静电和CPT Study/Solver树构建并保存隔离MPH，未运行静电或粒子求解器；三件套manifest
   复核PASS。该结果只关闭构建入口风险，不提升候选或Formal资格。
-- 已建立`baseline physical inputs + numerical mode -> resolved`单向链；Python解析器拒绝身份、
+- 已建立`baseline physical inputs + numerical mode -> resolved`单向链；唯一Python解析实现位于
+  `msplatform.components.apertured_tube_electron_impact_ion_source.resolve_contract`，拒绝身份、
   单位字段、范围、未知模式和证据粒子数误用，MATLAB入口无旧数值回退。
 - 跟踪的resolved为`build_only_smoke`，低N只验证合同读取、几何/网格/物理/Study树构建和GUI参数
   绑定；它明确不具备Candidate证据资格。

@@ -75,6 +75,13 @@ assert {'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly'
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.contracts.particle_state',
         'msplatform.assembly.electrode_binding', 'msplatform.execution.context'} <= origins.keys()
+for project_id, documents in fixture['standalone_contracts'].items():
+    module_name = 'msplatform.components.' + project_id + '.resolve_contract'
+    resolver = importlib.import_module(module_name)
+    assert resolver.resolve_contract(documents['baseline'], documents['modes'], 'build_only_smoke', 1) == documents['expected']
+    origin = pathlib.Path(resolver.__file__).resolve()
+    assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+    origins[module_name] = str(origin)
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -697,12 +704,21 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                 expected_layout=compile_assembly_layout(real_recipe, real_components))
             neutral_state = valid_row(91)
             neutral_state.update(state_event='snapshot', phase_reference_id='', phase_rad='')
+            standalone_contracts = {}
+            for project_id in ('apertured_tube_electron_impact_ion_source',
+                               'transverse_helical_filament_wehnelt_electron_gun'):
+                project_config = REPO_ROOT / 'projects' / project_id / 'config'
+                standalone_contracts[project_id] = {
+                    key: json.loads((project_config / filename).read_text(encoding='utf-8'))
+                    for key, filename in (('baseline', 'baseline.json'), ('modes', 'numerical_modes.json'),
+                                          ('expected', 'resolved_model.json'))}
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
                                               schemas=expected_schemas, provider_layout=provider_layout,
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
+                                              standalone_contracts=standalone_contracts,
                                               comparison=self.comparison_probe_fixture())), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             # Remove both private author trees from their original locations;
