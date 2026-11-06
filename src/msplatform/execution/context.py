@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from msplatform.contracts.machine_contracts import ContractError
 from types import MappingProxyType
 from typing import Mapping
 
@@ -50,3 +51,21 @@ class ExecutionContext:
                 raise ValueError(f"execution tool {name} must have an absolute path")
             tools[name] = path
         object.__setattr__(self, "tools", MappingProxyType(tools))
+
+
+def load_environment(*, workspace: str | Path, tools: Mapping[str, str | Path],
+                     policy: Mapping[str, str | Path]) -> ExecutionContext:
+    """Load one explicit machine environment without probing or creating paths."""
+    if not isinstance(tools, Mapping) or not {"python", "powershell"} <= tools.keys():
+        raise ContractError("execution tools must explicitly declare python and powershell")
+    required_policy = {"host_state_path"}
+    if (not isinstance(policy, Mapping) or not required_policy <= policy.keys()
+            or set(policy) - required_policy - {"policy_path", "execution_root", "stage_policy_path"}):
+        raise ContractError("execution policy requires host_state_path; policy_path, execution_root and stage_policy_path are optional")
+    from msplatform.execution.resources import resource_path
+    policy_path = Path(policy["policy_path"]) if "policy_path" in policy else resource_path("host_resource_policy.json")
+    return ExecutionContext(workspace=Path(workspace).absolute(), python_executable=Path(tools["python"]),
+        powershell_executable=Path(tools["powershell"]), tools={key: Path(value) for key, value in tools.items()},
+        host_state_path=Path(policy["host_state_path"]), policy_path=policy_path,
+        execution_root=Path(policy["execution_root"]) if "execution_root" in policy else None,
+        stage_policy_path=Path(policy["stage_policy_path"]) if "stage_policy_path" in policy else None)

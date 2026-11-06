@@ -89,7 +89,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from msplatform import api, assembly as assembly_api, components, examples
+from msplatform import api, assembly as assembly_api, components, examples, execution
 
 workspace = (Path.cwd() / "my_study").resolve()
 workspace.mkdir(parents=True, exist_ok=True)
@@ -128,7 +128,7 @@ stage_policy = {
 # 独立新study首次运行；不覆盖已有输入或引用。
 with policy_path.open("x", encoding="utf-8") as stream:
     json.dump(stage_policy, stream, indent=2)
-context = api.execution_context(
+context = execution.load_environment(
     workspace=workspace,
     tools={"python": Path(sys.executable),
            "powershell": Path("C:/Program Files/PowerShell/7/pwsh.exe")},

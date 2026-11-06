@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import execution as execution_api
 from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
 
@@ -54,7 +55,7 @@ class PlatformApiTests(unittest.TestCase):
             request = root / "inputs/execution_request.json"
             result = root / "result.json"
             result.write_text(json.dumps(dict(run_directory=str(root))), encoding="utf-8")
-            context = api.execution_context(workspace=root,
+            context = execution_api.load_environment(workspace=root,
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3"))
             sentinel = {"original_owner_fixture": True}
@@ -102,7 +103,7 @@ class PlatformApiTests(unittest.TestCase):
                 artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="Viewer transport fixture"))
             policy = root / "policy.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages=dict(open_model=stage))), encoding="utf-8")
-            context = api.execution_context(workspace=root / "uncreated",
+            context = execution_api.load_environment(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), solidworks=exe),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = {"software_fixture": True}
@@ -169,7 +170,7 @@ class PlatformApiTests(unittest.TestCase):
                     stages=dict(open_model=stage))), encoding="utf-8")
 
             write_policy()
-            context = api.execution_context(workspace=root / "uncreated",
+            context = execution_api.load_environment(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=exe),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = {"software_transport_fixture": True}
@@ -249,7 +250,7 @@ class PlatformApiTests(unittest.TestCase):
                 artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="Software dispatch fixture"))
             policy = root / "policy.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages=dict(track=stage))), encoding="utf-8")
-            context = api.execution_context(workspace=root / "uncreated",
+            context = execution_api.load_environment(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             propagation = dict(schema_version=1, scope="continuous_assembly", end_policy=dict(maximum_particle_age_us=200.),
@@ -422,7 +423,7 @@ class PlatformApiTests(unittest.TestCase):
             policy = root / "stages.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
                 stages={"prepare_model": stage})), encoding="utf-8")
-            context = api.execution_context(workspace=root / "study",
+            context = execution_api.load_environment(workspace=root / "study",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             reference = {"manifest": {"fixture": True}, "product_id": "geometry"}
@@ -463,7 +464,7 @@ class PlatformApiTests(unittest.TestCase):
                 compact_final_retained_bytes=104857600, automatic_retry_count=0),
                 artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="CAD software fixture"))
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages={"export_cad": stage})), encoding="utf-8")
-            context = api.execution_context(workspace=root / "new study",
+            context = execution_api.load_environment(workspace=root / "new study",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = object()
@@ -527,7 +528,7 @@ class PlatformApiTests(unittest.TestCase):
             policy = root / "policy.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
                 stages=dict(solve_fields=stage))), encoding="utf-8")
-            context = api.execution_context(workspace=root / "uncreated",
+            context = execution_api.load_environment(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = object()
@@ -574,7 +575,7 @@ class PlatformApiTests(unittest.TestCase):
                 compact_final_retained_bytes=104857600, automatic_retry_count=0)
             stage = dict(limits=limits, artifact_retention=dict(policy_version=1,
                 **{"class": "solver_review"}, reason="Explicit software fixture only"))
-            context = api.execution_context(workspace=root / "uncreated",
+            context = execution_api.load_environment(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=path))
 
@@ -619,7 +620,7 @@ class PlatformApiTests(unittest.TestCase):
             policy = dict(schema_version=1, role="execution_stage_policy", stages={"build_geometry": selected})
             path = root / "stages.json"
             path.write_text(json.dumps(policy), encoding="utf-8")
-            context = api.execution_context(workspace=root / "new study",
+            context = execution_api.load_environment(workspace=root / "new study",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", execution_root=root / "aliases", stage_policy_path=path))
             sentinel = object()
@@ -813,11 +814,11 @@ class PlatformApiTests(unittest.TestCase):
             workspace = base / "new study 中文"
             with patch("subprocess.Popen", side_effect=AssertionError("process probe")), \
                  patch.object(Path, "mkdir", side_effect=AssertionError("directory creation")):
-                context = api.execution_context(workspace=workspace,
+                context = execution_api.load_environment(workspace=workspace,
                     tools={"python": base/"python.exe", "powershell": base/"pwsh.exe"},
                     policy={"host_state_path": base/"shared.sqlite3", "policy_path": base/"policy.json",
                             "execution_root":base/"short_aliases"})
-                defaults = api.execution_context(workspace=workspace,
+                defaults = execution_api.load_environment(workspace=workspace,
                     tools={"python":base/"python.exe","powershell":base/"pwsh.exe"},
                     policy={"host_state_path":base/"shared.sqlite3"})
             self.assertEqual(context.workspace, workspace)

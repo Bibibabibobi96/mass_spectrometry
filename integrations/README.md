@@ -11,6 +11,27 @@
 `verify_integration.ps1`默认执行完整Ruff与测试发现；Repository范围沿公共catalog分为四组，按实际需要完成一次preflight，
 各组在独立GATE预算内执行明确模块并即时报告失败与耗时。分组PASS不单独代表完整集成门禁通过。
 
+## 一次机器配置
+
+普通安装后，机器工具与同机共享账本只通过`msplatform.execution.load_environment`加载；它返回显式
+`ExecutionContext`，不搜索作者checkout、其他venv或原生程序，也不创建工作区。调用方提供工作区、
+Python／PowerShell实际路径和共享`host_state_path`；可选执行、阶段与资源策略仍显式覆盖。
+
+```python
+import sys
+from pathlib import Path
+from msplatform import execution
+
+context = execution.load_environment(
+    workspace=Path("study").absolute(),
+    tools={"python": Path(sys.executable), "powershell": Path("pwsh").absolute()},
+    policy={"host_state_path": Path("shared/host-resources.sqlite3").absolute()},
+)
+```
+
+科学尺寸、驱动、源、判据和研究数值不进入该机器配置。独立源与离线分析无需构造它；几何编译、
+换源复用和改变分析继续使用各自领域入口，不要求商业工具或默认GUI。旧`api.execution_context`已退役。
+
 ## 配方解析
 
 作者显式引用冻结完整父配方；默认执行其全部实例，局部范围必须从该父装配声明派生。

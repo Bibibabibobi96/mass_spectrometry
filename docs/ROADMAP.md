@@ -131,6 +131,8 @@ P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需�
 `component_domains`逐实例冻结网格，完整父设计保留，误用公共原生构建会明确拒绝。现有项目Refine／Fly仍在原工作流，
 其SDK推广和原生验收保持开放。当前修正后的完整Changed门禁22 PASS／26 NA，2458个父测试成功、
 2项明确skip（既定T5 receipt未配置及opt-in SIMION N1），3155个子测试成功，公共墙钟2065.079秒。
+机器配置现由`execution.load_environment`唯一加载，直接返回显式ExecutionContext；旧`api.execution_context`
+及全部活动调用已迁移，构造不探测工具或创建工作区，普通安装探针同步覆盖。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

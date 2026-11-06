@@ -2,3 +2,6 @@
 
 Importing this package performs no host, filesystem or tool discovery.
 """
+from .context import ExecutionContext, load_environment
+
+__all__ = ["ExecutionContext", "load_environment"]

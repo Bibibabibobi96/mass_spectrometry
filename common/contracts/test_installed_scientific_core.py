@@ -35,8 +35,14 @@ from msplatform.analysis.particle_census import partition_cohort, subset_efficie
 from msplatform.contracts.particle_state import write_component_particle_state_csv, load_component_particle_state_csv
 from msplatform.assembly.electrode_binding import validate_electrode_bindings, ElectrodeKey
 from msplatform.contracts import machine_contracts
+from msplatform import execution
 
 root = pathlib.Path.cwd()
+environment = execution.load_environment(workspace=root/'machine-study',
+    tools={'python': pathlib.Path(sys.executable), 'powershell': root/'explicit-pwsh.exe'},
+    policy={'host_state_path': root/'shared-host.sqlite3'})
+assert environment.workspace == root/'machine-study'
+assert not environment.workspace.exists()
 fixture = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
 assert not root.is_relative_to(pathlib.Path(fixture['repo_root']))
 blocked_source_roots = [pathlib.Path(fixture['repo_root']).resolve(),
@@ -68,7 +74,7 @@ for name, module in tuple(sys.modules.items()):
 assert {'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.contracts.particle_state',
-        'msplatform.assembly.electrode_binding'} <= origins.keys()
+        'msplatform.assembly.electrode_binding', 'msplatform.execution.context'} <= origins.keys()
 
 spec = fixture['source']
 states = generate_release_states(spec)
