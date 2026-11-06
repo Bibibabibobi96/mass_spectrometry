@@ -444,13 +444,38 @@ def _render_scientific_body(
     return "\n".join(lines) + "\n"
 
 
+def _standalone_prefix(resolved: dict[str, Any], cell: Mapping[str, float]) -> list[str]:
+    """Serialize the existing provider-owned standalone PA domain header."""
+    domain = resolved["geometry_mm"]["numerical_domain"]
+    radius = float(domain["radius_mm"])
+    z_min, z_max = float(domain["z_min_mm"]), float(domain["z_max_mm"])
+    nx, ny = math.ceil(2 * radius / cell["x"]) + 1, math.ceil(2 * radius / cell["y"]) + 1
+    nz = math.ceil((z_max - z_min) / cell["z"]) + 1
+    return [
+        "; Generated from multipole_resolved_design; do not edit.",
+        f"; parent_resolved_sha256={resolved['resolved_sha256']}",
+        f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{cell['x']:.12g},{cell['y']:.12g},{cell['z']:.12g},surface=fractional)",
+        f"locate({radius:.12g},{radius:.12g},{-z_min:.12g}) {{",
+    ]
+
+
+def render_standalone_physical_gem(
+    resolved: dict[str, Any], cell_mm_xyz: dict[str, float] | float,
+    *, electrode_group_native_ids: Mapping[str, int],
+) -> str:
+    """Render a standalone scientific-group PA without a downstream component."""
+    cell = normalize_cell_mm_xyz(cell_mm_xyz)
+    body = _render_scientific_body(resolved, cell, electrode_group_native_ids)
+    return "\n".join([*_standalone_prefix(resolved, cell), body, "}"]) + "\n"
+
+
 def _render_native_gem(
     resolved: dict[str, Any], cell_mm_xyz: dict[str, float] | float,
     *, standalone: bool, electrode_ids: dict[int, int] | None,
 ) -> str:
     """Use the same physical bodies for standalone and assembly projections."""
     cell = normalize_cell_mm_xyz(cell_mm_xyz)
-    dx, dy, dz = cell["x"], cell["y"], cell["z"]
+    dz = cell["z"]
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("SIMION geometry requires a multipole resolved design")
     geometry = resolved["geometry_mm"]
@@ -473,17 +498,7 @@ def _render_native_gem(
     ):
         raise ValueError("electrode_ids must map every physical native electrode to distinct valid solver IDs")
     if standalone:
-        domain = geometry["numerical_domain"]
-        radius = float(domain["radius_mm"])
-        z_min, z_max = float(domain["z_min_mm"]), float(domain["z_max_mm"])
-        nx, ny = math.ceil(2 * radius / dx) + 1, math.ceil(2 * radius / dy) + 1
-        nz = math.ceil((z_max - z_min) / dz) + 1
-        lines = [
-            "; Generated from multipole_resolved_design; do not edit.",
-            f"; parent_resolved_sha256={resolved['resolved_sha256']}",
-            f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
-            f"locate({radius:.12g},{radius:.12g},{-z_min:.12g}) {{",
-        ]
+        lines = _standalone_prefix(resolved, cell)
     else:
         lines = []
     if segmented is not None:

@@ -10,7 +10,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from common.contracts.test_geometry_members import real_snapshot, independent_oa_snapshot
+from common.contracts.test_geometry_members import real_snapshot, independent_oa_snapshot, independent_oa_objects
 from msplatform.exporters.step import export_assembly_step
 
 
@@ -374,6 +374,35 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
             self.assertEqual(inspection['solid_count'], 25)
             self.assertLessEqual(abs(inspection['volume_residual_mm3']), inspection['volume_serialization_bound_mm3'])
         self.assertEqual(snapshot, before)
+
+
+    @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')
+    def test_cylindrical_oa_side_entry_cuts_past_curved_inner_wall_off_axis(self):
+        from msplatform import assembly as assembly_api, components as component_api
+        from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
+        from msplatform.exporters.step import inspect_assembly_step
+        parts, instrument, _ = independent_oa_objects()
+        source = parts['three'].source_design
+        source['requirements']['geometry']['cross_section'] = 'cylindrical'
+        parts['three'] = component_api.resolve_component(dict(provider_id='orthogonal_accelerator', design=source))
+        instrument = assembly_api.assemble(instrument.composition_plan['recipe'], parts)
+        snapshot = dict(composition_plan=instrument.composition_plan,
+                        components_resolved=instrument.components_resolved)
+        local_probe = [-15.99, 1.0, 2.0]
+        pose = next(row['transform'] for row in snapshot['composition_plan']['recipe']['instances']
+                    if row['instance_id'] == 'three')
+        transform = RigidTransform.from_contract(pose)
+        point = transform.transform_position(FramedPosition(transform.from_frame_id, local_probe)).coordinates_mm
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cylindrical-oa.step'
+            report = export_assembly_step(snapshot, destination=path, representation='physical_solids',
+                                          options=dict(write_pcurves=True, precision_mode=0))
+            inspection = inspect_assembly_step(path, assembly=snapshot,
+                export_report=dict(schema_version=1, role='owned_assembly_step_export', projection=report),
+                probes=[dict(probe_id='off_axis_curved_inner_wall', point_mm=list(point))])
+        self.assertEqual(inspection['status'], 'consistent')
+        self.assertFalse(inspection['probes'][0]['expected_source_inside'])
+        self.assertFalse(inspection['probes'][0]['actual_step_inside'])
 
 
 if __name__=='__main__': unittest.main()

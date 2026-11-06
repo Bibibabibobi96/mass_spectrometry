@@ -35,11 +35,13 @@ class SectionedAcceleratorTest(unittest.TestCase):
     def test_migration_preserves_two_three_zone_square_circular_bytes(self) -> None:
         from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
 
+        # Square projections remain frozen; cylindrical side-entry tools now
+        # cross the curved inner wall instead of leaving off-axis metal.
         expected = {
             ('square', False): 'db18f736e354c16c0e9481ea6614487e2ba1494cfd3eb3646e199776ea1be510',
             ('square', True): '891986898a8eefa73ccbd102684342c177d888f4f090bb53da182fcc7c71fe74',
-            ('cylindrical', False): '9e497e235b0f1dfd3963e7f786acd6f909702af3700f642ecc2b682297ab4ad7',
-            ('cylindrical', True): '8678d6f0c4627de4e51e835054f696945d87e2e0809b48767213993ce0abfcc2',
+            ('cylindrical', False): '8f0a85afff7acaad3cbc51ae369747ab68fcbd197362f7a4db2583f1a2d2c349',
+            ('cylindrical', True): '3ccf4a082e8f8c37a4fce7ede262e2c5104e30dff7ac55062a8190d4651638f3',
         }
         for (cross_section, three_zone), digest in expected.items():
             with self.subTest(cross_section=cross_section, three_zone=three_zone):

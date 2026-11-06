@@ -125,6 +125,12 @@ P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需�
 实际OA STEP含25个物理实体和5个显式理想面排除；这不是独立OA原生、GUI或Formal资格。
 最终Changed门禁18 PASS／30 NA，1821个父测试成功、1项既定receipt缺失跳过，2626个子测试成功，
 公共墙钟1886.016秒；历史schema 1／2保留原profile标签，新component3拒绝未消费标签。
+该旧轮不覆盖后续修正：直接Assembly现已与工厂同等执行提供者同源校验，圆柱侧孔贯穿曲面内壁，
+10 mm环厚负例及真实STEP离轴探针通过；方形字节投影保持，五项圆柱哈希按实际几何纠正更新。
+纯RF多实例／局部scope现可由公共SIMION入口生成独立PA GEM，覆盖四／六／八极及显式科学组映射；
+`component_domains`逐实例冻结网格，完整父设计保留，误用公共原生构建会明确拒绝。现有项目Refine／Fly仍在原工作流，
+其SDK推广和原生验收保持开放。当前修正后的完整Changed门禁22 PASS／26 NA，2458个父测试成功、
+2项明确skip（既定T5 receipt未配置及opt-in SIMION N1），3155个子测试成功，公共墙钟2065.079秒。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

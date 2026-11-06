@@ -26,10 +26,12 @@ def sectioned_shapes(g):
     if not isinstance(rings,list) or len(rings)!=int(g['ring_count']):
         raise ValueError('accelerator ring_z_mm must match ring_count')
     wall=float(g['shield_wall_mm'])
+    cut_min=float(g['negative_x_face_mm'])
+    cut_max=cut_min+wall if square else max(cut_min+wall,x)
     result=dict(shield_outer=body(float(g['shield_center_z_mm']),float(g['shield_outer_width_mm']),float(g['shield_span_z_mm'])),
         shield_cavity=body(float(g['shield_center_z_mm']),float(g['shield_inner_width_mm']),float(g['shield_span_z_mm'])),
-        side_opening=dict(kind='box',center_mm=[float(g['negative_x_face_mm'])+wall/2,float(g['port_center_y_mm']),float(g['port_center_z_mm'])],
-                          size_mm=[wall,float(g['numerical_port_width_mm']),float(g['numerical_port_height_mm'])]),
+        side_opening=dict(kind='box',center_mm=[(cut_min+cut_max)/2,float(g['port_center_y_mm']),float(g['port_center_z_mm'])],
+                          size_mm=[cut_max-cut_min,float(g['numerical_port_width_mm']),float(g['numerical_port_height_mm'])]),
         rear_cap=body(float(g['shield_back_z_mm'])+wall/2,float(g['shield_outer_width_mm']),wall),
         repeller=body(float(g['repeller_front_z_mm'])-float(g['repeller_thickness_mm'])/2,float(g['electrode_width_mm']),float(g['repeller_thickness_mm'])),
         grid1=body(float(g['grid1_z_mm']),float(g['electrode_width_mm']),0.),

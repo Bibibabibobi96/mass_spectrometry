@@ -273,6 +273,11 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 旧三模式、闭壳、单／双端贯通和出口孔板运行保持原输入、原owner与资格；它们是冻结旧几何证据，
 不自动成为schema 3裸杆或新壳体的求场、飞行、数值、制造或Formal验证。本次先闭合几何，未开展跨求解器差异研究。
 
+公共`msplatform.backends.simion.compile_geometry`现支持显式纯RF scope的独立GEM编译，覆盖四／六／八极、
+多实例和保留完整父设计的局部scope。`component_domains`逐实例冻结三轴网格，科学组原生映射复用唯一topology；
+输出标记`simion_independent_rf_geometry`，无downstream specs。误交给公共原生构建时明确拒绝并导向既有项目工作流。
+这只证明普通安装后的纯编译与身份接线，不创建PA、不Refine／Fly，也不改变上述旧几何资格边界。
+
 [壳体CAD检查](../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_143100__test__cad__multipole-enclosure-r02/summary.json)
 已完成bare、开放壳、前盖、后盖、双盖及缩放双盖六种构型：bare无壳实体，其余为唯一连续接地域；
 各实体对正体积交叠和中心孔交集均为0。五份STEP冷导入均为1域，最大体积回导差约5.10e-11 mm³，

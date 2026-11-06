@@ -244,6 +244,13 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
                                                components_resolved=oa_assembly.components_resolved))
     assert len(oa_members) == 30
     assert sum(member['representation_role']=='physical_solid' for member in oa_members) == 25
+    rf_only = assembly_api.assemble(actual_assembly.composition_plan['recipe'], actual_components,
+        local_scope=dict(instance_ids=['multipole'], research_scope='installed independent RF only',
+                         boundary_assumptions='explicit local scope; retain complete parent'))
+    rf_geometry = simion_api.compile_geometry(rf_only, numerics=dict(component_domains={
+        'multipole':dict(cell_mm_xyz=dict(x=.2,y=.2,z=.1))}))
+    assert rf_geometry.frontend_geometry['role'] == 'simion_independent_rf_geometry'
+    assert set(rf_geometry.frontend_gems) == {'multipole'} and not rf_geometry.downstream_specs
     from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
     from msplatform.backends.simion.field_execution import plan_fields_execution
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
@@ -384,6 +391,7 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      census_weight_fraction=efficiency['relative_weight_fraction'],
                      installed_platform_components=sorted(actual_components), downstream_spec_count=3,
                      independent_oa_components=sorted(oa_components), independent_oa_member_count=len(oa_members),
+                     independent_rf_instances=sorted(rf_geometry.frontend_gems), independent_rf_native_calls=0,
                      geometry_only_native_calls=0, release_independent_geometry=True,
                      prepared_model_compile_only=True, field_plan_only=True, field_execution_performed=False,
                      author_tree_reads_blocked=True,

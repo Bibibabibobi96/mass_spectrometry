@@ -8,6 +8,7 @@ from typing import Any
 
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.components.model import ResolvedComponent
+from msplatform.components.catalog import _from_provider
 from .resolve_assembly import compile_assembly_layout
 
 
@@ -23,6 +24,9 @@ class Assembly:
             raise ContractError("assembly requires a parent plan and complete resolved components")
         if any(not isinstance(value, ResolvedComponent) for value in components.values()):
             raise ContractError("assembly requires complete resolved component objects")
+        for value in components.values():
+            _from_provider(value.provider_id, value.resolved_design, value.assembly_interface,
+                           source_design=value.source_design)
         plan = copy.deepcopy(dict(composition_plan))
         interfaces = {name: value.assembly_interface for name, value in components.items()}
         canonical = compile_assembly_layout(plan["recipe"], interfaces, local_scope=plan.get("local_scope"))

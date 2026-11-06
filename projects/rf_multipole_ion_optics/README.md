@@ -41,6 +41,9 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 壳体只输入内半径、壁厚和两个轴向端面，每个端盖只输入孔径半径与厚度；端盖不开放独立电压。
 独立孔板、透镜等光学部件由外部提供者拥有，装配间隙由配方显式声明，没有1 mm默认值。多实例由
 [组装配方](../../integrations/README.md)表达，不复制项目或源码。
+普通安装的`msplatform.backends.simion.compile_geometry`也可对显式选定的纯RF scope编译独立PA GEM；
+`component_domains`逐实例提供`cell_mm_xyz`，可选科学组原生映射不改变物理身份。多实例／局部scope保留完整父设计，
+无TOF、粒子源或下游占位。该入口只生成文本，不创建PA、不Refine、不Fly；既有原生运行仍从下列项目工作流进入。
 
 ## 机器权威
 

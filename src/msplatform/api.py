@@ -107,6 +107,8 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
 
     if not isinstance(compiled, CompiledSimionGeometry):
         raise ContractError("build_geometry requires compiled SIMION geometry")
+    if compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry":
+        raise ContractError("independent RF native build remains in the project workflow; this SDK operation is pure compile only")
     if "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("build_geometry requires an explicit available SIMION executable")
     stage, authority = read_stage_policy(context, "build_geometry", required_roles=("solver_native_binary",))
