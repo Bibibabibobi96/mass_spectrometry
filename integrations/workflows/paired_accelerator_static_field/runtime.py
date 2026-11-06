@@ -15,6 +15,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+from msplatform.backends.comsol.resources import native_resource_directory
 from common.simion.pa_family_cache import (
     advance_pa_family_cache_transaction, canonical_pa_family_cache_key,
     load_pa_family_cache_transaction,
@@ -272,7 +273,7 @@ def materialize_tasks(run: Path, code: Path, pa: Path | None, *, saved_model: Pa
         raise ValueError('explicit prepared/saved or solved/saved model stage required')
     stage_argument = ", 'prepared_saved'" if saved_model_stage == 'prepared_saved' else ''
     task_path.write_text(
-        f"addpath({matlab(code/'projects'/PROJECT/'comsol')});\n"
+        f"addpath({matlab(native_resource_directory())},{matlab(code/'common/comsol')});\n"
         f"build_and_export_paired_accelerator_field({matlab(plan_path)},{matlab(run/'comsol')},"
         f"{matlab(saved_model) if saved_model is not None else chr(39)+chr(39)}{stage_argument});\n", encoding='utf-8', newline='\n')
     return dict(lua=str(lua_path) if simion_required else None, matlab=str(task_path))

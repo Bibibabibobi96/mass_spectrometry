@@ -4,7 +4,8 @@ function [result,model,context,state] = oatof_build_saved_particle_solution(mass
 result=[];model=[];context=struct();state=struct();
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 repositoryRoot = fileparts(fileparts(projectRoot));
-addpath(projectRoot, fullfile(repositoryRoot, 'common', 'comsol'));
+addpath(projectRoot, fullfile(repositoryRoot, 'common', 'comsol'), ...
+    fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
 assert(~isempty(contract_path), 'oatof_build_model_core requires a resolved contract path.');
 contract = load_oatof_contract(contract_path);
 geometryMm = contract.geometry_mm;

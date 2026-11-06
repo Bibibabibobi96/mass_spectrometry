@@ -3,9 +3,13 @@ from importlib.resources import files
 from pathlib import Path
 
 NATIVE_RESOURCES = frozenset({
+    "build_accelerator_grids.m",
+    "build_and_export_paired_accelerator_field.m",
+    "build_sectioned_geometry.m",
     "candidate_field.m",
     "classify_corridor_conductor_voltage.m",
     "export_corridor_scalar_field.m",
+    "oatof_build_accelerator_geometry.m",
     "update_corridor_workpoint_voltages.m",
 })
 

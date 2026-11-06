@@ -8,6 +8,13 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 ## 当前状态
 
+### 可安装COMSOL原生资源切片
+
+OA-only配对静态场的MATLAB构建/导出器及加速器实体、仪器投影和零厚栅helper的唯一实现位于
+`msplatform.backends.comsol/resources/`。活动静态场任务通过`native_resource_directory()`安装路径调用；
+候选与Formal几何继续使用同一组helper，项目旧副本已退役。公共`common/comsol/add_comsol_size_feature.m`
+保持共享网格依赖。本次只迁移源码与软件接线，不新增MPH、原生求解、保存重开、GUI/CAD或科学资格。
+
 ### P2 V6：理论与峰结果的公共语义
 
 完整科学电极几何及工作电位由`geometry_contract.resolve_electrode_geometry`唯一构造，

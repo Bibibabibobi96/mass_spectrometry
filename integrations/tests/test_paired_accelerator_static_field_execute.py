@@ -210,7 +210,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
         plan_path=producer/'inputs/bvp/paired_accelerator_static_field_plan.json'
         runtime.write(plan_path,previous)
         runtime.write(run/'inputs/bvp/paired_accelerator_static_field_plan.json',previous)
-        backend=Path('projects')/runtime.PROJECT/'comsol/build_and_export_paired_accelerator_field.m'
+        backend=Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m')
         frozen=producer/'inputs/runtime_snapshot'/backend;frozen.parent.mkdir(parents=True)
         shutil.copyfile(ROOT/backend,frozen)
         model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert model identity only')
@@ -416,7 +416,13 @@ foreach($completed in @($true,$false)){
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run,_=self.prepared(root);plan=runtime.prepare_run(run)
             tasks=runtime.materialize_tasks(run,ROOT,root/'ordinary.pa')
-            self.assertIn(",'');",Path(tasks['matlab']).read_text())
+            task=Path(tasks['matlab']).read_text()
+            self.assertIn(",'');",task)
+            self.assertIn(runtime.native_resource_directory().as_posix(),task)
+            self.assertIn((ROOT/'common/comsol').as_posix(),task)
+            for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
+                         'build_sectioned_geometry.m','build_accelerator_grids.m'):
+                self.assertEqual(runtime.native_resource_directory()/name,ROOT/'src/msplatform/backends/comsol/resources'/name)
             build=runtime.field_build_arguments(plan)
             voltages=list(map(float,build['voltages'].split(',')))
             for electrode,value in plan['static_on_electrode_voltages_v'].items():
@@ -455,7 +461,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
             producer=root/'producer';(producer/'comsol').mkdir(parents=True)
             source_plan=producer/'inputs/bvp/paired_accelerator_static_field_plan.json'
             runtime.write(source_plan,plan)
-            backend=Path('projects')/runtime.PROJECT/'comsol/build_and_export_paired_accelerator_field.m'
+            backend=Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m')
             for owner in (run,producer):
                 target=owner/'inputs/runtime_snapshot'/backend;target.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copyfile(ROOT/backend,target)
@@ -609,7 +615,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
             self.assertEqual(fact_plan,producer/'inputs/bvp/paired_accelerator_static_field_plan.json')
             self.assertEqual(fact_model,producer/'comsol/paired_accelerator_static.mph')
             model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert model identity only')
-            backend=Path('projects')/runtime.PROJECT/'comsol/build_and_export_paired_accelerator_field.m'
+            backend=Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m')
             consumer=root/'consumer';(consumer/'inputs/bvp').mkdir(parents=True)
             runtime.write(consumer/'inputs/bvp/paired_accelerator_static_field_plan.json',plan)
             for owner in (producer,consumer):
@@ -692,7 +698,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
             root=Path(directory);producer,_=self.prepared(root);plan=runtime.prepare_run(producer)
             runtime.write(producer/'run_config.json',dict(schema_version=1,project='instrument_assembly',
                 run_id='20261025_010003__test__python__paired-export-failure',mode='paired_accelerator_static_field',inputs={}))
-            backend=Path('projects')/runtime.PROJECT/'comsol/build_and_export_paired_accelerator_field.m'
+            backend=Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m')
             target=producer/'inputs/runtime_snapshot'/backend;target.parent.mkdir(parents=True)
             shutil.copyfile(ROOT/backend,target)
             model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert solved-model publication boundary')

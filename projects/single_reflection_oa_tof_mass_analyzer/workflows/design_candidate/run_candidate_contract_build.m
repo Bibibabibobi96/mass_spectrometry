@@ -3,7 +3,9 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
-addpath(projectRoot, fullfile(projectRoot, 'comsol'));
+repositoryRoot = fileparts(fileparts(projectRoot));
+addpath(projectRoot, fullfile(projectRoot, 'comsol'), ...
+    fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
 cleanup = onCleanup(@() fclose(fid));

@@ -130,7 +130,7 @@ def load_paired_static_model_source(
     if (Path(checkpoint.get('plan_path', '')).resolve() != source_plan.resolve()
             or Path(checkpoint.get('model_path', '')).resolve() != record_path(model, base_dir=base)):
         raise ValueError('native COMSOL fact does not bind the source plan/model')
-    backend = Path('projects')/'single_reflection_oa_tof_mass_analyzer'/'comsol/build_and_export_paired_accelerator_field.m'
+    backend = Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m')
     old_backend = bound(base/'inputs/runtime_snapshot'/backend)
     result = dict(manifest=dict(file_record(manifest_snapshot.resolve()), source_path=str(manifest_path)), solution=solution_record, source_stage=source_stage,
         plan=plan_record, model=model, backend=old_backend)

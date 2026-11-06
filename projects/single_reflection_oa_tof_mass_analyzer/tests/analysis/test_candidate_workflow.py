@@ -726,8 +726,8 @@ def execute_prepared_run(*args):
                 "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
                 "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
                 "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
-                "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
-                "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m",
+                "src/msplatform/backends/comsol/resources/build_sectioned_geometry.m",
+                "src/msplatform/backends/comsol/resources/build_accelerator_grids.m",
                 "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
                 "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
             }.issubset(source_ids))

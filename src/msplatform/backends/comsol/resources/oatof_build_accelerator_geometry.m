@@ -56,11 +56,6 @@ if ~isempty(fieldnames(geometry))
             'full_height_z_mm',opening.height_mm,'center_y_mm',center(2),'center_z_mm',center(3));
     end
 end
-projectsRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
-componentDir = fullfile(projectsRoot, 'orthogonal_accelerator', 'comsol');
-previousPath = path;
-restorePath = onCleanup(@() path(previousPath)); %#ok<NASGU>
-addpath(componentDir);
 accelringtags = build_sectioned_geometry(geom1, layout, interfacePort);
 end
 

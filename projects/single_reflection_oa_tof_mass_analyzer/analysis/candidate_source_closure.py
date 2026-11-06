@@ -119,9 +119,9 @@ RELATIVE_PATHS = (
     "projects/orthogonal_accelerator/analysis/component_contract.py",
     "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
     "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
-    "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
+    "src/msplatform/backends/comsol/resources/build_sectioned_geometry.m",
     "projects/orthogonal_accelerator/config/component_contract.json",
-    "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m",
+    "src/msplatform/backends/comsol/resources/build_accelerator_grids.m",
     "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
     "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
     "common/ion_release/dotnet_gaussian_box_ion11.py",
@@ -135,7 +135,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/cad/ms_export_oatof_to_solidworks.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/oatof_cad_export_manifest.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/configure_oatof_segmented_output.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
+    "src/msplatform/backends/comsol/resources/oatof_build_accelerator_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_detector_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_drift_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
@@ -562,15 +562,16 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
                 for name in sorted(names)]
     native_names = tuple(prefix+name for name in (
         "load_oatof_contract.m",
-        "comsol/configure_oatof_segmented_output.m", "comsol/oatof_build_accelerator_geometry.m",
+        "comsol/configure_oatof_segmented_output.m",
         "comsol/oatof_build_detector_geometry.m", "comsol/oatof_build_drift_geometry.m",
         "comsol/oatof_build_grid_geometry.m", "comsol/oatof_build_mesh.m",
         "comsol/oatof_build_reflectron_geometry.m", "comsol/oatof_configure_particle_model.m",
         "comsol/oatof_cpt_solver_policy.m", "comsol/oatof_parse_field_idealization.m",
         "comsol/oatof_read_cartesian_release.m"))
     native_names += ("common/comsol/add_comsol_size_feature.m",
-        "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
-        "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m")
+        "src/msplatform/backends/comsol/resources/oatof_build_accelerator_geometry.m",
+        "src/msplatform/backends/comsol/resources/build_sectioned_geometry.m",
+        "src/msplatform/backends/comsol/resources/build_accelerator_grids.m")
     export_names = tuple(prefix+name for name in (
         "workflows/design_candidate/run_candidate_contract_build.m",
         "comsol/oatof_build_model_core.m", "comsol/oatof_postprocess_saved_solution.m", "comsol/reextract_oatof_saved_solution.m",

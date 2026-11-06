@@ -10,7 +10,7 @@ import unittest
 PROJECT = Path(__file__).resolve().parents[2]
 LUA = Path('C:/Program Files/SIMION-2020/lua.exe')
 EXPORT = PROJECT / 'simion/export_paired_accelerator_field.lua'
-COMSOL = PROJECT / 'comsol/build_and_export_paired_accelerator_field.m'
+COMSOL = Path(__file__).resolve().parents[4] / 'src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m'
 
 
 class PairedFieldAdapterTests(unittest.TestCase):

@@ -2,10 +2,11 @@ function oatof_build_grid_geometry(geom1,z_mid_expr,geometry)
 % REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY
 % Embed the provider's zero-thickness accelerator sheets and the two
 % reflectron sheets in the same vacuum Union, retaining interior boundaries.
-projectsRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+projectRoot = fileparts(fileparts(mfilename('fullpath')));
+repositoryRoot = fileparts(fileparts(projectRoot));
 previousPath = path;
 restorePath = onCleanup(@() path(previousPath)); %#ok<NASGU>
-addpath(fullfile(projectsRoot,'orthogonal_accelerator','comsol'));
+addpath(fullfile(repositoryRoot,'src','msplatform','backends','comsol','resources'));
 if nargin < 3, geometry=struct(); end
 sheets=struct('tag',{'wp_grid1','wp_grid2'},'z',{'z_accel_grid1','z_accel_grid2'}, ...
     'width',{'2*(accel_shield_half-accel_ring_gap)','2*accel_shield_half'}, ...

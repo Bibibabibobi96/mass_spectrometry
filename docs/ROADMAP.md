@@ -147,6 +147,8 @@ IP真实15电极中性CSG、轮廓、guide入口／E14孔面和GEM已分迁compo
 普通wheel/sdist树外实际生成15电极及GEM，13项边界／安装检查通过；本切片不授予IP源、Refine、Fly或接续资格。
 截至`efd2e8ac`，以40a13e78→HEAD逐文件选择完成联合Changed：30 PASS／18 NA，5045个父测试成功、
 14项明确skip，5876个子测试成功，公共墙钟3357.404秒；这是当前迁移范围的联合软件证据，不是全仓Repository或P4收口。
+单反射OA-only静态COMSOL构建／采样及四份真实几何MATLAB闭包已迁入安装后端资源，paired运行器与依赖清单直接消费；
+22项paired及路由定向通过，普通安装读取实际资源；Python prepare未迁，未启动MATLAB/COMSOL或生成新MPH。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

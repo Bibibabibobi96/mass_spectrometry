@@ -104,6 +104,10 @@ candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict
 assert [candidate['analyzer_electrode_voltages_v'][i-1] for i in (11,12,13,14,16,17)] == [1.,1.,2.,2.,3.,4.]
 assert 'mphload' in native_resource_text('candidate_field.m')
 assert 'SIMION' in native_resource_text('export_corridor_scalar_field.m')
+for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_accelerator_geometry.m',
+             'build_sectioned_geometry.m', 'build_accelerator_grids.m'):
+    text = native_resource_text(name)
+    assert text.startswith('function') and 'mfilename' not in text
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
 ip = fixture['ip']

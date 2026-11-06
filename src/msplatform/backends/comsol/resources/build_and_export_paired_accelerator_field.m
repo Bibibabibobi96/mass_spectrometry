@@ -50,10 +50,6 @@ assert(isequal(points.Properties.VariableNames,{'point_id','x_mm','y_mm','z_mm'}
 assert(all(isfinite(points{:,:}),'all') && all(points.point_id>=0 & points.point_id==fix(points.point_id)) && ...
     numel(unique(points.point_id))==height(points), 'oatof:PairedPoints','Finite unique point IDs/coordinates required.');
 if ~isfolder(outputDir), mkdir(outputDir); end
-previousPath=path; restorePath=onCleanup(@() path(previousPath)); %#ok<NASGU>
-projectsRoot=fileparts(fileparts(fileparts(mfilename('fullpath'))));
-addpath(fullfile(projectsRoot,'orthogonal_accelerator','comsol'));
-addpath(fullfile(fileparts(projectsRoot),'common','comsol'));
 tag='PairedAcceleratorStatic';
 if ~isempty(SavedModelPath)
     % Explicit owner-bound input; a solved source remains export-only.

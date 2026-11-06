@@ -12,7 +12,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_acceler
 
 ROOT = Path(__file__).resolve().parents[4]
 PROJECT = ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
-OA = ROOT / "projects/orthogonal_accelerator/comsol"
+OA = ROOT / "src/msplatform/backends/comsol/resources"
 
 
 def source(name):
@@ -54,7 +54,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
         self.assertEqual(electrical["operating_voltages_v"]["repeller"],2240.)
         self.assertEqual(electrical["operating_voltages_v"]["grid1"],1760.)
         self.assertEqual(electrical["planes_z_mm"]["grid1"],-16.92918680341103)
-        adapter=source("comsol/oatof_build_accelerator_geometry.m")
+        adapter=(OA/"oatof_build_accelerator_geometry.m").read_text(encoding="utf-8")
         self.assertIn("if nargin < 3, interfacePort = struct('enabled',false); end",adapter)
         self.assertIn("'z_accel_grid1',k,'accel_stage2_length',acceleratorRingCount+1",adapter)
 
@@ -64,7 +64,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
         body=(OA/"build_sectioned_geometry.m").read_text(encoding="utf-8")
         self.assertIn("center = char(layout.ring_z{k})",body)
         self.assertNotIn("layout.stage2_length",body)
-        adapter=source("comsol/oatof_build_accelerator_geometry.m")
+        adapter=(OA/"oatof_build_accelerator_geometry.m").read_text(encoding="utf-8")
         self.assertIn("layout.ring_z=arrayfun(@mm,g.ring_z_mm(:).',",adapter)
         self.assertIn("opening.width_mm",adapter)
         self.assertIn("opening.height_mm",adapter)

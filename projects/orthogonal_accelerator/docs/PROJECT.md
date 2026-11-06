@@ -251,6 +251,12 @@ Python进程OS lifetime峰值工作集33,173,504 B包含解释器／import／pro
 公共 GATE 的 OA/完整 TOF 相邻十模块共 93 项通过（10.420 秒、无 skip），
 包括原几何输出与非零物理参数回归。此为软件层证据；普通安装整合和 P3 全目标另行验收。
 
+### 可安装COMSOL原生资源切片
+
+方形加速器的实体与零厚栅COMSOL helper已迁入`msplatform.backends.comsol/resources/`，由oa-TOF静态场、
+候选和Formal几何入口共同消费；旧项目副本已退役。迁移保持原几何构造与调用参数，不授予新的原生场、
+保存重开、GUI/CAD或独立器件资格。
+
 ### P4 公共装配边界与圆柱侧孔修正
 
 独立评审复现的公开`Assembly`构造旁路已关闭：直接构造和正常`assemble`均重新执行提供者同源校验，
