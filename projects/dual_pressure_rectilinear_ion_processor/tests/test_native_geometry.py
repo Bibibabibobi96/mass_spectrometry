@@ -10,7 +10,8 @@ import re
 import unittest
 from unittest.mock import patch
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection, render_gem
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.backends.simion.ip_geometry import render_gem
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -201,7 +202,7 @@ class NativeGeometryTests(unittest.TestCase):
         self.assertEqual(self.p["gas_model"], "prescribed_pressure_not_gas_flow_solution")
 
     def test_gem_serializes_solids_subtractions_and_grounded_faces(self) -> None:
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry.native_projection",
+        with patch("msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry.native_projection",
                    side_effect=AssertionError("renderer must consume the resolved geometry")):
             gem = render_gem(self.p)
         self.assertEqual(set(map(int, re.findall(r"\be\((\d+)\)", gem))), set(range(16)))

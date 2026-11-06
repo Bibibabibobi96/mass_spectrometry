@@ -46,7 +46,7 @@ def transform_shape(shape: dict, rotation: list, translation: list) -> dict:
     if any(sorted(abs(v) for v in row) != [0, 0, 1] for row in rotation):
         raise ValueError("assembly CSG requires axis permutation rotation")
     if shape["shape"] == "convex_polyhedron":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
 
         shape_bounds(shape)
         return {"shape": "convex_polyhedron",
@@ -71,7 +71,7 @@ def transform_shape(shape: dict, rotation: list, translation: list) -> dict:
 
 def _bounds(shape: dict) -> list:
     if shape["shape"] == "convex_polyhedron":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
 
         lower, upper = shape_bounds(shape)
         return lower + upper
@@ -85,7 +85,7 @@ def _bounds(shape: dict) -> list:
 
 def _primitive(shape: dict) -> str:
     if shape["shape"] == "convex_polyhedron":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import _primitive as native_primitive
+        from msplatform.backends.simion.ip_geometry import _primitive as native_primitive
 
         return native_primitive(shape)
     if shape["shape"] == "box":

@@ -20,8 +20,9 @@
 采用[官方GEM说明](https://simion.com/info/gem_geometry_file.html#half-space)的法向外侧约定，
 该功能标记从8.2EA-20170324提供；本机8.2.0.11已对四组候选完成真实GEM／Refine与N100飞行。在线文档标注2026，
 不据此使用新版本独有接口。原有Fast Adjust、HS1、RF和飞行积分入口不变。
-`analysis/electrode_contours.py`编译显式`baseline.electrode_contours`，
-`analysis/convex_geometry.py`提供凸体边界与截面，默认几何图按真实多边形减孔绘制，不以AABB替代金属。
+`msplatform.components.dual_pressure_rectilinear_ion_processor.electrode_contours`编译显式`baseline.electrode_contours`，
+同组件的`convex_geometry`提供凸体边界与截面，`native_geometry`拥有15电极中性CSG唯一实现；GEM字符串渲染由
+`msplatform.backends.simion.ip_geometry`承担。默认几何图按真实多边形减孔绘制，不以AABB替代金属。
 几何改变必须重新求解全部15个响应，不能复用旧几何PA。
 跨组诊断通过现有functional入口`compare-geometry-study --run <analysis-run>`消费冻结三组或四组合同，
 不启动求解器；物理判据失败但具有完整真实终态的组仍保留并参与比较。

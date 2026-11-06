@@ -4,13 +4,13 @@ import unittest
 
 from common.contracts.machine_contracts import validate_schema
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.assembly_interface import (
+from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import (
     resolve_assembly_interface,
 )
 
 
 def projection():
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
     from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import load_config
     config = load_config()
     return native_projection(config["baseline"], config["numerics"])
@@ -18,7 +18,7 @@ def projection():
 
 class ExtractionShieldInterfaceTests(unittest.TestCase):
     def test_actual_native_guide_inlet_is_open_rod_end_not_hp_lens(self):
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import load_config
         config = load_config()
         native = native_projection(config["baseline"], config["numerics"])

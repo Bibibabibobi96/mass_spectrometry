@@ -17,7 +17,8 @@ CORE_ROOT = REPO_ROOT / "src/msplatform"
 SCIENTIFIC_DOMAINS = {"analysis", "assembly", "contracts", "io", "ion_release"}
 PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection_oa_tof",
                     "apertured_tube_electron_impact_ion_source", "transverse_helical_filament_wehnelt_electron_gun",
-                    "dual_cone_tandem_quadrupole_ion_interface", "parallel_mirror_dual_stripe_mr_tof"}
+                    "dual_cone_tandem_quadrupole_ion_interface", "parallel_mirror_dual_stripe_mr_tof",
+                    "dual_pressure_rectilinear_ion_processor"}
 COMPONENT_INFRASTRUCTURE = {"model", "catalog"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},

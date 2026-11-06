@@ -25,7 +25,7 @@ from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings import (
     VALUES, prepare_spatial_crossings_from_samples,
 )

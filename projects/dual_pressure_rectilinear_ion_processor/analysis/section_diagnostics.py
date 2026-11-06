@@ -17,7 +17,7 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 def world_bounds(shape, origin_z_mm: float):
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
     a, b = shape_bounds(shape)
     return ([-b[2], a[0], origin_z_mm - b[1]], [-a[2], b[0], origin_z_mm - a[1]])
 
@@ -25,7 +25,7 @@ def section(shape, view, value, origin_z_mm: float):
     """Exact plane intersection; rectangles, circles or ordered world polygons."""
     h, v, f = {'long': (1, 2, 0), 'top': (1, 0, 2), 'cross': (0, 2, 1)}[view]
     if shape['shape'] == 'convex_polyhedron':
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_section
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_section
         axis, local_value = {'long': (2, -value), 'top': (1, origin_z_mm-value), 'cross': (0, value)}[view]
         vertices = convex_section(shape, axis, local_value)
         if vertices is None or len(vertices) < 3:

@@ -27,8 +27,8 @@ from projects.rf_multipole_ion_optics.core.component_port import (
     build_assembly_interface, validate_exit_observations, load_transport_producer_result,
 )
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
-from projects.dual_pressure_rectilinear_ion_processor.analysis.assembly_interface import resolve_assembly_interface
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import FATE_COLUMNS
 
 SCHEMA = Path(__file__).resolve().parents[2] / "config/schemas/multipole_ip_request.schema.json"

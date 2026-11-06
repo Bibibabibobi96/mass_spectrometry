@@ -16,7 +16,7 @@ from common.contracts.write_run_manifest import file_record
 
 def _shape_mask(shape: dict, x: float, y: np.ndarray, z: np.ndarray) -> np.ndarray:
     if shape["shape"] == "convex_polyhedron":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes
         mask = np.ones(np.broadcast(x, y, z).shape, dtype=bool)
         for a, b, c, d in convex_planes(shape):
             mask &= a*x+b*y+c*z+d <= 0

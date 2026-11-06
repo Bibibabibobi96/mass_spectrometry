@@ -76,7 +76,7 @@ def project_geometry(config: dict) -> dict:
     for electrode in projection["electrodes"]:
         solids = []
         for shape in electrode["solids"]:
-            from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
             low, high = shape_bounds(shape)
             corners = [to_project_position(config, (x,y,z)) for x in (low[0],high[0]) for y in (low[1],high[1]) for z in (low[2],high[2])]
             solids.append(dict(shape="box", min_mm=[min(p[i] for p in corners) for i in range(3)], max_mm=[max(p[i] for p in corners) for i in range(3)]))
@@ -321,7 +321,7 @@ def census(data: dict, time: float) -> tuple[dict, list[dict]]:
 
 def add_geometry(axis, projection: dict, horizontal: str, vertical: str) -> None:
     """Draw conservative solid-bound footprints; these are not metal sections."""
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
     hi, vi = "xyz".index(horizontal), "xyz".index(vertical)
     for electrode in projection["electrodes"]:
         first = True

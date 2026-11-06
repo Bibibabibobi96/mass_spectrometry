@@ -17,7 +17,7 @@ import tempfile
 import unittest
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
 
 PROJECT = Path(__file__).resolve().parents[1]

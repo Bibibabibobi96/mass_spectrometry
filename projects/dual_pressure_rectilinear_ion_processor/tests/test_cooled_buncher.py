@@ -18,10 +18,9 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.cooled_buncher im
     prepare_buncher_probe_points, render_cooled_buncher_gem_fragment,
 )
 from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import export_guide_contract
-from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes, convex_section
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import (
-    native_projection, render_gem, render_projection_electrodes,
-)
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes, convex_section
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.backends.simion.ip_geometry import render_gem, render_projection_electrodes
 
 PROJECT = Path(__file__).resolve().parents[1]
 

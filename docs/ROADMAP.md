@@ -142,6 +142,9 @@ prepare的冻结、源、SDS与Program仍属项目owner，未把准备或场编�
 MR既有候选科学、场binding、COMSOL同网格改压／导出与退役读取已按component/backend/execution职责实迁，
 MATLAB与Lua资源进入普通发行，integration及冻结来源直接切换且无旧转发桥。普通wheel/sdist探针实际调用纯电压投影并读取原生资源；
 完整Static为1785项（1773成功、12既定skip），3483条记录中3471成功、12 skip，未运行商业求解器或新增科学资格。
+IP真实15电极中性CSG、轮廓、guide入口／E14孔面和GEM已分迁component与SIMION backend，四份旧实现退役；
+185项定向及364项项目Static通过，几何字段和GEM字节不变，integration/MR消费者与冻结准备同步切换。
+普通wheel/sdist树外实际生成15电极及GEM，13项边界／安装检查通过；本切片不授予IP源、Refine、Fly或接续资格。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

@@ -19,10 +19,9 @@ from common.contracts.particle_physics import (
     AMU_KG, BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C,
 )
 from common.contracts.rigid_transform import FramedPosition, RigidTransform
-from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import (
-    native_projection, render_projection_electrodes,
-)
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.backends.simion.ip_geometry import render_projection_electrodes
 
 BUNCHER_ELECTRODE_NAMES = (
     "hp_rf_a", "hp_rf_b", "hp_auxiliary", "entrance_gate", "hp_shield",

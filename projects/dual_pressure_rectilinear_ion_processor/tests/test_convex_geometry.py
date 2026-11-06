@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import (
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import (
     contains_shape,
     convex_planes,
     convex_section,

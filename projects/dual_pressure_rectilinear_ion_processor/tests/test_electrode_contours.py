@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 import unittest
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection, render_gem
-from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import contains_shape, shape_bounds
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.backends.simion.ip_geometry import render_gem
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape, shape_bounds
 
 ROOT = Path(__file__).resolve().parents[1]
 

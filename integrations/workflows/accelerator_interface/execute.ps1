@@ -85,7 +85,7 @@ function Get-MultipoleIpPreparation {
 import json, sys
 from pathlib import Path
 from common.contracts.verify_run_manifest import verified_successful_run_reference, verify_record, record_path
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import transform_from_config
 run, config = map(Path, sys.argv[1:])
 path = verified_successful_run_reference(run, 'results/multipole_ip/preparation_receipt.json', project='instrument_assembly', mode='multipole_ip_preparation')

@@ -26,7 +26,7 @@ from integrations.workflows.local_frontend.prepare import (
     AUTOMATIC_PULSE_POLICY, RF_DELAY_PULSE_POLICY, _nominal_extraction_duration,
     extraction_shared_times, prepare_local_frontend, resolve_pulse_decision,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import export_guide_contract, export_guide_assembly_interface
 from projects.orthogonal_accelerator.simion.two_zone_candidate import compile_closed_two_zone_accelerator
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface

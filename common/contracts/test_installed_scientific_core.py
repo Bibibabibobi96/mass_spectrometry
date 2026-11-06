@@ -104,6 +104,12 @@ candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict
 assert [candidate['analyzer_electrode_voltages_v'][i-1] for i in (11,12,13,14,16,17)] == [1.,1.,2.,2.,3.,4.]
 assert 'mphload' in native_resource_text('candidate_field.m')
 assert 'SIMION' in native_resource_text('export_corridor_scalar_field.m')
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
+ip = fixture['ip']
+projection = native_projection(ip['baseline'], ip['numerics'])
+assert len(projection['electrodes']) == 15
+assert hashlib.sha256(render_ip_gem(projection).encode()).hexdigest() == ip['gem_sha256']
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -747,13 +753,19 @@ class InstalledScientificCoreTests(unittest.TestCase):
             export_uniform_runtime(root/'fixture-uniform.lua', root/'fixture-uniform-manifest.json',
                 spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
             dual_cone['uniform_lua'] = (root/'fixture-uniform.lua').read_text(encoding='utf-8')
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+            from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
+            ip_config = REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/config'
+            ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
+                  for name in ('baseline', 'numerics')}
+            ip['gem_sha256'] = hashlib.sha256(render_ip_gem(native_projection(ip['baseline'], ip['numerics'])).encode()).hexdigest()
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
                                               schemas=expected_schemas, provider_layout=provider_layout,
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
-                                              standalone_contracts=standalone_contracts, dual_cone=dual_cone,
+                                              standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               comparison=self.comparison_probe_fixture())), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             # Remove both private author trees from their original locations;

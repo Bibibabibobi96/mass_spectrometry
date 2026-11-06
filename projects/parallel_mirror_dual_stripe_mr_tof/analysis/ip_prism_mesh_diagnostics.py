@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from common.contracts.write_run_manifest import file_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes, convex_section
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes, convex_section
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _bounds
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER, PaHeader, read_pa_header
 

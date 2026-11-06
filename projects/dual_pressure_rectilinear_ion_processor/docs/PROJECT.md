@@ -93,6 +93,8 @@ MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包�
 ## 统一组装迁移任务
 
 提供者从同一native projection发布真实guide入口、E14出口屏蔽端面、截面、壁厚及具名电极集合。
+纯几何、轮廓、凸体算法与机械接口的唯一实现位于`msplatform.components.dual_pressure_rectilinear_ion_processor`，
+不依赖backend、execution或项目默认路径；SIMION GEM渲染位于`msplatform.backends.simion.ip_geometry`。
 一组可含多个solid，不按CSG分块或PA编号重新定义物理电极。裸导引与冷却组件分别发布自己的真实几何，
 不构造假孔、整面静态电位或新时钟。完整接口不替代真实几何与场的消费核验。
 

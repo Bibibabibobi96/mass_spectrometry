@@ -8,7 +8,37 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import _guide_solids
+def _number(value: Any, label: str, *, positive: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{label} must be finite")
+    if positive and value <= 0:
+        raise ValueError(f"{label} must be positive")
+    return float(value)
+
+
+def _guide_solids(projection: dict[str, Any]) -> list[dict[str, Any]]:
+    if type(projection.get("schema_version")) is not int or projection["schema_version"] != 1 or projection.get("role") != "native_electrode_geometry_projection":
+        raise ValueError("unsupported native guide projection schema")
+    electrodes = projection["electrodes"]
+    ids = [item["electrode_id"] for item in electrodes]
+    if len(ids) != len(set(ids)):
+        raise ValueError("native projection has duplicate electrode IDs")
+    by_id = {item["electrode_id"]: item for item in electrodes}
+    solids = []
+    fields = {"shape", "x_min_mm", "x_max_mm", "center_y_mm", "center_z_mm", "radius_mm"}
+    for group, name in ((1, "guide_positive"), (2, "guide_negative")):
+        electrode = by_id[group]
+        if set(electrode) != {"electrode_id", "name", "solids", "cutouts"} or electrode["name"] != name:
+            raise ValueError("native guide electrode identity differs")
+        if electrode["cutouts"] != [] or len(electrode["solids"]) != 4:
+            raise ValueError("bare guide requires four continuous uncut rods per RF group")
+        for solid in electrode["solids"]:
+            if set(solid) != fields or solid["shape"] != "cylinder_x":
+                raise ValueError("unsupported native guide solid")
+            for key in fields - {"shape"}:
+                _number(solid[key], key, positive=key == "radius_mm")
+            solids.append({**solid, "electrode_group": group})
+    return solids
 
 
 def _guide_inlet_port(native_projection: dict[str, Any]) -> dict[str, Any]:

@@ -15,6 +15,7 @@ from typing import Any
 from common.contracts.rigid_transform import FramedPosition, RigidTransform
 from common.ion_release.release import validate_release_spec
 from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
+from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import _guide_solids
 
 
 MULTIPOLE_FRAME_ID = "multipole_cartesian_z_axis_v1"
@@ -49,31 +50,6 @@ def _identities(value: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(record["sha256"], str) or re.fullmatch(r"[0-9A-Fa-f]{64}", record["sha256"]) is None:
             raise ValueError(f"{name} identity SHA-256 differs")
     return copy.deepcopy(value)
-
-
-def _guide_solids(projection: dict[str, Any]) -> list[dict[str, Any]]:
-    if type(projection.get("schema_version")) is not int or projection["schema_version"] != 1 or projection.get("role") != "native_electrode_geometry_projection":
-        raise ValueError("unsupported native guide projection schema")
-    electrodes = projection["electrodes"]
-    ids = [item["electrode_id"] for item in electrodes]
-    if len(ids) != len(set(ids)):
-        raise ValueError("native projection has duplicate electrode IDs")
-    by_id = {item["electrode_id"]: item for item in electrodes}
-    solids = []
-    fields = {"shape", "x_min_mm", "x_max_mm", "center_y_mm", "center_z_mm", "radius_mm"}
-    for group, name in ((1, "guide_positive"), (2, "guide_negative")):
-        electrode = by_id[group]
-        if set(electrode) != {"electrode_id", "name", "solids", "cutouts"} or electrode["name"] != name:
-            raise ValueError("native guide electrode identity differs")
-        if electrode["cutouts"] != [] or len(electrode["solids"]) != 4:
-            raise ValueError("bare guide requires four continuous uncut rods per RF group")
-        for solid in electrode["solids"]:
-            if set(solid) != fields or solid["shape"] != "cylinder_x":
-                raise ValueError("unsupported native guide solid")
-            for key in fields - {"shape"}:
-                _number(solid[key], key, positive=key == "radius_mm")
-            solids.append({**solid, "electrode_group": group})
-    return solids
 
 
 def _rod_array(solids: list[dict[str, Any]], baseline: dict[str, Any]) -> dict[str, Any]:

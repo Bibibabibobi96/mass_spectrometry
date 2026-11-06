@@ -17,7 +17,7 @@ import numpy as np
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis import field_diagnostics as diagnostics
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_native_timing, lua_literal
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
 
 PROJECT = Path(__file__).resolve().parents[1]

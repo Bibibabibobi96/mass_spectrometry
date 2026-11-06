@@ -15,7 +15,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_
     IMPULSE_COLUMNS, STEP_COLUMNS, build_force_budget_figure, covariance_budget,
     export_force_budget, extraction_surfaces, prepare_force_budget, spatial_fractions,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
 PROJECT = Path(__file__).resolve().parents[1]
 

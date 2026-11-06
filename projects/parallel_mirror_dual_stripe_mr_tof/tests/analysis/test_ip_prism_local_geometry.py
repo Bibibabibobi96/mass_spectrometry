@@ -9,7 +9,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometr
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
     transform_shape, _bounds, _primitive,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import contains_shape
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape
 
 
 def fixture() -> dict:

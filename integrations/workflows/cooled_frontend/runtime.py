@@ -154,7 +154,7 @@ def field_verification_spec(run: Path, directory: Path, *, member_id: str) -> Pa
     """Sample provider metal and real working voltages, without a basis model."""
     from integrations.runtime.frontend_field_plan import _bare_samples, sample_node
     from integrations.runtime.single_flight_electrode_contract import require_pa_plus_solution_model
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import contains_shape, shape_bounds
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape, shape_bounds
 
     run = Path(run)
     front = shared._load(run / "inputs/frontend_contract.json")

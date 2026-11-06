@@ -29,7 +29,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_numerical_boundaries
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts, section_centroid
 
 MODES = {"flat", "formed_extraction", "formed_extraction_continuous_aux"}
