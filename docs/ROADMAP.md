@@ -95,6 +95,29 @@ V7.2增加同一完整Assembly的独立STEP与PreparedModel首批出口（U07／
 默认不开GUI且不求场／Fly，保存后分别冷打开和继续求场。所选SIMION模型、场及传播链已有普通安装原生证据；
 STEP的实际生成／独立几何校验、历史SolidWorks查看与本次延期范围，均由集成正文分别记录。
 P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需求检验；不以当前能力不足删减目标。
+2026-11-06按V8.1启动唯一P4 Goal，实际起点为本地及`origin/master`共同的`40a13e78`，初始工作区干净，
+公共主机资源账本无活动记录；工作在`task/phase04-platform-rollout`分支推进。W0只读盘点覆盖1852个跟踪源码／配置文件，
+其静态引用与桥候选只用于导航，不作为完整动态消费者或删除证明。当前`rf_oatof_functional_v1`已通过原公共API完成
+组件解析、完整装配和SIMION纯几何编译基线，无原生求解；P3及旧CI证据仍只绑定各自源码与环境，不冒充P4后继验收。
+本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
+当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
+
+| 当前对象／职责 | 规范所有者与活动消费者 | 本阶段退出条件 |
+|---|---|---|
+| `StudyDefinition`／示例展开 | `examples`；包内例子、教程和安装测试 | 数据视图与副作用分离，旧总控入口退出 |
+| `ResolvedComponent`／provider 分派 | `components.model`／`components.catalog`；RF、OA、TOF及独立器件测试 | 完整设计与接口同源，无纯模型到provider的反向依赖 |
+| `Assembly`／装配／端口 | `assembly.model`与具名factory；完整／局部装配和集成测试 | 父设计、位姿和scope保持，旧总控装配入口退出 |
+| 出生源与释放实现 | `ion_release`；源、传播及母群测试 | ID／权重／clock／随机序列不变，无后端反向依赖 |
+| SIMION纯编译与原生操作 | `backends.simion`具名入口；当前P3链和后续独立器件 | 编译与副作用分层，唯一执行owner不变 |
+| 既有COMSOL操作 | `backends.comsol`具名入口；真实项目工作流与原生证据 | 只迁移实际能力，不以脚本或假模型冒充完成 |
+| STEP导出／冷读 | `exporters`；CAD和独立几何检查 | 与后端并列消费完整Assembly，无默认GUI |
+| 结果读取／分析／比较 | `results`组合中立I/O与纯`analysis`；离线消费者 | 无隐藏重算／owner，缺失和篡改失败关闭 |
+| 环境、恢复与原生查看 | `execution`／`applications`；运行owner与故障矩阵 | 一次部署、单一owner；历史action仅作数据语义读取 |
+| 能力查询 | 各规范操作的校验与显式声明；调用和查询共用分派 | 不再以私有planner签名建立第二套合同 |
+
+首个完整切片为`examples.load_example → components.resolve_component → assembly.assemble → backends.simion.compile_geometry`，
+同步迁移测试、冻结选择、教程并删除被替代总控符号；随后接通独立OA两／三区provider与同源STEP。
+其余原生执行、结果、部署、八项目推广、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。
 真实三区N100的映射A/B与显式回放、有限GUI及18次独立非粒子场查询已有相称证据；
