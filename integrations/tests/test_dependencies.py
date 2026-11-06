@@ -723,8 +723,9 @@ Write-Output $f.execution_root
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             selected = load(output / "code_inventory.json")["dependencies"]
             paths = {row["source_repo_path"] for row in selected}
-            required_ip = {"projects/dual_pressure_rectilinear_ion_processor/analysis/" + name + ".py"
-                           for name in ("guide_interface", "native_geometry", "electrode_contours", "convex_geometry")}
+            required_ip = {"projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py"}
+            required_ip.update("src/msplatform/components/dual_pressure_rectilinear_ion_processor/" + name + ".py"
+                               for name in ("native_geometry", "electrode_contours", "convex_geometry"))
             self.assertTrue(required_ip <= paths)
             self.assertNotIn("oatof_analyzer_component", {row["id"] for row in selected})
             snapshot = output/"runtime_snapshot"
