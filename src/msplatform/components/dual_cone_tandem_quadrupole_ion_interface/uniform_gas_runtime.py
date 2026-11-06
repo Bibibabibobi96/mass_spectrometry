@@ -7,12 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SPEC = PROJECT_ROOT / "config" / "uniform_rear_gas_field.json"
-DEFAULT_INTERFACE = PROJECT_ROOT / "config" / "gas_field_interface.json"
+from msplatform.io.file_identity import file_sha256
 
 
 def _load(path: Path, role: str) -> dict[str, Any]:
@@ -26,8 +21,8 @@ def export_uniform_runtime(
     output_lua: Path,
     output_manifest: Path,
     *,
-    spec_path: Path = DEFAULT_SPEC,
-    interface_path: Path = DEFAULT_INTERFACE,
+    spec_path: Path,
+    interface_path: Path,
 ) -> dict[str, Any]:
     spec = _load(spec_path, "dual_cone_uniform_rear_gas_field")
     interface = _load(interface_path, "dual_cone_simion_gas_field_interface")
@@ -98,8 +93,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-lua", required=True, type=Path)
     parser.add_argument("--output-manifest", required=True, type=Path)
+    parser.add_argument("--spec", required=True, type=Path)
+    parser.add_argument("--interface", required=True, type=Path)
     args = parser.parse_args()
-    export_uniform_runtime(args.output_lua, args.output_manifest)
+    export_uniform_runtime(
+        args.output_lua,
+        args.output_manifest,
+        spec_path=args.spec,
+        interface_path=args.interface,
+    )
     print(f"UNIFORM_REAR_GAS_RUNTIME=PASS MANIFEST={args.output_manifest.resolve()}")
     return 0
 

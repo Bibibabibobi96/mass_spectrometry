@@ -49,8 +49,9 @@ SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 
 ## 几何范围
 
 单体 PA 使用电极 `1/2` 表示两锥，`3` 表示末端孔板，`11/12` 表示椭圆杆两相，`21/22` 表示圆杆两相。设备坐标到
-Workbench 的平移记录在 `simion_solver_numerics.json`。杆几何由
-`common.multipole.simion_geometry.render_grouped_rod_array_gem` 生成，项目不复制圆杆或椭圆杆公式。
+Workbench 的平移记录在 `simion_solver_numerics.json`。单体 GEM 由
+`msplatform.backends.simion.dual_cone_geometry` 编译，杆几何直接复用
+`msplatform.backends.simion.rf_geometry.render_grouped_rod_array_gem`，项目不复制圆杆或椭圆杆公式。
 
 当前 C0 GEM 把椭圆杆入口暂时截为 `z=4.6 mm` 平面。真实“沿第二锥面切削”仍需项目级、经拓扑
 测试的 CSG mask；在它完成前，C0 只证明 GEM/PA 电极命名和粗几何可编译，不证明入口边缘场。
@@ -59,7 +60,7 @@ Workbench 的平移记录在 `simion_solver_numerics.json`。杆几何由
 
 ## 气体场接口
 
-COMSOL CSV 先由 `analysis/export_simion_gas_runtime.py`（或 `build_gas_runtime.ps1`）在独立校验通过后编译。导出 manifest 必须严格满足 `config/gas_field_interface.json`，并指向一个带 SHA-256 的自包含 Lua
+COMSOL CSV 先由 `msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime`（或 `build_gas_runtime.ps1`）在独立校验通过后编译。导出 manifest 必须严格满足 `config/gas_field_interface.json`，并指向一个带 SHA-256 的自包含 Lua
 只读场适配器。适配器在设备局部坐标中提供：
 
 - `pressure_pa(x_mm,y_mm,z_mm)`：绝对压力 Pa；

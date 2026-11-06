@@ -34,7 +34,9 @@ try {
       throw 'Dual-cone interface requires Python 3.11.'
     }
 
-    & $PythonExe -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry --check
+    & $PythonExe -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry `
+      --baseline (Join-Path $projectRoot 'config\baseline.json') `
+      --check (Join-Path $projectRoot 'config\resolved_geometry.json')
     if ($LASTEXITCODE -ne 0) {
       throw 'Dual-cone resolved geometry is invalid or stale.'
     }
@@ -47,12 +49,21 @@ try {
       'config\ion_transport_science.json',
       'config\simion_solver_numerics.json',
       'comsol\build_and_solve_axisymmetric_gas_flow.m',
-      'analysis\validate_gas_field.py',
-      'analysis\export_simion_gas_runtime.py',
-      'analysis\export_uniform_rear_gas_runtime.py',
-      'simion\geometry.py',
       'workflows\gas_assisted_transport\prepare.ps1'
     )
+    $requiredCoreFiles = @(
+      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\geometry.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_runtime.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\uniform_gas_runtime.py',
+      'src\msplatform\backends\simion\dual_cone_geometry.py'
+    )
+    foreach ($relativePath in $requiredCoreFiles) {
+      $requiredPath = Join-Path $repoRoot $relativePath
+      if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+        throw "Dual-cone core authority file is missing: $relativePath"
+      }
+    }
     foreach ($relativePath in $requiredProjectFiles) {
       $requiredPath = Join-Path $projectRoot $relativePath
       if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -81,7 +92,10 @@ try {
       'RUFF=HANDLED_BY_PARENT PROJECT=dual_cone_tandem_quadrupole_ion_interface'
     } else {
       & $PythonExe -m ruff check `
+        src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface `
+        src/msplatform/backends/simion/dual_cone_geometry.py `
         projects/dual_cone_tandem_quadrupole_ion_interface/analysis `
+        projects/dual_cone_tandem_quadrupole_ion_interface/simion `
         projects/dual_cone_tandem_quadrupole_ion_interface/tests
       if ($LASTEXITCODE -ne 0) {
         throw 'Dual-cone interface Ruff checks failed.'

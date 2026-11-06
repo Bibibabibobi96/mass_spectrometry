@@ -18,10 +18,18 @@ class GasFlowInputAdmissionTests(unittest.TestCase):
         end = source.index("  foreach($key in $schedulerFiles.Keys){", start)
         block = source[start:end]
         code_paths = (
-            "projects/dual_cone_tandem_quadrupole_ion_interface/analysis/resolve_geometry.py",
-            "projects/dual_cone_tandem_quadrupole_ion_interface/analysis/__init__.py",
-            "projects/rf_multipole_ion_optics/core/round_rod_geometry.py",
-            "projects/rf_multipole_ion_optics/core/__init__.py",
+            "src/msplatform/__init__.py",
+            "src/msplatform/components/__init__.py",
+            "src/msplatform/components/model.py",
+            "src/msplatform/components/catalog.py",
+            "src/msplatform/contracts/__init__.py",
+            "src/msplatform/contracts/machine_contracts.py",
+            "src/msplatform/io/__init__.py",
+            "src/msplatform/io/file_identity.py",
+            "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/geometry.py",
+            "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/__init__.py",
+            "src/msplatform/components/rf_multipole/round_rod_geometry.py",
+            "src/msplatform/components/rf_multipole/__init__.py",
         )
         for scenario in ("normal", "stale", "source_changed"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
@@ -47,7 +55,7 @@ $script:copies=0
 function Copy-VerifiedRunInput {param($Source,$Destination)
  $result=& $realCopy -Source $Source -Destination $Destination
  $script:copies++
- if($Scenario-eq'source_changed'-and$script:copies-eq4){
+ if($Scenario-eq'source_changed'-and$script:copies-eq12){
   foreach($p in Get-ChildItem -LiteralPath $SourceRoot -Recurse -File -Filter '*.py'){
    [IO.File]::WriteAllText($p.FullName,"raise RuntimeError('ACTIVE_REPO_FALLBACK')")
   }
@@ -74,7 +82,7 @@ if($Scenario-eq'stale'){
   foreach($path in $entry.Value){if(-not[IO.Path]::GetFullPath($path).StartsWith([IO.Path]::GetFullPath($geometrySnapshotRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Owned module escaped frozen snapshot'}}
  }
 }
-if($script:copies-ne4-or$failureStage-cne'geometry_input_freshness'){throw 'Incorrect frozen closure or failure stage'}
+if($script:copies-ne12-or$failureStage-cne'geometry_input_freshness'){throw 'Incorrect frozen closure or failure stage'}
 @{scenario=$Scenario;copies=$script:copies;downstream=$downstream;source_poisoned=($Scenario-eq'source_changed');numpy_version=$(if($Scenario-ne'stale'){$geometryValidationEnvironment.numpy.version}else{$null})}|ConvertTo-Json -Compress
 'GEOMETRY_INPUT_ADMISSION=PASS'
 ''', encoding="utf-8")

@@ -4,25 +4,41 @@ from __future__ import annotations
 
 import math
 import unittest
+from pathlib import Path
 
-from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry import (
-    DEFAULT_BASELINE,
-    DEFAULT_RESOLVED,
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import (
     load_baseline,
     resolve_geometry,
     serialized,
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BASELINE = PROJECT_ROOT / "config" / "baseline.json"
+DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_geometry.json"
+
+
 class GeometryContractTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.resolved = resolve_geometry(load_baseline())
+        self.resolved = resolve_geometry(load_baseline(DEFAULT_BASELINE))
 
     def test_resolved_publication_is_fresh(self) -> None:
         self.assertEqual(
             DEFAULT_RESOLVED.read_text(encoding="utf-8"),
             serialized(self.resolved),
         )
+        core_root = PROJECT_ROOT.parents[1] / "src" / "msplatform"
+        core_modules = [
+            *(core_root / "components" / PROJECT_ROOT.name).glob("*.py"),
+            core_root / "backends" / "simion" / "dual_cone_geometry.py",
+        ]
+        for module in core_modules:
+            with self.subTest(module=module.name):
+                source = module.read_text(encoding="utf-8")
+                self.assertNotIn("PROJECT_ROOT", source)
+                self.assertNotIn("DEFAULT_", source)
+                self.assertNotIn("__file__", source)
+                self.assertNotIn('"projects"', source)
 
     def test_user_dimensions_derive_expected_clear_radii_and_positions(self) -> None:
         geometry = self.resolved["geometry_mm"]

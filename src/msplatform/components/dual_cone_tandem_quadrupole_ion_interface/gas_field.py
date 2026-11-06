@@ -9,7 +9,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 PROJECT_ID = "dual_cone_tandem_quadrupole_ion_interface"
@@ -42,13 +42,11 @@ def validate_gas_field(
     metadata_path: Path,
     science_path: Path,
     numerics_path: Path,
-    geometry_path: Path | None = None,
+    geometry_path: Path,
 ) -> dict[str, Any]:
     """Return a fail-closed validation summary for one rectilinear r-z field."""
     science = _load_json(science_path, SCIENCE_ROLE)
     numerics = _load_json(numerics_path, NUMERICS_ROLE)
-    if geometry_path is None:
-        geometry_path = science_path.parent / "resolved_geometry.json"
     _load_json(
         geometry_path, "dual_cone_tandem_quadrupole_resolved_geometry"
     )
@@ -182,24 +180,11 @@ def validate_gas_field(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    project_root = Path(__file__).resolve().parents[1]
     parser.add_argument("--csv", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
-    parser.add_argument(
-        "--science",
-        type=Path,
-        default=project_root / "config" / "gas_flow_science.json",
-    )
-    parser.add_argument(
-        "--numerics",
-        type=Path,
-        default=project_root / "config" / "comsol_solver_numerics.json",
-    )
-    parser.add_argument(
-        "--geometry",
-        type=Path,
-        default=project_root / "config" / "resolved_geometry.json",
-    )
+    parser.add_argument("--science", type=Path, required=True)
+    parser.add_argument("--numerics", type=Path, required=True)
+    parser.add_argument("--geometry", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     summary = validate_gas_field(

@@ -29,8 +29,12 @@ $metadata = Join-Path $runDirectory 'results\gas_field_metadata.json'
 $runtime = Join-Path $outputDirectory 'gas_field_runtime.lua'
 $manifest = Join-Path $outputDirectory 'gas_field_manifest.json'
 
-& $python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_simion_gas_runtime `
-    --csv $csv --metadata $metadata --output-lua $runtime --output-manifest $manifest
+& $python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime `
+    --csv $csv --metadata $metadata --output-lua $runtime --output-manifest $manifest `
+    --science (Join-Path $projectRoot 'config\gas_flow_science.json') `
+    --numerics (Join-Path $projectRoot 'config\comsol_solver_numerics.json') `
+    --geometry (Join-Path $projectRoot 'config\resolved_geometry.json') `
+    --interface (Join-Path $projectRoot 'config\gas_field_interface.json')
 if ($LASTEXITCODE -ne 0) {
     throw "COMSOL-to-SIMION gas runtime compilation failed with exit code $LASTEXITCODE."
 }

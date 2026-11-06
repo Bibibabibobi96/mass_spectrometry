@@ -8,13 +8,10 @@ import math
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
+from msplatform.components.rf_multipole.round_rod_geometry import build_rod_array
 
 
 PROJECT_ID = "dual_cone_tandem_quadrupole_ion_interface"
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BASELINE = PROJECT_ROOT / "config" / "baseline.json"
-DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_geometry.json"
 
 
 def _positive(label: str, value: object) -> float:
@@ -24,7 +21,7 @@ def _positive(label: str, value: object) -> float:
     return number
 
 
-def load_baseline(path: Path = DEFAULT_BASELINE) -> dict[str, Any]:
+def load_baseline(path: Path) -> dict[str, Any]:
     """Load and minimally validate the version-1 author geometry."""
     document = json.loads(path.read_text(encoding="utf-8-sig"))
     if document.get("schema_version") != 1 or document.get("role") != (
@@ -251,10 +248,10 @@ def serialized(document: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
+    parser.add_argument("--baseline", type=Path, required=True)
     actions = parser.add_mutually_exclusive_group(required=True)
-    actions.add_argument("--write", type=Path, nargs="?", const=DEFAULT_RESOLVED)
-    actions.add_argument("--check", type=Path, nargs="?", const=DEFAULT_RESOLVED)
+    actions.add_argument("--write", type=Path)
+    actions.add_argument("--check", type=Path)
     args = parser.parse_args()
     result = serialized(resolve_geometry(load_baseline(args.baseline.resolve())))
     destination = (args.write or args.check).resolve()

@@ -136,6 +136,9 @@ P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需�
 EI与Wehnelt现有合同解析／检查及后者几何派生已迁入各自安装包组件，项目Static和冻结运行器直接消费，
 旧resolver退役；resolved JSON字节、电子质量／负电荷与build-only边界不变。普通安装探针实际重建两合同，
 46项跨边界测试通过；未新增COMSOL、求解或轨迹资格。
+双锥几何、GEM、真实COMSOL场校验／运行Lua和均匀400Pa对照编译已迁入安装包；31项项目测试与Static通过，
+resolved/GEM/两类Lua字节保持。显式路径替代作者默认，普通安装13项边界与交付测试实际覆盖几何、GEM和均匀场；
+prepare的冻结、源、SDS与Program仍属项目owner，未把准备或场编译称为碰撞轨迹能力。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

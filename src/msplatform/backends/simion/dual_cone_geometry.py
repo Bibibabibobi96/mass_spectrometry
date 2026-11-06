@@ -8,12 +8,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.simion.simion_geometry import render_grouped_rod_array_gem
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_geometry.json"
-DEFAULT_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
+from msplatform.backends.simion.rf_geometry import render_grouped_rod_array_gem
 
 
 def device_to_workbench_offsets(numerics: dict[str, Any]) -> tuple[float, float, float]:
@@ -122,8 +117,8 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--resolved", type=Path, default=DEFAULT_RESOLVED)
-    parser.add_argument("--numerics", type=Path, default=DEFAULT_NUMERICS)
+    parser.add_argument("--resolved", type=Path, required=True)
+    parser.add_argument("--numerics", type=Path, required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     resolved = _load(args.resolved, "dual_cone_tandem_quadrupole_resolved_geometry")

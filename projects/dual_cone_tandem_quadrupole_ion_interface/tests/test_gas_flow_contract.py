@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import importlib.util
 import json
 import math
 import tempfile
@@ -20,21 +19,15 @@ INTERFACE_PATH = PROJECT_ROOT / "config" / "gas_field_interface.json"
 
 
 def _load_validator():
-    path = PROJECT_ROOT / "analysis" / "validate_gas_field.py"
-    spec = importlib.util.spec_from_file_location("validate_gas_field", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field
+
+    return gas_field
 
 
 def _load_exporter():
-    path = PROJECT_ROOT / "analysis" / "export_simion_gas_runtime.py"
-    spec = importlib.util.spec_from_file_location("export_simion_gas_runtime", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_runtime
+
+    return gas_runtime
 
 
 def _contracts() -> tuple[dict, dict]:
@@ -167,7 +160,7 @@ class GasFlowContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             csv_path, metadata_path = _write_fixture(Path(directory))
             summary = validator.validate_gas_field(
-                csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH
+                csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH
             )
         self.assertEqual(summary["status"], "PASS")
         self.assertEqual(summary["row_count"], 100)
@@ -181,7 +174,7 @@ class GasFlowContractTests(unittest.TestCase):
                 stream.write("tampered\n")
             with self.assertRaisesRegex(ValueError, "SHA-256"):
                 validator.validate_gas_field(
-                    csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH
+                    csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH
                 )
 
     def test_valid_field_compiles_to_hashed_self_contained_lua(self) -> None:

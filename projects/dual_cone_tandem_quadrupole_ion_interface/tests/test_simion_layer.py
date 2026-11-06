@@ -13,9 +13,7 @@ from unittest import mock
 
 from common.contracts.file_identity import file_sha256
 from common.ion_release.release import generate_release_states, validate_release_spec
-from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
-    DEFAULT_NUMERICS,
-    DEFAULT_RESOLVED,
+from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
     render_gem,
 )
@@ -25,7 +23,7 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare import (
     prepare,
     validate_gas_field_manifest,
 )
-from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime import (
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import (
     export_uniform_runtime,
 )
 from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.plot_simion_trajectory_projection import (
@@ -35,7 +33,9 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.plot_simion_tra
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-
+DEFAULT_RESOLVED = PROJECT / "config" / "resolved_geometry.json"
+DEFAULT_NUMERICS = PROJECT / "config" / "simion_solver_numerics.json"
+UNIFORM_SPEC = PROJECT / "config" / "uniform_rear_gas_field.json"
 
 
 def load(path: Path) -> dict:
@@ -109,7 +109,9 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("0.75", gem)
         self.assertIn("$(122/mmgu+1)", gem)
         self.assertIn("C0 limitation", gem)
-        source = (PROJECT / "simion" / "geometry.py").read_text(encoding="utf-8")
+        source = (
+            PROJECT.parents[1] / "src/msplatform/backends/simion/dual_cone_geometry.py"
+        ).read_text(encoding="utf-8")
         self.assertIn("render_grouped_rod_array_gem", source)
         self.assertNotIn("def _stage_1_rods", source)
         self.assertEqual(device_to_workbench_offsets(numerics), (25.5, 25.5, 2.0))
@@ -226,13 +228,12 @@ class GasPreparationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "snapshot"
             for relative in ("common/contracts", "common/ion_release", "common/simion",
-                             "projects/" + PROJECT.name + "/config", "projects/" + PROJECT.name + "/simion",
-                             "projects/" + PROJECT.name + "/analysis"):
+                             "projects/" + PROJECT.name + "/config", "projects/" + PROJECT.name + "/simion"):
                 shutil.copytree(repo / relative, snapshot / relative,
                     ignore=lambda folder, names: [name for name in names
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
                             and Path(name).suffix not in {".py", ".json", ".lua"})])
-            from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
+            from common.contracts.frozen_inputs import freeze_file
             from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
             copy_scientific_core(repo, snapshot)
@@ -242,33 +243,19 @@ class GasPreparationTests(unittest.TestCase):
             self.assertEqual(kernel_record["sha256"], file_sha256(repo / kernel))
             self.assertEqual((snapshot / kernel).read_bytes(), (repo / kernel).read_bytes())
 
-            rf_modules = tuple("projects/rf_multipole_ion_optics/" + relative for relative in (
-                "core/round_rod_geometry.py", "core/connector_geometry.py",
-                "core/interface_geometry.py", "core/axial_acceleration.py",
-                "core/electrode_topology.py", "simion/electrode_mapping.py",
-                "simion/simion_geometry.py", "runtime/simion_numerics.py",
-            ))
-            for relative in enumerate_python_sources(repo, module_paths=rf_modules):
-                source = Path(relative)
-                target = snapshot / source
-                target.parent.mkdir(parents=True, exist_ok=True)
-                frozen = freeze_file(repo / source, target)
-                self.assertEqual(frozen['sha256'], file_sha256(target))
-                self.assertEqual(target.read_bytes(), (repo / source).read_bytes())
             code = r"""
 from pathlib import Path
 from common.contracts import frozen_inputs
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion import prepare as p
-from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime import export_uniform_runtime
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
 assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
 assert Path(frozen_inputs.__file__).resolve().is_relative_to(Path.cwd())
 import sys
-for name, module in tuple(sys.modules.items()):
-    if name.startswith('projects.rf_multipole_ion_optics') and getattr(module, '__file__', None):
-        assert Path(module.__file__).resolve().is_relative_to(Path.cwd()), (name, module.__file__)
 case = Path(sys.argv[2]); case.mkdir()
 c0 = p.prepare(case / 'c0', mode='c0_gem_smoke')
-export_uniform_runtime((case / 'field.lua').resolve(), (case / 'manifest.json').resolve())
+export_uniform_runtime((case / 'field.lua').resolve(), (case / 'manifest.json').resolve(),
+                       spec_path=Path.cwd() / 'projects/dual_cone_tandem_quadrupole_ion_interface/config/uniform_rear_gas_field.json',
+                       interface_path=p.GAS_INTERFACE)
 sds = case / 'sds'; sds.mkdir()
 for name in p.SDS_FILES:
     (sds/name).write_text('inert fixture\n', encoding='utf-8')
@@ -404,7 +391,12 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             root = Path(directory)
             runtime = root / "field.lua"
             manifest_path = root / "manifest.json"
-            manifest = export_uniform_runtime(runtime, manifest_path)
+            manifest = export_uniform_runtime(
+                runtime,
+                manifest_path,
+                spec_path=UNIFORM_SPEC,
+                interface_path=GAS_INTERFACE,
+            )
             source = runtime.read_text(encoding="utf-8")
             self.assertEqual(manifest["role"], "dual_cone_gas_field_export")
             self.assertEqual(manifest["source"]["kind"], "prescribed_uniform_rear_gas")

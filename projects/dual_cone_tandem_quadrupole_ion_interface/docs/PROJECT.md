@@ -8,6 +8,16 @@
 `pyproject.toml` 包资源声明实际展开的执行资源。冻结后的公共桥读取本次快照中的规范实现，
 不借作者源码补缺；独立加载预算观测的定向软件回归已通过。这不增加 COMSOL 求解或气流资格。
 
+双锥纯几何、COMSOL 气体场校验及两种 Lua 运行场编译已实迁到
+`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`；fractional GEM 编译实迁到
+`msplatform.backends.simion.dual_cone_geometry`。杆数组与杆 GEM 分别直接复用
+`msplatform.components.rf_multipole.round_rod_geometry` 和 `msplatform.backends.simion.rf_geometry`，
+旧项目内五个对应模块已退役且无转发桥。resolved JSON、GEM 与均匀场 Lua 已逐字节对照；
+来源哈希、理想气体密度、质量守恒、400 Pa 对照及失败关闭语义不变。本次迁移未运行 COMSOL/SIMION，
+未改变现有气流或轨迹资格，也未把项目 `prepare.py` 整体声明为已安装能力。
+规范组件和backend不保存项目根、默认配置文件或checkout定位逻辑；纯函数与CLI均要求显式输入路径，
+原项目默认体验只由项目verify、prepare和工作流脚本接线提供。
+
 ## 部件判断
 
 该结构最可能是三重四极杆 Q1 之前的“差分抽气双锥采样接口 + 两级高压 RF 四极杆离子导引组件”，
@@ -145,11 +155,9 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 
 `axisymmetric_gas_flow_screening_static`保留既有profile身份，普通计划不再先运行整套`static_gate`；独立软件验证、原COMSOL气流／资源／输出准入及Prototype边界保持。
 公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`交原runner冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
-prepare在同一snapshot运行原`resolve_geometry --baseline ... --check ...`，实际模块与NumPy沿正式环境记录来源；输入／派生物失配在商业调用前失败。气流成功不代表离子传输或新资格。
+prepare在同一snapshot运行规范组件`geometry --baseline ... --check ...`，实际模块与NumPy沿正式环境记录来源；输入／派生物失配在商业调用前失败。几何准入冻结清单包含规范组件、其包初始化闭包和RF杆数组实现，隔离导入根包含本次`src`，不得借作者checkout补缺。气流成功不代表离子传输或新资格。
 
-纯准备的[树外冻结回归](../tests/test_simion_layer.py)通过公共源码枚举与冻结入口声明八个实际RF模块，
-包含原生映射及其科学拓扑依赖，逐文件核对字节与SHA。隔离解释器`-I`下核对真实模块来源，
-缺少映射模块时明确拒绝，不借作者路径补洞；两种准备模式保持原输入与无PA生成边界。
+纯准备的[树外冻结回归](../tests/test_simion_layer.py)通过公共源码枚举交付规范核心，并保留项目prepare、配置和Program快照；隔离解释器`-I`下核对真实模块来源，缺少原生映射模块时明确拒绝，不借作者路径补洞。两种准备模式保持原输入与无PA生成边界。prepare仍是项目编排入口，只有其新几何依赖迁入规范后端，未整体安装。
 这只证明软件源码闭包，不解除上述SIMION原生运行阻断，也不新增轨迹或物理资格。
 
 ## 机器能力与解析输入

@@ -105,10 +105,18 @@ print(json.dumps(sorted(selected)))
   }
   $geometrySnapshotRoot=Join-Path $package.input_dir 'project_snapshot'
   $geometryCodeFiles=[ordered]@{
-    geometry_resolver='projects/dual_cone_tandem_quadrupole_ion_interface/analysis/resolve_geometry.py'
-    geometry_resolver_package='projects/dual_cone_tandem_quadrupole_ion_interface/analysis/__init__.py'
-    round_rod_geometry='projects/rf_multipole_ion_optics/core/round_rod_geometry.py'
-    round_rod_package='projects/rf_multipole_ion_optics/core/__init__.py'
+    msplatform_package='src/msplatform/__init__.py'
+    components_package='src/msplatform/components/__init__.py'
+    components_model='src/msplatform/components/model.py'
+    components_catalog='src/msplatform/components/catalog.py'
+    contracts_package='src/msplatform/contracts/__init__.py'
+    machine_contracts='src/msplatform/contracts/machine_contracts.py'
+    io_package='src/msplatform/io/__init__.py'
+    file_identity='src/msplatform/io/file_identity.py'
+    geometry_resolver='src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/geometry.py'
+    geometry_resolver_package='src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/__init__.py'
+    round_rod_geometry='src/msplatform/components/rf_multipole/round_rod_geometry.py'
+    round_rod_package='src/msplatform/components/rf_multipole/__init__.py'
   }
   foreach($key in $geometryCodeFiles.Keys){
     $frozen[$key]=Copy-VerifiedRunInput -Source (Join-Path $repoRoot $geometryCodeFiles[$key]) `
@@ -119,11 +127,12 @@ print(json.dumps(sorted(selected)))
 import importlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(root))
-resolver = importlib.import_module('projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry')
+sys.path.insert(0, str(root / 'src'))
+resolver = importlib.import_module('msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry')
 def owned_origins():
     result = {}
     for name, module in tuple(sys.modules.items()):
-        if name not in ('common', 'projects') and not name.startswith(('common.', 'projects.')):
+        if name not in ('common', 'projects', 'msplatform') and not name.startswith(('common.', 'projects.', 'msplatform.')):
             continue
         file = getattr(module, '__file__', None)
         paths = [file] if file else list(getattr(module, '__path__', ()))
@@ -202,7 +211,7 @@ print('DUAL_GEOMETRY_ENVIRONMENT=' + json.dumps(dict(
   }
   $failureStage='independent_gas_field_validation'
   $validation=Join-Path $package.result_dir 'gas_field_validation.json'
-  & $python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.validate_gas_field `
+  & $python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field `
     --csv $field --metadata $metadata --science $frozen.gas_flow_science `
     --numerics $frozen.comsol_solver_numerics --geometry $frozen.resolved_geometry `
     --output $validation

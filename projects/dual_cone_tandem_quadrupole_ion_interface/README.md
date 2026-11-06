@@ -35,7 +35,7 @@
 
 | 任务 | 入口 |
 |---|---|
-| 几何新鲜度 | `python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry --check` |
+| 几何新鲜度 | `verify_project.ps1 -Level Static`（项目脚本向规范组件显式传 baseline/resolved 路径） |
 | 计算气流、导出和校验 | [COMSOL 实施说明](docs/COMSOL.md#运行) |
 | SIMION 输运当前阻断及纯准备 | [SIMION 实施说明](docs/SIMION.md#当前执行阻断) |
 | 规定均匀场对照／GEM smoke | [SIMION 实施说明](docs/SIMION.md) |
@@ -48,9 +48,9 @@ SIMION 科学准备、GEM、源和 Fly Lua 保留；fractional PA 公共隔离�
 ```text
 dual_cone_tandem_quadrupole_ion_interface/
 ├─ config/       # 几何、气流、数值、mode和执行合同
-├─ analysis/     # 求解器无关几何编译与canonical输出校验
+├─ analysis/     # 轨迹投影等求解器无关诊断
 ├─ comsol/       # 气流模型任务
-├─ simion/       # GEM、Workbench Program与气体辅助轨迹实现
+├─ simion/       # Workbench Program、纯准备与气体辅助轨迹实现
 ├─ workflows/    # 按科学问题隔离的原型与准备入口
 ├─ tests/        # 静态、合同和求解器适配边界回归
 └─ docs/         # 当前PROJECT、软件说明与只读history

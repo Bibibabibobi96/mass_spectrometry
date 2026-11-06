@@ -80,9 +80,12 @@ z_index,r_index,z_mm,r_mm,p_pa,temperature_k,u_z_m_per_s,u_r_m_per_s,rho_kg_per_
 运行后必须执行独立验证：
 
 ```powershell
-python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.validate_gas_field `
+python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field `
   --csv C:\absolute\path\gas_field_rz.csv `
-  --metadata C:\absolute\path\gas_field_metadata.json
+  --metadata C:\absolute\path\gas_field_metadata.json `
+  --science projects\dual_cone_tandem_quadrupole_ion_interface\config\gas_flow_science.json `
+  --numerics projects\dual_cone_tandem_quadrupole_ion_interface\config\comsol_solver_numerics.json `
+  --geometry projects\dual_cone_tandem_quadrupole_ion_interface\config\resolved_geometry.json
 ```
 
 验证器检查身份、哈希、字段与行序、规则网格、有限值、理想气体密度闭合、质量守恒和出口压力。`Kn > 0.1` 时仍可保留结果作失效诊断，但验证摘要会把定量连续介质声明标为不允许；这提示后续需要 DSMC/混合方法，而不是把连续介质结果当成可靠真值。

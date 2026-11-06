@@ -14,9 +14,8 @@ from common.contracts.frozen_inputs import freeze_file
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import materialize_release_from_file
 from common.simion.particle_source import render_standard_beams, render_source_states
-from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
-    DEFAULT_NUMERICS,
-    DEFAULT_RESOLVED,
+from msplatform.backends.simion import dual_cone_geometry
+from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
     render_gem,
 )
@@ -24,6 +23,8 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_geometry.json"
+DEFAULT_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
 SCIENCE = PROJECT_ROOT / "config" / "ion_transport_science.json"
 GAS_INTERFACE = PROJECT_ROOT / "config" / "gas_field_interface.json"
 GAS_FLOW_SCIENCE = PROJECT_ROOT / "config" / "gas_flow_science.json"
@@ -336,7 +337,11 @@ def prepare(
             "surface": numerics["pa"]["surface_enhancement"],
             "simion_identity": {"executable_sha256": file_sha256(executable)},
             "refine_policy": numerics["pa"]["refine_policy"],
-            "builder_identity": {"geometry_compiler_sha256": file_sha256(Path(__file__).with_name("geometry.py"))},
+            "builder_identity": {
+                "geometry_compiler_sha256": file_sha256(
+                    Path(dual_cone_geometry.__file__).resolve()
+                )
+            },
         }
         identity_path = frozen / "pa_cache_identity.json"
         identity_path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")

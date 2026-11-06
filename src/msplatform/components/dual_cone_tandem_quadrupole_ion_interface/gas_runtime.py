@@ -9,9 +9,8 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
-
-from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.validate_gas_field import (
+from msplatform.io.file_identity import file_sha256
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import (
     validate_gas_field,
 )
 
@@ -169,15 +168,14 @@ return field
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    root = Path(__file__).resolve().parents[1]
     parser.add_argument("--csv", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--output-lua", type=Path, required=True)
     parser.add_argument("--output-manifest", type=Path, required=True)
-    parser.add_argument("--science", type=Path, default=root / "config" / "gas_flow_science.json")
-    parser.add_argument("--numerics", type=Path, default=root / "config" / "comsol_solver_numerics.json")
-    parser.add_argument("--geometry", type=Path, default=root / "config" / "resolved_geometry.json")
-    parser.add_argument("--interface", type=Path, default=root / "config" / "gas_field_interface.json")
+    parser.add_argument("--science", type=Path, required=True)
+    parser.add_argument("--numerics", type=Path, required=True)
+    parser.add_argument("--geometry", type=Path, required=True)
+    parser.add_argument("--interface", type=Path, required=True)
     args = parser.parse_args()
     export_runtime(
         args.csv,

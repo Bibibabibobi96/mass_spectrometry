@@ -82,6 +82,18 @@ for project_id, documents in fixture['standalone_contracts'].items():
     origin = pathlib.Path(resolver.__file__).resolve()
     assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
     origins[module_name] = str(origin)
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+from msplatform.backends.simion.dual_cone_geometry import render_gem
+cone = fixture['dual_cone']
+assert resolve_geometry(cone['baseline']) == cone['resolved']
+assert render_gem(cone['resolved'], cone['numerics']) == cone['gem']
+for name in ('uniform_rear_gas_field', 'gas_field_interface'):
+    (root/(name+'.json')).write_text(json.dumps(cone[name]), encoding='utf-8')
+manifest = export_uniform_runtime(root/'uniform.lua', root/'uniform-manifest.json',
+    spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
+assert manifest['role'] == 'dual_cone_gas_field_export'
+assert (root/'uniform.lua').read_bytes() == cone['uniform_lua'].encode()
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -712,13 +724,26 @@ class InstalledScientificCoreTests(unittest.TestCase):
                     key: json.loads((project_config / filename).read_text(encoding='utf-8'))
                     for key, filename in (('baseline', 'baseline.json'), ('modes', 'numerical_modes.json'),
                                           ('expected', 'resolved_model.json'))}
+            from msplatform.backends.simion.dual_cone_geometry import render_gem
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+            cone_config = REPO_ROOT / 'projects/dual_cone_tandem_quadrupole_ion_interface/config'
+            dual_cone = {name: json.loads((cone_config / filename).read_text(encoding='utf-8'))
+                for name, filename in (('baseline', 'baseline.json'), ('resolved', 'resolved_geometry.json'),
+                    ('numerics', 'simion_solver_numerics.json'), ('uniform_rear_gas_field', 'uniform_rear_gas_field.json'),
+                    ('gas_field_interface', 'gas_field_interface.json'))}
+            dual_cone['gem'] = render_gem(dual_cone['resolved'], dual_cone['numerics'])
+            for name in ('uniform_rear_gas_field', 'gas_field_interface'):
+                (root/(name+'.json')).write_text(json.dumps(dual_cone[name]), encoding='utf-8')
+            export_uniform_runtime(root/'fixture-uniform.lua', root/'fixture-uniform-manifest.json',
+                spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
+            dual_cone['uniform_lua'] = (root/'fixture-uniform.lua').read_text(encoding='utf-8')
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
                                               schemas=expected_schemas, provider_layout=provider_layout,
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
-                                              standalone_contracts=standalone_contracts,
+                                              standalone_contracts=standalone_contracts, dual_cone=dual_cone,
                                               comparison=self.comparison_probe_fixture())), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             # Remove both private author trees from their original locations;
