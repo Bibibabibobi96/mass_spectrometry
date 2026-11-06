@@ -766,7 +766,7 @@
             "cooled_frontend",
             "oa_mr"
           ]
-        },
+        }
       ],
       "python_packages": [
         {

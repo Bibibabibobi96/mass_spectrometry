@@ -130,8 +130,15 @@ def load_paired_static_model_source(
     if (Path(checkpoint.get('plan_path', '')).resolve() != source_plan.resolve()
             or Path(checkpoint.get('model_path', '')).resolve() != record_path(model, base_dir=base)):
         raise ValueError('native COMSOL fact does not bind the source plan/model')
-    backend = Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m')
-    old_backend = bound(base/'inputs/runtime_snapshot'/backend)
+    backend_candidates = [
+        Path('projects/single_reflection_oa_tof_mass_analyzer/comsol/build_and_export_paired_accelerator_field.m'),
+        Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m'),
+    ]
+    backend_matches = [path for path in backend_candidates if any(
+        record_path(row, base_dir=base) == (base/'inputs/runtime_snapshot'/path).resolve() for row in records)]
+    if len(backend_matches) != 1:
+        raise ValueError('COMSOL source requires exactly one manifest-bound backend resource location')
+    old_backend = bound(base/'inputs/runtime_snapshot'/backend_matches[0])
     result = dict(manifest=dict(file_record(manifest_snapshot.resolve()), source_path=str(manifest_path)), solution=solution_record, source_stage=source_stage,
         plan=plan_record, model=model, backend=old_backend)
     if borrowed is not None and source_identity(borrowed) != source_identity(result):
