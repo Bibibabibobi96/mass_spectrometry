@@ -20,6 +20,11 @@
 接受显式输入合同，`--self-test`只验证解析参考。轻量验证入口为`verify_project.ps1`，不启动商业求解器。
 该门禁还使用显式`-LuaExe`或本机 SIMION 2020 所附 Lua 检查构建参数合同；没有Lua时明确跳过该项。
 各API的参数和坐标约定以源码及理论为准；不提供隐藏的仪器电压、尺寸或焦面默认值。
+普通安装的独立几何入口为`msplatform.components.resolve_component`：二区`design`显式包含`requirements`和
+`geometry_profile`内容，三区包含完整sectioned `requirements`；profile ID不代替内容。包内
+`oa_two_three_geometric_v1`示例经`assembly.assemble`生成真实两变体装配，并可由`exporters`投影STEP。
+项目侧`analysis/assembly_interface.py`只负责读取具名项目profile并调用规范实现，不复制端口或电极算法。
+这些是纯几何／CAD能力，不启动原生求解，也不授予独立器件场、轨迹、GUI或Formal资格。
 组件工作流的软件接线回归执行实际源投影与冻结分析参数，验证小manifest身份绑定，
 并在禁止读取受保护载荷的条件下检查摘要；软件通过不代表原生飞行或科学资格。
 

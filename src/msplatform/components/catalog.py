@@ -14,6 +14,9 @@ def _component_interface(provider: str, resolved: dict[str, Any], profile: str |
     if provider == "rf_multipole":
         from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
         return build_assembly_interface(resolved, geometry_profile_id=profile)
+    if provider == "orthogonal_accelerator":
+        from msplatform.components.orthogonal_accelerator.assembly_interface import build_assembly_interface
+        return build_assembly_interface(resolved, geometry_profile_id=profile)
     if provider == "single_reflection_oa_tof":
         if type(resolved.get("schema_version")) is not int or resolved["schema_version"] != 1:
             raise ContractError("unsupported TOF resolved design version")
@@ -37,6 +40,11 @@ def _from_provider(provider: str, resolved: Mapping[str, Any], interface: Mappin
     canonical = _component_interface(provider, design, interface.get("geometry_profile_id"))
     if canonical != interface:
         raise ContractError(f"{provider}: assembly interface differs from the resolved design")
+    if provider == "orthogonal_accelerator":
+        from msplatform.components.orthogonal_accelerator.provider import resolve_component as resolve
+        expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
+        if expected["resolved_design"] != design:
+            raise ContractError("OA resolved design differs from its source requirements and geometry profile")
     if provider == "single_reflection_oa_tof":
         if not isinstance(source_design, Mapping):
             raise ContractError("TOF resolved design requires its explicit source design documents")
@@ -60,6 +68,10 @@ def resolve_component(request: Mapping[str, Any]) -> ResolvedComponent:
         from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
         resolved = compile_design_request(design, expected_identity=design["identity"])
         interface = build_assembly_interface(resolved, geometry_profile_id=profile)
+    elif provider == "orthogonal_accelerator":
+        from msplatform.components.orthogonal_accelerator.provider import resolve_component as resolve
+        result = resolve(design, geometry_profile_id=profile)
+        resolved, interface = result["resolved_design"], result["assembly_interface"]
     elif provider == "single_reflection_oa_tof":
         from msplatform.components.single_reflection_oa_tof.provider import resolve_component as resolve
         result = resolve(design, geometry_profile_id=profile)

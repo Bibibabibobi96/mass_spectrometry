@@ -5,6 +5,7 @@ import hashlib
 
 from msplatform import assembly as assembly_api, components as component_api, examples as example_api
 from msplatform.exporters.step import assembly_geometry_members
+from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
 
 
@@ -80,6 +81,76 @@ class GeometryMemberTests(unittest.TestCase):
         snapshot=real_snapshot();members=assembly_geometry_members(snapshot)
         self.assertEqual({m['instance_id'] for m in members},{'multipole','oatof'})
         self.assertNotEqual(members[0]['transform'],members[-1]['transform'])
+
+
+def independent_oa_objects():
+    """Load the versioned two/three-zone OA study without checkout or placeholders."""
+    study = example_api.load_example('oa_two_three_geometric_v1')
+    parts = {name: component_api.resolve_component(request)
+             for name, request in study.component_requests.items()}
+    instrument = assembly_api.assemble(study.recipe, parts)
+    snapshot = dict(composition_plan=instrument.composition_plan, components_resolved=instrument.components_resolved)
+    return parts, instrument, snapshot
+
+
+def independent_oa_snapshot():
+    return independent_oa_objects()[2]
+
+
+class IndependentOAProviderTests(unittest.TestCase):
+    def test_two_and_three_zone_designs_interfaces_and_members_are_independent(self):
+        parts, instrument, snapshot = independent_oa_objects()
+        self.assertEqual(set(parts), {'two', 'three'})
+        self.assertNotIn('single_reflection_oa_tof', snapshot['components_resolved'])
+        self.assertEqual(set(parts['two'].assembly_interface['ports']), {'axial_exit', 'side_entry'})
+        self.assertEqual(set(parts['three'].assembly_interface['ports']), {'side_entry'})
+        self.assertEqual(parts['two'].assembly_interface['component_electrodes'][1],
+                         {'electrode_group_id': 'repeller', 'role': 'repeller'})
+        self.assertEqual([row['electrode_group_id'] for row in parts['three'].assembly_interface['component_electrodes'][1:5]],
+                         ['repeller', 'intermediate_grid_1', 'intermediate_grid_2', 'exit_grid'])
+        self.assertEqual(instrument.composition_plan['schema_version'], 5)
+        members = assembly_geometry_members(snapshot)
+        self.assertEqual(len(members), 30)
+        self.assertEqual(len([m for m in members if m['representation_role'] == 'physical_solid']), 25)
+        self.assertEqual(len([m for m in members if m['representation_role'] == 'ideal_surface']), 5)
+        self.assertEqual({m['local_frame_id'] for m in members},
+                         {'orthogonal_accelerator_exit_origin_v1', 'sectioned_accelerator_cartesian'})
+        shield = next(m for m in members if m['instance_id'] == 'two' and m['member_id'] == 'grounded_shield')
+        self.assertIn('/local_exit_z_mm', shield['source_refs'])
+
+    def test_local_scope_retains_complete_oa_parent_and_inputs_remain_independent(self):
+        parts, instrument, snapshot = independent_oa_objects()
+        before = copy.deepcopy(snapshot)
+        local = assembly_api.assemble(instrument.composition_plan['recipe'], parts,
+            local_scope=dict(instance_ids=['three'], research_scope='three-zone OA only',
+                             boundary_assumptions='Explicit local CAD scope; retain full parent'))
+        selected = dict(composition_plan=local.composition_plan, components_resolved=local.components_resolved)
+        members = assembly_geometry_members(selected)
+        self.assertEqual({m['instance_id'] for m in members}, {'three'})
+        self.assertEqual(len(members), 9)
+        self.assertEqual(set(local.composition_plan['components']), {'two', 'three'})
+        self.assertEqual(snapshot, before)
+        changed = parts['two'].resolved_design
+        changed['enclosure'].clear()
+        self.assertNotEqual(parts['two'].resolved_design, changed)
+
+    def test_oa_source_and_interface_mismatch_fail_at_public_boundaries(self):
+        parts, instrument, _ = independent_oa_objects()
+        request = {'provider_id': 'orthogonal_accelerator', 'geometry_profile_id': 'closed_two_zone_compact_mr_axial_r3_gap1_4mm',
+                   'design': {'requirements': parts['two'].source_design['requirements']}}
+        with self.assertRaisesRegex(ValueError, 'geometry_profile content'):
+            component_api.resolve_component(request)
+        interface = parts['three'].assembly_interface
+        interface['ports']['side_entry']['center_mm'][1] += 1
+        direct = component_api.ResolvedComponent('orthogonal_accelerator', parts['three'].resolved_design, interface,
+                                                 source_design=parts['three'].source_design)
+        with self.assertRaisesRegex(ContractError, 'interface differs'):
+            assembly_api.assemble(instrument.composition_plan['recipe'], {'two': parts['two'], 'three': direct})
+        from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
+        for kwargs in ({'geometry_profile_id': 'unconsumed'},
+                       {'geometry_profile_id': None, 'geometry_profile': {}}):
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, 'not a geometric input'):
+                resolve_assembly_interface(parts['three'].source_design['requirements'], **kwargs)
 
 
 if __name__=='__main__': unittest.main()

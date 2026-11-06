@@ -10,7 +10,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from common.contracts.test_geometry_members import real_snapshot
+from common.contracts.test_geometry_members import real_snapshot, independent_oa_snapshot
 from msplatform.exporters.step import export_assembly_step
 
 
@@ -351,6 +351,29 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
             source.data_path('step').write_bytes(b'tampered STEP')
             with self.assertRaisesRegex(AssertionError,'changed'):
                 api.inspect_cad(source,checks=checks)
+
+
+    @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')
+    def test_independent_two_three_zone_oa_step_export_and_cold_semantic_read(self):
+        from msplatform.exporters.step import inspect_assembly_step
+        snapshot = independent_oa_snapshot()
+        before = copy.deepcopy(snapshot)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'independent-oa.step'
+            report = export_assembly_step(snapshot, destination=path, representation='physical_solids',
+                                          options=dict(write_pcurves=True, precision_mode=0))
+            self.assertEqual(report['source_member_count'], 30)
+            self.assertEqual(len(report['exported_members']), 25)
+            self.assertEqual(len(report['excluded_members']), 5)
+            cold = self._cold_product_names(path)
+            self.assertTrue(all(row['valid'] for row in cold['members']))
+            self.assertEqual(cold['solid_count'], 25)
+            inspection = inspect_assembly_step(path, assembly=snapshot,
+                export_report=dict(schema_version=1, role='owned_assembly_step_export', projection=report), probes=[])
+            self.assertEqual(inspection['status'], 'consistent')
+            self.assertEqual(inspection['solid_count'], 25)
+            self.assertLessEqual(abs(inspection['volume_residual_mm3']), inspection['volume_serialization_bound_mm3'])
+        self.assertEqual(snapshot, before)
 
 
 if __name__=='__main__': unittest.main()

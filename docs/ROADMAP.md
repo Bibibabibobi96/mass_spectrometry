@@ -120,7 +120,12 @@ P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需�
 最终Changed门禁16 PASS／32 NA，1937个父方法中1936成功、1项因未配置`OATOF_THREE_ZONE_T5_RECEIPT`明确跳过，
 3141个子测试全部成功，公共墙钟2698.441秒；普通wheel／sdist／重建wheel安装验收5项通过。
 这些是当前软件与纯科学证据，不是原生、数值或Formal资格；完整15分钟及owner性能目标仍未关闭。
-下一切片接通独立OA两／三区provider与同源STEP；其余原生执行、结果、部署、八项目推广、两个性能热点和旧桥退出继续在同一Goal内关闭。
+独立OA两／三区provider、component3、多实例／局部scope和同源STEP冷读已接通；包内`oa_two_three_geometric_v1`
+显式保存requirements／profile内容，项目profile加载适配不复制算法。定向51项回归及普通安装5项测试通过，
+实际OA STEP含25个物理实体和5个显式理想面排除；这不是独立OA原生、GUI或Formal资格。
+最终Changed门禁18 PASS／30 NA，1821个父测试成功、1项既定receipt缺失跳过，2626个子测试成功，
+公共墙钟1886.016秒；历史schema 1／2保留原profile标签，新component3拒绝未消费标签。
+其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。
 真实三区N100的映射A/B与显式回放、有限GUI及18次独立非粒子场查询已有相称证据；

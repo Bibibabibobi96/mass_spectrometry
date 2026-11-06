@@ -235,6 +235,15 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     independent_geometry = simion_api.compile_geometry(independent_assembly, numerics=independent.geometry_numerics)
     assert independent_geometry == actual_geometry
     assert study.to_dict()['release'] == original_release
+    oa_study = example_api.load_example('oa_two_three_geometric_v1')
+    oa_components = {name:component_api.resolve_component(request)
+                     for name,request in oa_study.component_requests.items()}
+    oa_assembly = assembly_api.assemble(oa_study.recipe, oa_components)
+    from msplatform.exporters.step import assembly_geometry_members
+    oa_members = assembly_geometry_members(dict(composition_plan=oa_assembly.composition_plan,
+                                               components_resolved=oa_assembly.components_resolved))
+    assert len(oa_members) == 30
+    assert sum(member['representation_role']=='physical_solid' for member in oa_members) == 25
     from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
     from msplatform.backends.simion.field_execution import plan_fields_execution
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
@@ -374,6 +383,7 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      strict_peak_metadata_version=strict_metadata['schema_version'], neutral_state_count=state_report['particles'],
                      census_weight_fraction=efficiency['relative_weight_fraction'],
                      installed_platform_components=sorted(actual_components), downstream_spec_count=3,
+                     independent_oa_components=sorted(oa_components), independent_oa_member_count=len(oa_members),
                      geometry_only_native_calls=0, release_independent_geometry=True,
                      prepared_model_compile_only=True, field_plan_only=True, field_execution_performed=False,
                      author_tree_reads_blocked=True,

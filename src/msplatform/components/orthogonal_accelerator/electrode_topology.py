@@ -40,7 +40,12 @@ def _at_pointer(document: Any, pointer: str) -> Any:
 def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> tuple[Mapping[str, Any], list[tuple[str, list[str], list[str]]]]:
     if isinstance(resolved, ClosedTwoZoneGeometry):
         document = asdict(resolved)
-        if len(resolved.grid_supports) != 2 or not resolved.rings:
+    elif isinstance(resolved, Mapping) and resolved.get("role") == "orthogonal_accelerator_two_zone_geometry":
+        document = resolved
+    else:
+        document = None
+    if document is not None:
+        if len(document["grid_supports"]) != 2 or not document["rings"]:
             raise ValueError("two-zone topology requires both supports and its rings")
         enclosure = [f"/enclosure/{key}" for key in document["enclosure"]
                      if key not in {"lateral_clearance_mm", "electrode_half_x_mm", "electrode_half_y_mm"}]
@@ -51,12 +56,12 @@ def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> t
             ("intermediate_grid_1", ["intermediate_grid_1", "grid_support", "ideal_transparent_sheet"], ["/grid_supports/0"]),
             ("exit_grid", ["exit_grid", "grid_support", "ideal_transparent_sheet"], ["/grid_supports/1"]),
         ]
-        if resolved.side_entry is not None:
+        if document["side_entry"] is not None:
             groups[0][2].append("/side_entry/physical_cutout_box_mm")
         groups.extend((f"ring_{index + 1:04d}", ["ring"], [f"/rings/{index}",
                        "/enclosure/electrode_half_x_mm", "/enclosure/electrode_half_y_mm",
                        "/aperture_half_x_mm", "/aperture_half_y_mm"])
-                      for index in range(len(resolved.rings)))
+                      for index in range(len(document["rings"])))
     elif isinstance(resolved, Mapping) and resolved.get("role") in {
         "orthogonal_accelerator_sectioned_three_zone_geometry", "instrument_sectioned_accelerator_mechanics_projection",
     }:

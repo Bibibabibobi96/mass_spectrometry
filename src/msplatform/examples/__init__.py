@@ -5,7 +5,7 @@ import json
 
 def load_example_document(name: str) -> dict:
     """Read one named example document without checkout or native side effects."""
-    if name != "rf_oatof_functional_v1":
+    if name not in {"rf_oatof_functional_v1", "oa_two_three_geometric_v1"}:
         raise ValueError(f"unknown example: {name}")
     return json.loads(files(__package__).joinpath(name + ".json").read_text(encoding="utf-8"))
 

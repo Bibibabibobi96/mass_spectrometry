@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "name": "oa_two_three_geometric_v1",
+  "role": "versioned_geometric_study",
+  "component_requests": {
+    "two": {
+      "provider_id": "orthogonal_accelerator",
+      "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+      "design": {
+        "requirements": {
+          "schema_version": 2,
+          "role": "orthogonal_accelerator_two_zone_requirements",
+          "variant_id": "two_zone",
+          "acceleration_direction": "-z",
+          "source_cylinder": {"radius_mm": 1.0, "height_mm": 1.0},
+          "focus": {"mode": "two_zone_time_focus", "focus_plane": "consumer_plane"},
+          "compaction": {"axes": ["y", "z"], "objective": "minimize_subject_to_focus"},
+          "local_pa": {
+            "span_mm": [64.0, 64.0, 84.0],
+            "mesh_mm_per_gu": [0.25, 0.25, 0.1],
+            "exit_z_mm": 6.0,
+            "margin_z_mm": 6.0
+          },
+          "placement": {"focus_y_mm": 20.0, "global_repeller_z_mm": 34.0, "global_exit_z_mm": 0.0},
+          "side_entry": {"face": "negative_y", "half_width_x_mm": 1.5, "half_width_z_mm": 1.4}
+        },
+        "geometry_profile": {
+          "gap_1_mm": 4.0,
+          "gap_2_mm": 30.0,
+          "ring_count": 15,
+          "ring_thickness_z_mm": 1.0,
+          "aperture_width_x_mm": 25.0,
+          "aperture_height_y_mm": 26.0,
+          "qualified_source_envelope_radius_mm": 1.0,
+          "qualified_source_envelope_height_mm": 1.0,
+          "electrode_outer_width_x_mm": 40.0,
+          "electrode_outer_height_y_mm": 30.0,
+          "guard_outer_width_x_mm": 44.0,
+          "guard_outer_height_y_mm": 34.0,
+          "guard_wall_thickness_mm": 1.0,
+          "lateral_clearance_mm": 1.0,
+          "repeller_thickness_z_mm": 2.0,
+          "rear_gap_mm": 1.0
+        }
+      }
+    },
+    "three": {
+      "provider_id": "orthogonal_accelerator",
+      "design": {
+        "requirements": {
+          "schema_version": 1,
+          "role": "orthogonal_accelerator_bare_three_zone_requirements",
+          "variant_id": "three_zone",
+          "geometry": {
+            "cross_section": "square",
+            "axis_x_mm": 0.0,
+            "axis_y_mm": 0.0,
+            "shield_center_z_mm": 15.0,
+            "shield_outer_width_mm": 34.0,
+            "shield_inner_width_mm": 32.0,
+            "shield_span_z_mm": 38.0,
+            "negative_x_face_mm": -17.0,
+            "shield_wall_mm": 1.0,
+            "shield_back_z_mm": -4.0,
+            "port_center_y_mm": 0.0,
+            "port_center_z_mm": 2.0,
+            "numerical_port_width_mm": 3.0,
+            "numerical_port_height_mm": 2.8,
+            "electrode_width_mm": 30.0,
+            "bore_width_mm": 26.0,
+            "repeller_front_z_mm": 0.0,
+            "repeller_thickness_mm": 1.0,
+            "grid1_z_mm": 4.0,
+            "intermediate2_z_mm": 14.0,
+            "grid2_z_mm": 34.0,
+            "ring_count": 4,
+            "ring_thickness_mm": 0.5,
+            "ring_z_mm": [6.0, 10.0, 20.0, 28.0]
+          }
+        }
+      }
+    }
+  },
+  "recipe": {
+    "schema_version": 1,
+    "role": "assembly_recipe",
+    "integration_id": "instrument_assembly",
+    "recipe_id": "independent_oa_two_three_test",
+    "assembly_frame_id": "oa_test_global",
+    "position_tolerance_mm": 1e-9,
+    "angular_tolerance_rad": 1e-12,
+    "instances": [
+      {
+        "instance_id": "two",
+        "project_id": "orthogonal_accelerator",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "orthogonal_accelerator_exit_origin_v1",
+          "to_frame_id": "oa_test_global",
+          "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+          "translation_mm": [0.0, 0.0, 0.0]
+        }
+      },
+      {
+        "instance_id": "three",
+        "project_id": "orthogonal_accelerator",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "sectioned_accelerator_cartesian",
+          "to_frame_id": "oa_test_global",
+          "rotation": [[0.0, -1.0, 0.0], [0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]],
+          "translation_mm": [0.0, -2.0, -18.0]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "connection_id": "two_to_three",
+        "upstream": {"instance_id": "two", "port_id": "axial_exit"},
+        "downstream": {"instance_id": "three", "port_id": "side_entry"},
+        "gap_mm": 1.0,
+        "coupling_mode": "state_handoff"
+      }
+    ]
+  },
+  "cad_export": {
+    "representation": "physical_solids",
+    "write_pcurves": true,
+    "precision_mode": 0,
+    "name": "Independent OA"
+  }
+}

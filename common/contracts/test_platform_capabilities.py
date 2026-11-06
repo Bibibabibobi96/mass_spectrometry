@@ -39,6 +39,14 @@ class PlatformCapabilitiesTests(unittest.TestCase):
                 self.assertEqual(result["environment_status"], "not_supplied")
                 self.assertEqual(result["execution_readiness"], "not_assessed")
                 self.assertEqual(arguments, before)
+        from common.contracts.test_geometry_members import independent_oa_objects
+        oa_parts, _, _ = independent_oa_objects()
+        request = dict(provider_id="orthogonal_accelerator",
+                       geometry_profile_id=oa_parts["two"].assembly_interface["geometry_profile_id"],
+                       design=oa_parts["two"].source_design)
+        result = self.query("resolve_component", dict(request=request))
+        self.assertEqual(result["contract_status"], "accepted", result)
+        self.assertEqual(result["native_qualification"], "not_granted")
 
     def test_real_model_field_and_tracking_planners_are_distinct_from_execution(self):
         packet = api.sample_release(self.case.release).to_dict()
@@ -105,7 +113,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
     def test_unsupported_request_does_not_borrow_legacy_project_support(self):
         unsupported = self.query("open_unknown_solver", {})
         self.assertEqual(unsupported["contract_status"], "unsupported")
-        rejected = self.query("resolve_component",dict(request=dict(provider_id="orthogonal_accelerator",design={})))
+        rejected = self.query("resolve_component",dict(request=dict(provider_id="unknown_provider",design={})))
         self.assertEqual(rejected["contract_status"], "rejected")
         self.assertIn("unsupported component provider", rejected["reason"]["message"])
         rejected = self.query("compile_geometry",dict(assembly=None,numerics=self.case.geometry_numerics))

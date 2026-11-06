@@ -13,6 +13,8 @@ from msplatform.components.rf_multipole.assembly_interface import build_assembly
 from msplatform.components.single_reflection_oa_tof.assembly_interface import resolve_assembly_interface as tof_interface
 from msplatform.components.single_reflection_oa_tof.accelerator_geometry import resolve_accelerator_geometry, apply_side_opening
 from msplatform.components.rf_multipole.geometry_members import iter_geometry_members as rf_members
+from msplatform.components.orthogonal_accelerator.assembly_interface import build_assembly_interface as oa_interface
+from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members as oa_members
 from msplatform.components.single_reflection_oa_tof.geometry_members import iter_geometry_members as tof_members
 
 
@@ -37,6 +39,9 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
         if project=='rf_multipole_ion_optics':
             actual=rf_interface(resolved,geometry_profile_id=interface['geometry_profile_id'])
             members=rf_members(resolved)
+        elif project=='orthogonal_accelerator':
+            actual=oa_interface(resolved,geometry_profile_id=interface['geometry_profile_id'])
+            members=oa_members(resolved)
         elif project=='single_reflection_oa_tof_mass_analyzer':
             if interface['variant_id']!='three_zone_square': raise ValueError('complete TOF STEP requires three_zone_square')
             projection=apply_side_opening(resolve_accelerator_geometry(resolved,variant_id=interface['variant_id']),side_opening=resolved['mechanical_side_opening'])
@@ -54,7 +59,7 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
             if member['representation_role'] not in {'physical_solid','ideal_surface'}: raise ValueError('unknown physical representation')
             for ref in member['source_refs']:
                 value=resolved
-                for token in ref.split('/')[1:]: value=value[int(token)] if isinstance(value,list) else value[token]
+                for token in ref.split('/')[1:]: value=value[int(token)] if isinstance(value,(list,tuple)) else value[token]
             _validate_shape(member['shape'],surface=member['representation_role']=='ideal_surface')
             result.append(dict(copy.deepcopy(member),instance_id=instance,transform=copy.deepcopy(poses[instance])))
     return tuple(result)
@@ -197,7 +202,7 @@ def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
     """Name actual instance/member products, independently of iteration order.
 
     RF references supply physical rod/segment identity; electrical groups only
-    qualify that label. TOF's complete source member role carries stage/ring.
+    qualify that label. TOF and OA source member roles carry their actual bodies.
     A compound stays one named product and retains all its physical solids.
     """
     names, used = {}, set()
@@ -215,7 +220,7 @@ def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
                 tokens += [f'rod_{rod:04d}', f"rf_group_{row['electrode_group']}"]
             else:
                 tokens = [row['role']]
-        elif project == 'single_reflection_oa_tof_mass_analyzer':
+        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator'}:
             tokens = identity.split('/')
         else:
             raise ValueError('STEP naming provider is unsupported: ' + project)

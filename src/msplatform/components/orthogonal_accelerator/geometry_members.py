@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from dataclasses import asdict
 from msplatform.components.orthogonal_accelerator.two_zone_geometry import ClosedTwoZoneGeometry
 
@@ -47,15 +48,16 @@ def _member(identity,group,shape,refs,frame,role='physical_solid'):
 
 def iter_geometry_members(resolved):
     """Return complete mechanics and explicit ideal sheets/tools, without mutation."""
-    if isinstance(resolved,ClosedTwoZoneGeometry):
-        d=asdict(resolved);e=d['enclosure'];frame='orthogonal_accelerator_exit_origin_v1'
+    if isinstance(resolved,ClosedTwoZoneGeometry) or (isinstance(resolved,Mapping) and resolved.get('role')=='orthogonal_accelerator_two_zone_geometry'):
+        d=asdict(resolved) if isinstance(resolved,ClosedTwoZoneGeometry) else resolved
+        e=d['enclosure'];frame='orthogonal_accelerator_exit_origin_v1'
         def box(x,y,z0,z1): return dict(kind='box',center_mm=[0,0,(z0+z1)/2],size_mm=[2*x,2*y,z1-z0])
         outer=box(e['guard_half_x_mm'],e['guard_half_y_mm'],d['local_exit_z_mm'],e['rear_cap_outer_z_mm'])
         cavity=box(e['guard_inner_half_x_mm'],e['guard_inner_half_y_mm'],d['local_exit_z_mm'],e['rear_cap_inner_z_mm'])
         tools=[cavity]
         if d['side_entry']:
             b=d['side_entry']['physical_cutout_box_mm'];tools.append(dict(kind='box',center_mm=[(b[i]+b[i+3])/2 for i in range(3)],size_mm=[b[i+3]-b[i] for i in range(3)]))
-        result=[_member('grounded_shield','grounded_shield',dict(kind='difference',base=outer,tools=tools),['/enclosure','/side_entry'],frame),
+        result=[_member('grounded_shield','grounded_shield',dict(kind='difference',base=outer,tools=tools),['/enclosure','/side_entry','/local_exit_z_mm'],frame),
                 _member('repeller','repeller',box(e['electrode_half_x_mm'],e['electrode_half_y_mm'],d['local_repeller_z_mm'],d['local_repeller_z_mm']+d['repeller_thickness_mm']),['/local_repeller_z_mm','/repeller_thickness_mm','/enclosure'],frame)]
         for index,s in enumerate(d['grid_supports']):
             group=('intermediate_grid_1','exit_grid')[index]

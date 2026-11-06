@@ -14,7 +14,7 @@
 |---|---|
 | 公共发现、结构变体与能力 | [project.json](../config/project.json)，二区／三区分别登记，不能隐式代选 |
 | 器件API、变体和具名几何profile | [component_contract_v3.json](../config/component_contract_v3.json)；旧API2来源保留原合同 |
-| 机械端口与物理电极视图 | [assembly_interface.py](../analysis/assembly_interface.py)，消费同一冻结请求和现有几何编译器 |
+| 机械端口与物理电极视图 | `msplatform.components.orthogonal_accelerator.assembly_interface`拥有唯一实现；[项目适配器](../analysis/assembly_interface.py)只加载具名profile |
 | 组件焦点实验 | [two_zone_component_focus_campaign.json](../config/two_zone_component_focus_campaign.json) |
 | 二区／三区及有符号源理论 | [理论导航](theory/README.md) |
 | 独立构建、飞行与验收 | [项目执行入口](../README.md#阅读与入口) |
@@ -48,6 +48,7 @@ resolved或三区领域文档，以稳定角色和环序号发布科学组；mem
 | SIMION几何 | 二区／三区、方／圆截面、环／屏蔽、显式侧孔及原生PA构建 | 任意拓扑或未声明的隐藏尺寸、电压 |
 | COMSOL几何 | 同源实体及零厚栅构造；当前装配消费支持方形截面 | 三区新装配的真实求解、保存重开与GUI验收 |
 | 机械接口 | 两种变体的真实端面、截面、外法向、壁厚及物理电极身份；直接消费者纯回归通过 | 孔内整面电位、源、时钟或粒子交接资格 |
+| 普通安装独立provider／CAD | `oa_two_three_geometric_v1`显式消费两变体requirements／profile内容，支持多实例、局部scope、同源STEP与冷读 | 原项目未闭合的场、轨迹、数值、GUI／正式CAD和资格 |
 | 封闭二区组件实验 | 具名源、完整电极电压、-z焦面、真实N100出口与候选收据 | 独立全变体Candidate/Formal或整机分辨率 |
 
 几何由提供者单次解析发布，消费者不重画电极或用局部PA编号作为全局物理身份。

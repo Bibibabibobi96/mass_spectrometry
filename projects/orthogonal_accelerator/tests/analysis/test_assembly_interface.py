@@ -137,7 +137,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
                 self.assertTrue(all(row["role"] == "ring" for row in current["component_electrodes"] if row["electrode_group_id"].startswith("ring_")))
 
     def test_current_query_does_not_project_a_native_integer_table(self) -> None:
-        module = "projects.orthogonal_accelerator.analysis.assembly_interface"
+        module = "msplatform.components.orthogonal_accelerator.assembly_interface"
         with patch(module + "._two_zone_component_electrodes", side_effect=AssertionError("legacy native table requested")):
             result = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE)
         self.assertEqual(result["component_electrodes"][0], {"electrode_group_id": "grounded_shield", "role": "shield"})
@@ -215,7 +215,8 @@ class AssemblyInterfaceTests(unittest.TestCase):
         from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
         profile = dict(load_geometry_profile(TWO_ZONE_PROFILE))
         profile["aperture_width_x_mm"] = 24.0
-        with patch("projects.orthogonal_accelerator.analysis.two_zone_geometry.load_geometry_profile",
+        with patch("projects.orthogonal_accelerator.analysis.assembly_interface.load_geometry_profile",
+                   return_value=profile), patch("projects.orthogonal_accelerator.analysis.two_zone_geometry.load_geometry_profile",
                    return_value=profile):
             interface = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE)
             compiled = compile_closed_two_zone_accelerator(two_zone_requirements())
@@ -267,6 +268,11 @@ assert result['ports']['axial_exit']['center_mm']==[0.0,0.0,0.0]
                 resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=profile)
         with self.assertRaisesRegex(ValueError, "two_zone or three_zone"):
             resolve_assembly_interface({"variant_id": "four_zone"}, geometry_profile_id=None)
+        with self.assertRaisesRegex(ValueError, "not a geometric input"):
+            resolve_assembly_interface(three_zone_requirements_fixture(), geometry_profile_id="unconsumed_profile")
+        legacy = resolve_assembly_interface(three_zone_requirements_fixture(),
+            geometry_profile_id="explicit_sectioned_compact_three_zone_fixture", schema_version=1)
+        self.assertEqual(legacy["geometry_profile_id"], "explicit_sectioned_compact_three_zone_fixture")
 
 
 if __name__ == "__main__":
