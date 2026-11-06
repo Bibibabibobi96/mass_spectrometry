@@ -12,8 +12,9 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from common.contracts.verify_run_manifest import verify_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.execution.manifest_records import verify_record
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import native_resource_path
 
 
 _record_indexes: ContextVar[dict | None] = ContextVar("static_field_record_indexes", default=None)
@@ -141,8 +142,8 @@ def _approve_retired_operator_owner(owner: Path) -> dict:
     Historical composition and pure-response declarations are metadata here;
     their own physical, numerical and composition checks still execute normally.
     """
-    from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
-    from common.contracts.file_identity import file_sha256
+    from msplatform.execution.solver_review_retirement import RECEIPT_NAME, verify_retirement
+    from msplatform.io.file_identity import file_sha256
 
     receipt_path = owner.parent / RECEIPT_NAME
     receipt = _read(receipt_path)
@@ -201,8 +202,8 @@ def _load_operator_ancestry(path: Path, *, copy_owner: Path | None = None,
     Only this recursive ancestry boundary can consult retired scalar identities.
     Public response selection remains strict; native metadata is not PA authorization.
     """
-    from common.contracts.solver_review_retirement import RECEIPT_NAME
-    from common.contracts.file_identity import file_sha256
+    from msplatform.execution.solver_review_retirement import RECEIPT_NAME
+    from msplatform.io.file_identity import file_sha256
 
     descriptor = _read(path)
     is_response = baseline is not None
@@ -768,9 +769,7 @@ def _load_native_binding(binding: dict[str, Any], *, pure_response: bool = False
 
 def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instances: list) -> None:
     """Verify the one declared mixed-owner exception without weakening ordinary fields."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
-        extend_fine_z_domain, ordinary_pa_file_bytes,
-    )
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain, ordinary_pa_file_bytes
     if [w["name"] for w in windows] != ["ion_processor_local", "positive_integer_grid_a",
                                           "negative_integer_grid_a", "covered_local"]:
         raise ValueError("IP fine extension must retain all four ordered windows")
@@ -835,8 +834,8 @@ def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instan
 
 def validate_ip_fine_response_reuse(old: dict, source: dict, axis: str) -> None:
     """Accept only the existing pure P1/P2 operator outside its extended fine domain."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import _response_authority
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import extend_fine_z_domain
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _response_authority
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
     if (axis not in {"p1", "p2"} or old["response_basis"]["axis"] != axis
             or source.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
             or not source.get("local_domain_update") or source.get("consumer_view")
@@ -1112,7 +1111,7 @@ def _static_solver_numerics(solver: Mapping[str, Any]) -> dict[str, Any]:
 def native_binding_problem(binding: Mapping[str, Any], materialization: Mapping[str, Any], *,
                            layout_resolver: Callable[[], list[Mapping[str, Any]]] | None = None) -> dict[str, Any]:
     """Keep native discretization fixed while allowing the existing four P/S axes."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
 
     if binding.get("mode") != "native_static_pa":
         raise CandidateContractError("native trial must consume its actual native static binding")
@@ -1155,8 +1154,9 @@ def native_binding_problem(binding: Mapping[str, Any], materialization: Mapping[
 def _parameterized_static_plan(binding: Mapping[str, Any], manifest: Path,
                                records: Mapping[str, Any], diagnostic: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Separate the saved mesh origin from a real parameterized solve; no equivalence claim."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import _load_object, _finite
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS, candidate_authority, compile_request
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object, finite as _finite
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
+    from msplatform.backends.comsol.corridor_field import compile_request
     def read_sealed(owner: Path, path: Path) -> dict[str, Any]:
         _record(owner, path)
         return _load_object(path)
@@ -1247,8 +1247,9 @@ def _parameterized_static_plan(binding: Mapping[str, Any], manifest: Path,
 def _strict_saved_static_plan(binding: Mapping[str, Any], manifest: Path,
                               records: Mapping[str, Any], diagnostic: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Consume an honestly sealed saved-field rerun; stopping changes are not mesh origins."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import _load_object, _finite
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS, compile_request
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object, finite as _finite
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+    from msplatform.backends.comsol.corridor_field import compile_request
     def read(owner: Path, path: Path) -> dict[str, Any]:
         _record(owner, path)
         return _load_object(path)
@@ -1324,9 +1325,10 @@ def _strict_saved_static_plan(binding: Mapping[str, Any], manifest: Path,
 def scalar_binding_problem(binding: Mapping[str, Any], materialization: Mapping[str, Any],
                             binding_path: str, source_diagnostic: dict[str, Any] | None = None) -> dict[str, Any]:
     """The existing resolved-binding family projection, shared by response validation."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import _load_object
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import _named_record
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS, compile_request
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object
+    from .candidate_authority import named_record as _named_record
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+    from msplatform.backends.comsol.corridor_field import compile_request
     manifest = Path(binding["export_manifest"])
     records = _load_object(manifest)["inputs"]
     parameterized = {"source_export_manifest", "parameter_source_manifest"} <= set(records)
@@ -1433,10 +1435,10 @@ def native_response_operator(binding: dict[str, Any], authority: dict[str, Any])
 @_within_record_lookup
 def _load_native_response_metadata(path: Path, baseline: dict[str, Any]) -> dict[str, Any]:
     """Resolve the unique sealed pure-response math and operator, without PA access."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import (
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
         PS_GROUPS, RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata,
     )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
     descriptor = _read(path)
     required = {"schema_version", "role", "parent", "refinement_windows", "instances",
                 "fly_authorized", "response_basis", "source_authority_path", "source_binding_path"}
@@ -1512,7 +1514,7 @@ def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str
 
 def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[str, Any]:
     """Verify composition lineage/receipts, then reuse the ordinary native loader."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import compile_response_coefficients, TE1_AXIS
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import compile_response_coefficients, TE1_AXIS
     metadata = descriptor["materialization"]
     ordinary = {k: v for k, v in descriptor.items() if k != "materialization"}
     result = _load_native_binding(ordinary)
@@ -1586,7 +1588,7 @@ def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[st
 
 def _load_collision_overlay(binding: dict[str, Any], path: Path) -> dict[str, Any]:
     """Preserve the source operator seal and independently verify new occupancy."""
-    from .native_static_field_provider import collision_overlay_plan
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import collision_overlay_plan
     required = {"schema_version", "role", "manifest", "source_binding", "source_binding_copy",
                 "patch_plan_path", "patch_pa_path", "patch_surface_path"}
     if set(binding) != required or binding["schema_version"] != 1:
@@ -1814,7 +1816,7 @@ def _response_scientific_family(family: dict[str, Any]) -> dict[str, Any]:
 
 def _resolve_voltage_responses(binding: dict[str, Any], path: Path) -> dict[str, Any]:
     """Resolve PS increments at their declared origins without relabeling saved fields."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import (
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import (
         PS_GROUPS, candidate_authority,
     )
     responses = binding["voltage_responses"]
@@ -1940,7 +1942,7 @@ def validate_response_candidate(binding: dict[str, Any], request: dict[str, Any]
     Reuses sealed records; geometry is compared as parsed content, not JSON formatting.
     No PA payload is scanned or hashed. Raises ValueError for an incompatible basis.
     """
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority
+    from .candidate_authority import derive_candidate_authority
 
     source_path = request["source_binding_path"]
     source = load_binding(Path(source_path), _allow_responses=False)
@@ -2073,7 +2075,7 @@ def compile_sampling_request(binding_a: dict[str, Any], binding_b: dict[str, Any
     fields = ["{ " + _scalar_field_lua_fields(binding) + ", refinement_windows = "
               + _scalar_refinement_windows_lua(binding.get("refinement_windows", [])) + " }"
               for binding in (binding_a, binding_b)]
-    adapter = Path(__file__).resolve().parents[1] / "simion/scalar_field_adapter.lua"
+    adapter = native_resource_path("scalar_field_adapter.lua")
     return ("return { schema_version = 1, adapter = " + json.dumps(adapter.as_posix())
             + ", output_csv = " + json.dumps(output_csv.resolve().as_posix())
             + ", a = " + fields[0] + ", b = " + fields[1]
@@ -2083,14 +2085,14 @@ def compile_sampling_request(binding_a: dict[str, Any], binding_b: dict[str, Any
 def compile_composition_plan(binding: dict[str, Any], source: Path, output_directory: Path,
                              *, _checking_sealed_outputs: bool = False) -> dict[str, Any]:
     """Plan the public standalone composer; never open, copy or hash PA payloads."""
-    from common.simion.operating_pa_cache import (
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import (
         content_identity_from_verified_record, file_content_identity,
         linear_basis_operating_pa_group_identity,
     )
     terms = binding.get("response_terms")
     if not isinstance(terms, list) or not 2 <= len(terms) <= 5:
         raise ValueError("composition requires baseline and one to four resolved response axes")
-    composer = Path(__file__).resolve().parents[3] / "common/simion/compose_standalone_pa.lua"
+    composer = native_resource_path("compose_standalone_pa.lua")
     groups = [[term["binding"], *term["binding"].get("refinement_windows", [])] for term in terms]
     if len({len(group) for group in groups}) != 1:
         raise ValueError("composition window counts differ")
@@ -2130,7 +2132,7 @@ def compile_composition_plan(binding: dict[str, Any], source: Path, output_direc
 
 
 def _load_materialized_response(descriptor: dict[str, Any]) -> dict[str, Any]:
-    from common.simion.operating_pa_cache import canonical_operating_pa_identity
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import canonical_operating_pa_identity
     source = Path(descriptor["response_binding"])
     original = _read(source)
     if "materialization_manifest" in original:

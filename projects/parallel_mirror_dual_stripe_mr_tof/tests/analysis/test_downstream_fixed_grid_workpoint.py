@@ -25,8 +25,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_
     solve_linearized_step,
 )
 from common.contracts.file_identity import file_sha256
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import scalar_binding_problem
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.backends.comsol.static_field_binding import scalar_binding_problem
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 
@@ -99,7 +99,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
     def test_center_storage_projection_preserves_original_problem_without_pa_reads(self):
         import hashlib
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import NativeAxisMaterializationTest
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from msplatform.backends.comsol.static_field_binding import load_binding
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bank = NativeAxisMaterializationTest()
@@ -319,7 +319,6 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             _native_static_binding_problem(binding, mat)
 
     def test_strict_saved_rerun_projects_actual_after_and_original_mesh(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
         values = [0.] * 20
         values[10:14] = [-27., -27., 55., 55.]
         values[15:17] = [191., -190.]
@@ -363,9 +362,9 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         plan = dict(candidate_authority=authority, active_mesh_tag="mesh6", export_grid=grid,
                     source_mph_record={"path": "mesh/original.mph"}, expected_tetrahedra=7,
                     source_dataset={"solution_tag": "sol1", "dataset_tag": "dset1"})
-        with patch(module + ".two_prism_operating_point._load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
-             patch(module + ".static_field_binding._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
-             patch(module + ".corridor_field_provider.compile_request", return_value=plan):
+        with patch("msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority.load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
+             patch("msplatform.backends.comsol.static_field_binding._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
+             patch("msplatform.backends.comsol.corridor_field.compile_request", return_value=plan):
             diagnostic = {}
             family = scalar_binding_problem(binding, receipt, "binding.json", diagnostic)
             self.assertEqual(family["solver_numerics"], after)
@@ -388,7 +387,6 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 data[path][key] = previous
 
     def test_parameterized_projection_uses_real_solve_without_claiming_operator_equivalence(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
         values = [0.] * 20
         values[10:14] = [-26.79, -26.79, 54.61, 54.61]
         values[15:17] = [191., -190.]
@@ -425,9 +423,9 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         plan = {"candidate_authority": authority, "active_mesh_tag": "mesh6", "export_grid": grid,
                 "source_mph_record": {"path": "mesh/original.mph"}, "expected_tetrahedra": 7,
                 "source_dataset": {"dataset_tag": "dset1", "solution_tag": "sol1"}}
-        with patch(module + ".two_prism_operating_point._load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
-             patch(module + ".static_field_binding._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
-             patch(module + ".corridor_field_provider.compile_request", return_value=plan) as compile_plan:
+        with patch("msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority.load_object", side_effect=lambda p: copy.deepcopy(data[p.as_posix()])), \
+             patch("msplatform.backends.comsol.static_field_binding._record", side_effect=lambda owner, p: {"path": str(p), "bytes": 7}), \
+             patch("msplatform.backends.comsol.corridor_field.compile_request", return_value=plan) as compile_plan:
             diagnostic = {}
             family = scalar_binding_problem(binding, receipt, "binding.json", diagnostic)
             self.assertEqual(family["source_mesh_record"]["path"], "mesh/original.mph")
@@ -1039,7 +1037,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 _trial(manifest)
 
     def test_native_history_uses_bound_small_evidence_not_retired_payload(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, verify_joint_asset_records
+        from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _collision_geometry_projection
 
         baseline, _, _ = self._fixture()

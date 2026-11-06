@@ -10,7 +10,7 @@ from unittest.mock import patch
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (
     TransportNumerics,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_coverage import (

@@ -26,7 +26,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_sou
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
     ION_PROCESSOR, validate_execution_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, native_response_operator
+from msplatform.backends.comsol.static_field_binding import load_binding, native_response_operator
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_ip_mr_transform
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout, render_measured_operating_point
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
@@ -87,7 +87,7 @@ def compile_memory_consumer_crops(contract: dict[str, Any], reference: dict[str,
 
 def validate_candidate_binding(binding: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
     """Keep the actual IP operator fixed while allowing only four P/S coordinates."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority, PS_GROUPS
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority, PS_GROUPS
     collision_workbench_layout(binding)
     if baseline.get("collision_overlay") and not binding.get("collision_overlay"):
         raise ValueError("Candidate cannot silently remove the prepared collision overlay")
@@ -304,7 +304,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         waveforms_record["continuation_source"] = waveform_provenance
     source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
     science_writer_record = freeze_file(Path(__file__).resolve().parents[3] / "common/simion/scientific_event_csv.lua", frozen_runtime / "joint.scientific_event_csv.lua")
-    freeze_file(Path(__file__).parents[1] / "simion/scalar_field_adapter.lua",
+    freeze_file(Path(__file__).parents[3] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
     reference = runtime / "mr_reference.operating_point.lua"
     verified_preparation_reference(prepared_run, reference.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)

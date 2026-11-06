@@ -12,7 +12,7 @@ from common.simion.pa_family_cache import canonical_pa_family_cache_key
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
     build_analyzer_gem,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 
 def derive(contract_path: Path, simion_executable: Path, simion_release: str) -> tuple[dict[str, Any], str]:

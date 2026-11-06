@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.loss_acceptance_diagno
     build_loss_acceptance_figure, prepare_loss_rows, prepare_mirror_domain_rows, summarize_loss_acceptance,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import _prism_phase_space_diagnostic
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+from msplatform.backends.comsol.static_field_binding import load_binding
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import extract_trajectory_samples
 
 COORDINATES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")

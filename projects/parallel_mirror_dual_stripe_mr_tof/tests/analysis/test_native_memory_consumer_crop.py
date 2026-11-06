@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[4]
-ADAPTER = REPO / "projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+ADAPTER = REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
 LUA = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
 
 

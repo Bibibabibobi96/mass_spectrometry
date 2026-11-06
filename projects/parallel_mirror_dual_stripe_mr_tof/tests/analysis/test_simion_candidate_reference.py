@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from common.contracts.rigid_transform import RigidTransform
 from common.integration.resolve_assembly import compile_assembly_layout
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
     load_contract, resolve_trajectory_profile, write_gem,
@@ -56,7 +56,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     screen_l1_fixed_geometry,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_l1_hardware_candidate import screen_l1_family
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import derive_mirror_boundaries
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import derive_mirror_boundaries
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_event_analysis import (
     static_return_chain,
     terminal,

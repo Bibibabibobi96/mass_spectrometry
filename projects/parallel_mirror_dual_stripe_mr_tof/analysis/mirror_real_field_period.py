@@ -22,7 +22,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_l1_screen import (
     SPEED_MM_US_PER_SQRT_EV_PER_TH,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 

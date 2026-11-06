@@ -44,7 +44,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
     ManagedMirrorRoot,
     load_managed_mirror_candidate,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (
     derive_mirror_boundaries,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
@@ -67,7 +67,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_ad
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
     derive_operating_energy_envelope,

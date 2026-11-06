@@ -14,9 +14,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stri
     load_fixed_grid_mirror_point,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
+from msplatform.backends.comsol.candidate_authority import named_record as _named_record
 
 
 @dataclass(frozen=True)
@@ -47,16 +48,6 @@ def _object(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
-def _named_record(records: object, filename: str, label: str) -> Mapping[str, Any]:
-    values = records.values() if isinstance(records, Mapping) else records
-    candidates = values if isinstance(values, list) or hasattr(values, "__iter__") else []
-    matches = [
-        item for item in candidates
-        if isinstance(item, Mapping) and Path(str(item.get("path", ""))).name == filename
-    ]
-    if len(matches) != 1:
-        raise CandidateContractError(f"Stripe run must bind exactly one {label}")
-    return matches[0]
 
 
 def _finite(value: Any, label: str) -> float:

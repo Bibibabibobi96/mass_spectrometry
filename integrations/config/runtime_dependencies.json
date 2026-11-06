@@ -981,15 +981,6 @@
           ]
         },
         {
-          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_scalar_field_adapter_lua",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr"
-          ]
-        },
-        {
           "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_component_request_n100_json",
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_request_n100.json",
           "consumers": [
@@ -1133,6 +1124,15 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "msplatform_mr_scalar_field_adapter_lua",
+          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
         {
           "id": "msplatform_native_payload_file_support_ps1",
           "source_repo_path": "src/msplatform/execution/resources/payload_file_support.ps1",

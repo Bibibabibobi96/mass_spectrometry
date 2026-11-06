@@ -22,7 +22,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
     load_managed_mirror_candidate,
     mirror_stage_contract_projection,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 
 
 PROJECT = Path(__file__).resolve().parents[2]

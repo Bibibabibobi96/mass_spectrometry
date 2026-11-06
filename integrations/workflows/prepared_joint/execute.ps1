@@ -255,7 +255,7 @@ function Invoke-PreparedJointTrial {
       }
       $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage mrtof_flight -Budget (Get-HostResourceBudget -Role SIMION -Stage mrtof_flight) -RunId $jointRunId
       $stage='joint_asset_identity_before_flight'
-      Invoke-ProjectPython -Arguments @('-c','import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("JOINT_NATIVE_ASSETS=PASS")',[string]$trial.field_binding.path)
+      Invoke-ProjectPython -Arguments @('-c','import sys;from pathlib import Path;from msplatform.backends.comsol.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("JOINT_NATIVE_ASSETS=PASS")',[string]$trial.field_binding.path)
       $stage='measured_joint_flight'
     }
     $dispatchValue=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json

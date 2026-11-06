@@ -11,9 +11,10 @@ import unittest
 from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as p
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority
+from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import _record, load_binding
+from msplatform.backends.comsol.static_field_binding import _record, load_binding
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _pure_axis_authority, _te1_excitation
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
@@ -28,7 +29,7 @@ class NativeStaticProviderTest(unittest.TestCase):
             Path(instance["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
             instance["origin_mm"] = [0, -10 if index == 1 else 30*index, -10]
         p.write_json(self.root / "binding.json", {"schema_version": 1, "role": "mrtof_native_static_field_binding"})
-        mock = patch.object(p, "_analyzer_geometry_lines", return_value=["e(1) { box(0,-1,-1,1,1,1) }"])
+        mock = patch("msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science._analyzer_geometry_lines", return_value=["e(1) { box(0,-1,-1,1,1,1) }"])
         mock.start()
         self.addCleanup(mock.stop)
         update = dict(box_mm=[0, -2, -2, 2, 2, 2], pitch_mm=[.5]*3, priority_probes=[
@@ -204,7 +205,7 @@ try {
                         p.compile_request(value)
 
     def test_collision_overlay_loader_preserves_materialization_and_checks_all_new_assets(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as b
+        from msplatform.backends.comsol import static_field_binding as b
         request = self.overlay_fixture()
         source_path = Path(request["source_binding_path"])
         p.write_json(source_path, dict(schema_version=1, role="mrtof_native_static_field_binding", materialization={}))
@@ -507,7 +508,7 @@ try {
         request.pop("candidate_voltages_v")
         request["response_axis"] = "s1"
         original_authority = copy.deepcopy(self.authority)
-        self.source["authority"] = p._pure_axis_authority(original_authority, "s1")
+        self.source["authority"] = _pure_axis_authority(original_authority, "s1")
         meta = dict(axis="s1", normalization_v=10000., physical_electrode_ids=[11, 12],
                     excitation_semantics="pure axis response; all other analyzer/component potentials zero",
                     combination_semantics="base PA plus (target axis minus base axis)/normalization_v times this PA")
@@ -1045,7 +1046,7 @@ try {
         before = copy.deepcopy(self.source)
         plan = p.compile_request(request)
         basis = plan["response_basis"]
-        excitation = p._te1_excitation(basis)
+        excitation = _te1_excitation(basis)
         self.assertEqual(max(abs(v) for v in excitation), 10000.)
         self.assertEqual(plan["candidate_authority"]["analyzer_electrode_voltages_v"], excitation*2+[0.]*10)
         self.assertTrue(all(v["voltage_v"] == 0 for v in plan["candidate_authority"]["component_voltages_v"]))
@@ -1087,7 +1088,7 @@ try {
                        {"direction_v_per_coordinate":[0.,0.,0.,0.]},
                        {"direction_v_per_coordinate":[1.,2.,3.,float("nan")]}):
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, "normalization"):
-                p._te1_excitation(dict(basis, **change))
+                _te1_excitation(dict(basis, **change))
         with self.assertRaises(ValueError):
             p._te1_basis_metadata(self.te1_reference([0.,0.,0.,0.]))
 
@@ -1099,7 +1100,7 @@ try {
                 p.compile_request(dict(request, **change))
 
     def test_te1_e_closure_ids_consume_the_same_paired_e_drive(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import _mirror_ground_shield_lines
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import _mirror_ground_shield_lines
         basis = p._te1_basis_metadata(self.te1_reference())
         authority = p._response_authority(self.authority, basis)
         geometry = dict(mirror_inner_shield_slot=[-2,0,-1,2,1,1], mirror_ground_shields=[],
@@ -1173,7 +1174,7 @@ try {
         import re
         mask = lambda text: re.sub(r"\be\([^)]*\)", "e(PHYSICAL)", text)
         for axis, ids in p.PS_GROUPS.items():
-            authority = p._pure_axis_authority(source["authority"], axis)
+            authority = _pure_axis_authority(source["authority"], axis)
             gem, _ = build_static_c0_gem(source["geometry"], authority, grid, boundary_mode="grounded_enclosure")
             self.assertEqual(mask(gem), mask(base))
             self.assertEqual(gem.count("e(10000)"), len(ids))
@@ -1207,12 +1208,12 @@ class IonProcessorResponseProviderTest(unittest.TestCase):
             with self.subTest(axis=axis), patch(
                 "projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines",
                 return_value=[f"e({i}) {{ box3d(0,0,0,1,1,1) }}" for i in (16,17)]):
-                gem, _ = p._static_gem(geometry, p._pure_axis_authority(source, axis), grid,
+                gem, _ = p._static_gem(geometry, _pure_axis_authority(source, axis), grid,
                                        boundary_mode="x_mirror_five_faces")
                 self.assertEqual(gem.count("namespace=ion_processor id="),15)
                 self.assertEqual(gem.count("notin_inside"),15)
                 self.assertEqual(gem.count("e(10000)"),1)
-                self.assertEqual(p._pure_axis_authority(source, axis)["analyzer_electrode_voltages_v"][physical_id-1],10000.)
+                self.assertEqual(_pure_axis_authority(source, axis)["analyzer_electrode_voltages_v"][physical_id-1],10000.)
                 self.assertNotIn("4000",gem)
 
     def fixture(self, root):
@@ -1282,8 +1283,8 @@ class IonProcessorResponseProviderTest(unittest.TestCase):
 
     def test_ip_axes_compose_preserves_full_operator_and_collision_geometry(self):
         import shutil
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"; source.mkdir()
@@ -1294,7 +1295,7 @@ class IonProcessorResponseProviderTest(unittest.TestCase):
                 with self.subTest(axis=axis):
                     plan = p.compile_request(dict(request, response_axis=axis))
                     self.assertFalse(plan["fly_authorized"])
-                    self.assertEqual(plan["candidate_authority"], p._pure_axis_authority(baseline["authority"], axis))
+                    self.assertEqual(plan["candidate_authority"], _pure_axis_authority(baseline["authority"], axis))
                     self.assertEqual(len(plan["levels"]), 5)
                     self.assertEqual([x["pitch_mm"] for x in plan["levels"].values()],
                                      [baseline["grid"]["pitch_mm"]] + [w["grid"]["pitch_mm"] for w in baseline["refinement_windows"]])
@@ -1510,7 +1511,7 @@ class IonProcessorFineResponseReuseTest(unittest.TestCase):
         return helper, banks, extension_path, extension_request
 
     def test_two_axes_reuse_four_pure_fields_and_compose_against_extended_ordinary(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             helper, banks, source_path, extension_request = self.chain(root)

@@ -204,8 +204,8 @@ function Assert-NativeStaticFieldBinding {
   $code=@'
 import copy, hashlib, json, sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, _record, native_numerics_match, resolve_native_refine_numerics
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority
+from msplatform.backends.comsol.static_field_binding import load_binding, _record, native_numerics_match, resolve_native_refine_numerics
+from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
@@ -302,7 +302,7 @@ function Assert-WorkpointPhysicalBinding {
       $storageCode=@'
 import json, sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+from msplatform.backends.comsol.static_field_binding import load_binding
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
 materialization = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 actual = load_binding(Path(materialization['field_binding']['path']))
@@ -586,7 +586,7 @@ function Resolve-ScreeningFieldBinding {
   if($staticFieldRepresentation-eq'native_static_pa'){
     $centerVariation=Join-Path (Split-Path -Parent $centerManifest) 'simion/terminal_time_mirror_voltage_variation.json'
     Assert-NativeStaticFieldBinding -BindingPath $center.field_binding.path -Voltages $voltages -Variation $centerVariation -ContractPath $contractPath -NumericalContractPath $numericalContractPath -CenterMaterializationPath $centerMaterializationPath
-    $numericsCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,native_numerics_match; print(json.dumps(native_numerics_match(load_binding(Path(sys.argv[1])),sys.argv[2])))"
+    $numericsCode="import json,sys; from pathlib import Path; from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match; print(json.dumps(native_numerics_match(load_binding(Path(sys.argv[1])),sys.argv[2])))"
     $sameNumerics=((Invoke-ProjectPython -Arguments @('-B','-c',$numericsCode,$center.field_binding.path,$numericalContractPath))-join"`n")|ConvertFrom-Json
     if($sameNumerics-isnot[bool]){throw 'Native field numerical preflight did not return a boolean.'}
   }
@@ -596,7 +596,7 @@ function Resolve-ScreeningFieldBinding {
     $staticCandidateFields[$key]=[string]$center.field_binding.path
   }
   if($staticFieldRepresentation-eq'native_static_pa'-and$centerBinding.ContainsKey('consumer_view')){
-    $fullReuseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,native_numerics_match; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority; r=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig')); b=load_binding(Path(r['source_binding_path'])); u=json.loads(sys.argv[2]); expected=candidate_authority(b['authority'],dict(zip(('s1','s2','p1','p2'),u,strict=True)),mirror_voltages_v=json.loads(sys.argv[3])); print(json.dumps(not b.get('consumer_view') and b['authority']==expected and native_numerics_match(b,sys.argv[4])))"
+    $fullReuseCode="import json,sys; from pathlib import Path; from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match; from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority; r=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig')); b=load_binding(Path(r['source_binding_path'])); u=json.loads(sys.argv[2]); expected=candidate_authority(b['authority'],dict(zip(('s1','s2','p1','p2'),u,strict=True)),mirror_voltages_v=json.loads(sys.argv[3])); print(json.dumps(not b.get('consumer_view') and b['authority']==expected and native_numerics_match(b,sys.argv[4])))"
     $reuseFull=((Invoke-ProjectPython -Arguments @('-B','-c',$fullReuseCode,$FieldProviderRequestPath,($voltages|ConvertTo-Json -Compress),($targetMirror|ConvertTo-Json -Compress),$numericalContractPath))-join"`n")|ConvertFrom-Json
     if($reuseFull-isnot[bool]){throw 'Full native source reuse did not return a boolean.'}
     if($reuseFull){$staticCandidateFields[$key]=[string]$fieldProviderRequest.source_binding_path}

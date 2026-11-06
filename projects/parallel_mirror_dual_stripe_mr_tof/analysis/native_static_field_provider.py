@@ -19,22 +19,25 @@ from typing import Any
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER, PaHeader
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import (
-    PS_GROUPS,
-    candidate_authority,
-    derive_candidate_authority,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
-    _analyzer_geometry_lines,
-    build_static_c0_gem,
-)
+from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _analyzer_geometry_lines
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
     _grid_shape,
     validate_generation_grid_pitch,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
+    RESPONSE_NORMALIZATION_V,
+    TE1_AXIS,
+    _response_authority,
+    _te1_basis_metadata,
+    collision_overlay_plan,
+    compile_response_coefficients,
+)
+from msplatform.backends.comsol.static_field_binding import (
     _native_active_box,
     _record,
     _sealed_record,
@@ -81,9 +84,6 @@ ROLE = "mrtof_native_static_field_provider_request"
 PROJECT = "parallel_mirror_dual_stripe_mr_tof"
 # Installed official examples/matlab/simion_pa_save.m: NOTREFINABLE = 2^28.
 COLLISION_NOTREFINABLE_FLAG = 1 << 28
-# Official SIMION electrode-solution normalization; not an actual workpoint.
-RESPONSE_NORMALIZATION_V = 10000.0
-TE1_AXIS = "te1"
 
 
 def read(path: Path) -> dict[str, Any]:
@@ -122,117 +122,14 @@ def _static_gem(geometry: dict, authority: dict, grid: dict, *, boundary_mode: s
             dict(accelerator_provider=IP_PROVIDER, boundary_mode=boundary_mode))
 
 
-def _pure_axis_authority(source: dict[str, Any], axis: str) -> dict[str, Any]:
-    """Keep frozen bodies/assembly while prescribing one normalized excitation."""
-    result = copy.deepcopy(source)
-    result["analyzer_electrode_voltages_v"] = [0.0] * 20
-    for component in result["component_voltages_v"]:
-        component["voltage_v"] = 0.0
-    for physical_id in PS_GROUPS[axis]:
-        result["analyzer_electrode_voltages_v"][physical_id - 1] = RESPONSE_NORMALIZATION_V
-    return result
 
 
-def _te1_excitation(basis: dict[str, Any]) -> list[float]:
-    """Return the five physical mirror voltages of one normalized TE1 direction."""
-    direction = basis.get("direction_v_per_coordinate")
-    if (
-        basis.get("axis") != TE1_AXIS
-        or basis.get("normalization_v") != RESPONSE_NORMALIZATION_V
-        or not isinstance(direction, list)
-        or len(direction) != 4
-        or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in direction)
-        or max(abs(v) for v in direction) == 0
-    ):
-        raise ValueError("TE1 response requires a finite nonzero direction and 10000 V normalization")
-    magnitude = max(abs(v) for v in direction)
-    return [0.0, *[RESPONSE_NORMALIZATION_V * (v / magnitude) for v in direction]]
 
 
-def _te1_basis_metadata(reference_path: Path) -> dict[str, Any]:
-    """Freeze the existing TE1 reference direction; this is not a working voltage."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import _te1_reference
-
-    _, coordinate, _, delta = _te1_reference(reference_path)
-    basis = {
-        "axis": TE1_AXIS,
-        "normalization_v": RESPONSE_NORMALIZATION_V,
-        "direction_v_per_coordinate": [v / coordinate for v in delta],
-    }
-    excitation = _te1_excitation(basis)
-    basis.update(
-        physical_electrode_ids=[i + 1 for i, v in enumerate(excitation * 2) if v != 0],
-        excitation_semantics="pure normalized TE1 direction; all other analyzer/component potentials zero",
-        combination_semantics="base PA plus physical mirror increment / normalized direction times this PA",
-    )
-    return basis
 
 
-def _response_authority(source: dict[str, Any], basis: dict[str, Any]) -> dict[str, Any]:
-    """Prescribe only the declared pure P/S axis or paired TE1 mirror direction."""
-    if basis.get("axis") != TE1_AXIS:
-        return _pure_axis_authority(source, basis["axis"])
-    excitation = _te1_excitation(basis)
-    if basis.get("physical_electrode_ids") != [i + 1 for i, v in enumerate(excitation * 2) if v != 0]:
-        raise ValueError("TE1 response physical electrode grouping differs")
-    result = copy.deepcopy(source)
-    result["analyzer_electrode_voltages_v"] = excitation * 2 + [0.0] * 10
-    for component in result["component_voltages_v"]:
-        component["voltage_v"] = 0.0
-    return result
 
 
-def compile_response_coefficients(
-    base_authority: dict[str, Any],
-    target_voltages_v: dict[str, float],
-    available_axes: list[str],
-    *,
-    mirror_voltages_v: list[float] | None = None,
-    te1_basis: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Plan pure-basis increments; no field I/O, solve, or trajectory prediction."""
-    if (
-        set(target_voltages_v) != set(PS_GROUPS)
-        or any(
-            isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
-            for v in target_voltages_v.values()
-        )
-        or len(available_axes) != len(set(available_axes))
-        or not set(available_axes) <= set(PS_GROUPS) | {TE1_AXIS}
-        or (TE1_AXIS in available_axes) != (te1_basis is not None)
-    ):
-        raise ValueError("response coefficients require finite complete P/S targets and unique available axes")
-    values = base_authority["analyzer_electrode_voltages_v"]
-    coefficients = {}
-    for axis, ids in PS_GROUPS.items():
-        anchor = values[ids[0] - 1]
-        if any(values[i - 1] != anchor for i in ids):
-            raise ValueError("baseline P/S group does not have one voltage")
-        delta = target_voltages_v[axis] - anchor
-        if axis not in available_axes and delta != 0:
-            raise ValueError("target changes an axis without a pure response")
-        if axis in available_axes:
-            coefficient = delta / RESPONSE_NORMALIZATION_V
-            if not math.isfinite(coefficient):
-                raise ValueError("response coefficient is nonfinite")
-            coefficients[axis] = coefficient
-    target = candidate_authority(base_authority, target_voltages_v, mirror_voltages_v=mirror_voltages_v)
-    if te1_basis is not None:
-        excitation = _te1_excitation(te1_basis)
-        if values[:10] != values[:5] * 2:
-            raise ValueError("TE1 baseline requires equal paired mirror voltages")
-        delta = [b - a for a, b in zip(values[:5], target["analyzer_electrode_voltages_v"][:5], strict=True)]
-        index = max(range(5), key=lambda i: abs(excitation[i]))
-        coefficient = delta[index] / excitation[index]
-        # Same absolute voltage reconstruction tolerance as mirror authority;
-        # compare actual vectors, never apply an absolute coordinate to an offset.
-        if not math.isfinite(coefficient) or any(
-            not math.isclose(change, coefficient * voltage, rel_tol=0.0, abs_tol=1e-9)
-            for change, voltage in zip(delta, excitation, strict=True)
-        ):
-            raise ValueError("target mirror increment is incompatible with the frozen TE1 direction")
-        coefficients[TE1_AXIS] = coefficient
-    return {"target_authority": target, "coefficients": coefficients, "normalization_v": RESPONSE_NORMALIZATION_V}
 
 
 def _compile_composition(
@@ -655,8 +552,10 @@ def _new_collision_plan(source: dict[str, Any], geometry: dict[str, Any]) -> dic
 
 def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
     """Reuse one ordinary operator, rebuilding only its extended IP fine domain."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
-        _gem, extend_fine_z_domain, ordinary_pa_file_bytes,
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _gem
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
+        extend_fine_z_domain,
+        ordinary_pa_file_bytes,
     )
     required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
                 "numerical_contract_path", "reuse_source_levels", "ion_processor_local_domain_update"}
@@ -845,65 +744,6 @@ def verify_collision_overlay_support(source: dict[str, Any], plan: dict[str, Any
                 raise ValueError("collision overlay exterior probe is masked by another instance")
 
 
-def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
-    """Compile same-CSG occupancy; its vacuum replaces the coarse PA too."""
-    from .ion_processor_assembly import ordinary_pa_file_bytes
-    if (not isinstance(update, dict) or set(update) != {"box_mm", "pitch_mm", "priority_probes"}
-            or "collision_overlay" in source or source.get("consumer_view")
-            or source.get("accelerator_provider") != IP_PROVIDER
-            or [i["role"] for i in source["instances"]] != ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]):
-        raise ValueError("collision overlay requires one complete four-role IP source and explicit patch numerics")
-    box, pitch = update["box_mm"], update["pitch_mm"]
-    if (not isinstance(box, list) or len(box) != 6
-            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in box)
-            or box[0] != 0 or any(box[a] >= box[a+3] for a in range(3))):
-        raise ValueError("collision overlay requires a finite x-mirrored nonempty box")
-    validate_generation_grid_pitch(contract, pitch)
-    dimensions = _grid_shape(box, pitch)
-    if min(dimensions) < 3:
-        raise ValueError("collision overlay requires at least three nodes on every axis")
-    effective = [-box[3], box[1], box[2], *box[3:]]
-    probes = update["priority_probes"]
-    if not isinstance(probes, list) or not probes:
-        raise ValueError("collision overlay requires declared metal, vacuum and exterior priority probes")
-    labels, categories = set(), set()
-    for probe in probes:
-        if (not isinstance(probe, dict) or set(probe) != {"label", "point_mm", "expected_electrode", "expected_instance"}
-                or not isinstance(probe["label"], str) or not probe["label"] or probe["label"] in labels
-                or type(probe["expected_electrode"]) is not bool or type(probe["expected_instance"]) is not int
-                or probe["expected_instance"] not in (2, 5)):
-            raise ValueError("invalid collision overlay priority probe")
-        point = probe["point_mm"]
-        if (not isinstance(point, list) or len(point) != 3
-                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in point)):
-            raise ValueError("collision overlay probe requires finite project coordinates")
-        inside = all(effective[a] <= point[a] <= effective[a+3] for a in range(3))
-        if inside != (probe["expected_instance"] == 5):
-            raise ValueError("collision overlay probe instance contradicts its declared box")
-        labels.add(probe["label"])
-        categories.add((inside, probe["expected_electrode"]))
-    if not {(True, True), (True, False)} <= categories or not any(not inside for inside, _ in categories):
-        raise ValueError("collision overlay probes must cover interior metal, interior vacuum and exterior")
-    bracket = any(
-        sum(a != b for a, b in zip(inner["point_mm"], outer["point_mm"], strict=True)) == 1
-        and all(abs(inner["point_mm"][a]-outer["point_mm"][a]) <= 2*pitch[a] for a in range(3))
-        for inner in probes if inner["expected_instance"] == 5
-        for outer in probes if outer["expected_instance"] == 2)
-    if not bracket:
-        raise ValueError("collision overlay probes require an adjacent inside/outside face bracket")
-    gem = ("; Same complete analyzer CSG; collision only, no Refine or Fast Adjust.\npa_define("
-           + ",".join(map(str, dimensions)) + ",planar,x,electric_,,"
-           + ",".join(format(v, ".17g") for v in pitch) + ",surface=fractional)\nlocate("
-           + ",".join(format(-v, ".17g") for v in box[:3]) + ") {\n"
-           + "\n".join(_analyzer_geometry_lines(source["geometry"])) + "\n}\n")
-    pa_bytes = ordinary_pa_file_bytes(dimensions, pitch)
-    # Fractional surface storage is unknown before native GEM conversion. Reserve
-    # another full PA plus evidence; the owner still measures the actual output.
-    committed = 2*pa_bytes + 16*1024**2
-    return dict(box_mm=box, origin_mm=box[:3], pitch_mm=pitch, dimensions=dimensions,
-                symmetry="x", pa_bytes=pa_bytes, committed_new_bytes=committed,
-                surface_allowance_bytes=pa_bytes, priority_probes=copy.deepcopy(probes), gem=gem,
-                refine_performed=False, fast_adjust_performed=False, refinable=False)
 
 
 def _compile_collision_overlay(request: dict[str, Any]) -> dict[str, Any]:
@@ -1601,7 +1441,7 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
     if plan.get("response_level_reuse"):
         write_json(inputs / "ip_fine_response_reuse.json", plan["response_level_reuse"])
     if plan.get("local_domain_update"):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import extend_fine_z_domain
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
         frozen_source = inputs / "source_binding.json"
         source = load_binding(frozen_source)
         fine_grid, active = extend_fine_z_domain(source["refinement_windows"][0]["grid"],

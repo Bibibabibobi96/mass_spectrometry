@@ -7,7 +7,7 @@ from unittest.mock import patch
 import copy
 
 from common.contracts.frozen_inputs import freeze_file
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as field_binding_module
+from msplatform.backends.comsol import static_field_binding as field_binding_module
 from common.contracts.write_run_manifest import file_record
 from integrations.workflows.accelerator_interface.prepare import (
     CONFIG, ION_PROCESSOR, load_selection, verified_reference,
@@ -84,8 +84,8 @@ class InterfacePreparationTests(unittest.TestCase):
 
     def test_finalize_native_strategy_requires_matching_actual_parent_and_all_windows(self):
         module = 'integrations.workflows.accelerator_interface.prepare'
-        field_module = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding'
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import resolve_native_refine_numerics
+        field_module = 'msplatform.backends.comsol.static_field_binding'
+        from msplatform.backends.comsol.static_field_binding import resolve_native_refine_numerics
         from common.contracts.file_identity import file_sha256
         for strategy in (None, False, True):
             for bad_level in (None, 0, 1, 2, 3, 4):

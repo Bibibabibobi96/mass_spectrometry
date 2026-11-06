@@ -39,7 +39,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _accelerator_geometric_exit_reference,
     _accelerator_geometric_exit_validation,
     _accelerator_ring_voltages,
-    _apply_terminal_mirror_variation,
     _apply_trajectory_step_scale,
     _accelerator_safe_exit_observation,
     _bunch_center_workpoint_validation,
@@ -49,7 +48,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _load_frozen_accelerator_pulse_schedule,
     _mirror_regions,
     _resolve_trial_geometry,
-    _fixed_mirror_stripe_source_state,
     _seed_theory_provenance,
     _schema5_native_source_state,
     _source_transverse_reference,
@@ -64,8 +62,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
     native_stripe_geometry_projection_sha256,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import (
+    apply_terminal_mirror_variation as _apply_terminal_mirror_variation,
+    fixed_mirror_stripe_source_state as _fixed_mirror_stripe_source_state,
 )
 
 

@@ -16,7 +16,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime 
     rebind_analyzer,
     resolve_native_system_runtime_bundle,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 
 
 def _receipt() -> dict[str, object]:

@@ -1,0 +1,30 @@
+"""Installed MATLAB resources for the MR same-mesh COMSOL field operation."""
+from importlib.resources import files
+from pathlib import Path
+
+NATIVE_RESOURCES = frozenset({
+    "candidate_field.m",
+    "classify_corridor_conductor_voltage.m",
+    "export_corridor_scalar_field.m",
+    "update_corridor_workpoint_voltages.m",
+})
+
+
+def native_resource_path(name: str) -> Path:
+    """Return one registered installed MATLAB resource or fail closed."""
+    if name not in NATIVE_RESOURCES:
+        raise ValueError(f"unsupported COMSOL native resource: {name}")
+    resource = files("msplatform.backends.comsol").joinpath("resources", name)
+    if not resource.is_file():
+        raise FileNotFoundError(f"installed COMSOL native resource is missing: {name}")
+    return Path(str(resource))
+
+
+def native_resource_directory() -> Path:
+    """Return the installed directory containing the complete MATLAB closure."""
+    return native_resource_path("candidate_field.m").parent
+
+
+def native_resource_text(name: str) -> str:
+    """Read one registered UTF-8 MATLAB resource without executing it."""
+    return native_resource_path(name).read_text(encoding="utf-8")

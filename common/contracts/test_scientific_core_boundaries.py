@@ -17,7 +17,7 @@ CORE_ROOT = REPO_ROOT / "src/msplatform"
 SCIENTIFIC_DOMAINS = {"analysis", "assembly", "contracts", "io", "ion_release"}
 PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection_oa_tof",
                     "apertured_tube_electron_impact_ion_source", "transverse_helical_filament_wehnelt_electron_gun",
-                    "dual_cone_tandem_quadrupole_ion_interface"}
+                    "dual_cone_tandem_quadrupole_ion_interface", "parallel_mirror_dual_stripe_mr_tof"}
 COMPONENT_INFRASTRUCTURE = {"model", "catalog"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
@@ -55,7 +55,7 @@ def _namespace_error(module: str) -> str | None:
     if (parts[1] == "components" and len(parts) > 2
             and parts[2] not in PROVIDER_DOMAINS | COMPONENT_INFRASTRUCTURE):
         return f"undeclared component provider or infrastructure module: {module}"
-    if parts[1] == "backends" and len(parts) > 2 and parts[2] != "simion":
+    if parts[1] == "backends" and len(parts) > 2 and parts[2] not in {"simion", "comsol"}:
         return f"undeclared installed backend: {module}"
     if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution"}:
         return f"undeclared installed exporter: {module}"

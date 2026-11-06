@@ -134,7 +134,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         self.assertIn("NATIVE_OPTIONAL_ARGV=PASS", result.stdout)
 
     def test_native_center_storage_projection_accepts_actual_full_field_and_rejects_changes(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from msplatform.backends.comsol.static_field_binding import load_binding
         runs = REPO_ROOT.parent/"artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs"
         materialization_path = runs/"20261014_064108__sim__simion__converging-joint-ps-workpoint__r02-stage-020/results/two_prism_trial_materialization.json"
         binding_path = runs/"20261014_073134__build__simion__converging-joint-full-field/results/field_binding.json"
@@ -170,7 +170,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                     elif change == "thin":
                         candidate["consumer_view"] = actual["consumer_view"]
                     with patch("sys.argv", ["projection", str(materialization_path), str(request)]), \
-                         patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",
+                         patch("msplatform.backends.comsol.static_field_binding.load_binding",
                                side_effect=[actual, candidate]):
                         if change is None:
                             exec(code, {})
@@ -187,9 +187,9 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                     json.dumps([*materialization["stripe_biases_v"], *materialization["prism_voltages_v"]]),
                     "", "", "", "", str(wrong_path)]
             with patch("sys.argv", argv), \
-                 patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",
+                 patch("msplatform.backends.comsol.static_field_binding.load_binding",
                        side_effect=[full, actual]), \
-                 patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider.derive_candidate_authority",
+                 patch("msplatform.backends.comsol.corridor_field.derive_candidate_authority",
                        return_value=(actual["authority"], {})):
                 with self.assertRaisesRegex(ValueError, "materialization binds another field"):
                     exec(native_code, {})
@@ -1329,8 +1329,8 @@ $config|ConvertTo-Json -Compress
                     self.assertIn("run_native_static_field_provider.ps1", value["runner"])
 
     def _native_evidence_authority(self, mutation=None, *, rebased=False, strict_numerics=False):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as fields
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import corridor_field_provider as provider
+        from msplatform.backends.comsol import static_field_binding as fields
+        from msplatform.backends.comsol import candidate_authority as provider
         source_code = RUNNER.read_text(encoding="utf-8-sig")
         helper = source_code.split("function Assert-NativeStaticFieldBinding {", 1)[1].split("\nfunction ", 1)[0]
         code = helper.split("$code=@'\n", 1)[1].split("\n'@", 1)[0]

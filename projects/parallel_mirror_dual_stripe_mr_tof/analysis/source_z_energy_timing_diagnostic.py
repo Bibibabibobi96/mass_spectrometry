@@ -30,9 +30,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_sched
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     derive_mirror_l0_slope_tolerance_per_v,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _te1_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     histogram_half_height_bin_span,
     peak_time_metrics,
@@ -202,37 +203,6 @@ def _detector_plane_initial_z_slope(path: Path) -> float:
     return slope
 
 
-def _te1_reference(path: Path) -> tuple[dict[str, Any], float, list[float], list[float]]:
-    reference = _load_object(path, "reference TE1 variation")
-    if (
-        reference.get("schema_version") != 1
-        or reference.get("role") != "mrtof_terminal_time_mirror_voltage_variation"
-        or reference.get("status") != "screening_candidate_materialized"
-        or reference.get("qualification")
-        != "diagnostic_only__complete_3d_detector_response_pending"
-        or reference.get("mode") != "TE1"
-    ):
-        raise CandidateContractError("reference must be one schema-1 TE1 variation")
-    try:
-        coordinate = float(reference["coordinate"])
-    except (KeyError, TypeError, ValueError) as error:
-        raise CandidateContractError("reference TE1 coordinate is invalid") from error
-    if not math.isfinite(coordinate) or coordinate == 0.0:
-        raise CandidateContractError("reference TE1 coordinate must be finite and nonzero")
-    base = _finite_vector(reference.get("base_mirror_voltages_v"), 5, "base voltages")
-    target = _finite_vector(reference.get("target_mirror_voltages_v"), 5, "target voltages")
-    delta = _finite_vector(reference.get("voltage_delta_v"), 4, "voltage delta")
-    if base[0] != 0.0 or target[0] != 0.0:
-        raise CandidateContractError("mirror ground voltage must remain zero")
-    if any(
-        not math.isclose(
-            target[index + 1] - base[index + 1], delta[index],
-            rel_tol=0.0, abs_tol=1e-9,
-        )
-        for index in range(4)
-    ):
-        raise CandidateContractError("reference TE1 variation delta is inconsistent")
-    return reference, coordinate, base, delta
 
 
 def build_te1_reference_from_mirror_jacobian(

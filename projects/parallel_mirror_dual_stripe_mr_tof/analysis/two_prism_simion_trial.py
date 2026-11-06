@@ -165,16 +165,21 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     CONVERGING_PRISM_ENERGY_RESIDUAL, converging_design_potential_delta_v,
     resolve_converging_prism_target,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
+from msplatform.backends.comsol.static_field_binding import (
     load_binding, validate_voltages, _lua_vector, _scalar_field_lua_fields,
     _scalar_refinement_windows_lua,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
-    derive_mirror_voltage_bounds,
     load_contract,
     mirror_power_supply_limits,
     resolve_trajectory_profile,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import (
+    apply_terminal_mirror_variation as _apply_terminal_mirror_variation,
+    finite as _finite,
+    fixed_mirror_stripe_source_state as _fixed_mirror_stripe_source_state,
+    vector as _vector,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     summarize_events,
@@ -799,143 +804,8 @@ def load_schema5_native_source_state(
     return _schema5_native_source_state(stripe_summary, contract, selected_energy_v)
 
 
-def _fixed_mirror_stripe_source_state(
-    authority: dict[str, Any],
-    mirror_summary: dict[str, Any],
-    stripe_summary: dict[str, Any],
-    contract: dict[str, Any],
-) -> tuple[dict[str, Any], float, float, list[float], float]:
-    """Validate the fixed-grid mirror/variable-slow-energy downstream receipt."""
-    if (
-        authority.get("schema_version") != 1
-        or authority.get("role")
-        != "mrtof_fixed_mirror_stripe_downstream_operating_authority"
-        or authority.get("status") != "success"
-    ):
-        raise CandidateContractError("fixed mirror/Stripe downstream authority is invalid")
-    if (
-        mirror_summary.get("schema_version") != 1
-        or mirror_summary.get("role") != "mrtof_mirror_turn_fixed_grid_validation"
-        or mirror_summary.get("status") != "success"
-    ):
-        raise CandidateContractError("fixed mirror summary identity is invalid")
-    if (
-        stripe_summary.get("schema_version") != 3
-        or stripe_summary.get("role")
-        != "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family"
-        or stripe_summary.get("status")
-        != "fixed_grid_native_mirror_exact_K_slow_energy_and_spatial_return_inverse_complete"
-    ):
-        raise CandidateContractError("fixed-mirror Stripe summary identity is invalid")
-    seed = stripe_summary.get("selected_seed")
-    materialized = (
-        seed.get("native_spatial_return_materialization")
-        if isinstance(seed, dict) else None
-    )
-    if not isinstance(seed, dict) or not isinstance(materialized, dict):
-        raise CandidateContractError("fixed-mirror Stripe summary lacks its materialization")
-    axial = _finite(authority.get("axial_energy_per_charge_v"), "fixed mirror axial energy")
-    slow = _finite(authority.get("slow_energy_per_charge_v"), "selected slow energy")
-    target_k = _finite(authority.get("target_period_ratio"), "fixed mirror/Stripe target K")
-    predicted_k = _finite(
-        authority.get("predicted_period_ratio"), "fixed mirror/Stripe predicted K",
-    )
-    mirror_voltages = _vector(
-        authority.get("mirror_voltages_v"), 5, "fixed-grid mirror voltages",
-    )
-    stripe_biases = _vector(
-        authority.get("stripe_biases_v"), 2, "fixed-mirror Stripe biases",
-    )
-    if slow <= 0.0 or axial <= 0.0 or not math.isclose(
-        target_k, predicted_k, rel_tol=0.0, abs_tol=1e-12,
-    ):
-        raise CandidateContractError("fixed mirror/Stripe energy or K identity is invalid")
-    expected = (
-        _finite(seed.get("selected_axial_energy_per_charge_v"), "Stripe axial energy"),
-        _finite(seed.get("selected_exact_K_slow_energy_per_charge_v"), "Stripe slow energy"),
-        _finite(seed.get("target_drift_period_ratio"), "Stripe target K"),
-        _finite(seed.get("predicted_continuous_oscillation_count"), "Stripe predicted K"),
-    )
-    materialized_biases = _vector(
-        materialized.get("stripe_biases_v"), 2, "materialized Stripe biases",
-    )
-    if (
-        expected != (axial, slow, target_k, predicted_k)
-        or _vector(seed.get("stripe_biases_v"), 2, "Stripe seed biases") != stripe_biases
-        or materialized_biases != stripe_biases
-        or _finite(materialized.get("axial_energy_per_charge_v"), "materialized axial energy")
-        != axial
-        or _finite(materialized.get("source_slow_energy_per_charge_v"), "materialized slow energy")
-        != slow
-    ):
-        raise CandidateContractError("fixed mirror/Stripe authority differs from its source summary")
-    energy_contract = contract.get("accelerator_energy_contract")
-    if not isinstance(energy_contract, dict):
-        raise CandidateContractError("MR-TOF contract lacks its accelerator energy envelope")
-    reference = _finite(
-        energy_contract.get("net_gain_reference_center_per_charge_v"),
-        "contract net-gain reference centre",
-    )
-    half_range = _finite(
-        energy_contract.get("net_gain_center_search_half_range_per_charge_v"),
-        "contract net-gain search half-range",
-    )
-    if not reference - half_range <= axial <= reference + half_range:
-        raise CandidateContractError("fixed-grid mirror energy is outside the contract search envelope")
-    return seed, slow, axial, mirror_voltages, target_k
 
 
-def _apply_terminal_mirror_variation(
-    *, variation: dict[str, Any] | None, base_voltages: list[float],
-    contract: dict[str, Any], axial_energy_v: float,
-) -> tuple[list[float], dict[str, Any] | None]:
-    if variation is None:
-        return base_voltages, None
-    if (
-        variation.get("schema_version") != 1
-        or variation.get("role") != "mrtof_terminal_time_mirror_voltage_variation"
-        or variation.get("status") != "screening_candidate_materialized"
-        or variation.get("qualification") not in {
-            "diagnostic_only__complete_3d_detector_response_pending",
-            "bare_mirror_prediction_outside_old_zero_slope_budget__complete_system_response_required",
-        }
-    ):
-        raise CandidateContractError("terminal-time mirror variation identity is invalid")
-    base = _vector(
-        variation.get("base_mirror_voltages_v"), 5,
-        "terminal-time variation base mirror voltages",
-    )
-    target = _vector(
-        variation.get("target_mirror_voltages_v"), 5,
-        "terminal-time variation target mirror voltages",
-    )
-    delta = _vector(
-        variation.get("voltage_delta_v"), 4,
-        "terminal-time variation voltage delta",
-    )
-    if base != base_voltages or base[0] != 0.0 or target[0] != 0.0:
-        raise CandidateContractError(
-            "terminal-time mirror variation is not bound to the selected mirror authority"
-        )
-    if any(
-        not math.isclose(target[index + 1] - base[index + 1], delta[index],
-                         rel_tol=0.0, abs_tol=1e-9)
-        for index in range(4)
-    ):
-        raise CandidateContractError("terminal-time mirror variation delta is inconsistent")
-    lower, upper = derive_mirror_voltage_bounds(contract, selected_center_v=axial_energy_v)
-    if any(
-        value < low or value > high
-        for value, low, high in zip(target[1:], lower, upper, strict=True)
-    ):
-        raise CandidateContractError("terminal-time mirror variation violates the mirror envelope")
-    identity = {
-        "mode": variation.get("mode"),
-        "coordinate": variation.get("coordinate"),
-        "voltage_delta_v": delta,
-        "source_seed": variation.get("source_seed"),
-    }
-    return target, identity
 
 
 def _p2_handoff_targets(
@@ -1026,17 +896,8 @@ def _load_frozen_accelerator_pulse_schedule(path: Path | None) -> dict[str, Any]
 
 
 
-def _finite(value: Any, label: str) -> float:
-    if type(value) not in (int, float) or not math.isfinite(float(value)):
-        raise CandidateContractError(f"{label} must be finite")
-    return float(value)
 
 
-def _vector(value: Any, count: int | None, label: str) -> list[float]:
-    if not isinstance(value, list) or not value or (count is not None and len(value) != count):
-        expected = f"{count} values" if count is not None else "at least one value"
-        raise CandidateContractError(f"{label} must contain {expected}")
-    return [_finite(item, label) for item in value]
 
 
 def _accelerator_ring_voltages(

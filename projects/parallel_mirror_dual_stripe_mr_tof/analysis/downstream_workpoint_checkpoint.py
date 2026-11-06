@@ -15,7 +15,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_i
     assert_trial_matches_jacobian,
     resolve_operating_cache_binding,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 

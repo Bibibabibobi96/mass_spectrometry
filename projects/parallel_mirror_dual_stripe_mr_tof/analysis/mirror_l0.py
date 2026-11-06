@@ -17,7 +17,7 @@ from typing import Iterable
 from scipy.integrate import IntegrationWarning, quad
 from scipy.optimize import brentq, differential_evolution, least_squares
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 
 
 @dataclass(frozen=True)

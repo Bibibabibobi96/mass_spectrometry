@@ -29,20 +29,18 @@ from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
-    _load_object,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _bunch_center_source_state, _source_release_record, _collision_geometry_projection,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
+from msplatform.backends.comsol.static_field_binding import (
     load_binding, _record, _validate_native_surface_absence, native_refine_numerics,
     validate_native_consumer_view, load_native_response_basis, native_binding_problem, scalar_binding_problem,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
 
 
 def _trajectory_physics_identity(

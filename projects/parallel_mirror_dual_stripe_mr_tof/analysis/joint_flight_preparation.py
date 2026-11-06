@@ -320,7 +320,7 @@ def prepare_event_field_audit(controller_projection: Path, candidate_binding: Pa
     The caller runs each returned Lua job through the public SIMION preparation
     lease. This compiler and the reducer never launch SIMION or change a field.
     """
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+    from msplatform.backends.comsol.static_field_binding import load_binding
     projection = _read(controller_projection)
     if projection.get("role") != "mrtof_measured_exit_centroid_controller_projection":
         raise ValueError("actual measured centroid controller projection required")
@@ -502,7 +502,7 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
                                     field_assets_verified: bool = False, source_identity_verified: bool = False,
                                     native_path_projection: bool = False) -> str:
     """Retain the MR core operating point, removing every OA launch-only field."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
 
     voltages = native_field["analyzer_voltages_v"]
     # Finalization may bind a closed P/S candidate after the design was frozen.
@@ -534,7 +534,7 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
 
 def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contract: dict[str, Any]) -> dict[str, Any]:
     """Bind only original field geometry/voltage/grid authors; never open old PA."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import resolve_trajectory_profile
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import resolve_trajectory_profile
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import resolve_drift_phase_contract
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _full_path_timeout_us
 

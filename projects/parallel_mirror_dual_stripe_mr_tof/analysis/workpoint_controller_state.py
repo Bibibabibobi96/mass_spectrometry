@@ -10,7 +10,7 @@ import copy
 import math
 from typing import Any, Mapping, Sequence
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 
 RECOVERY_VERSION = 8
 RECOVERY_ROLE = "mrtof_downstream_workpoint_local_model_recovery"

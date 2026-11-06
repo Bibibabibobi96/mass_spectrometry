@@ -9,6 +9,7 @@ PROVIDER_DEPENDENCIES = MappingProxyType({
     "apertured_tube_electron_impact_ion_source": (),
     "transverse_helical_filament_wehnelt_electron_gun": (),
     "dual_cone_tandem_quadrupole_ion_interface": ("rf_multipole",),
+    "parallel_mirror_dual_stripe_mr_tof": ("orthogonal_accelerator",),
     # OA owns the acceleration model; RF's existing grounded-shield validator
     # supplies the same physical zero-potential constraint, not another RF body.
     "single_reflection_oa_tof": ("orthogonal_accelerator", "rf_multipole"),

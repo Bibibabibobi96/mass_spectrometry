@@ -19,7 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geomet
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
     derive_native_corridor_plan,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 

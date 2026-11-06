@@ -94,6 +94,16 @@ manifest = export_uniform_runtime(root/'uniform.lua', root/'uniform-manifest.jso
     spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
 assert manifest['role'] == 'dual_cone_gas_field_export'
 assert (root/'uniform.lua').read_bytes() == cone['uniform_lua'].encode()
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+from msplatform.backends.comsol import corridor_field
+assert callable(corridor_field.compile_request)
+from msplatform.backends.comsol.resources import native_resource_text
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+assert callable(load_contract)
+candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict(s1=1., s2=2., p1=3., p2=4.))
+assert [candidate['analyzer_electrode_voltages_v'][i-1] for i in (11,12,13,14,16,17)] == [1.,1.,2.,2.,3.,4.]
+assert 'mphload' in native_resource_text('candidate_field.m')
+assert 'SIMION' in native_resource_text('export_corridor_scalar_field.m')
 
 spec = fixture['source']
 states = generate_release_states(spec)

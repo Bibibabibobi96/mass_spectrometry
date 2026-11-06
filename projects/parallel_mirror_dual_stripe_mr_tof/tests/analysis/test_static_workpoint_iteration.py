@@ -12,10 +12,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from msplatform.backends.comsol import corridor_field
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
     _native_static_binding_problem, _static_field_problem, _transport_invariants, assert_trial_matches_jacobian,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _project_selected_center_observation, analyze_trial,
 )
@@ -149,11 +150,10 @@ class StaticFieldIdentityTest(unittest.TestCase):
             if path.name=="solver_configured.json":
                 return self.solver_tree(solver)
             return solver if path.name=="solver_before.json" or after is None else after
-        analysis = MODULE.rsplit(".", 1)[0]
         with patch(f"{MODULE}.load_binding", return_value=binding), \
-             patch(f"{analysis}.static_field_binding._record"), \
-             patch(f"{analysis}.corridor_field_provider.compile_request", return_value=compiled), \
-             patch(f"{analysis}.two_prism_operating_point._load_object", side_effect=load):
+             patch("msplatform.backends.comsol.static_field_binding._record"), \
+             patch.object(corridor_field, "compile_request", return_value=compiled), \
+             patch("msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority.load_object", side_effect=load):
             return _static_field_problem(materialization)
 
     def test_ordinary_scalar_mesh2_and_provider_have_same_scientific_family(self):
@@ -422,7 +422,7 @@ Add-Content $env:MRTOF_FIXTURE_ORDER 'trial'
             (root / "authority_fixture.py").write_text("""import json,sys
 from pathlib import Path
 from unittest.mock import patch
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 code, request_json = sys.argv[1:]
 def compile_fixture(request):
     Path(__file__).with_name('checked_request.json').write_text(json.dumps(request))
@@ -437,8 +437,8 @@ def load_fixture(path, **kwargs):
     return {'authority': {'analyzer_electrode_voltages_v': [0]*10+[-27,-27,54,54,0,191,-190,0,0,0]}}
 def derive_fixture(request, source):
     return compile_fixture(request)['candidate_authority'], {}
-with patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding',load_fixture), \
-     patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider.derive_candidate_authority',derive_fixture):
+with patch('msplatform.backends.comsol.static_field_binding.load_binding',load_fixture), \
+     patch('msplatform.backends.comsol.candidate_authority.derive_candidate_authority',derive_fixture):
     sys.argv = ['authority',request_json]
     exec(code)
 """, encoding="utf-8")
@@ -459,7 +459,7 @@ function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Invoke-FixturePython {
     $supplied=@($args)
     if($supplied[0]-eq'-m'){
-        if($supplied[1]-ne'projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider'-or
+        if($supplied[1]-ne'msplatform.backends.comsol.corridor_field'-or
            $supplied[2]-ne'--resolve-completed-request'-or$supplied[4]-ne'--completed-provider-manifest'){
             throw 'unexpected completed-provider CLI boundary'
         }

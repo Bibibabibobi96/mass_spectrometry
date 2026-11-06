@@ -468,7 +468,7 @@ try{
     $lease=Enter-HostExecutionLease -Role SIMION -Stage preparation
     $stage='joint_asset_identity_before_iob'
     Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
-      & $python -B -c 'import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("JOINT_NATIVE_ASSETS=PASS")' (Join-Path $package.result_dir 'joint_workbench/static_field_binding.json')
+      & $python -B -c 'import sys;from pathlib import Path;from msplatform.backends.comsol.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("JOINT_NATIVE_ASSETS=PASS")' (Join-Path $package.result_dir 'joint_workbench/static_field_binding.json')
       if($LASTEXITCODE-ne0){throw 'Joint workbench live asset identity verification failed; no vendor consumer was started.'}
     }
     $stage='iob_assembly_no_fly'

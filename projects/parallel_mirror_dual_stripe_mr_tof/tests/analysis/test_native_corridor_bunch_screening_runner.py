@@ -47,7 +47,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
                     )
                     result = subprocess.run(["pwsh", "-NoProfile", "-Command", script],
                                             cwd=REPO_ROOT, capture_output=True, text=True,
-                                            encoding="utf-8", timeout=30)
+                                            encoding="utf-8", errors="replace", timeout=30)
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     def test_screening_runs_one_static_cohort_from_checkpointed_family(self) -> None:
@@ -382,8 +382,8 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         self.assertIn("physical state differs", self._static_problem(wrong_source=True)["caught"])
 
     def _te1_field_preflight(self, mutation=None, *, variation_enabled=True, center_view=False):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as fields
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import corridor_field_provider as provider
+        from msplatform.backends.comsol import static_field_binding as fields
+        from msplatform.backends.comsol import candidate_authority as provider
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import downstream_fixed_grid_workpoint as workpoint
         text = RUNNER.read_text(encoding="utf-8-sig")
         helper = text.split("function Assert-StaticScreeningField {", 1)[1].split("\nfunction ", 1)[0]

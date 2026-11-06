@@ -11,7 +11,7 @@ from typing import Any
 
 from common.contracts.file_identity import canonical_json_sha256, file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (
     derive_mirror_boundaries,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
@@ -19,7 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     effective_axial_width_mm,
     reduced_period,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
     derive_operating_energy_envelope,

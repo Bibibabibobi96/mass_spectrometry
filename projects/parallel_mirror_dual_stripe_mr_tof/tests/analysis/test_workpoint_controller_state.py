@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
     RECOVERY_VERSION, advance_recovery_round, import_recovery_checkpoint,
     prepare_recovery_state, relative_voltage_step, voltage_stencil_steps, validate_recovery_policy,

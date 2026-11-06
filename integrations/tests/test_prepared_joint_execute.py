@@ -358,7 +358,7 @@ foreach($command in $commands){
 ConvertTo-Json -InputObject @($script:calls) -Depth 10 -Compress
 ''', encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(runner), str(root)],
-                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             calls = json.loads(result.stdout.strip().splitlines()[-1])
             self.assertEqual(len(calls), 2)
@@ -410,7 +410,7 @@ if($null-eq$caught){throw 'Missing declared batch receipt was swallowed'}
 $configuration.inputs|ConvertTo-Json -Depth 10 -Compress
 ''', encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(runner), str(root)],
-                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             inputs = json.loads(result.stdout.strip().splitlines()[-1])
             self.assertEqual(inputs["reused_batch_001_scientific_events"], paths["events_path"])
@@ -456,7 +456,7 @@ if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|
             path = root / "test.ps1"
             path.write_text(script, encoding="utf-8")
             completed = subprocess.run(["pwsh", "-NoProfile", "-File", str(path)], cwd=REPO,
-                                       capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_existing_public_runner_replans_and_dispatches_local_batch_files(self):
@@ -754,8 +754,10 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
         snapshot = inputs / "runtime_snapshot"
         relative = Path("projects/parallel_mirror_dual_stripe_mr_tof/simion")
-        for name in ("mrtof_candidate.lua", "scalar_field_adapter.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua"):
+        for name in ("mrtof_candidate.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua"):
             self.assertEqual((snapshot / relative / name).read_bytes(), (REPO / relative / name).read_bytes())
+        scalar_relative = Path("src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua")
+        self.assertEqual((snapshot/scalar_relative).read_bytes(), (REPO/scalar_relative).read_bytes())
         runtime = fixture.root / "runtime"
         runtime.mkdir()
         (runtime / "joint.iob").write_bytes(b"test IOB; never passed to a solver")

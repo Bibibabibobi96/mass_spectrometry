@@ -18,7 +18,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff 
 from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 ROOT = Path(__file__).resolve().parents[4]
 IP_CONFIG = ROOT / "projects/dual_pressure_rectilinear_ion_processor/config"

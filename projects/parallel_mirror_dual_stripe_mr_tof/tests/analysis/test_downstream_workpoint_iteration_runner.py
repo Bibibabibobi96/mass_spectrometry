@@ -1034,7 +1034,7 @@ try{Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap 
                     self.assertEqual(observed["flights"],[])
 
     def test_prepared_refine_preflight_keeps_five_layer_ip_operator_identity(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as fields
+        from msplatform.backends.comsol import static_field_binding as fields
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import downstream_workpoint_iteration as controller
         source=(PROJECT/"analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         code=re.search(r"\$loadCode=@'\n(.*?)\n'@",source,re.S).group(1)
@@ -2210,9 +2210,9 @@ Write-Output 'PASS'
             "sys.argv=['authority',request]; "
             "from contextlib import ExitStack; "
             "stack=ExitStack(); "
-            "stack.enter_context(patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis."
-            "corridor_field_provider.compile_request',side_effect=AssertionError('Unused model metadata'))); "
-            "stack.enter_context(patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis."
+            "stack.enter_context(patch('msplatform.backends.comsol."
+            "corridor_field.compile_request',side_effect=AssertionError('Unused model metadata'))); "
+            "stack.enter_context(patch('msplatform.backends.comsol."
             "static_field_binding.load_binding',return_value={'authority':authority})); "
             "exec(code)"
         )
@@ -2248,7 +2248,7 @@ Write-Output 'PASS'
             fixture = (
                 "import json,sys; from unittest.mock import patch; "
                 "code,request,binding=sys.argv[1:];sys.argv=['check',request]; "
-                "from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding; "
+                "from msplatform.backends.comsol import static_field_binding; "
                 "with_context=patch.object(static_field_binding,'load_binding',return_value=json.loads(binding)); "
                 "with_context.start();exec(code)"
             )
@@ -2544,8 +2544,8 @@ $descriptor=if(Test-Path $descriptorPath){Get-Content $descriptorPath -Raw|Conve
         self.assertEqual(result["provider_calls"], 0)
 
     def test_retained_provider_selector_checks_target_operator_and_unflown_identity(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as fields
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import corridor_field_provider as provider
+        from msplatform.backends.comsol import static_field_binding as fields
+        from msplatform.backends.comsol import candidate_authority as provider
         source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         code = re.search(r"\$retainedCode=@'\n(.*?)\n'@", source, re.S).group(1)
         with TemporaryDirectory() as temporary:

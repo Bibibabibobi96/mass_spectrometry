@@ -9,7 +9,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_l0 import (
     derive_first_prism_l0,
     ray_segment_intersection_yz,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 
 PROJECT = Path(__file__).resolve().parents[2]

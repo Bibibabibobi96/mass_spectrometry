@@ -169,7 +169,7 @@ if($ResponseFieldBindingPath){
   $ResponseFieldBindingPath=(Resolve-Path -LiteralPath $ResponseFieldBindingPath).Path
   $responseDeclaration=Get-Content -LiteralPath $ResponseFieldBindingPath -Raw|ConvertFrom-Json -AsHashtable
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    $script:responseBinding=((& $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding --binding $ResponseFieldBindingPath)-join"`n")|ConvertFrom-Json -AsHashtable
+    $script:responseBinding=((& $python -m msplatform.backends.comsol.static_field_binding --binding $ResponseFieldBindingPath)-join"`n")|ConvertFrom-Json -AsHashtable
     if($LASTEXITCODE-ne0){throw 'Declared response field binding is invalid.'}
   }
   if($responseDeclaration.schema_version-ne2-or$responseBinding.representation-ne'exploratory_affine_ps_responses'){throw 'Active response input must declare the version-two exploratory PS basis.'}
@@ -187,7 +187,7 @@ if($staticFieldMode){
     if($CompletedFieldProviderManifest){throw 'Native static provider replay is not yet supported; unchanged voltages reuse the source binding.'}
   }
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    $script:staticBinding=((& $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding --binding $fieldProviderRequest.source_binding_path)-join"`n")|ConvertFrom-Json -AsHashtable
+    $script:staticBinding=((& $python -m msplatform.backends.comsol.static_field_binding --binding $fieldProviderRequest.source_binding_path)-join"`n")|ConvertFrom-Json -AsHashtable
     if($LASTEXITCODE-ne0){throw 'Static source binding is invalid.'}
   }
   if($staticBinding.mode-ne$staticBindingMode){throw 'Static field request and source solver modes differ.'}
@@ -514,7 +514,7 @@ function Invoke-CenterTrial {
     }
     # Reuse complete voltage/mirror derivation without preparing an unconsumed solve.
     # The explicit direct-field branch still uses the provider's full source checks.
-    $authorityCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,native_numerics_match; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority; r=json.loads(sys.argv[1]); s=load_binding(Path(r['source_binding_path']),_allow_responses=False); a,_=derive_candidate_authority(r,s['authority']); profiles=[json.loads(Path(p).read_text(encoding='utf-8-sig'))['simion']['numerical_profiles']['native_static_field'] for p in (r['numerical_contract_path'],sys.argv[2])] if s.get('consumer_view') else []; [p.pop('consumer_view',None) for p in profiles]; assert not profiles or profiles[0]==profiles[1], 'provider storage and trajectory field numerics differ'; print(json.dumps(a==s['authority'] and (r['role']!='mrtof_native_static_field_provider_request' or native_numerics_match(s,r['numerical_contract_path']))))"
+    $authorityCode="import json,sys; from pathlib import Path; from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match; from msplatform.backends.comsol.candidate_authority import derive_candidate_authority; r=json.loads(sys.argv[1]); s=load_binding(Path(r['source_binding_path']),_allow_responses=False); a,_=derive_candidate_authority(r,s['authority']); profiles=[json.loads(Path(p).read_text(encoding='utf-8-sig'))['simion']['numerical_profiles']['native_static_field'] for p in (r['numerical_contract_path'],sys.argv[2])] if s.get('consumer_view') else []; [p.pop('consumer_view',None) for p in profiles]; assert not profiles or profiles[0]==profiles[1], 'provider storage and trajectory field numerics differ'; print(json.dumps(a==s['authority'] and (r['role']!='mrtof_native_static_field_provider_request' or native_numerics_match(s,r['numerical_contract_path']))))"
     $sameSourceField=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
       $resolved=((& $python -c $authorityCode ($request|ConvertTo-Json -Depth 100 -Compress) ([string]$Arguments.ContractPath))-join"`n")
       if($LASTEXITCODE-ne0){throw 'Candidate field authority preflight failed.'}
@@ -538,8 +538,8 @@ function Invoke-CenterTrial {
       $retainedCode=@'
 import hashlib,json,sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,native_numerics_match,native_response_operator,_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority
+from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match,native_response_operator,_record
+from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from common.contracts.verify_run_manifest import verify_record
 r,ref=json.loads(sys.argv[1]),json.loads(sys.argv[2])
 m=Path(ref['provider_manifest']); old_request=Path(ref['request_path'])
@@ -587,7 +587,7 @@ print(json.dumps(str(p)))
     $completedBinding=$null
     if($CompletedFieldProviderManifest){
       $completed=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-        $resolved=((& $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider `
+        $resolved=((& $python -m msplatform.backends.comsol.corridor_field `
           --resolve-completed-request $requestPath --completed-provider-manifest $CompletedFieldProviderManifest)-join"`n")
         if($LASTEXITCODE-ne0){throw 'Completed field provider validation failed.'}
         return ($resolved|ConvertFrom-Json)
@@ -605,11 +605,11 @@ print(json.dumps(str(p)))
       $bindingPath=Join-Path $package.input_dir ($providerId+'_response_binding.json')
       Write-RunJson -Path $bindingPath -Depth 100 -Value $descriptor
       $resolved=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-        $output=((& $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding --binding $bindingPath)-join"`n")
+        $output=((& $python -m msplatform.backends.comsol.static_field_binding --binding $bindingPath)-join"`n")
         if($LASTEXITCODE-ne0){throw 'Candidate response field binding is invalid.'}
         return ($output|ConvertFrom-Json -AsHashtable)
       }
-      $checkCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,validate_response_candidate; validate_response_candidate(load_binding(Path(sys.argv[2])),json.loads(sys.argv[1]))"
+      $checkCode="import json,sys; from pathlib import Path; from msplatform.backends.comsol.static_field_binding import load_binding,validate_response_candidate; validate_response_candidate(load_binding(Path(sys.argv[2])),json.loads(sys.argv[1]))"
       Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
         & $python -c $checkCode ($request|ConvertTo-Json -Depth 100 -Compress) $bindingPath
         if($LASTEXITCODE-ne0){throw 'Declared response basis cannot supply this candidate; use an explicit direct-field configuration.'}
@@ -1192,7 +1192,7 @@ function Update-StagedAnchorFieldProtection {
   $protectionCode=@'
 import json, sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+from msplatform.backends.comsol.static_field_binding import load_binding
 binding = load_binding(Path(sys.argv[1]))
 if binding['mode'] != 'native_static_pa':
     raise ValueError('Recovered anchor field mode differs')
@@ -1896,7 +1896,7 @@ function Invoke-PreparedOriginalStagedWorkflow {
 import json,sys
 from pathlib import Path
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import load_prepared_centroid_trial
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,load_native_response_basis,native_response_operator
+from msplatform.backends.comsol.static_field_binding import load_binding,load_native_response_basis,native_response_operator
 a=load_prepared_centroid_trial(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]))
 b=load_binding(Path(sys.argv[4]))
 assert b['accelerator_provider']=='dual_pressure_rectilinear_ion_processor' and len(b['refinement_windows'])==4,'Prepared field must retain the five-layer IP operator'

@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     reduced_period,
 )
 from scipy.optimize import brentq, least_squares
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (

@@ -3,7 +3,9 @@ classdef classify_corridor_conductor_voltageTest < matlab.unittest.TestCase
     methods (TestClassSetup)
         function add_source(testCase)
             project = fileparts(fileparts(fileparts(mfilename('fullpath'))));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'comsol')));
+            repository = fileparts(fileparts(project));
+            resources = fullfile(repository,'src','msplatform','backends','comsol','resources');
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(resources));
         end
     end
     methods (Test)

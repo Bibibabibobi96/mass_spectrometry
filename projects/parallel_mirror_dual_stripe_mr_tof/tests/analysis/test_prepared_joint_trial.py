@@ -506,7 +506,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
             return dict(counts=dict(source=100,transferred=97,not_transferred=3))
         compiler = "integrations.workflows.accelerator_interface.prepare"
         with patch(compiler+".verified_reference",side_effect=lambda run,relative,**kwargs:run/relative), patch(compiler+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
-             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=bound_field), \
+             patch("msplatform.backends.comsol.static_field_binding.load_binding",return_value=bound_field), \
              patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source",side_effect=source_projection), \
              patch(compiler+".prepare_interface_field_audit",return_value={}):
             finalized = bind_joint_workbench(design_run=design,field_run=fields,source_run=actual,
@@ -535,7 +535,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
             design_receipt_path.write_text(json.dumps(design_receipt))
             with patch(compiler+".verified_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
                  patch(compiler+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
-                 patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=bound_field):
+                 patch("msplatform.backends.comsol.static_field_binding.load_binding",return_value=bound_field):
                 verified = compiler_module._joint_binding_inputs(design_run=design,field_run=fields,source_run=actual)
             self.assertEqual(verified["binding"], bound_field)
         design_plan_path.write_bytes(old_design_plan)
@@ -620,7 +620,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
 
     def test_candidate_binding_keeps_ip_operator_and_reuses_new_parent(self):
         import copy
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
         authority = dict(analyzer_electrode_voltages_v=[0.0]*20,
                          component_voltages_v=[dict(namespace="ion_processor", id=i, value_v=i) for i in range(1,16)],
                          assembly=dict(native_operating_point=dict(lift_v=4480.04379)))
@@ -721,7 +721,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
         target["prism_handoff_target"]={"axial_energy_per_charge_v":4372}
         adapter="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
         with patch(adapter+".load_measured_centroid_closure_target",return_value=target),\
-             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",side_effect=AssertionError("retired PA opened")):
+             patch("msplatform.backends.comsol.static_field_binding.load_binding",side_effect=AssertionError("retired PA opened")):
             from common.contracts.component_particle_state import load_component_particle_state_csv
             with patch("common.contracts.component_particle_state.load_component_particle_state_csv",
                        wraps=load_component_particle_state_csv) as canonical_reader:

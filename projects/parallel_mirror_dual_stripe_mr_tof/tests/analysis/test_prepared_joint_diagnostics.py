@@ -160,7 +160,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("SIMULATION_VERIFY_REAL_JOINT_ANALYSIS") == "1",
                          "explicit retained native-97 post-hoc verification")
     def test_retained_native_97_results_analyze_when_exact_pa_paths_are_unavailable(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, verify_joint_asset_records
+        from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
         self.binding_mock.stop()
         retained = Path(__file__).resolve().parents[5] / "artifacts/projects/instrument_assembly/runs/20261025_093701__sim__simion__ip-mr-joint-841cccc2"
         preparation = retained / "results/prepared_joint_trial.json"
@@ -198,7 +198,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
 
     def test_actual_sealed_native_metadata_analyzes_without_pa_and_native_use_refuses(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, verify_joint_asset_records
+        from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
         self.binding_mock.stop()
         fields = self.root / "tiny_fields"
@@ -206,7 +206,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         helper = IonProcessorNativeBindingTest()
         descriptor, binding_path, owner = helper.fixture(fields, detector_box=[0,0,0,1,1,1])
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         # Real complete provider solids support the actual loss classifier. Only
         # this synthetic binding's frame label and IP placeholder are test-owned;
         # the tiny fields do not claim a solve of this full physical analyzer.

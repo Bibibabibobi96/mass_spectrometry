@@ -279,7 +279,7 @@ if($staticFieldRequested){
     throw 'Static field binding cannot consume a native adjustable runtime.'
   }
   $FieldBindingPath=(Resolve-Path -LiteralPath $FieldBindingPath).Path
-  $staticFieldBinding=((@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding','--binding',$FieldBindingPath))-join"`n")|ConvertFrom-Json -Depth 100)
+  $staticFieldBinding=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.backends.comsol.static_field_binding','--binding',$FieldBindingPath))-join"`n")|ConvertFrom-Json -Depth 100)
   if($staticFieldBinding.PSObject.Properties['mode']){$staticFieldMode=[string]$staticFieldBinding.mode}
 }else{
   if([string]::IsNullOrWhiteSpace($NativeCorridorBankRunPath)){throw 'NativeCorridorBankRunPath is required for a native flight.'}
@@ -542,7 +542,7 @@ try{
   $staticFieldLocal=$null
   if($staticFieldRequested){
     $staticFieldLocal=Copy-RequiredInput $FieldBindingPath (Join-Path $solverDir 'static_field_binding.json') 'static COMSOL binding'
-    Copy-RequiredInput (Join-Path $providerSimionRoot 'scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
+    Copy-RequiredInput (Join-Path $script:pythonRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\resources\scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
   }
   Copy-RequiredInput -Source (Join-Path $providerSimionRoot 'build_native_corridor_iob.lua') -Destination (Join-Path $solverDir 'build_native_corridor_iob.lua') -Label 'native corridor IOB builder'|Out-Null
   Copy-RequiredInput -Source (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\4_instance_seed.iob') -Destination (Join-Path $solverDir '4_instance_seed.iob') -Label 'native four-instance seed'|Out-Null
@@ -858,7 +858,7 @@ try{
     }
   }
   if($staticFieldRequested-and$staticFieldMode-eq'native_static_pa'){
-    Invoke-ProjectPython -Arguments @('-c','import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("OA_MR_NATIVE_ASSETS=PASS")',$staticFieldLocal)|Out-Null
+    Invoke-ProjectPython -Arguments @('-c','import sys;from pathlib import Path;from msplatform.backends.comsol.static_field_binding import load_binding,verify_joint_asset_records;verify_joint_asset_records(load_binding(Path(sys.argv[1])));print("OA_MR_NATIVE_ASSETS=PASS")',$staticFieldLocal)|Out-Null
   }
   $iobAnalyzerInput=$globalFallbackAnalyzer
   # Flight initialization receives the private native Fast Adjust family below.

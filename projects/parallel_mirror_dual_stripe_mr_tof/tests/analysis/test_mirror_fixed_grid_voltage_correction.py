@@ -26,7 +26,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_fixed_grid_volt
     decompose_l0_l1_correction,
     rank_one_secant_update,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 

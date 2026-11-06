@@ -15,6 +15,8 @@ $repo = if($Child){[string](Get-Content (Join-Path $PSScriptRoot 'plan.json') -R
 $python=Join-Path $repo '.venv/Scripts/python.exe'
 if($Child){
     $plan=Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json
+    $env:MRTOF_COMSOL_RESOURCE_DIRECTORY=[string]$plan.matlab_resource_directory
+    if(-not(Test-Path -LiteralPath (Join-Path $env:MRTOF_COMSOL_RESOURCE_DIRECTORY 'update_corridor_workpoint_voltages.m'))){throw 'Installed COMSOL MATLAB resource closure is missing.'}
     . (Join-Path $repo 'common/resource_budget_support.ps1')
     $budget=Get-HostResourceBudget -Role COMSOL -Stage solver
     $launcherOptions=@{}
@@ -33,7 +35,7 @@ if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'Field provider must run ou
 if(-not(Test-Path -LiteralPath $preparedConfig)){
     if(-not $RequestPath){throw 'New preparation requires RequestPath.'}
     Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-        & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider --request $RequestPath --run-directory $RunDirectory
+        & $python -m msplatform.backends.comsol.corridor_field --request $RequestPath --run-directory $RunDirectory --repository-root $repo --runner-path $PSCommandPath
         if($LASTEXITCODE -ne 0){throw 'Candidate field preparation failed.'}
     }
 }elseif($RequestPath){throw 'Prepared input is frozen; omit RequestPath when approving that run.'}
@@ -93,7 +95,7 @@ try{
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $inputs 'provider_usage.json') -Encoding utf8
     if($capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity}
     Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-        & $python (Join-Path $inputs 'corridor_field_provider.py') --run-directory $RunDirectory --finalize
+        & $python -m msplatform.backends.comsol.corridor_field --run-directory $RunDirectory --finalize
         if($LASTEXITCODE -ne 0){throw 'Candidate provider terminal publication failed; retain original run for recovery.'}
     }
 }

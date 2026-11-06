@@ -88,11 +88,11 @@ Assert-MultipoleIpRecoveryRequest -Run $Run -Request $Request
 ''', encoding="utf-8")
             command = [powershell, "-NoProfile", "-File", str(script),
                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(run), str(author), sys.executable]
-            equal = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=False, timeout=30)
+            equal = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30)
             self.assertEqual(equal.returncode, 0, equal.stdout + equal.stderr)
             request["particle_weight"] = 2
             author.write_text(json.dumps(request), encoding="utf-8")
-            changed = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=False, timeout=30)
+            changed = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30)
             self.assertNotEqual(changed.returncode, 0)
             self.assertIn("unchanged request", changed.stderr)
             self.assertEqual(frozen.read_bytes(), original)
@@ -148,7 +148,7 @@ if($AcceleratorProvider-ne'orthogonal_accelerator'){throw 'Prepared-workbench br
 ''', encoding="utf-8")
             result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1")],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("JOINT_WORKFLOW_FINALIZATION=PASS", result.stdout)
 
@@ -178,12 +178,12 @@ if($summary.analysis_exit_code-ne2){throw 'wrong status'}
 ''', encoding="utf-8")
         command = [powershell, "-NoProfile", "-File", str(script),
                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(fixture.run), sys.executable]
-        okay = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        okay = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(okay.returncode, 0, okay.stdout + okay.stderr)
         fixture.summary["diagnostics_complete"] = False
         fixture._write_json("summary.json", fixture.summary)
         fixture._seal()
-        bad = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        bad = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("not a verified completed scientific negative", bad.stderr)
 
@@ -284,7 +284,7 @@ Write-Output 'MP_IP_JOINT=PASS'
                 case.mkdir()
                 result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
                     str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), scenario],
-                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("MP_IP_JOINT=PASS", result.stdout)
 
@@ -323,11 +323,11 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
 ''', encoding="utf-8")
         command = [powershell, "-NoProfile", "-File", str(script),
                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(configuration), sys.executable]
-        result_ok = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        result_ok = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result_ok.returncode, 0, result_ok.stdout + result_ok.stderr)
         model["baseline"]["native_geometry"]["domain_start_x_mm"] += 1
         write_json(configuration / "baseline.json", model["baseline"])
-        result_bad = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        result_bad = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertNotEqual(result_bad.returncode, 0)
         self.assertIn("receiver configuration", result_bad.stderr)
 
@@ -420,7 +420,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
 ''', encoding="utf-8")
         result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
             str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(template), sys.executable],
-            cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("REAL_FIELD_PROVIDER=PASS", result.stdout)
 
@@ -542,7 +542,7 @@ Write-Output 'JOINT_WORKFLOW_DISPATCH=PASS'
                 case.mkdir()
                 result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
                     str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), failure, str(REPO), sys.executable],
-                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("JOINT_WORKFLOW_DISPATCH=PASS", result.stdout)
 
@@ -597,7 +597,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                     (fields / "parent/field.pa").write_bytes(b"XX")
                 completed = subprocess.run([powershell, "-NoProfile", "-File", str(script),
                     str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(root), str(REPO),
-                    sys.executable, state], cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=40)
+                    sys.executable, state], cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40)
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 self.assertIn("ACTUAL_IOB_ASSET_BOUNDARY_PASS", completed.stdout)
 
@@ -618,8 +618,11 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 originals = {path: path.read_bytes() for path in (seed, payload)}
                 scripts = snapshot/"projects/parallel_mirror_dual_stripe_mr_tof/simion"
                 scripts.mkdir(parents=True)
-                for name in ("mrtof_candidate.lua", "mirror_cycle_counter.lua", "scalar_field_adapter.lua", "build_native_corridor_iob.lua"):
+                for name in ("mrtof_candidate.lua", "mirror_cycle_counter.lua", "build_native_corridor_iob.lua"):
                     (scripts/name).write_text("-- inert frozen script fixture")
+                scalar = snapshot/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+                scalar.parent.mkdir(parents=True)
+                scalar.write_text("-- inert frozen script fixture")
                 waveform = snapshot/"src/msplatform/backends/simion/resources/voltage_waveforms.lua"
                 waveform.parent.mkdir(parents=True, exist_ok=True)
                 waveform.write_bytes((REPO/"src/msplatform/backends/simion/resources/voltage_waveforms.lua").read_bytes())
@@ -685,7 +688,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 with patch.object(module, "REPO", snapshot), \
                         patch.object(module, "verified_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch.object(module, "verified_preparation_reference", side_effect=lambda run, relative, **kw: run/relative), \
-                        patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding", return_value=binding), \
+                        patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
                         patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source", side_effect=source_projection), \
                         patch.object(module, "collision_workbench_layout", return_value=dict(seed=str(seed), priority={})), \
                         patch.object(module, "render_measured_operating_point", return_value="return {}"), \
@@ -893,7 +896,7 @@ try{. $execution}catch{$caught=$_.Exception.Message}
                         run_id=run.name, project="instrument_assembly", mode="accelerator_interface_preparation", inputs={},
                         capacity_ledger_lifecycle=dict(enabled=True, artifact_root=str(root / "artifacts")))), encoding="utf-8")
                     result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO), sys.executable,
-                        str(run), scenario], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                        str(run), scenario], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     report = json.loads(result.stdout.strip().splitlines()[-1])
                     self.assertTrue(report["released"])
@@ -931,7 +934,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
             script.write_text(command, encoding="utf-8", newline="\n")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script),
                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), sys.executable],
-                cwd=directory, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                cwd=directory, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("SNAPSHOT_BYTECODE_DISABLED=PASS", result.stdout)
 
@@ -1276,7 +1279,7 @@ foreach($key in $before.Keys){if([Environment]::GetEnvironmentVariable($key)-cne
                     TEST_OBSERVED=str(observed), TEST_FAIL=failure)
                 result = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(entry), str(repo),
                     str(parent), sys.executable, str(selected), failure], capture_output=True,
-                    text=True, encoding="utf-8", env=environment, cwd=root, timeout=120)
+                    text=True, encoding="utf-8", errors="replace", env=environment, cwd=root, timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 actual = json.loads(observed.read_text(encoding="utf-8-sig"))
                 self.assertEqual(actual, dict(artifact_root=str(selected.resolve()),
@@ -1327,7 +1330,7 @@ function Complete-FailedRun {param($Python,$RepoRoot,$RunConfig,$Summary,$Summar
             MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=host, SIMULATION_PYTHON_EXE=sys.executable, TEST_CAPACITY_CAPTURE=str(capture))
         result = subprocess.run(["pwsh", "-NoProfile", "-File", str(entry), "-Request", str(fixture.request_path),
             "-RunId", "20261031_180100__analysis__python__mp-root-test", "-PythonExe", sys.executable,
-            "-RepoRoot", str(repo)], env=environment, cwd=fixture.root, capture_output=True, text=True, encoding="utf-8", timeout=120)
+            "-RepoRoot", str(repo)], env=environment, cwd=fixture.root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("AFTER_REAL_MP_PREPARE", result.stderr)
         run = selected / "projects/instrument_assembly/runs/20261031_180100__analysis__python__mp-root-test"
@@ -1384,7 +1387,7 @@ if(-not$failed-or$script:admissions-ne1){throw 'missing parent did not reject be
 """, encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(REPO),
                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), sys.executable, str(root)],
-                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=120)
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             references = json.loads((root / "references.json").read_text(encoding="utf-8-sig"))
             self.assertEqual([row["manifest_record"] for row in references], [file_record(parent / "run_manifest.json") for parent in parents[:3]] +

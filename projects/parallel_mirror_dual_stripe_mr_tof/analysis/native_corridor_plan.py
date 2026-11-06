@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
+    _grid_shape,
+    validate_generation_grid_pitch,
 )
 
 
@@ -21,42 +25,8 @@ def _numbers(value: object, label: str, count: int) -> list[float]:
     return result
 
 
-def validate_generation_grid_pitch(contract: Mapping[str, Any], pitch_mm: object) -> float:
-    """Validate new target spacing against the contract quantum; never round a grid.
-
-    Historical PA consumers do not call this generation-only check. Eight ULPs
-    allow binary representation of an integer ratio, not a physical tolerance.
-    """
-    try:
-        quantum = contract["simion"]["numerical_profiles"]["grid_generation"]["spacing_quantum_mm"]
-    except (KeyError, TypeError) as error:
-        raise CandidateContractError("new grid requires its spacing_quantum_mm contract") from error
-    if (isinstance(quantum, bool) or not isinstance(quantum, (int, float))
-            or not math.isfinite(quantum) or quantum <= 0):
-        raise CandidateContractError("spacing_quantum_mm must be finite and positive")
-    if (not isinstance(pitch_mm, list) or len(pitch_mm) != 3
-            or any(isinstance(v, bool) or not isinstance(v, (int, float))
-                   or not math.isfinite(v) or v <= 0 for v in pitch_mm)):
-        raise CandidateContractError("new grid pitch must contain three finite positive numeric spacings")
-    for value in pitch_mm:
-        ratio = value / quantum
-        if not math.isfinite(ratio):
-            raise CandidateContractError("new grid spacing/quantum ratio must be finite")
-        multiple = round(ratio)
-        if multiple < 1 or abs(ratio - multiple) > 8 * math.ulp(ratio):
-            raise CandidateContractError("new grid spacing must be a positive integer multiple of spacing_quantum_mm")
-    return float(quantum)
 
 
-def _grid_shape(box: list[float], mesh: list[float]) -> list[int]:
-    shape: list[int] = []
-    for axis in range(3):
-        cells = (box[axis + 3] - box[axis]) / mesh[axis]
-        rounded = round(cells)
-        if abs(cells - rounded) > 1e-8:
-            raise CandidateContractError("native corridor extent is not aligned to its mesh")
-        shape.append(int(rounded) + 1)
-    return shape
 
 
 def _native_settings(contract: Mapping[str, Any]) -> Mapping[str, Any]:

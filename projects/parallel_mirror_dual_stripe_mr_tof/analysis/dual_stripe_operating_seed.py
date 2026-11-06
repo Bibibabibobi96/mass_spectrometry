@@ -75,7 +75,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     derive_operating_energy_envelope,
 )

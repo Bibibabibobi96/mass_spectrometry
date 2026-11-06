@@ -127,11 +127,11 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\native_stripe_shape_adapter.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_geometry_parameters.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\resolved_geometry.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_candidate_reference.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_dual_stripe_operating_seed.ps1'
   )

@@ -12,13 +12,15 @@ import itertools
 import json
 import math
 import re
-import struct
 from pathlib import Path
 from typing import Any
 
 from common.contracts.verify_run_manifest import verify_record
 from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import _analyzer_geometry_lines
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
+    _analyzer_geometry_lines,
+    ordinary_pa_file_bytes,
+)
 
 
 def _read(path: Path) -> dict:
@@ -155,26 +157,6 @@ def _grid_plan(box: list, pitch: list, boundary: str, convergence: float) -> dic
     }
 
 
-def extend_fine_z_domain(grid: dict, active: list, update: dict, parent_grid: dict) -> tuple[dict, list]:
-    """Derive one lower-z extension without changing any other numerical coordinate."""
-    if not isinstance(update, dict) or set(update) != {"solve_z_min_mm", "active_z_min_mm"}:
-        raise ValueError("IP fine extension requires only solve_z_min_mm and active_z_min_mm")
-    lower, route = (_finite(update[key]) for key in ("solve_z_min_mm", "active_z_min_mm"))
-    old_lower = grid["origin_mm"][2]
-    if not lower < old_lower or not route < active[2][0] or not lower < route:
-        raise ValueError("IP fine extension must extend both lower-z bounds downward with a halo")
-    result = copy.deepcopy(grid)
-    steps = (old_lower - lower) / grid["pitch_mm"][2]
-    if not math.isclose(steps, round(steps), abs_tol=1e-8, rel_tol=0):
-        raise ValueError("IP fine extension must align with its unchanged z pitch")
-    result["origin_mm"][2] = lower
-    result["dimensions"][2] += round(steps)
-    coverage = copy.deepcopy(active)
-    coverage[2][0] = route
-    if (lower < parent_grid["origin_mm"][2]
-            or route - lower < grid["pitch_mm"][2]):
-        raise ValueError("IP fine extension exceeds its unchanged parent or lacks a gradient halo")
-    return result, coverage
 
 
 def _gem(
@@ -244,18 +226,6 @@ def derive_lift_seed(source: dict, request: dict) -> float:
     return result
 
 
-def ordinary_pa_file_bytes(dimensions: list[int], pitch_mm: list[float]) -> int:
-    """Forecast SIMION's ordinary GEM-save header and double node payload.
-
-    SIMION 2020 lib/python/SIMION/PA.py load/save: mode -1 stores the 32-byte
-    fixed header and implicit unit pitch. Nonunit pitch selects mode -2 and
-    adds three double pitches (56-byte header). This is not a PA parser and
-    does not broaden the mode -2-only affine-composition consumer.
-    """
-    header_bytes = struct.calcsize("<iidiiii")
-    if pitch_mm != [1, 1, 1]:
-        header_bytes += 3 * struct.calcsize("<d")
-    return header_bytes + math.prod(dimensions) * struct.calcsize("<d")
 
 
 def compile_materializable_fields(request: dict) -> dict:
@@ -267,7 +237,7 @@ def compile_materializable_fields(request: dict) -> dict:
     """
     from common.contracts.verify_run_manifest import record_path
     from common.contracts.write_run_manifest import file_record
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
+    from msplatform.backends.comsol.static_field_binding import (
         _native_active_box,
         resolve_native_refine_numerics,
         native_refine_options,

@@ -48,7 +48,7 @@ def verified_reference(run: Path, relative: str, *, required_status: str = "succ
 
 def _native_refine_change(reference: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any] | None:
     """Validate both native identities and isolate only the declared Boolean strategy."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import resolve_native_refine_numerics
+    from msplatform.backends.comsol.static_field_binding import resolve_native_refine_numerics
 
     profiles = [value["simion"].get("numerical_profiles", {}) for value in (reference, contract)]
     if not any("native_static_field" in profile for profile in profiles):
@@ -65,7 +65,7 @@ def _native_refine_change(reference: dict[str, Any], contract: dict[str, Any]) -
 def validate_execution_contract(reference: dict[str, Any], contract: dict[str, Any], *,
                                 allow_controller_budget: bool = False) -> dict[str, Any]:
     """Allow observation changes and one selected integration bound, never physics."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import resolve_trajectory_profile
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import resolve_trajectory_profile
 
     expected = json.loads(json.dumps(reference))
     scientific = json.loads(json.dumps(contract))

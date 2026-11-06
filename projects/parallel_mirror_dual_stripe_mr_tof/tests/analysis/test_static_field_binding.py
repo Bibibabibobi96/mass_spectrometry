@@ -13,7 +13,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _pure_axis_authority
+from msplatform.backends.comsol.static_field_binding import (
     ideal_sheet_projection, load_binding, validate_voltages, verify_joint_asset_records,
     _resolve_voltage_responses, validate_response_candidate, compile_sampling_request,
     compile_composition_plan, _load_materialized_response, _load_export,
@@ -31,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 class RecordLookupScopeTest(unittest.TestCase):
     def test_actual_joint_payloads_are_verified_once_and_conflicts_or_drift_rejected(self):
         from common.contracts.write_run_manifest import file_record
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import verify_joint_asset_records
+        from msplatform.backends.comsol.static_field_binding import verify_joint_asset_records
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             scalar, collision = root / "scalar.pa", root / "collision.pa"
@@ -46,7 +47,7 @@ class RecordLookupScopeTest(unittest.TestCase):
                 dict(pa_path=str(collision), manifest=str(owner), record=file_record(collision))])
             binding["refinement_windows"].append(dict(sources=dict(surface=str(surface)),
                 records=dict(surface=file_record(surface))))
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as module
+            from msplatform.backends.comsol import static_field_binding as module
             with patch.object(module, "verify_record", wraps=module.verify_record) as verify:
                 verify_joint_asset_records(binding)
             self.assertEqual(verify.call_count, 3)
@@ -64,7 +65,7 @@ class RecordLookupScopeTest(unittest.TestCase):
                 verify_joint_asset_records(binding)
 
     def test_nested_load_indexes_manifest_once_and_rechecks_asset_size(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as module
+        from msplatform.backends.comsol import static_field_binding as module
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             asset, manifest = root/'asset.json', root/'run_manifest.json'
@@ -92,7 +93,7 @@ class RecordLookupScopeTest(unittest.TestCase):
             self.assertIsNone(module._record_indexes.get())
 
     def test_next_load_reads_changed_manifest_and_failed_load_releases_scope(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as module
+        from msplatform.backends.comsol import static_field_binding as module
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             asset, manifest = root/'asset.json', root/'run_manifest.json'
@@ -114,7 +115,7 @@ class RecordLookupScopeTest(unittest.TestCase):
             self.assertEqual(read()['sha256'], 'second')
 
     def test_conflicting_duplicate_seals_are_rejected_after_indexing(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as module
+        from msplatform.backends.comsol import static_field_binding as module
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             asset, manifest = root/'asset.json', root/'run_manifest.json'
@@ -131,8 +132,8 @@ class NativeAxisMaterializationTest(unittest.TestCase):
     """Real tiny ordinary PA blocks; no SIMION or PA-sized fixture allocations."""
 
     def test_unretired_unused_response_pa_is_not_required_by_materialized_metadata(self):
-        from common.contracts.solver_review_retirement import RECEIPT_NAME
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.execution.solver_review_retirement import RECEIPT_NAME
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             provider, _ = self.setup_bank(root)
@@ -274,7 +275,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
             descriptor = NativeStaticBindingTest().fixture(directory)
             descriptor["instances"][0]["origin_mm"] = descriptor["parent"]["grid"]["origin_mm"]
             for level in (descriptor["parent"], *descriptor["refinement_windows"]):
-                Path(level["voltage_authority_path"]).write_text(json.dumps(provider._pure_axis_authority(authority, axis)))
+                Path(level["voltage_authority_path"]).write_text(json.dumps(_pure_axis_authority(authority, axis)))
                 path = Path(level["numerical_plan_path"]); value = json.loads(path.read_text())
                 value.update(refine_stopping="contract_convergence", convergence_v=1e-5, numerical_contract_path=str(self.contract_path))
                 path.write_text(json.dumps(value))
@@ -304,7 +305,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
         else:
             # Isolate the composition boundary, not the already tested mirror
             # proposal compiler. The loaded result independently rechecks U.
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+            from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
             authority = candidate_authority(source["authority"], target, mirror_voltages_v=mirror_target)
             with patch.object(provider, "derive_candidate_authority", return_value=(authority, {})):
                 plan = provider.compile_request(request)
@@ -321,7 +322,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
 
     def test_pure_response_mirror_reuse_roundtrip_and_real_composition(self):
         """Publish tiny new mirrors with old pure parent/E; no vendor solve."""
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             provider, base = self.setup_bank(root, nested=True)
@@ -450,7 +451,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
                 self.assertFalse(resolved["refine_performed"])
 
     def test_te1_basis_loader_rejects_direction_provenance_or_pure_voltage_contamination(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_native_static_field_provider import NativeStaticProviderTest
         for mutation in ("direction", "normalization", "e_cover", "background", "geometry", "stopping"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
@@ -489,7 +490,8 @@ class NativeAxisMaterializationTest(unittest.TestCase):
             fixture = NativeStaticProviderTest(); fixture.root = root
             self.add_pure_basis(root, provider, base, "te1", 2000., reference=fixture.te1_reference())
             target = dict(s1=0.,s2=0.,p1=0.,p2=0.)
-            mirror = provider._te1_excitation(json.loads(Path(self.bases["te1"]).read_text())["response_basis"])
+            from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _te1_excitation
+            mirror = _te1_excitation(json.loads(Path(self.bases["te1"]).read_text())["response_basis"])
             mirror = [v*.0001 for v in mirror]
             bad = mirror.copy(); bad[1] += .01
             with self.assertRaisesRegex(ValueError, "incompatible"):
@@ -612,7 +614,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
                     self.materialize(root, provider, offset, dict(s1=1., s2=0., p1=0., p2=0.), 'rejected')
 
     def test_basis_wrong_axis_background_operator_and_failed_sources_reject(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         for mutation in ("normalization", "fly", "background", "geometry", "grid", "numerics", "parent", "fixed_mirror", "failed"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
                 root=Path(directory); provider, _=self.setup_bank(root)
@@ -930,7 +932,7 @@ class NativeStaticBindingTest(unittest.TestCase):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens=0;local items={}
 local function make_pa(path)
@@ -995,7 +997,7 @@ print('NATIVE_EXISTING_PA_REUSE_PASS')
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens={}
 simion={pas={},early_access=function()end,experimental={make_efield_adjust=function(f)return f end}}
@@ -1074,7 +1076,7 @@ print('NATIVE_SHADOWED_WINDOWS_PASS')
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens=0;local support_reads=0;local unknown=false;local bad_field=false
 simion={pas={},wb={instances={}},early_access=function()end,
@@ -1140,7 +1142,7 @@ print('NATIVE_PARENT_REUSE_PASS')
     def test_native_lua_routes_mirrored_axis_and_never_falls_back_on_invalid_local_support(self):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file(): self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local unknown=false;local opens=0
 simion={pas={},early_access=function()end,experimental={make_efield_adjust=function(f)return f end}}
@@ -1388,7 +1390,7 @@ class NativeCollisionReferenceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path, descriptor, native, export = self.fixture(Path(directory))
             path.write_text(json.dumps(descriptor))
-            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding._load_export",
+            with patch("msplatform.backends.comsol.static_field_binding._load_export",
                        return_value=export):
                 result = load_binding(path)
             self.assertEqual([i["role"] for i in result["instances"]],
@@ -1431,7 +1433,7 @@ class NativeCollisionReferenceTest(unittest.TestCase):
                 else:
                     reference["unexpected"] = True
                 path.write_text(json.dumps(descriptor))
-                with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding._load_export",
+                with patch("msplatform.backends.comsol.static_field_binding._load_export",
                            return_value=export), self.assertRaises((ValueError, AssertionError)):
                     load_binding(path)
 
@@ -1441,7 +1443,7 @@ class StaticFieldSamplingTest(unittest.TestCase):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opened=0;local assets={}
 for name,value in pairs({a=2,b=4,mask=1}) do
@@ -1487,7 +1489,7 @@ print('ZERO_WEIGHT_QUERY_PASS')
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens={};local reads={};local values={a=2,b=4,c=8,aw=20,bw=40,cw=80}
 local unknown=false;local nonfinite=nil;local mask_reads=0
@@ -1555,7 +1557,7 @@ print('SHARED_MASK_QUERY_PASS')
             self.assertIn("SHARED_MASK_QUERY_PASS", completed.stdout)
 
     def test_existing_cli_compiles_sampling_and_rejects_partial_options(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             samples, request, output = (directory/name for name in ("samples.csv", "request.lua", "fields.csv"))
@@ -1742,7 +1744,7 @@ class RefinementWindowTest(unittest.TestCase):
     def load_fixture(self, windows: object, *, mismatch: str = "", local_grid: dict | None = None,
                      external_sources: bool = False) -> dict:
         """Resolve small mocked sealed metadata; only collision-file existence uses disk."""
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         assembly = {"accelerator_iob_origin_mm": [0, 0, 0], "detector": {"box": {}},
                     "accelerator_resolved_electrodes": {
                         "local_to_pa_translation_mm": [0, 0, 0],
@@ -1853,7 +1855,7 @@ class RefinementWindowTest(unittest.TestCase):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[2] / "simion/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local calls={base=0,first=0,second=0};local unknown=false;local assets={}
 for _,name in ipairs({'base','first','second'}) do
@@ -1914,7 +1916,7 @@ print('ORDERED_LOCAL_FIELD_FIXTURE_PASS')
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[2] / "simion/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         base = {"sources": {"scalar_pa": "base V.pa", "valid_pa": "base mask.pa"},
                 "grid": {"origin_mm": [-4, -4, -4], "pitch_mm": [1, 1, 1]},
                 "ideal_sheet_projection": []}
@@ -2031,8 +2033,9 @@ class NoWorkpoint(importlib.abc.MetaPathFinder):
         if fullname.endswith(".downstream_fixed_grid_workpoint"):
             raise AssertionError("response metadata imported the workpoint controller")
 sys.meta_path.insert(0, NoWorkpoint())
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as binding
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import corridor_field_provider as provider
+from msplatform.backends.comsol import static_field_binding as binding
+from msplatform.backends.comsol import candidate_authority as authority
+from msplatform.backends.comsol import corridor_field as provider
 fixture = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
 original_open = Path.open
 def metadata_only(path, *args, **kwargs):
@@ -2045,7 +2048,7 @@ with patch.object(Path, "open", metadata_only):
         assert result["projection"]["grid"] == fixture["source"]["grid"]
     else:
         with patch.object(binding, "load_binding", return_value=fixture["source"]), \
-                patch.object(provider, "derive_candidate_authority", return_value=(fixture["source"]["authority"], None)), \
+                patch.object(authority, "derive_candidate_authority", return_value=(fixture["source"]["authority"], None)), \
                 patch.object(provider, "compile_request", return_value=fixture["plan"]):
             binding.validate_response_candidate(fixture["candidate"], {"source_binding_path": "source.json"})
             bad = copy.deepcopy(fixture["candidate"])
@@ -2088,9 +2091,8 @@ print("METADATA_WITHOUT_WORKPOINT_PASS")
         return author, samples
 
     def resolve(self, author, samples):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
-        with patch(module + ".static_field_binding.load_binding", side_effect=lambda path, **kw: copy.deepcopy(samples[str(path)])), \
-                patch(module + ".static_field_binding.scalar_binding_problem",
+        with patch("msplatform.backends.comsol.static_field_binding.load_binding", side_effect=lambda path, **kw: copy.deepcopy(samples[str(path)])), \
+                patch("msplatform.backends.comsol.static_field_binding.scalar_binding_problem",
                       side_effect=lambda component, *args: component["fixture_family"]):
             return _resolve_voltage_responses(author, Path("combined.json"))
 
@@ -2240,7 +2242,7 @@ local ex,ey,ez=field(.5,.375,.5);assert(ex==2 and ey==4 and ez==6)
 assert(opens==2,'only nonzero term scalar and mask open')
 print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
 '''
-        adapter = REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua"
+        adapter = REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "fixture.lua"
             source.write_text(fixture, encoding="utf-8")
@@ -2281,7 +2283,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
                 self.resolve(copy.deepcopy(author), bad)
 
     def test_ps_version_two_loader_does_not_accept_legacy_target_format(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         descriptor = dict(schema_version=2, role="mrtof_static_comsol_field_binding",
                           baseline_binding="base.json", voltage_responses={"s1": {"binding": "s1.json"}},
                           target_stripe_voltages_v=[-27., 54.])
@@ -2326,13 +2328,12 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
         binding = self.resolve(author, samples)
         source = copy.deepcopy(binding["response_terms"][0]["binding"])
         source["fixture_family"]["geometry_sha256"] = "different-serialization"
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
 
         def check(candidate, provider_source):
-            with patch(module + ".corridor_field_provider.derive_candidate_authority", return_value=(
+            with patch("msplatform.backends.comsol.candidate_authority.derive_candidate_authority", return_value=(
                     binding["authority"], {})), \
-                    patch(module + ".static_field_binding.load_binding", return_value=provider_source), \
-                    patch(module + ".static_field_binding.scalar_binding_problem",
+                    patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=provider_source), \
+                    patch("msplatform.backends.comsol.static_field_binding.scalar_binding_problem",
                           side_effect=lambda component, *args: component["fixture_family"]):
                 validate_response_candidate(candidate, {"source_binding_path": "source.json"})
 
@@ -2375,12 +2376,11 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
         source = copy.deepcopy(binding["response_terms"][0]["binding"])
         request = dict(schema_version=1, role="mrtof_same_mesh_field_provider_request",
                        source_binding_path="source.json", candidate_voltages_v=author["target_ps_voltages_v"])
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis"
         # No source_field_manifest, model_path, dataset_readback, or solve budget.
-        with patch(module + ".static_field_binding.load_binding", return_value=source), \
-                patch(module + ".corridor_field_provider.compile_request",
+        with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=source), \
+                patch("msplatform.backends.comsol.corridor_field.compile_request",
                       side_effect=AssertionError("Must not prepare a new field solve")), \
-                patch(module + ".static_field_binding.scalar_binding_problem",
+                patch("msplatform.backends.comsol.static_field_binding.scalar_binding_problem",
                       side_effect=lambda component, *args: component["fixture_family"]):
             validate_response_candidate(binding, request)
             for changes in (dict(role="wrong"), dict(schema_version=2),
@@ -2419,7 +2419,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
                 self.resolve(author, samples)
 
     def test_nested_and_self_bindings_are_rejected_before_asset_loading(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         author = {"schema_version": 1, "role": "mrtof_static_comsol_field_binding",
                   "baseline_binding": "self.json", "voltage_responses": {}}
         with patch(module + "._read", return_value=author):
@@ -2427,7 +2427,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
                 load_binding(Path("self.json"))
 
     def test_existing_binding_cli_loader_resolves_baseline_before_responses(self):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         descriptor = {"schema_version": 1, "role": "mrtof_static_comsol_field_binding",
                       "baseline_binding": "base.json", "voltage_responses": {},
                       "target_stripe_voltages_v": [-27., 54.]}
@@ -2443,7 +2443,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = Path(__file__).resolve().parents[2] / "simion/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         base = {"sources": {"scalar_pa": "base", "valid_pa": "mask"},
                 "grid": {"origin_mm": [0, 0, 0], "pitch_mm": [1, 1, 1]}, "ideal_sheet_projection": []}
         binding = copy.deepcopy(base)
@@ -2509,7 +2509,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
             output = run / "inputs/composition_plan.json"
             arguments = ["binding", "--binding", str(source), "--composition-plan", str(output),
                          "--composition-output-directory", str(run / "results")]
-            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding", return_value=binding), \
+            with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
                     patch("sys.argv", arguments), contextlib.redirect_stdout(io.StringIO()):
                 binding_main()
             self.assertEqual(json.loads(output.read_text())["role"], "mrtof_fixed_scalar_composition_plan")
@@ -2585,7 +2585,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
                              ["whole_point_A_correction_scale", "whole_point_B_scale", "whole_point_C_scale", "whole_point_D_scale"])
             manifest = self.publish_fixture(run, plan)
             descriptor = {"response_binding": str(source), "materialization_manifest": str(manifest)}
-            module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+            module = "msplatform.backends.comsol.static_field_binding"
             with patch(module + ".load_binding", return_value=binding):
                 result = _load_materialized_response(descriptor)
             self.assertEqual(result["representation"], "exploratory_materialized_affine_ps_responses")
@@ -2609,7 +2609,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        composer = REPO_ROOT/"common/simion/compose_standalone_pa.lua"
+        composer = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/compose_standalone_pa.lua"
         fixture = r'''
 local root,composer=arg[1],arg[2]
 local values={['a.pa']=2,['b.pa']=4,['c.pa']=8,['d.pa']=16}
@@ -2651,7 +2651,7 @@ print('FOUR_TERM_PUBLIC_COMPOSER_PASS')
             manifest = self.publish_fixture(run, plan)
             original = copy.deepcopy(binding)
             descriptor = {"response_binding": str(source), "materialization_manifest": str(manifest)}
-            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding", return_value=binding):
+            with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding):
                 result = _load_materialized_response(descriptor)
             self.assertEqual(binding, original)
             self.assertNotIn("response_terms", result)
@@ -2688,7 +2688,7 @@ print('FOUR_TERM_PUBLIC_COMPOSER_PASS')
                     source.write_text('{"changed": true}')
                 elif problem == "size":
                     Path(plan["commands"][0]["argv"][2]).write_bytes(b"wrong-size")
-                with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding", return_value=binding):
+                with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding):
                     with self.assertRaises(ValueError):
                         _load_materialized_response({"response_binding": str(source), "materialization_manifest": str(manifest)})
 
@@ -2697,7 +2697,7 @@ print('FOUR_TERM_PUBLIC_COMPOSER_PASS')
             binding, source, run, plan = self.fixture(Path(directory))
             plan["operating_pa_identity"]["synthesis"]["implementation_sha256"] = "A" * 64
             manifest = self.publish_fixture(run, plan)
-            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding", return_value=binding):
+            with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding):
                 result = _load_materialized_response({"response_binding": str(source), "materialization_manifest": str(manifest)})
             self.assertEqual(result["materialization_synthesis"]["implementation_sha256"], "A" * 64)
             self.assertEqual(result["materialization_synthesis"], plan["operating_pa_identity"]["synthesis"])
@@ -2722,7 +2722,7 @@ class StaticFieldVoltageTest(unittest.TestCase):
             ideal_sheet_projection(assembly, grid)
 
     def test_export_binding_rejects_missing_scalar_and_invalid_pitch(self) -> None:
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         bad = [None, .25, [], [.25], [.25, .25], [.25] * 4,
                [.25, 0, .25], [.25, -.125, .25], [.25, float("nan"), .25],
                [.25, float("inf"), .25], [.25, True, .25], [.25, ".125", .25]]
@@ -2748,7 +2748,7 @@ class StaticFieldVoltageTest(unittest.TestCase):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[2] / "simion/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local calls={};local unknown=false;local nonfinite=false;local faCalls=0;local opens=0
 local pa={symmetry='3dplanar',nx=9,ny=9,nz=9,dx_mm=.25,dy_mm=.125,dz_mm=.5}
@@ -2814,7 +2814,7 @@ print('ANISOTROPIC_ADAPTER_FIXTURE_PASS')
             self.assertIn("ANISOTROPIC_ADAPTER_FIXTURE_PASS", completed.stdout)
 
     def test_load_binding_consumes_current_three_axis_export(self) -> None:
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding"
+        module = "msplatform.backends.comsol.static_field_binding"
         assembly = {"accelerator_iob_origin_mm": [0, 0, 0], "detector": {"box": {}},
                     "accelerator_resolved_electrodes": {
                         "local_to_pa_translation_mm": [0, 0, 0],
@@ -2873,7 +2873,7 @@ print('ANISOTROPIC_ADAPTER_FIXTURE_PASS')
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[2] / "simion/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
 local marks={};local potentialCalls=0
 local pa={symmetry='3dplanar',nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1,debug_max_voltage=1000}
@@ -3206,7 +3206,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
         return fixture, helper, banks, extended, request
 
     def retire(self, root, name="source", *, full_owner=False):
-        from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
+        from msplatform.execution.solver_review_retirement import RECEIPT_NAME, verify_retirement
         from common.contracts.artifact_retention import classify_file
         source = root / name
         owner = source / "run_manifest.json"
@@ -3242,14 +3242,14 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
 
     def test_current_chain_and_future_compose_keep_strict_current_assets_after_exact_retirement(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_native_static_field_provider as fixtures
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fixture, helper, banks, extended, request = self.chain(root)
             receipt_path, _ = self.retire(root)
-            from common.contracts.solver_review_retirement import verify_retirement
-            with patch("common.contracts.solver_review_retirement.verify_retirement", wraps=verify_retirement) as verified:
+            from msplatform.execution.solver_review_retirement import verify_retirement
+            with patch("msplatform.execution.solver_review_retirement.verify_retirement", wraps=verify_retirement) as verified:
                 source = load_binding(extended)
             self.assertEqual(verified.call_count, 1)
             self.assertEqual(len(source["operator_ancestry_projections"]), 1)
@@ -3264,7 +3264,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             frozen.write_bytes(frozen_bytes)
             # Retired payloads do not invalidate their frozen metadata or a
             # fresh rebuild plan; actual native use still requires the files.
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import verify_joint_asset_records
+            from msplatform.backends.comsol.static_field_binding import verify_joint_asset_records
             retired_source = load_binding(root / "source/results/field_binding.json")
             with self.assertRaisesRegex(AssertionError, "missing"):
                 verify_joint_asset_records(retired_source)
@@ -3316,7 +3316,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
 
     def test_materialized_field_reads_retired_mixed_owner_and_pure_response_ancestry_only(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_native_static_field_provider as fixtures
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import (
             IonProcessorNativeBindingTest as FixtureBindingTest,
@@ -3385,7 +3385,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
                 verify_joint_asset_records(metadata)
 
     def test_resealed_semantically_changed_copy_and_unowned_clone_are_rejected(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import _load_operator_ancestry
+        from msplatform.backends.comsol.static_field_binding import _load_operator_ancestry
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, helper, _, _, _ = self.chain(root)
@@ -3415,7 +3415,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
         owner.write_text(json.dumps(manifest))
 
     def test_retirement_receipt_and_preserved_evidence_fail_closed(self):
-        from common.contracts.solver_review_retirement import RetirementError
+        from msplatform.execution.solver_review_retirement import RetirementError
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, _, _, extended, _ = self.chain(root)
@@ -3453,7 +3453,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
 
     def test_retired_metadata_does_not_consume_unrelated_preserved_native_payload(self):
         from common.contracts.write_run_manifest import file_record
-        from common.contracts.solver_review_retirement import RetirementError, verify_retirement
+        from msplatform.execution.solver_review_retirement import RetirementError, verify_retirement
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, _, _, extended, _ = self.chain(root)
@@ -3476,7 +3476,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             live.write_bytes(bytes([original[0] ^ 1]) + original[1:])
             # Metadata parsing is not a second payload authorization boundary.
             parsed = load_binding(extended)
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import verify_joint_asset_records
+            from msplatform.backends.comsol.static_field_binding import verify_joint_asset_records
             with self.assertRaisesRegex(AssertionError, "live joint field asset SHA-256 changed"):
                 verify_joint_asset_records(parsed)
 

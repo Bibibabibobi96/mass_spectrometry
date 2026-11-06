@@ -27,7 +27,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
     dual_stripe_width_at_y_mm,
     resolve_geometry,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 

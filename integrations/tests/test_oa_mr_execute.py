@@ -244,7 +244,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import NativeStaticBindingTest
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_bunch_source_and_schedule import _states
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import materialize_bunch_source
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from msplatform.backends.comsol.static_field_binding import load_binding
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
         from common.contracts.verify_run_manifest import verify_record
         from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
@@ -548,7 +548,7 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_native_payload_identity_is_checked_inside_guards_before_vendor(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import NativeStaticBindingTest
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from msplatform.backends.comsol.static_field_binding import load_binding
         source = RUNNER.read_text()
         start = source.index("    $guardPaths=@($staticFieldBinding.instances")
         block = source[start:source.index("  $iobAnalyzerInput=$globalFallbackAnalyzer", start)]
@@ -1059,7 +1059,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             "$nativeCorridorRun=", 1,
         )[0]
         static, native = selection.split("}else{", 1)
-        self.assertIn("analysis.static_field_binding", static)
+        self.assertIn("msplatform.backends.comsol.static_field_binding", static)
         self.assertIn("Static field binding cannot consume a native adjustable runtime.", static)
         self.assertNotIn("IsNullOrWhiteSpace($NativeCorridorBankRunPath)", static)
         self.assertIn("IsNullOrWhiteSpace($NativeCorridorBankRunPath)", native)

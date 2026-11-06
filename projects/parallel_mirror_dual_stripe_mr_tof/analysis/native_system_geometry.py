@@ -14,19 +14,11 @@ from pathlib import Path
 
 from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 from common.integration.resolve_assembly import derive_assembly_scope
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
-    _box,
-    _central_ground_lines,
-    _extrude_polygon_bands,
-    _mirror_ground_shield_lines,
-    _mirror_lines,
-    _number,
-    _prism_ground_shield_lines,
-    _stripe_lines,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import _box, _number
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.assembly_interface import resolve_assembly_interface as resolve_mr_assembly_interface
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _analyzer_geometry_lines
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )
@@ -280,21 +272,6 @@ def build_analyzer_gem(contract_path: Path) -> str:
     return "\n".join(lines)
 
 
-def _analyzer_geometry_lines(resolved: dict[str, object]) -> list[str]:
-    """Return the geometry emitter shared by the global fallback and native corridor."""
-    lines: list[str] = []
-    lines.extend(_mirror_lines(resolved))
-    lines.extend(_mirror_ground_shield_lines(resolved))
-    lines.extend(_stripe_lines(resolved))
-    lines.extend(_central_ground_lines(resolved))
-    lines.append("  ; CAD-constrained triangular prism electrodes, emitted after ground bodies.")
-    for prism in resolved["prism_electrodes"]:
-        terms = " ".join(
-            term for part in prism["parts"] for term in _extrude_polygon_bands(part["x"], part["polygon_yz_mm"])
-        )
-        lines.append(f"  e({prism['id']}) {{ {terms} }}")
-    lines.extend(_prism_ground_shield_lines(resolved))
-    return lines
 
 
 def _detector_origin(

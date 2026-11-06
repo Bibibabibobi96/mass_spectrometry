@@ -191,8 +191,9 @@ function Assert-StaticScreeningField {
     $code=@'
 import copy, json, sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, _record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority, candidate_authority
+from msplatform.backends.comsol.static_field_binding import load_binding, _record
+from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))

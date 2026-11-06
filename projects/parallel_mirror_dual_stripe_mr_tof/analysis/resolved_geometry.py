@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     validate_detector_return_path,
 )
@@ -27,7 +27,7 @@ from projects.orthogonal_accelerator.simion.two_zone_candidate import (
 )
 
 
-CENTRAL_GROUND_ELECTRODE_ID = 15
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.geometry_contract import CENTRAL_GROUND_ELECTRODE_ID
 
 
 @dataclass(frozen=True)

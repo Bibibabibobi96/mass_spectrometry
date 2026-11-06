@@ -31,7 +31,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_
     resolve_active_stripe_axes,
     workpoint_residual_names,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
@@ -2573,7 +2573,7 @@ def prepare_measured_centroid_acquisition(*, prepared_run: Path, contract_path: 
     from common.contracts.write_run_manifest import file_record
     from common.contracts.frozen_inputs import freeze_file
     from common.contracts.verify_run_manifest import verified_successful_run_reference
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, load_native_response_basis
+    from msplatform.backends.comsol.static_field_binding import load_binding, load_native_response_basis
     proposal=load_measured_centroid_initial_proposal(proposal_path)
     binding_path=verified_successful_run_reference(
         prepared_run, "results/joint_workbench/static_field_binding.json",

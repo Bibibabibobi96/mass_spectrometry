@@ -16,7 +16,7 @@ from scipy.spatial import ConvexHull
 
 from msplatform.backends.simion.gem_primitives import format_number
 from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import (
     _extrude_polygon_bands, _prism_ground_shield_lines,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (

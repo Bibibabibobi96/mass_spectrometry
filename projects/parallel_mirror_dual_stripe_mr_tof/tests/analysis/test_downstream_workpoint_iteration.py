@@ -65,8 +65,8 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
                 project="instrument_assembly", mode="accelerator_interface_preparation", status="success",
                 inputs={"binding":file_record(binding_path)}, outputs=[])))
             source=evidence.read_bytes()
-            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=binding),\
-                 patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_native_response_basis",side_effect=lambda p,b:dict(response_basis=dict(axis=json.loads(p.read_text())["axis"]))):
+            with patch("msplatform.backends.comsol.static_field_binding.load_binding",return_value=binding),\
+                 patch("msplatform.backends.comsol.static_field_binding.load_native_response_basis",side_effect=lambda p,b:dict(response_basis=dict(axis=json.loads(p.read_text())["axis"]))):
                 result=prepare_measured_centroid_acquisition(prepared_run=root,contract_path=evidence,proposal_path=path,
                     p1_response=p1,p2_response=p2,field_run_id="test-field",output_directory=root/"frozen")
                 binding["descriptor_owner"]="extended_fine_manifest.json"

@@ -13,13 +13,13 @@ import subprocess
 import tempfile
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import (
     _mirror_lines,
     _prism_ground_shield_lines,
     _stripe_lines,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 
 PROJECT = Path(__file__).resolve().parents[2]

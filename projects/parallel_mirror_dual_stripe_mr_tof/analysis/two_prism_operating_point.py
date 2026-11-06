@@ -6,9 +6,7 @@ staged and segmented consumers retain their shared mathematical inputs.
 from __future__ import annotations
 
 from dataclasses import asdict
-import json
 import math
-from pathlib import Path
 from typing import Any, Sequence
 
 import numpy as np
@@ -16,9 +14,10 @@ import numpy as np
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import finite as _finite
 
 
 RESIDUAL_NAMES = (
@@ -28,17 +27,8 @@ RESIDUAL_NAMES = (
 UNKNOWN_NAMES = ("prism_1_voltage_v", "prism_2_voltage_v")
 
 
-def _load_object(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(value, dict):
-        raise CandidateContractError(f"expected a JSON object in {path}")
-    return value
 
 
-def _finite(value: Any, label: str) -> float:
-    if type(value) not in (int, float) or not math.isfinite(float(value)):
-        raise CandidateContractError(f"{label} must be finite")
-    return float(value)
 
 
 def _same_frozen_problem(trials: Sequence[dict[str, Any]]) -> None:

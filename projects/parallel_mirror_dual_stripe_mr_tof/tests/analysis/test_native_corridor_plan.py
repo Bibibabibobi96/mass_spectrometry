@@ -5,10 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
-    derive_native_corridor_plan,
-    validate_generation_grid_pitch,
-)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import derive_native_corridor_plan
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import validate_generation_grid_pitch
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
     NATIVE_RESPONSE_NAMES,
     RAW_NAME,
@@ -19,7 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_respon
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry import (
     build_native_corridor_gem,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 
@@ -30,7 +28,7 @@ CONTRACT = PROJECT / 'config' / 'simion_candidate_two_zone.json'
 
 class NativeCorridorPlanTest(unittest.TestCase):
     def test_generation_quantum_checks_new_grids_without_restricting_old_consumers(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import _validate_pitch_mm
+        from msplatform.backends.comsol.static_field_binding import _validate_pitch_mm
         contract = json.loads(CONTRACT.read_text(encoding='utf-8-sig'))
         for pitch in ([.01, .02, .03], [.05, .1, .25]):
             before = pitch.copy()

@@ -5,41 +5,39 @@ import copy
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import (
-    TASK_SOURCE, candidate_authority, derive_candidate_authority, compile_request, prepare, finalize, resolve_completed_provider,
+from msplatform.backends.comsol.corridor_field import (
+    TASK_SOURCE, compile_request, prepare, finalize, resolve_completed_provider,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
-from common.contracts.write_run_manifest import build_run_manifest, publish_terminal_state
+from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+from msplatform.backends.comsol.static_field_binding import load_binding
+from msplatform.execution.retention import build_run_manifest
+from msplatform.execution.terminal_publication import publish_terminal_state
 
 
 class CandidateAuthorityTest(unittest.TestCase):
-    def test_frozen_provider_imports_from_public_root_context(self) -> None:
+    def test_installed_provider_imports_from_public_root_context(self) -> None:
         repo = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory(prefix="mrtof-provider-import-") as directory:
-            inputs = Path(directory)
-            frozen = inputs / "corridor_field_provider.py"
-            shutil.copyfile(repo / "projects/parallel_mirror_dual_stripe_mr_tof/analysis/corridor_field_provider.py", frozen)
-            (inputs / "plan.json").write_text(json.dumps({"repo_root": str(repo)}), encoding="utf-8")
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
             command = (
                 ". '" + str(repo / "common/contracts/run_artifact_support.ps1").replace("'", "''") + "'; "
                 "Invoke-RunToolRootContext -RepoRoot '" + str(repo).replace("'", "''") + "' -Operation { "
-                "& '" + sys.executable.replace("'", "''") + "' '" + str(frozen).replace("'", "''") + "' --help; "
-                "if ($LASTEXITCODE -ne 0) { throw 'Frozen provider import failed' } }"
+                "& '" + sys.executable.replace("'", "''") + "' -m msplatform.backends.comsol.corridor_field --help; "
+                "if ($LASTEXITCODE -ne 0) { throw 'Installed provider import failed' } }"
             )
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", command],
-                                    cwd=inputs, env=environment, timeout=30,
+                                    cwd=directory, env=environment, timeout=30,
                                     capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("--finalize", result.stdout)
+            self.assertIn("--resolve-completed-request", result.stdout)
 
     def setUp(self) -> None:
         self.authority = {"analyzer_electrode_voltages_v": list(range(20)),
@@ -86,7 +84,7 @@ class CandidateAuthorityTest(unittest.TestCase):
     def test_authority_derivation_does_not_read_field_solve_metadata(self) -> None:
         request = dict(schema_version=1, role="mrtof_same_mesh_field_provider_request",
                        candidate_voltages_v=self.candidate)
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider"
+        module = "msplatform.backends.comsol.candidate_authority"
         with patch(module+".read", side_effect=AssertionError("No unconsumed model metadata")):
             actual, references = derive_candidate_authority(request, self.authority)
         self.assertEqual(actual, candidate_authority(self.authority, self.candidate))
@@ -104,6 +102,8 @@ class CandidateAuthorityTest(unittest.TestCase):
         self.assertNotIn("createAutoSequence",TASK_SOURCE)
         self.assertNotIn("mesh.run",TASK_SOURCE)
         self.assertNotIn("geom.run",TASK_SOURCE)
+        self.assertIn("getenv('MRTOF_COMSOL_RESOURCE_DIRECTORY')", TASK_SOURCE)
+        self.assertIn("addpath(task)", TASK_SOURCE)
 
     def test_only_reviewed_cg_and_manual_fgmres_paths_are_generated(self) -> None:
         # Source contract only; this does not execute or qualify a COMSOL field.
@@ -166,7 +166,7 @@ class SourceMeshAndExportPlanTest(unittest.TestCase):
 
     def compile_fixture(self, *, mesh="mesh2", plan_name="diagnostic_plan.json",
                         legacy=False, mismatch=None, pitch=(.25,.25,.25), launcher_options=None):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider"
+        module = "msplatform.backends.comsol.corridor_field"
         root = Path("/provider-fixture")
         field, export = root / "field", root / "export"
         model = field / "source.mph"
@@ -301,7 +301,7 @@ class SealedSourceCompileTest(unittest.TestCase):
         self.addCleanup(self.fixture.doCleanups)
 
     def mirror_request(self) -> dict:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import _named_record
+        from msplatform.backends.comsol.candidate_authority import named_record as _named_record
         manifest = self.reference / "run_manifest.json"
         variation = self.reference / "simion/terminal_time_mirror_voltage_variation.json"
         contract = self.reference / "simion/trajectory_contract.json"
@@ -356,7 +356,7 @@ class SealedSourceCompileTest(unittest.TestCase):
 
     def test_nonunit_scale_applies_once_only_to_absolute_mirror_target(self) -> None:
         # Existing P/S request values are physical V0; source MPH values are already scaled.
-        import projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider as provider
+        import msplatform.backends.comsol.candidate_authority as provider
         request = self.mirror_request()
         real_read, real_load = provider.read, provider.load_contract
         binding = load_binding(Path(request["source_binding_path"]))
@@ -371,7 +371,8 @@ class SealedSourceCompileTest(unittest.TestCase):
             value["simion"]["nonaccelerator_scale"] = 2
             return value
         with patch.object(provider,"read",side_effect=read_scaled), \
-             patch.object(provider,"load_binding",return_value=binding), \
+             patch("msplatform.backends.comsol.corridor_field.read",side_effect=read_scaled), \
+             patch("msplatform.backends.comsol.corridor_field.load_binding",return_value=binding), \
              patch.object(provider,"load_contract",side_effect=contract_scaled):
             plan = compile_request(request)
         variation = real_read(Path(request["mirror_voltage_variation_path"]))
@@ -380,7 +381,7 @@ class SealedSourceCompileTest(unittest.TestCase):
         self.assertEqual(plan["candidate_authority"]["analyzer_electrode_voltages_v"][15],request["candidate_voltages_v"]["p1"])
 
     def test_source_mirror_mismatch_rejected_before_field_solve(self) -> None:
-        import projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider as provider
+        import msplatform.backends.comsol.candidate_authority as provider
         request = self.mirror_request()
         real_read = provider.read
         binding = load_binding(Path(request["source_binding_path"]))
@@ -390,7 +391,9 @@ class SealedSourceCompileTest(unittest.TestCase):
             if path.name == "frozen_input.json":
                 value["analyzer_electrode_voltages_v"][1] += 1
             return value
-        with patch.object(provider,"read",side_effect=mismatch),patch.object(provider,"load_binding",return_value=binding):
+        with patch.object(provider,"read",side_effect=mismatch), \
+             patch("msplatform.backends.comsol.corridor_field.read",side_effect=mismatch), \
+             patch("msplatform.backends.comsol.corridor_field.load_binding",return_value=binding):
             with self.assertRaisesRegex(ValueError,"source MPH mirror voltages"):
                 compile_request(request)
 
@@ -408,7 +411,7 @@ class SealedSourceCompileTest(unittest.TestCase):
 
     def test_public_manifest_finalize_to_consumer_binding(self) -> None:
         # Lifecycle/consumer integration only: tiny byte fixtures, never a claimed solved field.
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider"
+        module = "msplatform.backends.comsol.corridor_field"
         with tempfile.TemporaryDirectory(prefix="mrtof-provider-test-") as temporary:
             base = Path(temporary)
             run = base / "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261006_000000__test__python__provider-binding-fixture"
@@ -416,7 +419,13 @@ class SealedSourceCompileTest(unittest.TestCase):
             request = base / "request.json"
             request.write_text(json.dumps(self.source_request()),encoding="utf-8")
             with patch(module+".register_writing_range"), patch(module+".register_writing"):
-                prepared = prepare(request,run)
+                repo = Path(__file__).resolve().parents[4]
+                prepared = prepare(
+                    request,
+                    run,
+                    repository_root=repo,
+                    runner_path=repo / "projects/parallel_mirror_dual_stripe_mr_tof/comsol/run_corridor_field_provider.ps1",
+                )
             self.assertEqual(prepared["status"],"prepared_not_executed")
             inputs = run / "inputs"
             (inputs / "provider_usage.json").write_text(json.dumps({"outcome":"success","test_fixture":True}),encoding="utf-8")
@@ -536,12 +545,18 @@ class RefinementWindowProviderTest(unittest.TestCase):
             {"inputs/field_v.pa":b"fake", "inputs/field_valid.pa":b"fake", "inputs/simion_pa_save.m":b"% fixture"})
 
     def candidate(self, number=10):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider"
+        module = "msplatform.backends.comsol.corridor_field"
         request_path = self.root / f"request{number}.json"
         self.write(request_path, self.request)
         run = self.runs / f"20261007_0000{number}__test__python__provider-fixture"
         with patch(module+".register_writing_range"), patch(module+".register_writing"):
-            prepare(request_path, run)
+            repo = Path(__file__).resolve().parents[4]
+            prepare(
+                request_path,
+                run,
+                repository_root=repo,
+                runner_path=repo / "projects/parallel_mirror_dual_stripe_mr_tof/comsol/run_corridor_field_provider.ps1",
+            )
         plan = json.loads((run / "inputs/plan.json").read_text())
         self.write(run / "inputs/provider_usage.json", dict(outcome="success", test_fixture=True))
         for local, grid in [(run / "inputs", plan["export_grid"]), *[
@@ -552,7 +567,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
         return run, plan
 
     def publish(self, run):
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider"
+        module = "msplatform.backends.comsol.corridor_field"
         with patch(module+".record_capacity_object"):
             return finalize(run)
 
@@ -738,7 +753,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
         self.publish(run)
         repo = Path(__file__).resolve().parents[4]
         request_path = self.root / "request10.json"
-        command = [sys.executable, "-m", "projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider",
+        command = [sys.executable, "-m", "msplatform.backends.comsol.corridor_field",
                    "--resolve-completed-request", str(request_path),
                    "--completed-provider-manifest", str(run / "run_manifest.json")]
         result = subprocess.run(command, cwd=repo, capture_output=True, text=True, timeout=30)

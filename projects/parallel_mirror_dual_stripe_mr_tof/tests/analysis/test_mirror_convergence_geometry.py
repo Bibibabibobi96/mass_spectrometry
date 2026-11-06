@@ -9,10 +9,10 @@ import unittest
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     _converging_mirror_solid, resolve_geometry,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError, load_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import (
     _mirror_lines, _mirror_ground_shield_lines,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import collision_diagnostics

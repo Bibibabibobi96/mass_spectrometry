@@ -139,6 +139,9 @@ EI与Wehnelt现有合同解析／检查及后者几何派生已迁入各自安�
 双锥几何、GEM、真实COMSOL场校验／运行Lua和均匀400Pa对照编译已迁入安装包；31项项目测试与Static通过，
 resolved/GEM/两类Lua字节保持。显式路径替代作者默认，普通安装13项边界与交付测试实际覆盖几何、GEM和均匀场；
 prepare的冻结、源、SDS与Program仍属项目owner，未把准备或场编译称为碰撞轨迹能力。
+MR既有候选科学、场binding、COMSOL同网格改压／导出与退役读取已按component/backend/execution职责实迁，
+MATLAB与Lua资源进入普通发行，integration及冻结来源直接切换且无旧转发桥。普通wheel/sdist探针实际调用纯电压投影并读取原生资源；
+完整Static为1785项（1773成功、12既定skip），3483条记录中3471成功、12 skip，未运行商业求解器或新增科学资格。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

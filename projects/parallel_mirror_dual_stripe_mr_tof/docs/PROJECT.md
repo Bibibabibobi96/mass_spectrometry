@@ -70,6 +70,30 @@ runner 使用公共导入根，并在每次 Python 调用前校验核心及目�
 MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒），包括真实冻结源码、
 核心来源、缺文件拒绝及原 source/clock/velocity 断言；这是软件验收，没有重跑旧局部物理。
 
+### COMSOL corridor 操作边界
+
+同网格改压 provider 的 `compile_request`、准备、已完成 provider 解析与收尾现由安装包
+`msplatform.backends.comsol.corridor_field` 实现；项目 `comsol/run_corridor_field_provider.ps1`
+仍是唯一原生执行入口，显式传入仓库根、runner 路径和安装资源目录。四个 MATLAB 文件
+`candidate_field.m`、`update_corridor_workpoint_voltages.m`、`export_corridor_scalar_field.m`、
+`classify_corridor_conductor_voltage.m` 唯一保存在 `msplatform/backends/comsol/resources`；
+旧项目 Python 与同份 MATLAB 副本已退役，不保留转发。
+
+科学几何、电压、binding 与 manifest 校验仍属 MR owner。真实科学算法位于
+`msplatform.components.parallel_mirror_dual_stripe_mr_tof`；候选权限、binding、manifest 与退役读取边界位于
+`msplatform.backends.comsol` 的同名模块，component 不反向依赖 execution/backend。
+旧 `simion_candidate_reference.py`、`static_field_binding.py`、`mirror_geometry_parameters.py`、
+`analyzer_candidate_geometry.py` 已退役；所有活动消费者直接使用其新 owner，不保留转发。
+backend/component 均无 `projects.*` 或 `common.*` 依赖；
+收尾 retention/manifest 与 solver-review 退役生命周期由 `msplatform.execution` 提供，
+COMSOL backend 不持有 subprocess、ctypes 或环境生命周期；不使用回调注入或第二 CLI。原生脚本继续核对源 MPH
+改压前后电压、活动网格与 solver 控制，只清除所选解数据并单次 `runAll`，随后导出基础窗及
+全部有序细分窗；`field_v.pa`、`field_valid.pa`、receipt 与无轨迹资格语义不变。
+本轮只迁移纯编译／准备／收尾及原生资源，没有启动 COMSOL、实际 Compute 或新增场／GUI／Formal 资格。
+最终完整 Static 为 1785 项、3 failure、20 error、12 skip；这些失败均来自尚未同步的
+`integrations` 旧 binding/Lua 引用，由主 Agent 在 integration 边界处理。MR 内定向及完整门禁
+未留下其他失败；该结果不冒充完整 Static PASS。
+
 ## 当前决策与完成边界
 
 两Prism分段诊断的阶段B只使用`stage_b_p1_exit_to_p2_low_field_reference`；旧的pre-reflection／Stripe入口别名已退役，

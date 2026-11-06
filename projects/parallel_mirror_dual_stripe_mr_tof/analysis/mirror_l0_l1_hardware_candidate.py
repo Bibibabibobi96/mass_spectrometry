@@ -19,7 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     refine_l0_gamma_intersection,
     screen_l1_fixed_geometry,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
     derive_operating_energy_envelope,

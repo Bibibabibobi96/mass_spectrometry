@@ -89,7 +89,7 @@ try {
     'projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_fixed_grid_workpoint.ps1',
     'projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_mirror_stripe_l0.py',
     'projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_operating_point.py',
-    'projects/parallel_mirror_dual_stripe_mr_tof/analysis/simion_candidate_reference.py',
+    'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py',
     'common/contracts/file_identity.py',
     'common/contracts/verify_run_manifest.py',
     'common/contracts/run_artifact_support.ps1'

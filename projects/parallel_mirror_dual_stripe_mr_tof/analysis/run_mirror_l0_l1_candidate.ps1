@@ -81,14 +81,14 @@ try {
     'projects\orthogonal_accelerator\analysis\accelerator_time_focus.py',
     'projects\orthogonal_accelerator\analysis\two_zone_geometry.py',
     'projects\orthogonal_accelerator\analysis\two_zone_theory.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_geometry_parameters.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0_hardware_candidate.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0_l1_hardware_candidate.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0_l1_run_summary.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_mirror_l0_l1_candidate.ps1',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_candidate_reference.py'
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py'
   )
   $sourcePaths = @($sourceRelativePaths | ForEach-Object { Join-Path $repoRoot $_ })
   $inputCopyBytes = [int64](Get-Item -LiteralPath $contractInput).Length

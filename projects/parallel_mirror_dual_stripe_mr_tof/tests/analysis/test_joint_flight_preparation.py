@@ -463,7 +463,7 @@ print('OA_BUILDER_MOCK=PASS')
             with patch("integrations.workflows.accelerator_interface.prepare.verified_reference",
                        side_effect=lambda run, relative, **kwargs: run / relative), patch(
                     "integrations.workflows.accelerator_interface.prepare.verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), patch(
-                    "projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding", return_value=binding), patch(
+                    "msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), patch(
                     "projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source",
                     side_effect=source_projection), patch(
                     "integrations.workflows.accelerator_interface.prepare.prepare_interface_field_audit",
@@ -737,7 +737,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
                 level('positive_integer_grid_a','mirror.pa',[[-1,1],[-1,1],[5,7]]),
                 level('covered_local','covered.pa',[[-1,1],[-1,1],[-1,7]])])
             target=root/'audit'
-            module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding'
+            module='msplatform.backends.comsol.static_field_binding.load_binding'
             with patch(module,return_value=binding):
                 plan=prepare_event_field_audit(projection,binding_path,target)
             self.assertEqual([j['rank_zero_based'] for j in plan['jobs']],[0,2,1])

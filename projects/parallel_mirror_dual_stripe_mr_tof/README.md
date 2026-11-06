@@ -15,6 +15,7 @@
 | 理解模型、符号、推导和验证范围 | [理论索引](docs/theory/index.md) |
 | 科学事件／轨迹与历史日志读取 | [结构化科学记录](docs/PROJECT.md#结构化科学记录) |
 | 构建、检查或运行 SIMION | [SIMION 实施说明](docs/SIMION.md) |
+| 准备、执行或收尾 COMSOL corridor 改压场 | [COMSOL corridor 操作边界](docs/PROJECT.md#comsol-corridor-操作边界) |
 | 启动或恢复原生候选campaign | [显式装配输入与恢复身份](docs/PROJECT.md#oamr-运行组装合同) |
 | 维护staged工作点控制与恢复 | [控制决策职责](docs/PROJECT.md#工作点控制决策职责) |
 | 选择OA／IP并准备或执行跨器件链 | [统一集成入口](../../integrations/README.md)、[组装当前边界](docs/PROJECT.md#统一组装迁移任务) |

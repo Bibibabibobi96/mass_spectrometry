@@ -34,7 +34,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_volt
     load_axis_response_basis_csv,
     normalized_slopes,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 

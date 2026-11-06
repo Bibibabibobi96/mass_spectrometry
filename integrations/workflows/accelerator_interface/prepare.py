@@ -170,7 +170,7 @@ def prepare_joint_flight(*, reference_run: Path,
 
 def _joint_binding_inputs(*, design_run: Path, field_run: Path, source_run: Path) -> dict[str, Any]:
     """Validate the current assembly and sealed physical inputs before any output."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+    from msplatform.backends.comsol.static_field_binding import load_binding
 
     design_manifest = _read(design_run / "run_manifest.json")
     design_path = verified_preparation_reference(design_run, "results/joint_flight/joint_preparation_receipt.json", manifest=design_manifest)
@@ -272,9 +272,11 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
     # Workbench save may write same-basename companions before the final copy.
     for source_name, target_name in {
         "mrtof_candidate.lua": "mrtof_candidate.lua", "mirror_cycle_counter.lua": "mrtof_candidate.mirror_cycle_counter.lua",
-        "scalar_field_adapter.lua": "mrtof_candidate.scalar_field_adapter.lua", "build_native_corridor_iob.lua": "build_workbench.lua",
+        "build_native_corridor_iob.lua": "build_workbench.lua",
     }.items():
         freeze_file(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/simion" / source_name, runtime / target_name)
+    freeze_file(REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua",
+                runtime / "mrtof_candidate.scalar_field_adapter.lua")
     freeze_file(REPO / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", runtime / "mrtof_candidate.voltage_waveforms.lua")
     shutil.copyfile(output_directory / "measured_source/source_runtime.lua", runtime / "mrtof_candidate.source_runtime.lua")
     reference_path = design_run / "inputs/reference_operating_point.lua"
@@ -465,7 +467,7 @@ def finalize_interface(*, source_run: Path, reference_mr_run: Path, design_run: 
         frozen["historical_reference_trajectory"] = frozen["reference_trajectory"]
         frozen["reference_trajectory"] = freeze_file(contract_path, inputs / "execution_trajectory.json")
         if execution["native_refine_change"] is not None:
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import native_numerics_match
+            from msplatform.backends.comsol.static_field_binding import native_numerics_match
             field_binding = verified["binding"]
             if not native_numerics_match(field_binding, Path(frozen["reference_trajectory"]["path"])):
                 raise ValueError("new native field Refine numerics differ from the selected execution contract")
