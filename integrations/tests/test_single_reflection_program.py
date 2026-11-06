@@ -447,17 +447,18 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
             rf_drive_kernel_source=native_resource_path("rf_drive.lua").read_bytes().decode("utf-8-sig"))
 
     def test_prepared_model_real_public_example_is_the_only_tracking_drive(self):
-        from msplatform import api
+        from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+        from msplatform.backends import simion as simion_api
         from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive, model_geometry
         from msplatform.backends.simion.native_plans import plan_solve_fields
         from msplatform.backends.simion.tracking_program import build_successor_program as canonical_build
         from msplatform.backends.simion.artifacts import CompiledPreparedModel
         from msplatform.backends.simion.compiler import _content_sha256
 
-        case = api.load_example('rf_oatof_functional_v1')
-        parts = {key:api.resolve_component(value) for key,value in case.component_requests.items()}
-        assembly = api.compile_assembly(case.recipe,parts)
-        compiled = api.compile_geometry(assembly,backend='simion',numerics=case.geometry_numerics)
+        case = example_api.load_example('rf_oatof_functional_v1')
+        parts = {key:component_api.resolve_component(value) for key,value in case.component_requests.items()}
+        assembly = assembly_api.assemble(case.recipe,parts)
+        compiled = simion_api.compile_geometry(assembly,numerics=case.geometry_numerics)
         components = {key:compiled.components_resolved[key] for key in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
         drive = project_resolved_drive(compiled,components,pulse=self.flight['pulse'],
             clock=dict(clock_epoch_id='tracking_model_test',authority_sha256='A'*64,phase_reference_instrument_time_us=0.))

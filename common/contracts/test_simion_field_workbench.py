@@ -8,7 +8,7 @@ import unittest
 
 from common.contracts.test_simion_geometry_compiler import compiler_inputs
 from common.contracts.test_simion_native_plans import SEED, NATIVE_PATH, LUA
-from msplatform.backends.simion import compile_geometry
+from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.native_plans import plan_solve_fields, plan_field_workbench, _field_plan
 from msplatform.backends.simion.field_validation import require_supported_split_interfaces
 from msplatform.backends.simion.frontend import frontend_electrode_maps

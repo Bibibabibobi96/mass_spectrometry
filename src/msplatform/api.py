@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from msplatform.assembly.port_mating import mate_ports as mate_ports
-from msplatform.assembly.resolve_assembly import compile_assembly_layout
+from msplatform import assembly as assembly_domain
+from msplatform import components as component_catalog
+from msplatform.backends import simion as simion_backend
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.clock import ClockIdentity
 
@@ -21,143 +22,6 @@ if TYPE_CHECKING:
     from msplatform.backends.simion.compiler import CompiledSimionGeometry
     from msplatform.execution.artifact_reader import ArtifactResolver, OpenedArtifact
     from msplatform.execution.context import ExecutionContext
-
-
-@dataclass(frozen=True, init=False)
-class StudyDefinition:
-    """Inspectable versioned scientific input; each view returns an independent copy."""
-
-    _document: dict[str, Any]
-
-    def __init__(self, document: Mapping[str, Any]):
-        object.__setattr__(self, "_document", copy.deepcopy(dict(document)))
-
-    @property
-    def document(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document)
-
-    @property
-    def component_requests(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["component_requests"])
-
-    @property
-    def recipe(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["recipe"])
-
-    @property
-    def geometry_numerics(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["numerics"]["geometry"])
-
-    @property
-    def field_numerics(self) -> dict[str, Any]:
-        """Expand field stopping settings over the example's single geometry grid."""
-        settings = copy.deepcopy(self._document["numerics"]["fields"])
-        convergence = settings.pop("frontend_refine_convergence_v")
-        domains = self.geometry_numerics["frontend_domains"]
-        if set(convergence) != set(domains):
-            raise ContractError("example field convergence must cover its exact geometry domains")
-        for name, domain in domains.items():
-            domain["refine_convergence_v"] = convergence[name]
-        return dict(frontend_domains=domains, **settings)
-
-    @property
-    def cad_export(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["cad_export"])
-
-    @property
-    def drive(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["drive"])
-
-    @property
-    def physics(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["physics"])
-
-    @property
-    def release(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["release"])
-
-    def to_dict(self) -> dict[str, Any]:
-        """Expand the complete example without changing its authoritative inputs."""
-        return copy.deepcopy(self._document)
-
-
-@dataclass(frozen=True, init=False)
-class ResolvedComponent:
-    """A provider's scientific design and its validated mechanical/electrical interface."""
-
-    provider_id: str
-    _resolved_design: dict[str, Any]
-    _assembly_interface: dict[str, Any]
-    _source_design: dict[str, Any] | None
-
-    def __init__(self, provider_id: str, resolved_design: Mapping[str, Any],
-                 assembly_interface: Mapping[str, Any], *, source_design: Mapping[str, Any] | None = None):
-        design, interface = copy.deepcopy(dict(resolved_design)), copy.deepcopy(dict(assembly_interface))
-        canonical = _component_interface(provider_id, design, interface.get("geometry_profile_id"))
-        if canonical != interface:
-            raise ContractError(f"{provider_id}: assembly interface differs from the resolved design")
-        source = copy.deepcopy(dict(source_design)) if source_design is not None else None
-        if provider_id == "single_reflection_oa_tof":
-            if source is None:
-                raise ContractError("TOF resolved design requires its explicit source design documents")
-            from msplatform.components.single_reflection_oa_tof.provider import resolve_component as resolve
-            expected = resolve(source, geometry_profile_id=interface["geometry_profile_id"])
-            if expected["resolved_design"] != design:
-                raise ContractError("TOF resolved design differs from its source design documents")
-        object.__setattr__(self, "provider_id", provider_id)
-        object.__setattr__(self, "_resolved_design", design)
-        object.__setattr__(self, "_assembly_interface", interface)
-        object.__setattr__(self, "_source_design", source)
-
-    @property
-    def resolved_design(self) -> dict[str, Any]:
-        return copy.deepcopy(self._resolved_design)
-
-    @property
-    def assembly_interface(self) -> dict[str, Any]:
-        return copy.deepcopy(self._assembly_interface)
-
-    @property
-    def source_design(self) -> dict[str, Any] | None:
-        return copy.deepcopy(self._source_design)
-
-    def port(self, port_id: str) -> dict[str, Any]:
-        """Return a local-frame port view suitable for explicit mating."""
-        if port_id not in self.assembly_interface["ports"]:
-            raise ContractError(f"{self.provider_id} has no declared port: {port_id}")
-        return {**copy.deepcopy(self.assembly_interface["ports"][port_id]),
-                "frame_id": self.assembly_interface["local_frame_id"]}
-
-
-@dataclass(frozen=True, init=False)
-class Assembly:
-    """The complete canonical parent plan plus the corresponding provider designs."""
-
-    _composition_plan: dict[str, Any]
-    _components: dict[str, ResolvedComponent]
-
-    def __init__(self, composition_plan: Mapping[str, Any], components: Mapping[str, ResolvedComponent]):
-        plan = copy.deepcopy(dict(composition_plan))
-        if not components or any(not isinstance(value, ResolvedComponent) for value in components.values()):
-            raise ContractError("assembly requires complete resolved component objects")
-        interfaces = {name: value.assembly_interface for name, value in components.items()}
-        canonical = compile_assembly_layout(plan["recipe"], interfaces, local_scope=plan.get("local_scope"))
-        if plan != canonical:
-            raise ContractError("assembly layout differs from its complete component designs")
-        object.__setattr__(self, "_composition_plan", plan)
-        object.__setattr__(self, "_components", copy.deepcopy(dict(components)))
-
-    @property
-    def composition_plan(self) -> dict[str, Any]:
-        return copy.deepcopy(self._composition_plan)
-
-    @property
-    def components(self) -> dict[str, ResolvedComponent]:
-        return copy.deepcopy(self._components)
-
-    @property
-    def components_resolved(self) -> dict[str, dict[str, Any]]:
-        return {name: value.resolved_design for name, value in self._components.items()}
 
 
 @dataclass(frozen=True, init=False)
@@ -210,85 +74,6 @@ class ReleaseRealization:
     def to_dict(self) -> dict[str, Any]:
         """Expand the exact sampler inputs, actual rows, ID mapping and clock mapping."""
         return copy.deepcopy(self._document)
-
-
-def _component_interface(provider: str, resolved: dict[str, Any], profile: str | None) -> dict[str, Any]:
-    """Derive the public interface from the same complete provider design."""
-    if provider == "rf_multipole":
-        from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
-        return build_assembly_interface(resolved, geometry_profile_id=profile)
-    if provider == "single_reflection_oa_tof":
-        if type(resolved.get("schema_version")) is not int or resolved["schema_version"] != 1:
-            raise ContractError("unsupported TOF resolved design version")
-        if resolved.get("role") != "oa_tof_resolved_contract_do_not_edit":
-            raise ContractError("unsupported TOF resolved design role")
-        from msplatform.components.single_reflection_oa_tof.accelerator_geometry import (
-            apply_side_opening, resolve_accelerator_geometry,
-        )
-        from msplatform.components.single_reflection_oa_tof.assembly_interface import resolve_assembly_interface
-        projection = apply_side_opening(resolve_accelerator_geometry(resolved, variant_id="three_zone_square"),
-                                       side_opening=resolved["mechanical_side_opening"])
-        return resolve_assembly_interface(resolved, projection=projection, geometry_profile_id=profile)
-    raise ContractError(f"unsupported component provider for this installed slice: {provider}")
-
-
-def load_example(example_id: str) -> StudyDefinition:
-    """Read an expanded package-owned example; no native or workspace actions."""
-    from msplatform.examples import load_example as read_example
-    document = read_example(example_id)
-    if type(document.get("schema_version")) is not int or document["schema_version"] != 1:
-        raise ContractError("unsupported study example version")
-    if document.get("name") != example_id:
-        raise ContractError("example identity differs from the requested example")
-    return StudyDefinition(copy.deepcopy(document))
-
-
-def resolve_component(request: Mapping[str, Any]) -> ResolvedComponent:
-    """Resolve one explicit supported provider request, without sampling or execution."""
-    required = {"provider_id", "design"}
-    if not isinstance(request, Mapping) or not required <= request.keys() or set(request) - required - {"geometry_profile_id"}:
-        raise ContractError("component request requires provider_id and design; only geometry_profile_id is optional")
-    design = copy.deepcopy(request["design"])
-    profile = request.get("geometry_profile_id")
-    provider = request["provider_id"]
-    if provider == "rf_multipole":
-        from msplatform.components.rf_multipole.compile_design_request import compile_design_request
-        from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
-        resolved = compile_design_request(design, expected_identity=design["identity"])
-        interface = build_assembly_interface(resolved, geometry_profile_id=profile)
-    elif provider == "single_reflection_oa_tof":
-        from msplatform.components.single_reflection_oa_tof.provider import resolve_component as resolve
-        result = resolve(design, geometry_profile_id=profile)
-        resolved, interface = result["resolved_design"], result["assembly_interface"]
-    else:
-        raise ContractError(f"unsupported component provider for this installed slice: {provider}")
-    return ResolvedComponent(provider, resolved, interface, source_design=design)
-
-
-def compile_assembly(recipe: Mapping[str, Any], components: Mapping[str, ResolvedComponent], *,
-                     local_scope: Mapping[str, Any] | None = None) -> Assembly:
-    """Compile the explicit parent recipe through the canonical assembly validator."""
-    if not components or any(not isinstance(value, ResolvedComponent) for value in components.values()):
-        raise ContractError("assembly components must be resolved provider objects")
-    interfaces = {name: copy.deepcopy(dict(value.assembly_interface)) for name, value in components.items()}
-    plan = compile_assembly_layout(copy.deepcopy(dict(recipe)), interfaces, local_scope=copy.deepcopy(local_scope))
-    return Assembly(plan, components)
-
-
-def compile_geometry(assembly: Assembly, *, backend: str, numerics: Mapping[str, Any]) -> CompiledSimionGeometry:
-    """Compile native geometry specifications only; no source, writes, build, solve or Fly."""
-    if backend != "simion":
-        raise ContractError(f"unsupported geometry backend: {backend}")
-    if not isinstance(assembly, Assembly):
-        raise ContractError("geometry compilation requires an explicitly compiled assembly")
-    from msplatform.backends.simion.compiler import compile_geometry as compile_simion
-    from dataclasses import replace
-    selected = assembly.composition_plan["scope"]["instance_ids"]
-    compiled = compile_simion({"composition_plan": copy.deepcopy(dict(assembly.composition_plan)),
-                           "components_resolved": {name: copy.deepcopy(assembly.components_resolved[name]) for name in selected}},
-                          numerics=copy.deepcopy(dict(numerics)))
-    # Persist the complete parent source, not just interfaces or active PA scope.
-    return replace(compiled, components_resolved=assembly.components_resolved)
 
 
 def sample_release(spec: Mapping[str, Any]) -> ReleaseRealization:
@@ -677,7 +462,7 @@ def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[s
 def _validate_step_export_options(assembly, format, options) -> str:
     """One pure option boundary shared by STEP planning and actual export."""
     from msplatform.exporters.step import step_export_filename
-    if not isinstance(assembly, Assembly) or format != "step":
+    if not isinstance(assembly, assembly_domain.Assembly) or format != "step":
         raise ContractError("export_cad requires a complete Assembly and the supported step format")
     if not isinstance(options, Mapping) or options.get('representation') != 'physical_solids':
         raise ContractError("STEP options require physical_solids and explicit write_pcurves/precision_mode")
@@ -687,7 +472,7 @@ def _validate_step_export_options(assembly, format, options) -> str:
         raise ContractError(str(error)) from error
 
 
-def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
+def export_cad(assembly: assembly_domain.Assembly, *, format: str, options: Mapping[str, Any],
                context: ExecutionContext) -> OpenedArtifact:
     """Publish an independent STEP without solver, source, field or GUI actions.
 
@@ -941,11 +726,11 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
                                                components_resolved=assembly.components_resolved))
 
     if operation == "resolve_component":
-        validator, scope = resolve_component, "provider_scientific_document_and_component_interface"
+        validator, scope = component_catalog.resolve_component, "provider_scientific_document_and_component_interface"
     elif operation == "compile_assembly":
-        validator, scope = compile_assembly, "complete_parent_mechanical_layout"
+        validator, scope = assembly_domain.assemble, "complete_parent_mechanical_layout"
     elif operation == "compile_geometry":
-        validator, scope = compile_geometry, "native_geometry_specifications_not_built"
+        validator, scope = simion_backend.compile_geometry, "native_geometry_specifications_not_built"
     elif operation == "prepare_model":
         from msplatform.backends.simion.model import compile_prepared_model
         validator, scope = compile_prepared_model, "pure_drive_physics_binding_not_native_preparation"

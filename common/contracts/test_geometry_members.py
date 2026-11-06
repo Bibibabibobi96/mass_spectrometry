@@ -3,15 +3,15 @@ import copy
 import unittest
 import hashlib
 
-from msplatform import api
+from msplatform import assembly as assembly_api, components as component_api, examples as example_api
 from msplatform.exporters.step import assembly_geometry_members
 from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
 
 
 def real_snapshot():
-    case=api.load_example('rf_oatof_functional_v1')
-    parts={name:api.resolve_component(req) for name,req in case.component_requests.items()}
-    assembly=api.compile_assembly(case.recipe,parts)
+    case=example_api.load_example('rf_oatof_functional_v1')
+    parts={name:component_api.resolve_component(req) for name,req in case.component_requests.items()}
+    assembly=assembly_api.assemble(case.recipe,parts)
     return dict(composition_plan=assembly.composition_plan,components_resolved=assembly.components_resolved)
 
 

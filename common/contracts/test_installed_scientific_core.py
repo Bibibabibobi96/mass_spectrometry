@@ -217,21 +217,22 @@ assert reference_count > 0
 
 # The real new user slice runs from installed providers and package resources.
 from unittest.mock import patch
-from msplatform import api
+from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform.backends import simion as simion_api
 with patch('subprocess.Popen', side_effect=AssertionError('hidden native action')), \
      patch.object(pathlib.Path, 'mkdir', side_effect=AssertionError('hidden workspace creation')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('hidden file write')):
-    study = api.load_example('rf_oatof_functional_v1')
-    actual_components = {name:api.resolve_component(request) for name,request in study.component_requests.items()}
-    actual_assembly = api.compile_assembly(study.recipe, actual_components)
-    actual_geometry = api.compile_geometry(actual_assembly, backend='simion', numerics=study.geometry_numerics)
+    study = example_api.load_example('rf_oatof_functional_v1')
+    actual_components = {name:component_api.resolve_component(request) for name,request in study.component_requests.items()}
+    actual_assembly = assembly_api.assemble(study.recipe, actual_components)
+    actual_geometry = simion_api.compile_geometry(actual_assembly, numerics=study.geometry_numerics)
     changed = study.to_dict()
     original_release = copy.deepcopy(changed['release'])
     changed['release'] = {'deliberately_invalid_release_not_a_geometry_input': True}
-    independent = api.StudyDefinition(changed)
-    independent_components = {name:api.resolve_component(request) for name,request in independent.component_requests.items()}
-    independent_assembly = api.compile_assembly(independent.recipe, independent_components)
-    independent_geometry = api.compile_geometry(independent_assembly, backend='simion', numerics=independent.geometry_numerics)
+    independent = example_api.StudyDefinition(changed)
+    independent_components = {name:component_api.resolve_component(request) for name,request in independent.component_requests.items()}
+    independent_assembly = assembly_api.assemble(independent.recipe, independent_components)
+    independent_geometry = simion_api.compile_geometry(independent_assembly, numerics=independent.geometry_numerics)
     assert independent_geometry == actual_geometry
     assert study.to_dict()['release'] == original_release
     from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
@@ -331,8 +332,8 @@ import msplatform.examples
 example_path = pathlib.Path(msplatform.examples.__file__).with_name('rf_oatof_functional_v1.json')
 missing_rejected = []
 for label, missing_path, action in (
-    ('example', example_path, lambda:api.load_example('rf_oatof_functional_v1')),
-    ('gem', gem_template_path('reflectron'), lambda:api.compile_geometry(actual_assembly,backend='simion',numerics=study.geometry_numerics)),
+    ('example', example_path, lambda:example_api.load_example('rf_oatof_functional_v1')),
+    ('gem', gem_template_path('reflectron'), lambda:simion_api.compile_geometry(actual_assembly,numerics=study.geometry_numerics)),
     ('powershell', resource_path('process_owner.ps1'), lambda:resource_path('process_owner.ps1')),
     ('lua', native_resource_path('build_geometry_iob.lua'), lambda:native_resource_path('build_geometry_iob.lua')),
     ('execution_lua', resource_path('native_run_path.lua'), lambda:resource_path('native_run_path.lua')),
@@ -353,7 +354,7 @@ schema_path.rename(hidden_schema)
 try:
     import subprocess
     failed = subprocess.run([sys.executable,'-I','-c',
-        "from msplatform import api; api.resolve_component(api.load_example('rf_oatof_functional_v1').component_requests['multipole'])"],
+        "from msplatform import components as component_api, examples as example_api; component_api.resolve_component(example_api.load_example('rf_oatof_functional_v1').component_requests['multipole'])"],
         cwd=root, capture_output=True, timeout=30)
     failed_output = (failed.stdout+failed.stderr).decode('utf-8', errors='backslashreplace')
     assert failed.returncode != 0 and schema_path.name in failed_output, failed_output

@@ -37,3 +37,6 @@ def validate_provider_dependencies(dependencies: Mapping[str, Sequence[str]]) ->
 
 
 validate_provider_dependencies(PROVIDER_DEPENDENCIES)
+
+from .model import ResolvedComponent as ResolvedComponent
+from .catalog import resolve_component as resolve_component

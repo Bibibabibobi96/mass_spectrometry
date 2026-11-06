@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 from common.contracts.test_simion_field_worker import INERT_WORKER
 from common.contracts.test_simion_fields_execution import INERT_DOWNSTREAM
-from msplatform import api
+from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.field_execution import execute_fields, plan_fields_execution
 from msplatform.backends.simion.field_closure import load_field_model
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
@@ -32,10 +33,10 @@ from msplatform.execution.run_session import RunSession
 
 
 def public_case():
-    case = api.load_example('rf_oatof_functional_v1')
-    components = {name:api.resolve_component(value) for name,value in case.component_requests.items()}
-    assembly = api.compile_assembly(case.recipe, components)
-    geometry = api.compile_geometry(assembly, backend='simion', numerics=case.geometry_numerics)
+    case = example_api.load_example('rf_oatof_functional_v1')
+    components = {name:component_api.resolve_component(value) for name,value in case.component_requests.items()}
+    assembly = assembly_api.assemble(case.recipe, components)
+    geometry = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
     root = Path(str(files('msplatform.examples')))
     contract = root/'instrument_clock_authority_v1.json'
     authority = validate_clock_authority(contract, root)

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from common.contracts.test_simion_geometry_compiler import compiler_inputs
-from msplatform.backends.simion import compile_geometry
+from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.native_plans import (
     plan_geometry_build, plan_solve_fields, operating_member_identity, plan_operating_member, plan_downstream_solve,
 )

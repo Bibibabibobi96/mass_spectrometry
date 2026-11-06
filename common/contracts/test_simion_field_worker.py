@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from common.contracts.test_simion_geometry_compiler import compiler_inputs
-from msplatform.backends.simion import compile_geometry
+from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.field_worker import run_member, _require_published_parent
 from msplatform.backends.simion import pa_family_cache as cache
 from msplatform.backends.simion.native_plans import plan_solve_fields, operating_member_identity

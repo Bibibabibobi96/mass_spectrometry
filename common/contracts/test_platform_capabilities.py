@@ -6,16 +6,17 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from msplatform import api
+from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, PHYSICS
 
 
 class PlatformCapabilitiesTests(unittest.TestCase):
     def setUp(self):
-        self.case = api.load_example("rf_oatof_functional_v1")
-        self.components = {name: api.resolve_component(request) for name, request in self.case.component_requests.items()}
-        self.assembly = api.compile_assembly(self.case.recipe, self.components)
-        self.compiled = api.compile_geometry(self.assembly, backend="simion", numerics=self.case.geometry_numerics)
+        self.case = example_api.load_example("rf_oatof_functional_v1")
+        self.components = {name: component_api.resolve_component(request) for name, request in self.case.component_requests.items()}
+        self.assembly = assembly_api.assemble(self.case.recipe, self.components)
+        self.compiled = simion_api.compile_geometry(self.assembly, numerics=self.case.geometry_numerics)
         self.drive = project_resolved_drive(self.compiled, self.compiled.components_resolved,
             pulse=dict(mode="timed", time_us=10., width_us=2.),
             clock=dict(clock_epoch_id="epoch", authority_sha256="A" * 64, phase_reference_instrument_time_us=0.))
@@ -28,7 +29,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
     def test_actual_provider_assembly_and_geometry_compile_without_native_claim(self):
         cases = [("resolve_component", dict(request=next(iter(self.case.component_requests.values())))),
                  ("compile_assembly", dict(recipe=self.case.recipe, components=self.components)),
-                 ("compile_geometry", dict(assembly=self.assembly, backend="simion", numerics=self.case.geometry_numerics))]
+                 ("compile_geometry", dict(assembly=self.assembly, numerics=self.case.geometry_numerics))]
         for operation, arguments in cases:
             with self.subTest(operation=operation):
                 before = copy.deepcopy(arguments)
@@ -79,7 +80,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         self.assertEqual(rejected["contract_status"], "rejected")
 
     def test_explicit_environment_is_separate_and_no_discovery_or_writes(self):
-        args = dict(assembly=self.assembly,backend="simion",numerics=self.case.geometry_numerics)
+        args = dict(assembly=self.assembly,numerics=self.case.geometry_numerics)
         environment = dict(schema_version=1,tools=dict(simion=dict(available=False,release="SIMION 2020")))
         with patch("subprocess.Popen",side_effect=AssertionError("tool")), \
              patch("shutil.which",side_effect=AssertionError("host discovery")), \
@@ -107,8 +108,8 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         rejected = self.query("resolve_component",dict(request=dict(provider_id="orthogonal_accelerator",design={})))
         self.assertEqual(rejected["contract_status"], "rejected")
         self.assertIn("unsupported component provider", rejected["reason"]["message"])
-        rejected = self.query("compile_geometry",dict(assembly=self.assembly,backend="comsol",numerics=self.case.geometry_numerics))
+        rejected = self.query("compile_geometry",dict(assembly=None,numerics=self.case.geometry_numerics))
         self.assertEqual(rejected["contract_status"], "rejected")
-        self.assertIn("unsupported geometry backend", rejected["reason"]["message"])
+        self.assertIn("explicitly assembled design", rejected["reason"]["message"])
         with self.assertRaises(ValueError):
             api.capabilities(dict(schema_version=2,operation="track",arguments={}))

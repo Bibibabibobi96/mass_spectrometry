@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from msplatform import api
+from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform.backends import simion as simion_api
 from msplatform.assembly.handoff import HandoffMother,HandoffClock,HandoffResult,prepare_handoff_states,HandoffSelection
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.contracts.clock import ClockIdentity
@@ -110,10 +111,10 @@ def tracking_action_fixture(self, root):
 
 class TrackingExecutionPlanTests(unittest.TestCase):
     def setUp(self):
-        self.case=api.load_example('rf_oatof_functional_v1')
-        parts={key:api.resolve_component(value) for key,value in self.case.component_requests.items()}
-        assembly=api.compile_assembly(self.case.recipe,parts)
-        self.compiled=api.compile_geometry(assembly,backend='simion',numerics=self.case.geometry_numerics)
+        self.case=example_api.load_example('rf_oatof_functional_v1')
+        parts={key:component_api.resolve_component(value) for key,value in self.case.component_requests.items()}
+        assembly=assembly_api.assemble(self.case.recipe,parts)
+        self.compiled=simion_api.compile_geometry(assembly,numerics=self.case.geometry_numerics)
         self.packet=api.sample_release(self.case.release).to_dict()
         components={key:self.compiled.components_resolved[key] for key in self.compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
         self.drive=project_resolved_drive(self.compiled,components,pulse=dict(mode='timed',time_us=10.,width_us=2.),

@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from msplatform.examples import load_example
+from msplatform.examples import load_example_document as load_example
 from msplatform.components.single_reflection_oa_tof.provider import resolve_component
 from msplatform.components.single_reflection_oa_tof.geometry_contract import resolve_electrode_geometry
 from msplatform.components.single_reflection_oa_tof.accelerator_geometry import apply_side_opening, resolve_accelerator_geometry
@@ -44,7 +44,7 @@ class InstalledGeometryProviderTests(unittest.TestCase):
 
     def test_tree_independent_pure_provider_does_not_import_backend_or_host(self):
         code = """import json,sys
-from msplatform.examples import load_example
+from msplatform.examples import load_example_document as load_example
 from msplatform.components.single_reflection_oa_tof.provider import resolve_component
 x=resolve_component(load_example('rf_oatof_functional_v1')['component_requests']['oatof']['design'])
 for prefix in ('projects','integrations','common','msplatform.backends','msplatform.execution'):

@@ -16,8 +16,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_ROOT = REPO_ROOT / "src/msplatform"
 SCIENTIFIC_DOMAINS = {"analysis", "assembly", "contracts", "io", "ion_release"}
 PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection_oa_tof"}
+COMPONENT_INFRASTRUCTURE = {"model", "catalog"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
+    "assembly": SCIENTIFIC_DOMAINS | {"components"},
     "components": SCIENTIFIC_DOMAINS | {"components"},
     "backends": SCIENTIFIC_DOMAINS | {"components", "backends", "execution"},
     "execution": SCIENTIFIC_DOMAINS | {"execution"},
@@ -48,8 +50,9 @@ def _namespace_error(module: str) -> str | None:
         return None
     if len(parts) < 2 or parts[0] != "msplatform" or parts[1] not in DOMAIN_IMPORTS:
         return f"undeclared installed domain: {module}"
-    if parts[1] == "components" and len(parts) > 2 and parts[2] not in PROVIDER_DOMAINS:
-        return f"undeclared component provider: {module}"
+    if (parts[1] == "components" and len(parts) > 2
+            and parts[2] not in PROVIDER_DOMAINS | COMPONENT_INFRASTRUCTURE):
+        return f"undeclared component provider or infrastructure module: {module}"
     if parts[1] == "backends" and len(parts) > 2 and parts[2] != "simion":
         return f"undeclared installed backend: {module}"
     if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution"}:
@@ -65,6 +68,9 @@ def _target_error(target: str, dependencies: set[str], source_domain: str) -> st
     if parts[0] == "msplatform":
         if error := _namespace_error(target):
             return error
+        if (source_domain == "assembly" and len(parts) > 2 and parts[:2] == ["msplatform", "components"]
+                and parts[2] not in COMPONENT_INFRASTRUCTURE):
+            return f"assembly imports provider-specific physics instead of neutral component data: {target}"
         if len(parts) > 1 and parts[1] not in DOMAIN_IMPORTS.get(source_domain, set()):
             return f"{source_domain} imports a reverse dependency: {target}"
         return None
@@ -199,6 +205,16 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
                    for path in (CORE_ROOT / "components" / provider).rglob("*.py")
                    }
         self.assertEqual(component_dependency_errors(sources, dict(PROVIDER_DEPENDENCIES)), [])
+
+    def test_neutral_data_models_do_not_import_providers_backends_or_execution(self):
+        forbidden = ("msplatform.components.rf_multipole", "msplatform.components.orthogonal_accelerator",
+                     "msplatform.components.single_reflection_oa_tof", "msplatform.backends", "msplatform.execution")
+        for relative in ("components/model.py", "assembly/model.py"):
+            with self.subTest(path=relative):
+                module = "msplatform." + relative.removesuffix(".py").replace("/", ".")
+                source = (CORE_ROOT / relative).read_text(encoding="utf-8")
+                _, _, targets = _import_errors(ast.parse(source), module, set(), module.split(".")[1])
+                self.assertFalse([target for target in targets if target.startswith(forbidden)])
 
     def test_declarative_cycles_and_undeclared_python_provider_edges_are_rejected(self):
         for graph in ({"rf": ("oa",), "oa": ("rf",)}, {"rf": ("missing",)}, {"rf": ("rf",)}):

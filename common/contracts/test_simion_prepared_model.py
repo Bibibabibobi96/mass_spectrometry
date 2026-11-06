@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from common.contracts.test_simion_geometry_compiler import compiler_inputs
-from msplatform.backends.simion import compile_geometry
+from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.model import (
     PHYSICS, compile_prepared_model, project_resolved_drive, render_model_configuration, require_prepared_model,
 )
@@ -33,12 +33,13 @@ def model_inputs(root):
 
 class PreparedModelTests(unittest.TestCase):
     def test_real_public_example_keeps_backend_numerics_out_of_provider_model_inputs(self):
-        from msplatform import api
+        from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+        from msplatform.backends import simion as simion_api
 
-        case = api.load_example('rf_oatof_functional_v1')
-        parts = {name: api.resolve_component(request) for name, request in case.component_requests.items()}
-        assembly = api.compile_assembly(case.recipe, parts)
-        compiled = api.compile_geometry(assembly, backend='simion', numerics=case.geometry_numerics)
+        case = example_api.load_example('rf_oatof_functional_v1')
+        parts = {name: component_api.resolve_component(request) for name, request in case.component_requests.items()}
+        assembly = assembly_api.assemble(case.recipe, parts)
+        compiled = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
         original = copy.deepcopy(compiled)
         components = {name: compiled.components_resolved[name]
                       for name in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}

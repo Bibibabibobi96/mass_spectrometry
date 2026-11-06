@@ -9,15 +9,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform import api
+from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
 
 
 def compile_example():
-    case = api.load_example("rf_oatof_functional_v1")
-    components = {name: api.resolve_component(request) for name, request in case.component_requests.items()}
-    assembly = api.compile_assembly(case.recipe, components)
-    return case, components, assembly, api.compile_geometry(assembly, backend="simion", numerics=case.geometry_numerics)
+    case = example_api.load_example("rf_oatof_functional_v1")
+    components = {name: component_api.resolve_component(request) for name, request in case.component_requests.items()}
+    assembly = assembly_api.assemble(case.recipe, components)
+    return case, components, assembly, simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
 
 
 class PlatformApiTests(unittest.TestCase):
@@ -372,13 +373,13 @@ class PlatformApiTests(unittest.TestCase):
         invalid = copy.deepcopy(before)
         invalid["numerics"]["fields"]["frontend_refine_convergence_v"]["undeclared"] = {}
         with self.assertRaisesRegex(ContractError, "exact geometry domains"):
-            api.StudyDefinition(invalid).field_numerics
+            example_api.StudyDefinition(invalid).field_numerics
 
     def test_versioned_release_keeps_real_physics_and_authors_new_sparse_birth_ids(self):
         import csv
         import hashlib
 
-        case = api.load_example("rf_oatof_functional_v1")
+        case = example_api.load_example("rf_oatof_functional_v1")
         request = case.release
         before = copy.deepcopy(request)
         with patch("subprocess.Popen", side_effect=AssertionError("source sampling must not launch tools")):
@@ -685,9 +686,9 @@ class PlatformApiTests(unittest.TestCase):
         self.assertNotIn("source", case.to_dict())
         altered = case.to_dict()
         altered["release"] = {"deliberately_invalid_for_sampling": True}
-        independent = api.StudyDefinition(altered)
-        parts = {name: api.resolve_component(request) for name, request in independent.component_requests.items()}
-        self.assertEqual(api.compile_geometry(api.compile_assembly(independent.recipe, parts), backend="simion",
+        independent = example_api.StudyDefinition(altered)
+        parts = {name: component_api.resolve_component(request) for name, request in independent.component_requests.items()}
+        self.assertEqual(simion_api.compile_geometry(assembly_api.assemble(independent.recipe, parts),
                          numerics=independent.geometry_numerics), compiled)
         self.assertEqual(set(components), {"multipole", "oatof"})
         self.assertEqual(len(components["oatof"].assembly_interface["component_electrodes"]), 42)
@@ -702,11 +703,11 @@ class PlatformApiTests(unittest.TestCase):
         before = copy.deepcopy((case.to_dict(), components, assembly))
         requests = case.component_requests
         requests["multipole"]["design"]["geometry_mm"]["rod_radius_ratio"] = .55
-        changed = {name: api.resolve_component(request) for name, request in requests.items()}
-        result = api.compile_geometry(api.compile_assembly(case.recipe, changed),
-                                      backend="simion", numerics=case.geometry_numerics)
+        changed = {name: component_api.resolve_component(request) for name, request in requests.items()}
+        result = simion_api.compile_geometry(assembly_api.assemble(case.recipe, changed),
+                                             numerics=case.geometry_numerics)
         self.assertEqual(changed["multipole"].assembly_interface, components["multipole"].assembly_interface)
-        self.assertEqual(api.compile_assembly(case.recipe, changed).composition_plan, assembly.composition_plan)
+        self.assertEqual(assembly_api.assemble(case.recipe, changed).composition_plan, assembly.composition_plan)
         self.assertNotEqual(result.frontend_gems, original.frontend_gems)
         self.assertNotEqual(result.provider_content_identities["multipole"],
                             original.provider_content_identities["multipole"])
@@ -722,51 +723,64 @@ class PlatformApiTests(unittest.TestCase):
         assembly.components_resolved["oatof"].clear()
         assembly.components.clear()
         self.assertEqual((case, components, assembly), before)
-        rebuilt = api.compile_geometry(assembly, backend="simion", numerics=case.geometry_numerics)
+        rebuilt = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
         self.assertEqual(rebuilt, compiled)
         design = components["multipole"].resolved_design
         interface = components["multipole"].assembly_interface
-        snapshot = api.ResolvedComponent("rf_multipole", design, interface,
+        snapshot = component_api.ResolvedComponent("rf_multipole", design, interface,
                                          source_design=components["multipole"].source_design)
         design.clear()
         interface.clear()
         self.assertEqual(snapshot, components["multipole"])
 
     def test_mismatched_design_interface_and_parent_layout_are_rejected(self):
-        _, components, assembly, _ = compile_example()
+        from msplatform.components.catalog import _from_provider
+
+        case, components, assembly, _ = compile_example()
         for name, component in components.items():
             interface = component.assembly_interface
             port = next(iter(interface["ports"].values()))
             port["center_mm"][0] += .1
             with self.subTest(instance=name), self.assertRaisesRegex(ContractError, "interface differs"):
-                api.ResolvedComponent(component.provider_id, component.resolved_design, interface)
+                _from_provider(component.provider_id, component.resolved_design, interface,
+                               source_design=component.source_design)
+            direct = component_api.ResolvedComponent(component.provider_id, component.resolved_design, interface,
+                                                      source_design=component.source_design)
+            with self.subTest(instance=name, boundary="public_assembly"), \
+                    self.assertRaisesRegex(ContractError, "interface differs"):
+                assembly_api.assemble(case.recipe, {**components, name: direct})
         stale = components["multipole"].resolved_design
         stale["geometry_mm"]["rod_array"]["rods"][0]["radius_mm"] += .01
         with self.assertRaisesRegex(ContractError, "hash is stale"):
-            api.ResolvedComponent("rf_multipole", stale, components["multipole"].assembly_interface)
+            _from_provider("rf_multipole", stale, components["multipole"].assembly_interface,
+                           source_design=components["multipole"].source_design)
         for version in (99, True):
             invalid = components["oatof"].resolved_design
             invalid["schema_version"] = version
             with self.subTest(version=version), self.assertRaisesRegex(ContractError, "TOF resolved design version"):
-                api.ResolvedComponent("single_reflection_oa_tof", invalid, components["oatof"].assembly_interface)
+                _from_provider("single_reflection_oa_tof", invalid, components["oatof"].assembly_interface,
+                               source_design=components["oatof"].source_design)
+        with self.assertRaisesRegex(ContractError, "requires its explicit source design"):
+            _from_provider("single_reflection_oa_tof", components["oatof"].resolved_design,
+                           components["oatof"].assembly_interface, source_design=None)
         stale_tof = components["oatof"].resolved_design
         stale_tof["validation_target"]["mass_amu"] += 1
         with self.assertRaisesRegex(ContractError, "differs from its source design documents"):
-            api.ResolvedComponent("single_reflection_oa_tof", stale_tof,
-                                  components["oatof"].assembly_interface,
-                                  source_design=components["oatof"].source_design)
+            _from_provider("single_reflection_oa_tof", stale_tof,
+                           components["oatof"].assembly_interface,
+                           source_design=components["oatof"].source_design)
         plan = assembly.composition_plan
         plan["scope"]["instance_ids"].reverse()
         with self.assertRaisesRegex(ContractError, "layout differs"):
-            api.Assembly(plan, components)
+            assembly_api.Assembly(plan, components)
 
-    def test_unknown_provider_backend_and_example_fail_explicitly(self):
+    def test_unknown_provider_example_and_nonassembly_input_fail_explicitly(self):
         with self.assertRaisesRegex(ValueError, "unknown example"):
-            api.load_example("latest")
+            example_api.load_example("latest")
         with self.assertRaisesRegex(ContractError, "unsupported component provider"):
-            api.resolve_component({"provider_id": "unknown", "design": {}})
-        with self.assertRaisesRegex(ContractError, "unsupported geometry backend"):
-            api.compile_geometry(None, backend="unknown", numerics={})
+            component_api.resolve_component({"provider_id": "unknown", "design": {}})
+        with self.assertRaisesRegex(ContractError, "explicitly assembled design"):
+            simion_api.compile_geometry(None, numerics={})
 
     def test_mating_independent_rotated_nonzero_gap_oracle(self):
         upstream = dict(frame_id="world", center_mm=[0., 0., 10.], outward_normal=[0., 0., 1.],
@@ -774,24 +788,24 @@ class PlatformApiTests(unittest.TestCase):
         downstream = dict(frame_id="local", center_mm=[1., 2., 3.], outward_normal=[0., 0., -1.],
                           cross_section=dict(shape="circle", radius_mm=2.))
         before = copy.deepcopy((upstream, downstream))
-        pose = api.mate_ports(upstream, downstream, rotation=[[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]], gap_mm=.5)
+        pose = assembly_api.mate_ports(upstream, downstream, rotation=[[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]], gap_mm=.5)
         self.assertEqual(pose.translation_mm, (2., -1., 7.5))
         self.assertEqual((pose.from_frame_id, pose.to_frame_id), ("local", "world"))
         self.assertEqual((upstream, downstream), before)
         for gap in (-.1, float("nan"), True):
             with self.subTest(gap=gap), self.assertRaises(ValueError):
-                api.mate_ports(upstream, downstream, rotation=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], gap_mm=gap)
+                assembly_api.mate_ports(upstream, downstream, rotation=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], gap_mm=gap)
         downstream["outward_normal"] = [0.,0.,1.]
         with self.assertRaisesRegex(ValueError, "normals must oppose"):
-            api.mate_ports(upstream, downstream, rotation=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], gap_mm=0.)
+            assembly_api.mate_ports(upstream, downstream, rotation=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], gap_mm=0.)
 
     def test_rectangular_mating_checks_named_in_plane_axes(self):
         section = dict(shape="rectangle", width_mm=3., height_mm=2., width_axis=[1.,0.,0.], height_axis=[0.,1.,0.])
         up = dict(frame_id="world", center_mm=[0.,0.,0.], outward_normal=[0.,0.,1.], cross_section=section)
         down = dict(frame_id="local", center_mm=[0.,0.,0.], outward_normal=[0.,0.,-1.], cross_section=copy.deepcopy(section))
-        api.mate_ports(up, down, rotation=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], gap_mm=0.)
+        assembly_api.mate_ports(up, down, rotation=[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]], gap_mm=0.)
         with self.assertRaisesRegex(ValueError, "width_axis"):
-            api.mate_ports(up, down, rotation=[[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]], gap_mm=0.)
+            assembly_api.mate_ports(up, down, rotation=[[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]], gap_mm=0.)
 
     def test_execution_configuration_does_not_create_or_probe_workspace(self):
         with tempfile.TemporaryDirectory() as directory:

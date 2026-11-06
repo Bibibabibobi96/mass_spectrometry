@@ -89,14 +89,14 @@ import json
 import os
 from pathlib import Path
 import sys
-from msplatform import api
+from msplatform import api, assembly as assembly_api, components, examples
 
 workspace = (Path.cwd() / "my_study").resolve()
 workspace.mkdir(parents=True, exist_ok=True)
-study = api.load_example("rf_oatof_functional_v1")
-components = {name: api.resolve_component(request)
-              for name, request in study.component_requests.items()}
-assembly = api.compile_assembly(study.recipe, components)
+study = examples.load_example("rf_oatof_functional_v1")
+parts = {name: components.resolve_component(request)
+         for name, request in study.component_requests.items()}
+assembly = assembly_api.assemble(study.recipe, parts)
 # 可打印 study.to_dict() 查看／另存完整版本化请求、配方、位姿与数值。
 options = study.cad_export
 print(json.dumps(options, indent=2))
@@ -200,10 +200,10 @@ OCCT序列化精度profile；体积界不是物理／制造公差。可显式给
 
 SolidWorks兼容查看是后续显式可选动作`api.open_model(cad, application="solidworks", context=...)`，
 另需应用、配对模板与`open_model`预算，见本节下文；不是生成STEP的前置，也不自动保存／转存。
-同一`assembly`可并列传给`api.compile_geometry(assembly, backend="simion", numerics=study.geometry_numerics)`，
+同一`assembly`可并列传给`msplatform.backends.simion.compile_geometry(assembly, numerics=study.geometry_numerics)`，
 纯编译不采样、不写工作目录、不Refine／Fly或开GUI；不经STEP导入来反建后端几何。
 其原生build／prepare／solve另行显式调用，不能从CAD完成推出模型或场资格。
-端口便利连接用显式rotation与gap的`api.mate_ports`；分域与副作用边界见
+端口便利连接用显式rotation与gap的`msplatform.assembly.mate_ports`；分域与副作用边界见
 [仓库架构](../docs/REPOSITORY_ARCHITECTURE.md#可安装科学核心与迁移边界)。
 
 同一示例的`cad_export`、`drive`和`physics`均可展开查看；驱动电极组缺省从同一解析提供者展开，

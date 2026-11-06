@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 import unittest
 
-from msplatform import api
+from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, require_prepared_model
 from msplatform.backends.simion.native_plans import plan_solve_fields, operating_member_identity
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
@@ -14,10 +15,10 @@ from msplatform.execution.clock_authority import validate_clock_authority
 
 class FieldTransportTests(unittest.TestCase):
     def test_public_example_native_labels_keep_exact_cache_key_after_worker_json_roundtrip(self):
-        case = api.load_example("rf_oatof_functional_v1")
-        components = {name:api.resolve_component(request) for name,request in case.component_requests.items()}
-        assembly = api.compile_assembly(case.recipe, components)
-        compiled = api.compile_geometry(assembly, backend="simion", numerics=case.geometry_numerics)
+        case = example_api.load_example("rf_oatof_functional_v1")
+        components = {name:component_api.resolve_component(request) for name,request in case.component_requests.items()}
+        assembly = assembly_api.assemble(case.recipe, components)
+        compiled = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
         selected = {name:compiled.components_resolved[name]
                     for name in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]}
         root = Path(str(files("msplatform.examples")))

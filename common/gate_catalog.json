@@ -978,7 +978,7 @@
           {
             "matches": [
               {
-                "regex": "^src/msplatform/(?:api\\.py|assembly/port_mating\\.py|examples/|components/|backends/simion/)",
+                "regex": "^src/msplatform/(?:api\\.py|assembly/|examples/|components/|backends/simion/)",
                 "reason": "installed_stage_api_changed"
               }
             ],

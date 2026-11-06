@@ -1,3 +1,4 @@
-"""Pure SIMION geometry compilation; no native process is started here."""
+"""SIMION domain operations; pure compilation starts no native process."""
 
-from .compiler import CompiledSimionGeometry as CompiledSimionGeometry, compile_geometry as compile_geometry
+from .compiler import CompiledSimionGeometry as CompiledSimionGeometry
+from .operations import compile_geometry as compile_geometry
