@@ -159,7 +159,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
     def test_center_storage_view_roundtrip_and_composition_preserve_collision(self):
         import numpy as np
         from dataclasses import replace
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import read_pa_header, HEADER
+        from msplatform.backends.simion.standalone_pa_composition import read_pa_header, HEADER
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             provider, base = self.setup_bank(root, nested=True)
@@ -241,7 +241,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
 
     def setup_bank(self, root, *, nested=False):
         import numpy as np
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
+        from msplatform.backends.simion.standalone_pa_composition import PaHeader
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
         base_dir = root/"base"; base_dir.mkdir()
         base = NativeStaticBindingTest().fixture(base_dir)
@@ -369,7 +369,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
     def add_pure_basis(self, root, provider, base, axis, potential, *, reference=None, electrode_flags=False):
         """Add a tiny sealed pure field with identical geometry and PA flags."""
         import numpy as np
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
+        from msplatform.backends.simion.standalone_pa_composition import PaHeader
         directory = root/axis; directory.mkdir()
         descriptor = NativeStaticBindingTest().fixture(directory)
         descriptor["instances"][0]["origin_mm"] = descriptor["parent"]["grid"]["origin_mm"]
@@ -404,7 +404,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
 
     def test_five_responses_compose_actual_nonzero_mirror_anchor_and_roundtrip_flags(self):
         import numpy as np
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER, read_pa_header
+        from msplatform.backends.simion.standalone_pa_composition import HEADER, read_pa_header
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_native_static_field_provider import NativeStaticProviderTest
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); provider, base = self.setup_bank(root)
@@ -518,7 +518,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
 
     def test_two_candidates_use_fixed_bank_offset_and_native_roundtrip(self):
         import numpy as np
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER
+        from msplatform.backends.simion.standalone_pa_composition import HEADER
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); provider, _ = self.setup_bank(root)
             first, plan = self.materialize(root, provider, self.base_path, dict(s1=1.,s2=-2.,p1=0.,p2=0.), "first")
@@ -540,7 +540,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
     def mirror_offset(self, root):
         """Clone a tiny sealed ordinary solve, not the immutable response inputs."""
         import numpy as np
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER
+        from msplatform.backends.simion.standalone_pa_composition import HEADER
         descriptor = copy.deepcopy(json.loads(self.base_path.read_text()))
         levels = [descriptor['parent'], *descriptor['refinement_windows']]
         paths = {}
@@ -574,7 +574,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
 
     def test_new_mirror_offset_reuses_old_pure_axes_and_never_accumulates_candidates(self):
         import numpy as np
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER
+        from msplatform.backends.simion.standalone_pa_composition import HEADER
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); provider, _ = self.setup_bank(root)
             offset, _ = self.mirror_offset(root)

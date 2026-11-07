@@ -389,8 +389,8 @@ GUI 对等不能由 `efield_adjust` 回调推定，最终交付仍须满足实�
 公共 transaction 是 payload、scratch、发布指针和容量账本的唯一 owner；
 项目不维护第二份 PA 生命周期。缓存命中不得再做 GEM、Refine 或大 PA 复制。
 
-原生响应固定点物化使用项目内的
-[`standalone_pa_composition.py`](../analysis/standalone_pa_composition.py)，尚未取得跨项目公共化资格。
+原生响应固定点物化使用安装SIMION backend的
+[`standalone_pa_composition.py`](../../../src/msplatform/backends/simion/standalone_pa_composition.py)。
 它按有界float64块组合普通`.pa`，保留电极标志，要求网格及fractional伴随数据一致；
 不Refine、不读取原生family、不修改输入。新PA及sidecar关闭前各执行一次`flush()`和`os.fsync()`；
 刷新失败由owner保留私有残留并失败收尾，不返回成功或重试。

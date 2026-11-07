@@ -545,7 +545,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
     """Freeze B/C/D measured cohorts and exact local fields without executing SIMION."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_focus_diagnostics
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_local_field_diagnostics
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis import standalone_pa_composition
+    from msplatform.backends.simion import standalone_pa_composition
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_mesh_diagnostics
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_field_theory
     from common.simion.cache_generation import materialize_direct_inventory
@@ -679,7 +679,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
 
 def validate_fields(run: Path) -> dict:
     """Validate every newly built unique ordinary field before any local Fly."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import (
+    from msplatform.backends.simion.standalone_pa_composition import (
         read_pa_header, validate_standalone_pa_payload,
     )
 

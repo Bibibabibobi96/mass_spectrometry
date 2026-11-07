@@ -67,7 +67,7 @@ try{
         $copies.geometry_contract_loader=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py'
     }
     $copies.crop_adapter=Join-Path $PSScriptRoot 'crop_native_static_field.lua'
-    if($isComposition){$copies.composer=Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/standalone_pa_composition.py'}
+    if($isComposition){$copies.composer=Join-Path $repo 'src/msplatform/backends/simion/standalone_pa_composition.py'}
     $frozen=[ordered]@{}
     foreach($key in $copies.Keys){
         $destination=Join-Path $RunDirectory ('inputs/'+$key+[IO.Path]::GetExtension($copies[$key]))

@@ -24,7 +24,7 @@ from typing import Any, BinaryIO, Sequence
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 HEADER = struct.Struct('<iidiiiiddd')
 PA_CHUNK_NODES = 1 << 20

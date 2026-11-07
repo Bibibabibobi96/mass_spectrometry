@@ -65,6 +65,9 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 本轮跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒）；
 其后 joint-flight、依赖及路径相关 16 项测试通过（7.465 秒）。
 这些结果验证软件接线与来源，未新增飞行、场求解或科学资格。
+普通PA的头部读取、分块校验与仿射组合现已迁到`msplatform.backends.simion.standalone_pa_composition`；
+原生场provider、IP/Prism诊断、距离研究和PowerShell冻结路径直接消费该实现，旧项目模块已退役。
+普通`.pa`格式、电极标志、sidecar与失败语义保持；此迁移不启动SIMION，也不授予场精度或科学资格。
 
 IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
 `particle_physics`、`rigid_transform`、`resolve_assembly`、`release` 及

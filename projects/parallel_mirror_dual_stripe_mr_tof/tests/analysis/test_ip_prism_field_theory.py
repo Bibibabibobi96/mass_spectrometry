@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import numpy as np
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_field_theory as theory
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
+from msplatform.backends.simion.standalone_pa_composition import PaHeader
 
 
 def source(pid, x, vx, t=100., z=0., vz=-2.):

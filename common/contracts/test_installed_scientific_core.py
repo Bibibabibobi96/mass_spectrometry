@@ -33,6 +33,7 @@ from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak
 from msplatform.analysis.peak_metrics import compute_nominal_mass_peak_metrics
 from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
 from msplatform.analysis.pulse_selection import select_actual_occupancy_pulse
+from msplatform.backends.simion.standalone_pa_composition import PaHeader, compose_standalone_pa, read_pa_header, validate_standalone_pa_payload
 from msplatform.contracts.particle_state import write_component_particle_state_csv, load_component_particle_state_csv
 from msplatform.assembly.electrode_binding import validate_electrode_bindings, ElectrodeKey
 from msplatform.contracts import machine_contracts
@@ -76,7 +77,21 @@ assert {'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly'
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.analysis.pulse_selection',
         'msplatform.contracts.particle_state', 'msplatform.assembly.electrode_binding',
-        'msplatform.execution.context'} <= origins.keys()
+        'msplatform.execution.context', 'msplatform.backends.simion.standalone_pa_composition'} <= origins.keys()
+for name, maximum, values in (('base', 10., [0., 1., 20., 3.]), ('response', 20., [1., 2., 42., 4.])):
+    header = PaHeader(-2, 1, maximum, 2, 2, 1, 0, .1, .1, .1)
+    with (root/(name+'-'+sys.argv[2]+'.pa')).open('wb') as stream:
+        stream.write(header.pack())
+        np.asarray(values, dtype='<f8').tofile(stream)
+composed_path = root/('composed-'+sys.argv[2]+'.pa')
+composed = compose_standalone_pa(root/('base-'+sys.argv[2]+'.pa'), composed_path,
+    [(root/('response-'+sys.argv[2]+'.pa'), .5)], chunk_nodes=2)
+assert composed['blocks'] == 2 and composed['refine_performed'] is False
+assert read_pa_header(composed_path).max_voltage == 40.
+assert validate_standalone_pa_payload(composed_path, chunk_nodes=3)['validated_nodes'] == 4
+with composed_path.open('rb') as stream:
+    stream.seek(56)
+    np.testing.assert_array_equal(np.fromfile(stream, dtype='<f8'), [.5, 2., 81., 5.])
 bounds = {axis: dict(minimum_mm=-1., maximum_mm=1., center_mm=0., full_width_mm=2.) for axis in 'xyz'}
 observations = {0.: [dict(particle_id=1, x_mm=.9, y_mm=0., z_mm=0.)],
                 1.: [dict(particle_id=1, x_mm=0., y_mm=0., z_mm=0.)]}

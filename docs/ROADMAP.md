@@ -175,6 +175,8 @@ integration中的`single_flight_frontend_hook.lua`与`single_flight_pulse_hook.l
 母群、场、模型、共同钟、选择／方法输入与科学资格语义不变。
 实际占据率脉冲选择已迁入`msplatform.analysis.pulse_selection`，local与单反射消费者直接使用规范实现；
 旧`integrations/runtime/pulse_selection.py`已退役，候选排序、生命周期、归一化几何和无支持候选负结果保持。
+普通PA读取、分块校验及仿射组合已迁入安装SIMION backend，MR场provider及IP/Prism消费者直接调用；
+旧项目实现退役，普通格式、sidecar、源保护与失败语义不变，不新增原生求场或轨迹资格。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

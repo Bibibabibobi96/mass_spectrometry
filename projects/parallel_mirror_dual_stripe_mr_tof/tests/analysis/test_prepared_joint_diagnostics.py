@@ -199,7 +199,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
     def test_actual_sealed_native_metadata_analyzes_without_pa_and_native_use_refuses(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
         from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
+        from msplatform.backends.simion.standalone_pa_composition import PaHeader
         self.binding_mock.stop()
         fields = self.root / "tiny_fields"
         fields.mkdir()

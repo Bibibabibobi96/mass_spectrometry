@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import standalone_pa_composition as c
+from msplatform.backends.simion import standalone_pa_composition as c
 
 # Root can freeze these small assets in its existing managed diagnostic run.
 # Real GEM compilation, rather than a zero-witness Lua fill, supplies actual

@@ -18,7 +18,7 @@ from typing import Any
 
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.file_identity import file_sha256
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER, PaHeader
+from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
@@ -1657,7 +1657,7 @@ def verify_native_provider_inputs(plan: dict[str, Any], run_directory: Path) -> 
 
 def compose_run(plan: dict[str, Any], run_directory: Path) -> None:
     """Write one candidate set in bounded blocks; the caller owns leases/sealing."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import compose_standalone_pa
+    from msplatform.backends.simion.standalone_pa_composition import compose_standalone_pa
 
     if plan.get("operation") != "compose" or plan.get("refine_performed") is not False:
         raise ValueError("compose requires a prepared no-Refine composition plan")
@@ -1679,7 +1679,7 @@ def validate_refined_field_payloads(plan: dict[str, Any], run_directory: Path) -
     Affine compositions already validate all consumed/written blocks in their
     own receipt. Collision-only arrays use their separate occupancy boundary.
     """
-    from .standalone_pa_composition import validate_standalone_pa_payload
+    from msplatform.backends.simion.standalone_pa_composition import validate_standalone_pa_payload
 
     if plan.get("operation") != "refine":
         raise ValueError("new Refine payload validation requires a refine plan")

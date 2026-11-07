@@ -372,6 +372,9 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 ### Standalone 工作点与响应合成 API
 
 以下公共入口仅负责 PA 表示、工作点导出与缓存，不选择项目电压，也不授予物理工作点资格。
+普通mode -2 `.pa`的头部读取、有界分块校验和仿射组合由安装实现
+[`standalone_pa_composition.py`](../../src/msplatform/backends/simion/standalone_pa_composition.py)提供；
+它只接受调用方已保护的独立PA，不读取原生family、不执行Refine或Fly，source与发布仍归工作流owner。
 
 [`export_fast_adjusted_standalone_pa.lua`](export_fast_adjusted_standalone_pa.lua)只在可写、一次性的 build staging
 中使用。输入必须是原生 family controller `.pa0`、全量 `ID=V` 工作点表和一个尚不存在的 `.pa` 输出路径。

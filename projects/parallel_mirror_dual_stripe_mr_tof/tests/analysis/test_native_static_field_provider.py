@@ -17,7 +17,7 @@ from msplatform.backends.comsol.static_field_binding import _record, load_bindin
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _pure_axis_authority, _te1_excitation
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
+from msplatform.backends.simion.standalone_pa_composition import PaHeader
 
 
 class NativeStaticProviderTest(unittest.TestCase):
@@ -167,7 +167,7 @@ try {
         self.assertEqual(self.source, original)
 
     def test_collision_overlay_accepts_original_unit_grid_detector_without_broadening_composer(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import read_pa_header
+        from msplatform.backends.simion.standalone_pa_composition import read_pa_header
         request = self.overlay_fixture()
         detector = Path(self.source["instances"][3]["pa_path"])
         detector.write_bytes(struct.pack("<iidiiii", -1, 1, 100000, 21, 21, 21, 1600)+b"\0"*(21**3*8))

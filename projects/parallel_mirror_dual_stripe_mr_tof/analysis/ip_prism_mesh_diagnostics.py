@@ -15,7 +15,7 @@ import numpy as np
 from common.contracts.write_run_manifest import file_record
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes, convex_section
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _bounds
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER, PaHeader, read_pa_header
+from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader, read_pa_header
 
 
 def _mask(shape: dict, xyz: list[np.ndarray]) -> np.ndarray:
