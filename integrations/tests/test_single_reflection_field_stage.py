@@ -82,7 +82,7 @@ class DirectFieldPlanTests(unittest.TestCase):
             run, plan = prepared(root)
             member = plan['members'][0]
             audit_plan = dict(plan, **member)
-            verifier = WORKFLOW/'audit_frontend_working_fields.lua'
+            verifier = ROOT/'src/msplatform/backends/simion/resources/audit_frontend_working_fields.lua'
             producer = root/'producer'
             audit = producer/'logs/parent_carrier_off_fields_audit.json'
             audit.parent.mkdir(parents=True)
@@ -489,7 +489,7 @@ arg={spec,report};dofile(helper);assert(active==0)
                 single = dict(plan, working_points=[point])
                 write_audit_spec(single, root/'raw.pa#', root, spec)
                 for fault in ('none', 'roundoff', 'id', 'voltage', 'mask', 'grid', 'nonfinite'):
-                    result = subprocess.run([str(LUA), str(harness), str(WORKFLOW / 'audit_frontend_working_fields.lua'),
+                    result = subprocess.run([str(LUA), str(harness), str(ROOT / 'src/msplatform/backends/simion/resources/audit_frontend_working_fields.lua'),
                         str(spec), str(root / 'audit.json'), fault], cwd=root, capture_output=True,
                         text=True, encoding='utf-8', timeout=30, check=False)
                     with self.subTest(fault=fault):

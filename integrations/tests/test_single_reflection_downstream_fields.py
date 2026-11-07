@@ -589,7 +589,7 @@ function simion.pas:open()
 end
 arg={spec};original(target)
 """,encoding="utf-8",newline="\n")
-        target = ROOT / "integrations/workflows/single_reflection_flight/audit_downstream_fields.lua"
+        target = ROOT / "src/msplatform/backends/simion/resources/audit_downstream_fields.lua"
         spec = Path(self.plan["audit_spec_record"]["path"])
         bad=subprocess.run([str(LUA),str(script),str(target),str(spec),"wrong"],capture_output=True,text=True,cwd=self.root,timeout=10)
         self.assertNotEqual(bad.returncode,0)
