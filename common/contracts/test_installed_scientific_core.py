@@ -128,6 +128,8 @@ for name, count, digest in (
     ('scientific_event_csv.lua', 1688, '0f74fcbec8cf1a9035dfdd57c43bef85bf4af2a76a65c2813e8f2f02b3cf71c4'),
     ('voltage_waveforms.lua', 814, '7634929290f3e3b4f4c9df3c4559bbc15341d6c087b5363cea248324178f7c2f'),
     ('rf_drive.lua', 6741, '29955e8c9e00cec75d773446eae011d93990068bf2c5a45b6236aac35e86774c'),
+    ('single_flight_frontend_hook.lua', 7918, 'aef4acfb520ae2cd73b66d43bf2e9369a049a66478e0d3dd8b4696ef3c85a24a'),
+    ('single_flight_pulse_hook.lua', 3913, 'e3ef5a0b08b73e23c566df23f84102052b9f2d45f0ada9ae768094cc6c287d37'),
 ):
     payload = native_resource_path(name).read_bytes()
     assert len(payload) == count and hashlib.sha256(payload).hexdigest() == digest

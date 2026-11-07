@@ -163,6 +163,8 @@ manifest绑定、搬迁resolver、文件身份复核和失败关闭不变，其�
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；
 规范资源字节与科学公式不变，旧路径拒绝负例继续保留。
+integration中的`single_flight_frontend_hook.lua`与`single_flight_pulse_hook.lua`旧转发器亦已删除；
+真实Lua回调、原冻结消费者及普通安装直接读取安装实现，原回调顺序和字节身份不变。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

@@ -418,25 +418,6 @@
       "provider_project": "instrument_assembly",
       "files": [
         {
-          "id": "rf_single_flight_pulse_hook",
-          "source_repo_path": "integrations/runtime/single_flight_pulse_hook.lua",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "rf_single_flight_frontend_hook",
-          "source_repo_path": "integrations/runtime/single_flight_frontend_hook.lua",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "instrument_assembly_runtime_initialize_fast_adjust_pa_basis_lua",
           "source_repo_path": "integrations/runtime/initialize_fast_adjust_pa_basis.lua",
           "consumers": [
