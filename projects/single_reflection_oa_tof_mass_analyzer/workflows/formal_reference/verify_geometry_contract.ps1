@@ -47,7 +47,8 @@ $comsolSources = @(
   Select-Object -ExpandProperty FullName)
 $acceleratorComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\resources\build_sectioned_geometry.m'
 $acceleratorGridComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\resources\build_accelerator_grids.m'
-$comsolSources += @($acceleratorComsolSource, $acceleratorGridComsolSource)
+$acceleratorGeometryComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\resources\oatof_build_accelerator_geometry.m'
+$comsolSources += @($acceleratorComsolSource, $acceleratorGridComsolSource, $acceleratorGeometryComsolSource)
 $simionLua = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.lua'
 $simionFly2 = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.fly2'
 $simionDeliveryBuilder = Join-Path $componentDir 'simion\workbench\build_formal_delivery.ps1'
