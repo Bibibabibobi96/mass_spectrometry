@@ -23,7 +23,7 @@ from integrations.tests.test_local_frontend_analysis import (
     _TIMES, fixture, write_log,
 )
 from integrations.workflows.cooled_frontend.analyze import analyze_cooled_frontend
-from projects.dual_pressure_rectilinear_ion_processor.analysis.cooled_buncher import build_cooled_buncher_contract
+from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_cooled_buncher import buncher_fixture, native_pose
 
 

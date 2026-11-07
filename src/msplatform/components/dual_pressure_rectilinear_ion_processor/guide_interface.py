@@ -12,9 +12,9 @@ import math
 import re
 from typing import Any
 
-from common.contracts.rigid_transform import FramedPosition, RigidTransform
-from common.ion_release.release import validate_release_spec
-from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
+from msplatform.ion_release.release import validate_release_spec
+from msplatform.components.rf_multipole.round_rod_geometry import build_rod_array
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import _guide_solids
 
 

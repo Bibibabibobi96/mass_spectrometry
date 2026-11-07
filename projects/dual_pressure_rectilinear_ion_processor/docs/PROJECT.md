@@ -94,7 +94,10 @@ MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包�
 
 提供者从同一native projection发布真实guide入口、E14出口屏蔽端面、截面、壁厚及具名电极集合。
 纯几何、轮廓、凸体算法与机械接口的唯一实现位于`msplatform.components.dual_pressure_rectilinear_ion_processor`，
-不依赖backend、execution或项目默认路径；SIMION GEM渲染位于`msplatform.backends.simion.ip_geometry`。
+不依赖backend、execution或项目默认路径；裸导引源包络及冷却组件的HP实体复用、终端阱和局部场诊断也归该组件包。
+SIMION完整IP GEM渲染位于`msplatform.backends.simion.ip_geometry`，冷却组件GEM片段渲染位于
+`msplatform.backends.simion.ip_frontend_geometry`；原项目`analysis/guide_interface.py`和
+`analysis/cooled_buncher.py`已退役且无转发。
 一组可含多个solid，不按CSG分块或PA编号重新定义物理电极。裸导引与冷却组件分别发布自己的真实几何，
 不构造假孔、整面静态电位或新时钟。完整接口不替代真实几何与场的消费核验。
 

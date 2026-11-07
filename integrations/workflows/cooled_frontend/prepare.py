@@ -25,8 +25,8 @@ from integrations.workflows.local_frontend.prepare import (
 from integrations.workflows.cooled_frontend.geometry import (
     CONDITIONER_ELECTRODE_IDS, compile_cooled_frontend, compile_field_plan,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.cooled_buncher import build_cooled_buncher_contract, prepare_buncher_probe_points, export_cooled_buncher_assembly_interface
-from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import export_guide_contract
+from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, prepare_buncher_probe_points, export_cooled_buncher_assembly_interface
+from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 
 

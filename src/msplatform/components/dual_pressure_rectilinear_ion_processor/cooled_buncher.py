@@ -15,13 +15,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     AMU_KG, BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C,
 )
-from common.contracts.rigid_transform import FramedPosition, RigidTransform
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from msplatform.backends.simion.ip_geometry import render_projection_electrodes
 
 BUNCHER_ELECTRODE_NAMES = (
     "hp_rf_a", "hp_rf_b", "hp_auxiliary", "entrance_gate", "hp_shield",
@@ -188,13 +187,6 @@ def export_cooled_buncher_assembly_interface(contract: dict, guide_contract: dic
                            electrical_group_id=r["electrode_group"]) for r in guide_contract["rod_array"]["rods"]],
                     *[dict(component_electrode_id=i, role=name) for name, i in contract["electrode_ids"].items()],
                 ])
-
-
-def render_cooled_buncher_gem_fragment(contract: dict) -> str:
-    """Return native-frame e/fill metal body; caller applies native_to_mr once."""
-    if contract.get("role") != "ion_processor_hp_end_buncher_provider" or contract.get("schema_version") != 1:
-        raise ValueError("unsupported cooled buncher provider")
-    return render_projection_electrodes(contract["native_projection_fragment"])
 
 
 def prepare_buncher_probe_points(contract: dict, offsets_mm: list[float]) -> list[dict]:

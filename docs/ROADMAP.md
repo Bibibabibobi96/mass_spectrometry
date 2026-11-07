@@ -152,6 +152,9 @@ IP真实15电极中性CSG、轮廓、guide入口／E14孔面和GEM已分迁compo
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。
+IP裸导引与HP末端冷却组件的纯设计、源包络、终端阱／气体域和局部诊断已迁入component，GEM归backend；
+20项定向、364项IP Static及61项integration回归通过。标准wheel/sdist实际完成八杆、七电极与GEM片段调用；
+不授予实际场、Refine／Fly或冷却性能资格。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。

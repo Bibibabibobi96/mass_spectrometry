@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
-from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import (
+from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import (
     export_guide_contract, export_guide_assembly_interface,
 )
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection

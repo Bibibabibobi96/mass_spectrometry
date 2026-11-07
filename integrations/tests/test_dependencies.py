@@ -723,7 +723,7 @@ Write-Output $f.execution_root
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             selected = load(output / "code_inventory.json")["dependencies"]
             paths = {row["source_repo_path"] for row in selected}
-            required_ip = {"projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py"}
+            required_ip = {"src/msplatform/components/dual_pressure_rectilinear_ion_processor/guide_interface.py"}
             required_ip.update("src/msplatform/components/dual_pressure_rectilinear_ion_processor/" + name + ".py"
                                for name in ("native_geometry", "electrode_contours", "convex_geometry"))
             self.assertTrue(required_ip <= paths)
@@ -781,7 +781,7 @@ print('LOCAL_SNAPSHOT_CROSSING=PASS')
                 kernel.write_bytes(contents)
             # Removing one declared provider proves the clean snapshot cannot
             # silently recover an undeclared cross-project import from the repo.
-            (snapshot/"projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py").unlink()
+            (snapshot/"src/msplatform/components/dual_pressure_rectilinear_ion_processor/guide_interface.py").unlink()
             missing = subprocess.run([sys.executable, "-B", "-s", "-c", statement], cwd=snapshot, env=env,
                                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertNotEqual(missing.returncode, 0)

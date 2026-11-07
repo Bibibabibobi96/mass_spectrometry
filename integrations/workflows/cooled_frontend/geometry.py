@@ -10,7 +10,7 @@ from common.simion.gem_primitives import format_number
 from integrations.runtime.single_flight_frontend import (
     _canonical_grid, finalize_frontend_geometry, prepare_bare_frontend_geometry,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.cooled_buncher import render_cooled_buncher_gem_fragment
+from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment
 
 
 CONDITIONER_ELECTRODE_IDS = dict(zip(

@@ -114,6 +114,17 @@ ip = fixture['ip']
 projection = native_projection(ip['baseline'], ip['numerics'])
 assert len(projection['electrodes']) == 15
 assert hashlib.sha256(render_ip_gem(projection).encode()).hexdigest() == ip['gem_sha256']
+from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
+from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, BUNCHER_ELECTRODE_NAMES
+from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment
+from msplatform.contracts.rigid_transform import RigidTransform
+guide = export_guide_contract(dict(ip['model'], native_projection=projection), ip['identities'])
+assert len(guide['rod_array']['rods']) == 8
+registration = ip['registration']
+pose = RigidTransform.from_contract(guide['coordinate_transform']).then(RigidTransform(guide['frame_id'], 'mrtof_global_cartesian', registration['rotation_upstream_to_downstream'], registration['translation_mm'])).to_contract()
+cooled = build_cooled_buncher_contract(ip['model'], guide_contract=guide, native_to_assembly=pose, request=ip['request'], electrode_ids=ip['electrode_ids'])
+assert len(cooled['native_projection_fragment']['electrodes']) == 7
+assert hashlib.sha256(render_cooled_buncher_gem_fragment(cooled).encode()).hexdigest() == ip['cooled_gem_sha256']
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -761,8 +772,24 @@ class InstalledScientificCoreTests(unittest.TestCase):
             from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
             ip_config = REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/config'
             ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
-                  for name in ('baseline', 'numerics')}
+                  for name in ('baseline', 'numerics', 'source', 'native_operating_point')}
             ip['gem_sha256'] = hashlib.sha256(render_ip_gem(native_projection(ip['baseline'], ip['numerics'])).encode()).hexdigest()
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, BUNCHER_ELECTRODE_NAMES
+            from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment
+            from msplatform.contracts.rigid_transform import RigidTransform
+            ip['model'] = dict(baseline=ip['baseline'], numerics=ip['numerics'], source=ip['source'],
+                               native_operating_point=ip['native_operating_point'])
+            ip['identities'] = {name: dict(path='inputs/'+name, bytes=1, sha256='A'*64)
+                                for name in ('resolved_model', 'source_spec', 'release_csv')}
+            guide = export_guide_contract(dict(ip['model'], native_projection=native_projection(ip['baseline'], ip['numerics'])), ip['identities'])
+            ip['registration'] = dict(rotation_upstream_to_downstream=[[0,-1,0],[0,0,1],[-1,0,0]], translation_mm=[0,-97,32])
+            ip['request'] = dict(schema_version=1, role='ion_processor_hp_end_buncher_request', inner_center_inset_mm=5., inner_length_mm=2.5)
+            ip['electrode_ids'] = dict(zip(BUNCHER_ELECTRODE_NAMES, range(40,47), strict=True))
+            registration = ip['registration']
+            pose = RigidTransform.from_contract(guide['coordinate_transform']).then(RigidTransform(guide['frame_id'], 'mrtof_global_cartesian', registration['rotation_upstream_to_downstream'], registration['translation_mm'])).to_contract()
+            cooled = build_cooled_buncher_contract(ip['model'], guide_contract=guide, native_to_assembly=pose, request=ip['request'], electrode_ids=ip['electrode_ids'])
+            ip['cooled_gem_sha256'] = hashlib.sha256(render_cooled_buncher_gem_fragment(cooled).encode()).hexdigest()
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],

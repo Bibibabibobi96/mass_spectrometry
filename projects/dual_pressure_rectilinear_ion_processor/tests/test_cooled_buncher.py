@@ -13,11 +13,12 @@ import pandas as pd
 
 from common.contracts.rigid_transform import RigidTransform
 from common.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
-from projects.dual_pressure_rectilinear_ion_processor.analysis.cooled_buncher import (
+from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import (
     export_cooled_buncher_assembly_interface, BUNCHER_ELECTRODE_NAMES, analyze_buncher_axial_barriers, analyze_buncher_field_samples, build_cooled_buncher_contract,
-    prepare_buncher_probe_points, render_cooled_buncher_gem_fragment,
+    prepare_buncher_probe_points,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import export_guide_contract
+from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
+from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes, convex_section
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem, render_projection_electrodes
