@@ -170,6 +170,7 @@ integration中的`single_flight_frontend_hook.lua`与`single_flight_pulse_hook.l
 当前构建直接消费安装路径及core helper，历史continuation仍按父run原冻结资源读取，不重写旧资产。
 `common/paths/native_run_path.lua`旧桥现已删除，真实执行别名测试与全部原冻结消费者直接使用`execution.resources`规范实现；
 安装包、进程内路径投影及历史资产语义不变。
+公共Dirichlet构建、standalone导出及detached导出三份旧Lua转发器已删除；真实参数合同、候选发布和冻结依赖直接消费既有安装实现。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

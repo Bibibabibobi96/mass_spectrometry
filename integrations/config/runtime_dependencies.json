@@ -161,15 +161,6 @@
           ]
         },
         {
-          "id": "local_frontend_common_simion_export_standalone_pa_lua",
-          "source_repo_path": "common/simion/export_standalone_pa.lua",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "local_frontend_common_simion_short_pa_path_support_ps1",
           "source_repo_path": "common/simion/short_pa_path_support.ps1",
           "consumers": [
@@ -187,24 +178,6 @@
           "source_repo_path": "common/simion/assets/iob_instance_seeds/3_instance_seed.iob",
           "consumers": [
             "accelerator_interface"
-          ]
-        },
-        {
-          "id": "cooled_common_simion_build_dirichlet_patch_operating_pa_lua",
-          "source_repo_path": "common/simion/build_dirichlet_patch_operating_pa.lua",
-          "consumers": [
-            "cooled_frontend",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "cooled_common_simion_export_detached_standalone_pa_lua",
-          "source_repo_path": "common/simion/export_detached_standalone_pa.lua",
-          "consumers": [
-            "cooled_frontend",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
           ]
         },
         {

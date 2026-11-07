@@ -98,7 +98,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
                     for component in plan["components"][:2]:
                         stem, key = component["stem"], component["cache_key"]
                         recipe = dict(schema_version=2, receipt_name=stem + ".standalone_responses.json",
-                            exporter_path=str(REPO / "common/simion/export_standalone_pa.lua"), source_location="build_scratch",
+                            exporter_path=str(REPO / "src/msplatform/backends/simion/resources/export_standalone_pa.lua"), source_location="build_scratch",
                             exports=[dict(response_id=i, source_name=f"{stem}.pa{i}", standalone_name=f"{stem}.response{i}.pa")
                                      for i in component["response_ids"]])
                         first = pa_family_cache.advance_pa_family_cache_transaction(cache, component["identity"], component["expected_files"],

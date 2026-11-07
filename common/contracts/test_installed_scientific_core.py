@@ -133,6 +133,9 @@ for name, count, digest in (
     ('audit_frontend_working_fields.lua', 5910, 'a3c07078e53a22cf741f3c3d1a415373c7b261b39dc3b89f7c3a345e8a63845f'),
     ('audit_downstream_fields.lua', 2335, '39ea50b054868d6940552b3c049ec8e407f6bd4cbc9ebd6156c70c874c101cdd'),
     ('build_iob.lua', 1154, '180ecea75537eecac2b081e3cca491254d578db005cf3b33461220a622ba27b9'),
+    ('build_dirichlet_patch_operating_pa.lua', 5359, 'ae69a4ebb153f21652d69a712cab9fe9a19fa4b70c03dfb343f8d169231ea7dd'),
+    ('export_standalone_pa.lua', 2592, '2152afe2af738c9cf715518847617ce858fdaef2c874aa29f44fb1f5db93924b'),
+    ('export_detached_standalone_pa.lua', 2813, '78985820fb41a696ad4097f973c5dd5888384683ad1551ba7b54bf9f66c9715b'),
 ):
     payload = native_resource_path(name).read_bytes()
     assert len(payload) == count and hashlib.sha256(payload).hexdigest() == digest
@@ -837,6 +840,8 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               paired_static=paired,
                                               comparison=self.comparison_probe_fixture())), encoding='utf-8')
             consumer_python = str(consumer / python_name)
+            probe_path = root / 'installed_scientific_probe.py'
+            probe_path.write_text(INSTALLED_PROBE, encoding='utf-8')
             # Remove both private author trees from their original locations;
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
@@ -849,7 +854,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                   *replacement, '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
                                  cwd=root, environment=environment, timeout=300)
                 probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
-                result = self.run_command([consumer_python, '-I', '-c', INSTALLED_PROBE, str(fixture), str(index)],
+                result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
             if retained:

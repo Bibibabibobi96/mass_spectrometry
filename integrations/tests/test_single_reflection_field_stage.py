@@ -435,7 +435,7 @@ assert(metal==3,'padding parameter slots must never create physical electrodes')
 assert(store['raw.pa#']['1,1,1'][1]==12,'raw IDs changed')
 """,encoding='utf-8',newline='\n')
             result = subprocess.run([str(LUA),str(harness),
-                str(ROOT/'common/simion/build_dirichlet_patch_operating_pa.lua')],
+                str(ROOT/'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua')],
                 cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
