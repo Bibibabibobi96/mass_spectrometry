@@ -14,7 +14,7 @@ import pandas as pd
 
 from integrations.runtime.single_flight_source import binary64_serialization_close as _close
 
-from common.analysis.particle_census import (
+from msplatform.analysis.particle_census import (
     CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
 )
 from common.contracts.particle_physics import kinetic_energy_ev

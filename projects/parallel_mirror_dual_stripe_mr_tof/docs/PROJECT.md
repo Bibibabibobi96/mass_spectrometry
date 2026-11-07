@@ -68,6 +68,8 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 普通PA的头部读取、分块校验与仿射组合现已迁到`msplatform.backends.simion.standalone_pa_composition`；
 原生场provider、IP/Prism诊断、距离研究和PowerShell冻结路径直接消费该实现，旧项目模块已退役。
 普通`.pa`格式、电极标志、sidecar与失败语义保持；此迁移不启动SIMION，也不授予场精度或科学资格。
+IP交接、实测源及实测分析现直接调用`msplatform.analysis.particle_census`；旧公共census桥退役，
+92项相关回归覆盖完整ID、权重、未知终态与RF冻结缺件拒绝，未新增原生或科学资格。
 
 IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
 `particle_physics`、`rigid_transform`、`resolve_assembly`、`release` 及

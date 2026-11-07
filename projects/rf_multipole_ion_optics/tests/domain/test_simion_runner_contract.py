@@ -358,7 +358,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
             "src/msplatform/execution/resources/host_resource_policy.json", "common/require_powershell7.ps1",
-            "common/analysis/particle_census.py",
+            "src/msplatform/analysis/particle_census.py",
         }
         for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
             with self.subTest(runner=runner_name), tempfile.TemporaryDirectory() as directory:
@@ -423,7 +423,7 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                 census_program = """
 import csv, json, pathlib, sys
 sys.path[:0] = json.loads(sys.argv[2])
-from common.analysis import particle_census as c
+from msplatform.analysis import particle_census as c
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from projects.rf_multipole_ion_optics.core.component_port import validate_exit_observations
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
@@ -475,7 +475,7 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
                 self.assertNotEqual(refused_core.returncode, 0)
                 self.assertIn('component_particle_state.schema.json', refused_core.stderr)
                 missing_schema.write_bytes(schema_bytes)
-                (root / "code/common/analysis/particle_census.py").unlink()
+                (root / "code/src/msplatform/analysis/particle_census.py").unlink()
                 refused = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30, check=False)
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn("particle_census", refused.stderr)

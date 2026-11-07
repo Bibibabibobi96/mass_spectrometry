@@ -10,22 +10,6 @@ from msplatform.analysis.particle_census import (
 )
 
 
-class CanonicalSourceTests(unittest.TestCase):
-    def test_legacy_bridge_has_one_canonical_implementation_and_fixed_output(self):
-        from common.analysis import particle_census as bridge
-        from msplatform.analysis import particle_census as core
-
-        self.assertIs(bridge, core)
-        for name in ("partition_cohort", "subset_efficiency", "lifetime_position"):
-            self.assertEqual(getattr(core, name).__module__, "msplatform.analysis.particle_census")
-        self.assertEqual(core.partition_cohort([9, 2], [(2, "unknown"), (9, "exit")],
-                         categories=("exit", "unknown"), relative_weights={9: .5, 2: 1.5}),
-                         dict(schema_version=1, mother_particle_ids=[9, 2], mother_count=2,
-                              particle_ids_by_category={"exit": [9], "unknown": [2]},
-                              counts={"exit": 1, "unknown": 1}, weighting="relative",
-                              mother_weight_sum=2., weight_sums={"exit": .5, "unknown": 1.5}))
-
-
 class LifetimeTests(unittest.TestCase):
     def at(self, time, start=1., end=3., **tolerances):
         return lifetime_position(time, start, end, start_tolerance_us=tolerances.get("start", 0.),

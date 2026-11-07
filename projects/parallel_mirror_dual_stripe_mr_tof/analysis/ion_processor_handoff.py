@@ -16,7 +16,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from common.analysis.particle_census import partition_cohort
+from msplatform.analysis.particle_census import partition_cohort
 from common.contracts.component_particle_state import (
     load_component_particle_state_csv,
     write_component_particle_state_csv,

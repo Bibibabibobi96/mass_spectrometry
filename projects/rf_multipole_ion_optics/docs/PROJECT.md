@@ -229,8 +229,8 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 
 ## 资格边界
 
-机械出口母群统计现复用公共particle_census的完整ID分类；构字典前拒绝重复source ID，
-两传输运行器同时冻结该依赖并计入容量。原机械平面、孔径、正向夹持与terminal覆盖校验保持，
+机械出口母群统计现复用`msplatform.analysis.particle_census`的完整ID分类；构字典前拒绝重复source ID，
+两传输运行器直接冻结该安装实现并计入容量，旧公共桥已退役。原机械平面、孔径、正向夹持与terminal覆盖校验保持，
 有／无出口两组旧census结果精确相同；non_exit_terminal是非出口终态集合，不等同已证实实物损失。
 此处仍是unit粒子计数，不授予相对权重或真实电流资格。
 

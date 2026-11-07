@@ -537,10 +537,8 @@ IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付c
 
 ### 粒子旧入口与退出范围
 
-`common.analysis.particle_census`单向转接`msplatform.analysis.particle_census`；剩余活动调用为：
-
-- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`的`ion_processor_handoff.py`、`measured_component_analysis.py`、`measured_component_source.py`。
-- `integrations/workflows/local_frontend/analyze.py`。
+`common.analysis.particle_census`旧桥已退役；MR交接／实测源／分析、local及RF冻结消费者直接使用
+`msplatform.analysis.particle_census`。原ID、权重、母群与未知终态分类不变。
 
 `common.contracts.component_particle_state`单向转接`msplatform.contracts.particle_state`；剩余活动调用为：
 
@@ -551,9 +549,9 @@ IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付c
 `common.contracts.particle_state`仍是RF事件表／ION11旧协议入口，规范所有者为RF
 `analysis/rf_event_table_validation.py`及`simion/ion11_source_adapter.py`，不可错接中立状态。
 当前未发现活动生产Python直调；RF/IP交接fixture及公共旧CLI行为测试仍消费它。
-上述三桥只服务具名调用、旧CLI／测试协议及冻结库存，不拥有第二套算法。
-RF的`runtime/run_simion_finite_3d_transport.ps1`及`runtime/run_finite_3d_transport.ps1`仍显式冻结census旧桥；
-integration的`runtime_dependencies.json`公共provider整包声明间接携带三桥，不等于直接算法调用。
+其余两桥只服务具名调用、旧CLI／测试协议及冻结库存，不拥有第二套算法。
+RF的`runtime/run_simion_finite_3d_transport.ps1`及`runtime/run_finite_3d_transport.ps1`已显式冻结census安装实现；
+integration的`runtime_dependencies.json`公共provider整包声明间接携带其余桥，不等于直接算法调用。
 最迟P4由各活动消费者所有者迁移上述调用和测试／CLI边界，同步清理旧源码声明及库存；
 保留真实冻结来源／缺依赖拒绝及原CSV、ID、单位、共同钟、权重／母群、失败语义回归后移除旧桥。
 历史冻结快照不追改；本清单不声称未知外部消费者不存在。

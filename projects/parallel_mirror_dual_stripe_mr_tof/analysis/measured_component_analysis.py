@@ -14,7 +14,7 @@ import shutil
 import statistics
 from typing import Any
 
-from common.analysis.particle_census import partition_cohort, subset_efficiency
+from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.component_particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256

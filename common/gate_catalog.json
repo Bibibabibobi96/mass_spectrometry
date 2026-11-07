@@ -266,7 +266,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/particle_census.py",
+          "exact": "src/msplatform/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
         },
         {
@@ -1404,7 +1404,7 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/analysis/particle_census.py",
+          "exact": "src/msplatform/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
         },
         {
@@ -2334,7 +2334,7 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/analysis/particle_census.py",
+          "exact": "src/msplatform/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
         },
         {
@@ -2618,7 +2618,7 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/analysis/particle_census.py",
+          "exact": "src/msplatform/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
         },
         {
@@ -2731,7 +2731,7 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/analysis/particle_census.py",
+          "exact": "src/msplatform/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
         },
         {
@@ -2849,7 +2849,7 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "common/analysis/particle_census.py",
+          "exact": "src/msplatform/analysis/particle_census.py",
           "reason": "shared_particle_census_changed"
         },
         {

@@ -208,7 +208,7 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
 $hostRuntimeSourcePaths=@(
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
   'src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
-$analysisSourcePaths=@('common/analysis/particle_census.py')
+$analysisSourcePaths=@('src/msplatform/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','common/contracts','common/simion','common/ion_release','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.lua')

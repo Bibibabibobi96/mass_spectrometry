@@ -325,7 +325,7 @@ composer读取，不代表物理磁盘流量或运行倍速。
 结果的`crossing_reconstruction`记录方法版本与首次穿越选择，不证明未采样区间中没有转折。
 冻结清单包含公共内核；脱离活动仓库的局部快照能实际计算穿面，缺该模块时失败关闭。
 
-局部OA共享时刻census接入[公共母群核算](../../common/analysis/particle_census.py)，
+局部OA共享时刻census接入[公共母群核算](../../src/msplatform/analysis/particle_census.py)，
 保留真实shared-time观测与原32 ULP端点政策；没有支持记录时仍为numerical_unsupported，
 不借用IP显示插值，不由缺终态推断存活。legacy already_loss仅指非出口终态，实际图标为Non-exit terminal，
 不表示已证实撞壁。分类与出口比例保持完整原始母群及显式分母，缺观测不从分母移除。
