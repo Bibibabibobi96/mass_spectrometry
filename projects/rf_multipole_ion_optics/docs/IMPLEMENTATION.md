@@ -225,7 +225,7 @@ COMSOL阶段接线见[公共入口](../../../common/comsol/README.md#主机资�
 
 SIMION在原生状态完整后遇到正式科学判据FAIL，会正常发布`failed`、原checks、资格状态和
 `native_execution_complete`；释放运行许可后仍以退出码1告知调用者。PASS为0。执行或发布异常仍走
-通用失败收尾，不赋予完整原生声明。`component_port.load_transport_producer_result`沿manifest的唯一
+通用失败收尾，不赋予完整原生声明。`msplatform.backends.simion.transport_result.load_transport_producer_result`沿manifest的唯一
 小结果记录区分这些情况，供实际出口准备和IP准入复用；完整科学负结果不自动取得器件资格，
 也不豁免真实机械出口、完整母群和时钟校验。旧通用失败无新格式fallback。
 

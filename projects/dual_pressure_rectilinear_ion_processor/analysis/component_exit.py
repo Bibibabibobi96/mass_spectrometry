@@ -22,7 +22,7 @@ from common.contracts.write_run_manifest import file_record, require_completed_t
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import (
     to_local_position, to_project_position, to_project_vector, transform_from_config,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import frozen_release_states, load_injected_source
+from msplatform.backends.simion.ip_handoff import frozen_release_states, load_injected_source
 
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENT_VALUES = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")

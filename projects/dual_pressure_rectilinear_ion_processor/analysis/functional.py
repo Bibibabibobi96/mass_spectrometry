@@ -32,8 +32,8 @@ from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from common.simion.particle_source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem
-from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import (
-    SCHEMA as INJECTED_SOURCE_SCHEMA, load_injected_source, release_states,
+from msplatform.backends.simion.ip_handoff import (
+    load_injected_source, release_states,
     freeze_injected_source, frozen_release_states,
 )
 
@@ -376,7 +376,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     config["source_profile"] = source_profile
     config["source_authority_file"] = config_files["source"]
     if injected_source is not None and protected_injected_paths is not None:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import injected_source_protection_paths
+        from msplatform.backends.simion.ip_handoff import injected_source_protection_paths
         if set(injected_source_protection_paths(injected_source)) != {Path(path).resolve() for path in protected_injected_paths}:
             raise ValueError("injected source protection authorities changed after admission")
     admission = load_injected_source(injected_source) if injected_source is not None else None
@@ -526,10 +526,6 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         target = inputs / "code" / project.relative_to(repo) / "config" / source.name
         target.parent.mkdir(parents=True, exist_ok=True)
         freeze_file(source, target)
-    if admission is not None:
-        schema_target = inputs/"code"/INJECTED_SOURCE_SCHEMA.relative_to(repo)
-        schema_target.parent.mkdir(parents=True, exist_ok=True)
-        freeze_file(INJECTED_SOURCE_SCHEMA, schema_target)
     run_config = read_json(run / "run_config.json")
     run_config["inputs"] = {str(p.relative_to(run)).replace("/", "_"): str(p) for folder in (inputs, solver) for p in folder.rglob("*") if p.is_file()}
     run_config["inputs"].update(external_inputs)

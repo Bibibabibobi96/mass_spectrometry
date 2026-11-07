@@ -264,7 +264,7 @@ try {
  if([IO.Path]::GetFullPath($configurationRoot).StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)){$protected+=@($configurationRoot)}
  if($InjectedSource){
   $InjectedSource=(Resolve-Path -LiteralPath $InjectedSource).Path
-  $projection=& $python -c 'import json,sys;from pathlib import Path;from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import injected_source_protection_paths;print(json.dumps([str(p) for p in injected_source_protection_paths(Path(sys.argv[1]))]))' $InjectedSource
+  $projection=& $python -c 'import json,sys;from pathlib import Path;from msplatform.backends.simion.ip_handoff import injected_source_protection_paths;print(json.dumps([str(p) for p in injected_source_protection_paths(Path(sys.argv[1]))]))' $InjectedSource
   if($LASTEXITCODE-ne0){throw 'Injected source protection projection failed'}
   $injectedAuthorities=@(($projection|ConvertFrom-Json))
   foreach($path in $injectedAuthorities){if([IO.Path]::GetFullPath($path).StartsWith($artifactPrefix,[StringComparison]::OrdinalIgnoreCase)){$protected+=@($path)}}

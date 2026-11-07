@@ -39,7 +39,7 @@ namespaces = false
 [tool.setuptools.package-data]
 "msplatform.contracts" = ["schemas/*.schema.json"]
 "msplatform.examples" = ["*.json"]
-"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob"]
+"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.schema.json"]
 "msplatform.backends.comsol" = ["resources/*.m"]
 "msplatform.components.parallel_mirror_dual_stripe_mr_tof" = ["resources/*.lua"]
 "msplatform.execution" = ["resources/*.ps1", "resources/*.lua", "resources/*.json"]

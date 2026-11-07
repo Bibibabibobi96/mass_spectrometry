@@ -254,7 +254,7 @@ except ValueError: pass
 else: raise AssertionError('unequal weights accepted')
 
 schemas = sorted(machine_contracts.SCHEMA_DIR.glob('*.schema.json'))
-assert [path.name for path in schemas] == fixture['schemas']
+assert [path.name for path in schemas] == fixture['contract_schemas']
 registry = machine_contracts.schema_registry()
 schema_ids = [json.loads(path.read_text(encoding='utf-8'))['$id'] for path in schemas]
 assert len(schema_ids) == len(set(schema_ids))
@@ -575,7 +575,8 @@ class InstalledScientificCoreTests(unittest.TestCase):
             self.assertNotRegex(name, r'\.(pa\d*|pa#|pa-surf|mph|iob|dll|exe|pyc)$')
 
     def inspect_wheel(self, wheel: Path) -> list[str]:
-        expected_schemas = sorted(path.name for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json'))
+        expected_schemas = sorted([path.name for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json')]
+            + [path.name for path in (REPO_ROOT/'src/msplatform/backends/simion/resources').glob('*.schema.json')])
         config = tomllib.loads((REPO_ROOT/'pyproject.toml').read_text(encoding='utf-8'))
         expected_resources = {
             path.relative_to(REPO_ROOT/'src').as_posix()
@@ -802,7 +803,9 @@ class InstalledScientificCoreTests(unittest.TestCase):
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
-                                              schemas=expected_schemas, provider_layout=provider_layout,
+                                              schemas=expected_schemas,
+                                              contract_schemas=sorted(path.name for path in (REPO_ROOT/'src/msplatform/contracts/schemas').glob('*.schema.json')),
+                                              provider_layout=provider_layout,
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,

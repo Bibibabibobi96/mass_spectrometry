@@ -23,7 +23,7 @@ from common.contracts.rigid_transform import RigidTransform
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from integrations.workflows.multipole_ip.prepare import FRAME, prepare
-from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import load_injected_source
+from msplatform.backends.simion.ip_handoff import load_injected_source
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -467,7 +467,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             "from common.contracts.frozen_inputs import python_import_roots; "
             "sys.path.pop(0); sys.path[:0]=python_import_roots(snapshot); "
             "from integrations.workflows.multipole_ip import prepare; "
-            "from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import load_injected_source; "
+            "from msplatform.backends.simion.ip_handoff import load_injected_source; "
             "assert Path(prepare.__file__).is_relative_to(Path.cwd()); "
             f"prepare.prepare(Path({str(self.request_path)!r}),Path({str(self.run)!r})); "
             f"a=load_injected_source(Path({str(self.run / 'results/multipole_ip/ip_injected_source.json')!r})); "

@@ -13,7 +13,7 @@ from common.contracts.component_particle_state import write_component_particle_s
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from common.contracts.write_run_manifest import file_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import (
+from msplatform.backends.simion.ip_handoff import (
     FATE_COLUMNS, frozen_release_states, load_injected_source, release_states,
 )
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional, batching
@@ -24,7 +24,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 class AdmissionTests(unittest.TestCase):
     def test_source_protection_projection_includes_clock_and_producer_owner(self):
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import injected_source_protection_paths
+        from msplatform.backends.simion.ip_handoff import injected_source_protection_paths
         paths = injected_source_protection_paths(self.inputs / "injected_source.json")
         self.assertIn(self.inputs.resolve(), paths)
         self.assertIn(self.producer.resolve(), paths)
@@ -272,13 +272,13 @@ class AdmissionTests(unittest.TestCase):
         (root/"run_manifest.json").write_text(json.dumps(dict(run_id=root.name, project="instrument_assembly",
             mode="multipole_ip_preparation", status="success", inputs={},
             outputs=[file_record(source), file_record(receipt_path)])), encoding="utf-8")
-        with patch("projects.rf_multipole_ion_optics.core.component_port.load_transport_producer_result",
+        with patch("msplatform.backends.simion.ip_handoff.load_transport_producer_result",
                    side_effect=AssertionError("private producer reader must not run")):
             admission = load_injected_source(source)
             self.assertEqual(admission["producer_result"], result)
             destination = self.run/"frozen"
             (destination/"inputs").mkdir(parents=True)
-            from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import freeze_injected_source
+            from msplatform.backends.simion.ip_handoff import freeze_injected_source
             freeze_injected_source(admission, destination)
             frozen = load_injected_source(destination/"inputs/injected_source.json")
             self.assertEqual(frozen["producer_result"], result)

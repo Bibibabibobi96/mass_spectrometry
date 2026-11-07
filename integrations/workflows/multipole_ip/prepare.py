@@ -24,12 +24,13 @@ from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.integration.resolve_assembly import derive_assembly_scope
 from projects.rf_multipole_ion_optics.core.component_port import (
-    build_assembly_interface, validate_exit_observations, load_transport_producer_result,
+    build_assembly_interface, validate_exit_observations,
 )
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import FATE_COLUMNS
+from msplatform.backends.simion.ip_handoff import FATE_COLUMNS
+from msplatform.backends.simion.transport_result import load_transport_producer_result
 
 SCHEMA = Path(__file__).resolve().parents[2] / "config/schemas/multipole_ip_request.schema.json"
 FRAME = "dual_pressure_ion_processor_local_v1"

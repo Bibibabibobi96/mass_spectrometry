@@ -895,17 +895,6 @@
             "accelerator_interface"
           ]
         },
-        {
-          "id": "projects_dual_pressure_rectilinear_ion_processor_analysis_schemas_ip_injected_source_schema_json",
-          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/schemas/ip_injected_source.schema.json",
-          "consumers": [
-            "multipole_ip",
-            "prepared_joint",
-            "accelerator_interface",
-            "cooled_frontend",
-            "oa_mr"
-          ]
-        }
       ],
       "python_packages": [
         {

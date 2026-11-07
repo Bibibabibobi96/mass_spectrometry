@@ -7,6 +7,7 @@ Arrival starts IP integration; original birth remains the particle-age origin.
 from __future__ import annotations
 
 import csv
+from importlib.resources import files
 import json
 import math
 from pathlib import Path
@@ -14,19 +15,37 @@ import shutil
 from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.backends.simion.transport_result import load_transport_producer_result
+from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.particle_state import load_component_particle_state_csv
-from common.contracts.machine_contracts import validate_schema
-from common.contracts.verify_run_manifest import record_path, verified_successful_run_reference, verify_record
-from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.execution.manifest_records import file_record, record_path, verify_record
+from msplatform.execution.terminal_publication import require_completed_terminal_publication
+from msplatform.ion_release.release import generate_release_states
 
-SCHEMA = Path(__file__).resolve().parent / "schemas/ip_injected_source.schema.json"
+SCHEMA = Path(str(files("msplatform.backends.simion").joinpath("resources/ip_injected_source.schema.json")))
 FATE_COLUMNS = ["particle_id", "particle_birth_time_us", "mass_amu", "charge_state",
                 "terminal_instrument_time_us", "terminal_reason", "particle_weight"]
 
 
 def _json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def _verified_successful_run_reference(
+    run: Path, relative: str, *, project: str, mode: str, manifest: dict[str, Any]
+) -> Path:
+    """Verify one published record using the installed execution primitives."""
+    require_completed_terminal_publication(run / "run_manifest.json")
+    if manifest.get("project") != project or manifest.get("mode") != mode or manifest.get("status") != "success":
+        raise ValueError(f"reference must be a successful {project} {mode} run")
+    desired = (run / relative).resolve()
+    matches = [record for record in [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+               if record_path(record, base_dir=run) == desired]
+    if len(matches) != 1:
+        raise ValueError("reference manifest must bind exactly one record for " + relative)
+    verify_record("consumed run reference", matches[0], base_dir=run)
+    return desired
 
 
 def injected_source_protection_paths(contract_path: Path) -> list[Path]:
@@ -66,8 +85,8 @@ def _published_producer_result(manifest_path: Path, source_path: Path, producer_
     except ValueError as exc:
         raise ValueError("handoff source is outside its publishing run") from exc
     options = dict(project="instrument_assembly", mode="multipole_ip_preparation", manifest=manifest)
-    verified_successful_run_reference(root, relative, **options)
-    receipt_path = verified_successful_run_reference(root, "results/multipole_ip/preparation_receipt.json", **options)
+    _verified_successful_run_reference(root, relative, **options)
+    receipt_path = _verified_successful_run_reference(root, "results/multipole_ip/preparation_receipt.json", **options)
     receipt = _json(receipt_path)
     if receipt.get("role") != "multipole_ip_preparation" or receipt.get("status") != "success":
         raise ValueError("handoff preparation receipt differs")
@@ -145,7 +164,6 @@ def load_injected_source(contract_path: Path) -> dict[str, Any]:
                 raise ValueError("frozen handoff package differs from published source")
     else:
         # Historical packages predate terminal handoff publications.
-        from projects.rf_multipole_ion_optics.core.component_port import load_transport_producer_result
         producer_result = load_transport_producer_result(producer, paths["producer_manifest"].parent)
     census = _json(paths["mother_census"])
     if (census.get("schema_version") != 1 or census.get("role") != "multipole_mechanical_exit_census"
@@ -246,7 +264,6 @@ def freeze_injected_source(admission: dict[str, Any], run: Path) -> None:
 def frozen_release_states(run: Path, config: dict[str, Any]) -> list[dict[str, Any]]:
     """Read the run's actual injection table, or retain standalone source behavior."""
     if "injected_source" not in config:
-        from common.ion_release.release import generate_release_states
         return generate_release_states(config["source"])
     rows = load_component_particle_state_csv(run/"inputs/injected_states.csv").rows if config["source"]["particle_count"] else []
     return sorted(release_states(dict(rows=rows)), key=lambda row: row["particle_id"])
