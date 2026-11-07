@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from common.contracts.test_geometry_members import real_snapshot, independent_oa_snapshot, independent_oa_objects
 from msplatform.exporters.step import export_assembly_step
+from msplatform.execution.artifact_reader import open_artifact
 
 
 class StepExportTests(unittest.TestCase):
@@ -293,7 +294,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
                  patch.object(Path,'write_text',side_effect=AssertionError('write')), \
                  patch('msplatform.exporters.step.export_assembly_step',side_effect=AssertionError('export')):
                 result = api.inspect_cad(ref,checks=checks)
-                self.assertEqual(result,api.inspect_cad(api.open_artifact(ref,expected_kind="cad_geometry"),checks=checks))
+                self.assertEqual(result,api.inspect_cad(open_artifact(ref,expected_kind="cad_geometry"),checks=checks))
             self.assertEqual(result['status'],'consistent')
             self.assertEqual([r['actual_step_inside'] for r in result['probes']],[False,True])
             self.assertEqual(result['solid_count'],result['expected_solid_count'])
@@ -338,7 +339,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
             def resolver(record, base):
                 return (moved/'publication'/Path(record['path']).name if Path(record['path']).parent.name=='publication'
                         else moved/Path(record['path']).name)
-            source = api.open_artifact(ref,expected_kind='cad_geometry',resolver=resolver)
+            source = open_artifact(ref,expected_kind='cad_geometry',resolver=resolver)
             result = api.inspect_cad(source,checks=checks)
             self.assertEqual(result['status'],'consistent')
             self.assertEqual(source.data_path('step'),moved/'assembly.step')

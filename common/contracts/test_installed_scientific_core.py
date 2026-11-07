@@ -353,7 +353,9 @@ publish_terminal_state(read_root, {'status':'failed'}, read_manifest)
 artifact_reference = dict(manifest=file_record(read_root/'run_manifest.json'),product_id='contract')
 with patch('subprocess.Popen', side_effect=AssertionError('read started native action')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('read wrote data')):
-    reopened = api.open_artifact(artifact_reference,expected_kind='trajectory_result')
+    assert not hasattr(api, 'open_artifact')
+    from msplatform.execution.artifact_reader import open_artifact
+    reopened = open_artifact(artifact_reference,expected_kind='trajectory_result')
     assert reopened.data_path('state') == (root/'neutral-state.csv').resolve()
     assert reopened.producer['status'] == 'failed'
 # Reuse the repository's manifest-bound comparison fixture as plain data.

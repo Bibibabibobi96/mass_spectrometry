@@ -170,9 +170,9 @@ item exclusions remain the identity authority; imported body order is not an ide
 ```python
 import json
 from pathlib import Path
-from msplatform import api
+from msplatform.execution.artifact_reader import open_artifact
 ref = json.loads(Path("my_study/cad-reference.json").read_text(encoding="utf-8"))
-cad = api.open_artifact(ref, expected_kind="cad_geometry")
+cad = open_artifact(ref, expected_kind="cad_geometry")
 print(cad.data_path("step"))  # 原manifest发布绑定及文件bytes/SHA复核
 print(cad.metadata)
 ```
@@ -225,7 +225,7 @@ SolidWorks兼容查看是后续显式可选动作`api.open_model(cad, applicatio
 不能传latest、改变源来暗中求场，或把未求解PA当已有场。普通安装和 worker 运输已有分阶段证据；
 完整场包发布、后续Fly及搬迁后继续执行的范围仍查集成正文，不能从接口存在推定完成。
 
-`api.open_artifact(reference, expected_kind=...)`读取显式manifest record和`product_id`，校验已完成发布的
+`msplatform.execution.artifact_reader.open_artifact(reference, expected_kind=...)`读取显式manifest record和`product_id`，校验已完成发布的
 所选数据闭包；不恢复执行环境、不运行求解器。发布者在原manifest的`products`字段绑定版本1产品：
 `schema_version/kind/status/metadata/data`，其中`status="complete"`，`data`每个具名成员是同一manifest
 inputs／outputs中的原文件record。reference为`{"manifest": <文件record>, "product_id": <具名产品>}`。

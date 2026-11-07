@@ -157,6 +157,8 @@ paired COMSOL主脚本、Cartesian释放读取与CPT步策略helper亦迁入安�
 普通构建、Candidate冻结源码、同步、重追踪及MATLAB测试同步使用安装目录，三份MATLAB字节保持，未启动原生求解。
 单反射飞行管、反射镜和检测器variant Lua的三份旧项目转发桥现已删除；smoke、冻结依赖、集成及真实Lua测试直接消费安装实现，
 不再保留重复冻结条目或到期别名。
+`api.open_artifact`纯转发别名现已退役，生产内部调用、测试及教程直接消费`execution.artifact_reader`；
+manifest绑定、搬迁resolver、文件身份复核和失败关闭不变，其余仍有独立职责的staged入口未因此删除。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

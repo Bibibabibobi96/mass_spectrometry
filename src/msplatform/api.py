@@ -16,11 +16,12 @@ from msplatform import components as component_catalog
 from msplatform.backends import simion as simion_backend
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.clock import ClockIdentity
+from msplatform.execution import artifact_reader
 
 if TYPE_CHECKING:
     from msplatform.assembly.handoff import HandoffResult
     from msplatform.backends.simion.compiler import CompiledSimionGeometry
-    from msplatform.execution.artifact_reader import ArtifactResolver, OpenedArtifact
+    from msplatform.execution.artifact_reader import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
 
 
@@ -139,7 +140,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
         action_record=source,
         expected_relative_paths=[str(Path(path).relative_to(planning_root)) for path in plan.declared_outputs],
         use_short_execution_path=True, completion_api=lambda: native_completion)
-    return open_artifact({"manifest": result["manifest"], "product_id": "geometry"}, expected_kind="geometry_artifact")
+    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "geometry"}, expected_kind="geometry_artifact")
 
 
 def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mapping[str, Any],
@@ -173,7 +174,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
         raise ContractError("model drive requires pulse, explicit clock authority and phase reference; groups are optional")
     if "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("prepare_model requires an explicit available SIMION executable")
-    source = open_artifact(geometry.reference if isinstance(geometry, OpenedArtifact) else geometry,
+    source = artifact_reader.open_artifact(geometry.reference if isinstance(geometry, OpenedArtifact) else geometry,
                            expected_kind="geometry_artifact")
     stage, policy_record = read_stage_policy(context, "prepare_model", required_roles=("solver_native_binary",))
     runtime = stage.get("runtime", {})
@@ -231,7 +232,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
         action_record=file_record(Path(execute_model.__code__.co_filename).resolve(), "required_evidence"),
         source_references=[{"manifest_record": source.reference["manifest"]}],
         use_short_execution_path=True, completion_api=lambda: native_completion)
-    return open_artifact({"manifest": result["manifest"], "product_id": "model"}, expected_kind="prepared_model")
+    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "model"}, expected_kind="prepared_model")
 
 
 def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping[str, Any],
@@ -269,7 +270,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
     reuse_reference = None
     references = [{"manifest_record": source.artifact.reference["manifest"]}]
     if reuse_fields is not None:
-        reused = open_artifact(reuse_fields.reference if isinstance(reuse_fields, OpenedArtifact) else reuse_fields,
+        reused = artifact_reader.open_artifact(reuse_fields.reference if isinstance(reuse_fields, OpenedArtifact) else reuse_fields,
                                expected_kind="field_bundle")
         reuse_reference = reused.reference
         references.append({"manifest_record": reuse_reference["manifest"]})
@@ -289,7 +290,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference),
         action_record=file_record(Path(execute_fields.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
-    return open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")
+    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")
 
 
 def track(fields: OpenedArtifact | Mapping[str, Any],
@@ -324,7 +325,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
 
-    source = fields if isinstance(fields, OpenedArtifact) else open_artifact(fields, expected_kind="field_bundle")
+    source = fields if isinstance(fields, OpenedArtifact) else artifact_reader.open_artifact(fields, expected_kind="field_bundle")
     meta = source.metadata
     if (source.kind != "field_bundle" or meta.get("backend") != "simion"
             or meta.get("field_status") != "available" or meta.get("source_status") != "not_requested"):
@@ -362,7 +363,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         if source_reference is None:
             raise ContractError("state relaunch requires its published trajectory source reference")
         predecessor = (source_reference if isinstance(source_reference, OpenedArtifact)
-                       else open_artifact(source_reference, expected_kind="trajectory_result"))
+                       else artifact_reader.open_artifact(source_reference, expected_kind="trajectory_result"))
         if predecessor.kind != "trajectory_result":
             raise ContractError("handoff producer must be a published trajectory result")
         references.append({"manifest_record": predecessor.reference["manifest"]})
@@ -395,7 +396,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
         action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
-    return open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")
+    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")
 
 
 def analyze(result: OpenedArtifact | Mapping[str, Any], *,
@@ -409,7 +410,7 @@ def analyze(result: OpenedArtifact | Mapping[str, Any], *,
     from msplatform.backends.simion.trajectory_analysis import analyze_published_trajectory
     from msplatform.execution.artifact_reader import OpenedArtifact
 
-    source = result if isinstance(result, OpenedArtifact) else open_artifact(result, expected_kind="trajectory_result")
+    source = result if isinstance(result, OpenedArtifact) else artifact_reader.open_artifact(result, expected_kind="trajectory_result")
     if source.kind != "trajectory_result" or source.metadata.get("backend") != "simion":
         raise ContractError("analysis requires a trajectory result from the supported SIMION data adapter")
     if not isinstance(selection, Mapping) or not isinstance(method, Mapping):
@@ -427,7 +428,7 @@ def compare_trajectories(left: OpenedArtifact | Mapping[str, Any], right: Opened
     from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
     from msplatform.execution.artifact_reader import OpenedArtifact
 
-    sources = [value if isinstance(value, OpenedArtifact) else open_artifact(value, expected_kind="trajectory_result")
+    sources = [value if isinstance(value, OpenedArtifact) else artifact_reader.open_artifact(value, expected_kind="trajectory_result")
                for value in (left, right)]
     if not isinstance(selection, Mapping) or not isinstance(method, Mapping):
         raise ContractError("comparison requires explicit selection and method contracts")
@@ -440,7 +441,7 @@ def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[s
     import json
     from msplatform.execution.artifact_reader import OpenedArtifact
     from msplatform.exporters.step import inspect_assembly_step
-    source = result if isinstance(result, OpenedArtifact) else open_artifact(result, expected_kind="cad_geometry")
+    source = result if isinstance(result, OpenedArtifact) else artifact_reader.open_artifact(result, expected_kind="cad_geometry")
     if source.kind != "cad_geometry" or not isinstance(checks, Mapping) or set(checks) != {"schema_version", "kind", "probes"}:
         raise ContractError("STEP inspection requires explicit current checks and cad_geometry")
     if type(checks['schema_version']) is not int or checks['schema_version'] != 1 or checks['kind'] != 'physical_solids_step_v1' or not isinstance(checks['probes'],(list,tuple)):
@@ -510,7 +511,7 @@ def export_cad(assembly: assembly_domain.Assembly, *, format: str, options: Mapp
             options={name: options[name] for name in ("write_pcurves", "precision_mode", "name") if name in options}, limits=stage["limits"]),
         action_record=source, completion_api=no_particle_batch_completion_api,
         expected_relative_paths=("results/" + filename, "results/cad_export_report.json"))
-    return open_artifact({"manifest": result["manifest"], "product_id": "cad_geometry"}, expected_kind="cad_geometry")
+    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "cad_geometry"}, expected_kind="cad_geometry")
 
 
 def _open_simion_model(model: OpenedArtifact | Mapping[str, Any], context: ExecutionContext) -> dict[str, Any]:
@@ -592,7 +593,7 @@ def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | 
         return _open_simion_model(model, context)
     if selected != "solidworks":
         raise ContractError("open_model supports the explicit SolidWorks STEP or SIMION PreparedModel action")
-    source = model if isinstance(model, OpenedArtifact) else open_artifact(model, expected_kind="cad_geometry")
+    source = model if isinstance(model, OpenedArtifact) else artifact_reader.open_artifact(model, expected_kind="cad_geometry")
     if source.kind != "cad_geometry":
         raise ContractError("SolidWorks viewing requires a published CAD geometry product")
     if checks is not None:
@@ -655,13 +656,6 @@ def resume_run(run_ref: str | Path, *, mode: str, context: ExecutionContext) -> 
     else:
         raise ContractError("No installed completion policy for this explicit run action")
     return resume_finalization(context, path, completion_api=completion)
-
-
-def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
-                  resolver: ArtifactResolver | None = None) -> OpenedArtifact:
-    """Read an explicitly published data product without invoking any execution owner."""
-    from msplatform.execution.artifact_reader import open_artifact as read
-    return read(reference, expected_kind=expected_kind, resolver=resolver)
 
 
 def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] | None = None) -> dict:
