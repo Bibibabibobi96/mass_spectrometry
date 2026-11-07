@@ -801,13 +801,6 @@
       "provider_project": "single_reflection_oa_tof_mass_analyzer",
       "files": [
         {
-          "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_read_cartesian_release_m",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
-          "consumers": [
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
           "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_build_flight_tube_variant_lua",
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_flight_tube_variant.lua",
           "consumers": [
@@ -833,20 +826,6 @@
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
           "consumers": [
             "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_cpt_solver_policy_m",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_cpt_solver_policy.m",
-          "consumers": [
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_comsol_run_paired_accelerator_pulse_m",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_paired_accelerator_pulse.m",
-          "consumers": [
-            "paired_accelerator_pulse"
           ]
         }
       ],
@@ -1083,6 +1062,21 @@
           "consumers": [
             "accelerator_interface"
           ]
+        },
+        {
+          "id": "msplatform_comsol_run_paired_accelerator_pulse_m",
+          "source_repo_path": "src/msplatform/backends/comsol/resources/run_paired_accelerator_pulse.m",
+          "consumers": ["paired_accelerator_pulse"]
+        },
+        {
+          "id": "msplatform_comsol_oatof_read_cartesian_release_m",
+          "source_repo_path": "src/msplatform/backends/comsol/resources/oatof_read_cartesian_release.m",
+          "consumers": ["paired_accelerator_pulse"]
+        },
+        {
+          "id": "msplatform_comsol_oatof_cpt_solver_policy_m",
+          "source_repo_path": "src/msplatform/backends/comsol/resources/oatof_cpt_solver_policy.m",
+          "consumers": ["paired_accelerator_pulse"]
         },
         {
           "id": "msplatform_comsol_build_and_export_paired_accelerator_field_m",

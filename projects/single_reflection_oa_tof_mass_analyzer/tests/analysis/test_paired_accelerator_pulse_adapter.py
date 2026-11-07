@@ -1,10 +1,11 @@
 """Static native-boundary guards; these do not execute or qualify COMSOL APIs."""
-from pathlib import Path
 import re
 import unittest
 
+from msplatform.backends.comsol.resources import native_resource_path
 
-SOURCE = Path(__file__).resolve().parents[2] / "comsol/run_paired_accelerator_pulse.m"
+
+SOURCE = native_resource_path("run_paired_accelerator_pulse.m")
 
 
 class PairedPulseAdapterTests(unittest.TestCase):

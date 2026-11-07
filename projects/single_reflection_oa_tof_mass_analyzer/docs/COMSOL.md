@@ -91,7 +91,7 @@ Candidate冻结器保持`oatof_paths.m`和公共`workspace_paths.m`原始字节�
 
 `../tests/comsol/test_finite_pulse_field_superposition.m`用于核验有限脉冲的数值实现；已通过工况与证据边界见
 [PROJECT当前状态](PROJECT.md#当前状态)。
-通过公共COMSOL入口冻结并执行该脚本及`../comsol/oatof_cpt_solver_policy.m`，保留二者相对目录；
+通过公共COMSOL入口冻结并执行该脚本及安装backend的`msplatform/backends/comsol/resources/oatof_cpt_solver_policy.m`；
 不加载或改写仪器Formal模型。固定立方体中的静态横向场始终存在，另一路场仅在声明脉冲区间开启。
 脚本对两档容差检查解析位置／速度、关断后加速度及保存重开后的默认Compute；strict设置必须回读实际活动算法。
 详细证据写入bootstrap报告同目录的`finite_pulse_field_superposition.log`，bootstrap状态文件由公共入口独占。

@@ -20,6 +20,10 @@ paired静态场SIMION采样器和paired脉冲SIMION回调现唯一保存在`mspl
 旧manifest所绑定的项目路径仅用于历史完成结果只读复用，不改写历史记录。采样坐标、`pa:field_vc`
 符号、脉冲时钟与回调、Program嵌入顺序及Lua原始字节保持；本迁移不启动场求解或Fly。
 
+paired CPT主脚本、Cartesian释放读取与CPT步策略helper的唯一实现现位于`msplatform.backends.comsol/resources/`。
+普通构建、Candidate源码闭包、同步、重追踪、冷后处理和MATLAB测试均显式加入该安装目录；paired任务只生成新位置调用。
+三份MATLAB原始字节、算法、原生读回及原ID语义保持，项目旧副本退役且无转发；本次不启动COMSOL求解或GUI。
+
 ### P2 V6：理论与峰结果的公共语义
 
 完整科学电极几何及工作电位由`geometry_contract.resolve_electrode_geometry`唯一构造，

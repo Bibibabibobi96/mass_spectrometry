@@ -9,7 +9,9 @@ assert(~isempty(reportPath) && isfolder(fileparts(reportPath)), ...
     'A run-private COMSOL_BOOTSTRAP_REPORT directory is required.');
 runDir = fileparts(reportPath);
 testDir = fileparts(mfilename('fullpath'));
+repositoryRoot = fileparts(fileparts(fileparts(testDir)));
 addpath(fullfile(fileparts(fileparts(testDir)), 'comsol'));
+addpath(fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
 detailPath = fullfile(runDir,'finite_pulse_field_superposition.log');
 fid = fopen(detailPath, 'w');
 assert(fid >= 0, 'Cannot open probe detail report.');

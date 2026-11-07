@@ -8,6 +8,7 @@ classdef OaTofCartesianReleaseTest < matlab.unittest.TestCase
             projectRoot=fileparts(fileparts(fileparts(mfilename('fullpath'))));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(projectRoot));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(projectRoot,'comsol')));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(fileparts(projectRoot),'src','msplatform','backends','comsol','resources')));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.path=fullfile(fixture.Folder,'cartesian.csv');
             testCase.release=array2table([17,100,1,-14,0,-18,3000,-45,90,5; ...

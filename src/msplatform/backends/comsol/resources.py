@@ -11,6 +11,7 @@ NATIVE_RESOURCES = frozenset({
     "export_corridor_scalar_field.m",
     "oatof_build_accelerator_geometry.m",
     "update_corridor_workpoint_voltages.m",
+    "run_paired_accelerator_pulse.m", "oatof_read_cartesian_release.m", "oatof_cpt_solver_policy.m",
 })
 
 

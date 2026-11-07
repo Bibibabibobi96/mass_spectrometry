@@ -860,7 +860,9 @@ $result|ConvertTo-Json -Compress
             "src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m",
             "src/msplatform/backends/comsol/resources/oatof_build_accelerator_geometry.m",
             "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
-            "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
+            "src/msplatform/backends/comsol/resources/oatof_read_cartesian_release.m",
+            "src/msplatform/backends/comsol/resources/oatof_cpt_solver_policy.m",
+            "src/msplatform/backends/comsol/resources/run_paired_accelerator_pulse.m",
             "src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua",
             "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua",
         ]

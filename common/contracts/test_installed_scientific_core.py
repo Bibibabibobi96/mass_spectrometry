@@ -105,7 +105,8 @@ assert [candidate['analyzer_electrode_voltages_v'][i-1] for i in (11,12,13,14,16
 assert 'mphload' in native_resource_text('candidate_field.m')
 assert 'SIMION' in native_resource_text('export_corridor_scalar_field.m')
 for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_accelerator_geometry.m',
-             'build_sectioned_geometry.m', 'build_accelerator_grids.m'):
+             'build_sectioned_geometry.m', 'build_accelerator_grids.m', 'run_paired_accelerator_pulse.m',
+             'oatof_read_cartesian_release.m', 'oatof_cpt_solver_policy.m'):
     text = native_resource_text(name)
     assert text.startswith('function') and 'mfilename' not in text
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection

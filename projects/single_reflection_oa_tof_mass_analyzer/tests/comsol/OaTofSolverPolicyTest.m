@@ -11,6 +11,7 @@ classdef OaTofSolverPolicyTest < matlab.unittest.TestCase
             testDir = fileparts(mfilename('fullpath'));
             projectRoot = fileparts(fileparts(testDir));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(projectRoot,'comsol')));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(fileparts(projectRoot),'src','msplatform','backends','comsol','resources')));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(testDir,'test_support')));
         end
     end

@@ -35,7 +35,8 @@ arguments
 end
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
-addpath(projectRoot);
+repositoryRoot = fileparts(fileparts(projectRoot));
+addpath(projectRoot, fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
 contractPath = options.ContractPath;
 if options.GeometryOnly
     assert(strlength(contractPath)>0 && strlength(options.OutputModelPath)>0, ...
