@@ -11,7 +11,7 @@ import subprocess
 from typing import Any
 
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
+from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
 
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.verify_run_manifest import record_path, verify_record

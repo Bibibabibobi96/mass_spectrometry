@@ -397,8 +397,8 @@ class FunctionalContractTests(unittest.TestCase):
         self.assertEqual(frozen.read_bytes(), Path(functional.__file__).read_bytes())
         self.assertTrue((code / 'common/simion/collision_hs1.py').is_file())
         self.assertFalse((code / 'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py').exists())
-        self.assertEqual((code / 'common/contracts/rigid_transform.py').read_bytes(),
-                         (PROJECT.parents[1] / 'common/contracts/rigid_transform.py').read_bytes())
+        self.assertEqual((code / 'src/msplatform/contracts/rigid_transform.py').read_bytes(),
+                         (PROJECT.parents[1] / 'src/msplatform/contracts/rigid_transform.py').read_bytes())
         population_program = (
             "import json, pathlib, sys; "
             "sys.path.insert(0, sys.argv[1]); "
@@ -470,7 +470,7 @@ sys.path.insert(0, str(root))
 from common.contracts.frozen_inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from common.analysis import plane_crossings as c
-from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
+from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 samples = [c.CrossingSample(7, 2, PhaseSpaceState('f', (0., 0., 2.), (0., 0., -1000.), 10.)),
            c.CrossingSample(7, 'exit', PhaseSpaceState('f', (0., 0., 0.), (0., 0., -1000.), 10.5))]

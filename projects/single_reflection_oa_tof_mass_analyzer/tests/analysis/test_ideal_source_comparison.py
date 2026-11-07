@@ -13,7 +13,7 @@ from contextlib import ExitStack
 
 import numpy as np
 
-from common.analysis.peak_metrics import AnalysisSettings
+from msplatform.analysis.peak_metrics import AnalysisSettings
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
     AxialParticleSource,
     NumericalSourceSpec,

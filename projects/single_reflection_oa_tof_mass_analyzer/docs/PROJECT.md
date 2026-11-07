@@ -50,7 +50,8 @@ paired CPT主脚本、Cartesian释放读取与CPT步策略helper的唯一实现�
 metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍未绝对标定；共同钟为unspecified、
 科学资格为not_assessed。实际CLI/JSON/CSV/PNG和hash绑定已定向补验。
 默认single结果3、SIMION recording、comparison、compensation、radial、ideal-source及其余具名分析
-仍由各workflow在P3/P4迁移明确writer/reader，最迟P4退出旧活动桥；本切片不宣称所有峰消费者已迁。
+现均直接使用`msplatform.analysis.peak_metrics`；旧活动桥已退役，冻结来源、数值、单位和资格语义保持。
+接受域纵向拟合及publisher冻结探针同样直接使用`msplatform.analysis.longitudinal_fit`，旧公共实现退役。
 
 活动三区理论campaign v1/v2只通过既有`render_campaign_authorities`刷新六项源码身份，
 科学数值、阶段、资格与阈值保持；旧run和冻结输入不回写，缺失、过期或篡改来源仍拒绝。

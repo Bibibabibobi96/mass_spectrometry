@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import compile_assembly_layout
@@ -252,7 +252,7 @@ class LocalFrontendTests(unittest.TestCase):
         self.assertEqual([int(r["particle_id"]) for r in rows], list(range(1, 101)))
         self.assertEqual({float(r["instrument_time_us"]) for r in rows}, {0})
         transform = RigidTransform.from_contract(result["registration"]["observer_to_mr"])
-        from common.contracts.rigid_transform import FramedPosition
+        from msplatform.contracts.rigid_transform import FramedPosition
         actual = transform.transform_position(FramedPosition(transform.from_frame_id, result["registration"]["oa_exit_center_solver_mm"]))
         self.assertEqual(actual.coordinates_mm, (0, -50, 0))
         self.assertEqual(json.loads((output / "inputs/numerics.json").read_text())["trajectory_quality"], 8)

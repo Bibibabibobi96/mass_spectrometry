@@ -179,7 +179,7 @@ class InterfacePreparationTests(unittest.TestCase):
             self.assertFalse((root/'run').exists())
 
     def test_measured_peak_reference_is_explicit_observation_change_not_physics(self):
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         original = dict(simion=dict(default_trajectory_profile_id='same', trajectory_profiles=dict(
             same=dict(trajectory_quality=8, maximum_step_us=.002, purpose='unit'))),
             peak_analysis=dict(method_id='common_gaussian_kde_time_v2',
@@ -235,7 +235,7 @@ class InterfacePreparationTests(unittest.TestCase):
 
     def test_joint_analysis_preflight_binds_source_and_clock_before_field(self):
         from types import SimpleNamespace
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         from integrations.workflows.accelerator_interface.prepare import preflight_joint_analysis
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -266,7 +266,7 @@ class InterfacePreparationTests(unittest.TestCase):
                 rows=[dict(particle_id=7, instrument_time_us=11.)])
             with patch('integrations.workflows.accelerator_interface.prepare.verified_preparation_reference',
                        side_effect=lambda run, relative: paths[relative]), \
-                 patch('common.contracts.component_particle_state.load_component_particle_state_csv', return_value=table):
+                 patch('msplatform.contracts.particle_state.load_component_particle_state_csv', return_value=table):
                 preflight_joint_analysis(root, source, selected)
                 with self.assertRaisesRegex(ValueError, 'selected IP run'):
                     preflight_joint_analysis(root, root/'different', selected)

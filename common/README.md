@@ -448,29 +448,8 @@ integration所有者负责组合入口、source/clock、程序与冻结资源声
 
 退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
 
-`common.analysis.peak_metrics`（18个生产Python文件）：峰宽、时间峰、映射及bootstrap分析。
-
-- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`measured_component_analysis.py`、`source_z_energy_timing_diagnostic.py`。
-- `projects/rf_multipole_ion_optics/core/`：`mass_response.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`analyze_accelerator_grid_phase.py`、`analyze_paper1_gap_working_point.py`、`ideal_acceptance_density.py`、`ideal_source_comparison.py`、`mass_spectrum.py`、`solver_diagnostics.py`、`three_zone_theory_numeric_execution.py`、`truncation_diagnostics.py`、`verify_axial_ideal_closure.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`acceptance_theory.py`、`numerical_case.py`、`run_comparison.py`、`slope_scan.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`analysis.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`。
-
-退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
-
-`common.contracts.rigid_transform`（20个生产Python文件）：frame类型、刚体/相对变换、穿面状态。
-
-- `common/analysis/`：`plane_crossings.py`。
-- `integrations/runtime/`：`build_single_flight_program.py`、`single_flight_source.py`。
-- `integrations/workflows/cooled_frontend/`：`geometry.py`、`prepare.py`。
-- `integrations/workflows/local_frontend/`：`analyze.py`、`focus.py`、`prepare.py`。
-- `integrations/workflows/multipole_ip/`：`prepare.py`。
-- `integrations/workflows/single_reflection_flight/`：`fields.py`、`geometry.py`、`prepare.py`。
-- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`cooled_buncher.py`、`coordinates.py`、`guide_interface.py`、`spatial_crossings.py`。
-- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`ion_processor_handoff.py`、`joint_flight_preparation.py`、`measured_component_source.py`、`native_system_geometry.py`。
-
-退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+峰形与刚体变换旧桥均已退役；活动消费者直接调用`msplatform.analysis.peak_metrics`及
+`msplatform.contracts.rigid_transform`，包括实际冻结源码与来源探针。算法、协议标识、坐标和变换算序不变。
 
 `common.contracts.particle_physics`（47个生产Python文件）：质量/电荷常数、单位、速度与动能。
 
@@ -540,18 +519,15 @@ IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付c
 `common.analysis.particle_census`旧桥已退役；MR交接／实测源／分析、local及RF冻结消费者直接使用
 `msplatform.analysis.particle_census`。原ID、权重、母群与未知终态分类不变。
 
-`common.contracts.component_particle_state`单向转接`msplatform.contracts.particle_state`；剩余活动调用为：
-
-- `projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_phase_space_comparison.py`。
-- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`的`downstream_workpoint_iteration.py`、`ion_processor_handoff.py`、`measured_component_analysis.py`、`measured_component_source.py`、`prepared_joint_trial.py`。
-- `integrations/workflows/accelerator_interface/prepare.py`、`integrations/workflows/multipole_ip/prepare.py`。
+`common.contracts.component_particle_state`旧桥已退役；IP、MR及integration的准备、交接、分析、
+测试与旧CLI直接使用`msplatform.contracts.particle_state`，冻结输入和状态合同不变。
 
 `common.contracts.particle_state`仍是RF事件表／ION11旧协议入口，规范所有者为RF
 `analysis/rf_event_table_validation.py`及`simion/ion11_source_adapter.py`，不可错接中立状态。
 当前未发现活动生产Python直调；RF/IP交接fixture及公共旧CLI行为测试仍消费它。
-其余两桥只服务具名调用、旧CLI／测试协议及冻结库存，不拥有第二套算法。
+该RF旧协议入口只服务具名fixture、旧CLI及冻结库存，不拥有第二套算法。
 RF的`runtime/run_simion_finite_3d_transport.ps1`及`runtime/run_finite_3d_transport.ps1`已显式冻结census安装实现；
-integration的`runtime_dependencies.json`公共provider整包声明间接携带其余桥，不等于直接算法调用。
+integration的`runtime_dependencies.json`公共provider整包声明间接携带该旧协议入口，不等于直接算法调用。
 最迟P4由各活动消费者所有者迁移上述调用和测试／CLI边界，同步清理旧源码声明及库存；
 保留真实冻结来源／缺依赖拒绝及原CSV、ID、单位、共同钟、权重／母群、失败语义回归后移除旧桥。
 历史冻结快照不追改；本清单不声称未知外部消费者不存在。

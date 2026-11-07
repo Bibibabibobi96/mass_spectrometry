@@ -16,7 +16,7 @@ from itertools import zip_longest
 from typing import Any
 
 from common.contracts.frozen_inputs import freeze_file
-from common.contracts.component_particle_state import load_component_particle_state_csv
+from msplatform.contracts.particle_state import load_component_particle_state_csv
 from common.contracts.verify_run_manifest import record_path, verify_record, verified_successful_run_reference
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import derive_assembly_scope

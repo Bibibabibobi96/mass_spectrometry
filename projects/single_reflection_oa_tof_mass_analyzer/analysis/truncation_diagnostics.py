@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum import load_mode
-from common.analysis.peak_metrics import (
+from msplatform.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_distribution,
     compute_peak_metrics,

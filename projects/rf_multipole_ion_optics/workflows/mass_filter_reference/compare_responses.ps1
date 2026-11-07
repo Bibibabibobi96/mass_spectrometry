@@ -249,7 +249,7 @@ try {
         'projects.rf_multipole_ion_optics.core.mass_response',
         'projects.rf_multipole_ion_optics.core.paired_mass_scan',
         'common.contracts.file_identity',
-        'common.analysis.peak_metrics'
+        'msplatform.analysis.peak_metrics'
     )
     $distributions = @('matplotlib','numpy','scipy')
     $frozenPythonEnvironment = Invoke-IsolatedFrozenPythonModule `

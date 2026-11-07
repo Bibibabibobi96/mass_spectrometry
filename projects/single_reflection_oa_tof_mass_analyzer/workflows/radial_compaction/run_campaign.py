@@ -103,7 +103,7 @@ EXTRA_SOURCE_IDS = (
 # These sources are consumed only after native Fly in this workflow. All other
 # closure members, the driver, frozen inputs and solver/runtime remain bound.
 ANALYSIS_ONLY_SOURCES = frozenset({
-    "common/analysis/peak_metrics.py",
+    "src/msplatform/analysis/peak_metrics.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
 })

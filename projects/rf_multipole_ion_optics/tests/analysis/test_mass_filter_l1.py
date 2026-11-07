@@ -242,7 +242,7 @@ class MassFilterL1Tests(unittest.TestCase):
             execution = MODULE._invoke_analysis_stage(request, prepare_only=False)
             self.assertTrue(execution["module_invoked"])
             origins = {entry["name"]: Path(entry["origin"]) for entry in execution["frozen_modules"]}
-            for name in ("common.analysis.peak_metrics", "projects.rf_multipole_ion_optics.core.mass_response"):
+            for name in ("msplatform.analysis.peak_metrics", "projects.rf_multipole_ion_optics.core.mass_response"):
                 self.assertTrue(origins[name].is_relative_to(inputs / "analysis_code"))
             actual = load_json(results / "mass-filter__functional-metrics.json")
             self.assertEqual(actual["status"], "PASS")
@@ -254,7 +254,7 @@ class MassFilterL1Tests(unittest.TestCase):
                 {entry["path"] for entry in files},
                 {str(path.resolve()) for path in (inputs / "analysis_code").rglob("*") if path.is_file()},
             )
-            peak = origins["common.analysis.peak_metrics"]
+            peak = origins["msplatform.analysis.peak_metrics"]
             original = peak.read_bytes()
             peak.write_bytes(original + b"\n# changed frozen source\n")
             with self.assertRaisesRegex(RuntimeError, "hash differs"):

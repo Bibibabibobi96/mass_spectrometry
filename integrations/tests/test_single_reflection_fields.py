@@ -16,7 +16,7 @@ from integrations.runtime.single_flight_frontend import native_frontend_instance
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
 from integrations.tests.test_single_reflection_geometry import scientific_inputs, source_fixture
 from common.contracts.verify_run_manifest import record_path
-from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 
 
 def multipole_source(project):

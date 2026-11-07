@@ -53,7 +53,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
     def test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states(self):
         import copy
         from common.contracts.write_run_manifest import file_record
-        from common.contracts.component_particle_state import write_component_particle_state_csv
+        from msplatform.contracts.particle_state import write_component_particle_state_csv
         fixture = source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -108,7 +108,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                         source=dict(energy_eV=5), target=dict(y_mm=360),
                         downstream_fixed_grid_workpoint_profile=dict(automatic_iteration=dict(
                             maximum_iterations=5, advance_multiplier=1.0, damping_factor=.5)))
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         timing_authority = root / "native_timing.json"
         timing_authority.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=7500)))
         source_receipt = json.loads((source / "source_receipt.json").read_text())
@@ -317,7 +317,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
 
         # A different parent expression does not move the already MR-local
         # measured source, fields, collision layout, or absolute instrument clock.
-        from common.contracts.rigid_transform import RigidTransform
+        from msplatform.contracts.rigid_transform import RigidTransform
         for index, rotation in enumerate(([[1,0,0],[0,1,0],[0,0,1]], [[0,-1,0],[1,0,0],[0,0,1]])):
             recipe = copy.deepcopy(assembly_plan["recipe"])
             movement = RigidTransform.from_contract(dict(schema_version=1, role="rigid_transform",
@@ -666,7 +666,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_analysis import _terminal
         fixture=source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         fixture.setUp();self.addCleanup(fixture.doCleanups);receipt=fixture._materialize()
-        from common.contracts.component_particle_state import write_component_particle_state_csv
+        from msplatform.contracts.particle_state import write_component_particle_state_csv
         canonical=fixture.output/"component_particle_state.csv"
         with canonical.open() as handle:
             mother=list(csv.DictReader(handle))
@@ -722,8 +722,8 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
         adapter="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
         with patch(adapter+".load_measured_centroid_closure_target",return_value=target),\
              patch("msplatform.backends.comsol.static_field_binding.load_binding",side_effect=AssertionError("retired PA opened")):
-            from common.contracts.component_particle_state import load_component_particle_state_csv
-            with patch("common.contracts.component_particle_state.load_component_particle_state_csv",
+            from msplatform.contracts.particle_state import load_component_particle_state_csv
+            with patch("msplatform.contracts.particle_state.load_component_particle_state_csv",
                        wraps=load_component_particle_state_csv) as canonical_reader:
                 trial=load_prepared_centroid_trial(manifest,reference,reference)
                 canonical_reader.assert_called_once_with(probe/"component_particle_state.csv")

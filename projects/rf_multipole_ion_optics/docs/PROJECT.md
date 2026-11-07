@@ -345,8 +345,8 @@ RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及
 [公共ion_release](../../../common/ion_release/README.md)提供。旧150 mm碰撞脚本不是活动合同。
 旧矩形PA导出／比较三脚本已退役，不恢复硬编码0.2 mm基线的GEM文本替换链。
 
-质量响应的L1、SIMION、COMSOL及响应比较共用`core/mass_response.py`准备结果，再复用公共
-`half_height_width`计算`sampled_mass_response_linear_half_height_v1`。旧
+质量响应的L1、SIMION、COMSOL及响应比较共用`core/mass_response.py`准备结果，再直接复用
+`msplatform.analysis.peak_metrics.half_height_width`计算`sampled_mass_response_linear_half_height_v1`；旧峰形桥已退役。旧
 `observed_half_maximum_band_Th`仍是全部半高样本的采样包络；新
 `interpolated_main_peak_fwhm_Th`只取首个全局最大值两侧最近半高交点的线性插值，单位Th。
 多个峰之间的空隙不会并入该主峰宽，等高plateau仍按同一定义处理。未夹住左／右／两侧交点时明确

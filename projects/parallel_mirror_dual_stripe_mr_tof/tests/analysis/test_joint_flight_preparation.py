@@ -523,7 +523,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
 
     def test_interface_audit_consumes_sealed_inputs_and_outputs_and_rejects_conflicts(self):
         """Manifest placement does not change control identity or PA size policy."""
-        from common.contracts.rigid_transform import RigidTransform
+        from msplatform.contracts.rigid_transform import RigidTransform
         cases = ('outputs_only', 'inputs_only', 'split', 'identical', 'relative', 'missing_control',
                  'tampered_control', 'conflicting_control', 'conflicting_basis', 'missing_basis',
                  'fresh_declared', 'reused', 'reused_missing_consumption', 'reused_declaration_conflict',
@@ -633,7 +633,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
 
     def test_interface_field_audit_uses_actual_clock_basis_route_and_centroid_ledger(self):
         import csv
-        from common.contracts.rigid_transform import RigidTransform
+        from msplatform.contracts.rigid_transform import RigidTransform
         lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')

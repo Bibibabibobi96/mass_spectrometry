@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 
-from common.analysis.peak_metrics import compute_peak_metrics
+from msplatform.analysis.peak_metrics import compute_peak_metrics
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.verify_run_manifest import record_path, verify_record

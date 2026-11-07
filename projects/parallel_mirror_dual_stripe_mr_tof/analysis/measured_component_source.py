@@ -16,13 +16,13 @@ from typing import Any
 
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from msplatform.analysis.particle_census import partition_cohort
-from common.contracts.component_particle_state import (
+from msplatform.contracts.particle_state import (
     ComponentParticleStateTable, load_component_particle_state_csv, write_component_particle_state_csv,
 )
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_number
-from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
+from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from common.simion.particle_source import project_direct_velocity, render_source_states, render_standard_beams
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import (
@@ -41,7 +41,7 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
     this authoring inverse is not a P/S controller or an energy acceptance gate.
     """
     from scipy.optimize import brentq
-    from common.contracts.component_particle_state import DERIVED_ABSOLUTE_TOLERANCE, DERIVED_RELATIVE_TOLERANCE
+    from msplatform.contracts.particle_state import DERIVED_ABSOLUTE_TOLERANCE, DERIVED_RELATIVE_TOLERANCE
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
         converging_design_potential_delta_v, resolve_converging_prism_target,
     )

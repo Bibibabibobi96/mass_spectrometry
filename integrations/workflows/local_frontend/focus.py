@@ -22,7 +22,7 @@ from common.analysis.plane_crossings import (
     iter_bounded_plane_crossings,
 )
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
+from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 
 from common.analysis.beam_focus_diagnostics import (
     build_focus_figure,

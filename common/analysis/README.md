@@ -1,8 +1,9 @@
 # 公共分析函数
 
 峰形算法与完整母群计数的规范实现和安装 API 分别为 `msplatform.analysis.peak_metrics`、
-`msplatform.analysis.particle_census`。峰形旧桥仍保留给具名消费者，census旧桥已退役；其他仓库分析工具按本页导航使用。
+`msplatform.analysis.particle_census`。峰形与census旧桥均已退役；其他仓库分析工具按本页导航使用。
 迁移责任与退役期限见[公共入口](../README.md#科学核心发行与旧入口)。
+纵向拟合由`msplatform.analysis.longitudinal_fit`提供，单反射接受域分析与发布器直接消费／冻结该实现；旧公共副本已退役。
 实际占据率脉冲选择由`msplatform.analysis.pulse_selection`提供；它按已声明候选的可支持母群、
 集中度与时间排序，不读取轨迹文件、不利用未来检测结果，也不替代调用方的生命周期和几何校验。
 
@@ -75,7 +76,7 @@ model、完整母群（含谱系）与原始钟；合法run-local路径不同不
 | 多变量及二变量总体矩 | [population_moments.py](population_moments.py)：`population_moments`、`population_pair_moments` | 多变量输入为有限二维数组，行是已选择观测、列是变量；可显式传入严格正有限相对权重；ddof=0，不转换单位或筛选粒子；二变量接口仍为无权，常量相关系数为null |
 | 已选择束团的束宽、真角度发射度与零场预测 | [beam_focus_diagnostics.py](beam_focus_diagnostics.py)：`prepare_focus_diagnostics`、`prepare_time_focus_diagnostics`及prepared结果绘图 | 显式全母群ID→正相对权重；观察面及出口群由适配器确定；mm／μs、ddof=0；实际穿面与无场反事实分开 |
 | 有界定向穿面证据 | [plane_crossings.py](plane_crossings.py)：`iter_bounded_plane_crossings` | 复用已有`PhaseSpaceState/PlaneSurface`；位置mm、速度m/s、共同仪器时间μs；返回原anchor、夹持区间、alpha及观察到的穿越次数，不生成第二份状态表 |
-| 纵向多项式拟合与残差 | [longitudinal_fit.py](longitudinal_fit.py)：`fit_longitudinal_polynomial` | z用mm、vz用mm/μs；调用方确认有限配对和可辨识阶数；残差sigma为ddof=1，不代表冷却或独立噪声 |
+| 纵向多项式拟合与残差 | [longitudinal_fit.py](../../src/msplatform/analysis/longitudinal_fit.py)：`fit_longitudinal_polynomial` | z用mm、vz用mm/μs；调用方确认有限配对和可辨识阶数；残差sigma为ddof=1，不代表冷却或独立噪声 |
 | 按原粒子ID配对事件字段 | [particle_events.py](particle_events.py)：`group_particle_events`、`iter_particle_event_fields` | 保留母群、事件顺序及数量差异；不生成ID、丢弃未知粒子或选择相等容差 |
 | 批量导出已准备图形 | [figure_export.py](figure_export.py)：`export_figures` | 调用者给定完整stem→figure、formats、dpi与facecolor；整批目的路径预检、独占新建，返回实际导出记录；不计算指标或创建图形 |
 | 完整母群与寿命边界事实 | [particle_census.py](../../src/msplatform/analysis/particle_census.py)：`lifetime_position`、`partition_cohort`、`subset_efficiency` | caller显式声明生效／终止时间、容差、分类标签和完整母群权重；保留原ID、分类数和明确分子分母；未知不推断存活，非出口终止不等于撞壁 |

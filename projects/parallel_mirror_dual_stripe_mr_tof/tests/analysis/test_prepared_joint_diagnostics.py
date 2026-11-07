@@ -314,7 +314,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
 
     def test_posthoc_contract_changes_only_peak_and_keeps_native_inputs(self) -> None:
         import copy
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         from types import SimpleNamespace
         contract_path = self.root / "contract.json"
         original = json.loads(contract_path.read_text())
@@ -374,7 +374,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
             merge_receipt=self.preparation.parent / "batch_log_merge_receipt.json", analysis_contract=override)
 
     def test_default_pipeline_transports_declared_peak_contract(self) -> None:
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         contract_path = self.root / "contract.json"
         contract = json.loads(contract_path.read_text())
         timing = self.root / "timing.json"

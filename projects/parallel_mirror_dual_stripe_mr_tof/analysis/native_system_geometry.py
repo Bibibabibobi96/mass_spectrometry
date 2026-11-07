@@ -12,7 +12,7 @@ import math
 import re
 from pathlib import Path
 
-from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 from common.integration.resolve_assembly import derive_assembly_scope
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import _box, _number
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.assembly_interface import resolve_assembly_interface as resolve_mr_assembly_interface

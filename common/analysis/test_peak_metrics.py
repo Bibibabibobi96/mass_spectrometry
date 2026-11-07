@@ -5,7 +5,7 @@ import unittest
 
 import numpy as np
 
-from common.analysis.peak_metrics import (
+from msplatform.analysis.peak_metrics import (
     AnalysisSettings, bootstrap_resolution_difference, compare_peak_shapes, half_height_width,
     compute_peak_metrics, compute_time_peak_metrics, compute_nominal_mass_peak_metrics,
 )

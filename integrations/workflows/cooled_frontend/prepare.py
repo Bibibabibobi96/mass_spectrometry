@@ -15,7 +15,7 @@ from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import validate_schema
 from common.integration.resolve_assembly import derive_assembly_scope
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, transform_source_rows

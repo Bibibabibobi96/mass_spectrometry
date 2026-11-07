@@ -13,7 +13,7 @@ import math
 from numbers import Real
 from typing import TypeAlias
 
-from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
+from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 
 SCHEMA_VERSION = 1
 METHOD = "bounded_linear_directed_plane_crossing"

@@ -14,7 +14,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geomet
     resolve_accelerator_geometry, project_side_opening,
 )
 from common.integration.resolve_assembly import compile_assembly_layout
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture as three_zone_fixture, reframe_parent
 from msplatform.backends.comsol.paired_static_field import prepare

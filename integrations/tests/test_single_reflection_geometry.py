@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError
-from common.contracts.rigid_transform import FramedPosition, RigidTransform
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem, physical_electrode_view
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request

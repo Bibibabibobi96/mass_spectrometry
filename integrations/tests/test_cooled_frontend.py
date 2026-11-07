@@ -25,7 +25,7 @@ from integrations.tests.frontend_fixtures import canonical_frontend_fixture, can
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_cooled_buncher import buncher_fixture, native_pose
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract
 from integrations.tests.test_local_frontend_workflow import fixture, REPO
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts import capacity_ledger
 from common.simion import pa_family_cache
 from common.contracts.write_run_manifest import file_record

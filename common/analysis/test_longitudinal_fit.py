@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from common.analysis.longitudinal_fit import fit_longitudinal_polynomial
+from msplatform.analysis.longitudinal_fit import fit_longitudinal_polynomial
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_ideal_acceptance_aperture_campaign import (
     _polynomial_metrics as campaign_metrics,
 )

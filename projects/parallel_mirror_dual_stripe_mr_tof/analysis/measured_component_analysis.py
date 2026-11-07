@@ -16,7 +16,7 @@ from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
 from common.contracts.canonical_clock_authority import validate_clock_authority
-from common.contracts.component_particle_state import load_component_particle_state_csv
+from msplatform.contracts.particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events, unavailable_peak_metadata
@@ -168,7 +168,7 @@ def _population_rows(census: list[dict[str, str]], states: dict[int, dict[str, A
 
 def validate_measured_peak_analysis_contract(contract: dict[str, Any], base: Path) -> float:
     """Verify explicit common-pulse peak settings and frozen timing bytes; return pulse time in us."""
-    from common.analysis.peak_metrics import AnalysisSettings
+    from msplatform.analysis.peak_metrics import AnalysisSettings
     if (set(contract) != {"method_id", "resolution_definition", "time_basis", "settings", "common_time_reference"}
             or contract["method_id"] != "common_gaussian_kde_time_v2"
             or contract["resolution_definition"] != "mean_tof_us/(2*direct_fwhm_tof_us)"
@@ -222,7 +222,7 @@ def _prepare_detector_peak(contract: dict[str, Any] | None, base: Path, receipt:
     )
     if contract is None:
         return result, None
-    from common.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
+    from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics
 
     pulse = validate_measured_peak_source_reference(contract, base, receipt, states)
     reference = contract["common_time_reference"]

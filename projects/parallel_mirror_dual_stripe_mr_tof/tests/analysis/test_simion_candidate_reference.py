@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from common.integration.resolve_assembly import compile_assembly_layout
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,

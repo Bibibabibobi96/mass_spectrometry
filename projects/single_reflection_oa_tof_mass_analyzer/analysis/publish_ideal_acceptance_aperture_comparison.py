@@ -21,6 +21,7 @@ import tempfile
 from typing import Any, Callable
 
 from common.contracts.artifact_naming import validate_run_id
+from msplatform.analysis import longitudinal_fit
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import (
     analyze_ideal_acceptance_aperture_campaign as pre_pulse,
@@ -174,7 +175,7 @@ def publish_aperture_comparison(
         "publication_implementation": Path(__file__).resolve(),
         "pre_pulse_implementation": Path(pre_pulse.__file__).resolve(),
         "full_flight_implementation": Path(full_flight.__file__).resolve(),
-        "longitudinal_fit_implementation": REPOSITORY_ROOT / "common/analysis/longitudinal_fit.py",
+        "longitudinal_fit_implementation": Path(longitudinal_fit.__file__).resolve(),
         "file_identity_implementation": REPOSITORY_ROOT / "common/contracts/file_identity.py",
     }
     source_hashes = {name: _sha256(path) for name, path in source_paths.items()}

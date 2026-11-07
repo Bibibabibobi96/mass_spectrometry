@@ -14,7 +14,7 @@ import pandas as pd
 ANALYSIS_DIR = Path(__file__).resolve().parents[2] / "analysis"
 
 
-from common.analysis.peak_metrics import (
+from msplatform.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_distribution,
     bootstrap_resolution_difference,

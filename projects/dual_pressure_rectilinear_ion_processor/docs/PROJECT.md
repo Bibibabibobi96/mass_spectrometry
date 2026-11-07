@@ -290,9 +290,9 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 
 2026-11-02，`functional.prepare`随[科学核心实迁](../../../common/README.md#科学核心发行与旧入口)
 冻结`src/msplatform`生产源码及其本地schema资源，继续绑定所选配置、源、时钟及原生动态资源。
-仍被本项目与公共状态／穿面模块导入的三个旧入口由
-`FROZEN_SCIENTIFIC_BRIDGE_MODULES`显式声明：`particle_physics`、`rigid_transform`及`ion_release.release`；
-它们只路由至canonical实现，随具名消费者迁移直接导入后退出，最迟P4移除。
+仍被本项目与公共状态／穿面模块导入的两个旧入口由
+`FROZEN_SCIENTIFIC_BRIDGE_MODULES`显式声明：`particle_physics`及`ion_release.release`；
+刚体变换旧桥已退役，状态与穿面消费者直接使用canonical实现，不改变冻结科学语义。
 两代隔离准备回归实际移走作者目录，再以`-I`仅从第一代冻结代码和资源准备第二代；
 释放CSV、时钟、Fly2等输出保持逐字节一致，缺失runtime或placeholder仍在物化前拒绝。
 两方法通过（10.603秒）；上游admission与电子枪绑定联合45项通过（27.111秒）。

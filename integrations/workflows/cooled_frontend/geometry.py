@@ -5,7 +5,7 @@ import copy
 import math
 from typing import Any
 
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from common.simion.gem_primitives import format_number
 from integrations.runtime.single_flight_frontend import (
     _canonical_grid, finalize_frontend_geometry, prepare_bare_frontend_geometry,

@@ -16,7 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import ndtri
 
-from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
+from msplatform.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
     CoupledReflectronSolution,
     solve_coupled_reflectron_from_accelerator_derivatives,

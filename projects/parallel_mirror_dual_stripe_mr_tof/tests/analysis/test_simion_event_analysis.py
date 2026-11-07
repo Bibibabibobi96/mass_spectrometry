@@ -186,7 +186,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
 
         def checked_import(name, *args, **kwargs):
             if name == "common.analysis.peak_metrics":
-                raise AssertionError("MR analysis must call canonical peak metrics directly")
+                raise AssertionError("MR analysis must not call the retired peak-metrics bridge")
             return original_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=checked_import):

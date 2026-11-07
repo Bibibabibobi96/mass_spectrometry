@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from common.analysis.peak_metrics import compute_peak_metrics
+from msplatform.analysis.peak_metrics import compute_peak_metrics
 from common.contracts.recorded_file_removal import write_json_atomic
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from common.contracts.component_particle_state import write_component_particle_state_csv
+from msplatform.contracts.particle_state import write_component_particle_state_csv
 from common.contracts.particle_physics import kinetic_energy_ev
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import compare_measured_exit_energy
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_ion_processor_handoff as fixtures

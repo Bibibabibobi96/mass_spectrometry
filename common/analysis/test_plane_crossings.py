@@ -11,7 +11,7 @@ from common.analysis.plane_crossings import (
     CrossingSample,
     iter_bounded_plane_crossings,
 )
-from common.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
+from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 
 
 def sample(pid, anchor, time, z, *, vz=-1000., frame="instrument"):

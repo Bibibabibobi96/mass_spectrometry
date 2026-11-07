@@ -654,7 +654,7 @@ foreach ($status in @('PASS','FAIL')) {{
 }}
 # Keep the complete FAIL outputs in place: they must not mask isolation failures.
 $peakPath = Get-FrozenPythonPackageFile -Package $frozenAnalysisPackage `
-    -RelativePath common/analysis/peak_metrics.py
+    -RelativePath src/msplatform/analysis/peak_metrics.py
 $peakPath = [IO.Path]::GetFullPath($peakPath)
 if (-not $peakPath.StartsWith($fixtureRoot + [IO.Path]::DirectorySeparatorChar,
         [StringComparison]::OrdinalIgnoreCase)) {{ throw 'Fixture path escaped temporary root.' }}
@@ -726,7 +726,7 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                         "projects.rf_multipole_ion_optics.core.mass_response",
                         "projects.rf_multipole_ion_optics.core.paired_mass_scan",
                         "common.contracts.file_identity",
-                        "common.analysis.peak_metrics",
+                        "msplatform.analysis.peak_metrics",
                     ):
                         self.assertIn(module, origins)
                     if runner_name != "compare_responses.ps1":

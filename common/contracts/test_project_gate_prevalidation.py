@@ -63,6 +63,18 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
                     path = target / relative.replace("\\", "/")
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text("# inert authority fixture\n", encoding="utf-8")
+            required_core = re.search(r"\$requiredCoreFiles = @\((.*?)\n    \)", source, re.S)
+            if required_core:
+                for relative in re.findall(r"'([^']+)'", required_core[1]):
+                    path = self.root / relative.replace("\\", "/")
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("# inert canonical authority fixture\n", encoding="utf-8")
+            for relative in ("config/baseline.json", "config/numerical_modes.json",
+                             "config/resolved_model.json", "config/resolved_geometry.json"):
+                authority = REPO / "projects" / project / relative
+                if authority.is_file():
+                    (target / relative).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(authority, target / relative)
         (self.root/"lua_probe.ps1").write_text("exit 0\n", encoding="utf-8")
         lua = self.root / "projects" / MR / "tests/simion"
         lua.mkdir(parents=True)
@@ -90,9 +102,13 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
                 direct = self.run_gate(project)
                 self.assertEqual(direct.returncode, 0, direct.stdout + direct.stderr)
                 ruff = [row for row in self.calls() if row[0] == "ruff"]
-                self.assertEqual(ruff, [["ruff", "check", f"projects/{project}/analysis",
-                                        f"projects/{project}/tests" +
-                                        ("" if project == RUFF_PROJECTS[2] else "/analysis")]])
+                expected_ruff = [f"src/msplatform/components/{project}"]
+                if project == RUFF_PROJECTS[2]:
+                    expected_ruff += ["src/msplatform/backends/simion/dual_cone_geometry.py",
+                                      f"projects/{project}/analysis", f"projects/{project}/simion"]
+                expected_ruff.append(f"projects/{project}/tests" +
+                                     ("" if project == RUFF_PROJECTS[2] else "/analysis"))
+                self.assertEqual(ruff, [["ruff", "check", *expected_ruff]])
                 self.log.unlink()
                 delegated = self.run_gate(project, "-RuffHandledByParent", fail="ruff")
                 self.assertEqual(delegated.returncode, 0, delegated.stdout + delegated.stderr)

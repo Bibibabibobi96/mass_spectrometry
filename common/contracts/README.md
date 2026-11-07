@@ -824,9 +824,9 @@ typed整数列`particle_id`／`parent_particle_id`／`generation`／`charge_stat
 需要消费状态的入口调用[`load_component_particle_state_csv`](../../src/msplatform/contracts/particle_state.py)，一次读取、解析和校验后
 返回按原行序的typed `rows`及原有`report`；整数、实数与可空字段按Schema解析，标识字符串不转数值。
 `validate_component_particle_state_csv`复用同一入口并仅返回报告；读取不会重写输入字节。
-旧`common.contracts.component_particle_state`仅单向委托中立实现；旧`common.contracts.particle_state`
-仅适配RF事件协议及其具名源reader，两者不是同一合同。剩余RF/IP/MR和integration活动消费者、
-冻结CLI库存按对应工作流迁移，旧活动桥最迟P4退出；历史冻结资产不回填当前实现。
+旧`common.contracts.component_particle_state`已退役；旧`common.contracts.particle_state`
+仅适配RF事件协议及其具名源reader，两者不是同一合同。中立状态消费者和旧CLI直接使用canonical实现；
+历史冻结资产不回填当前实现。
 IP接收已发布准备run时复用`verified_successful_run_reference`、`verify_record`及终态journal检查，
 验证manifest绑定的状态包、准备receipt和原生产者身份；IP冻结副本保留准备manifest及原包引用。
 历史未发布准备包仍沿原RF生产者验证路径，不把未绑定的JSON当作发布证据。

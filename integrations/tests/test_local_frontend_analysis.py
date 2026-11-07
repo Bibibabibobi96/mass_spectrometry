@@ -11,7 +11,7 @@ import unittest
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from integrations.tests.frontend_fixtures import (
     canonical_three_zone_frontend_fixture,
     canonical_two_zone_frontend_contract,

@@ -23,7 +23,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
-from common.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
+from msplatform.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
 from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import (
     DEFAULT_DETECTOR_CENTER_X_MM,

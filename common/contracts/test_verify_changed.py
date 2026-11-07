@@ -279,7 +279,7 @@ ConvertTo-Json -Compress -InputObject $paths
                  ("common/ion_release/__init__.py", "common.contracts.test_installed_scientific_core"),
                  ("common/integration/resolve_assembly.py", "common.contracts.test_installed_scientific_core"),
                  ("common/integration/__init__.py", "common.contracts.test_installed_scientific_core"),
-                 ("common/analysis/peak_metrics.py", "common.contracts.test_installed_scientific_core"),
+                 ("src/msplatform/analysis/peak_metrics.py", "common.contracts.test_installed_scientific_core"),
                  ("common/contracts/particle_physics.py", "common.contracts.test_installed_scientific_core"),
                  ("src/msplatform/contracts/schemas/composition_plan.schema.json", "common.contracts.test_installed_scientific_core"),
                  ("src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json", "common.contracts.test_machine_contracts_paths"))
@@ -537,7 +537,7 @@ exit 0
         for implementation, stage, module in (
             ("common/contracts/expected_values.py", "common_contracts",
              "common.contracts.test_expected_values"),
-            ("common/analysis/longitudinal_fit.py", "longitudinal_fit_tests",
+            ("src/msplatform/analysis/longitudinal_fit.py", "longitudinal_fit_tests",
              "common.analysis.test_longitudinal_fit"),
         ):
             with self.subTest(implementation=implementation):
@@ -552,7 +552,7 @@ exit 0
                     self.assertIn(module, route["command"]["arguments"])
         self.assertTrue({
             "single_reflection_oa_tof_mass_analyzer_static",
-                    } <= self.routed_stages("common/analysis/longitudinal_fit.py").keys())
+                    } <= self.routed_stages("src/msplatform/analysis/longitudinal_fit.py").keys())
         self.assertIn("orthogonal_accelerator_static",
                       self.routed_stages("common/contracts/expected_values.py"))
         self.assertTrue({"single_reflection_oa_tof_mass_analyzer_static", "instrument_assembly_integration"}

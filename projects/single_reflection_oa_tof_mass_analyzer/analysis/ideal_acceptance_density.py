@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from common.analysis.peak_metrics import half_height_width
+from msplatform.analysis.peak_metrics import half_height_width
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import (
     DesignDomainError, finite_source_envelope,
 )

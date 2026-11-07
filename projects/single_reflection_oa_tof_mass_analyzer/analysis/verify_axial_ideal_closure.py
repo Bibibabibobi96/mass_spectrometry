@@ -29,7 +29,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerato
     coupled_flight_time_s,
     solve_coupled_reflectron_fields,
 )
-from common.analysis.peak_metrics import (
+from msplatform.analysis.peak_metrics import (
     compute_peak_metrics,
 )
 from common.contracts.file_identity import file_sha256 as _sha256

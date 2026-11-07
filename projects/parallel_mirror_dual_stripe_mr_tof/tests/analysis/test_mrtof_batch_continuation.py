@@ -424,7 +424,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                 _continuation_waveforms(manifest)
 
     def test_peak_upgrade_reuses_fly_only_with_verified_contracts_and_unchanged_flight(self) -> None:
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent, current = self._prepared_joint_fixture(root, second_complete=True)

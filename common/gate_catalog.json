@@ -133,7 +133,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/longitudinal_fit.py",
+          "exact": "src/msplatform/analysis/longitudinal_fit.py",
           "reason": "longitudinal_fit_changed"
         },
         {
@@ -187,16 +187,12 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/peak_metrics.py",
+          "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_peak_metrics_changed"
         },
         {
           "exact": "common/analysis/test_peak_metrics.py",
           "reason": "shared_peak_metrics_tests_changed"
-        },
-        {
-          "exact": "src/msplatform/analysis/peak_metrics.py",
-          "reason": "shared_peak_metrics_changed"
         }
       ],
       "command": {
@@ -580,7 +576,7 @@
           "reason": "workspace_path_transport_changed"
         },
         {
-          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
+          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|machine_contracts)\\.py))$",
           "reason": "installed_scientific_core_changed"
         },
         {
@@ -948,7 +944,7 @@
                 "reason": "optional_cad_dependency_lock_changed"
               },
               {
-                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|rigid_transform|machine_contracts)\\.py))$",
+                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|particle_physics|machine_contracts)\\.py))$",
                 "reason": "installed_scientific_core_changed"
               }
             ],
@@ -1872,7 +1868,7 @@
           "reason": "parallel_mirror_dual_stripe_mr_tof_path_changed"
         },
         {
-          "exact": "common/analysis/peak_metrics.py",
+          "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_peak_metrics_changed"
         },
         {
@@ -2072,11 +2068,11 @@
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
-          "exact": "common/analysis/peak_metrics.py",
+          "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_peak_metrics_changed"
         },
         {
-          "exact": "common/analysis/longitudinal_fit.py",
+          "exact": "src/msplatform/analysis/longitudinal_fit.py",
           "reason": "longitudinal_fit_dependency_changed"
         },
         {
@@ -2338,7 +2334,7 @@
           "reason": "shared_particle_census_changed"
         },
         {
-          "exact": "common/analysis/peak_metrics.py",
+          "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_response_peak_metrics_changed"
         },
         {

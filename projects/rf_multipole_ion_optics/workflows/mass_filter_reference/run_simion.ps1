@@ -147,7 +147,7 @@ try {
     $analysisRequiredModules = @($analysisModule,
       'projects.rf_multipole_ion_optics.core.mass_response',
       'projects.rf_multipole_ion_optics.core.paired_mass_scan',
-      'common.contracts.file_identity','common.analysis.peak_metrics')
+      'common.contracts.file_identity','msplatform.analysis.peak_metrics')
     $analysisDistributions = @('matplotlib','numpy','scipy')
     $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `

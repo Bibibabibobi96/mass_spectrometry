@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from common.analysis.peak_metrics import AnalysisSettings
+from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.machine_contracts import load_json
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import DesignDomainError, prepare_source_quadrature

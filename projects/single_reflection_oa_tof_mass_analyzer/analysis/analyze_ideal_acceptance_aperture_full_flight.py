@@ -15,7 +15,7 @@ import csv
 import json
 from pathlib import Path
 
-from common.analysis.longitudinal_fit import fit_longitudinal_polynomial
+from msplatform.analysis.longitudinal_fit import fit_longitudinal_polynomial
 from common.contracts.file_identity import file_sha256 as _sha256
 import re
 from typing import Any

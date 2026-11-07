@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unittest
 
-from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
+from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import (
     export_guide_contract, export_guide_assembly_interface,
 )

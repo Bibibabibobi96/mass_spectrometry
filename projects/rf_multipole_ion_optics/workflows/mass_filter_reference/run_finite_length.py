@@ -276,7 +276,7 @@ def _prepare_analysis_request(inputs: Path, results: Path) -> tuple[Path, dict[s
         "python": sys.executable, "relative_paths": relative_paths,
         "python_packages": python_packages,
         "required_modules": [
-            "common.analysis.peak_metrics",
+            "msplatform.analysis.peak_metrics",
             "projects.rf_multipole_ion_optics.core.mass_response",
             "projects.rf_multipole_ion_optics.workflows.mass_filter_reference.run_finite_length",
         ],

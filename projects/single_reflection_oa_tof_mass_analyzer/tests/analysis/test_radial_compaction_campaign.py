@@ -776,9 +776,9 @@ def run(case_root, run_id, context, managed):
     def test_flight_dependency_comparison_keeps_science_and_driver_identity(self) -> None:
         original = {"inputs": {"campaign": "same"}, "campaign_driver_sha256": "same",
                     "simion_sha256": "same", "python_sha256": "same", "sources": {
-                        "common/analysis/peak_metrics.py": "old", "physical.lua": "same"}}
+                        "src/msplatform/analysis/peak_metrics.py": "old", "physical.lua": "same"}}
         changed = copy.deepcopy(original)
-        changed["sources"]["common/analysis/peak_metrics.py"] = "new"
+        changed["sources"]["src/msplatform/analysis/peak_metrics.py"] = "new"
         self.assertTrue(radial._same_flight_dependencies(changed, original))
         for section, key in (("sources", "physical.lua"), ("inputs", "campaign")):
             altered = copy.deepcopy(changed)

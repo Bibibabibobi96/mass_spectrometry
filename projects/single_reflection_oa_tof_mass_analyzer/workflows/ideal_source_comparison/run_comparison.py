@@ -32,7 +32,7 @@ import scipy
 
 from common.paths.workspace_paths import resolve_workspace_paths
 from common.contracts.artifact_naming import validate_run_id
-from common.analysis.peak_metrics import AnalysisSettings
+from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
 from common.contracts.verify_run_manifest import verify_record
@@ -86,7 +86,7 @@ def _inputs(config_path: Path) -> dict[str, Path]:
             "numerical_case": Path(__file__).with_name("numerical_case.py"),
             "analysis_contract": PROJECT_ROOT / "config/analysis_contract.json",
             "particle_policy": REPO_ROOT / "common/contracts/particle_count_policy.json",
-            "peak_metrics": REPO_ROOT / "common/analysis/peak_metrics.py",
+            "peak_metrics": REPO_ROOT / "src/msplatform/analysis/peak_metrics.py",
             "accelerator_time_focus": accelerator / "accelerator_time_focus.py",
             "accelerator_three_zone_theory": accelerator / "three_zone_ideal_theory.py",
             "accelerator_two_zone_geometry": accelerator / "two_zone_geometry.py",
@@ -331,6 +331,9 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
             retained = [(key, value) for key, value in zip(node.keys, node.values)
                         if not (isinstance(key, ast.Constant) and key.value == "numerical_case")]
             node.keys, node.values = [item[0] for item in retained], [item[1] for item in retained]
+    for node in ast.walk(expected_inputs):
+        if isinstance(node, ast.Constant) and node.value == "src/msplatform/analysis/peak_metrics.py":
+            node.value = "common/analysis/peak_metrics.py"
     equal(function(source, "_inputs"), expected_inputs, "complete original input role constructor")
     expected_reuse = copy.deepcopy(function(current_source, "_reuse_case"))
     expected_reuse.body = [node for node in expected_reuse.body if not (
@@ -405,6 +408,7 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     numerical_imports[alias.asname or alias.name] = (node.module, alias.name, node.level)
+    numerical_imports["AnalysisSettings"] = ("common.analysis.peak_metrics", "AnalysisSettings", 0)
     for node in ast.parse(source).body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:

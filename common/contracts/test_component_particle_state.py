@@ -131,12 +131,10 @@ class ComponentParticleStateTests(unittest.TestCase):
         self.assertEqual(report["frame_ids"], ["instrument_global"])
         self.assertEqual(report["clock_epoch_ids"], ["instrument_clock_epoch.v1"])
 
-    def test_core_source_and_legacy_bridge_share_the_same_transfer_contract(self) -> None:
-        from common.contracts import component_particle_state as bridge
+    def test_canonical_source_owns_the_transfer_contract(self) -> None:
         from msplatform.contracts import particle_state as core
         from msplatform.contracts.rigid_transform import PhaseSpaceState
 
-        self.assertIs(bridge, core)
         self.assertIs(core.PhaseSpaceState, PhaseSpaceState)
         for name in ("ComponentParticleStateTable", "load_component_particle_state_csv",
                      "validate_component_particle_state_csv", "write_component_particle_state_csv"):
@@ -150,16 +148,15 @@ class ComponentParticleStateTests(unittest.TestCase):
         self.assertNotIn("terminal", table.report)
         self.assertIsNone(table.rows[0]["phase_rad"])
 
-    def test_legacy_and_canonical_cli_validate_the_same_actual_csv(self) -> None:
+    def test_canonical_cli_validates_actual_csv(self) -> None:
         self.write([valid_row(91)])
         root = Path(__file__).resolve().parents[2]
-        outputs = []
-        for module in ("common.contracts.component_particle_state", "msplatform.contracts.particle_state"):
-            result = subprocess.run([sys.executable, "-m", module, "--state", str(self.path)],
-                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            outputs.append(result.stdout)
-        self.assertEqual(outputs, ["COMPONENT_PARTICLE_STATE=PASS SCHEMA_VERSION=1 PARTICLES=1\n"] * 2)
+        result = subprocess.run(
+            [sys.executable, "-m", "msplatform.contracts.particle_state", "--state", str(self.path)],
+            cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "COMPONENT_PARTICLE_STATE=PASS SCHEMA_VERSION=1 PARTICLES=1\n")
 
     def test_loader_reads_once_returns_typed_rows_and_preserves_order(self) -> None:
         rows = [valid_row(9), valid_row(2)]

@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from common.analysis.peak_metrics import (
+from msplatform.analysis.peak_metrics import (
     AnalysisSettings,
     _bootstrap_resolution_batch,
     compute_peak_metrics,

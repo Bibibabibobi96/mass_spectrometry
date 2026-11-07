@@ -28,7 +28,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometr
 # recorded-source readers used by this study. Retire with those imports by P4.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "common/contracts/particle_physics.py",
-    "common/contracts/rigid_transform.py",
     "common/integration/resolve_assembly.py",
     "common/ion_release/release.py",
     "common/simion/resource_scheduler.py",

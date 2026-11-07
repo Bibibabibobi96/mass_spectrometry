@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.machine_contracts import validate_schema
-from common.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
+from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
 from projects.orthogonal_accelerator.analysis.assembly_interface import (
     resolve_assembly_interface,
 )

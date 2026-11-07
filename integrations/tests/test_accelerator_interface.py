@@ -293,7 +293,7 @@ Write-Output 'MP_IP_JOINT=PASS'
         if not powershell:
             self.skipTest("PowerShell 7 required")
         from integrations.tests.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
-        from common.contracts.rigid_transform import RigidTransform
+        from msplatform.contracts.rigid_transform import RigidTransform
         fixture = MultipoleIPPreparationTests("test_current_three_component_parent_derives_both_scopes_without_repositioning")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)

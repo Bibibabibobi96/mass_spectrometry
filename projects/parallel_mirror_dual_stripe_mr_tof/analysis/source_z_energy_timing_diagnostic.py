@@ -494,7 +494,7 @@ def materialize_te1_variation_from_diagnostics(
 
 def _require_current_time_peak_result(timing: dict[str, Any], label: str) -> dict[str, Any]:
     """Require the native common-zero KDE result and its own matching settings."""
-    from common.analysis.peak_metrics import AnalysisSettings
+    from msplatform.analysis.peak_metrics import AnalysisSettings
 
     contract = timing.get("analysis_contract")
     metadata = timing.get("analysis_metadata")

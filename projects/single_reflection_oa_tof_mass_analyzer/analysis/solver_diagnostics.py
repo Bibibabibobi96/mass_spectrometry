@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from common.analysis.peak_metrics import FWHM_FACTOR
+from msplatform.analysis.peak_metrics import FWHM_FACTOR
 
 
 DETECTOR_PATTERN = re.compile(

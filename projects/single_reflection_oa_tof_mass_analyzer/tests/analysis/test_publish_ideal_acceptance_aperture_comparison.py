@@ -63,7 +63,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             result_exists = (run_dir / "results" / "ideal_acceptance_300mm_aperture_pre_pulse_comparison.json").is_file()
             snapshot = run_dir / "inputs" / "repository_snapshot"
             for name, relative in (
-                ("longitudinal_fit_implementation", "common/analysis/longitudinal_fit.py"),
+                ("longitudinal_fit_implementation", "src/msplatform/analysis/longitudinal_fit.py"),
                 ("file_identity_implementation", "common/contracts/file_identity.py"),
             ):
                 self.assertEqual(manifest["inputs"][name]["sha256"], _sha(snapshot / relative))
@@ -72,12 +72,12 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             # Isolated import proves the new dependency is present without the live repo.
             probe = subprocess.run(
                 [sys.executable, "-I", "-c",
-                 "import sys; sys.path.insert(0, sys.argv[1]); "
-                 "from common.analysis.longitudinal_fit import fit_longitudinal_polynomial; "
+                 "import sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[2]); "
+                 "from msplatform.analysis.longitudinal_fit import fit_longitudinal_polynomial; "
                  "from common.contracts.file_identity import file_sha256; "
                  "import numpy as np; "
                  "assert abs(fit_longitudinal_polynomial(np.arange(3.), np.arange(3.), 1).metrics['k_per_us'] - 1) < 1e-12",
-                 str(snapshot)],
+                 str(snapshot), str(snapshot / "src")],
                 cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
             self.assertEqual(probe.returncode, 0, probe.stderr)

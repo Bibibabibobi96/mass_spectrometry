@@ -2294,7 +2294,7 @@ def _derive_saved_slow_signature(trial: dict[str, Any], manifest_path: Path) -> 
 def load_measured_centroid_closure_target(path: Path, source_receipt_path: Path,
                                          contract_path: Path) -> dict[str, Any]:
     """Import the explicit audited target; never synthesize an old OA target."""
-    from common.contracts.component_particle_state import DERIVED_RELATIVE_TOLERANCE, DERIVED_ABSOLUTE_TOLERANCE
+    from msplatform.contracts.particle_state import DERIVED_RELATIVE_TOLERANCE, DERIVED_ABSOLUTE_TOLERANCE
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import resolve_converging_prism_target
     target = _load(path, "measured centroid closure target")
     required = {"schema_version", "role", "inputs", "source_energy_ledger", "prism_handoff_target",
@@ -2411,7 +2411,7 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
     for key,record in source["outputs"].items():
         verify_record(key,record)
     observation,materialization = copy.deepcopy(projection["observation"]),copy.deepcopy(projection["materialization"])
-    from common.contracts.component_particle_state import load_component_particle_state_csv
+    from msplatform.contracts.particle_state import load_component_particle_state_csv
     canonical=Path(source["outputs"]["component_particle_state"]["path"])
     rows=load_component_particle_state_csv(canonical).rows
     if len(rows)!=1 or rows[0]["particle_id"]!=1 or rows[0]["state_event"]!="constructed_measured_exit_centroid":

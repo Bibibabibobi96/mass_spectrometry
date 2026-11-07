@@ -12,7 +12,7 @@ from unittest.mock import patch
 import copy
 from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from common.contracts.write_run_manifest import file_record
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from integrations.workflows.accelerator_interface import geometry
 from integrations.tests import test_multipole_ip_prepare as multipole_tests
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_ion_processor_assembly as assembly_tests

@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.analysis.peak_metrics import AnalysisSettings
+from msplatform.analysis.peak_metrics import AnalysisSettings
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import peak_time_metrics
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,

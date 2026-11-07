@@ -18,7 +18,7 @@ from msplatform.analysis.particle_census import (
     CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
 )
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.rigid_transform import FramedPosition, PhaseSpaceState, RigidTransform
+from msplatform.contracts.rigid_transform import FramedPosition, PhaseSpaceState, RigidTransform
 from common.contracts.write_run_manifest import file_record
 from integrations.analysis.plot_single_flight_spatial_six_panel import (
     _checkpoint_distribution_summary,

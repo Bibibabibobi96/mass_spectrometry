@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.component_particle_state import write_component_particle_state_csv
+from msplatform.contracts.particle_state import write_component_particle_state_csv
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import _load_source, analyze_measured_component, _prepare_detector_peak, _save_detector_peak, validate_measured_peak_source_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
@@ -46,7 +46,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         timing = self.root / "native_timing.json"
         timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=pulse)))
         source = json.loads((self.source / "source_receipt.json").read_text())
-        from common.analysis.peak_metrics import AnalysisSettings
+        from msplatform.analysis.peak_metrics import AnalysisSettings
         return dict(method_id="common_gaussian_kde_time_v2", resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
                     time_basis="instrument_arrival_minus_common_extraction_pulse_us",
                     settings={key: value for key, value in vars(AnalysisSettings()).items()},
@@ -80,7 +80,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(float(rows[1]["tof_from_common_pulse_us"])-float(rows[0]["tof_from_common_pulse_us"]), .06)
 
     def test_common_peak_algorithm_and_time_translation_preserve_exit_spread(self) -> None:
-        from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
+        from msplatform.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
         source = json.loads((self.source / "source_receipt.json").read_text())
         offsets = [.01, .02, .05, .08, .11]
         states = {i: dict(mass_amu=524.0, charge_state=1, mass_to_charge_Th=524.0, particle_weight=1.0, instrument_time_us=7500+offset)

@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from common.analysis.peak_metrics import AnalysisSettings
+from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (

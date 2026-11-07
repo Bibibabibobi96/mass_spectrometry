@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from common.contracts.rigid_transform import (
+from msplatform.contracts.rigid_transform import (
     FramedCovariance,
     FramedPosition,
     FramedTensor,

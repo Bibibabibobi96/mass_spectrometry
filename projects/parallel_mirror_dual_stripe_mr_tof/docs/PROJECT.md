@@ -70,10 +70,11 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 普通`.pa`格式、电极标志、sidecar与失败语义保持；此迁移不启动SIMION，也不授予场精度或科学资格。
 IP交接、实测源及实测分析现直接调用`msplatform.analysis.particle_census`；旧公共census桥退役，
 92项相关回归覆盖完整ID、权重、未知终态与RF冻结缺件拒绝，未新增原生或科学资格。
+峰形、刚体变换与中立状态消费者均直接调用安装canonical实现；三份旧公共桥删除，门禁仍覆盖原消费者范围。
 
 IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
-`particle_physics`、`rigid_transform`、`resolve_assembly`、`release` 及
-`resource_profile` 仍导入的 `resource_scheduler` 五个兼容桥。
+`particle_physics`、`resolve_assembly`、`release` 及
+`resource_profile` 仍导入的 `resource_scheduler` 四个兼容桥；刚体变换旧桥已退出。
 runner 使用公共导入根，并在每次 Python 调用前校验核心及目标模块来自本次快照；
 缺少冻结核心时拒绝宿主安装补齐。上述桥随具名调用迁移退出，最迟 P4 删除。
 MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒），包括真实冻结源码、

@@ -106,7 +106,6 @@ RELATIVE_PATHS = (
     "common/comsol/run_comsol_r2025b.ps1",
     "common/paths/workspace_paths.m",
     "common/paths/resolve_path_identity.m",
-    "common/analysis/peak_metrics.py",
     "common/contracts/artifact_naming.py",
     "common/contracts/file_identity.py",
     "common/contracts/particle_count_policy.json",

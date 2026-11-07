@@ -47,7 +47,6 @@ from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates i
 # Retire with their direct imports by P4; all algorithms remain in msplatform.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "common/contracts/particle_physics.py",
-    "common/contracts/rigid_transform.py",
     "common/ion_release/release.py",
 )
 # Actual runtime dependencies, independent of incidental imports in the author process.

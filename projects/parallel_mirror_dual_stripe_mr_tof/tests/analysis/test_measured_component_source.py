@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.canonical_clock_authority import validate_clock_authority
-from common.contracts.component_particle_state import write_component_particle_state_csv
+from msplatform.contracts.particle_state import write_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
 from common.contracts.strict_json import StrictJsonError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import measured_component_source as source_module

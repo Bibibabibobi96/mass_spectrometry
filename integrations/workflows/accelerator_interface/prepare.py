@@ -41,7 +41,7 @@ verified_preparation_reference = partial(
 
 def preflight_joint_analysis(design_run: Path, source_run: Path, contract_path: Path) -> None:
     """Validate the selected analysis and measured source before a new field solve."""
-    from common.contracts.component_particle_state import load_component_particle_state_csv
+    from msplatform.contracts.particle_state import load_component_particle_state_csv
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import validate_component_exit_binding
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_source_reference
 

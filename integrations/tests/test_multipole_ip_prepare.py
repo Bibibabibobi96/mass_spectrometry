@@ -19,7 +19,7 @@ from projects.rf_multipole_ion_optics.core.component_port import prepare_exit_ob
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
-from common.contracts.rigid_transform import RigidTransform
+from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from integrations.workflows.multipole_ip.prepare import FRAME, prepare
