@@ -86,7 +86,7 @@ import json, sys
 from pathlib import Path
 from common.contracts.verify_run_manifest import verified_successful_run_reference, verify_record, record_path
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import transform_from_config
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import transform_from_config
 run, config = map(Path, sys.argv[1:])
 path = verified_successful_run_reference(run, 'results/multipole_ip/preparation_receipt.json', project='instrument_assembly', mode='multipole_ip_preparation')
 receipt = json.loads(path.read_text(encoding='utf-8-sig'))
@@ -131,7 +131,7 @@ function Assert-CompletedIpScientificFailure {
   $code=@'
 import json, sys
 from pathlib import Path
-from projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit import load_component_source
+from msplatform.backends.simion.ip_exit import load_component_source
 summary, _, _ = load_component_source(Path(sys.argv[1]).resolve())
 if not (summary.get('status') == 'failed' and summary.get('execution_status') == 'completed' and summary.get('data_validity') == 'valid' and summary.get('science_status') == 'not_passed' and summary.get('analysis_exit_code') == 2 and summary.get('native_completed') is True and summary.get('diagnostics_complete') is True):
     raise ValueError('IP failure lacks completed native and analysis evidence')

@@ -85,14 +85,14 @@ def _resolve_ip_matching(*, source_run: Path, results: Path, inputs: Path,
                         frozen: dict[str, Any]) -> dict[str, Any]:
     """Consume the declared IP export API from the frozen package namespace."""
     dependency = _read(Path(frozen["accelerator_dependency"]["path"]))
-    expected = "projects/dual_pressure_rectilinear_ion_processor/analysis/component_exit.py"
+    expected = "src/msplatform/backends/simion/ip_exit.py"
     if (dependency.get("api_version") != 2
             or dependency.get("provider_project_id") != ION_PROCESSOR
             or dependency.get("execution_scope") != "prepare_only_no_solver"
             or dependency.get("provider_callable") != "export_component_exit"
             or dependency.get("provider_module") != expected):
         raise ValueError("unsupported ion processor provider API")
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit import export_component_exit
+    from msplatform.backends.simion.ip_exit import export_component_exit
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_matching_request
     request = _read(Path(frozen['accelerator_request']['path']))
     plan = derive_assembly_scope(_read(Path(frozen['composition_plan']['path'])), local_scope=request.get('local_scope'))

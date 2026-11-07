@@ -13,16 +13,17 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort
-from common.contracts.canonical_clock_authority import validate_clock_authority
-from msplatform.contracts.particle_state import write_component_particle_state_csv
-from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
-from common.contracts.solver_review_retirement import verify_retirement
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import (
+from msplatform.backends.simion.ip_handoff import frozen_release_states, load_injected_source
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
     to_local_position, to_project_position, to_project_vector, transform_from_config,
 )
-from msplatform.backends.simion.ip_handoff import frozen_release_states, load_injected_source
+from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
+from msplatform.contracts.particle_state import write_component_particle_state_csv
+from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.execution.ip_continuation import continuation_ancestry, continuation_protection_paths
+from msplatform.execution.manifest_records import file_record, record_path, verify_record
+from msplatform.execution.solver_review_retirement import verify_retirement
+from msplatform.execution.terminal_publication import require_completed_terminal_publication
 
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENT_VALUES = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
@@ -117,7 +118,6 @@ def load_component_source(run: Path) -> tuple[dict[str, Any], dict[str, Any], di
     inputs = {name: dict(path=str(run / name), exists=True, bytes=records[name]["bytes"],
                          sha256=str(records[name]["sha256"]).upper()) for name in consumed}
     if partial:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import continuation_protection_paths
         continuation_protection_paths(run)
         plan = _json(run / "inputs/partial_batch_replay/simion_whole_unit_replay_plan.json")
         parent_manifest = Path(plan["predecessor"]["run_dir"]).resolve()/"run_manifest.json"
@@ -129,7 +129,6 @@ def load_component_source(run: Path) -> tuple[dict[str, Any], dict[str, Any], di
         require_completed_terminal_publication(parent_manifest)
         inputs["partial_predecessor_manifest"] = dict(record)
     if continued and not empty:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import continuation_ancestry
         ancestry = continuation_ancestry(run)
         plan = _json(run / "inputs/simion_whole_unit_replay_plan.json")
         parent = Path(plan["predecessor"]["run_dir"]).resolve()

@@ -18,7 +18,7 @@ from matplotlib.figure import Figure
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import charge_to_mass_c_per_kg
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position, to_project_vector
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
 
 AXES = "xyz"

@@ -37,7 +37,7 @@ from msplatform.backends.simion.ip_handoff import (
     freeze_injected_source, frozen_release_states,
 )
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import (
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
     transform_from_config, to_project_position, to_project_vector,
     to_local_position, to_local_vector,
 )

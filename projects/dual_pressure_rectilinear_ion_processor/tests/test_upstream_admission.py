@@ -378,7 +378,7 @@ class AdmissionTests(unittest.TestCase):
             inputs={p.name: file_record(p) for p in (consumer/"inputs").iterdir() if p.is_file()},
             outputs=[file_record(consumer/"summary.json")])
         (consumer/"run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit import export_component_exit
+        from msplatform.backends.simion.ip_exit import export_component_exit
         output = self.run/"zero_exit_export"
         receipt = export_component_exit(consumer, output, source_instance_id="ip", target_instance_id="mr")
         self.assertEqual(receipt["status"], "zero_exit")

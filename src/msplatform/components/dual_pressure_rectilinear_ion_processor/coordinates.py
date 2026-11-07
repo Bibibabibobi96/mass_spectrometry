@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from common.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
+from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
 
 
 LOCAL_FRAME_ID = "dual_pressure_ion_processor_local_v1"

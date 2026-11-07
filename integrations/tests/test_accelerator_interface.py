@@ -434,7 +434,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
             frozen = dict(
                 accelerator_dependency=write("dependency.json", dict(api_version=2,
                     provider_project_id="dual_pressure_rectilinear_ion_processor", execution_scope="prepare_only_no_solver",
-                    provider_callable="export_component_exit", provider_module="projects/dual_pressure_rectilinear_ion_processor/analysis/component_exit.py")),
+                    provider_callable="export_component_exit", provider_module="src/msplatform/backends/simion/ip_exit.py")),
                 accelerator_request=write("request.json", {}), composition_plan=write("plan.json", {}),
             )
             zero = dict(role="ion_processor_component_exit_export", status="zero_exit",
@@ -443,7 +443,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
             with patch('integrations.workflows.accelerator_interface.prepare.derive_assembly_scope', return_value={}), \
                  patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_ip_mr_connection', return_value=connection), \
                  patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_matching_request', side_effect=AssertionError('must not match')), \
-                 patch('projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit.export_component_exit', return_value=zero):
+                 patch('msplatform.backends.simion.ip_exit.export_component_exit', return_value=zero):
                 self.assertEqual(_resolve_ip_matching(source_run=root, results=root, inputs=root, frozen=frozen), zero)
 
     def test_joint_workflow_dispatches_actual_owner_sequence_and_stops_on_failure(self):

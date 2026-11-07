@@ -229,7 +229,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
             path = root / "test.ps1"
             path.write_text(script, encoding="utf-8")
             completed = subprocess.run(["pwsh", "-NoProfile", "-File", str(path)], cwd=REPO,
-                                       capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
@@ -590,7 +590,7 @@ try {
                     elif case == "missing": payload.unlink()
                     completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
                         sys.executable, str(REPO), str(binding_path), str(metadata_path)],
-                        cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                        cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     output = completed.stdout + completed.stderr
                     if case == "valid":
                         self.assertEqual(completed.returncode, 0, output)
@@ -635,7 +635,7 @@ foreach($record in @($first,$second)){
 'BATCH_CONFIG_APPEND=PASS'
 ''', encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(RUNNER), str(REPO), directory],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertIn("BATCH_CONFIG_APPEND=PASS", result.stdout)
 
@@ -770,7 +770,7 @@ try{
                     output.mkdir()
                     result = subprocess.run(
                         ["pwsh", "-NoProfile", "-File", str(script), str(REPO), str(output), sys.executable, owner, str(fixture)],
-                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60,
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                     )
                     if owner == "instrument_assembly":
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -817,7 +817,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
 'OWNER_BOUNDARIES_PASS'
 """
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", command],
-                                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("OWNER_BOUNDARIES_PASS", result.stdout)
 
@@ -881,7 +881,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                     script_path.write_text(script, encoding="utf-8")
                     result = subprocess.run(
                         ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path)],
-                        cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", timeout=30,
+                        cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                     )
                     actual = json.loads(result.stdout.splitlines()[-1])
                     self.assertEqual(actual["writes"], writes)
@@ -916,7 +916,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                     + statement + ";$summaryValue.batch_recovery|ConvertTo-Json -Compress"
                 )
                 result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 recovery = json.loads(result.stdout)
                 self.assertEqual((recovery["native_batches_executed"], recovery["reused_batches"]), expected)
@@ -933,7 +933,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                       f"$package=@{{artifact_run_dir={quote(owner)};input_dir={quote(alias)}}};"
                       + assignment + ";$continuationRoot")
             result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(Path(result.stdout.strip()), owner / "inputs/mrtof_batch_continuation")
             self.assertFalse(alias.exists())
@@ -965,7 +965,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                         + block + "\n$pose|ConvertTo-Json -Depth 100 -Compress"
                     )
                     completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script],
-                        cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                        cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                     self.assertEqual(json.loads(completed.stdout.splitlines()[-1]), expected)
                     self.assertEqual(json.loads((root / "resolved_iob_pose.json").read_text(encoding="utf-8-sig")), expected)
@@ -994,7 +994,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                        f"$config=Get-Content -Raw -LiteralPath {quote(source)}|ConvertFrom-Json -Depth 100\n"
                        f"$runConfig={quote(target)}\n{publication}")
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=RUNNER.parent,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(target.read_text(encoding="utf-8-sig")), value)
             self.assertNotIn("truncated", result.stdout.lower())
@@ -1100,7 +1100,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
                 cwd=RUNNER.parent,
-                capture_output=True, text=True, encoding="utf-8", timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(target.read_text(encoding="utf-8-sig")), value)
@@ -1137,7 +1137,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                           + validator + ";'accepted'")
                 completed = subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                    cwd=project.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    cwd=project.parents[1], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 )
                 self.assertEqual(completed.returncode == 0, valid, completed.stdout + completed.stderr)
 
@@ -1252,7 +1252,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         )
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-Command", command],
-            cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", timeout=30,
+            cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual([int(value) for value in result.stdout.split()], [0, 1, 0, 1, 1, 1, 1, 1])
@@ -1389,7 +1389,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                        + guard + gui + provenance +
                        "@{guard=@($guardPaths);gui=@($guiPaDependencies);provenance=$config.provenance}|ConvertTo-Json -Depth 30 -Compress")
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=RUNNER.parent,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             value = json.loads(result.stdout)
             self.assertEqual(set(value["guard"]), {*(f"collision/{i}.pa" for i in range(4)),
@@ -1404,7 +1404,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             binding["refinement_windows"][0]["records"]["surface"] = None
             path.write_text(json.dumps(binding), encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=RUNNER.parent,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             value = json.loads(result.stdout)
             self.assertNotIn(None, value["guard"])
@@ -1548,7 +1548,7 @@ $rows+=@(Invoke-Fixture 'none' $true $true $false $tail)
 $rows|ConvertTo-Json -Depth 8 -Compress
 """
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO,
-                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         rows = json.loads(result.stdout)
         for row in rows:
@@ -1621,7 +1621,7 @@ $rows|ConvertTo-Json -Compress
             invocation = "& {" + command + "} " + " ".join(
                 "'" + str(value).replace("'", "''") + "'" for value in (sys._base_executable, root))
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", invocation], cwd=REPO,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = {row["case"]: row for row in json.loads(result.stdout)}
             self.assertEqual([rows[key]["stopped"] for key in ("zero", "nonzero", "unknown")],
@@ -1650,7 +1650,7 @@ $result=New-NativeCorridorRuntimeFamily -BankGenerationDirectory sealed-field -C
 if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
 '''
         process = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO,
-            capture_output=True, text=True, encoding="utf-8", timeout=20)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
 
     def test_compact_postprocess_does_not_transition_a_finished_solver_lease(self):
@@ -1771,7 +1771,7 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
                     result = subprocess.run(
                         ["pwsh", "-NoProfile", "-Command", command],
                         cwd=RUNNER.parent,
-                        capture_output=True, text=True, encoding="utf-8", timeout=30,
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     actual = json.loads(result.stdout)
@@ -1799,7 +1799,7 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-Command", command],
                     cwd=RUNNER.parent,
-                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(json.loads(result.stdout)["flight_scope"], scope)

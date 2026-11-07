@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from common.contracts.write_run_manifest import file_record
 from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import prepare_replay, finalize_replay, record_prepared_native_family, validate_baseline_for_private_gui
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import (
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
     to_local_position, to_local_vector, to_project_position, to_project_vector,
     transform_from_config,
 )

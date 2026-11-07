@@ -4,7 +4,7 @@
   "consumer_project_id": "parallel_mirror_dual_stripe_mr_tof",
   "provider_project_id": "dual_pressure_rectilinear_ion_processor",
   "api_version": 2,
-  "provider_module": "projects/dual_pressure_rectilinear_ion_processor/analysis/component_exit.py",
+  "provider_module": "src/msplatform/backends/simion/ip_exit.py",
   "provider_callable": "export_component_exit",
   "provider_voltage_schedule": "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua",
   "provider_voltage_waveforms": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",

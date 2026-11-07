@@ -25,7 +25,7 @@ from msplatform.contracts.particle_state import load_component_particle_state_cs
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.exit_state_plot import prepare_visual_style_map
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position
 # Top-level imports are deliberate: prepare() freezes loaded repository modules
 # before Fly, so these mandatory default producers travel with the same run.
 from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import export_sections

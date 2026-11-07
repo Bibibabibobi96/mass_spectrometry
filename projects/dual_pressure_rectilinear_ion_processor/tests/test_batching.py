@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from msplatform.execution.resources import resource_path
-from msplatform.execution import manifest_records
+from msplatform.execution import ip_continuation, manifest_records
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -182,7 +182,7 @@ class BatchingTests(unittest.TestCase):
             inputs={"continuation_plan": write_run_manifest.file_record(self.run / "inputs/simion_whole_unit_replay_plan.json"),
                     "continuation_predecessor_manifest": write_run_manifest.file_record(prior / "run_manifest.json")}, outputs=[])
         functional.write_json(self.run / "run_manifest.json", child_manifest)
-        self.assertEqual(batching.continuation_ancestry(self.run), [self.run, prior])
+        self.assertEqual(ip_continuation.continuation_ancestry(self.run), [self.run, prior])
         grandchild = Path(self.temp.name) / "grandchild"
         shutil.copytree(self.run, grandchild)
         batching.prepare_completed_reanalysis(grandchild, self.run)
@@ -196,11 +196,11 @@ class BatchingTests(unittest.TestCase):
                     "continuation_predecessor_manifest": write_run_manifest.file_record(self.run / "run_manifest.json"),
                     "continuation_origin_manifest": write_run_manifest.file_record(prior / "run_manifest.json")}, outputs=[])
         functional.write_json(grandchild / "run_manifest.json", grandchild_manifest)
-        self.assertEqual(batching.continuation_ancestry(grandchild), [grandchild, self.run, prior])
+        self.assertEqual(ip_continuation.continuation_ancestry(grandchild), [grandchild, self.run, prior])
         child_manifest["inputs"]["continuation_predecessor_manifest"]["sha256"] = "0" * 64
         functional.write_json(self.run / "run_manifest.json", child_manifest)
         with self.assertRaisesRegex(ValueError, "not bound"):
-            batching.continuation_ancestry(self.run)
+            ip_continuation.continuation_ancestry(self.run)
         # A bound but tampered output cannot be treated as completed.
         (prior / "simion/events.csv").write_text("tampered", encoding="utf-8")
         with self.assertRaisesRegex(Exception, "hash differs"):

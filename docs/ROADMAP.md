@@ -158,7 +158,9 @@ IP裸导引与HP末端冷却组件的纯设计、源包络、终端阱／气体�
 20项定向、364项IP Static及61项integration回归通过。标准wheel/sdist实际完成八杆、七电极与GEM片段调用；
 不授予实际场、Refine／Fly或冷却性能资格。
 IP真实上游状态准入及schema已迁SIMION backend，保留原ID／母群／权重／出生到达钟与零出口／科学负结果；
-22项定向和IP Static通过，25项integration／边界与wheel/sdist验收通过。component_exit发布职责仍未迁。
+22项定向和IP Static通过，25项integration／边界与wheel/sdist验收通过。
+IP坐标映射与component_exit现已分迁component／SIMION backend，continuation保护归execution；155项定向、
+364项Static及84项integration回归通过。保留原始停止、母群／权重和唯一时钟，未重新Fly。
 RF Static另有一项既存COMSOL恢复测试非UTF-8诊断解码错误，稳定复现，不与本迁移混报为成功。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；

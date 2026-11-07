@@ -20,7 +20,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics impor
     pulse_timing_context, validate_diagnostics_config,
     project_geometry, cooling_statistics,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position, to_project_vector
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
 
 
 class DiagnosticsTests(unittest.TestCase):

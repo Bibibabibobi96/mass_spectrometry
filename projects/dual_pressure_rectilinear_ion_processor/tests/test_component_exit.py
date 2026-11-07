@@ -13,7 +13,7 @@ from common.contracts.component_particle_state import validate_component_particl
 from common.contracts.component_particle_state import write_component_particle_state_csv
 from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from common.contracts.write_run_manifest import file_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit import (
+from msplatform.backends.simion.ip_exit import (
     PROJECT, export_component_exit,
 )
 
@@ -442,7 +442,7 @@ class ComponentExitTests(unittest.TestCase):
         for record in [manifest["run_config"], *manifest["inputs"].values(), *manifest["outputs"]]:
             record["path"] = Path(record["path"]).relative_to(self.run).as_posix()
         self._write_json("run_manifest.json", manifest)
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit.file_record", wraps=file_record) as recorder:
+        with patch("msplatform.backends.simion.ip_exit.file_record", wraps=file_record) as recorder:
             receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         source_reads = [Path(call.args[0]) for call in recorder.call_args_list if self.run in Path(call.args[0]).parents]
         self.assertEqual(source_reads, [self.run / "run_manifest.json"])
@@ -503,7 +503,7 @@ class ComponentExitTests(unittest.TestCase):
 
     def test_retired_source_uses_public_retirement_verifier(self) -> None:
         self._write_json("solver_review_retirement_receipt.json", {"test": "verification delegation only"})
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit.verify_retirement", return_value={"status": "PASS"}) as verifier:
+        with patch("msplatform.backends.simion.ip_exit.verify_retirement", return_value={"status": "PASS"}) as verifier:
             receipt = export_component_exit(self.run, self.output, source_instance_id="processor_a", target_instance_id="analyzer_b")
         verifier.assert_called_once_with(self.run)
         self.assertIn("solver_review_retirement_receipt.json", receipt["inputs"])
