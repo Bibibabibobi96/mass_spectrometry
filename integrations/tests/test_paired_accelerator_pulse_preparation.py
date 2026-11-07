@@ -28,7 +28,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
         plan = runtime.prepare_run(static)
         model = static / "comsol/paired_accelerator_static.mph"
         model.write_bytes(b"INERT MODEL IDENTITY FIXTURE; NOT A COMSOL MODEL")
-        backend = Path("projects") / runtime.PROJECT / "comsol/build_and_export_paired_accelerator_field.m"
+        backend = Path("src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m")
         target = static / "inputs/runtime_snapshot" / backend
         target.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / backend, target)
