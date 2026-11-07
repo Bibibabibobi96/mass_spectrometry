@@ -15,6 +15,11 @@ OA-only配对静态场的MATLAB构建/导出器及加速器实体、仪器投影
 候选与Formal几何继续使用同一组helper，项目旧副本已退役。公共`common/comsol/add_comsol_size_feature.m`
 保持共享网格依赖。本次只迁移源码与软件接线，不新增MPH、原生求解、保存重开、GUI/CAD或科学资格。
 
+paired静态场SIMION采样器和paired脉冲SIMION回调现唯一保存在`msplatform.backends.simion/resources/`。
+当前缓存验证、Lua任务、Program及dispatch代码身份直接消费安装资源，旧项目文件已退役；
+旧manifest所绑定的项目路径仅用于历史完成结果只读复用，不改写历史记录。采样坐标、`pa:field_vc`
+符号、脉冲时钟与回调、Program嵌入顺序及Lua原始字节保持；本迁移不启动场求解或Fly。
+
 ### P2 V6：理论与峰结果的公共语义
 
 完整科学电极几何及工作电位由`geometry_contract.resolve_electrode_geometry`唯一构造，

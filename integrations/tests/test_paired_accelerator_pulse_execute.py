@@ -129,6 +129,9 @@ exit 0
             (generation / 'cache_manifest.json').write_text(json.dumps(dict(files=[
                 dict(name='paired_static_on.pa', bytes=1, sha256='A' * 64)])))
             frozen = run / 'inputs/runtime_snapshot'
+            installed_adapter = frozen / 'src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua'
+            self.assertEqual(installed_adapter.read_bytes(), (ROOT / 'src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua').read_bytes())
+            self.assertFalse((frozen / 'projects/single_reflection_oa_tof_mass_analyzer/simion/paired_accelerator_pulse.lua').exists())
             worker = root / 'test_only_worker_planning'
             (worker / 'inputs').mkdir(parents=True)
             (worker / 'results').mkdir()

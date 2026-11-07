@@ -116,10 +116,17 @@ assert len(projection['electrodes']) == 15
 assert hashlib.sha256(render_ip_gem(projection).encode()).hexdigest() == ip['gem_sha256']
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from importlib.resources import files
+from msplatform.backends.simion.resources import native_resource_path
 timing = derive_native_timing(ip['baseline'])
 assert math.isclose(timing['primary_quench_us'], 7500.)
 assert math.isclose(timing['pulse_start_us'], 7500.135135135135)
 assert files('msplatform.backends.simion').joinpath('resources', 'native_drive.lua').read_bytes() == ip['native_drive'].encode('utf-8')
+for name, count, digest in (
+    ('export_paired_accelerator_field.lua', 3746, 'ccf136da2821ec93c1cbcb6335863da1494e041b36860b3011a12cbc30919c29'),
+    ('paired_accelerator_pulse.lua', 5516, '007c7847319ced4ebdaf99f0309e819d06c62a96607a1ed1808ce2352029aaf9'),
+):
+    payload = native_resource_path(name).read_bytes()
+    assert len(payload) == count and hashlib.sha256(payload).hexdigest() == digest
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, BUNCHER_ELECTRODE_NAMES
 from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment
@@ -417,6 +424,7 @@ for label, missing_path, action in (
     ('gem', gem_template_path('reflectron'), lambda:simion_api.compile_geometry(actual_assembly,numerics=study.geometry_numerics)),
     ('powershell', resource_path('process_owner.ps1'), lambda:resource_path('process_owner.ps1')),
     ('lua', native_resource_path('build_geometry_iob.lua'), lambda:native_resource_path('build_geometry_iob.lua')),
+    ('paired_pulse_lua', native_resource_path('paired_accelerator_pulse.lua'), lambda:native_resource_path('paired_accelerator_pulse.lua')),
     ('execution_lua', resource_path('native_run_path.lua'), lambda:resource_path('native_run_path.lua')),
     ('policy', resource_path('host_resource_policy.json'), lambda:resource_path('host_resource_policy.json')),
     ('structural_seed', structural_seed_path(4), lambda:structural_seed_path(4)),

@@ -29,27 +29,41 @@ WORKFLOW = ROOT/'integrations/workflows/paired_accelerator_static_field'
 
 class PairedStaticExecutionTests(unittest.TestCase):
     def test_completed_simion_samples_reuse_bound_identity_without_pa_or_model_read(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);run,producer,model,samples,_,_=self.completed_comsol_source(root)
-            runtime.comsol_reuse(run,producer/'run_manifest.json')
-            cache_identity=dict(geometry='TEST_ONLY frozen BVP',mesh=[1,1,1])
-            identity=producer/'inputs/pa_cache_identity.json';runtime.write(identity,cache_identity)
-            exporter_relative=Path('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua')
-            exporter=producer/'inputs/runtime_snapshot'/exporter_relative;exporter.parent.mkdir(parents=True);shutil.copyfile(ROOT/exporter_relative,exporter)
-            simion=producer/'results/simion_field_samples.csv';simion.parent.mkdir(exist_ok=True);shutil.copyfile(samples,simion)
-            facts=producer/'logs/simion_field_native_facts.txt';facts.parent.mkdir(exist_ok=True)
-            facts.write_text('backend=SIMION\napi=pa:field_vc\nnative_field_unit=V/gu\nexport_field_unit=V/m\nfield_sign=negative_potential_gradient\npoint_count=115\n')
-            config=runtime.read(producer/'run_config.json');config['inputs'].update(simion_identity=str(identity),simion_exporter=str(exporter));runtime.write(producer/'run_config.json',config)
-            outputs=[Path(row['path']) for row in runtime.read(producer/'run_manifest.json')['outputs']]+[simion,facts]
-            manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
-            model.unlink()
-            with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
-                selected=runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
-            self.assertEqual(Path(selected['samples']['path']),simion)
-            self.assertFalse(any(Path(call.args[1]['path'])==model or Path(call.args[1]['path']).suffix in {'.pa','.pa0','.mph'} for call in verified.call_args_list))
-            self.assertIsNone(runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=dict(cache_identity,mesh=[2,1,1])),ROOT))
-            facts.write_text(facts.read_text()+'corruption\n')
-            with self.assertRaises(AssertionError): runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+        for exporter_relative in (
+                Path('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua'),
+                Path('src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')):
+            with self.subTest(exporter=exporter_relative.as_posix()), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);run,producer,model,samples,_,_=self.completed_comsol_source(root)
+                runtime.comsol_reuse(run,producer/'run_manifest.json')
+                cache_identity=dict(geometry='TEST_ONLY frozen BVP',mesh=[1,1,1])
+                identity=producer/'inputs/pa_cache_identity.json';runtime.write(identity,cache_identity)
+                exporter=producer/'inputs/runtime_snapshot'/exporter_relative
+                exporter.parent.mkdir(parents=True)
+                shutil.copyfile(ROOT/'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua',exporter)
+                simion=producer/'results/simion_field_samples.csv';simion.parent.mkdir(exist_ok=True);shutil.copyfile(samples,simion)
+                facts=producer/'logs/simion_field_native_facts.txt';facts.parent.mkdir(exist_ok=True)
+                facts.write_text('backend=SIMION\napi=pa:field_vc\nnative_field_unit=V/gu\nexport_field_unit=V/m\nfield_sign=negative_potential_gradient\npoint_count=115\n')
+                config=runtime.read(producer/'run_config.json');config['inputs'].update(simion_identity=str(identity),simion_exporter=str(exporter));runtime.write(producer/'run_config.json',config)
+                outputs=[Path(row['path']) for row in runtime.read(producer/'run_manifest.json')['outputs']]+[simion,facts]
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                model.unlink()
+                with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                    selected=runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+                self.assertEqual(Path(selected['samples']['path']),simion)
+                self.assertFalse(any(Path(call.args[1]['path'])==model or Path(call.args[1]['path']).suffix in {'.pa','.pa0','.mph'} for call in verified.call_args_list))
+                self.assertIsNone(runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=dict(cache_identity,mesh=[2,1,1])),ROOT))
+                other=next(path for path in (
+                    Path('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua'),
+                    Path('src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')) if path!=exporter_relative)
+                duplicate=producer/'inputs/runtime_snapshot'/other;duplicate.parent.mkdir(parents=True);shutil.copyfile(exporter,duplicate)
+                config=runtime.read(producer/'run_config.json');config['inputs']['duplicate_simion_exporter']=str(duplicate);runtime.write(producer/'run_config.json',config)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                with self.assertRaisesRegex(ValueError,'multiple native exporter'):
+                    runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+                del config['inputs']['duplicate_simion_exporter'];runtime.write(producer/'run_config.json',config)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                facts.write_text(facts.read_text()+'corruption\n')
+                with self.assertRaises(AssertionError): runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
 
 
     def capacity_isolated_owner(self, root):
@@ -743,6 +757,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
             root=Path(directory);run,_=self.prepared(root);runtime.prepare_run(run)
             executable=root/'inert_simion.exe';executable.write_bytes(b'identity-only; never executed')
             original=runtime.cache_plan(run,ROOT,executable,root/'cache')
+            self.assertEqual(Path(original['verifier_path']),ROOT/'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')
             plan_path=run/'inputs/bvp/paired_accelerator_static_field_plan.json'
             plan=runtime.read(plan_path)
             plan['sample_points']['count']=1000

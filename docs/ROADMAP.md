@@ -151,6 +151,8 @@ IP真实15电极中性CSG、轮廓、guide入口／E14孔面和GEM已分迁compo
 22项paired及路由定向通过，普通安装读取实际资源；未启动MATLAB/COMSOL或生成新MPH。
 paired Python纯准备现已迁入COMSOL backend，旧workflow prepare退役；22项准备与22项执行回归通过，
 四类输出新旧字节一致，普通wheel/sdist实际生成相同完整plan，仍不创建PA或求解。
+paired SIMION静态采样器与脉冲回调Lua也已迁入安装SIMION backend，缓存、Program与dispatch直接消费；
+旧manifest绑定位置仅保留只读复用，项目副本退役。两份资源原字节及SHA保持，未新增原生求解资格。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

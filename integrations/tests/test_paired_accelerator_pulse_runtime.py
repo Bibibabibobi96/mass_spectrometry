@@ -24,7 +24,7 @@ from common.simion.resource_scheduler import plan_simion_dispatch
 
 ROOT=Path(__file__).resolve().parents[2]
 LUA=Path("C:/Program Files/SIMION-2020/lua.exe")
-ADAPTER=ROOT/"projects/single_reflection_oa_tof_mass_analyzer/simion/paired_accelerator_pulse.lua"
+ADAPTER=ROOT/"src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua"
 
 
 def fixture(root: Path) -> tuple[Path, Path, Path]:

@@ -89,11 +89,10 @@ print('PAIRED_ACCELERATOR_PULSE_IOB_'..mode:upper()..'=PASS INSTANCES=1 FLY=Fals
 
 
 def _program(config: dict, particle_ids: list[int], source_time: float, code_root: Path) -> str:
-    project = code_root / "projects/single_reflection_oa_tof_mass_analyzer/simion"
     components = {
         "pulse_math": code_root / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "pulse_hook": code_root / "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua",
-        "oa_adapter": project / "paired_accelerator_pulse.lua",
+        "oa_adapter": code_root / "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua",
     }
     embedded = "\n".join(f"local {name}=(function()\n{path.read_text(encoding='utf-8')}\nend)()"
                          for name, path in components.items())
@@ -610,7 +609,7 @@ def prepare_dispatch_request(run: Path,plan_path: Path,code_root: Path,field_pa:
     code={name:_fingerprint(file_record(code_root/name)) for name in (
         "integrations/workflows/paired_accelerator_pulse/runtime.py","integrations/runtime/single_flight_source.py",
         "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua","src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-        "projects/single_reflection_oa_tof_mass_analyzer/simion/paired_accelerator_pulse.lua")}
+        "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua")}
     request=dict(solver="SIMION",field_kind="electrostatic",independent_particles=True,
                  particle_count=plan["particle_count"],trajectory_quality=plan["numerics"]["simion_trajectory_quality"],
                  frontend_cell_mm_xyz=static["native_geometry_compilation"]["grid"]["cell_mm_xyz"],

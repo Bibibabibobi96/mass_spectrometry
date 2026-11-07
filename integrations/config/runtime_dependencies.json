@@ -836,13 +836,6 @@
           ]
         },
         {
-          "id": "projects_single_reflection_oa_tof_mass_analyzer_simion_export_paired_accelerator_field_lua",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_cpt_solver_policy_m",
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_cpt_solver_policy.m",
           "consumers": [
@@ -852,13 +845,6 @@
         {
           "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_comsol_run_paired_accelerator_pulse_m",
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_paired_accelerator_pulse.m",
-          "consumers": [
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_simion_paired_accelerator_pulse_lua",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/paired_accelerator_pulse.lua",
           "consumers": [
             "paired_accelerator_pulse"
           ]
@@ -1077,6 +1063,20 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "msplatform_simion_export_paired_accelerator_field_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "msplatform_simion_paired_accelerator_pulse_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
         {
           "id": "msplatform_ip_native_drive_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/native_drive.lua",

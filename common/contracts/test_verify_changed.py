@@ -861,7 +861,8 @@ $result|ConvertTo-Json -Compress
             "src/msplatform/backends/comsol/resources/oatof_build_accelerator_geometry.m",
             "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
             "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
-            "projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua",
+            "src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua",
+            "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua",
         ]
         for path in paths:
             with self.subTest(path=path):

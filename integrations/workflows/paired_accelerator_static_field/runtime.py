@@ -63,7 +63,7 @@ def cache_plan(run: Path, code: Path, native: Path, cache_root: Path) -> dict:
         builder_identity={name: file_sha256(path) for name, path in builders.items()})
     write(run/'inputs/pa_cache_identity.json', identity)
     return dict(cache_root=str(cache_root), cache_key=canonical_pa_family_cache_key(identity), identity=identity,
-                filenames=[PA_NAME], verifier_path=str(code/'projects'/PROJECT/'simion/export_paired_accelerator_field.lua'))
+                filenames=[PA_NAME], verifier_path=str(code/'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua'))
 
 
 def advance_cache(run: Path, plan: dict, verification: Path | None = None, *,
@@ -207,9 +207,13 @@ def completed_simion_exports(run: Path, manifest_path: Path, cache: dict, code: 
     samples=bound(base/'results/simion_field_samples.csv')
     facts=bound(base/'logs/simion_field_native_facts.txt')
     identity=bound(base/'inputs/pa_cache_identity.json')
-    exporter_path='projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua'
-    exporters=[row for row in manifest['inputs'].values() if record_path(row,base_dir=base).as_posix().endswith('/'+exporter_path)]
-    exporter=bound(record_path(exporters[0],base_dir=base)) if len(exporters)==1 else None
+    exporter_paths=('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua',
+                    'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')
+    exporters=[bound(base/'inputs/runtime_snapshot'/path) for path in exporter_paths]
+    exporters=[row for row in exporters if row is not None]
+    if len(exporters)>1:
+        raise ValueError('Completed SIMION exports bind multiple native exporter locations')
+    exporter=exporters[0] if exporters else None
     if samples is None and facts is None:
         source=bound(base/'inputs/comsol_source.json')
         carried=read(record_path(source,base_dir=base)).get('simion_exports') if source else None
@@ -217,9 +221,11 @@ def completed_simion_exports(run: Path, manifest_path: Path, cache: dict, code: 
             samples,facts,identity,exporter=(bound(record_path(carried[key],base_dir=base)) for key in ('samples','native_facts','cache_identity','exporter'))
             if any(row is None for row in (samples,facts,identity,exporter)):
                 raise ValueError('Borrowed SIMION exports lack published bindings')
+    if (samples is not None or facts is not None) and exporter is None:
+        raise ValueError('Completed SIMION exports require one manifest-bound native exporter')
     if any(row is None for row in (samples,facts,identity,exporter)): return None
     if read(record_path(identity,base_dir=base)) != cache['identity']: return None
-    if exporter['sha256'].lower() != file_record(code/exporter_path)['sha256'].lower(): return None
+    if exporter['sha256'].lower() != file_record(code/exporter_paths[-1])['sha256'].lower(): return None
     plan=read(run/'inputs/bvp/paired_accelerator_static_field_plan.json')
     try: validate_samples(plan,record_path(samples,base_dir=base))
     except ValueError: return None
@@ -256,7 +262,7 @@ def materialize_tasks(run: Path, code: Path, pa: Path | None, *, saved_model: Pa
                "cell_mm_xyz={x=%s,y=%s,z=%s},instance_origin_mm={x=%s,y=%s,z=%s}}},"
                "sample_points={path=%s,count=%s}}\n"
                "local count=export(%s,plan,%s,%s)\nprint('PAIRED_FIELD_EXPORT=PASS samples='..count)\n") % (
-                   quote(code/'projects'/PROJECT/'simion/export_paired_accelerator_field.lua'), ROLE,
+                   quote(code/'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua'), ROLE,
                    n['nx'], n['ny'], n['nz'], repr(p['x']), repr(p['y']), repr(p['z']),
                    repr(o['x']), repr(o['y']), repr(o['z']),
                    quote(run/'inputs/bvp/paired_accelerator_field_points.csv'), plan['sample_points']['count'],
