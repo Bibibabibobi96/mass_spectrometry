@@ -109,6 +109,23 @@ class FieldActionTests(unittest.TestCase):
                     required_output_paths=[row['path'] for row in records.values()], retention_preserve_paths=[],
                     manifest_extra_fields={'products':{'model':dict(schema_version=1, kind='prepared_model',status='complete',metadata=metadata,data=records)}})
 
+            fixture_root = root/'fixture-process-owner'
+            fixture_root.mkdir()
+            for name in ('process_owner.ps1', 'host_execution_lease.ps1', 'resource_process_support.ps1', 'payload_file_support.ps1'):
+                shutil.copyfile(resource_path(name), fixture_root/name)
+            snapshot_log = root/'fixture-host-snapshots.txt'
+            fixture_owner = fixture_root/'process_owner.ps1'
+            fixture_owner.write_text(fixture_owner.read_text(encoding='utf-8').replace(
+                ". (Join-Path $PSScriptRoot 'resource_process_support.ps1')",
+                "function Get-HostResourceSnapshot {\n"
+                "  if((Resolve-HostResourceStatePath)-cne'"+str(context.host_state_path).replace("'", "''")+"'){throw 'field fixture host ledger escaped isolation'}\n"
+                "  $owner=Get-Process -Id $PID\n"
+                "  Add-Content -LiteralPath '"+str(snapshot_log).replace("'", "''")+"' -Value $PID\n"
+                "  return @{complete=$true;logical_processors=4;cpu_percent=0;total_memory_bytes=32GB;\n"
+                "    available_memory_bytes=24GB;io_pressure=$false;\n"
+                "    processes=@(@{pid=$PID;parent_pid=0;started=$owner.StartTime.ToUniversalTime().Ticks.ToString('D19');\n"
+                "      memory_bytes=[long]$owner.WorkingSet64});unknown_process_ids=@();definitely_exited_process_ids=@()}\n"
+                "}\n. (Join-Path $PSScriptRoot 'resource_process_support.ps1')"), encoding='utf-8', newline='\n')
             actual_process = RunSession.run_process
             def inert_transport(session, operation_id, **kwargs):
                 if operation_id.startswith('frontend_') or operation_id == 'downstream_fields':
@@ -132,7 +149,9 @@ class FieldActionTests(unittest.TestCase):
                     raise
             with patch.dict(os.environ, environment), patch.object(owner, '_capacity_policy', return_value=policy), patch(
                     'msplatform.execution.capacity_admission._capacity_policy', return_value=policy), patch.object(
-                    RunSession, 'run_process', new=inert_transport):
+                    RunSession, 'run_process', new=inert_transport), patch(
+                    'msplatform.execution.processes.resource_path',
+                    side_effect=lambda name: fixture_owner if name == 'process_owner.ps1' else resource_path(name)):
                 published = owner.run_managed_stage(context, **base,
                     run_id='20261104_120000__test__python__field-model-source', expected_operation_ids=[],
                     operation_dependencies={}, action=publish_model)
@@ -179,3 +198,4 @@ class FieldActionTests(unittest.TestCase):
                 self.assertEqual(outcomes[1].metadata['frontend_native_operations'], 0)
                 self.assertEqual(outcomes[1].metadata['downstream_native_operations'], 0)
                 self.assertTrue(outcomes[1].metadata['downstream_reused'])
+                self.assertGreater(len(snapshot_log.read_text(encoding='utf-8').splitlines()), 0)
