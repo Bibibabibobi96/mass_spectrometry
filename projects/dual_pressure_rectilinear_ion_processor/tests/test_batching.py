@@ -20,6 +20,7 @@ from common.contracts.file_identity import file_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
 from common.simion.resource_scheduler import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
+from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
 
 PROJECT=Path(__file__).resolve().parents[1]
@@ -35,7 +36,7 @@ class BatchingTests(unittest.TestCase):
         for name in ("inputs","simion","results","logs"):(self.run/name).mkdir(parents=True)
         self.config={name:functional.read_json(PROJECT/"config"/f"{name}.json") for name in ("baseline","numerics","source","native_operating_point")}
         self.config["coordinate_transform"]=functional.read_json(PROJECT/"config/coordinate_transform.json")
-        self.config["native_timing"]=functional.derive_native_timing(self.config["baseline"])
+        self.config["native_timing"]=derive_native_timing(self.config["baseline"])
         self.config["native_projection"]=functional.native_projection(self.config["baseline"],self.config["numerics"])
         self.field=Path(self.temp.name)/"native"
         self.field.mkdir()

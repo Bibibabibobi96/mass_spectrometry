@@ -16,7 +16,8 @@ from unittest import mock
 import numpy as np
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis import field_diagnostics as diagnostics
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_native_timing, lua_literal
+from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
 
@@ -200,8 +201,8 @@ class FieldDiagnosticsTests(unittest.TestCase):
         config["field_diagnostics"]=d
         with tempfile.TemporaryDirectory(prefix="native_field_probe_fixture_") as temporary:
             folder=Path(temporary);config["native_field"]={"directory":str(folder)}
-            for name in ("native_drive.lua","probe_native_field.lua"):
-                shutil.copyfile(PROJECT/"simion"/name,folder/name)
+            shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/native_drive.lua",folder/"native_drive.lua")
+            shutil.copyfile(PROJECT/"simion/probe_native_field.lua",folder/"probe_native_field.lua")
             shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/rf_drive.lua",folder/"simion_rf_drive.lua")
             shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/voltage_waveforms.lua",folder/"voltage_waveforms.lua")
             (folder/"frozen_config.lua").write_text("return "+lua_literal(config),encoding="utf-8")

@@ -6,7 +6,7 @@
   "api_version": 2,
   "provider_module": "src/msplatform/backends/simion/ip_exit.py",
   "provider_callable": "export_component_exit",
-  "provider_voltage_schedule": "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua",
+  "provider_voltage_schedule": "src/msplatform/backends/simion/resources/native_drive.lua",
   "provider_voltage_waveforms": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
   "state_schema": "src/msplatform/contracts/schemas/component_particle_state.schema.json",
   "execution_scope": "prepare_only_no_solver",

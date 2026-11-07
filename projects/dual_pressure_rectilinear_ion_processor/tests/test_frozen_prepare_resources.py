@@ -82,7 +82,6 @@ class FrozenPrepareResourceTests(unittest.TestCase):
                 (PROJECT_RELATIVE / "simion" / name)
                 for name in (
                     "runtime.lua",
-                    "native_drive.lua",
                     "build_workbench.lua",
                     "probe_native_field.lua",
                     "extraction_force_audit.lua",
@@ -90,6 +89,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             ],
             Path("src/msplatform/backends/simion/resources/rf_drive.lua"),
             Path("src/msplatform/backends/simion/resources/voltage_waveforms.lua"),
+            Path("src/msplatform/backends/simion/resources/native_drive.lua"),
             Path("common/simion/scientific_event_csv.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("common/simion/assets/iob_instance_seeds/1_instance_seed.iob"),

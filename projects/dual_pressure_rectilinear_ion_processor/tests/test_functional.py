@@ -25,6 +25,7 @@ from common.contracts.particle_count_policy import POLICY_PATH
 from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
 from common.ion_release.release import generate_release_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -60,7 +61,7 @@ def load_config() -> dict:
     config = {name: functional.read_json(PROJECT / "config" / f"{name}.json")
               for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
     config["source_profile"] = "functional"
-    config["native_timing"] = functional.derive_native_timing(config["baseline"])
+    config["native_timing"] = derive_native_timing(config["baseline"])
     return config
 
 
@@ -126,7 +127,7 @@ class FunctionalContractTests(unittest.TestCase):
     def test_native_timing_aligns_both_switches_and_preserves_lift_end(self) -> None:
         baseline = copy.deepcopy(self.config["baseline"])
         baseline["electric"]["rf_quench_alignment"] = "next_cosine_zero"
-        timing = functional.derive_native_timing(baseline)
+        timing = derive_native_timing(baseline)
         self.assertAlmostEqual(timing["primary_quench_us"], 7500 + .25/3.7, places=9)
         self.assertAlmostEqual(timing["pulse_start_us"], 7500 + .75/3.7, places=9)
         self.assertGreater(timing["primary_quench_us"], baseline["schedule"]["lift_end_us"])
@@ -136,7 +137,7 @@ class FunctionalContractTests(unittest.TestCase):
             b["clock"]["rf_phase_rad"] = phase
             for frequency in (3.7e6, 2.1e6):
                 b["electric"]["rf_frequency_hz"] = frequency
-                result = functional.derive_native_timing(b)
+                result = derive_native_timing(b)
                 for key in ("primary_quench_us", "side_quench_us"):
                     angle = 2*math.pi*frequency*1e-6*result[key]+phase
                     self.assertLess(abs(math.cos(angle)), 1e-9)
@@ -144,21 +145,21 @@ class FunctionalContractTests(unittest.TestCase):
     def test_native_timing_zero_roundoff_and_invalid_resolved_times(self) -> None:
         b = copy.deepcopy(self.config["baseline"])
         b["electric"]["rf_quench_alignment"] = "next_cosine_zero"
-        zero = functional.derive_native_timing(b)["primary_quench_us"]
+        zero = derive_native_timing(b)["primary_quench_us"]
         b["schedule"]["extraction_start_us"] = zero
-        self.assertEqual(functional.derive_native_timing(b)["primary_quench_us"], zero)
+        self.assertEqual(derive_native_timing(b)["primary_quench_us"], zero)
         for offset in (-1e-6, 1e-6):
             b["schedule"]["extraction_start_us"] = zero + offset
-            result = functional.derive_native_timing(b)
+            result = derive_native_timing(b)
             self.assertGreaterEqual(result["primary_quench_us"], zero + offset)
             self.assertAlmostEqual(result["primary_quench_us"], zero if offset < 0 else zero+.5/3.7)
         b["electric"]["rf_quench_delay_cycles"] = .3
         with self.assertRaisesRegex(ValueError, "half-cycles"):
-            functional.derive_native_timing(b)
+            derive_native_timing(b)
         b = copy.deepcopy(self.config["baseline"])
         b["schedule"]["terminal_us"] = zero + .01
         with self.assertRaisesRegex(ValueError, "precede terminal"):
-            functional.derive_native_timing(b)
+            derive_native_timing(b)
         self.config["native_timing"]["primary_quench_us"] += .01
         with self.assertRaisesRegex(ValueError, "native timing differs"):
             functional.validate_configs(self.config)
@@ -168,7 +169,7 @@ class FunctionalContractTests(unittest.TestCase):
         b["electric"]["rf_quench_alignment"] = "requested_time"
         b["electric"]["rf_quench_delay_cycles"] = .3
         b["clock"]["rf_phase_rad"] = .7
-        result = functional.derive_native_timing(b)
+        result = derive_native_timing(b)
         self.assertEqual(result["policy"], "requested_instrument_time_v1")
         self.assertEqual(result["primary_quench_us"], b["schedule"]["extraction_start_us"])
         self.assertEqual(result["alignment_roundoff_us"], 0)
@@ -335,11 +336,12 @@ class FunctionalContractTests(unittest.TestCase):
         shutil.copyfile(PROJECT / "config/source_parameter_sources.json", project / "config/source_parameter_sources.json")
         functional.write_json(project / "config/source_exploration.json",
                               functional.read_json(PROJECT / "config/source_exploration.json"))
-        for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
+        for name in ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
         fixture_paths = [repo / "src/msplatform/backends/simion/resources/rf_drive.lua",
                          repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+                         repo / "src/msplatform/backends/simion/resources/native_drive.lua",
                          repo / "common/simion/scientific_event_csv.lua",
                          repo / "src/msplatform/execution/resources/native_run_path.lua",
                          repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",

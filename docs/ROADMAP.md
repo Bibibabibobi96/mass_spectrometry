@@ -161,6 +161,9 @@ IP真实上游状态准入及schema已迁SIMION backend，保留原ID／母群�
 22项定向和IP Static通过，25项integration／边界与wheel/sdist验收通过。
 IP坐标映射与component_exit现已分迁component／SIMION backend，continuation保护归execution；155项定向、
 364项Static及84项integration回归通过。保留原始停止、母群／权重和唯一时钟，未重新Fly。
+IP原生仪器时序及15电极Lua驱动已分迁component／SIMION backend，项目、MR及冻结integration直接消费新实现与新资源；
+旧函数和Lua文件退役且无转发。默认时序仍为7500／7500.135135135135微秒，Lua保持2061字节及原SHA-256；
+普通wheel/sdist两轮树外实际读取、比较并执行其余安装探针通过，未启动SIMION或新增飞行资格。
 RF Static另有一项既存COMSOL恢复测试非UTF-8诊断解码错误，稳定复现，不与本迁移混报为成功。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；

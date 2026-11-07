@@ -114,6 +114,12 @@ ip = fixture['ip']
 projection = native_projection(ip['baseline'], ip['numerics'])
 assert len(projection['electrodes']) == 15
 assert hashlib.sha256(render_ip_gem(projection).encode()).hexdigest() == ip['gem_sha256']
+from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+from importlib.resources import files
+timing = derive_native_timing(ip['baseline'])
+assert math.isclose(timing['primary_quench_us'], 7500.)
+assert math.isclose(timing['pulse_start_us'], 7500.135135135135)
+assert files('msplatform.backends.simion').joinpath('resources', 'native_drive.lua').read_bytes() == ip['native_drive'].encode('utf-8')
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, BUNCHER_ELECTRODE_NAMES
 from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment
@@ -778,6 +784,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
             ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
                   for name in ('baseline', 'numerics', 'source', 'native_operating_point')}
             ip['gem_sha256'] = hashlib.sha256(render_ip_gem(native_projection(ip['baseline'], ip['numerics'])).encode()).hexdigest()
+            ip['native_drive'] = (REPO_ROOT/'src/msplatform/backends/simion/resources/native_drive.lua').read_text(encoding='utf-8')
             from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
             from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, BUNCHER_ELECTRODE_NAMES
             from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment

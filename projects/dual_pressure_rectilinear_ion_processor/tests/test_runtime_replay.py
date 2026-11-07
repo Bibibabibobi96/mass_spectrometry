@@ -392,7 +392,7 @@ class RuntimeReplayTests(unittest.TestCase):
                   for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
         if mode == "zero-alignment":
             config["baseline"]["electric"]["rf_quench_alignment"] = "next_cosine_zero"
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_native_timing
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
         config["native_timing"] = derive_native_timing(config["baseline"])
         if mode in {"transformed", "upstream-source"}:
             config["coordinate_transform"] = json.loads((PROJECT / "config/coordinate_transform.json").read_text(encoding="utf-8"))
@@ -410,7 +410,7 @@ class RuntimeReplayTests(unittest.TestCase):
         config["numerical_boundaries"]=derive_numerical_boundaries(config["native_projection"])
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:
             folder = Path(temporary)
-            for name in ("runtime.lua", "native_drive.lua", "extraction_force_audit.lua"):
+            for name in ("runtime.lua", "extraction_force_audit.lua"):
                 if name == "runtime.lua":
                     # Syntax adapter for standalone Lua only; real SIMION evidence
                     # is required to prove adjustable binding.
@@ -418,6 +418,8 @@ class RuntimeReplayTests(unittest.TestCase):
                     (folder / name).write_text(text.replace("adjustable ", ""), encoding="utf-8")
                 else:
                     shutil.copyfile(PROJECT / "simion" / name, folder / name)
+            shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/native_drive.lua",
+                            folder / "native_drive.lua")
             shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/rf_drive.lua",
                             folder / "simion_rf_drive.lua")
             shutil.copyfile(REPOSITORY / "common/simion/scientific_event_csv.lua",

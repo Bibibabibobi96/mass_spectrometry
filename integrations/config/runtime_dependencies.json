@@ -887,15 +887,7 @@
     {
       "provider_scope": "project",
       "provider_project": "dual_pressure_rectilinear_ion_processor",
-      "files": [
-        {
-          "id": "accelerator_interface_projects_dual_pressure_rectilinear_ion_processor_simion_native_drive_lua",
-          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua",
-          "consumers": [
-            "accelerator_interface"
-          ]
-        },
-      ],
+      "files": [],
       "python_packages": [
         {
           "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis",
@@ -1085,6 +1077,13 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "msplatform_ip_native_drive_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/native_drive.lua",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
         {
           "id": "msplatform_comsol_build_and_export_paired_accelerator_field_m",
           "source_repo_path": "src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m",

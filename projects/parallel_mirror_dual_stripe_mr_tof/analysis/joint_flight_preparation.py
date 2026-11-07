@@ -610,7 +610,7 @@ def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_exe
     baseline["electric"]["lift_v"] = point["lift_v"]
     dependency = _read(inputs / "accelerator_dependency.json")
     schedule_source = (REPO / dependency["provider_voltage_schedule"]).resolve()
-    if schedule_source != (REPO / "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua").resolve():
+    if schedule_source != (REPO / "src/msplatform/backends/simion/resources/native_drive.lua").resolve():
         raise ValueError("provider voltage schedule must belong to the selected IP component")
     schedule = freeze_file(schedule_source,
                            inputs / "provider_native_drive.lua")

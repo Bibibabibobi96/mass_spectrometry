@@ -103,7 +103,7 @@ class AssemblyTests(unittest.TestCase):
             analyzer_electrode_voltages_v=[0] * 20,
             provider_voltage_projection={
                 "source_native_drive": file_record(
-                    ROOT / "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"
+                    ROOT / "src/msplatform/backends/simion/resources/native_drive.lua"
                 ),
                 "basis": "post_extraction_pulse_held_rf_zero",
                 "evaluation_time_us": 7501,
@@ -227,9 +227,8 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(config["native_operating_point"]["hp_transfer_offset_v"],
                          original["native_operating_point"]["hp_transfer_offset_v"])
         self.assertEqual(json.loads((self.root / "source.json").read_text()), original)
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import (
-            derive_native_timing, validate_configs,
-        )
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs
         config["source_profile"] = "functional"
         config["native_timing"] = derive_native_timing(config["baseline"])
         validate_configs(config)
@@ -251,9 +250,8 @@ class AssemblyTests(unittest.TestCase):
                 self.assertEqual((fixture.root / "source.json").read_bytes(), json.dumps(original).encode("utf-8"))
                 config = {name: json.loads(Path(path).read_text())
                           for name, path in report["source_config_paths"].items()}
-                from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import (
-                    derive_native_timing, validate_configs,
-                )
+                from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+                from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs
                 config["source_profile"] = "functional"
                 config["native_timing"] = derive_native_timing(config["baseline"])
                 validate_configs(config)

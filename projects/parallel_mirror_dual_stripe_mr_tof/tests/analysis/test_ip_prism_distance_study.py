@@ -58,7 +58,7 @@ print('FROZEN_STUDY_SOURCE=PASS')
 '''
             result = subprocess.run(
                 [sys.executable, "-I", "-B", "-c", probe, str(code)], cwd=root,
-                capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+                capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("FROZEN_STUDY_SOURCE=PASS", result.stdout)
             script = r'''
@@ -78,11 +78,11 @@ Invoke-StudyPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_to
                        str(runner), str(code), sys.executable,
                        str(repo / "common/contracts/run_artifact_support.ps1")]
             admitted = subprocess.run(command, cwd=root, capture_output=True, text=True,
-                                      encoding="utf-8", timeout=60, check=False)
+                                      encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
             self.assertEqual(admitted.returncode, 0, admitted.stdout + admitted.stderr)
             (code / "src/msplatform/__init__.py").unlink()
             refused = subprocess.run(command, cwd=root, capture_output=True, text=True,
-                                     encoding="utf-8", timeout=60, check=False)
+                                     encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
             self.assertNotEqual(refused.returncode, 0)
             self.assertRegex(refused.stderr, "core|msplatform")
 
@@ -374,7 +374,7 @@ class ContourPreparationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory);source_inputs=root/"inputs";(source_inputs/"simion").mkdir(parents=True)
             (source_inputs/"simion/native_drive.lua").write_text("old")
-            current = root/"projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"
+            current = root/"src/msplatform/backends/simion/resources/native_drive.lua"
             current.parent.mkdir(parents=True);current.write_text("changed")
             case = dict(config=dict(coordinate_transform=dict(from_frame_id="native", to_frame_id="IP-world"),
                                     native_projection=dict(frame_id="native")))
@@ -386,10 +386,10 @@ class ContourPreparationTests(unittest.TestCase):
     def test_current_waveforms_mismatch_fails_before_plain_lua(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); inputs = root/'inputs'; (inputs/'simion').mkdir(parents=True)
-            native = root/'projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua'
+            native = root/'src/msplatform/backends/simion/resources/native_drive.lua'
             native.parent.mkdir(parents=True); native.write_text('return {}')
             (inputs/'simion/native_drive.lua').write_text('return {}')
-            (root/'src/msplatform/backends/simion/resources').mkdir(parents=True)
+            (root/'src/msplatform/backends/simion/resources').mkdir(parents=True, exist_ok=True)
             (root/'src/msplatform/backends/simion/resources/voltage_waveforms.lua').write_text('return {changed=true}')
             (inputs/'simion/voltage_waveforms.lua').write_text('return {producer=731}')
             case = dict(config=dict(coordinate_transform=dict(from_frame_id='native',to_frame_id='IP-world'),
@@ -472,10 +472,10 @@ class ContourPreparationTests(unittest.TestCase):
     def test_voltage_projection_reuses_native_schedule_and_exact_convex_pose(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);inputs=root/"inputs";(inputs/"simion").mkdir(parents=True)
-            native=root/"projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"
+            native=root/"src/msplatform/backends/simion/resources/native_drive.lua"
             native.parent.mkdir(parents=True);native.write_text("return {}")
             (inputs/"simion/native_drive.lua").write_text("return {}")
-            (root/"src/msplatform/backends/simion/resources").mkdir(parents=True)
+            (root/"src/msplatform/backends/simion/resources").mkdir(parents=True, exist_ok=True)
             (root/"src/msplatform/backends/simion/resources/voltage_waveforms.lua").write_text("return {}")
             (inputs/"simion/voltage_waveforms.lua").write_text("return {}")
             dependency=root/"projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json"

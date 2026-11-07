@@ -376,7 +376,7 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
     if model["native_projection"]["frame_id"] != transform["from_frame_id"]:
         raise ValueError("native projection and coordinate transform source frames differ")
     for source_relative, current_relative in (
-            ("simion/native_drive.lua", "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"),
+            ("simion/native_drive.lua", "src/msplatform/backends/simion/resources/native_drive.lua"),
             ("simion/voltage_waveforms.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua")):
         if file_record(inputs / source_relative)["sha256"] != file_record(repo / current_relative)["sha256"]:
             raise ValueError("current native voltage schedule differs from frozen source schedule: " + source_relative)

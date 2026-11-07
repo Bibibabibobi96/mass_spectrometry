@@ -31,6 +31,7 @@ from common.ion_release.release import generate_release_states, materialize_rele
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from common.simion.particle_source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.backends.simion.ip_geometry import render_gem
 from msplatform.backends.simion.ip_handoff import (
     load_injected_source, release_states,
@@ -57,52 +58,6 @@ FROZEN_RUNTIME_MODULES = (
 )
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENTS = ["source", "hp_enter", "capture", "transfer", "pre_extraction", "extraction_exit", "terminal"]
-
-
-def derive_native_timing(baseline: dict[str, Any]) -> dict[str, Any]:
-    """Compile author-selected LP switch alignment on the instrument clock.
-
-    Eight ULPs of the computed half-cycle index cover phase arithmetic roundoff
-    at an already-zero request; this is not a physical switching tolerance.
-    Other consumers read the frozen result and never recompute alignment.
-    """
-    electric, clock, schedule = (baseline[key] for key in ("electric", "clock", "schedule"))
-    frequency = electric["rf_frequency_hz"] * 1e-6
-    phase_cycles = clock["rf_phase_rad"] / (2 * math.pi)
-    requested = schedule["extraction_start_us"]
-    delay = electric["rf_quench_delay_cycles"]
-    alignment = electric["rf_quench_alignment"]
-    if not isinstance(alignment, str) or alignment not in {"requested_time", "next_cosine_zero"}:
-        raise ValueError("unsupported electric.rf_quench_alignment")
-    if not all(math.isfinite(value) for value in (frequency, phase_cycles, requested, delay, clock["epoch_us"])) or frequency <= 0 or delay <= 0:
-        raise ValueError("invalid native RF timing inputs")
-    if alignment == "requested_time":
-        primary = requested
-        roundoff_us = 0
-        policy = "requested_instrument_time_v1"
-    else:
-        if 2 * delay != round(2 * delay):
-            raise ValueError("side RF zero switching requires a positive integer number of half-cycles")
-        index = 2 * (frequency * (clock["epoch_us"] + requested) + phase_cycles) - .5
-        if not math.isfinite(index):
-            raise ValueError("native RF timing phase overflows its finite clock")
-        roundoff = 8 * math.ulp(index)
-        nearest = round(index)
-        if abs(index - nearest) <= roundoff:
-            primary = requested
-        else:
-            primary = (.25 + .5 * math.ceil(index) - phase_cycles) / frequency - clock["epoch_us"]
-            if primary < requested:
-                raise ValueError("derived primary RF quench precedes its requested time")
-        roundoff_us = roundoff/(2*frequency)
-        policy = "cosine_zero_at_or_after_requested_v1"
-    pulse = primary + delay / frequency
-    if not schedule["lift_end_us"] <= primary < pulse < schedule["terminal_us"]:
-        raise ValueError("derived RF quench/pulse must follow lift and precede terminal time")
-    return dict(schema_version=1, role="native_electrode_timing",
-                policy=policy, requested_quench_us=requested,
-                primary_quench_us=primary, side_quench_us=pulse, pulse_start_us=pulse,
-                alignment_roundoff_us=roundoff_us)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -348,11 +303,12 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     config_files["source"] = "source_exploration.json" if source_profile == "exploration" else "source.json"
     # Dynamic language inputs belong to the same runnable frozen package as Python.
     runtime_resources = [project / "simion" / name for name in
-        ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")]
+        ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")]
     runtime_resources.extend(repo / relative for relative in (
         "src/msplatform/execution/resources/artifact_retention.json",
         "common/contracts/particle_count_policy.json", "src/msplatform/execution/resources/host_resource_policy.json",
         "src/msplatform/backends/simion/resources/rf_drive.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+        "src/msplatform/backends/simion/resources/native_drive.lua",
         "common/simion/scientific_event_csv.lua",
         "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
         "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
@@ -423,8 +379,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         git_context[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
     git_context["worktree_dirty"] = bool(git_context["worktree_porcelain"])
     write_json(inputs / "source_context.json", git_context)
-    for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
+    for name in ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         freeze_file(project / "simion" / name, solver / name)
+    freeze_file(repo / "src/msplatform/backends/simion/resources/native_drive.lua", solver / "native_drive.lua")
     freeze_file(repo / "common/simion/scientific_event_csv.lua", solver / "scientific_event_csv.lua")
     freeze_file(resource_path("native_run_path.lua"), solver / "native_run_path.lua")
     freeze_file(repo / "src/msplatform/backends/simion/resources/rf_drive.lua", solver / "simion_rf_drive.lua")
