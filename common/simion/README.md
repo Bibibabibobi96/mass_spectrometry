@@ -104,7 +104,7 @@ IP与冷却前端共用此入口，并沿各自现有冻结机制携带公共模
 
 ## 电压边沿
 
-[`voltage_waveforms.lua`](voltage_waveforms.lua)提供三项纯数学操作，时间输入均为微秒：
+[`voltage_waveforms.lua`](../../src/msplatform/backends/simion/resources/voltage_waveforms.lua)提供三项纯数学操作，时间输入均为微秒：
 
 - `cap_before_edge(time_us, current_dt_us, edge_us)`仅在边沿严格位于未来时缩短步长；到达或越过边沿后保持传入步长。
 - `rectangular_gate(time_us, on_us, off_us)`返回`active, next_edge_us`，理想脉冲在`[on_us, off_us)`为ON；
@@ -123,7 +123,7 @@ full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注�
 
 ## RF驱动
 
-[`rf_drive.lua`](rf_drive.lua)是共享的纯RF/DC数学kernel，不拥有Workbench、segment callback、PA实例或时钟。
+[`rf_drive.lua`](../../src/msplatform/backends/simion/resources/rf_drive.lua)是共享的纯RF/DC数学kernel，不拥有Workbench、segment callback、PA实例或时钟。
 调用方显式传入唯一instrument time，kernel验证并计算sine/cosine、相位、RF幅值与scale、两组DC、
 逐电极common-mode与scale，并从每周期步数给出timestep cap。`new_differential`用于已包含静态场的载体，
 `new`用于完整逐电极驱动；几何、电极含义、源时钟和数值选择仍归消费者。
@@ -350,7 +350,7 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 轨迹portal、实例优先级或接受阈值。
 [`field_comparison.py`](field_comparison.py)统一读取该比较CSV、拒绝缺列与非有限残差，并计算RMS和最大残差；
 样点分组、物理区域、身份绑定及接受阈值仍由消费项目定义。
-[`build_dirichlet_patch_operating_pa.lua`](build_dirichlet_patch_operating_pa.lua)从一个已解父工作点 standalone
+[`build_dirichlet_patch_operating_pa.lua`](../../src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua)从一个已解父工作点 standalone
 `.pa` 或一次性 `.pa0` 直接采样
 六面Dirichlet边界，把调用方明确给出的局部电极电压写入同源raw局部几何并只Refine一个工作点。它用于局部
 响应文件不能由SIMION原生Fast Adjust电极计数安全表达的情况；不推导电压、区域、原点、网格或Workbench
@@ -440,7 +440,7 @@ selector的`verify_payload=False`仅供随后有guard的物化选择；小respon
 短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的
 family 成员即使完整物化到私有目录也不得再次交给供应商进程；`r66` 证明复制后的成员仍可能导致原 cache
 兄弟文件延迟变化。原生 family 只在一次性 build staging 中构建，并由
-[`export_standalone_pa.lua`](export_standalone_pa.lua)复制到全新 PA 对象、保存为受同一 manifest 覆盖的
+[`export_standalone_pa.lua`](../../src/msplatform/backends/simion/resources/export_standalone_pa.lua)复制到全新 PA 对象、保存为受同一 manifest 覆盖的
 standalone 响应。运行时只为这些真正 standalone 的响应建立短副本，在 SIMION 退出后核对源并清理。
 无活动调用者的旧 hard-link 命名转发接口已删除；已冻结运行继续使用自己的源码快照。
 

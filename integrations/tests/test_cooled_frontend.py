@@ -660,7 +660,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $package=[pscustomobject]@{artifact_run_dir=$Run;run_dir=$Run;execution_alias=$null;execution_path_capacity=$null;python=$Python;path_context=[pscustomobject]@{execution_root=$ExecutionRoot;artifact_root=(Split-Path -Parent $Run);host_resource_state_path=(Join-Path $ExecutionRoot host.sqlite3)}}
 $before=[IO.File]::ReadAllText((Join-Path $Run run_config.json))
 if($null-ne$package.execution_alias){throw 'pure prepare created a native alias'}
-$builder=Join-Path $Run 'inputs/runtime_snapshot/common/simion/build_dirichlet_patch_operating_pa.lua'
+$builder=Join-Path $Run 'inputs/runtime_snapshot/src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua'
 if(-not(Test-Path -LiteralPath $builder)-or$builder.Length-le259){throw 'actual frozen native builder must require projection'}
 $paths=@($Run,(Join-Path $Run 'inputs/frontend.gem'),$builder)
 try{

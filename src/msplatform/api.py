@@ -418,24 +418,6 @@ def analyze(result: OpenedArtifact | Mapping[str, Any], *,
     return analyze_published_trajectory(source, selection=copy.deepcopy(dict(selection)), method=copy.deepcopy(dict(method)))
 
 
-def compare_trajectories(left: OpenedArtifact | Mapping[str, Any], right: OpenedArtifact | Mapping[str, Any], *,
-                         selection: Mapping[str, Any], method: Mapping[str, Any]) -> dict[str, Any]:
-    """Read two published trajectories and describe actual event t/xyz differences.
-
-    This creates no owner, starts no tool and writes no data. Missing original
-    observations remain explicit; completion is not equality or qualification.
-    """
-    from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
-    from msplatform.execution.artifact_reader import OpenedArtifact
-
-    sources = [value if isinstance(value, OpenedArtifact) else artifact_reader.open_artifact(value, expected_kind="trajectory_result")
-               for value in (left, right)]
-    if not isinstance(selection, Mapping) or not isinstance(method, Mapping):
-        raise ContractError("comparison requires explicit selection and method contracts")
-    return compare_published_trajectories(*sources, selection=copy.deepcopy(dict(selection)),
-                                         method=copy.deepcopy(dict(method)))
-
-
 def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[str, Any]) -> dict[str, Any]:
     """Independently cold-read published STEP data; no export, owner or viewer."""
     import json

@@ -13,6 +13,8 @@ from msplatform import api, assembly as assembly_api, components as component_ap
 from msplatform import execution as execution_api
 from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
+from msplatform.execution.artifact_reader import open_artifact
+from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
 
 
 def compile_example():
@@ -34,8 +36,10 @@ class PlatformApiTests(unittest.TestCase):
              patch.object(Path, "mkdir", side_effect=AssertionError("mkdir")), \
              patch.object(Path, "write_text", side_effect=AssertionError("write")), \
              patch("msplatform.execution.owner.run_managed_stage", side_effect=AssertionError("owner")):
-            result = api.compare_trajectories(left.reference, right.reference, selection=selection, method=method)
-            opened = api.compare_trajectories(left, right, selection=selection, method=method)
+            result = compare_published_trajectories(
+                open_artifact(left.reference, expected_kind='trajectory_result'),
+                open_artifact(right.reference, expected_kind='trajectory_result'), selection=selection, method=method)
+            opened = compare_published_trajectories(left, right, selection=selection, method=method)
         self.assertEqual(result, opened)
         self.assertEqual(result["status"], "comparison_completed")
         self.assertEqual(result["matched_particle_ids"], [7, 99, 123])

@@ -364,7 +364,7 @@ publish_terminal_state(read_root, {'status':'failed'}, read_manifest)
 artifact_reference = dict(manifest=file_record(read_root/'run_manifest.json'),product_id='contract')
 with patch('subprocess.Popen', side_effect=AssertionError('read started native action')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('read wrote data')):
-    assert not hasattr(api, 'open_artifact')
+    assert not hasattr(api, 'open_artifact') and not hasattr(api, 'compare_trajectories')
     from msplatform.execution.artifact_reader import open_artifact
     reopened = open_artifact(artifact_reference,expected_kind='trajectory_result')
     assert reopened.data_path('state') == (root/'neutral-state.csv').resolve()
@@ -422,7 +422,10 @@ comparison_ref = dict(manifest=file_record(comparison_run/'run_manifest.json'),p
 with patch('subprocess.Popen',side_effect=AssertionError('comparison launched tool')), \
      patch.object(pathlib.Path,'mkdir',side_effect=AssertionError('comparison created workspace')), \
      patch.object(pathlib.Path,'write_text',side_effect=AssertionError('comparison wrote data')):
-    described = api.compare_trajectories(comparison_ref,comparison_ref,selection=comparison['selection'],
+    from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
+    from msplatform.execution.artifact_reader import open_artifact
+    described = compare_published_trajectories(open_artifact(comparison_ref, expected_kind='trajectory_result'),
+        open_artifact(comparison_ref, expected_kind='trajectory_result'), selection=comparison['selection'],
         method=dict(schema_version=1,kind='event_time_position'))
 assert described['status']=='comparison_completed' and described['matched_particle_ids']==[7,99,123]
 assert described['coverage']['left']['denominator_count']==4

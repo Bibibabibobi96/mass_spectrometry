@@ -36,14 +36,17 @@ print(metrics["mean_tof_us"], metrics["std_tof_ns"])
 
 ## 两份已发布轨迹的描述比较
 
-`api.compare_trajectories`接受两个已打开的`trajectory_result`或显式manifest/product引用；
-它复用同一已发布数据校验，不创建owner、不写文件、不调用工具，也不要求PA或旧源码。
-例如`left`、`right`已经指向实际发布产物时：
+`compare_published_trajectories`接受两个已打开的`trajectory_result`；显式manifest/product引用先由
+`execution.artifact_reader.open_artifact`分别打开。它复用同一已发布数据校验，不创建owner、不写文件、不调用工具，也不要求PA或旧源码。
+例如`left`、`right`已经指向实际发布产物的引用时：
 
 ```python
-from msplatform import api
+from msplatform.execution.artifact_reader import open_artifact
+from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
 
-comparison = api.compare_trajectories(
+left = open_artifact(left, expected_kind="trajectory_result")
+right = open_artifact(right, expected_kind="trajectory_result")
+comparison = compare_published_trajectories(
     left, right,
     selection={"schema_version": 1, "particle_ids": original_selected_ids,
                "observation": {"kind": "canonical_event", "event": "detector_crossing"},
