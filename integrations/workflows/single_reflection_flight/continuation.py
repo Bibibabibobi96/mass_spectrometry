@@ -554,7 +554,10 @@ def _published_case(case: Mapping[str, Any], records: Mapping[Path, tuple[int, s
                         # Rebind only this fixed compiler role and exact bytes.
                         identity = _identity(file_record(source_path), "inherited IOB builder")
                         matches = [path for path, bound in records.items()
-                                   if path.parts[-4:] == source_path.parts[-4:] and bound == identity]
+                                   if bound == identity and path.name == source_path.name
+                                   and path.as_posix().endswith((
+                                       '/integrations/workflows/single_reflection_flight/build_iob.lua',
+                                       '/src/msplatform/backends/simion/resources/build_iob.lua'))]
                         if len(matches) != 1:
                             raise ValueError("inherited IOB builder is not uniquely manifest-bound")
                         arguments[index] = str(matches[0])

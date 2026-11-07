@@ -1,9 +1,8 @@
 -- Process-local paths are transport; the same core owns physical IOB controls.
 -- Persistent build specs are never rewritten with this execution representation.
 local source=debug.getinfo(1,'S').source:sub(2):gsub('\\','/')
-local root=assert(source:match('^(.*)/integrations/workflows/single_reflection_flight/build_iob%.lua$'),
-  'builder must retain its frozen package and common native path companion')
-local native_path=assert(loadfile(root..'/common/paths/native_run_path.lua'))()
+local directory=assert(source:match('^(.*)/[^/]+$'),'builder requires its installed resource directory')
+local native_path=assert(loadfile(directory..'/../../../execution/resources/native_run_path.lua'))()
 local spec=dofile(native_path(assert(arg[1], 'frozen IOB build specification is required')))
 local mode=arg[2] or 'build'
 for _,key in ipairs({'seed_iob','output_iob'}) do
@@ -18,5 +17,5 @@ for _,key in ipairs({'instances','response_fields'}) do
 end
 -- Program/FLY2 companions share the projected output stem. The locator remains
 -- injected only for paths discovered while independently reopening an old IOB.
-local core=assert(loadfile(root..'/src/msplatform/backends/simion/resources/iob_core.lua'))()
+local core=assert(loadfile(directory..'/iob_core.lua'))()
 return core(spec,mode,native_path)

@@ -416,7 +416,7 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
             interface_field_probes=interfaces,
             native_priority_occupancy_probes=probes,
             seed_iob=(seed / seed_names[0]).as_posix(), output_iob=iob.as_posix())) + "\n",
-        builder_path=str(Path(context["snapshot_root"]) / "integrations/workflows/single_reflection_flight/build_iob.lua"),
+        builder_path=str(Path(context["snapshot_root"]) / "src/msplatform/backends/simion/resources/build_iob.lua"),
         builder_core_path=str(Path(context["snapshot_root"])/"src/msplatform/backends/simion/resources/iob_core.lua"),
         program_path_projection_record=context.setdefault("_program_path_projection_record",
             file_record(resource_path("native_run_path.lua"))),
@@ -462,7 +462,7 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
     for name in seed_names:
         if not seed_sources[name].is_file():
             raise ValueError(f"frozen public IOB seed resource is missing: {name}")
-    builder = snapshot_root / "integrations/workflows/single_reflection_flight/build_iob.lua"
+    builder = snapshot_root / "src/msplatform/backends/simion/resources/build_iob.lua"
     if not builder.is_file():
         raise ValueError("frozen four/five-slot IOB builder is missing")
     directory.mkdir(parents=True)

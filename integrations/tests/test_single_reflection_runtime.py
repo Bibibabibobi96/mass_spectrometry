@@ -41,7 +41,7 @@ from integrations.runtime.single_flight_frontend import instance_design_record, 
 
 ROOT = Path(__file__).resolve().parents[2]
 LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
-BUILDER = ROOT / "integrations/workflows/single_reflection_flight/build_iob.lua"
+BUILDER = ROOT / "src/msplatform/backends/simion/resources/build_iob.lua"
 
 
 def write_json(path, value):
@@ -207,12 +207,12 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         self.downstream_path = self.producer / "field_receipt.json"
         write_json(self.downstream_path, self.downstream)
         self.snapshot = self.root / "snapshot"
-        for name in [*_SOURCES.values(), "integrations/workflows/single_reflection_flight/build_iob.lua",
-                     "integrations/workflows/single_reflection_flight/build_iob_core.lua",
-                     "src/msplatform/backends/simion/resources/iob_core.lua", "common/paths/native_run_path.lua"]:
+        for name in [*_SOURCES.values(), "src/msplatform/backends/simion/resources/build_iob.lua",
+                     "src/msplatform/backends/simion/resources/iob_core.lua", "common/paths/native_run_path.lua",
+                     "src/msplatform/execution/resources/native_run_path.lua"]:
             target = self.snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(resource_path("native_run_path.lua") if name == "common/paths/native_run_path.lua" else ROOT / name, target)
+            shutil.copyfile(resource_path("native_run_path.lua") if name.endswith("native_run_path.lua") else ROOT / name, target)
         seed = self.snapshot / "common/simion/assets/iob_instance_seeds"
         seed.mkdir(parents=True)
         for name in ["4_instance_seed.iob", "5_instance_seed.iob", *(f"iob_seed_placeholder_{i:02d}.pa0" for i in range(1, 6))]:

@@ -166,6 +166,8 @@ manifest绑定、搬迁resolver、文件身份复核和失败关闭不变，其�
 integration中的`single_flight_frontend_hook.lua`与`single_flight_pulse_hook.lua`旧转发器亦已删除；
 真实Lua回调、原冻结消费者及普通安装直接读取安装实现，原回调顺序和字节身份不变。
 单反射前／下游场审计旧Lua转发器亦已删除；真实审计测试直接读取安装实现，原冻结条目退出且不新增重复声明。
+单反射`build_iob`实际路径投影迁入安装SIMION backend，`build_iob_core`旧桥退役；
+当前构建直接消费安装路径及core helper，历史continuation仍按父run原冻结资源读取，不重写旧资产。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

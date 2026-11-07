@@ -132,6 +132,7 @@ for name, count, digest in (
     ('single_flight_pulse_hook.lua', 3913, 'e3ef5a0b08b73e23c566df23f84102052b9f2d45f0ada9ae768094cc6c287d37'),
     ('audit_frontend_working_fields.lua', 5910, 'a3c07078e53a22cf741f3c3d1a415373c7b261b39dc3b89f7c3a345e8a63845f'),
     ('audit_downstream_fields.lua', 2335, '39ea50b054868d6940552b3c049ec8e407f6bd4cbc9ebd6156c70c874c101cdd'),
+    ('build_iob.lua', 1154, '180ecea75537eecac2b081e3cca491254d578db005cf3b33461220a622ba27b9'),
 ):
     payload = native_resource_path(name).read_bytes()
     assert len(payload) == count and hashlib.sha256(payload).hexdigest() == digest

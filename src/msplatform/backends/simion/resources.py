@@ -17,7 +17,7 @@ NATIVE_RESOURCES = frozenset({
     "build_tracking_iob.lua",
     "voltage_waveforms.lua", "rf_drive.lua", "single_flight_pulse_hook.lua", "single_flight_frontend_hook.lua",
     'build_dirichlet_patch_operating_pa.lua', 'export_detached_standalone_pa.lua', 'export_standalone_pa.lua', 'audit_frontend_working_fields.lua', 'audit_downstream_fields.lua',
-    "gem2pa_geometry.lua", "build_frontend_geometry.lua", "build_geometry_iob.lua", "iob_core.lua",
+    "gem2pa_geometry.lua", "build_frontend_geometry.lua", "build_geometry_iob.lua", "iob_core.lua", "build_iob.lua",
     "build_flight_tube_variant.lua", "build_detector_variant.lua", "build_reflectron_variant.lua",
     "export_paired_accelerator_field.lua", "paired_accelerator_pulse.lua", "scientific_event_csv.lua",
 })
