@@ -116,7 +116,7 @@ Invoke-Builder (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\buil
 ) 'accelerator_builder'
 
 $failureStage = 'reflectron_build'
-Invoke-Builder (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
+Invoke-Builder (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_reflectron_variant.lua') @(
   (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_reflectron_ideal_10_5.gem'),
   (Join-Path $outputFull 'reflectron.pa#'),
   (Join-Path $projectRoot 'simion\workbench\formal\oatof_resolved.lua'), 'refine-all'

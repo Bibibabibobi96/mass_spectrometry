@@ -19,7 +19,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import lua_value, render_resolved_lua
 
-from msplatform.backends.simion.resources import gem_template_path, gem_template_text
+from msplatform.backends.simion.resources import gem_template_path, gem_template_text, native_resource_path
 
 LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
 
@@ -54,16 +54,16 @@ class PhysicalGeometryTests(unittest.TestCase):
     @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
     def test_three_builders_reject_incomplete_inputs_before_native_operations(self):
         builders = (
-            "reflectron/build_reflectron_variant.lua",
-            "workbench/build_flight_tube_variant.lua",
-            "workbench/build_detector_variant.lua",
+            "build_reflectron_variant.lua",
+            "build_flight_tube_variant.lua",
+            "build_detector_variant.lua",
         )
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "invalid.pa#"
             for relative in builders:
                 with self.subTest(builder=relative):
                     result = subprocess.run(
-                        [str(LUA), str(PROJECT_ROOT / "simion" / relative),
+                        [str(LUA), str(native_resource_path(relative)),
                          str(Path(directory) / "source.gem"), str(output)],
                         cwd=directory, capture_output=True, text=True, encoding="utf-8",
                         timeout=20, check=False,
@@ -141,7 +141,7 @@ class PhysicalGeometryTests(unittest.TestCase):
         with self.subTest(directory=directory):
             snapshot = Path(directory) / "resolved.lua"
             snapshot.write_text(render_resolved_lua(resolved), encoding="utf-8")
-            builder = PROJECT_ROOT / "simion/reflectron/build_reflectron_variant.lua"
+            builder = native_resource_path("build_reflectron_variant.lua")
             script = Path(directory) / "drive.lua"
             output = directory.joinpath(*(["long directory with spaces"] * 12), "reflectron.pa#") if long_output else directory / "reflectron.pa#"
             argv = [str(gem_template_path("reflectron")),

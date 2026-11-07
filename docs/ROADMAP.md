@@ -155,6 +155,8 @@ paired SIMION静态采样器与脉冲回调Lua也已迁入安装SIMION backend�
 旧manifest绑定位置仅保留只读复用，项目副本退役。两份资源原字节及SHA保持，未新增原生求解资格。
 paired COMSOL主脚本、Cartesian释放读取与CPT步策略helper亦迁入安装COMSOL backend；
 普通构建、Candidate冻结源码、同步、重追踪及MATLAB测试同步使用安装目录，三份MATLAB字节保持，未启动原生求解。
+单反射飞行管、反射镜和检测器variant Lua的三份旧项目转发桥现已删除；smoke、冻结依赖、集成及真实Lua测试直接消费安装实现，
+不再保留重复冻结条目或到期别名。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

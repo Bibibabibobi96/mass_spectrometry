@@ -24,6 +24,9 @@ paired CPT主脚本、Cartesian释放读取与CPT步策略helper的唯一实现�
 普通构建、Candidate源码闭包、同步、重追踪、冷后处理和MATLAB测试均显式加入该安装目录；paired任务只生成新位置调用。
 三份MATLAB原始字节、算法、原生读回及原ID语义保持，项目旧副本退役且无转发；本次不启动COMSOL求解或GUI。
 
+飞行管、反射镜和检测器variant Lua旧项目路径原先仅转发安装实现；实际smoke、冻结依赖、集成及物理测试现已直接消费新位置，
+三份旧桥已删除。新原生builder字节、错误拒绝及fast_adjust输入不变；本切片未启动SIMION或生成PA。
+
 ### P2 V6：理论与峰结果的公共语义
 
 完整科学电极几何及工作电位由`geometry_contract.resolve_electrode_geometry`唯一构造，

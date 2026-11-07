@@ -801,27 +801,6 @@
       "provider_project": "single_reflection_oa_tof_mass_analyzer",
       "files": [
         {
-          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_build_flight_tube_variant_lua",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_flight_tube_variant.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_build_detector_variant_lua",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_detector_variant.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_reflectron_build_reflectron_variant_lua",
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/build_reflectron_variant.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_build_grid_geometry_m",
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
           "consumers": [
