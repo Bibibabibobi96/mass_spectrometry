@@ -13,7 +13,7 @@ from unittest.mock import patch
 from matplotlib import pyplot as plt
 
 from msplatform.contracts.particle_state import write_component_particle_state_csv
-from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
+from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import (
     build_figures, census, export_diagnostics, prepare_data, state_at,

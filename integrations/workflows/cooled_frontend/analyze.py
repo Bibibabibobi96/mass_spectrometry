@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from integrations.workflows.local_frontend.analyze import (
     analyze_local_frontend,
 )

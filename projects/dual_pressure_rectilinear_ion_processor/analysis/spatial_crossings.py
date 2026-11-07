@@ -5,7 +5,7 @@ from collections.abc import Iterable
 import math
 
 from common.analysis.plane_crossings import CrossingSample, iter_bounded_plane_crossings
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 
 VALUES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")

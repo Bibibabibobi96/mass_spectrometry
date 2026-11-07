@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
     axial_potential_gradient_v_per_mm,

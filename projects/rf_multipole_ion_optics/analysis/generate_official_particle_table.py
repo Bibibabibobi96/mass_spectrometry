@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.ion_release.numpy_ion11_box import (
     render_numpy_ion11_box_table,

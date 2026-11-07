@@ -22,7 +22,7 @@ from integrations.workflows.cooled_frontend.prepare import prepare_cooled_fronte
 from integrations.workflows.cooled_frontend.runtime import _verified_small_record, fields
 from integrations.workflows.cooled_frontend import reference, runtime
 from integrations.workflows.local_frontend import runtime as shared
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.simion.particle_batching import plan_single_wave_batches
 from common.simion import pa_family_cache
 

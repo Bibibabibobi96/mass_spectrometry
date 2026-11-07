@@ -75,12 +75,6 @@ class FixedHardwareMirrorPointContractTests(unittest.TestCase):
                 target = detached / source.relative_to(REPOSITORY)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
-            # Alias bridges expose canonical __file__, so preserve the still
-            # imported repository entry explicitly rather than infer it from that attribute.
-            bridge = Path("common/contracts/particle_physics.py")
-            target = detached / bridge
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(REPOSITORY / bridge, target)
             from common.contracts.frozen_inputs import enumerate_python_sources
 
             for relative in enumerate_python_sources(

@@ -8,7 +8,7 @@ import json
 import math
 from pathlib import Path
 
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,

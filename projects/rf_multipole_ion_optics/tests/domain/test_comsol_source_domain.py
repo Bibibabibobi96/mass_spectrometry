@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from projects.rf_multipole_ion_optics.runtime import (
     particle_source_preflight as source_api,
 )

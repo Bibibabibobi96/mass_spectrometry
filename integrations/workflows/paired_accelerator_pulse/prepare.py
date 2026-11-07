@@ -14,7 +14,7 @@ from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.particle_count_policy import validate_positive_particle_count
-from common.contracts.particle_physics import AMU_KG
+from msplatform.contracts.particle_physics import AMU_KG
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.write_run_manifest import require_completed_terminal_publication
 from integrations.analysis.build_comsol_prepulse_replay import build_comsol_prepulse_replay

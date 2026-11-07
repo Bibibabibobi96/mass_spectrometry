@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import COLUMNS
 from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
 from common.simion.resource_profile import publish_resource_profile

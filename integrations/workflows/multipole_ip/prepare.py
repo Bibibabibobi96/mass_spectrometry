@@ -16,7 +16,7 @@ from typing import Any
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from common.contracts.machine_contracts import validate_schema
-from common.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
+from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 from msplatform.contracts.clock import ClockIdentity, age_us, seconds_to_microseconds
 from msplatform.assembly.handoff import HandoffClock, HandoffMother, HandoffSelection, prepare_handoff_states

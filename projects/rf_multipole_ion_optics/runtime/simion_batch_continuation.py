@@ -113,7 +113,7 @@ def prepare(run: Path, predecessor: Path, cases: list[str], retention: str, mech
         "projects/rf_multipole_ion_optics/runtime/simion_particle_source.py",
         "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
         "projects/rf_multipole_ion_optics/core/interface_geometry.py",
-        "common/simion/particle_source.py", "common/contracts/particle_physics.py",
+        "common/simion/particle_source.py", "src/msplatform/contracts/particle_physics.py",
     }
     def simion_code(inventory: dict) -> dict[str, str]:
         return {row["path"]: row["sha256"] for row in inventory["files"]

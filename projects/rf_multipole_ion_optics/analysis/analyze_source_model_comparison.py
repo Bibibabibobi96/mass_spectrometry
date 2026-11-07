@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.rf_multipole_ion_optics.analysis.campaign_analysis import SERIES_DELTA_FIELDS, summarize_run
 from projects.rf_multipole_ion_optics.analysis.numerical_observables import (

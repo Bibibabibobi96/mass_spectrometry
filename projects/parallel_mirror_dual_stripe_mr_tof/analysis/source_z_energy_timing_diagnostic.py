@@ -22,7 +22,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     resolve_bunch_source_interval,

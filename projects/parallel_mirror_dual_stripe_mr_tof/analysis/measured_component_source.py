@@ -19,7 +19,7 @@ from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.particle_state import (
     ComponentParticleStateTable, load_component_particle_state_csv, write_component_particle_state_csv,
 )
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_number
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform

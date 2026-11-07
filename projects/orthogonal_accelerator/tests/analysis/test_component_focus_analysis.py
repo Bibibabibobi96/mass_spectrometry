@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.particle_physics import kinetic_energy_ev, speed_m_s_from_kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev, speed_m_s_from_kinetic_energy_ev
 from common.ion_release.release import generate_release_states, materialize_release
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import ComponentFocusError, _ideal_two_zone_contrast, analyze

@@ -215,7 +215,7 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\native_stripe_shape_adapter.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\resolved_geometry.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
-    'common\contracts\particle_physics.py',
+    'src\msplatform\contracts\particle_physics.py',
     'common\contracts\file_identity.py',
     'common\contracts\verify_run_manifest.py',
     'common\host_resource_python.py',

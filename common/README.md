@@ -451,25 +451,8 @@ integration所有者负责组合入口、source/clock、程序与冻结资源声
 峰形与刚体变换旧桥均已退役；活动消费者直接调用`msplatform.analysis.peak_metrics`及
 `msplatform.contracts.rigid_transform`，包括实际冻结源码与来源探针。算法、协议标识、坐标和变换算序不变。
 
-`common.contracts.particle_physics`（47个生产Python文件）：质量/电荷常数、单位、速度与动能。
-
-- `integrations/analysis/`：`build_comsol_prepulse_replay.py`。
-- `integrations/runtime/`：`single_flight_source.py`。
-- `integrations/workflows/cooled_frontend/`：`analyze.py`、`field_design.py`、`reference.py`。
-- `integrations/workflows/local_frontend/`：`analyze.py`、`focus.py`。
-- `integrations/workflows/multipole_ip/`：`prepare.py`。
-- `integrations/workflows/paired_accelerator_pulse/`：`prepare.py`。
-- `integrations/workflows/single_reflection_flight/`：`census.py`。
-- `projects/dual_cone_tandem_quadrupole_ion_interface/simion/`：`prepare.py`。
-- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`component_exit.py`、`cooled_buncher.py`、`diagnostics.py`、`extraction_force_budget.py`、`extraction_phase_space_comparison.py`、`functional.py`、`post_extraction_diagnostics.py`、`spatial_crossings.py`。
-- `projects/orthogonal_accelerator/analysis/`：`accelerator_time_focus.py`、`component_focus_analysis.py`、`component_focus_workflow.py`。
-- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`accelerator_exit_transport_source.py`、`ion_processor_handoff.py`、`ip_prism_distance_study.py`、`ip_prism_field_theory.py`、`ip_prism_local_diagnostics.py`、`joint_flight_preparation.py`、`loss_acceptance_diagnostics.py`、`measured_component_source.py`、`prepared_joint_diagnostics.py`、`prepared_joint_trial.py`、`source_z_energy_timing_diagnostic.py`、`two_prism_segmented_transport.py`、`two_prism_simion_trial.py`。
-- `projects/rf_multipole_ion_optics/analysis/`：`analyze_source_model_comparison.py`、`generate_official_particle_table.py`、`numerical_observables.py`、`paired_particle_source_bundle.py`、`validate_release_construction_gate.py`。
-- `projects/rf_multipole_ion_optics/runtime/`：`particle_source_preflight.py`、`phase_matched_particle_source.py`、`simion_particle_source.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`exported_axis_field_integrator.py`、`reflectron_dual_stage_solver.py`。
-- `projects/transverse_helical_filament_wehnelt_electron_gun/analysis/`：`resolve_contract.py`。
-
-退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
+`common.contracts.particle_physics`旧桥已退役；全部活动消费者、动态冻结清单和门禁路由直接使用
+`msplatform.contracts.particle_physics`。物理常量、动能／速度公式、单位与失败语义不变。
 
 `common.contracts.machine_contracts`（43个生产Python文件）：ContractError、JSON/schema校验、普通摘要。
 

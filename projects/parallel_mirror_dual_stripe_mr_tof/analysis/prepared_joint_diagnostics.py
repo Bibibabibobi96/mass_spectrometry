@@ -22,7 +22,7 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
 from common.analysis.figure_export import export_figures
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import (

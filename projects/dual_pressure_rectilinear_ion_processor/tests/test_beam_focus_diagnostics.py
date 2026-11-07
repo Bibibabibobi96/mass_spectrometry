@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from common.analysis import beam_focus_diagnostics as beam
 from msplatform.contracts.particle_state import write_component_particle_state_csv
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.write_run_manifest import file_record
 from projects.dual_pressure_rectilinear_ion_processor.analysis import extraction_phase_space_comparison as recorded
 from projects.dual_pressure_rectilinear_ion_processor.analysis import geometry_comparison

@@ -181,6 +181,7 @@ integration中的`single_flight_frontend_hook.lua`与`single_flight_pulse_hook.l
 峰形、刚体变换与中立粒子状态旧桥均已退役；全部活动消费者、测试、冻结来源与门禁路由直接使用canonical实现，
 不改算法、科学协议字符串、原ID／母群、坐标／旋转算序或历史资产。
 纵向拟合已迁入`msplatform.analysis.longitudinal_fit`；接受域消费者、publisher冻结来源和门禁路由直接绑定新实现，旧公共文件退役。
+粒子物理旧桥已删除，各项目与integration直接消费安装实现；常量、公式、单位、ID／母群及科学资格不变。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

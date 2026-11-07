@@ -49,7 +49,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C as _ELEMENTARY_CHARGE_C,
 )
 

@@ -23,7 +23,7 @@ from msplatform.analysis.particle_census import (
 )
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.exit_state_plot import prepare_visual_style_map
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position
 # Top-level imports are deliberate: prepare() freezes loaded repository modules

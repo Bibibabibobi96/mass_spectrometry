@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations, transport_numerical_domain
 

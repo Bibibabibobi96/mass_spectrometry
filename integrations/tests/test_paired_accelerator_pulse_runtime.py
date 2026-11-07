@@ -17,7 +17,7 @@ from integrations.workflows.paired_accelerator_pulse.runtime import (
     materialize_comsol_task, materialize_simion_batches, prepare_dispatch_request, plan_simion_replay_continuation,
 )
 
-from common.contracts.particle_physics import AMU_KG
+from msplatform.contracts.particle_physics import AMU_KG
 from common.contracts.write_run_manifest import build_run_manifest, file_record
 from common.simion.particle_batching import plan_single_wave_batches
 from common.simion.resource_scheduler import plan_simion_dispatch

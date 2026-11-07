@@ -230,7 +230,7 @@ try {
             'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
             'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
             'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
-            'common.contracts.particle_physics',
+            'msplatform.contracts.particle_physics',
             'common.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
             'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'
@@ -278,7 +278,7 @@ try {
             'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
             'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
             'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
-            'common.contracts.particle_physics',
+            'msplatform.contracts.particle_physics',
             'common.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
             'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'

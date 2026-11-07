@@ -13,7 +13,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 COMSOL_PRIMARY_STATE_FILE = "particle_state__primary.csv"
 SUPPORTED_SOLVERS = ("COMSOL", "SIMION")
 CELL_AXES = ("x", "y", "z")

@@ -17,7 +17,7 @@ from integrations.runtime.single_flight_source import binary64_serialization_clo
 from msplatform.analysis.particle_census import (
     CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
 )
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import FramedPosition, PhaseSpaceState, RigidTransform
 from common.contracts.write_run_manifest import file_record
 from integrations.analysis.plot_single_flight_spatial_six_panel import (

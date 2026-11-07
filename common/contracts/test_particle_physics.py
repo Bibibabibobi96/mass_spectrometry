@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     AMU_KG,
     ELECTRON_MASS_KG,
     ELECTRON_MASS_U,

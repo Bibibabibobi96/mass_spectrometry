@@ -130,7 +130,7 @@ def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_pat
     return result
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,

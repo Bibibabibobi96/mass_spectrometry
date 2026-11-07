@@ -5,7 +5,7 @@ import json
 import unittest
 from pathlib import Path
 from common.contracts.build_project_registry import validate_descriptor
-from common.contracts.particle_physics import ELECTRON_MASS_U
+from msplatform.contracts.particle_physics import ELECTRON_MASS_U
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]

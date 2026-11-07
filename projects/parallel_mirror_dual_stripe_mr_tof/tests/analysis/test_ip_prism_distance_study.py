@@ -46,7 +46,7 @@ sys.path.insert(0, str(root))
 from common.contracts.frozen_inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_distance_study as study
-from common.contracts.particle_physics import kinetic_energy_ev as legacy_energy
+from msplatform.contracts.particle_physics import kinetic_energy_ev as legacy_energy
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 assert legacy_energy is kinetic_energy_ev
 assert pathlib.Path(study.__file__).resolve().is_relative_to(root)

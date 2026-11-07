@@ -15,7 +15,7 @@ from typing import Any
 from matplotlib import pyplot as plt
 from matplotlib.patches import Ellipse, Patch, Polygon, Rectangle
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import collision_diagnostics
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _collision_geometry_projection
 

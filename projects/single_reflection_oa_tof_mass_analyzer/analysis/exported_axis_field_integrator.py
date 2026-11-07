@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.contracts.particle_physics import charge_to_mass_c_per_kg
+from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg
 
 
 @dataclass(frozen=True)

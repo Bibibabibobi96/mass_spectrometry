@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from common.contracts import particle_physics
+from msplatform.contracts import particle_physics
 from common.contracts.file_identity import file_sha256 as sha256
 from common.contracts.particle_count_policy import (
     POLICY_PATH,

@@ -280,7 +280,7 @@ ConvertTo-Json -Compress -InputObject $paths
                  ("common/integration/resolve_assembly.py", "common.contracts.test_installed_scientific_core"),
                  ("common/integration/__init__.py", "common.contracts.test_installed_scientific_core"),
                  ("src/msplatform/analysis/peak_metrics.py", "common.contracts.test_installed_scientific_core"),
-                 ("common/contracts/particle_physics.py", "common.contracts.test_installed_scientific_core"),
+                 ("src/msplatform/contracts/particle_physics.py", "common.contracts.test_installed_scientific_core"),
                  ("src/msplatform/contracts/schemas/composition_plan.schema.json", "common.contracts.test_installed_scientific_core"),
                  ("src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json", "common.contracts.test_machine_contracts_paths"))
         for path, module in cases:

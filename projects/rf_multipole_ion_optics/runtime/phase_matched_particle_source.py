@@ -27,7 +27,7 @@ from common.contracts.particle_count_policy import (
     validate_positive_particle_count,
     validate_prefix_particle_sources,
 )
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 
 
 COLUMNS = (

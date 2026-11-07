@@ -15,7 +15,7 @@ from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import
 from pathlib import Path
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import COLUMNS
 from projects.rf_multipole_ion_optics.analysis.verify_resolved_design import verify as verify_resolved_design
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (

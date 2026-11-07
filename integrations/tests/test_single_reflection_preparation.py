@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record

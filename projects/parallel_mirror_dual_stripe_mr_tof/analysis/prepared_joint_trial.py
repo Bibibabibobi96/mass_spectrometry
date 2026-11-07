@@ -602,7 +602,7 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     """
     import csv
     import math
-    from common.contracts.particle_physics import kinetic_energy_ev
+    from msplatform.contracts.particle_physics import kinetic_energy_ev
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,

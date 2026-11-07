@@ -34,7 +34,6 @@ RELATIVE_PATHS = (
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\generate_particle_table.py",
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\particle_source_policy.py",
     r"projects\rf_multipole_ion_optics\analysis\paired_particle_source_bundle.py",
-    r"common\contracts\particle_physics.py",
     r"common\contracts\particle_count_policy.py",
     r"common\contracts\particle_count_policy.json",
     r"common\contracts\file_identity.py",
@@ -57,7 +56,7 @@ REQUIRED_MODULES = (
     "projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table",
     "projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy",
     "projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle",
-    "common.contracts.particle_physics",
+    "msplatform.contracts.particle_physics",
     "common.contracts.particle_count_policy",
     "common.contracts.file_identity",
     "common.ion_release",
@@ -237,7 +236,7 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
         source = COMSOL_RUNNER.read_text(encoding="utf-8")
         start = source.index("import importlib,json,pathlib,runpy,sys")
         code = source[start:source.index("raw=json.loads", start)]
-        code += "\nfrom common.contracts.particle_physics import kinetic_energy_ev, AMU_KG, ELEMENTARY_CHARGE_C\n"
+        code += "\nfrom msplatform.contracts.particle_physics import kinetic_energy_ev, AMU_KG, ELEMENTARY_CHARGE_C\n"
         code += "assert kinetic_energy_ev(1.,1.,0.,0.) == .5*AMU_KG/ELEMENTARY_CHARGE_C\n"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

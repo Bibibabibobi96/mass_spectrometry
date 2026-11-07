@@ -10,7 +10,7 @@ import unittest
 
 import numpy as np
 
-from common.contracts.particle_physics import charge_to_mass_c_per_kg
+from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import (
     IMPULSE_COLUMNS, STEP_COLUMNS, build_force_budget_figure, covariance_budget,
     export_force_budget, extraction_surfaces, prepare_force_budget, spatial_fractions,

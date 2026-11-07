@@ -25,7 +25,7 @@ from common.simion.workbench_seed import freeze_workbench_seed
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.particle_count_policy import validate_positive_particle_count, validate_standard_particle_count
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
 from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
@@ -46,7 +46,7 @@ from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates i
 # Explicit legacy import routes used by this package and its shared consumers.
 # Retire with their direct imports by P4; all algorithms remain in msplatform.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
-    "common/contracts/particle_physics.py",
+    "src/msplatform/contracts/particle_physics.py",
     "common/ion_release/release.py",
 )
 # Actual runtime dependencies, independent of incidental imports in the author process.

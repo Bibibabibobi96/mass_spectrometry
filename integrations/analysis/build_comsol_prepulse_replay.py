@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from integrations.runtime.single_flight_source import select_timed_pre_pulse_states
 
 

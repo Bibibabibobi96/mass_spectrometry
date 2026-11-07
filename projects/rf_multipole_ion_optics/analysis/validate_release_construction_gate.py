@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
+from msplatform.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 
 
 PARTICLE_COUNT = 100

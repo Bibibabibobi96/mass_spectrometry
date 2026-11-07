@@ -87,8 +87,8 @@
     },
     "accelerator_two_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-      "bytes": 6750,
-      "sha256": "A9EDE0749AC6CA068615CFB148F48404976F11ECE8BF5345463A78E16F5ADC65"
+      "bytes": 6754,
+      "sha256": "09888DE7F7929E074EF38C1B17E5AEE5CA7342FF647794E716B31EB5E95C31C7"
     },
     "accelerator_three_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",

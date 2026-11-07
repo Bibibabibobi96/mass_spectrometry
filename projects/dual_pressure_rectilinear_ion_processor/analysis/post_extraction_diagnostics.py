@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import numpy as np
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 VARS=('x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us')
 def sha(p):
     with p.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()

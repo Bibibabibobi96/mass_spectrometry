@@ -18,7 +18,7 @@ from common.analysis.figure_export import export_figures
 from common.analysis.population_moments import population_pair_moments
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 
 
 STATE_FIELDS = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us", "potential_v")

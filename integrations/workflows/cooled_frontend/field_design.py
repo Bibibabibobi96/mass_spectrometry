@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.polynomial import Polynomial
 
-from common.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
 from common.contracts.write_run_manifest import file_record
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import (
     analyze_buncher_axial_barriers, analyze_buncher_field_samples,

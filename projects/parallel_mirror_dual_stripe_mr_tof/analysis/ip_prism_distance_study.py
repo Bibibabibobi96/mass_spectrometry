@@ -27,7 +27,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometr
 # These routes are still imported by native geometry, OA timing and the IP
 # recorded-source readers used by this study. Retire with those imports by P4.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
-    "common/contracts/particle_physics.py",
+    "src/msplatform/contracts/particle_physics.py",
     "common/integration/resolve_assembly.py",
     "common/ion_release/release.py",
     "common/simion/resource_scheduler.py",
@@ -320,7 +320,7 @@ def _write_rows(path: Path, rows: list[dict]) -> None:
 
 def _contour_source_tables(case: dict, registration: dict) -> tuple[list[dict], list[dict]]:
     """Project recorded world-frame exits by translation only, preserving all IDs."""
-    from common.contracts.particle_physics import kinetic_energy_ev
+    from msplatform.contracts.particle_physics import kinetic_energy_ev
 
     model = case["config"]
     transform = model["coordinate_transform"]
@@ -362,7 +362,7 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
                                   inputs: Path, lua_executable: Path, repo: Path) -> tuple[dict, dict]:
     """Project exact native CSG and evaluate the unchanged sole Lua voltage schedule."""
     import copy
-    from common.contracts.particle_physics import kinetic_energy_ev
+    from msplatform.contracts.particle_physics import kinetic_energy_ev
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import transform_shape
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import project_provider_voltages
 

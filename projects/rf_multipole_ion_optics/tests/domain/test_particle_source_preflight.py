@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 from collections.abc import Callable
 
-from common.contracts.particle_physics import (
+from msplatform.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C as E_CHARGE_C,
 )

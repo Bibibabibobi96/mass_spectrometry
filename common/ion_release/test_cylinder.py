@@ -8,7 +8,7 @@ import unittest
 from statistics import NormalDist
 from pathlib import Path
 
-from common.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, kinetic_energy_ev
+from msplatform.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, kinetic_energy_ev
 
 from common.ion_release.cylinder import (
     apply_controlled_slow_energy_pair,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.generate_official_particle_table import (
     generate,
     generate_canonical,

@@ -27,7 +27,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_ion_
 class MeasuredCentroidTargetTests(unittest.TestCase):
     @staticmethod
     def evidence():
-        from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev, kinetic_energy_ev
+        from msplatform.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev, kinetic_energy_ev
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_dual_stripe_l0_math import converging_prism_fixture
         contract, _, reference = converging_prism_fixture()
         record = lambda name: dict(path="C:/synthetic-unit-evidence/"+name+".json",bytes=1,sha256="ab"*32)
@@ -195,7 +195,7 @@ class MeasuredComponentSourceTests(unittest.TestCase):
 
     def test_centroid_is_separate_probe_and_keeps_full_mother_provenance(self) -> None:
         import math
-        from common.contracts.particle_physics import kinetic_energy_ev
+        from msplatform.contracts.particle_physics import kinetic_energy_ev
         original = self._materialize()
         with (self.output / "component_particle_state.csv").open() as handle:
             varied = list(csv.DictReader(handle))

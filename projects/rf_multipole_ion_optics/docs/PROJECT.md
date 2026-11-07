@@ -14,6 +14,7 @@
 `core/ideal_transport.py` 直接从 `msplatform.ion_release` 与
 `msplatform.contracts.particle_physics` 消费源策略、释放及粒子物理实现。
 相邻回归核对实际函数来源，并保持原两粒子完整固定输出；不再经旧科学兼容桥取得这些调用。
+粒子物理活动消费者、运行器冻结清单和来源探针现均直接绑定`msplatform.contracts.particle_physics`，旧公共桥已退役。
 本轮跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
 其中布局及 MR 测试在拒绝旧桥导入时仍执行真实计算。这是软件迁移证据，未新增原生求解或科学资格。
 

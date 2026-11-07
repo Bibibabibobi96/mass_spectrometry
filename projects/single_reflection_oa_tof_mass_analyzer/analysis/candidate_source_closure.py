@@ -46,7 +46,6 @@ RELATIVE_PATHS = (
     "common/contracts/frozen_inputs.py",
     "common/contracts/historical_source_scratch_retirement.py",
     "common/contracts/legacy_owner_disposition.py",
-    "common/contracts/particle_physics.py",
     "common/contracts/reconcile_artifact_capacity.py",
     "common/contracts/recorded_file_removal.py",
     "common/contracts/run_capacity_lifecycle.py",

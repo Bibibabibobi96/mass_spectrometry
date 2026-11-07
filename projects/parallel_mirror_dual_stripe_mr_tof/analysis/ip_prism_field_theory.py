@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from common.analysis.population_moments import population_pair_moments
-from common.contracts.particle_physics import charge_to_mass_c_per_kg, kinetic_energy_ev
+from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg, kinetic_energy_ev
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_local_diagnostics as local
 from msplatform.backends.simion.standalone_pa_composition import HEADER, read_pa_header

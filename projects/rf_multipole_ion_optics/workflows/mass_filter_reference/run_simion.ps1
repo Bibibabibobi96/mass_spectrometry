@@ -384,7 +384,7 @@ $runConfig.inputs.simion_fly_physics=Join-Path $inputDir 'simion_fly_physics.jso
             'projects/rf_multipole_ion_optics/runtime/simion_particle_source.py',
             'projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py',
             'projects/rf_multipole_ion_optics/core/interface_geometry.py','common/simion/particle_source.py',
-            'common/contracts/particle_physics.py','common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')
+            'src/msplatform/contracts/particle_physics.py','common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')
     $lifecycle=Get-Content -LiteralPath $runConfigPath -Raw|ConvertFrom-Json -AsHashtable
     foreach($key in @('artifact_retention','capacity_ledger_lifecycle')){if($lifecycle.ContainsKey($key)){$runConfig[$key]=$lifecycle[$key]}}
     $runConfig.schema_version=$lifecycle.schema_version

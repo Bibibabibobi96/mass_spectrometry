@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from msplatform.contracts.rigid_transform import RigidTransform
-from common.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
+from msplatform.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import (
     export_cooled_buncher_assembly_interface, BUNCHER_ELECTRODE_NAMES, analyze_buncher_axial_barriers, analyze_buncher_field_samples, build_cooled_buncher_contract,
     prepare_buncher_probe_points,

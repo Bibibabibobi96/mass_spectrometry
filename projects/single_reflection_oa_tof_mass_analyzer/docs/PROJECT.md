@@ -52,6 +52,7 @@ metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍
 默认single结果3、SIMION recording、comparison、compensation、radial、ideal-source及其余具名分析
 现均直接使用`msplatform.analysis.peak_metrics`；旧活动桥已退役，冻结来源、数值、单位和资格语义保持。
 接受域纵向拟合及publisher冻结探针同样直接使用`msplatform.analysis.longitudinal_fit`，旧公共实现退役。
+项目粒子物理消费者及Candidate闭包直接使用`msplatform.contracts.particle_physics`，常量、公式和冻结身份边界不变。
 
 活动三区理论campaign v1/v2只通过既有`render_campaign_authorities`刷新六项源码身份，
 科学数值、阶段、资格与阈值保持；旧run和冻结输入不回写，缺失、过期或篡改来源仍拒绝。

@@ -21,7 +21,7 @@ from common.analysis.population_moments import population_pair_moments
 from common.analysis.plane_crossings import METHOD as CROSSING_METHOD, SCHEMA_VERSION as CROSSING_SCHEMA_VERSION
 
 from msplatform.contracts.particle_state import load_component_particle_state_csv
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries

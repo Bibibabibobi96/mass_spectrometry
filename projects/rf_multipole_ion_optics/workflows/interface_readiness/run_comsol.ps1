@@ -600,7 +600,7 @@ try {
             'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table',
             'projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy',
             'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
-            'common.contracts.particle_physics',
+            'msplatform.contracts.particle_physics',
         'common.contracts.particle_count_policy',
         'common.contracts.file_identity',
         'common.ion_release',

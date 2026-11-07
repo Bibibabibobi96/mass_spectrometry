@@ -22,7 +22,7 @@ from msplatform.contracts.particle_state import (
     write_component_particle_state_csv,
 )
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform, relative_transform
 
 

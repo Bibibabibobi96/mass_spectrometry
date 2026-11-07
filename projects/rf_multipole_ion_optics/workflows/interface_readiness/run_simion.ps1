@@ -209,7 +209,7 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table',
         'projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy',
         'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
-        'common.contracts.particle_physics',
+        'msplatform.contracts.particle_physics',
         'common.contracts.particle_count_policy',
         'common.contracts.file_identity',
         'common.ion_release',
@@ -492,7 +492,7 @@ Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -CaseName 'interface_r
     -SourceRelativePaths @('projects/rf_multipole_ion_optics/runtime/simion_particle_source.py',
         'projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py',
         'projects/rf_multipole_ion_optics/core/interface_geometry.py',
-        'common/simion/particle_source.py','common/contracts/particle_physics.py',
+        'common/simion/particle_source.py','src/msplatform/contracts/particle_physics.py',
         'common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')
 $lifecycle=Get-Content -LiteralPath $runConfigPath -Raw|ConvertFrom-Json -AsHashtable
 foreach($key in @('artifact_retention','capacity_ledger_lifecycle')){if($lifecycle.ContainsKey($key)){$runConfig[$key]=$lifecycle[$key]}}
