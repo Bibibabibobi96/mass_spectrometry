@@ -18,7 +18,7 @@ local function test_priority() return {schema_version=1,role='mrtof_native_corri
     {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
   corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}} end
 local priority=test_priority()
-local point={scientific_event_output={csv_writer_path=repo..'/common/simion/scientific_event_csv.lua',
+local point={scientific_event_output={csv_writer_path=repo..'/src/msplatform/backends/simion/resources/scientific_event_csv.lua',
   events_path=events_path,environment_required=false},mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0}, accelerator_voltages_v={40,30,0},
   accelerator_ring_voltages_v={45,42,39,36,33,30,27,24,21,18,15,12,9,6,3}, nonaccelerator_scale=0.5,

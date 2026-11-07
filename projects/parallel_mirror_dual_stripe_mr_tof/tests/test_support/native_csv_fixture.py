@@ -13,7 +13,7 @@ def prepare(repo: Path, root: Path) -> None:
         "program_current.voltage_waveforms.lua": repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "program_current.mirror_cycle_counter.lua": project / "simion/mirror_cycle_counter.lua",
         "voltage_map_current.lua": project / "simion/candidate_voltage_map.lua",
-        "scientific_event_csv.lua": repo / "common/simion/scientific_event_csv.lua",
+        "scientific_event_csv.lua": repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
     }
     from common.contracts.write_run_manifest import file_record
     records = {}

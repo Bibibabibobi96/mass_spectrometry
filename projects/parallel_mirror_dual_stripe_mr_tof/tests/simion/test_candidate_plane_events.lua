@@ -21,7 +21,7 @@ local priority={schema_version=1,role='mrtof_native_corridor_iob_priority_contra
   instances={{role='global_fallback',priority_number=1},{role='native_corridor',priority_number=2},
     {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
   corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}}
-local point={scientific_event_output={csv_writer_path=repo..'/common/simion/scientific_event_csv.lua',
+local point={scientific_event_output={csv_writer_path=repo..'/src/msplatform/backends/simion/resources/scientific_event_csv.lua',
   events_path=events_path,environment_required=false},mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0},
   accelerator_voltages_v={40,30,0},accelerator_ring_voltages_v={25,20,15,10,5},

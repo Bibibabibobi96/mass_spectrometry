@@ -3,7 +3,7 @@
 local program=assert(arg[1],'production component_focus.lua is required')
 local library=assert(arg[2],'installed official testplanelib.lua is required')
 local real_loadfile,real_open=loadfile,io.open
-local writer_source=program:gsub("[\\/]projects[\\/]orthogonal_accelerator[\\/]simion[\\/]component_focus%.lua$","/common/simion/scientific_event_csv.lua")
+local writer_source=program:gsub("[\\/]projects[\\/]orthogonal_accelerator[\\/]simion[\\/]component_focus%.lua$","/src/msplatform/backends/simion/resources/scientific_event_csv.lua")
 assert(writer_source~=program,"production Program must be inside the repository projects root")
 local rows
 local function setup()

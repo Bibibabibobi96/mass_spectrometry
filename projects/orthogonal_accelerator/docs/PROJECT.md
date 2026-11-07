@@ -83,7 +83,8 @@ resolved或三区领域文档，以稳定角色和环序号发布科学组；mem
 
 `analysis/component_focus_simion_source.py` 直接调用 `msplatform.ion_release` 的释放校验、
 `msplatform.contracts.particle_physics` 的动能函数及 `msplatform.io.file_identity` 的文件身份函数；
-相邻测试核对实际函数来源。跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
+相邻测试核对实际函数来源。组件聚焦CSV writer现直接冻结安装SIMION backend的`scientific_event_csv.lua`；
+列顺序、精度和原文件身份保持，不再读取旧common/simion副本。跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
 布局及 MR 同时验证拒绝旧桥后仍能执行真实计算；本轮未新增原生求解或科学资格。
 
 源投影的软件回归在 `test_component_focus_simion_source.py` 使用规范 `msplatform.ion_release` 的七粒子受控输入，

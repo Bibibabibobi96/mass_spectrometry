@@ -28,7 +28,7 @@ class ScientificEventIoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'events.csv'
             script = Path(directory) / 'write.lua'
-            script.write_text('local C=assert(loadfile(' + repr((ROOT / 'common/simion/scientific_event_csv.lua').as_posix()) + '))();local w=C.open(' + repr(path.as_posix()) + ",{'event','particle_id','t_us'},15);w:write({'source','45',1.2345678901234567});w:flush();w:close()")
+            script.write_text('local C=assert(loadfile(' + repr((ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix()) + '))();local w=C.open(' + repr(path.as_posix()) + ",{'event','particle_id','t_us'},15);w:write({'source','45',1.2345678901234567});w:flush();w:close()")
             result = subprocess.run([str(lua), str(script)], cwd=script.parent, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(path.read_text(), 'event,particle_id,t_us\nsource,45,1.23456789012346\n')
@@ -65,7 +65,7 @@ class ScientificEventIoTests(unittest.TestCase):
         lua = Path('C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
-        module = (ROOT / 'common/simion/scientific_event_csv.lua').as_posix()
+        module = (ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix()
         code = """local C=assert(loadfile(arg[1]))()
 local original=io.open
 for _,phase in ipairs({'write','flush','close','row'}) do

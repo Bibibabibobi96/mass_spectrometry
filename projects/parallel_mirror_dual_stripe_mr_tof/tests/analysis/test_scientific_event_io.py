@@ -64,13 +64,13 @@ class ScientificEventIoTests(unittest.TestCase):
             root = Path(directory)
             events = root / 'events.csv'
             script = root / 'record.lua'
-            point = '{csv_writer_path=' + json.dumps((ROOT / 'common/simion/scientific_event_csv.lua').as_posix()) + ',events_path=' + json.dumps(events.as_posix()) + ',environment_required=false}'
+            point = '{csv_writer_path=' + json.dumps((ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix()) + ',events_path=' + json.dumps(events.as_posix()) + ',environment_required=false}'
             script.write_text('local operating_point={scientific_event_output=' + point + '}\n' + block + "\ninitialize_scientific_output();record_scientific('fast_turn',{ion='45',n=1,t_us=7});scientific_events:close()", encoding='utf-8')
             result = subprocess.run([str(lua), str(script)], cwd=script.parent, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = list(io.iter_csv_rows(events, ('kind', 'ion', 't_us')))
             self.assertEqual((rows[0]['kind'], rows[0]['ion'], rows[0]['t_us']), ('fast_turn', '45', '7'))
-            script.write_text('local operating_point={scientific_event_output={csv_writer_path=' + json.dumps((ROOT / 'common/simion/scientific_event_csv.lua').as_posix()) + ",environment_required=true,events_environment_variable='MRTOF_TEST_UNSET_REQUIRED_LOCATOR',trajectory_environment_variable='MRTOF_TEST_UNSET_TRAJECTORY_LOCATOR'}}\n" + block + '\ninitialize_scientific_output()', encoding='utf-8')
+            script.write_text('local operating_point={scientific_event_output={csv_writer_path=' + json.dumps((ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix()) + ",environment_required=true,events_environment_variable='MRTOF_TEST_UNSET_REQUIRED_LOCATOR',trajectory_environment_variable='MRTOF_TEST_UNSET_TRAJECTORY_LOCATOR'}}\n" + block + '\ninitialize_scientific_output()', encoding='utf-8')
             result = subprocess.run([str(lua), str(script)], cwd=script.parent, capture_output=True, text=True, timeout=30)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('batch scientific event locator is required', result.stderr)
@@ -87,7 +87,7 @@ class ScientificEventIoTests(unittest.TestCase):
             events=root/'events.csv'
             trajectory=root/'trajectory.csv'
             script=root/'callback.lua'
-            point=dict(csv_writer_path=(ROOT/'common/simion/scientific_event_csv.lua').as_posix(),events_path=events.as_posix(),trajectory_path=trajectory.as_posix())
+            point=dict(csv_writer_path=(ROOT/'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix(),events_path=events.as_posix(),trajectory_path=trajectory.as_posix())
             declaration='{'+','.join(key+'='+json.dumps(value) for key,value in point.items())+'}'
             setup='local operating_point={trajectory_recording_enabled=true,trajectory_recording_mode="fixed_interval",trajectory_recording_interval_us=1,scientific_event_output='+declaration+'}\n'
             setup+='ion_number=7;ion_px_mm=0.12345678901234566;ion_py_mm=2;ion_pz_mm=3;ion_vx_mm=4;ion_vy_mm=5;ion_vz_mm=6;ion_time_of_flight=0\nlocal source_id=1000000000000\nlocal function event_id() return source_id end\nlocal function instrument_time_us() return ion_time_of_flight end\n'
@@ -375,7 +375,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
             point.with_suffix('.obs.lua').write_text('return {environment_required=true}')
             script = root / 'gui.ps1'
             script.write_text("param($Root,$Writer)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n$temporarySolverDir=Join-Path $Root gui;$guiWorkbenchIob=Join-Path $temporarySolverDir case.iob;$sidecar=Join-Path $Root flight.lua\n$trial=@{scientific_event_output=@{csv_writer_path=$Writer}}\nfunction Copy-RequiredInput {param($Source,$Destination,$Label) Copy-Item -LiteralPath $Source -Destination $Destination}\n" + block)
-            result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(root), str(ROOT / 'common/simion/scientific_event_csv.lua')], cwd=script.parent, capture_output=True, text=True, timeout=30)
+            result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(root), str(ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua')], cwd=script.parent, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(flight.read_text(), 'unchanged flight input')
             for folder in (gui, root / 'relocated'):
@@ -424,7 +424,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             events, trajectory = root / 'events.csv', root / 'trajectory.csv'
-            point = dict(csv_writer_path=(ROOT / 'common/simion/scientific_event_csv.lua').as_posix(),
+            point = dict(csv_writer_path=(ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix(),
                          events_path=events.as_posix(), trajectory_path=trajectory.as_posix(), environment_required=False)
             declaration = '{' + ','.join(key+'='+('false' if value is False else json.dumps(value)) for key,value in point.items()) + '}'
             script = root / 'record.lua'
@@ -468,7 +468,7 @@ scientific_events:close();scientific_trajectory:close()
                     cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 snapshot = output / 'runtime_snapshot'
-                for relative in ('common/simion/scientific_event_csv.lua', 'common/simion/scientific_event_io.py'):
+                for relative in ('src/msplatform/backends/simion/resources/scientific_event_csv.lua', 'common/simion/scientific_event_io.py'):
                     self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
                 check = "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from common.simion import scientific_event_io;assert Path(scientific_event_io.__file__).is_relative_to(Path(sys.argv[1]));print('FROZEN_EVENT_READER=PASS')"
                 imported = subprocess.run([sys.executable, '-I', '-B', '-c', check, str(snapshot)],

@@ -61,6 +61,7 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 `provider_voltage_schedule` 现同样直接指向安装SIMION backend的`resources/native_drive.lua`；
 电压投影、IP/Prism距离研究与冻结integration均校验并冻结该同一资源，不再读取已退役项目Lua副本。
 时序编译直接使用安装IP component；原仪器时钟、15电极顺序及冻结输入内相对路径不变。
+联合与分段研究的科学事件CSV writer现直接冻结安装SIMION backend资源，原运行内别名与记录语义不变。
 本轮跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒）；
 其后 joint-flight、依赖及路径相关 16 项测试通过（7.465 秒）。
 这些结果验证软件接线与来源，未新增飞行、场求解或科学资格。

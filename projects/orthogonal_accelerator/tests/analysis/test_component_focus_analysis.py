@@ -280,7 +280,7 @@ $source=Join-Path $repoRoot 'projects/orthogonal_accelerator/simion/run_componen
 $tokens=$null;$errors=$null
 $tree=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Runner parse failed'}
-$copies=@($tree.FindAll({param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Copy-VerifiedRunInput' -and $node.Extent.Text.Contains('common/simion/scientific_event_csv.lua')},$true))
+$copies=@($tree.FindAll({param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Copy-VerifiedRunInput' -and $node.Extent.Text.Contains('src/msplatform/backends/simion/resources/scientific_event_csv.lua')},$true))
 if($copies.Count -ne 1){throw 'Expected one actual writer freeze command'}
 Invoke-Expression $copies[0].Extent.Text | Out-Null
 """.replace('REPO', quote(repo)).replace('DESTINATION', quote(self.root))
@@ -288,7 +288,7 @@ Invoke-Expression $copies[0].Extent.Text | Out-Null
                                    cwd=self.root, capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertEqual((self.root / 'component_focus.scientific_event_csv.lua').read_bytes(),
-                         (repo / 'common/simion/scientific_event_csv.lua').read_bytes())
+                         (repo / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').read_bytes())
 
     def test_public_stream_reader_retains_header_contract_and_rejects_bad_rows(self) -> None:
         from common.simion.scientific_event_io import iter_csv_rows

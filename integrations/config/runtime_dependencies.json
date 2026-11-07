@@ -319,15 +319,6 @@
           ]
         },
         {
-          "id": "common_simion_scientific_event_csv_lua",
-          "source_repo_path": "common/simion/scientific_event_csv.lua",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr"
-          ]
-        },
-        {
           "id": "common_paths_native_run_path_lua",
           "source_repo_path": "common/paths/native_run_path.lua",
           "consumers": [
@@ -1040,6 +1031,15 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/native_drive.lua",
           "consumers": [
             "accelerator_interface"
+          ]
+        },
+        {
+          "id": "msplatform_simion_scientific_event_csv_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
           ]
         },
         {

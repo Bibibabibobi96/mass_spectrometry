@@ -422,7 +422,7 @@ class RuntimeReplayTests(unittest.TestCase):
                             folder / "native_drive.lua")
             shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/rf_drive.lua",
                             folder / "simion_rf_drive.lua")
-            shutil.copyfile(REPOSITORY / "common/simion/scientific_event_csv.lua",
+            shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
                             folder / "scientific_event_csv.lua")
             shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
                             folder / "voltage_waveforms.lua")

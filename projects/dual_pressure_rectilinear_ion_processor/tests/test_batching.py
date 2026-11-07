@@ -46,7 +46,7 @@ class BatchingTests(unittest.TestCase):
         self.config["native_field"]=dict(directory=str(self.field),source_manifest=str(self.manifest))
         for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","voltage_waveforms.lua","extraction_force_audit.lua","processor.iob"):
             (self.run/"simion"/name).write_bytes(b"inert frozen control "+name.encode())
-        shutil.copyfile(PROJECT.parents[1]/"common/simion/scientific_event_csv.lua",self.run/"simion/scientific_event_csv.lua")
+        shutil.copyfile(PROJECT.parents[1]/"src/msplatform/backends/simion/resources/scientific_event_csv.lua",self.run/"simion/scientific_event_csv.lua")
         self.save_config()
         functional.write_json(self.run/"inputs/runtime_profiles.json",functional.read_json(PROJECT/"config/runtime_profiles.json"))
         functional.write_json(self.run/"run_config.json",dict(inputs={}))

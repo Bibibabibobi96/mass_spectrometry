@@ -118,6 +118,7 @@ IP冻结输入保留该引用；旧式未发布的准备包仍使用原生产者
 上游接续准入的唯一实现位于`msplatform.backends.simion.ip_handoff`，其schema随SIMION backend资源冻结；RF封存结果读取位于`msplatform.backends.simion.transport_result`。坐标映射位于`msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates`，出口发布位于`msplatform.backends.simion.ip_exit`，continuation ancestry与保护路径位于`msplatform.execution.ip_continuation`。项目`functional`、`batching`和保护路径投影直接消费这些安装模块，旧项目坐标、出口、提取的continuation helper、`upstream_admission.py`及旧schema均已退役且无转发。原ID、物种、母群、相对权重、出生／到达钟、科学负结果和零出口语义保持；生命周期、manifest与退役核验继续使用安装execution实现。
 
 原生时序编译器位于`msplatform.components.dual_pressure_rectilinear_ion_processor.timing`，项目`functional`直接消费其唯一实现；Lua驱动资源位于`msplatform.backends.simion/resources/native_drive.lua`，prepare仍按原字节冻结为运行内`simion/native_drive.lua`。旧项目函数与Lua路径已退役且无转发；phase、仪器时钟、15电极顺序、无PA／无求解边界不变。
+科学事件CSV writer亦从安装SIMION backend冻结，原运行内相对路径、列、精度和字节保持。
 
 公共functional入口的`-InjectedSource`接受冻结状态包，默认独立源行为不变。
 上游状态不重采样，出生与到达绝对时刻、原ID及物种保留；碰撞随机源绑定原ID，批次序号不改母群身份。

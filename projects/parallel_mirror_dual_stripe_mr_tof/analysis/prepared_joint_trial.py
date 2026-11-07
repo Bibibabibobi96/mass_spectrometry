@@ -303,7 +303,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     if waveform_provenance is not None:
         waveforms_record["continuation_source"] = waveform_provenance
     source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
-    science_writer_record = freeze_file(Path(__file__).resolve().parents[3] / "common/simion/scientific_event_csv.lua", frozen_runtime / "joint.scientific_event_csv.lua")
+    science_writer_record = freeze_file(Path(__file__).resolve().parents[3] / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", frozen_runtime / "joint.scientific_event_csv.lua")
     freeze_file(Path(__file__).parents[3] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
     reference = runtime / "mr_reference.operating_point.lua"

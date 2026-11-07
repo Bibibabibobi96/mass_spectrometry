@@ -767,7 +767,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
         preparation = fixture.root / "preparation.json"
         from common.contracts.frozen_inputs import freeze_file
-        writer = freeze_file(snapshot / "common/simion/scientific_event_csv.lua", runtime / "joint.scientific_event_csv.lua")
+        writer = freeze_file(snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", runtime / "joint.scientific_event_csv.lua")
         preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
             frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval", interval_us=.1),
             scientific_event_writer=writer)), encoding="utf-8")
@@ -784,7 +784,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         self.assertEqual((batch / "joint.fly2").read_bytes(), (batch / "measured_source/source.fly2").read_bytes())
         self.assertEqual((batch / "joint.lua").read_bytes(), (snapshot / relative / "mrtof_candidate.lua").read_bytes())
         self.assertEqual((batch / "joint.voltage_waveforms.lua").read_bytes(), waveform.read_bytes())
-        self.assertEqual((batch / "joint.scientific_event_csv.lua").read_bytes(), (snapshot / "common/simion/scientific_event_csv.lua").read_bytes())
+        self.assertEqual((batch / "joint.scientific_event_csv.lua").read_bytes(), (snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua").read_bytes())
         self.assertEqual(receipt["scientific_event_output"]["csv_writer_path"], writer["path"])
         missing_preparation = fixture.root / "missing_writer.json"
         incomplete = json.loads(preparation.read_text(encoding="utf-8"))

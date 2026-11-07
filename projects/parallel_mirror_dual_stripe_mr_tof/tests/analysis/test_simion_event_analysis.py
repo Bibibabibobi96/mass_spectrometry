@@ -329,7 +329,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
             events = root / "events.csv"
             script = root / "events.lua"
             declaration = "{csv_writer_path=" + json.dumps(
-                (REPOSITORY_ROOT / "common/simion/scientific_event_csv.lua").as_posix()
+                (REPOSITORY_ROOT / "src/msplatform/backends/simion/resources/scientific_event_csv.lua").as_posix()
             ) + ",events_path=" + json.dumps(events.as_posix()) + "}"
             setup = "local operating_point={scientific_event_output=" + declaration + "}\n"
             setup += r"""

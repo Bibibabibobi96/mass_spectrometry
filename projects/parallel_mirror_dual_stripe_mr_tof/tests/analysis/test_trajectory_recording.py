@@ -62,7 +62,7 @@ class TrajectoryRecordingTest(unittest.TestCase):
         function=source[source.index("-- The frozen sidecar"):source.index("local static_field_adjust")]
         with TemporaryDirectory() as temporary:
             root=Path(temporary);program=root/"callback.lua";trajectory=root/"trajectory.csv"
-            declaration="{csv_writer_path="+json.dumps((PROJECT.parents[1]/"common/simion/scientific_event_csv.lua").as_posix())+",events_path="+json.dumps((root/"events.csv").as_posix())+",trajectory_path="+json.dumps(trajectory.as_posix())+"}"
+            declaration="{csv_writer_path="+json.dumps((PROJECT.parents[1]/"src/msplatform/backends/simion/resources/scientific_event_csv.lua").as_posix())+",events_path="+json.dumps((root/"events.csv").as_posix())+",trajectory_path="+json.dumps(trajectory.as_posix())+"}"
             script="""local operating_point={trajectory_recording_enabled=true,trajectory_recording_mode='fixed_interval',trajectory_recording_interval_us=.1}
 local function event_id() return ion_number==1 and 20 or 80 end
 local function instrument_time_us() return 7500+ion_time_of_flight end
@@ -123,7 +123,7 @@ scientific_events:close();scientific_trajectory:close()
             self.assertIn(hook, source)
         with TemporaryDirectory() as temporary:
             root=Path(temporary);path=root/"recording.lua";trajectory=root/"trajectory.csv"
-            declaration="{csv_writer_path="+json.dumps((PROJECT.parents[1]/"common/simion/scientific_event_csv.lua").as_posix())+",events_path="+json.dumps((root/"events.csv").as_posix())+",trajectory_path="+json.dumps(trajectory.as_posix())+"}"
+            declaration="{csv_writer_path="+json.dumps((PROJECT.parents[1]/"src/msplatform/backends/simion/resources/scientific_event_csv.lua").as_posix())+",events_path="+json.dumps((root/"events.csv").as_posix())+",trajectory_path="+json.dumps(trajectory.as_posix())+"}"
             script = """local operating_point={}
 local function event_id() return 7 end
 local function instrument_time_us() return 12.5 end

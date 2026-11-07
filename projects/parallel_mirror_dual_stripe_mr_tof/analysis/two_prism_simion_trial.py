@@ -2112,7 +2112,7 @@ def materialize_trial(
             f"accelerator_voltages_v = {_lua_vector([0.0, *endpoint_voltages, *ring_voltages])} }}, "
         )
     scientific_directory = sidecar_path.parent.resolve()
-    writer_source = Path(__file__).resolve().parents[3] / "common/simion/scientific_event_csv.lua"
+    writer_source = Path(__file__).resolve().parents[3] / "src/msplatform/backends/simion/resources/scientific_event_csv.lua"
     writer_path = scientific_directory / "scientific_event_csv.lua"
     writer_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(writer_source, writer_path)

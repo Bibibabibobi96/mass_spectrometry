@@ -309,7 +309,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         "common/contracts/particle_count_policy.json", "src/msplatform/execution/resources/host_resource_policy.json",
         "src/msplatform/backends/simion/resources/rf_drive.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "src/msplatform/backends/simion/resources/native_drive.lua",
-        "common/simion/scientific_event_csv.lua",
+        "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
         "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
         "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
     runtime_resources.append(repo / "src/msplatform/execution/resources/native_run_path.lua")
@@ -382,7 +382,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     for name in ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         freeze_file(project / "simion" / name, solver / name)
     freeze_file(repo / "src/msplatform/backends/simion/resources/native_drive.lua", solver / "native_drive.lua")
-    freeze_file(repo / "common/simion/scientific_event_csv.lua", solver / "scientific_event_csv.lua")
+    freeze_file(repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", solver / "scientific_event_csv.lua")
     freeze_file(resource_path("native_run_path.lua"), solver / "native_run_path.lua")
     freeze_file(repo / "src/msplatform/backends/simion/resources/rf_drive.lua", solver / "simion_rf_drive.lua")
     freeze_file(repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", solver / "voltage_waveforms.lua")
