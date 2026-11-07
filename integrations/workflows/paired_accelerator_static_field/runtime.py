@@ -23,7 +23,7 @@ from common.simion.pa_family_cache import (
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples import _require_static_samples
 from common.analysis.field_comparison import merge_complete_samples
 from integrations.runtime.paired_accelerator_model import load_paired_static_model_source
-from .prepare import prepare
+from msplatform.backends.comsol.paired_static_field import prepare
 
 PROJECT = 'single_reflection_oa_tof_mass_analyzer'
 ROLE = 'oatof_paired_accelerator_static_field_plan'

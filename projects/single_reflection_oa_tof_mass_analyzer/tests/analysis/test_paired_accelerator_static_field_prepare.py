@@ -17,9 +17,7 @@ from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.rigid_transform import RigidTransform
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture as three_zone_fixture, reframe_parent
-from integrations.workflows.paired_accelerator_static_field.prepare import (
-    prepare,
-)
+from msplatform.backends.comsol.paired_static_field import prepare
 
 
 def _record(path: Path) -> dict[str, object]:
@@ -214,7 +212,7 @@ class PairedAcceleratorStaticFieldPrepareTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             request = self._request(root)
-            with patch("integrations.workflows.single_reflection_flight.geometry.render_physical_gem",
+            with patch("msplatform.backends.simion.geometry.render_physical_gem",
                        side_effect=AssertionError("OA-only GEM must not render an unselected multipole")):
                 plan = prepare(self._write_request(root, request), root / "output")
 

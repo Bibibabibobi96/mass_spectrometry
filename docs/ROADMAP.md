@@ -148,7 +148,9 @@ IP真实15电极中性CSG、轮廓、guide入口／E14孔面和GEM已分迁compo
 截至`efd2e8ac`，以40a13e78→HEAD逐文件选择完成联合Changed：30 PASS／18 NA，5045个父测试成功、
 14项明确skip，5876个子测试成功，公共墙钟3357.404秒；这是当前迁移范围的联合软件证据，不是全仓Repository或P4收口。
 单反射OA-only静态COMSOL构建／采样及四份真实几何MATLAB闭包已迁入安装后端资源，paired运行器与依赖清单直接消费；
-22项paired及路由定向通过，普通安装读取实际资源；Python prepare未迁，未启动MATLAB/COMSOL或生成新MPH。
+22项paired及路由定向通过，普通安装读取实际资源；未启动MATLAB/COMSOL或生成新MPH。
+paired Python纯准备现已迁入COMSOL backend，旧workflow prepare退役；22项准备与22项执行回归通过，
+四类输出新旧字节一致，普通wheel/sdist实际生成相同完整plan，仍不创建PA或求解。
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。

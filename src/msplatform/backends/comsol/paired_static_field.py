@@ -1,6 +1,6 @@
-"""Freeze the solver-neutral contract for an OA-only static field comparison.
+"""Prepare the solver-neutral contract for an OA-only static field comparison.
 
-The existing native geometry compiler renders the OA-only GEM from the same
+The existing SIMION geometry compiler renders the OA-only GEM from the same
 frozen parent and provider. This stage solves no fields and creates no PA. Both
 solvers consume the frozen common box, ON voltages and vacuum sample points.
 """
@@ -13,18 +13,15 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
-from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
-
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_electrical import (
+from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+from msplatform.backends.simion.accelerator_projection import project_side_opening
+from msplatform.backends.simion.geometry import compile_frontend_geometry
+from msplatform.backends.simion.tof_assembly_interface import resolve_provider_assembly_interface
+from msplatform.components.single_reflection_oa_tof.accelerator_electrical import (
     resolve_accelerator_electrical_design,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import (
-    resolve_accelerator_geometry, project_side_opening,
-)
+from msplatform.components.single_reflection_oa_tof.accelerator_geometry import resolve_accelerator_geometry
+from msplatform.execution.manifest_records import file_record, record_path, verify_record
 
 _ROLE = "oatof_paired_accelerator_static_field_request"
 _REQUIRED_RECORDS = {"parent_manifest", "frontend_geometry", "oatof_resolved"}
@@ -86,8 +83,8 @@ def _provider_projection(frontend: dict, oatof: dict, variant: str) -> tuple[Any
         cell_mm_xyz=domain["cell_mm_xyz"], pa_origin_mm=domain["instance_origin_mm"])
     if projection.local_region != frontend["accelerator_projection"]:
         raise ValueError("frontend physical accelerator projection differs from its resolved provider and mechanical side opening")
-    if resolve_assembly_interface(oatof, projection=projection, geometry_profile_id=interface["geometry_profile_id"],
-                                  schema_version=interface["schema_version"]) != interface:
+    if resolve_provider_assembly_interface(oatof, projection=projection, geometry_profile_id=interface["geometry_profile_id"],
+                                           schema_version=interface["schema_version"]) != interface:
         raise ValueError("parent oaTOF mechanical interface differs from the actual provider projection")
     return projection, selected, oatof_id, bindings
 
@@ -241,6 +238,7 @@ def _validate_points(
 
 def prepare(request_path: Path, output_dir: Path, *, source_snapshot_root: Path | None = None,
             source_base_dir: Path | None = None) -> dict[str, Any]:
+    """Write GEM, geometry, point and plan files from a verified schema-2 request."""
     request = _read(request_path)
     required = {
         "schema_version",

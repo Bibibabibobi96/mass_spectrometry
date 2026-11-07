@@ -125,6 +125,9 @@ pose = RigidTransform.from_contract(guide['coordinate_transform']).then(RigidTra
 cooled = build_cooled_buncher_contract(ip['model'], guide_contract=guide, native_to_assembly=pose, request=ip['request'], electrode_ids=ip['electrode_ids'])
 assert len(cooled['native_projection_fragment']['electrodes']) == 7
 assert hashlib.sha256(render_cooled_buncher_gem_fragment(cooled).encode()).hexdigest() == ip['cooled_gem_sha256']
+from msplatform.backends.comsol.paired_static_field import prepare as prepare_paired_field
+paired = fixture['paired_static']
+assert prepare_paired_field(root/'paired-request.json', root/'paired-installed') == paired['expected_plan']
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -790,6 +793,11 @@ class InstalledScientificCoreTests(unittest.TestCase):
             pose = RigidTransform.from_contract(guide['coordinate_transform']).then(RigidTransform(guide['frame_id'], 'mrtof_global_cartesian', registration['rotation_upstream_to_downstream'], registration['translation_mm'])).to_contract()
             cooled = build_cooled_buncher_contract(ip['model'], guide_contract=guide, native_to_assembly=pose, request=ip['request'], electrode_ids=ip['electrode_ids'])
             ip['cooled_gem_sha256'] = hashlib.sha256(render_cooled_buncher_gem_fragment(cooled).encode()).hexdigest()
+            from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_paired_accelerator_static_field_prepare import PairedAcceleratorStaticFieldPrepareTests
+            from msplatform.backends.comsol.paired_static_field import prepare as prepare_paired_field
+            paired_request = PairedAcceleratorStaticFieldPrepareTests()._request(root)
+            (root/'paired-request.json').write_text(json.dumps(paired_request), encoding='utf-8')
+            paired = dict(expected_plan=prepare_paired_field(root/'paired-request.json', root/'paired-installed'))
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
@@ -797,6 +805,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               schemas=expected_schemas, provider_layout=provider_layout,
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
+                                              paired_static=paired,
                                               comparison=self.comparison_probe_fixture())), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             # Remove both private author trees from their original locations;
