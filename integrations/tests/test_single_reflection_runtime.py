@@ -208,7 +208,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         write_json(self.downstream_path, self.downstream)
         self.snapshot = self.root / "snapshot"
         for name in [*_SOURCES.values(), "src/msplatform/backends/simion/resources/build_iob.lua",
-                     "src/msplatform/backends/simion/resources/iob_core.lua", "common/paths/native_run_path.lua",
+                     "src/msplatform/backends/simion/resources/iob_core.lua",
                      "src/msplatform/execution/resources/native_run_path.lua"]:
             target = self.snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)

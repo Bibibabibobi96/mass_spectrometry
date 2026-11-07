@@ -295,18 +295,6 @@
           "consumers": [
             "paired_accelerator_static_field"
           ]
-        },
-        {
-          "id": "common_paths_native_run_path_lua",
-          "source_repo_path": "common/paths/native_run_path.lua",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight",
-            "paired_accelerator_pulse",
-            "prepared_joint",
-            "oa_mr"
-          ]
         }
       ],
       "python_packages": [

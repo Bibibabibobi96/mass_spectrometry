@@ -880,7 +880,7 @@ print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
 ''', encoding="utf-8")
         builder = Path(__file__).resolve().parents[2] / "simion/build_native_corridor_iob.lua"
         result = subprocess.run([lua, str(script), batch_dir.as_posix(), str(builder),
-                                 str(repository/"common/paths/native_run_path.lua")], cwd=root,
+                                 str(repository/"src/msplatform/execution/resources/native_run_path.lua")], cwd=root,
                                 env=dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(root),
                                          MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(alias)),
                                 timeout=30, capture_output=True, text=True, encoding="utf-8", check=False)
