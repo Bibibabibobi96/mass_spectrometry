@@ -52,6 +52,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             self.assertEqual(dispatch.read_bytes(), (REPO_ROOT / relative).read_bytes())
             loader = root / "load.ps1"
             loader.write_text("""param($Snapshot)
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
 . (Join-Path $Snapshot 'common/resource_budget_support.ps1')
 $expected=[IO.Path]::GetFullPath((Join-Path $Snapshot 'src/msplatform/execution/resources/simion_dispatch_support.ps1'))
@@ -64,14 +65,14 @@ foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invo
 """, encoding="utf-8", newline="\n")
             command = [shutil.which("pwsh"), "-NoProfile", "-File", str(loader), str(snapshot)]
             loaded = subprocess.run(command, cwd=snapshot, env=environment,
-                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=30)
             self.assertEqual(loaded.returncode, 0, loaded.stdout + loaded.stderr)
             self.assertIn("FROZEN_DISPATCH_BODY=PASS", loaded.stdout)
             # A new process cannot retain the previously loaded function or
             # fall back to the author checkout/installed resource after deletion.
             dispatch.unlink()
             missing = subprocess.run(command, cwd=snapshot, env=environment,
-                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=30)
             self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
             self.assertIn("simion_dispatch_support.ps1", missing.stdout + missing.stderr)
             self.assertNotIn("FROZEN_DISPATCH_BODY=PASS", missing.stdout)
@@ -82,12 +83,14 @@ foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invo
             root = Path(directory)
             output = root / 'inputs'
             script = f"""
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . '{DEPENDENCIES}'
 $f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
 $f.import_roots|ConvertTo-Json -Compress
 """
             result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script], cwd=root,
-                                    capture_output=True, text=True, encoding='utf-8', timeout=120)
+                                    capture_output=True, text=True, encoding='utf-8',
+                                    errors='backslashreplace', timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = output / 'runtime_snapshot'
             roots = json.loads(result.stdout)
@@ -95,7 +98,10 @@ $f.import_roots|ConvertTo-Json -Compress
             entries = load(output / 'code_inventory.json')['dependencies']
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
-            expected = sorted(path.name for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json'))
+            expected = sorted(path.name for directory in (
+                REPO_ROOT / 'src/msplatform/contracts/schemas',
+                REPO_ROOT / 'src/msplatform/backends/simion/resources',
+            ) for path in directory.glob('*.schema.json'))
             self.assertEqual(sorted(Path(row['source_repo_path']).name for row in resources), expected)
             self.assertTrue(all(row['id'] == 'resource:' + row['source_repo_path'] for row in resources))
             code = '''import json,sys
@@ -159,7 +165,7 @@ with tempfile.TemporaryDirectory() as request_directory:
 '''
             result = subprocess.run([sys.executable, "-B", "-s", "-c", code], cwd=snapshot,
                 env=snapshot_environment(snapshot),
-                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
@@ -1036,7 +1042,7 @@ Write-Output 'BOUNDARIES=PASS'
             code = "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from projects.device.pkg.entry import prepare;prepare(Path(sys.argv[2]))"
             completed = subprocess.run([sys.executable, "-I", "-B", "-c", code,
                 str(output / "runtime_snapshot"), str(plan)], cwd=output,
-                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertEqual(plan.read_text(), "42")
 
