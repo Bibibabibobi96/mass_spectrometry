@@ -19,19 +19,6 @@
       "provider_project": "common",
       "files": [
         {
-          "id": "common_simion_voltage_waveforms",
-          "source_repo_path": "common/simion/voltage_waveforms.lua",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight",
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
           "id": "common_simion_aperture_topology_support",
           "source_repo_path": "common/simion/aperture_topology_support.ps1",
           "consumers": [
@@ -45,15 +32,6 @@
           "consumers": [
             "local_frontend",
             "cooled_frontend"
-          ]
-        },
-        {
-          "id": "common_multipole_simion_rf_drive_kernel",
-          "source_repo_path": "common/simion/rf_drive.lua",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight"
           ]
         },
         {

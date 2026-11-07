@@ -38,7 +38,7 @@
 
 前一解析场workflow未形成运行证据，已删除无生产消费者的解析场及其专用测试；旧curvature/offset仅在历史解释中保留。
 不得将历史解析场输出或普通GUI静态电势显示混为原生动态场证据。旧0.2 mm场族的15组原生响应Refine完成（15.47 s），当前0.1 mm场族已求解；旧场不自动继承资格，当前恢复与结果边界见PROJECT。
-RF波形复用[`common/simion/rf_drive.lua`](../../../common/simion/rf_drive.lua)，所有阶段使用唯一绝对instrument time。
+RF波形复用[`rf_drive.lua`](../../../src/msplatform/backends/simion/resources/rf_drive.lua)，所有阶段使用唯一绝对instrument time。
 LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费原生电压配置中的相对偏置；
 当前跟随Pull的−900 V修正及条件对照见PROJECT。HP屏蔽件电极15与HP common-mode同步；
 屏蔽件与接地外边界的关系由原生几何统一派生，避免4 kV抬升把离子云暴露于未经声明的近地泄漏场。

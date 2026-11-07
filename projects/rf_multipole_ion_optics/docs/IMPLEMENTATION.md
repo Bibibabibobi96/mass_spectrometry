@@ -262,7 +262,7 @@ SIMION使用`cell_mm_xyz`，COMSOL显式声明电势单元阶次。普通收敛�
 最终参考或GUI复核可保留重型求解器资产。
 
 SIMION杆电压只消费[公共RF驱动kernel](../../../common/simion/README.md#rf驱动)，生产run冻结
-[`rf_drive.lua`](../../../common/simion/rf_drive.lua)后加载，wrapper和integration不另存RF公式。
+[`rf_drive.lua`](../../../src/msplatform/backends/simion/resources/rf_drive.lua)后加载，wrapper和integration不另存RF公式。
 独立多极杆Program传`ion_time_of_flight`，连续single-flight Program传规范`birth + ion_time_of_flight`；
 每个Program只保留一个`fast_adjust`和`tstep_adjust`包装，在`initialize_run`编译一次驱动。
 纯数学回归使用SIMION官方`simion.exe --nogui --noprompt lua`入口执行

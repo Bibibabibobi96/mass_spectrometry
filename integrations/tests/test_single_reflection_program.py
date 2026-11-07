@@ -708,7 +708,7 @@ assert(not pcall(pulse.new,cfg),'unknown hook input accepted')
 assert(not pcall(hook.cap_timestep_at,0,-1),'negative native step accepted')
 print('INJECTED_PUBLIC_EDGE_CAP=PASS')
 """, encoding='utf-8', newline='\n')
-        result = subprocess.run([str(LUA),str(script),str(ROOT/'common/simion/voltage_waveforms.lua'),
+        result = subprocess.run([str(LUA),str(script),str(ROOT/'src/msplatform/backends/simion/resources/voltage_waveforms.lua'),
             str(ROOT/'integrations/runtime/single_flight_pulse_hook.lua')], cwd=self.root,
             capture_output=True, text=True, timeout=20, check=False)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

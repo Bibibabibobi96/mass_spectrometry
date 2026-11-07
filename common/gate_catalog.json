@@ -2837,7 +2837,7 @@
           "reason": "shared_simion_source_changed"
         },
         {
-          "exact": "common/simion/rf_drive.lua",
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
           "reason": "shared_rf_drive_changed"
         },
         {
@@ -2929,7 +2929,7 @@
           "reason": "shared_simion_rod_renderer_dependency_changed"
         },
         {
-          "exact": "common/simion/rf_drive.lua",
+          "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
           "reason": "shared_simion_rf_drive_dependency_changed"
         },
         {
