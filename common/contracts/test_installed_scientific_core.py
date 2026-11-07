@@ -32,6 +32,7 @@ from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive
 from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics, half_height_width
 from msplatform.analysis.peak_metrics import compute_nominal_mass_peak_metrics
 from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
+from msplatform.analysis.pulse_selection import select_actual_occupancy_pulse
 from msplatform.contracts.particle_state import write_component_particle_state_csv, load_component_particle_state_csv
 from msplatform.assembly.electrode_binding import validate_electrode_bindings, ElectrodeKey
 from msplatform.contracts import machine_contracts
@@ -73,8 +74,18 @@ for name, module in tuple(sys.modules.items()):
         origins[name] = str(origin)
 assert {'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
-        'msplatform.analysis.particle_census', 'msplatform.contracts.particle_state',
-        'msplatform.assembly.electrode_binding', 'msplatform.execution.context'} <= origins.keys()
+        'msplatform.analysis.particle_census', 'msplatform.analysis.pulse_selection',
+        'msplatform.contracts.particle_state', 'msplatform.assembly.electrode_binding',
+        'msplatform.execution.context'} <= origins.keys()
+bounds = {axis: dict(minimum_mm=-1., maximum_mm=1., center_mm=0., full_width_mm=2.) for axis in 'xyz'}
+observations = {0.: [dict(particle_id=1, x_mm=.9, y_mm=0., z_mm=0.)],
+                1.: [dict(particle_id=1, x_mm=0., y_mm=0., z_mm=0.)]}
+census = {time: [dict(particle_id=1, status='active')] for time in (0., 1.)}
+selected = select_actual_occupancy_pulse(observations, census, [0., 1.], bounds, frame_id='installed')
+assert selected['status'] == 'selected' and selected['selected_time_us'] == 1.
+unsupported = select_actual_occupancy_pulse({0.: []}, {0.: [dict(particle_id=1, status='numerical_unsupported')]},
+    [0.], bounds, frame_id='installed')
+assert unsupported['status'] == 'no_supported_eligible_candidate' and unsupported['selected'] is None
 for project_id, documents in fixture['standalone_contracts'].items():
     module_name = 'msplatform.components.' + project_id + '.resolve_contract'
     resolver = importlib.import_module(module_name)

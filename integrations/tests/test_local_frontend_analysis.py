@@ -279,7 +279,7 @@ def write_log(path: Path, events: list[dict]) -> None:
 class LocalFrontendAnalysisTests(unittest.TestCase):
     def test_extracted_occupancy_preserves_legacy_checkpoint_moments_exactly(self):
         from integrations.analysis.plot_single_flight_spatial_six_panel import _checkpoint_distribution_summary
-        from integrations.runtime.pulse_selection import SELECTION_ORDER, pulse_candidate_concentration
+        from msplatform.analysis.pulse_selection import SELECTION_ORDER, pulse_candidate_concentration
 
         bounds = dict(x_min=99e6,x_max=101e6,y_min=-101e6,y_max=-99e6,z_min=20.,z_max=40.)
         frontend = dict(native_frame_id="mrtof_global_cartesian",

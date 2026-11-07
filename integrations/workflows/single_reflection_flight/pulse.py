@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from integrations.runtime.pulse_selection import select_actual_occupancy_pulse
+from msplatform.analysis.pulse_selection import select_actual_occupancy_pulse
 from integrations.runtime.single_flight_source import binary64_serialization_close as _close
 
 ROLE = "single_reflection_actual_occupancy_pulse_decision"

@@ -497,7 +497,6 @@ integration所有者负责组合入口、source/clock、程序与冻结资源声
 - `common/contracts/`：`compile_execution_plan.py`、`plan_design_request.py`、`validate_design_request.py`。
 - `common/integration/`：`resolve_connection.py`。
 - `common/simion/`：`aperture.py`、`batch_continuation.py`。
-- `integrations/runtime/`：`pulse_selection.py`。
 - `integrations/workflows/cooled_frontend/`：`prepare.py`。
 - `integrations/workflows/local_frontend/`：`prepare.py`。
 - `integrations/workflows/multipole_ip/`：`prepare.py`。

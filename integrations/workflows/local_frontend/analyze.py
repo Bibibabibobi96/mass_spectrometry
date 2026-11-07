@@ -25,7 +25,7 @@ from integrations.analysis.plot_single_flight_spatial_six_panel import (
     build_local_shared_time_figure,
     write_checkpoint_evolution_outputs,
 )
-from integrations.runtime.pulse_selection import (
+from msplatform.analysis.pulse_selection import (
     select_actual_occupancy_pulse,
 )
 

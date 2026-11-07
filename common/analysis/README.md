@@ -3,6 +3,8 @@
 峰形算法与完整母群计数的规范实现和安装 API 分别为 `msplatform.analysis.peak_metrics`、
 `msplatform.analysis.particle_census`；本目录同名模块仅为单向兼容桥。其他仓库分析工具仍按本页导航使用。
 迁移责任与退役期限见[公共入口](../README.md#科学核心发行与旧入口)。
+实际占据率脉冲选择由`msplatform.analysis.pulse_selection`提供；它按已声明候选的可支持母群、
+集中度与时间排序，不读取轨迹文件、不利用未来检测结果，也不替代调用方的生命周期和几何校验。
 
 本目录提供求解器无关的数值函数及已准备结果的图形导出，不读取项目配置或选择科学验收阈值。调用者负责母群、有效事件、
 单位、输入身份及资格；方法依据见[验证方法](../../docs/science/VALIDATION_METHODS.md)，项目结果归PROJECT或INTEGRATION。

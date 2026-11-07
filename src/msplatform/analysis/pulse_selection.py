@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 
 
 SELECTION_ORDER = [
