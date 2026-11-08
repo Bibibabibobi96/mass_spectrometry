@@ -171,6 +171,8 @@ manifest绑定、搬迁resolver、文件身份复核和失败关闭不变，其�
 共同钟、状态重发射、完整单元复用与零handoff无原生调用语义不变，定向测试通过但未新增真实Fly证据。
 STEP导出编排与独立冷读检查已迁入`msplatform.exporters`，旧`api.export_cad`／`api.inspect_cad`删除；
 同源Assembly、身份复核、无默认GUI／求解及显式预算语义不变。
+显式SIMION／SolidWorks模型查看已迁入`msplatform.applications`，旧`api.open_model`删除；唯一owner、
+自有进程、原关闭与配置恢复保证不变，本切片仅做软件回归，不启动GUI。
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

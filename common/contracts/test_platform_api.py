@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import api, applications as applications_api, assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import execution as execution_api
 from msplatform import exporters as exporters_api
 from msplatform import ion_release as ion_release_api
@@ -115,7 +115,7 @@ class PlatformApiTests(unittest.TestCase):
             sentinel = {"software_fixture": True}
             with patch("msplatform.execution.owner.run_managed_stage", return_value=sentinel) as owner, \
                  patch("subprocess.Popen", side_effect=AssertionError("transport test launched a tool")):
-                self.assertIs(api.open_model(source, application="solidworks", context=context), sentinel)
+                self.assertIs(applications_api.open_model(source, application="solidworks", context=context), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["expected_operation_ids"], ("materialize_view", "view_model"))
                 self.assertEqual(call["operation_dependencies"], {"view_model": ["materialize_view"]})
@@ -127,16 +127,16 @@ class PlatformApiTests(unittest.TestCase):
                 owner.reset_mock()
                 checks = dict(schema_version=1, kind="selected_solid_geometry_v1", selected_step_members=["member_00008"])
                 with patch("msplatform.applications.model_execution._inspection_input") as read_report:
-                    self.assertIs(api.open_model(source, application="solidworks", context=context, checks=checks), sentinel)
+                    self.assertIs(applications_api.open_model(source, application="solidworks", context=context, checks=checks), sentinel)
                     read_report.assert_called_once_with(source, checks)
                     self.assertEqual(owner.call_args.kwargs["action"].keywords["checks"], checks)
                     self.assertEqual(owner.call_args.kwargs["payload"]["checks"], checks)
                 owner.reset_mock()
                 with self.assertRaisesRegex(ValueError, "does not support"):
-                    api.open_model(source, application="simion", context=context, checks=checks)
+                    applications_api.open_model(source, application="simion", context=context, checks=checks)
                 owner.assert_not_called()
                 with self.assertRaisesRegex(ValueError, "prepared_model|PreparedModel|unsolved"):
-                    api.open_model(source, application="simion", context=context)
+                    applications_api.open_model(source, application="simion", context=context)
                 owner.assert_not_called()
             self.assertFalse(context.workspace.exists())
 
@@ -187,7 +187,7 @@ class PlatformApiTests(unittest.TestCase):
                  patch("subprocess.Popen", side_effect=AssertionError("API transport must not launch a tool")):
                 for value, application in ((artifact, None), (artifact.reference, "simion")):
                     with self.subTest(application=application):
-                        self.assertIs(api.open_model(value, application=application, context=context), sentinel)
+                        self.assertIs(applications_api.open_model(value, application=application, context=context), sentinel)
                         call = owner.call_args.kwargs
                         ids = ("materialize_geometry", "build_model", "verify_model", "view_model")
                         self.assertEqual(call["expected_operation_ids"], ids)
@@ -209,7 +209,7 @@ class PlatformApiTests(unittest.TestCase):
                         write_policy()
                         owner.reset_mock()
                         with self.assertRaisesRegex(ContractError, "view runtime"):
-                            api.open_model(artifact, application="simion", context=context)
+                            applications_api.open_model(artifact, application="simion", context=context)
                         owner.assert_not_called()
             self.assertFalse(context.workspace.exists())
 

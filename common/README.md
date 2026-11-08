@@ -198,7 +198,7 @@ OCCT序列化精度profile；体积界不是物理／制造公差。可显式给
 这些语义检查，也不代表任意器件／姿态已支持。准确能力和GUI验收范围查
 [集成状态](../integrations/docs/INTEGRATION.md#当前边界)。
 
-SolidWorks兼容查看是后续显式可选动作`api.open_model(cad, application="solidworks", context=...)`，
+SolidWorks兼容查看是后续显式可选动作`applications.open_model(cad, application="solidworks", context=...)`，
 另需应用、配对模板与`open_model`预算，见本节下文；不是生成STEP的前置，也不自动保存／转存。
 同一`assembly`可并列传给`msplatform.backends.simion.compile_geometry(assembly, numerics=study.geometry_numerics)`，
 纯编译不采样、不写工作目录、不Refine／Fly或开GUI；不经STEP导入来反建后端几何。
@@ -270,7 +270,7 @@ observation可为census的null、`{"kind":"canonical_event","event":...}`，或�
 （epoch、authority SHA、`instrument_time_us`）及`settings`（原AnalysisSettings字段或显式null）。
 峰使用共同仪器参考，保留原算法metadata；缺测／非等权分别报告不足／不支持，不补飞或授予精度资格。
 
-`api.open_model(cad, application="solidworks", context=context)`是独立、同步的STEP查看动作。
+`applications.open_model(cad, application="solidworks", context=context)`是独立、同步的STEP查看动作。
 `open_model` stage runtime明确`com_class="SldWorks.Application.30"`、现有clean `part_template`及`assembly_template`绝对路径与
 `lifecycle="document_close"`；显式工具路径使用`tools["solidworks"]`。它拒绝接管已有应用，复制已发布
 STEP与模板后打开自己的文档；导入完成后、进入查看等待前恢复并读回临时导入偏好，
@@ -287,7 +287,7 @@ STEP与模板后打开自己的文档；导入完成后、进入查看等待前�
 返回`selected_geometry`中的原生实体／质心／表面观测，getter不可用或超出界限记`incomplete`；
 这些观测不是孔形、尺寸或科学资格通过。SIMION查看不接受此SolidWorks检查选项。
 
-`api.open_model(model, application="simion", context=context)`接受已发布的未求解PreparedModel；
+`applications.open_model(model, application="simion", context=context)`接受已发布的未求解PreparedModel；
 已打开的PreparedModel省略application时也选择SIMION，裸引用应明确application。
 它沿唯一模型writer复制完整raw／surface／clock／drive并执行容器build、冷读回verify，再显式打开新IOB；
 四个操作为`materialize_geometry/build_model/verify_model/view_model`。这是同设计的新查看容器，不是原IOB字节搬迁，
