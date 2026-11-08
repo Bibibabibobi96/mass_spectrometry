@@ -23,6 +23,8 @@ paired静态场SIMION采样器和paired脉冲SIMION回调现唯一保存在`mspl
 paired CPT主脚本、Cartesian释放读取与CPT步策略helper的唯一实现现位于`msplatform.backends.comsol/resources/`。
 普通构建、Candidate源码闭包、同步、重追踪、冷后处理和MATLAB测试均显式加入该安装目录；paired任务只生成新位置调用。
 三份MATLAB原始字节、算法、原生读回及原ID语义保持，项目旧副本退役且无转发；本次不启动COMSOL求解或GUI。
+四份测试的backend资源路径已改为从实际仓库根进入`src/msplatform/backends/comsol/resources`，不再落到
+`projects/src`；这只修正测试路径接线，尚需当前MATLAB运行结果确认实际函数来源。
 
 飞行管、反射镜和检测器variant Lua旧项目路径原先仅转发安装实现；实际smoke、冻结依赖、集成及物理测试现已直接消费新位置，
 三份旧桥已删除。新原生builder字节、错误拒绝及fast_adjust输入不变；本切片未启动SIMION或生成PA。
@@ -52,6 +54,8 @@ metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍
 默认single结果3、SIMION recording、comparison、compensation、radial、ideal-source及其余具名分析
 现均直接使用`msplatform.analysis.peak_metrics`；旧活动桥已退役，冻结来源、数值、单位和资格语义保持。
 接受域纵向拟合及publisher冻结探针同样直接使用`msplatform.analysis.longitudinal_fit`，旧公共实现退役。
+publisher可将checkout外普通安装模块按`src/msplatform`规范目的路径冻结，并绑定实际加载字节；
+非仓库且非安装包的来源仍拒绝，开发checkout正例与冻结快照隔离读取保持。
 项目粒子物理消费者及Candidate闭包直接使用`msplatform.contracts.particle_physics`，常量、公式和冻结身份边界不变。
 机器合同科学函数直接使用安装实现；真实checkout根从`common.paths.repository_root`取得，不进入可安装科学核心。
 

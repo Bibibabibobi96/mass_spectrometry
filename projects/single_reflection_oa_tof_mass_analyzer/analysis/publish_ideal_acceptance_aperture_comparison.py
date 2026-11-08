@@ -153,6 +153,18 @@ def _publish_manifest(*, run_dir: Path, run_config: Path, outputs: tuple[Path, .
     os.replace(pending, run_dir / "run_manifest.json")
 
 
+def _source_snapshot_relative_path(source: Path) -> Path:
+    """Map repository or installed-package source into the frozen source tree."""
+    try:
+        return source.relative_to(REPOSITORY_ROOT)
+    except ValueError:
+        pass
+    package_anchors = [index for index, part in enumerate(source.parts) if part == "msplatform"]
+    if not package_anchors:
+        raise ValueError(f"analysis implementation is outside the repository and installed package: {source}")
+    return Path("src/msplatform") / Path(*source.parts[package_anchors[-1] + 1:])
+
+
 def publish_aperture_comparison(
     *, campaign_path: Path, runs_root: Path, run_dir: Path, mode: str,
     threshold_mm: float = 4.0, workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
@@ -196,7 +208,7 @@ def publish_aperture_comparison(
         staging = Path(tempfile.mkdtemp(prefix=f".{run_dir.name}.pending-", dir=canonical_runs))
         result_path, summary_path, config_path = staging / "results" / result_name, staging / "summary.json", staging / "run_config.json"
         for name, source in source_paths.items():
-            frozen = staging / "inputs" / "repository_snapshot" / source.relative_to(REPOSITORY_ROOT)
+            frozen = staging / "inputs" / "repository_snapshot" / _source_snapshot_relative_path(source)
             frozen.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, frozen)
             if _sha256(source) != source_hashes[name] or _sha256(frozen) != source_hashes[name]:

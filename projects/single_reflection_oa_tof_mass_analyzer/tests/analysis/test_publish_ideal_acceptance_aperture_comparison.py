@@ -102,6 +102,26 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
         self.assertEqual(len(manifest["inputs"]), 22)
         self.assertIn("arm_01_single_flight_manifest", manifest["inputs"])
 
+    def test_installed_module_outside_checkout_is_frozen_from_actual_bytes(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            campaign, runs = self._campaign_and_runs(root, "pre-pulse")
+            installed = root / "installed/msplatform/analysis/longitudinal_fit.py"
+            installed.parent.mkdir(parents=True)
+            installed.write_bytes((publisher.REPOSITORY_ROOT / "src/msplatform/analysis/longitudinal_fit.py").read_bytes())
+            reader = lambda **_: self._reader_result(campaign, qualification="DETECTOR_BLIND_SOURCE_ONLY")
+            run_dir = self._run_dir(root, "20260828_120050__analysis__python__aperture-installed")
+            with (patch.object(publisher, "longitudinal_fit", SimpleNamespace(__file__=installed)),
+                  patch.dict(publisher.MODES, {"pre-pulse": (publisher.MODES["pre-pulse"][0], publisher.MODES["pre-pulse"][1], reader)})):
+                publisher.publish_aperture_comparison(campaign_path=campaign, runs_root=runs,
+                    run_dir=run_dir, mode="pre-pulse", workspace_root=root)
+            frozen = run_dir / "inputs/repository_snapshot/src/msplatform/analysis/longitudinal_fit.py"
+            manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(frozen.read_bytes(), installed.read_bytes())
+            self.assertEqual(manifest["inputs"]["longitudinal_fit_implementation"]["sha256"], _sha(installed))
+
     def test_reader_failure_leaves_no_published_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
