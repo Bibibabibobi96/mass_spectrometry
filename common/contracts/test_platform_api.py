@@ -543,7 +543,7 @@ class PlatformApiTests(unittest.TestCase):
             with patch("msplatform.backends.simion.field_closure.load_field_model", return_value=source), \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
                  patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel) as reader:
-                self.assertIs(api.solve_fields(reference, numerics=numerics, context=context), sentinel)
+                self.assertIs(simion_api.solve_fields(reference, numerics=numerics, context=context), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["expected_operation_ids"], ("materialize_geometry", "frontend_parent_carrier_off",
                     "frontend_parent_rf_reference", "frontend_parent_pulse_delta", "downstream_fields",
@@ -562,7 +562,7 @@ class PlatformApiTests(unittest.TestCase):
                                                expected_kind="field_bundle")
                 reuse = dict(manifest=reference["manifest"], product_id="prior-fields")
                 reader.side_effect = [SimpleNamespace(reference=reuse), sentinel]
-                self.assertIs(api.solve_fields(reference, numerics=numerics, context=context, reuse_fields=reuse), sentinel)
+                self.assertIs(simion_api.solve_fields(reference, numerics=numerics, context=context, reuse_fields=reuse), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["action"].keywords["reuse_fields_reference"], reuse)
                 self.assertEqual(call["source_references"], [{"manifest_record": reference["manifest"]},

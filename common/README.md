@@ -216,7 +216,7 @@ SolidWorks兼容查看是后续显式可选动作`api.open_model(cad, applicatio
 仅给`phase_reference_instrument_time_us`，epoch ID与SHA由唯一authority验证器读取，不由作者重复抄写。
 完整原生模型／GUI及后续求场验收状态仍以集成正文为准，接口存在不代表该链已经完成。
 
-`api.solve_fields(model, numerics=..., context=context, reuse_fields=None)`使用已发布未求解模型及其唯一驱动。
+`msplatform.backends.simion.solve_fields(model, numerics=..., context=context, reuse_fields=None)`使用已发布未求解模型及其唯一驱动。
 求场数值显式提供`frontend_domains`（含各成员`refine_convergence_v`）、RF模型的
 `rf_reference_voltage_v`及三角色`downstream_convergence_v`；它们不放进执行context。
 `solve_fields`工程policy另要求`reserved_run_payload_bytes`，为原总commitment以内的非负整数，

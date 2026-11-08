@@ -23,64 +23,6 @@ if TYPE_CHECKING:
     from msplatform.ion_release.authoring import ReleaseRealization
 
 
-def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping[str, Any],
-                 context: ExecutionContext,
-                 reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None) -> OpenedArtifact:
-    """Explicitly solve an unsolved model, without source sampling or flight.
-
-    Optional reuse names one published field product, never a latest lookup.
-    The backend validates the actual spatial operator before reusing downstream
-    data; the new field product retains the current model's drive and clock.
-    """
-    from datetime import datetime
-    from functools import partial
-    from uuid import uuid4
-    from msplatform.backends.simion.field_closure import load_field_model
-    from msplatform.backends.simion.field_execution import execute_fields, plan_fields_execution
-    from msplatform.backends.simion import native_completion
-    from msplatform.execution.artifact_reader import OpenedArtifact
-    from msplatform.execution.manifest_records import file_record
-    from msplatform.execution.owner import run_managed_stage
-    from msplatform.execution.payload_inputs import materialize_payloads
-    from msplatform.execution.stage_policy import read_stage_policy
-
-    if not isinstance(numerics, Mapping):
-        raise ContractError("solve_fields requires explicit field numerics")
-    if "simion" not in context.tools or not context.tools["simion"].is_file():
-        raise ContractError("solve_fields requires an explicit available SIMION executable")
-    stage, policy_record = read_stage_policy(context, "solve_fields", required_roles=("solver_native_binary",))
-    runtime = stage.get("runtime", {})
-    if (set(runtime) - {"simion_allow_asynchronous_io"}
-            or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
-        raise ContractError("SIMION field runtime only accepts explicit boolean simion_allow_asynchronous_io")
-    source = load_field_model(model.reference if isinstance(model, OpenedArtifact) else model)
-    selected_numerics = copy.deepcopy(dict(numerics))
-    reuse_reference = None
-    references = [{"manifest_record": source.artifact.reference["manifest"]}]
-    if reuse_fields is not None:
-        reused = artifact_reader.open_artifact(reuse_fields.reference if isinstance(reuse_fields, OpenedArtifact) else reuse_fields,
-                               expected_kind="field_bundle")
-        reuse_reference = reused.reference
-        references.append({"manifest_record": reuse_reference["manifest"]})
-    graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference)
-    result = run_managed_stage(context,
-        descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__fields-" + uuid4().hex[:12],
-        payload=dict(action="solve_fields", model=source.artifact.reference, numerics=selected_numerics,
-                     reuse_fields=reuse_reference, stage_policy=stage),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record], retention=stage["artifact_retention"],
-        expected_operation_ids=tuple(graph["expected_operation_ids"]),
-        operation_dependencies=graph["operation_dependencies"],
-        action=partial(execute_fields, model_reference=source.artifact.reference, numerics=selected_numerics,
-            limits=stage["limits"], materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
-            materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference),
-        action_record=file_record(Path(execute_fields.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
-    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")
-
-
 def track(fields: OpenedArtifact | Mapping[str, Any],
           particles: ReleaseRealization | HandoffResult | Mapping[str, Any], *,
           propagation: Mapping[str, Any], observations: Mapping[str, Any],
