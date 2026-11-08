@@ -738,6 +738,16 @@ foreach($scope in @('Owner','Repository')){
             self.assertEqual(len(selected), len(cases))
             return selected
 
+    def test_unmapped_simion_source_preserves_native_exclusions(self) -> None:
+        result = self.selections(REPO_ROOT, [dict(
+            stage="simion_common", paths=["src/msplatform/backends/simion/operations.py"],
+        )])[0]
+        self.assertEqual(result["Reason"], "explicit_discovery_preserves_native_exclusions")
+        self.assertTrue(result["OnlyTestModules"])
+        self.assertFalse(result["CompleteOwner"])
+        self.assertIn("common/simion/test_native_completion.py", result["Modules"])
+        self.assertNotIn("common/simion/test_dirichlet_patch_basis.py", result["Modules"])
+
     def test_existing_modules_and_support_have_explicit_selection(self) -> None:
         cases = []
         for prefix, stage, filename in (

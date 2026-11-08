@@ -479,7 +479,27 @@ function Get-GateChangedTests {
         $partition = $Route.repository_integration_partition
         $preservesOwner = [string]$selection.module_parameter -cne [string]$partition.parameter
     }
-    if (-not $FullScope -and $unmappedProduction.Count -gt 0 -and -not $preservesOwner) { return $null }
+    if (-not $FullScope -and $unmappedProduction.Count -gt 0 -and -not $preservesOwner) {
+        $excluded = @(if ($null -ne $selection.PSObject.Properties['exclude_modules']) { $selection.exclude_modules })
+        if ($excluded.Count -gt 0 -and [string]$Route.command.runner -eq 'python') {
+            $modules = @(
+                foreach ($root in $roots) {
+                    Get-ChildItem -LiteralPath (Join-Path $RepoRoot $root) -Filter 'test_*.py' -File -Recurse |
+                        ForEach-Object { $_.FullName.Substring($RepoRoot.Length + 1).Replace('\', '/') } |
+                        Where-Object { $_ -notin $excluded }
+                }
+            )
+            return [pscustomobject]@{
+                Modules = @($modules | Sort-Object -Unique)
+                Expanded = $false
+                CompleteOwner = $false
+                OnlyTestModules = $true
+                DependencyProfile = [string]$Route.dependency_profile
+                Reason = 'explicit_discovery_preserves_native_exclusions'
+            }
+        }
+        return $null
+    }
     if ($FullScope) { $related = @($roots | ForEach-Object { $_ + '__init__.py' }) }
     if ($related.Count -eq 0 -and $mappedModules.Count -eq 0) { return $null }
     $modules = @($related | Where-Object {
