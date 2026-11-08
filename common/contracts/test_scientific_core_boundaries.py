@@ -28,7 +28,7 @@ DOMAIN_IMPORTS = {
     "execution": SCIENTIFIC_DOMAINS | {"execution"},
     "examples": SCIENTIFIC_DOMAINS | {"examples"},
     "exporters": SCIENTIFIC_DOMAINS | {"components", "exporters", "execution"},
-    "applications": SCIENTIFIC_DOMAINS | {"applications", "backends", "execution"},
+    "applications": SCIENTIFIC_DOMAINS | {"applications", "execution"},
     "capabilities": SCIENTIFIC_DOMAINS | {"capabilities", "components", "backends", "execution", "examples", "exporters", "applications"},
 }
 HOST_MODULES = {"ctypes", "winreg", "subprocess", "multiprocessing"}
@@ -66,11 +66,18 @@ def _namespace_error(module: str) -> str | None:
     return None
 
 
-def _target_error(target: str, dependencies: set[str], source_domain: str) -> str | None:
+def _target_error(target: str, dependencies: set[str], source_domain: str, source_module: str) -> str | None:
     parts = target.split(".")
     if parts[0] == "msplatform":
         if error := _namespace_error(target):
             return error
+        if source_domain == "applications" and parts[1:3] == ["backends", "simion"]:
+            allowed_preparation = {
+                "field_closure", "model", "model_view_preparation", "resources",
+            }
+            if source_module == "msplatform.applications.operations" and (len(parts) <= 3 or parts[3] in allowed_preparation):
+                return None
+            return f"applications import exceeds named SIMION model preparation: {target}"
         if (source_domain == "assembly" and len(parts) > 2 and parts[:2] == ["msplatform", "components"]
                 and parts[2] not in COMPONENT_INFRASTRUCTURE):
             return f"assembly imports provider-specific physics instead of neutral component data: {target}"
@@ -92,7 +99,7 @@ def _target_error(target: str, dependencies: set[str], source_domain: str) -> st
 
 
 def _import_errors(tree: ast.AST, package: str, dependencies: set[str],
-                   source_domain: str) -> tuple[list[str], dict[str, str], set[str]]:
+                   source_domain: str, source_module: str) -> tuple[list[str], dict[str, str], set[str]]:
     errors, aliases, imported = [], {}, set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -111,7 +118,7 @@ def _import_errors(tree: ast.AST, package: str, dependencies: set[str],
             continue
         imported.update(targets)
         errors.extend(f"{node.lineno}: {error}" for target in targets
-                      if (error := _target_error(target, dependencies, source_domain)))
+                      if (error := _target_error(target, dependencies, source_domain, source_module)))
     return errors, aliases, imported
 
 
@@ -141,7 +148,7 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
     tree = ast.parse(source)
     package = module if is_package else module.rpartition(".")[0]
     source_domain = module.split(".")[1] if "." in module else "namespace"
-    errors, aliases, _ = _import_errors(tree, package, dependencies, source_domain)
+    errors, aliases, _ = _import_errors(tree, package, dependencies, source_domain, module)
     if error := _namespace_error(module):
         errors.append(error)
     for node in ast.walk(tree):
@@ -164,7 +171,7 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
             except ValueError as error:
                 errors.append(f"{node.lineno}: {error}")
             else:
-                if error := _target_error(target, dependencies, source_domain):
+                if error := _target_error(target, dependencies, source_domain, module):
                     errors.append(f"{node.lineno}: {error}")
     return sorted(set(errors))
 
@@ -184,7 +191,7 @@ def component_dependency_errors(sources: dict[str, str], declarations: dict[str,
         provider = parts[2]
         package = module.rpartition(".")[0]
         tree = ast.parse(source)
-        _, aliases, targets = _import_errors(tree, package, set(), "components")
+        _, aliases, targets = _import_errors(tree, package, set(), "components", module)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and _qualified_name(node.func, aliases) in {
                     "__import__", "importlib.__import__", "importlib.import_module"}:
@@ -216,7 +223,7 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
             with self.subTest(path=relative):
                 module = "msplatform." + relative.removesuffix(".py").replace("/", ".")
                 source = (CORE_ROOT / relative).read_text(encoding="utf-8")
-                _, _, targets = _import_errors(ast.parse(source), module, set(), module.split(".")[1])
+                _, _, targets = _import_errors(ast.parse(source), module, set(), module.split(".")[1], module)
                 self.assertFalse([target for target in targets if target.startswith(forbidden)])
 
     def test_declarative_cycles_and_undeclared_python_provider_edges_are_rejected(self):
@@ -347,6 +354,9 @@ lib.import_module('.helper', __package__)
             ("msplatform.applications.solidworks_worker", "import ctypes"),
             ("msplatform.applications.solidworks_worker", "import multiprocessing"),
             ("msplatform.applications.solidworks_worker", "import sys; sys.path.append(author_checkout)"),
+            ("msplatform.applications.solidworks_worker", "from msplatform.backends.simion.field_execution import execute_fields"),
+            ("msplatform.applications.operations", "from msplatform.backends.simion.operations import track"),
+            ("msplatform.applications.operations", "import importlib; importlib.import_module('msplatform.backends.simion.operations')"),
         )
         for module, source in rejected:
             with self.subTest(module=module, source=source):
