@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.simion.native_completion import parse_fly_completed_line
+from msplatform.backends.simion.native_completion import parse_fly_completed_line
 
 
 def mock_recorded_scientific_events(events):

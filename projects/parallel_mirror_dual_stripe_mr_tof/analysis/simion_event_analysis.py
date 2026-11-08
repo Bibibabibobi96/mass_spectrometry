@@ -14,7 +14,7 @@ from pathlib import Path
 from statistics import mean, median, pstdev
 from typing import Any
 
-from common.simion.native_completion import parse_fly_completed_line
+from msplatform.backends.simion.native_completion import parse_fly_completed_line
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
     resolve_drift_phase_contract,

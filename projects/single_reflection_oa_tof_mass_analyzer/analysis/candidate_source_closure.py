@@ -59,7 +59,7 @@ RELATIVE_PATHS = (
     "common/simion/__init__.py",
     "common/simion/cache_generation.py",
     "common/simion/immutable_pa_parity.py",
-    "common/simion/native_completion.py",
+    "src/msplatform/backends/simion/native_completion.py",
     "common/simion/pa_family_cache.py",
     "common/simion/standalone_pa_response_set.py",
     "common/simion/short_pa_path_support.ps1",

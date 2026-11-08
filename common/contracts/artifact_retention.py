@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from msplatform.execution.resources import resource_path
 from msplatform.execution import artifact_retention as _retention_runtime
@@ -17,25 +15,9 @@ POLICY_PATH = resource_path("artifact_retention.json")
 
 
 def _simion_completion_api() -> ModuleType:
-    """Load one sibling adapter for package and existing direct-file consumers."""
-    if __package__:
-        from common.simion import native_completion
-        return native_completion
-    name = f"{__name__}._simion_native_completion"
-    if name in sys.modules:
-        return sys.modules[name]
-    source = Path(__file__).resolve().parents[1] / "simion/native_completion.py"
-    spec = importlib.util.spec_from_file_location(name, source)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"SIMION completion adapter cannot be loaded: {source}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module  # dataclass resolves annotations through this entry.
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        del sys.modules[name]
-        raise
-    return module
+    """Use the canonical parser from the current frozen import closure."""
+    from msplatform.backends.simion import native_completion
+    return native_completion
 
 
 Retention = _retention_runtime.Retention

@@ -47,7 +47,7 @@ from common.contracts.write_run_manifest import (
 )
 from common.host_resource_python import run_heavy_function, run_managed_python_process
 from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
-from common.simion.native_completion import require_one_fly_completion
+from msplatform.backends.simion.native_completion import require_one_fly_completion
 from common.simion.process_observation import run_observed_process
 from common.simion.resource_profile import discover_case_resource_profiles
 from common.simion.resource_scheduler import plan_simion_case_dispatch
@@ -96,7 +96,7 @@ EXTRA_SOURCE_IDS = (
     "common/contracts/frozen_inputs.py",
     "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
     "common/simion/batch_continuation.py",
-    "common/simion/native_completion.py",
+    "src/msplatform/backends/simion/native_completion.py",
     "common/simion/resource_profile.py",
     "common/simion/resource_scheduler.py",
 )

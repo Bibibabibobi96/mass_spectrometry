@@ -150,7 +150,7 @@ exit 0
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_completion_fact_checks_controls_without_republishing_manifest(self) -> None:
-        from common.simion.native_completion import validate_frontend_batch_completion
+        from msplatform.backends.simion.native_completion import validate_frontend_batch_completion
 
         script = r'''param($Support,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest

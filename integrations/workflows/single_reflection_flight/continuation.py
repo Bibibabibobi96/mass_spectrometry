@@ -19,7 +19,7 @@ from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_un
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS
 from integrations.workflows.single_reflection_flight.census import read_native_evidence
-from common.simion.native_completion import frontend_batch_completion_path, validate_frontend_batch_completion
+from msplatform.backends.simion.native_completion import frontend_batch_completion_path, validate_frontend_batch_completion
 
 
 def render_legacy_iob_builder(core: str) -> str:

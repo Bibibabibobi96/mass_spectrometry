@@ -21,7 +21,7 @@ from common.contracts.recorded_file_removal import remove_recorded_files
 from common.contracts.write_run_manifest import publish_run_manifest, resolve_path, write_json_atomic
 from common.contracts.verify_run_manifest import record_path, verify_record
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from common.simion.native_completion import require_one_fly_completion
+from msplatform.backends.simion.native_completion import require_one_fly_completion
 from common.simion.particle_batching import merge_rebased_particle_csvs
 # Import public dependencies before prepare freezes the loaded source closure.
 from common.simion import batch_continuation as batch_continuation

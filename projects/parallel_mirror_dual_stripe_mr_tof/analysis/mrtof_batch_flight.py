@@ -12,7 +12,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
-from common.simion.native_completion import parse_fly_completed_line
+from msplatform.backends.simion.native_completion import parse_fly_completed_line
 from common.simion.scientific_event_io import iter_csv_rows
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (

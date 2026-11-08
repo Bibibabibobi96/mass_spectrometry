@@ -895,7 +895,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
         config['inputs']={'identity':str(predecessor/'inputs/pa_cache_identity.json')}
         runtime.write(public.producer_run_config,config)
         plan=dict(cache_root=str(cache),cache_key=runtime.canonical_pa_family_cache_key(identity),
-                  identity=identity,filenames=list(public.names),verifier_path=str(ROOT/'common/simion/native_completion.py'))
+                  identity=identity,filenames=list(public.names),verifier_path=str(ROOT/'src/msplatform/backends/simion/native_completion.py'))
         first=runtime.advance_cache(predecessor,plan)
         payload=Path(first['build_directory'])
         for name in public.names:(payload/name).write_bytes(b'inert transaction member; not a qualified PA')

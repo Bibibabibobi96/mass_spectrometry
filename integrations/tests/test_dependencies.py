@@ -336,7 +336,8 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
 import sys
 from pathlib import Path
 from common.contracts import capacity_ledger, solver_review_retirement, verify_artifact_layout
-from common.contracts import artifact_cache_contract, gui_source_protection
+from common.contracts import gui_source_protection
+from msplatform.execution import artifact_cache_contract
 root=Path(sys.argv[1]).resolve()
 for module in (capacity_ledger,solver_review_retirement,verify_artifact_layout,artifact_cache_contract,gui_source_protection):
     Path(module.__file__).resolve().relative_to(root)
@@ -473,7 +474,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                 environment['PYTHONPATH'] = os.pathsep.join(python_import_roots(snapshot))
                 statement = """
 from pathlib import Path
-from common.simion import native_completion
+from msplatform.backends.simion import native_completion
 from common.contracts import write_run_manifest, capacity_protection
 assert Path(native_completion.__file__).is_relative_to(Path.cwd())
 assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
@@ -491,7 +492,7 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
                 for module in (False, True):
                     with self.subTest(module=module, adapter_present=True):
                         self._assert_frozen_retention(snapshot, module=module, adapter_present=True)
-                (snapshot / 'common/simion/native_completion.py').unlink()
+                (snapshot / 'src/msplatform/backends/simion/native_completion.py').unlink()
                 missing = subprocess.run(command, cwd=snapshot, env=environment,
                     capture_output=True, text=True, encoding='utf-8', timeout=60)
                 self.assertNotEqual(missing.returncode, 0)

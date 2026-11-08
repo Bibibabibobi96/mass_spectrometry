@@ -162,7 +162,7 @@ function Complete-RunArtifactPowerShellOwner {
     # reads bounded log tails, never PA payloads or scientific trajectories.
     $ownerRunRoot=$root
     $completedLogs=Invoke-RunToolRootContext -RepoRoot $Context.repo_root -Operation {
-      & $Context.python -B -c 'import json,sys;from pathlib import Path;from common.simion.native_completion import recoverable_batch_logs,has_recoverable_batch_completion;print(json.dumps([str(p) for p in sorted(recoverable_batch_logs(Path(sys.argv[1]))) if has_recoverable_batch_completion(p)]))' $ownerRunRoot
+      & $Context.python -B -c 'import json,sys;from pathlib import Path;from msplatform.backends.simion.native_completion import recoverable_batch_logs,has_recoverable_batch_completion;print(json.dumps([str(p) for p in sorted(recoverable_batch_logs(Path(sys.argv[1]))) if has_recoverable_batch_completion(p)]))' $ownerRunRoot
       if($LASTEXITCODE-ne0){throw 'Completed batch log retention selection failed.'}
     }
     $preserve+=@(($completedLogs-join"`n")|ConvertFrom-Json)

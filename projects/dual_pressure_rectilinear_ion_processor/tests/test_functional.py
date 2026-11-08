@@ -697,7 +697,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
         self.assertIn("FROZEN_POLICY_PASS", result.stdout)
         config = functional.read_json(self.run / "run_config.json")
         self.assertIn(str(frozen_policy), config["inputs"].values())
-        self.assertIn(str(closure / "common/simion/native_completion.py"), config["inputs"].values())
+        self.assertIn(str(closure / "src/msplatform/backends/simion/native_completion.py"), config["inputs"].values())
         resolved = functional.read_json(self.run / "inputs/resolved_model.json")
         self.assertEqual(resolved["numerical_boundaries"], {
             "schema_version": 2, "role": "native_numerical_observation_boundaries",

@@ -228,7 +228,7 @@ program:close()
  $stage='fly_after_alias_removal'
  $null=Invoke-FixtureNative fly @('--nogui','--noprompt','fly','--particles',$sourceFly,'--programs','1','--retain-trajectories','0',$activeIob) $childOperations
  $flyLog=Join-Path $package.log_dir 'fly.log'
- & $Python -c 'import re,sys;from pathlib import Path;from common.simion.native_completion import require_one_fly_completion;text=Path(sys.argv[1]).read_text(encoding="utf-8-sig");assert require_one_fly_completion(text.splitlines()).splats==1;hit=re.search(r"CHECKPOINT_PARTICLE_TERMINAL id=1 tof_us=([0-9.eE+-]+)",text);assert hit and float(hit.group(1))>0' $flyLog
+ & $Python -c 'import re,sys;from pathlib import Path;from msplatform.backends.simion.native_completion import require_one_fly_completion;text=Path(sys.argv[1]).read_text(encoding="utf-8-sig");assert require_one_fly_completion(text.splitlines()).splats==1;hit=re.search(r"CHECKPOINT_PARTICLE_TERMINAL id=1 tof_us=([0-9.eE+-]+)",text);assert hit and float(hit.group(1))>0' $flyLog
  if($LASTEXITCODE-ne0-or(Get-Content $flyLog -Raw)-notmatch'CHECKPOINT_PARTICLE_STARTED id=1'){throw 'Native N1 Fly completion/Program evidence missing.'}
  if(@($childOperations|Where-Object operation_id -eq refine).Count){throw 'Checkpoint reuse performed Refine.'}
  if([Convert]::ToBase64String($parentBytes)-cne[Convert]::ToBase64String([IO.File]::ReadAllBytes($parentManifest))){throw 'Consumption changed parent terminal manifest bytes.'}
