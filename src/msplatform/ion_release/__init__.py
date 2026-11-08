@@ -1,5 +1,6 @@
-"""Repository-wide solver-neutral ion-release materialization."""
+"""Repository-wide solver-neutral ion-release authoring and materialization."""
 
+from msplatform.ion_release.authoring import ReleaseRealization, sample_release
 from msplatform.ion_release.cylinder import (
     apply_controlled_position_pair,
     apply_controlled_slow_energy_pair,
@@ -14,6 +15,7 @@ from msplatform.ion_release.mt19937_disk_cone_rf_phase import (
 from msplatform.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
 
 __all__ = [
+    "ReleaseRealization",
     "apply_controlled_position_pair",
     "apply_controlled_slow_energy_pair",
     "generate_center_axis_pair_halton_cylinder_phase_space",
@@ -22,4 +24,5 @@ __all__ = [
     "generate_mt19937_disk_cone_rf_phase_states",
     "generate_mt19937_disk_sqrt_cone_rf_phase_states",
     "sample_numpy_box_cone_phase_space",
+    "sample_release",
 ]

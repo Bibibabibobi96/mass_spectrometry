@@ -4,12 +4,76 @@ from __future__ import annotations
 import copy
 import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
 
 from msplatform.contracts.clock import ClockIdentity, instrument_time_us, seconds_to_microseconds
+from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from msplatform.contracts.particle_state import validate_component_particle_state_rows
 from msplatform.ion_release.continuous_axial_volume import ROLE as SNAPSHOT_ROLE
 from msplatform.ion_release.release import generate_release_states
+
+
+@dataclass(frozen=True, init=False)
+class ReleaseRealization:
+    """Canonical birth rows and their complete, independently copied authoring facts."""
+
+    _document: dict[str, Any]
+
+    def __init__(self, request: Mapping[str, Any]):
+        required = {"schema_version", "role", "release_spec", "clock", "instrument_origin_us",
+                    "species_id", "source_component_id", "relative_weights"}
+        if (not isinstance(request, Mapping) or not required <= request.keys()
+                or set(request) - required - {"particle_ids"}
+                or type(request["schema_version"]) is not int or request["schema_version"] != 1
+                or request["role"] != "canonical_birth_source_request"):
+            raise ContractError("release requires a version-1 canonical_birth_source_request")
+        document = copy.deepcopy(dict(request))
+        if not isinstance(document["clock"], dict) or set(document["clock"]) != {"clock_epoch_id", "authority_sha256"}:
+            raise ContractError("release clock requires an explicit epoch and authority identity")
+        clock = ClockIdentity(**document["clock"])
+        weights = document["relative_weights"]
+        if isinstance(weights, Mapping):
+            converted = {}
+            for key, value in weights.items():
+                if isinstance(key, str) and key.isascii() and key.isdecimal() and str(int(key)) == key:
+                    key = int(key)
+                if type(key) is not int or key in converted:
+                    raise ContractError("release weight keys must be unique canonical particle IDs")
+                converted[key] = value
+            weights = converted
+        result = author_release(document["release_spec"], clock=clock,
+            instrument_origin_us=document["instrument_origin_us"], species_id=document["species_id"],
+            source_component_id=document["source_component_id"], relative_weights=weights,
+            particle_ids=document.get("particle_ids"))
+        object.__setattr__(self, "_document", result)
+
+    @property
+    def rows(self) -> list[dict[str, Any]]:
+        return copy.deepcopy(self._document["rows"])
+
+    @property
+    def mother(self) -> dict[str, Any]:
+        return copy.deepcopy(self._document["mother"])
+
+    @property
+    def clock(self) -> ClockIdentity:
+        return ClockIdentity(**self._document["clock"])
+
+    def to_dict(self) -> dict[str, Any]:
+        """Expand the exact sampler inputs, actual rows, ID mapping and clock mapping."""
+        return copy.deepcopy(self._document)
+
+
+def sample_release(spec: Mapping[str, Any]) -> ReleaseRealization:
+    """Author canonical births without fields, materialized source files or native actions.
+
+    The request supplies the existing release spec, clock, birth origin, species,
+    component and explicit weight policy. Existing low-level sampler contracts
+    remain available from msplatform.ion_release.release unchanged.
+    """
+    return ReleaseRealization(spec)
 
 
 def author_release(spec: Mapping, *, clock: ClockIdentity, instrument_origin_us: float,

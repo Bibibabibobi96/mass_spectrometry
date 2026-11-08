@@ -328,11 +328,15 @@ assert reference_count > 0
 # The real new user slice runs from installed providers and package resources.
 from unittest.mock import patch
 from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 with patch('subprocess.Popen', side_effect=AssertionError('hidden native action')), \
      patch.object(pathlib.Path, 'mkdir', side_effect=AssertionError('hidden workspace creation')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('hidden file write')):
     study = example_api.load_example('rf_oatof_functional_v1')
+    release = ion_release_api.sample_release(study.release)
+    assert len(release.rows) == 100 and isinstance(release, ion_release_api.ReleaseRealization)
+    assert not hasattr(api, 'sample_release') and not hasattr(api, 'ReleaseRealization')
     actual_components = {name:component_api.resolve_component(request) for name,request in study.component_requests.items()}
     actual_assembly = assembly_api.assemble(study.recipe, actual_components)
     actual_geometry = simion_api.compile_geometry(actual_assembly, numerics=study.geometry_numerics)
@@ -454,6 +458,11 @@ with patch('subprocess.Popen',side_effect=AssertionError('comparison launched to
     described = compare_published_trajectories(open_artifact(comparison_ref, expected_kind='trajectory_result'),
         open_artifact(comparison_ref, expected_kind='trajectory_result'), selection=comparison['selection'],
         method=dict(schema_version=1,kind='event_time_position'))
+    analyzed = simion_api.analyze(comparison_ref, selection=comparison['selection'],
+        method=dict(schema_version=1,kind='time_peak',settings=None,
+            time_reference=dict(clock_epoch_id=clock.clock_epoch_id,authority_sha256=clock.authority_sha256,
+                                instrument_time_us=20.)))
+assert analyzed['status']=='analysis_completed' and analyzed['selected_particle_ids']==[7,99,123]
 assert described['status']=='comparison_completed' and described['matched_particle_ids']==[7,99,123]
 assert described['coverage']['left']['denominator_count']==4
 assert all(pair['right_minus_left']['instrument_time_us']==0. and
@@ -577,6 +586,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
         from msplatform import api
+        from msplatform.backends import simion as simion_api
         from msplatform.execution.manifest_records import file_record
         from msplatform.execution.terminal_publication import publish_terminal_state
         statements = ast.parse(INSTALLED_PROBE).body
@@ -588,7 +598,8 @@ class InstalledScientificCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             namespace = dict(root=Path(directory),fixture=json.loads(json.dumps({'comparison':self.comparison_probe_fixture()})),
                 sys=SimpleNamespace(argv=['probe','fixture.json','0']),file_record=file_record,
-                publish_terminal_state=publish_terminal_state,json=json,copy=copy,pathlib=__import__('pathlib'),patch=patch,api=api)
+                publish_terminal_state=publish_terminal_state,json=json,copy=copy,pathlib=__import__('pathlib'),patch=patch,api=api,
+                simion_api=simion_api)
             exec(code,namespace)
             self.assertEqual(namespace['described']['status'],'comparison_completed')
             self.assertTrue(all(type(pid) is int and pid==row['particle_id'] for pid,row in namespace['mother'].records.items()))

@@ -4,6 +4,8 @@ from __future__ import annotations
 import copy
 import json
 import math
+from collections.abc import Mapping
+from typing import Any
 
 from msplatform.analysis.trajectory import analyze_trajectory, _observation_rows
 from msplatform.analysis.particle_census import subset_efficiency
@@ -181,3 +183,23 @@ def analyze_published_trajectory(source: OpenedArtifact, *, selection, method) -
         time_reference_instrument_us=reference, observation_selection=observation_selection, settings=settings)
     result.update(evidence)
     return result
+
+
+def analyze(result: OpenedArtifact | Mapping[str, Any], *,
+            selection: Mapping[str, Any], method: Mapping[str, Any]) -> dict[str, Any]:
+    """Open and analyze a published SIMION trajectory without native actions.
+
+    Selection and method are explicit version-1 contracts. Missing observations
+    or unclassified inherited fates remain unavailable; no tool is started to
+    supply them. The common time reference is not a particle birth or age.
+    """
+    from msplatform.contracts.machine_contracts import ContractError
+    from msplatform.execution.artifact_reader import open_artifact
+
+    source = result if isinstance(result, OpenedArtifact) else open_artifact(result, expected_kind="trajectory_result")
+    if source.kind != "trajectory_result" or source.metadata.get("backend") != "simion":
+        raise ContractError("analysis requires a trajectory result from the supported SIMION data adapter")
+    if not isinstance(selection, Mapping) or not isinstance(method, Mapping):
+        raise ContractError("analysis requires explicit selection and method contracts")
+    return analyze_published_trajectory(source, selection=copy.deepcopy(dict(selection)),
+                                        method=copy.deepcopy(dict(method)))

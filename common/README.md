@@ -236,7 +236,7 @@ inputs／outputs中的原文件record。reference为`{"manifest": <文件record>
 实际位置快照，不替代后续`data_path`复核或原owner的写入保护。搬迁后的数据可读不自动改变原容量owner；
 真实三进程链的完成状态仍查集成正文。
 
-`api.sample_release`消费版本1的`canonical_birth_source_request`：显式`release_spec`（原生成器合同）、
+`msplatform.ion_release.sample_release`消费版本1的`canonical_birth_source_request`：显式`release_spec`（原生成器合同）、
 `clock`（epoch与authority SHA）、`instrument_origin_us`、`species_id`、`source_component_id`与
 `relative_weights`，可另给首次作者`particle_ids`。`relative_weights=None`明确使用单位权重；映射则
 精确覆盖实际作者ID，JSON十进制ID键与整数ID键不能重复。返回`ReleaseRealization`的`rows`是原CSV1
@@ -262,7 +262,7 @@ observations给出`plane_observations`及可选`observation_times_us`；numerics
 公共接线与原owner的四单元软件恢复已有分层回归；零handoff保完整母群且无原生调用。
 普通安装后的真实Fly、真实SIMION角色的多单元派发与跨进程分析仍待验收，不能据接口存在宣布完成。
 
-`api.analyze(result, selection=..., method=...)`只读已发布SIMION轨迹数据，不启动owner或工具。
+`msplatform.backends.simion.analyze(result, selection=..., method=...)`只读已发布SIMION轨迹数据，不启动owner或工具。
 selection版本1明确`particle_ids`、`observation`与`unexecuted_fate_label_field`；完整母群继续作为分母，
 未执行粒子的原fate字段由调用者明确指定，缺分类返回`insufficient_classification`，不猜作loss。
 observation可为census的null、`{"kind":"canonical_event","event":...}`，或具名plane的

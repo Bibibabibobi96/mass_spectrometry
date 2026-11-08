@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from msplatform.assembly.handoff import HandoffMother
 from msplatform.backends.simion.source import project_source_states
-from msplatform.backends.simion.trajectory_analysis import analyze_published_trajectory
+from msplatform.backends.simion.trajectory_analysis import analyze, analyze_published_trajectory
 from msplatform.contracts.clock import ClockIdentity
 from msplatform.execution.artifact_reader import open_artifact
 from msplatform.execution.manifest_records import file_record
@@ -94,9 +94,10 @@ class PublishedTrajectoryAnalysisTests(unittest.TestCase):
         with patch("subprocess.Popen", side_effect=AssertionError("analysis started a tool")), \
              patch.object(Path, "write_text", side_effect=AssertionError("analysis wrote a file")), \
              patch.object(Path, "mkdir", side_effect=AssertionError("analysis created workspace")):
-            direct = api.analyze(source, selection=self.selection, method=self.method)
-            reopened = api.analyze(source.reference, selection=self.selection, method=self.method)
+            direct = analyze(source, selection=self.selection, method=self.method)
+            reopened = analyze(source.reference, selection=self.selection, method=self.method)
         self.assertEqual(direct, reopened)
+        self.assertFalse(hasattr(api, "analyze"))
         self.assertEqual(direct["status"], "analysis_completed")
         self.assertEqual(direct["producer"]["status"], "failed")
         self.assertEqual(direct["selected_particle_ids"], [7, 99, 123])

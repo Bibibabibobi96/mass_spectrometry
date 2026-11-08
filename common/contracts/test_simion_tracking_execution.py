@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.assembly.handoff import HandoffMother,HandoffClock,HandoffResult,prepare_handoff_states,HandoffSelection
 from msplatform.contracts.rigid_transform import RigidTransform
@@ -115,7 +116,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         parts={key:component_api.resolve_component(value) for key,value in self.case.component_requests.items()}
         assembly=assembly_api.assemble(self.case.recipe,parts)
         self.compiled=simion_api.compile_geometry(assembly,numerics=self.case.geometry_numerics)
-        self.packet=api.sample_release(self.case.release).to_dict()
+        self.packet=ion_release_api.sample_release(self.case.release).to_dict()
         components={key:self.compiled.components_resolved[key] for key in self.compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
         self.drive=project_resolved_drive(self.compiled,components,pulse=dict(mode='timed',time_us=10.,width_us=2.),
             clock=dict(self.packet['clock'],phase_reference_instrument_time_us=0.))

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +14,6 @@ from msplatform import assembly as assembly_domain
 from msplatform import components as component_catalog
 from msplatform.backends import simion as simion_backend
 from msplatform.contracts.machine_contracts import ContractError
-from msplatform.contracts.clock import ClockIdentity
 from msplatform.execution import artifact_reader
 
 if TYPE_CHECKING:
@@ -23,68 +21,7 @@ if TYPE_CHECKING:
     from msplatform.backends.simion.compiler import CompiledSimionGeometry
     from msplatform.execution.artifact_reader import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
-
-
-@dataclass(frozen=True, init=False)
-class ReleaseRealization:
-    """Canonical birth rows and their complete, independently copied authoring facts."""
-
-    _document: dict[str, Any]
-
-    def __init__(self, request: Mapping[str, Any]):
-        required = {"schema_version", "role", "release_spec", "clock", "instrument_origin_us",
-                    "species_id", "source_component_id", "relative_weights"}
-        if (not isinstance(request, Mapping) or not required <= request.keys()
-                or set(request) - required - {"particle_ids"}
-                or type(request["schema_version"]) is not int or request["schema_version"] != 1
-                or request["role"] != "canonical_birth_source_request"):
-            raise ContractError("release requires a version-1 canonical_birth_source_request")
-        document = copy.deepcopy(dict(request))
-        if not isinstance(document["clock"], dict) or set(document["clock"]) != {"clock_epoch_id", "authority_sha256"}:
-            raise ContractError("release clock requires an explicit epoch and authority identity")
-        clock = ClockIdentity(**document["clock"])
-        weights = document["relative_weights"]
-        if isinstance(weights, Mapping):
-            converted = {}
-            for key, value in weights.items():
-                if isinstance(key, str) and key.isascii() and key.isdecimal() and str(int(key)) == key:
-                    key = int(key)
-                if type(key) is not int or key in converted:
-                    raise ContractError("release weight keys must be unique canonical particle IDs")
-                converted[key] = value
-            weights = converted
-        from msplatform.ion_release.authoring import author_release
-        result = author_release(document["release_spec"], clock=clock,
-            instrument_origin_us=document["instrument_origin_us"], species_id=document["species_id"],
-            source_component_id=document["source_component_id"], relative_weights=weights,
-            particle_ids=document.get("particle_ids"))
-        object.__setattr__(self, "_document", result)
-
-    @property
-    def rows(self) -> list[dict[str, Any]]:
-        return copy.deepcopy(self._document["rows"])
-
-    @property
-    def mother(self) -> dict[str, Any]:
-        return copy.deepcopy(self._document["mother"])
-
-    @property
-    def clock(self) -> ClockIdentity:
-        return ClockIdentity(**self._document["clock"])
-
-    def to_dict(self) -> dict[str, Any]:
-        """Expand the exact sampler inputs, actual rows, ID mapping and clock mapping."""
-        return copy.deepcopy(self._document)
-
-
-def sample_release(spec: Mapping[str, Any]) -> ReleaseRealization:
-    """Author canonical births without fields, materialized source files or native actions.
-
-    The request supplies the existing release spec, clock, birth origin, species,
-    component and explicit weight policy. Existing low-level sampler contracts
-    remain available from msplatform.ion_release.release unchanged.
-    """
-    return ReleaseRealization(spec)
+    from msplatform.ion_release.authoring import ReleaseRealization
 
 
 def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContext) -> OpenedArtifact:
@@ -324,6 +261,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     from msplatform.execution.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
+    from msplatform.ion_release.authoring import ReleaseRealization
 
     source = fields if isinstance(fields, OpenedArtifact) else artifact_reader.open_artifact(fields, expected_kind="field_bundle")
     meta = source.metadata
@@ -397,25 +335,6 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")
-
-
-def analyze(result: OpenedArtifact | Mapping[str, Any], *,
-            selection: Mapping[str, Any], method: Mapping[str, Any]) -> dict[str, Any]:
-    """Read published trajectory observations and compute descriptive statistics.
-
-    Selection and method are explicit version-1 contracts. Missing observations
-    or unclassified inherited fates remain unavailable; no tool is started to
-    supply them. The common time reference is not a particle birth or age.
-    """
-    from msplatform.backends.simion.trajectory_analysis import analyze_published_trajectory
-    from msplatform.execution.artifact_reader import OpenedArtifact
-
-    source = result if isinstance(result, OpenedArtifact) else artifact_reader.open_artifact(result, expected_kind="trajectory_result")
-    if source.kind != "trajectory_result" or source.metadata.get("backend") != "simion":
-        raise ContractError("analysis requires a trajectory result from the supported SIMION data adapter")
-    if not isinstance(selection, Mapping) or not isinstance(method, Mapping):
-        raise ContractError("analysis requires explicit selection and method contracts")
-    return analyze_published_trajectory(source, selection=copy.deepcopy(dict(selection)), method=copy.deepcopy(dict(method)))
 
 
 def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[str, Any]) -> dict[str, Any]:

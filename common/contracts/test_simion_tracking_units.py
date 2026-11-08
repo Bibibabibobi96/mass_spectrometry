@@ -83,7 +83,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
     def test_original_owner_four_units_out_of_order_partial_replay_then_zero_calls(self):
         """Real owner/dispatcher/guards/children, controlled test-only role/CPU seams."""
         case=base_fixture.TrackingExecutionPlanTests();case.setUp()
-        case.packet=base_fixture.api.sample_release(dict(case.case.release,relative_weights={pid:1.+i/100 for i,pid in enumerate(case.case.release['particle_ids'])})).to_dict()
+        case.packet=base_fixture.ion_release_api.sample_release(dict(case.case.release,relative_weights={pid:1.+i/100 for i,pid in enumerate(case.case.release['particle_ids'])})).to_dict()
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'shared GATE required')
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

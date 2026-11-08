@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import execution as execution_api
+from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.execution.artifact_reader import open_artifact
@@ -229,7 +230,7 @@ class PlatformApiTests(unittest.TestCase):
             request = case.release
             request["clock"] = dict(clock_epoch_id="software-tracking-fixture",
                                     authority_sha256=hashlib.sha256(epoch.read_bytes()).hexdigest())
-            release = api.sample_release(request)
+            release = ion_release_api.sample_release(request)
             packet = release.to_dict()
             components = {key: compiled.components_resolved[key]
                           for key in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]}
@@ -388,7 +389,7 @@ class PlatformApiTests(unittest.TestCase):
         request = case.release
         before = copy.deepcopy(request)
         with patch("subprocess.Popen", side_effect=AssertionError("source sampling must not launch tools")):
-            release = api.sample_release(request)
+            release = ion_release_api.sample_release(request)
         self.assertEqual(request, before)
         self.assertEqual(len(release.rows), 100)
         self.assertEqual([row["particle_id"] for row in release.rows], request["particle_ids"])
@@ -662,7 +663,7 @@ class PlatformApiTests(unittest.TestCase):
         with patch("subprocess.Popen",side_effect=AssertionError("native source action")), \
              patch.object(Path,"mkdir",side_effect=AssertionError("source workspace")), \
              patch.object(Path,"write_text",side_effect=AssertionError("source file")):
-            source = api.sample_release(request)
+            source = ion_release_api.sample_release(request)
         self.assertEqual(request,before)
         self.assertEqual([row["particle_id"] for row in source.rows],[11,101,1009])
         self.assertEqual([row["particle_weight"] for row in source.rows],[.5,2.,3.])
@@ -678,11 +679,11 @@ class PlatformApiTests(unittest.TestCase):
         invalid = copy.deepcopy(before)
         invalid["relative_weights"][11] = 1.
         with self.assertRaisesRegex(ContractError,"weight keys"):
-            api.sample_release(invalid)
+            ion_release_api.sample_release(invalid)
         invalid = copy.deepcopy(before)
         invalid["schema_version"] = True
         with self.assertRaisesRegex(ContractError,"version-1"):
-            api.sample_release(invalid)
+            ion_release_api.sample_release(invalid)
 
     def test_real_example_full_geometry_without_source_or_side_effects(self):
         with patch("subprocess.Popen", side_effect=AssertionError("native launch")), \
