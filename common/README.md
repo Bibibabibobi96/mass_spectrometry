@@ -246,7 +246,7 @@ inputs／outputs中的原文件record。reference为`{"manifest": <文件record>
 `msplatform.ion_release.release.generate_release_states`合同和采样次序保持。实际原生执行仍须验证相同
 clock authority的真实发布record，并由backend检查原生ID表示范围。
 
-`api.track(fields, particles, propagation=..., observations=..., numerics=..., context=...,
+`msplatform.backends.simion.track(fields, particles, propagation=..., observations=..., numerics=..., context=...,
 source_reference=None, unit_size=None, recovery_reference=None, dispatch_profiles=())`
 将已发布SIMION FieldBundle接到同一运行owner；未求解model直接拒绝。
 `particles`为`ReleaseRealization`、其完整`to_dict()`或纯handoff的`HandoffResult`。handoff必须显式提供

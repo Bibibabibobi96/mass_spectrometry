@@ -6,7 +6,7 @@ Scientific defaults are visible in the versioned example, not inferred here.
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,117 +17,8 @@ from msplatform.contracts.machine_contracts import ContractError
 from msplatform.execution import artifact_reader
 
 if TYPE_CHECKING:
-    from msplatform.assembly.handoff import HandoffResult
     from msplatform.execution.artifact_reader import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
-    from msplatform.ion_release.authoring import ReleaseRealization
-
-
-def track(fields: OpenedArtifact | Mapping[str, Any],
-          particles: ReleaseRealization | HandoffResult | Mapping[str, Any], *,
-          propagation: Mapping[str, Any], observations: Mapping[str, Any],
-          numerics: Mapping[str, Any], context: ExecutionContext,
-          source_reference: OpenedArtifact | Mapping[str, Any] | None = None,
-          unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
-          dispatch_profiles: Sequence[Mapping[str, Any]] = ()) -> OpenedArtifact:
-    """Publish an explicit fixed-field flight, preserving its original cohort/clock.
-
-    A release realization starts at birth; a HandoffResult requires its published
-    trajectory producer. The backend verifies the actual observed source before
-    relaunch. Zero handoff publishes full mother facts without launching tools.
-    unit_size fixes ordinal replay boundaries without changing original IDs or
-    the full mother. recovery_reference is one explicit predecessor manifest
-    file record: complete units are verified and reused, incomplete units fully
-    replayed by the existing dispatcher. Opening a field never solves it.
-    """
-    from dataclasses import asdict
-    from datetime import datetime
-    from functools import partial
-    from uuid import uuid4
-    from msplatform.assembly.handoff import HandoffResult
-    from msplatform.backends.simion.artifacts import CompiledPreparedModel
-    from msplatform.backends.simion.model import require_prepared_model
-    from msplatform.backends.simion.tracking_execution import execute_tracking, plan_tracking_execution
-    from msplatform.backends.simion.tracking_units import inspect_tracking_recovery
-    from msplatform.backends.simion import native_completion
-    from msplatform.execution.artifact_reader import OpenedArtifact
-    from msplatform.execution.manifest_records import file_record
-    from msplatform.execution.owner import run_managed_stage
-    from msplatform.execution.stage_policy import read_stage_policy
-    from msplatform.ion_release.authoring import ReleaseRealization
-
-    source = fields if isinstance(fields, OpenedArtifact) else artifact_reader.open_artifact(fields, expected_kind="field_bundle")
-    meta = source.metadata
-    if (source.kind != "field_bundle" or meta.get("backend") != "simion"
-            or meta.get("field_status") != "available" or meta.get("source_status") != "not_requested"):
-        raise ContractError("track requires a published source-independent SIMION FieldBundle")
-    model = CompiledPreparedModel(source.data_path("compiled_model").read_text(encoding="utf-8-sig"))
-    document = require_prepared_model(model)
-    if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
-        raise ContractError("tracking field model/clock identity differs")
-    packet = particles.to_dict() if isinstance(particles, ReleaseRealization) else copy.deepcopy(particles)
-    clocks = {name: dict(source.data_records[name], path=str(source.data_path(name)))
-              for name in ("clock_authority", "instrument_epoch")}
-    if (not isinstance(dispatch_profiles, Sequence) or isinstance(dispatch_profiles, (str, bytes))
-            or any(not isinstance(profile, Mapping) for profile in dispatch_profiles)):
-        raise ContractError("tracking dispatch_profiles must be an explicit sequence of resource profiles")
-    profiles = tuple(copy.deepcopy(dict(profile)) for profile in dispatch_profiles)
-    recovery = None
-    if recovery_reference is not None:
-        if (not isinstance(recovery_reference, Mapping)
-                or not isinstance(recovery_reference.get("path"), str)
-                or not Path(recovery_reference["path"]).is_absolute()):
-            raise ContractError("tracking recovery requires an explicit absolute predecessor manifest file record")
-        recovery = copy.deepcopy(dict(recovery_reference))
-    planning = dict(particles=packet, clock_records=clocks, propagation=propagation,
-                    observations=observations, numerics=numerics, unit_size=unit_size,
-                    field_manifest_record=source.reference["manifest"])
-    graph = plan_tracking_execution(model, **planning)
-    if recovery is not None:
-        inspected = inspect_tracking_recovery(graph, recovery)
-        graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
-    predecessor = None
-    references = [{"manifest_record": source.reference["manifest"]}]
-    if recovery is not None:
-        references.append({"manifest_record": recovery})
-    if isinstance(packet, HandoffResult):
-        if source_reference is None:
-            raise ContractError("state relaunch requires its published trajectory source reference")
-        predecessor = (source_reference if isinstance(source_reference, OpenedArtifact)
-                       else artifact_reader.open_artifact(source_reference, expected_kind="trajectory_result"))
-        if predecessor.kind != "trajectory_result":
-            raise ContractError("handoff producer must be a published trajectory result")
-        references.append({"manifest_record": predecessor.reference["manifest"]})
-    elif source_reference is not None:
-        raise ContractError("birth realization cannot claim a handoff producer")
-    if graph["native_requested"] and ("simion" not in context.tools or not context.tools["simion"].is_file()):
-        raise ContractError("nonempty tracking requires an explicit available SIMION executable")
-    stage, policy_record = read_stage_policy(context, "track", required_roles=("solver_native_binary",))
-    runtime = stage.get("runtime", {})
-    if (set(runtime) - {"simion_allow_asynchronous_io"}
-            or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
-        raise ContractError("SIMION tracking runtime only accepts explicit boolean simion_allow_asynchronous_io")
-    result = run_managed_stage(context,
-        descriptor=dict(project="instrument_assembly", mode="tracking", software=["SIMION"]),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__track-" + uuid4().hex[:12],
-        payload=dict(action="track", fields=source.reference,
-            particles=asdict(packet) if isinstance(packet, HandoffResult) else packet,
-            propagation=copy.deepcopy(dict(propagation)), observations=copy.deepcopy(dict(observations)),
-            numerics=copy.deepcopy(dict(numerics)), source_reference=predecessor.reference if predecessor else None,
-            unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
-            stage_policy=stage),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record], retention=stage["artifact_retention"],
-        expected_operation_ids=tuple(graph["expected_operation_ids"]),
-        operation_dependencies=graph["operation_dependencies"],
-        action=partial(execute_tracking, fields_reference=source, particles=packet,
-            propagation=graph["propagation"], observations=graph["observations"], numerics=graph["numerics"],
-            limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
-            unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
-        action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
-    return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")
 
 
 def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[str, Any]) -> dict[str, Any]:

@@ -269,7 +269,7 @@ class PlatformApiTests(unittest.TestCase):
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
                  patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel), \
                  patch("subprocess.Popen", side_effect=AssertionError("planning launched a process")):
-                result = api.track(fields, release, propagation=propagation, observations=observations, numerics=numerics, context=context)
+                result = simion_api.track(fields, release, propagation=propagation, observations=observations, numerics=numerics, context=context)
                 self.assertIs(result, sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["expected_operation_ids"], ("build_tracking_iob", "verify_tracking_iob", "track_fly"))
@@ -280,7 +280,7 @@ class PlatformApiTests(unittest.TestCase):
                 self.assertEqual(call["source_references"], [{"manifest_record": reference["manifest"]}])
                 self.assertEqual(call["committed_new_bytes"], limits["transient_run_directory_bytes"])
                 common = dict(propagation=propagation, observations=observations, numerics=numerics, context=context)
-                self.assertIs(api.track(fields, release, unit_size=27, **common), sentinel)
+                self.assertIs(simion_api.track(fields, release, unit_size=27, **common), sentinel)
                 split = owner.call_args.kwargs
                 self.assertEqual(len(split["expected_operation_ids"]), 12)
                 self.assertTrue(split["expected_operation_ids"][-1].endswith("unit_0004"))
@@ -293,7 +293,7 @@ class PlatformApiTests(unittest.TestCase):
                 recovery = file_record(recovery_manifest, "required_evidence")
                 with patch("msplatform.backends.simion.tracking_units.inspect_tracking_recovery",
                            return_value=dict(reused_unit_keys=["unit_0001", "unit_0003"])) as inspect_recovery:
-                    self.assertIs(api.track(fields, release, unit_size=27, recovery_reference=recovery, **common), sentinel)
+                    self.assertIs(simion_api.track(fields, release, unit_size=27, recovery_reference=recovery, **common), sentinel)
                     resumed = owner.call_args.kwargs
                     self.assertEqual(len(resumed["expected_operation_ids"]), 6)
                     self.assertTrue(all(name.endswith(("unit_0002", "unit_0004")) for name in resumed["expected_operation_ids"]))
@@ -307,29 +307,29 @@ class PlatformApiTests(unittest.TestCase):
                                      {key: reference["manifest"][key] for key in ("bytes", "sha256")})
                     inspect_recovery.return_value = dict(reused_unit_keys=[f"unit_{i:04d}" for i in range(1, 5)])
                     all_reused = dict(common, context=replace(context, tools={}))
-                    self.assertIs(api.track(fields, release, unit_size=27, recovery_reference=recovery, **all_reused), sentinel)
+                    self.assertIs(simion_api.track(fields, release, unit_size=27, recovery_reference=recovery, **all_reused), sentinel)
                     self.assertEqual(owner.call_args.kwargs["expected_operation_ids"], ())
                     inspect_recovery.side_effect = ValueError("recovery input changed")
                     owner.reset_mock()
                     with self.assertRaisesRegex(ValueError, "recovery input changed"):
-                        api.track(fields, release, unit_size=27, recovery_reference=recovery, **common)
+                        simion_api.track(fields, release, unit_size=27, recovery_reference=recovery, **common)
                     owner.assert_not_called()
                 for invalid_size in (True, 0, -1, 1.5):
                     with self.subTest(invalid_unit_size=invalid_size), self.assertRaisesRegex(ValueError, "unit_size"):
-                        api.track(fields, release, unit_size=invalid_size, **common)
+                        simion_api.track(fields, release, unit_size=invalid_size, **common)
                 for invalid_profiles in ("profile.json", {}, [None]):
                     with self.subTest(invalid_profiles=invalid_profiles), self.assertRaisesRegex(ContractError, "dispatch_profiles"):
-                        api.track(fields, release, dispatch_profiles=invalid_profiles, **common)
+                        simion_api.track(fields, release, dispatch_profiles=invalid_profiles, **common)
                 with self.assertRaisesRegex(ContractError, "absolute predecessor manifest"):
-                    api.track(fields, release, recovery_reference={"path": "relative.json"}, **common)
+                    simion_api.track(fields, release, recovery_reference={"path": "relative.json"}, **common)
                 owner.reset_mock()
                 invalid = dict(numerics, refine_convergence_v=1e-5)
                 with self.assertRaisesRegex(ValueError, "must not contain"):
-                    api.track(fields, release, propagation=propagation, observations=observations, numerics=invalid, context=context)
+                    simion_api.track(fields, release, propagation=propagation, observations=observations, numerics=invalid, context=context)
                 unsolved = OpenedArtifact(kind="prepared_model", product_id="model", reference=reference,
                     metadata=fields.metadata, records=fields.data_records, paths=paths, producer=fields.producer)
                 with self.assertRaisesRegex(ContractError, "FieldBundle"):
-                    api.track(unsolved, release, propagation=propagation, observations=observations, numerics=numerics, context=context)
+                    simion_api.track(unsolved, release, propagation=propagation, observations=observations, numerics=numerics, context=context)
                 owner.assert_not_called()
                 records = {row["particle_id"]: row for row in packet["mother"]["records"].values()}
                 mother = HandoffMother(records, packet["mother"]["fates"])
@@ -337,11 +337,11 @@ class PlatformApiTests(unittest.TestCase):
                 empty = HandoffResult((), (), tuple(records), mother, HandoffClock(clock, clock), "time_snapshot")
                 relaunch = dict(propagation, scope="state_relaunch")
                 with self.assertRaisesRegex(ContractError, "published trajectory"):
-                    api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics, context=context)
+                    simion_api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics, context=context)
                 prior = OpenedArtifact(kind="trajectory_result", product_id="trajectory", reference=dict(reference, product_id="trajectory"),
                     metadata={}, records={}, paths={}, producer=dict(status="success"))
                 no_tool = replace(context, tools={})
-                self.assertIs(api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics,
+                self.assertIs(simion_api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics,
                                         context=no_tool, source_reference=prior), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["expected_operation_ids"], ())
