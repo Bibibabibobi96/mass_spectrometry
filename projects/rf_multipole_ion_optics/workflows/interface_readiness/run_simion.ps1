@@ -363,7 +363,7 @@ Push-Location $repoRoot
 try {
     & $python -m common.simion.resource_profile discover --runs-root (Join-Path $artifactRoot 'runs') --output $resourceProfiles
     if ($LASTEXITCODE -ne 0) { throw 'SIMION resource profile discovery failed.' }
-    & $python -m common.simion.resource_scheduler --request $dispatchRequest --profiles $resourceProfiles --output $dispatchPlan
+    & $python -m msplatform.execution.simion_dispatch --request $dispatchRequest --profiles $resourceProfiles --output $dispatchPlan
     if ($LASTEXITCODE -ne 0) { throw 'SIMION repository dispatch planning failed.' }
 } finally { Pop-Location }
 $dispatchPlanDocument = Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8 | ConvertFrom-Json

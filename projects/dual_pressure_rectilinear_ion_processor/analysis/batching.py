@@ -26,7 +26,7 @@ from common.simion.particle_batching import merge_rebased_particle_csvs
 # Import public dependencies before prepare freezes the loaded source closure.
 from msplatform.execution import recovery as batch_continuation
 from common.simion import resource_profile as resource_profile
-from common.simion import resource_scheduler
+from msplatform.execution import simion_dispatch as resource_scheduler
 from common.simion.particle_source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.backends.simion.ip_handoff import frozen_release_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector

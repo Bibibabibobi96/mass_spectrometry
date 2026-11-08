@@ -192,7 +192,7 @@ try{
  function Invoke-FrontendRuntimePython {
   param([string[]]$Arguments,[switch]$Json,$Python,$RepoRoot,$RunDirectory,$Name)
   if($Arguments-contains'prepare-dispatch'){return @{dispatch_request_path='request.json'}}
-  if($Arguments-contains'common.simion.resource_scheduler'){
+  if($Arguments-contains'msplatform.execution.simion_dispatch'){
    $adaptive=$Arguments-contains'--observed-formal-peak-bytes'
    if($adaptive){
     if(($Arguments-contains'--first-batch-completed')-ne($scenario-eq'complete')){throw 'active first batch falsely marked complete'}

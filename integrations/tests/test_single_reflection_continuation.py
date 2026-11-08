@@ -290,7 +290,7 @@ class SingleReflectionContinuationTests(unittest.TestCase):
 
 
     def test_provisional_formal_completion_reuses_first_interval(self) -> None:
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         initial=plan_simion_dispatch(dict(solver='SIMION',field_kind='electrostatic',particle_count=100,
             independent_particles=True,trajectory_quality=8),[],available_memory_bytes=10*1024**3,
             total_physical_memory_bytes=20*1024**3,logical_processors=8)

@@ -483,7 +483,7 @@ def load_completed_pulse_stages(plan_path: Path,predecessor_manifest: Path,snaps
     batch_plan=batch_plan_from_dispatch(dispatch)
     recovered_dispatch=None
     if batch_plan.get("coverage","complete_population")!="complete_population":
-        from common.simion.resource_scheduler import plan_recovered_formal_followup
+        from msplatform.execution.simion_dispatch import plan_recovered_formal_followup
         provisional=bound(base/'results/pulse.provisional_dispatch_plan.json')
         initial=_read(record_path(provisional))
         if len(workbench['batches'])!=1:

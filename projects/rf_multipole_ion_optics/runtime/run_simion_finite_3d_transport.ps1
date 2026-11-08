@@ -632,7 +632,7 @@ try{
       $projectRunsRoot=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"
       & $python -m common.simion.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles
       if($LASTEXITCODE-ne 0){throw 'SIMION resource profile discovery failed.'}
-      & $python -m common.simion.resource_scheduler --request $dispatchRequest `
+      & $python -m msplatform.execution.simion_dispatch --request $dispatchRequest `
         --profiles $resourceProfiles --output $dispatchPlan
       if($LASTEXITCODE-ne 0){throw 'SIMION repository dispatch planning failed.'}
       $dispatchPlanDocument=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
@@ -1177,7 +1177,7 @@ return config
     if($continuationPredecessor-and$pendingRuns.Count-gt0){
       # The source partition is immutable. Each case checks its actual missing
       # units, so a later larger unit cannot inherit an insufficient observation.
-      $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$dispatchPlan,
+      $fixedArguments=@('-m','msplatform.execution.simion_dispatch','--prepare-fixed-recovery-plan',$dispatchPlan,
         '--fixed-batch-plan',$batchPlan,'--profiles',$resourceProfiles,'--output',$dispatchPlan)
       foreach($pendingRun in $pendingRuns){$fixedArguments+=@('--replay-batch-index',[string]$pendingRun.batch.index)}
       Push-Location $codeRoot
@@ -1210,7 +1210,7 @@ return config
       try{
         $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
         $planningSource=if($continuationPredecessor){@('--recovered-missing-plan',$dispatchPlan)}else{@('--request',$dispatchRequest,'--profiles',$resourceProfiles)}
-        $replanArguments=@('-m','common.simion.resource_scheduler')+$planningSource+@('--output',$dispatchPlan,
+        $replanArguments=@('-m','msplatform.execution.simion_dispatch')+$planningSource+@('--output',$dispatchPlan,
           '--available-memory-bytes',([string]$formalObservation.available_memory_bytes),
           '--total-physical-memory-bytes',([string]$formalObservation.total_physical_memory_bytes),
           '--observed-formal-peak-bytes',([string]$formalObservation.observed_peak_process_tree_working_set_bytes),

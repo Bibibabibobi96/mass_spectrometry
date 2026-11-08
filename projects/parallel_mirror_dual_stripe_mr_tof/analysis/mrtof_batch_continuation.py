@@ -338,7 +338,7 @@ def _recover_observed_formal_plan(*, parent: Path, manifest: Mapping[str, Any],
                                   output_dir: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Replan a stopped first interval only from sealed owner and measurement facts."""
     from common.simion.particle_batching import batch_plan_from_dispatch
-    from common.simion.resource_scheduler import plan_recovered_formal_followup
+    from msplatform.execution.simion_dispatch import plan_recovered_formal_followup
 
     if manifest.get("status") not in {"failed", "interrupted"}:
         raise ContractError("formal recovery requires a terminal failed or interrupted predecessor")

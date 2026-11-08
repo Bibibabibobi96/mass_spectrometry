@@ -50,7 +50,7 @@ from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from common.simion.process_observation import run_observed_process
 from common.simion.resource_profile import discover_case_resource_profiles
-from common.simion.resource_scheduler import plan_simion_case_dispatch
+from msplatform.execution.simion_dispatch import plan_simion_case_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
 )
@@ -1039,7 +1039,7 @@ def _run_parallel_flights(
         selected_ids = [item["case_id"] for item in dispatch["waves"][0]["cases"]]
         selected = [case for case in pending if case["case_id"] in selected_ids]
         # This executor makes no resource decision: it receives exactly the
-        # wave already chosen by common.simion.resource_scheduler.
+        # wave already chosen by msplatform.execution.simion_dispatch.
         failure: BaseException | None = None
         exit_unconfirmed = False
         with ThreadPoolExecutor(max_workers=len(selected)) as pool:

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.simion.resource_scheduler import RESOURCE_IDENTITY_KEYS
+from msplatform.execution.simion_dispatch import RESOURCE_IDENTITY_KEYS
 
 
 PROFILE_ROLE = "simion_resource_profile"

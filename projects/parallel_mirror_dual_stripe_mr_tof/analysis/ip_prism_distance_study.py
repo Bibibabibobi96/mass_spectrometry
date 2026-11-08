@@ -30,7 +30,7 @@ FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "src/msplatform/contracts/particle_physics.py",
     "common/integration/resolve_assembly.py",
     "common/ion_release/release.py",
-    "common/simion/resource_scheduler.py",
+    "src/msplatform/execution/simion_dispatch.py",
 )
 
 

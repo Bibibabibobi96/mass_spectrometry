@@ -433,7 +433,7 @@ if(@($result.pending).Count-ne1-or$result.pending[0].scheduler_batch.index-ne2-o
         self.assertEqual(before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
 
     def test_partial_recovery_calibrates_original_715_particle_unit(self) -> None:
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
 
         counts = [500, 715, 715, 714, 714, 714, 714, 214]
@@ -481,7 +481,7 @@ function Get-ManagedSolverProcessSample {
    working_set_bytes=[long]1MB;managed_memory_bytes=[long]1MB;total_processor_time_ticks=[long]0}
 }
 function Invoke-PreparedPython {param($Arguments)
- if($Arguments[1]-ne'common.simion.resource_scheduler'){throw 'fixed partition was rematerialized'}
+ if($Arguments[1]-ne'msplatform.execution.simion_dispatch'){throw 'fixed partition was rematerialized'}
  & $python @Arguments|Out-Host
  if($LASTEXITCODE-ne0){throw 'real scheduler failed'}
 }

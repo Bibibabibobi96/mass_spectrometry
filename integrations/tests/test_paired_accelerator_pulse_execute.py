@@ -181,7 +181,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
             self.assertEqual(scheduled.returncode, 0, scheduled.stdout + scheduled.stderr)
             request_path = json.loads(scheduled.stdout)['dispatch_request_path']
             dispatch = worker / 'results/test_only_dispatch.json'
-            scheduler = subprocess.run([sys.executable, '-B', '-s', '-m', 'common.simion.resource_scheduler',
+            scheduler = subprocess.run([sys.executable, '-B', '-s', '-m', 'msplatform.execution.simion_dispatch',
                 '--request', request_path, '--output', str(dispatch), '--available-memory-bytes', str(8 * 1024**3),
                 '--total-physical-memory-bytes', str(16 * 1024**3), '--logical-processors', '4'],
                 cwd=frozen, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)

@@ -408,7 +408,7 @@ Invoke-Expression $release.Extent.Text
 ''', encoding="utf-8")
             (root / "source.pa").write_bytes(b"inert byte transport fixture, no native PA")
             (root / "common/simion/resource_profile.py").write_text("", encoding="utf-8")
-            (root / "common/simion/resource_scheduler.py").write_text(
+            (root / "src/msplatform/execution/simion_dispatch.py").write_text(
                 "import os,sys\nfrom pathlib import Path\n"
                 "with (Path(os.environ['FIXTURE_ROOT'])/'events').open('a', encoding='utf-8') as f: f.write('replan:'+sys.argv[1]+'\\n')\n",
                 encoding="utf-8",

@@ -15,7 +15,7 @@ RUNNER = REPO / "integrations/workflows/oa_mr/execute.ps1"
 class TwoPrismTrialRunnerTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_joint_owners_transport_profiles_for_actual_fixed_missing_intervals(self):
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
 
         profile = ResourceSchedulerTests.profile(peak=GIB, cpu=80, observed_batch_work_units=2500)
@@ -79,7 +79,7 @@ exit 0
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_fixed_partition_observes_largest_missing_not_reused_prefix(self):
-        from common.simion.resource_scheduler import plan_simion_dispatch, prepare_fixed_partition_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch, prepare_fixed_partition_dispatch
         request = {"solver":"SIMION", "field_kind":"rf", "rf_steps_per_period":40,
                    "particle_count":6, "independent_particles":True, "trajectory_quality":8}
         initial = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
@@ -187,7 +187,7 @@ if(-not$caught-or$script:admitted){throw 'Missing explicit authority reached adm
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_missing_observation_calibrates_first_missing_batch_only(self):
-        from common.simion.resource_scheduler import plan_recovered_formal_followup, plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_recovered_formal_followup, plan_simion_dispatch
         request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
                    "particle_count": 3, "independent_particles": True, "trajectory_quality": 8}
         provisional = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,

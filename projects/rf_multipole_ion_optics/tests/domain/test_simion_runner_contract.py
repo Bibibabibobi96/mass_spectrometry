@@ -603,7 +603,7 @@ if($script:calls-ne1-or$state.finalization_started){throw 'Terminal outcome was 
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_continuation_observes_largest_missing_batch_without_repartition(self) -> None:
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         request = dict(solver="SIMION", field_kind="rf", rf_steps_per_period=40,
                        particle_count=8, independent_particles=True, trajectory_quality=8)
         initial = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
@@ -1035,7 +1035,7 @@ exit 0
     def test_default_dispatch_retains_first_formal_batch_before_parallel_replan(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         discover = "common.simion.resource_profile discover"
-        schedule = "common.simion.resource_scheduler"
+        schedule = "msplatform.execution.simion_dispatch"
         publish = "common.simion.resource_profile publish"
         self.assertIn(discover, source)
         self.assertIn("--profiles $resourceProfiles", source)

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.simion.resource_scheduler import (
+from msplatform.execution.simion_dispatch import (
     CPU_DEMAND_SAFETY_FACTOR,
     MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS,
     MAXIMUM_MEMORY_RECOVERY_ATTEMPTS,
@@ -56,7 +56,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             root = Path(directory)
             for name, document in (("dispatch", initial), ("fixed", fixed), ("profiles", [profile])):
                 (root/f"{name}.json").write_text(json.dumps(document), encoding="utf-8")
-            completed = subprocess.run([sys.executable, "-m", "common.simion.resource_scheduler",
+            completed = subprocess.run([sys.executable, "-m", "msplatform.execution.simion_dispatch",
                 "--prepare-fixed-recovery-plan", str(root/"dispatch.json"), "--fixed-batch-plan", str(root/"fixed.json"),
                 "--profiles", str(root/"profiles.json"), "--replay-batch-index", "2", "--replay-batch-index", "3",
                 "--output", str(root/"dispatch.json")], cwd=Path(__file__).resolve().parents[2],
@@ -188,7 +188,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             root = Path(directory); dispatch = root/"dispatch.json"; partition = root/"batch.json"
             dispatch.write_text(json.dumps(initial), encoding="utf-8")
             partition.write_text(json.dumps(fixed), encoding="utf-8")
-            result = subprocess.run([sys.executable, "-m", "common.simion.resource_scheduler",
+            result = subprocess.run([sys.executable, "-m", "msplatform.execution.simion_dispatch",
                 "--prepare-fixed-recovery-plan", str(dispatch), "--fixed-batch-plan", str(partition),
                 "--replay-batch-index", "2", "--replay-batch-index", "3", "--output", str(dispatch)],
                 cwd=Path(__file__).resolve().parents[2], timeout=30, capture_output=True, text=True, check=False)
@@ -223,7 +223,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source=Path(directory)/'fallback.json';output=Path(directory)/'calibrated.json'
             source.write_text(json.dumps(fallback),encoding='utf-8')
-            result=subprocess.run([sys.executable,'-m','common.simion.resource_scheduler',
+            result=subprocess.run([sys.executable,'-m','msplatform.execution.simion_dispatch',
                 '--recovered-missing-plan',str(source),'--output',str(output),
                 '--observed-formal-peak-bytes',str(GIB),'--observed-formal-cpu-percent','8',
                 '--observed-background-cpu-percent','0','--available-memory-bytes',str(10*GIB),
@@ -786,7 +786,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             request_path.write_text(json.dumps(self.request()), encoding="utf-8")
             result = subprocess.run(
                 [
-                    sys.executable, "-m", "common.simion.resource_scheduler",
+                    sys.executable, "-m", "msplatform.execution.simion_dispatch",
                     "--request", str(request_path), "--output", str(output_path),
                     "--available-memory-bytes", str(int(4.5 * GIB)),
                     "--total-physical-memory-bytes", str(10 * GIB),

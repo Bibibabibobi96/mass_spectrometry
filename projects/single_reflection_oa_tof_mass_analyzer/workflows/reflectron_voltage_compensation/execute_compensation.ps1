@@ -291,7 +291,7 @@ try{
       if($selected.Count-ne1){throw 'Observed formal unit differs from the fixed missing partition.'}
       $first=Convert-CompensationBatch $selected[0]
       $replan={param($formal)
-        $arguments=@('-B','-m','common.simion.resource_scheduler',$(if($recovered){'--recovered-missing-plan'}else{'--prepared-plan'}),$dispatch,
+        $arguments=@('-B','-m','msplatform.execution.simion_dispatch',$(if($recovered){'--recovered-missing-plan'}else{'--prepared-plan'}),$dispatch,
           '--output',$dispatch,'--observed-formal-peak-bytes',[string]$formal.observed_peak_process_tree_working_set_bytes,
           '--observed-formal-cpu-percent',[string]$formal.observed_process_cpu_percent,
           '--observed-background-cpu-percent',[string]$formal.observed_background_cpu_percent,

@@ -222,7 +222,7 @@ function Invoke-FrontendFlightPhase {
   }else{
     Invoke-FrontendRuntimePython @context -Name "$Phase.resource-profile-discover" `
       -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',$ProjectRunsRoot,'--output',$profiles)
-    $scheduler=@('-m','common.simion.resource_scheduler','--request',[string]$Prepared.dispatch_request_path,'--profiles',$profiles,'--output',$dispatch)
+    $scheduler=@('-m','msplatform.execution.simion_dispatch','--request',[string]$Prepared.dispatch_request_path,'--profiles',$profiles,'--output',$dispatch)
     Invoke-FrontendRuntimePython @context -Name "$Phase.dispatch-plan" -Arguments $scheduler
   }
   $plan=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json -Depth 100
@@ -268,7 +268,7 @@ function Invoke-FrontendFlightPhase {
       if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $initial -Depth 100}
       $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe
       $replan={param($formal)
-        $arguments=@('-m','common.simion.resource_scheduler','--recovered-missing-plan',$dispatch,'--output',$dispatch,
+        $arguments=@('-m','msplatform.execution.simion_dispatch','--recovered-missing-plan',$dispatch,'--output',$dispatch,
           '--observed-formal-peak-bytes',[string]$formal.observed_peak_process_tree_working_set_bytes,
           '--observed-formal-cpu-percent',[string]$formal.observed_process_cpu_percent,
           '--observed-background-cpu-percent',[string]$formal.observed_background_cpu_percent,

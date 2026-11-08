@@ -71,7 +71,7 @@ def write_canonical_source(path: Path) -> None:
 class SimionTransportRunnerSourceTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 required')
     def test_finite_recovery_uses_actual_missing_unit_profiles_and_rechecks_each_case(self):
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
 
         counts = [500, 715, 715, 714, 714, 714, 714, 214]

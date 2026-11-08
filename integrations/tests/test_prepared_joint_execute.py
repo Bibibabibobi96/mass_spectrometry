@@ -418,7 +418,7 @@ $configuration.inputs|ConvertTo-Json -Depth 10 -Compress
             self.assertEqual(before, {path: path.read_bytes() for path in receipts})
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_missing_observation_calibrates_first_missing_batch_only(self):
-        from common.simion.resource_scheduler import plan_recovered_formal_followup, plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_recovered_formal_followup, plan_simion_dispatch
         request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
                    "particle_count": 3, "independent_particles": True, "trajectory_quality": 8}
         provisional = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
@@ -586,7 +586,7 @@ function Invoke-ProjectPython {
   Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),(Join-Path $TestRoot ($fieldDirectory+'/local/field.pa')));field_binding=@{path=(Join-Path $TestRoot ($fieldDirectory+'/binding.json'))};launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);prism_voltages_v=@(1,2);stripe_biases_v=@(0,0);trajectory_contract=@{path=$Runner};launcher=(Join-Path $TestRoot 'run/inputs/mock_launcher.lua');trajectory_equivalence_reference=@{reference_log='frozen'}}
   '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
  }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
- }elseif($Arguments[1]-eq'common.simion.resource_scheduler'){
+ }elseif($Arguments[1]-eq'msplatform.execution.simion_dispatch'){
   if($Arguments-contains'--prepare-fixed-recovery-plan'){
    if($Arguments-notcontains'--profiles'){throw 'Existing resource profiles did not reach the public fixed selector'}
    if($Scenario-eq'mixed_insufficient'-and@($Arguments|Where-Object{$_-eq'--replay-batch-index'}).Count-ne1){throw 'Fixed recovery omitted missing batch'}

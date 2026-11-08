@@ -140,7 +140,7 @@ def recover_provisional_dispatch(preparation: Mapping[str, Any], phase: str) -> 
     """Reconstruct the original first interval only from bound natural-exit measurements."""
     if phase == "default_replay" and not preparation["default_replay_requested"]:
         return None
-    from common.simion.resource_scheduler import plan_recovered_formal_followup
+    from msplatform.execution.simion_dispatch import plan_recovered_formal_followup
 
     parent, _, records, _ = _parent(preparation)
     _, workbench_path, workbench_phase = _phase_paths(parent, phase)

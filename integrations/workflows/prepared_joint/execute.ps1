@@ -156,7 +156,7 @@ function Invoke-PreparedJointTrial {
       $profiles=[string]$continuation.resource_profiles.path
     }else{
       Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $pathContext.artifact_root "projects/$projectId/runs"),'--output',$profiles)
-      Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$request,'--profiles',$profiles,'--output',$dispatch)
+      Invoke-ProjectPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch)
       Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
     }
     $batchRoot=Join-Path $resultDir 'batches'
@@ -197,7 +197,7 @@ function Invoke-PreparedJointTrial {
         $localDispatch=Join-Path $resultDir 'simion_repository_dispatch_plan.json'
         Copy-Item -LiteralPath $dispatch -Destination $localDispatch
         $dispatch=$localDispatch
-        $fixedArgs=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$dispatch,'--fixed-batch-plan',$plan,'--output',$dispatch)
+        $fixedArgs=@('-m','msplatform.execution.simion_dispatch','--prepare-fixed-recovery-plan',$dispatch,'--fixed-batch-plan',$plan,'--output',$dispatch)
         if($profiles){$fixedArgs+=@('--profiles',$profiles)}
         foreach($batch in $missing){$fixedArgs+=@('--replay-batch-index',([string]$batch.index))}
         Invoke-ProjectPython -Arguments $fixedArgs
@@ -266,7 +266,7 @@ function Invoke-PreparedJointTrial {
       $replan={
       param($formal)
       $completed=[bool]$formal.process_record.completed
-      $adaptive=@('-m','common.simion.resource_scheduler')
+      $adaptive=@('-m','msplatform.execution.simion_dispatch')
       if($recoverObservation){$adaptive+=@('--recovered-missing-plan',$dispatch)}else{$adaptive+=@('--request',$request,'--profiles',$profiles)}
       $adaptive+=@('--output',$dispatch,'--observed-formal-peak-bytes',([string]$formal.observed_peak_process_tree_working_set_bytes),'--observed-formal-cpu-percent',([string]$formal.observed_process_cpu_percent),'--observed-background-cpu-percent',([string]$formal.observed_background_cpu_percent),'--available-memory-bytes',([string]$formal.available_memory_bytes),'--total-physical-memory-bytes',([string]$formal.total_physical_memory_bytes))
       if($completed){$adaptive+='--first-batch-completed'}

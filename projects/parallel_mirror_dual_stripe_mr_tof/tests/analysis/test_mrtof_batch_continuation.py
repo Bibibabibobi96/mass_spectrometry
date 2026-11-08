@@ -229,7 +229,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
 
     def test_prepared_replans_formal_batch_from_sealed_observation(self) -> None:
         from common.simion.particle_batching import batch_plan_from_dispatch
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent, current = self._prepared_joint_fixture(root, second_complete=False)
@@ -281,7 +281,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
 
     def test_prepared_recovers_committed_dispatch_when_batch_plan_write_failed(self) -> None:
         from common.simion.particle_batching import batch_plan_from_dispatch
-        from common.simion.resource_scheduler import plan_adaptive_followup, plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_adaptive_followup, plan_simion_dispatch
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             parent,current=self._prepared_joint_fixture(root,second_complete=False)
@@ -813,7 +813,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
 
     def test_oa_formal_recovery_keeps_first_and_replans_remaining(self):
         from common.simion.particle_batching import batch_plan_from_dispatch
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent, current = self._fixture(root)

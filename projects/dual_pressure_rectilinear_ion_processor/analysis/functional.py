@@ -51,7 +51,7 @@ FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
 )
 # Actual runtime dependencies, independent of incidental imports in the author process.
 FROZEN_RUNTIME_MODULES = (
-    "common/simion/resource_scheduler.py",
+    "src/msplatform/execution/simion_dispatch.py",
     "common/simion/resource_profile.py",
     "common/simion/particle_batching.py",
 )

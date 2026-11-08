@@ -20,7 +20,7 @@ from projects.rf_multipole_ion_optics.runtime.simion_batch_continuation import p
 class RfContinuationTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_prepared_fixed_recovery_transports_existing_profiles_to_public_selector(self):
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
 
         repo = Path(__file__).resolve().parents[4]
@@ -58,7 +58,7 @@ exit 0
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_finite_recovery_rechecks_each_case_actual_missing_unit(self):
-        from common.simion.resource_scheduler import plan_simion_dispatch
+        from msplatform.execution.simion_dispatch import plan_simion_dispatch
         from common.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
 
         repo = Path(__file__).resolve().parents[4]

@@ -11,7 +11,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight imp
     merge_rebased_event_logs,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
-from common.simion.resource_scheduler import plan_adaptive_followup, plan_simion_dispatch
+from msplatform.execution.simion_dispatch import plan_adaptive_followup, plan_simion_dispatch
 
 
 class MrtofBatchFlightTest(unittest.TestCase):

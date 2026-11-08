@@ -284,7 +284,7 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertFalse((run / "simion").exists())
 
     def test_formal_first_batch_source_is_retained_after_adaptive_partition(self) -> None:
-        from common.simion.resource_scheduler import plan_adaptive_followup
+        from msplatform.execution.simion_dispatch import plan_adaptive_followup
         run = self.fixture("20261030_120005__sim__simion__compensation-first")
         self.fit(run)
         first = study.materialize_batches(run, "baseline")["batches"][0]

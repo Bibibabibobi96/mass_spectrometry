@@ -86,7 +86,7 @@ function Invoke-StudyDispatchPhase {
  $dispatch=Join-Path $package.result_dir ($prefix+'_repository_dispatch_plan.json')
  $usage=Join-Path $package.result_dir ($prefix+'_batch_resource_usage.json')
  Invoke-StudyPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profiles)
- Invoke-StudyPython -Arguments @('-m','common.simion.resource_scheduler','--request',$request,'--profiles',$profiles,'--output',$dispatch)
+ Invoke-StudyPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch)
  $plan=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json -Depth 40
  $expected=if($build){$study.build_cases.Count}else{$study.cases.Count}
  if($plan.dispatch_unit-ne'independent_work_items'-or[int]$plan.work_item_count-ne$expected){throw 'Dispatch identity differs from complete phase work items.'}
@@ -102,7 +102,7 @@ function Invoke-StudyDispatchPhase {
    -WaitForNaturalCompletionAfterObservation:$completeObservation
   $script:existing=@($formal.process_record)
   if($formal.resource_budget_exceeded-or($formal.process_record.completed-and(-not$formal.completed_naturally-or[int]$formal.exit_code-ne0))){throw "Formal first local $Phase work item failed."}
-  $adaptive=@('-m','common.simion.resource_scheduler','--request',$request,'--profiles',$profiles,'--output',$dispatch,
+  $adaptive=@('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch,
    '--observed-formal-peak-bytes',"$($formal.observed_peak_process_tree_working_set_bytes)",
    '--observed-formal-cpu-percent',"$($formal.observed_process_cpu_percent)",
    '--observed-background-cpu-percent',"$($formal.observed_background_cpu_percent)",

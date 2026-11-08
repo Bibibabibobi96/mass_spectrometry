@@ -489,13 +489,13 @@ print(json.dumps(refs))
   $batchPlanPath=Join-Path $run 'results/simion_execution_batch_plan.json'
   $usagePath=Join-Path $run 'results/simion_batch_resource_usage.json'
   Invoke-PreparedPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profilesPath)
-  Invoke-PreparedPython -Arguments @('-m','common.simion.resource_scheduler','--request',$requestPath,'--profiles',$profilesPath,'--output',$dispatchPath)
+  Invoke-PreparedPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$requestPath,'--profiles',$profilesPath,'--output',$dispatchPath)
   Invoke-PreparedPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
   if($partialContinuation){
    $oldPlanPath=Join-Path $run 'inputs/partial_batch_replay/batch_plan.json'
    $oldPlan=Get-Content $oldPlanPath -Raw|ConvertFrom-Json
    $replayKeys=@($partialPlan.units|Where-Object{$_.action-eq'replay'}|ForEach-Object{$_.key})
-   $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$dispatchPath,'--fixed-batch-plan',$oldPlanPath,'--profiles',$profilesPath,'--output',$dispatchPath)
+   $fixedArguments=@('-m','msplatform.execution.simion_dispatch','--prepare-fixed-recovery-plan',$dispatchPath,'--fixed-batch-plan',$oldPlanPath,'--profiles',$profilesPath,'--output',$dispatchPath)
    foreach($batch in $oldPlan.batches){if(('batch_{0:D4}'-f[int]$batch.index)-in$replayKeys){$fixedArguments+=@('--replay-batch-index',[string]$batch.index)}}
    Invoke-PreparedPython -Arguments $fixedArguments
    Copy-Item -LiteralPath $oldPlanPath -Destination $batchPlanPath -Force
@@ -530,7 +530,7 @@ print(json.dumps(refs))
     $replan={
     param($formal)
     $sourceArguments=if($partialContinuation){@('--recovered-missing-plan',$dispatchPath)}else{@('--request',$requestPath,'--profiles',$profilesPath)}
-    $adaptive=@('-m','common.simion.resource_scheduler')+$sourceArguments+@('--output',$dispatchPath,'--observed-formal-peak-bytes',"$($formal.observed_peak_process_tree_working_set_bytes)",'--observed-formal-cpu-percent',"$($formal.observed_process_cpu_percent)",'--observed-background-cpu-percent',"$($formal.observed_background_cpu_percent)",'--available-memory-bytes',"$($formal.available_memory_bytes)",'--total-physical-memory-bytes',"$($formal.total_physical_memory_bytes)")
+    $adaptive=@('-m','msplatform.execution.simion_dispatch')+$sourceArguments+@('--output',$dispatchPath,'--observed-formal-peak-bytes',"$($formal.observed_peak_process_tree_working_set_bytes)",'--observed-formal-cpu-percent',"$($formal.observed_process_cpu_percent)",'--observed-background-cpu-percent',"$($formal.observed_background_cpu_percent)",'--available-memory-bytes',"$($formal.available_memory_bytes)",'--total-physical-memory-bytes',"$($formal.total_physical_memory_bytes)")
     if($formal.process_record.completed){$adaptive+='--first-batch-completed'}
     Invoke-PreparedPython -Arguments $adaptive
     if(-not$partialContinuation){

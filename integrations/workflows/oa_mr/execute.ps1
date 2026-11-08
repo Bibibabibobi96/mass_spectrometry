@@ -637,7 +637,7 @@ try{
       workload_topology_id='mrtof_native_corridor_four_instance_two_prism_full_flight'
       field_loading_policy_id=$(if($staticFieldRequested){if($staticFieldMode-eq'native_static_pa'){'native_static_pa__four_read_only_collision_instances'}else{'comsol_scalar_v__four_read_only_collision_instances'}}else{'shared_native_corridor_runtime__four_instances__no_refine'})
     })
-    Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath,'--output',$runtimeDispatchPlanPath)
+    Invoke-ProjectPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath,'--output',$runtimeDispatchPlanPath)
     Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
     # Publish the immutable N>1 identity before any worker starts.  The common
     # continuation protocol then needs only the canonical batch plan and
@@ -712,7 +712,7 @@ try{
       else{$batchContinuationPlan.batches|Where-Object{$_.action-eq'replay'}|ForEach-Object{[int]$_.index}}
     )
     if($null-ne$batchContinuationPlan-and$replayBatchIndexes.Count-gt0){
-      $fixedArguments=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$runtimeDispatchPlanPath,'--fixed-batch-plan',$batchPlanPath,'--output',$runtimeDispatchPlanPath)
+      $fixedArguments=@('-m','msplatform.execution.simion_dispatch','--prepare-fixed-recovery-plan',$runtimeDispatchPlanPath,'--fixed-batch-plan',$batchPlanPath,'--output',$runtimeDispatchPlanPath)
       if($resourceProfilesPath){$fixedArguments+=@('--profiles',$resourceProfilesPath)}
       foreach($index in $replayBatchIndexes){$fixedArguments+=@('--replay-batch-index',[string]$index)}
       Invoke-ProjectPython -Arguments $fixedArguments
@@ -1035,7 +1035,7 @@ try{
       $replan={
       param($formal)
       $firstBatchCompleted=[bool]$formal.process_record.completed
-      $adaptiveArguments=@('-m','common.simion.resource_scheduler')
+      $adaptiveArguments=@('-m','msplatform.execution.simion_dispatch')
       if($recoverObservation){$adaptiveArguments+=@('--recovered-missing-plan',$runtimeDispatchPlanPath)}else{$adaptiveArguments+=@('--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath)}
       $adaptiveArguments+=@('--output',$runtimeDispatchPlanPath,'--observed-formal-peak-bytes',([string]$formal.observed_peak_process_tree_working_set_bytes),'--observed-formal-cpu-percent',([string]$formal.observed_process_cpu_percent),'--observed-background-cpu-percent',([string]$formal.observed_background_cpu_percent),'--available-memory-bytes',([string]$formal.available_memory_bytes),'--total-physical-memory-bytes',([string]$formal.total_physical_memory_bytes))
       if($firstBatchCompleted){$adaptiveArguments+='--first-batch-completed'}

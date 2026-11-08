@@ -18,7 +18,7 @@ import zipfile
 from common.contracts import verify_run_manifest, write_run_manifest
 from common.contracts.file_identity import file_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
-from common.simion.resource_scheduler import plan_simion_dispatch, plan_adaptive_followup
+from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS

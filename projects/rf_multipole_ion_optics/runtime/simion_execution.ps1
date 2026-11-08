@@ -122,7 +122,7 @@ function Initialize-RfSimionPreparedContinuation {
         foreach($unit in $plan.replay.units){if($unit.action-eq'reuse'){$context.units[[string]$unit.key]=$unit}}
         $context.all_reused=[int]$plan.replay.replay_unit_count-eq0
         if(-not$context.all_reused){
-            $fixed=@('-m','common.simion.resource_scheduler','--prepare-fixed-recovery-plan',$DispatchPlanPath,
+            $fixed=@('-m','msplatform.execution.simion_dispatch','--prepare-fixed-recovery-plan',$DispatchPlanPath,
                 '--fixed-batch-plan',$BatchPlanPath,'--profiles',[string]$RunConfig.inputs.simion_resource_profiles,'--output',$DispatchPlanPath)
             foreach($unit in $plan.replay.units|Where-Object{$_.action-eq'replay'}){
                 if($unit.key-notmatch'\.batch_(\d+)$'){throw 'RF continuation batch key is invalid.'}
@@ -555,7 +555,7 @@ function Update-RfSimionDispatchAfterFormalObservation {
         throw 'The first formal SIMION batch did not produce a usable resource observation.'
     }
     $arguments = @(
-        '-m','common.simion.resource_scheduler','--request',$DispatchRequestPath,
+        '-m','msplatform.execution.simion_dispatch','--request',$DispatchRequestPath,
         '--profiles',$ResourceProfilesPath,'--output',$DispatchPlanPath,
         '--available-memory-bytes',([string]$Observation.available_memory_bytes),
         '--total-physical-memory-bytes',([string]$Observation.total_physical_memory_bytes),
@@ -622,7 +622,7 @@ function Invoke-RfSimionAdaptiveBatchWave {
         $replan = {
         param($observation)
         if($continuing){
-            $calibrate=@('-m','common.simion.resource_scheduler','--recovered-missing-plan',$arguments.DispatchPlanPath,
+            $calibrate=@('-m','msplatform.execution.simion_dispatch','--recovered-missing-plan',$arguments.DispatchPlanPath,
                 '--output',$arguments.DispatchPlanPath,'--available-memory-bytes',[string]$observation.available_memory_bytes,
                 '--total-physical-memory-bytes',[string]$observation.total_physical_memory_bytes,
                 '--observed-formal-peak-bytes',[string]$observation.observed_peak_process_tree_working_set_bytes,
