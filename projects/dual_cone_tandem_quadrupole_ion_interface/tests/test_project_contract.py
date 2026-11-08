@@ -11,7 +11,8 @@ import unittest
 from pathlib import Path
 
 from common.contracts.build_project_registry import validate_descriptor
-from common.contracts.machine_contracts import REPO_ROOT, validate_schema
+from common.paths.repository_root import REPO_ROOT
+from msplatform.contracts.machine_contracts import validate_schema
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

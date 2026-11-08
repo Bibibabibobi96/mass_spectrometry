@@ -12,7 +12,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.machine_contracts import ContractError, REPO_ROOT
+from common.paths.repository_root import REPO_ROOT
+from msplatform.contracts.machine_contracts import ContractError
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from common.integration.resolve_connection import resolve_assembly_recipe, verify_composition_plan
 

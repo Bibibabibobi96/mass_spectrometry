@@ -4,7 +4,7 @@ import unittest
 from functools import lru_cache
 from pathlib import Path
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.assembly_interface import resolve_assembly_interface
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry

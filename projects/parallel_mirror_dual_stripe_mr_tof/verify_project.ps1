@@ -44,7 +44,7 @@ try {
     & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)"
     if ($LASTEXITCODE -ne 0) { throw 'MR-TOF requires Python 3.11.' }
     if (-not ($PreflightValidated -or $RegistryPrevalidated)) {
-      & $python common/contracts/build_project_registry.py --check
+      & $python -m common.contracts.build_project_registry --check
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF project registration is stale or invalid.' }
     } elseif ($RegistryPrevalidated) {
       'PROJECT_REGISTRY=PREVALIDATED'

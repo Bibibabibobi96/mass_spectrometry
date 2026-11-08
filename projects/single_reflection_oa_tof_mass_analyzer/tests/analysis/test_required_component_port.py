@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import load_json, sha256, validate_schema
+from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]

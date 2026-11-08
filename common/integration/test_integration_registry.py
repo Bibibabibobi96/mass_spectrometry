@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from common.contracts.machine_contracts import ContractError, validate_schema
+from msplatform.contracts.machine_contracts import ContractError, validate_schema
 
 
 class IntegrationRegistryTests(unittest.TestCase):

@@ -1096,7 +1096,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertEqual(set(stages), {"common_contracts", "single_reflection_oa_tof_mass_analyzer_static",
                                       "instrument_assembly_integration"})
         for path in ("src/msplatform/contracts/schemas/future_unknown.schema.json",
-                     "common/contracts/machine_contracts.py", "common/contracts/run_artifact_support.ps1"):
+                     "src/msplatform/contracts/machine_contracts.py", "common/contracts/run_artifact_support.ps1"):
             with self.subTest(path=path):
                 self.assertIn("common_contracts", self.routed_stages(path))
                 self.assertIn("rf_multipole_quadrupole_static", self.routed_stages(path))
@@ -1329,7 +1329,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                 self.assertIn(f"{project_id}_static", routed)
 
     def test_common_contracts_routes_to_declared_direct_consumers(self) -> None:
-        routed = self.routed_stages("common/contracts/machine_contracts.py")
+        routed = self.routed_stages("src/msplatform/contracts/machine_contracts.py")
         self.assertIn("common_contracts", routed)
         self.assertIn("rf_multipole_generated_publications", routed)
         self.assertIn("instrument_assembly_integration", routed)

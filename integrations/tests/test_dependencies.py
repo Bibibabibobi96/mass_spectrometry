@@ -145,7 +145,7 @@ print('FROZEN_SRC_CORE=PASS')
 from pathlib import Path
 from integrations.workflows.accelerator_interface import prepare
 from integrations.workflows.multipole_ip import prepare as handoff
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
 import tempfile
 root = Path.cwd().resolve()
@@ -604,7 +604,7 @@ assert not any('rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyze
 assert not (Path.cwd()/'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer').exists()
 request,run=map(Path,sys.argv[1:])
 # TEST_ONLY schema branch copied from the fixture, never used as scientific input.
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 from common.contracts.verify_run_manifest import record_path
 request_value=json.loads(request.read_text())
 provider=next(v for v in request_value['providers']['instances'].values() if 'geometry' not in v)

@@ -11,7 +11,7 @@ import subprocess
 from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.simion.native_completion import parse_fly_completed_line

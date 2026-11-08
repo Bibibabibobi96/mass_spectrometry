@@ -55,7 +55,7 @@ class CooledBuncherGeometryTests(unittest.TestCase):
                                             request=request, electrode_ids=ids)
 
     def test_assembly_interface_publishes_real_local_circular_gate_faces(self):
-        from common.contracts.machine_contracts import validate_schema
+        from msplatform.contracts.machine_contracts import validate_schema
         model, guide, registration, request, ids = buncher_fixture()
         contract = build_cooled_buncher_contract(model, guide_contract=guide,
             native_to_assembly=native_pose(guide, registration), request=request, electrode_ids=ids)

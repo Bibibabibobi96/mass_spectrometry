@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import (
     experiment_campaign as campaign_module,
 )

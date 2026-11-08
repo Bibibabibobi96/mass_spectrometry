@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import (
     resolve_assembly_interface,

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import REPO_ROOT
+from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import (
     ContractError,
     load_json,

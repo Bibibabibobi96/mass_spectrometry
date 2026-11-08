@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import EnvelopeReviewRequired, write_candidate
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare, verify_routing_coverage
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_formal_promotion import prepare as prepare_promotion

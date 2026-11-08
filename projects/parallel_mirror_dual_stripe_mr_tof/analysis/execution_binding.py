@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import load_json
 from common.ion_release.release import validate_release_spec
 
 

@@ -16,7 +16,7 @@ import json
 import math
 from typing import Any, Mapping, Sequence
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 
 
 ELECTRODES = ("repeller", "intermediate1", "intermediate2", "exit")

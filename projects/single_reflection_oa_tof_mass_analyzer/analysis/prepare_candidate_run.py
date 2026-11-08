@@ -12,7 +12,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.artifact_naming import validate_run_id, validate_task_id
-from common.contracts.machine_contracts import load_json, sha256, validate_schema
+from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.simion.process_observation import run_observed_process
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
     freeze_candidate_source_closure,

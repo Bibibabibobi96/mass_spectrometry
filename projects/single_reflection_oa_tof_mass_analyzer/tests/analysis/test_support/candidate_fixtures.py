@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import start_candidate_run
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import compile_proposal, write_candidate
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run

@@ -26,7 +26,7 @@ from scipy.optimize import root
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.frozen_inputs import freeze_file
-from common.contracts.machine_contracts import load_json, validate_schema
+from msplatform.contracts.machine_contracts import load_json, validate_schema
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import require_completed_terminal_publication

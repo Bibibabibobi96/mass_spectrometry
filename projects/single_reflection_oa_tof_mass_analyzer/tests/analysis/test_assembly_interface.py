@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_contract
 from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import (

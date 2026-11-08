@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from common.contracts.file_identity import file_sha256
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS

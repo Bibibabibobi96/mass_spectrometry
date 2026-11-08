@@ -10,11 +10,13 @@ from typing import Any
 if __package__:
     from .artifact_identity_archive import historical_project_identities
     from .file_identity import repository_text_sha256
-    from .machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
+    from common.paths.repository_root import REPO_ROOT
+    from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
 else:
     from artifact_identity_archive import historical_project_identities
     from file_identity import repository_text_sha256
-    from machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
+    from common.paths.repository_root import REPO_ROOT
+    from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
 
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}

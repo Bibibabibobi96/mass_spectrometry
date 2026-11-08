@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.machine_contracts import ContractError, schema_registry, validate_schema
+from msplatform.contracts.machine_contracts import ContractError, schema_registry, validate_schema
 
 
 class MachineContractPathTests(unittest.TestCase):

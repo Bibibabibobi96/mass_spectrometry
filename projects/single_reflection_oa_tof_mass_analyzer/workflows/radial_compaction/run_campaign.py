@@ -37,7 +37,7 @@ PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.frozen_inputs import freeze_file, python_import_roots
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record

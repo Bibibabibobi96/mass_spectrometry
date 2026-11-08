@@ -150,7 +150,9 @@ $frozen|ConvertTo-Json -Compress
             self.assertEqual(project_native_run_path(root / "external.ion"), str(root / "external.ion"))
 
     def test_equivalent_roots_and_real_execution_junction(self):
-        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SystemRoot": os.environ["SystemRoot"]}, clear=True
+        ):
             root = Path(temporary)
             source = root / "checkout"
             source.mkdir()

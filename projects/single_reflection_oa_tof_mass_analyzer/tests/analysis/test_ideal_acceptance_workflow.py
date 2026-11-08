@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import load_json
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import acceptance_theory as workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import run_comparison as runner
 

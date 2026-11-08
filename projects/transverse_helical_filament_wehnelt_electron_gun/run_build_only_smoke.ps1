@@ -321,7 +321,7 @@ try {
     file_identity = 'common\contracts\file_identity.py'
     artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
-    machine_contracts = 'common\contracts\machine_contracts.py'
+    machine_contracts = 'src\msplatform\contracts\machine_contracts.py'
     frozen_input_selector = 'common\contracts\frozen_inputs.py'
     comsol_runner = 'common\comsol\run_comsol_r2025b.ps1'
     comsol_launcher_resolver = 'common\comsol\resolve_comsol_64.ps1'

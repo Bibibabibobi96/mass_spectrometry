@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts import write_run_manifest as terminal_publication
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
@@ -3538,7 +3538,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
 
 
     def test_report_and_cleanup_do_not_change_native_but_field_and_task_inputs_do(self):
-        from common.contracts.machine_contracts import sha256
+        from msplatform.contracts.machine_contracts import sha256
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             _,path=self.native_workflow_plan(Path(temporary),'20261031_213001')

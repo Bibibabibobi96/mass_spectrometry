@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_design_request, compile_design_request_file, compile_governed_design_request_file,
     validate_design_request, validate_resolved_design, validate_resolved_design_contract,

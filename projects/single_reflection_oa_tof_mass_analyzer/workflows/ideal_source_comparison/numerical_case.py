@@ -9,7 +9,7 @@ import numpy as np
 
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import load_json
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, build_working_point, propagate_ideal_source,
 )

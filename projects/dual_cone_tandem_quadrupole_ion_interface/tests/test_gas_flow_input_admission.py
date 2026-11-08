@@ -102,7 +102,7 @@ if($script:copies-ne12-or$failureStage-cne'geometry_input_freshness'){throw 'Inc
 
     def test_current_compiler_baseline_pair_and_missing_old_bundle(self):
         from common.contracts.compile_execution_plan import compile_execution
-        from common.contracts.machine_contracts import sha256
+        from msplatform.contracts.machine_contracts import sha256
         registry_path = REPO / "config/project_registry.json"
         # Same compiler-boundary plan fixture used by the current common owner;
         # this does not claim the scientific request planner accepts a gas metric.

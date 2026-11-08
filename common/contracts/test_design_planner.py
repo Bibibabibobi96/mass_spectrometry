@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 
-from common.contracts.machine_contracts import REPO_ROOT, sha256
+from common.paths.repository_root import REPO_ROOT
+from msplatform.contracts.machine_contracts import sha256
 from common.contracts.plan_design_request import build_plan, write_plan
 
 

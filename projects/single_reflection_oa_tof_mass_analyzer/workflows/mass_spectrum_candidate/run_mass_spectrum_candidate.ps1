@@ -339,7 +339,7 @@ if ($resumeExisting) {
     geometry_freshness_resolver = 'projects/single_reflection_oa_tof_mass_analyzer/analysis/resolve_geometry.py'
     geometry_freshness_contract = 'projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py'
     geometry_freshness_file_identity = 'common/contracts/file_identity.py'
-    geometry_freshness_machine_contracts = 'common/contracts/machine_contracts.py'
+    geometry_freshness_machine_contracts = 'src/msplatform/contracts/machine_contracts.py'
     geometry_freshness_aperture = 'common/simion/aperture.py'
     geometry_freshness_simion_package = 'common/simion/__init__.py'
     geometry_freshness_grounded_shield = 'projects/rf_multipole_ion_optics/core/grounded_shield.py'

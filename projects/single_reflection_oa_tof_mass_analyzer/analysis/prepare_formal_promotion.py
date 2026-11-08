@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

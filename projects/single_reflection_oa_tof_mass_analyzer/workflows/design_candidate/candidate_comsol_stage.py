@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import load_json
 from common.contracts.frozen_inputs import python_import_roots
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 

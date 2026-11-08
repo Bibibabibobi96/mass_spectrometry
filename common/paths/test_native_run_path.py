@@ -4,9 +4,11 @@ import subprocess
 import tempfile
 import unittest
 
+from msplatform.execution.resources import resource_path
+
 
 LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
-MODULE = Path(__file__).with_name("native_run_path.lua")
+MODULE = resource_path("native_run_path.lua")
 
 
 @unittest.skipUnless(LUA.is_file(), "plain Lua unavailable")

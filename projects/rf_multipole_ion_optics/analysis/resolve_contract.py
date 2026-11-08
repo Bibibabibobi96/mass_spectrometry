@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 
 from common.contracts.file_identity import repository_text_sha256 as _sha256
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_governed_design_request_file,
 )

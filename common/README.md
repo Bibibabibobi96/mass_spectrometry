@@ -454,31 +454,9 @@ integration所有者负责组合入口、source/clock、程序与冻结资源声
 `common.contracts.particle_physics`旧桥已退役；全部活动消费者、动态冻结清单和门禁路由直接使用
 `msplatform.contracts.particle_physics`。物理常量、动能／速度公式、单位与失败语义不变。
 
-`common.contracts.machine_contracts`（43个生产Python文件）：ContractError、JSON/schema校验、普通摘要。
-
-- `common/contracts/`：`compile_execution_plan.py`、`plan_design_request.py`、`validate_design_request.py`。
-- `common/integration/`：`resolve_connection.py`。
-- `common/simion/`：`aperture.py`、`batch_continuation.py`。
-- `integrations/workflows/cooled_frontend/`：`prepare.py`。
-- `integrations/workflows/local_frontend/`：`prepare.py`。
-- `integrations/workflows/multipole_ip/`：`prepare.py`。
-- `integrations/workflows/single_reflection_flight/`：`prepare.py`。
-- `projects/dual_pressure_rectilinear_ion_processor/analysis/`：`upstream_admission.py`。
-- `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`execution_binding.py`、`mrtof_batch_continuation.py`。
-- `projects/rf_multipole_ion_optics/analysis/`：`analyze_simion_axial_acceleration.py`、`campaign_analysis.py`、`evaluate_transport_evidence.py`、`resolve_contract.py`。
-- `projects/rf_multipole_ion_optics/core/`：`compile_design_request.py`、`component_port.py`。
-- `projects/rf_multipole_ion_optics/runtime/`：`design_profile.py`、`runtime_profile.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_run_lifecycle.py`、`candidate_source_closure.py`、`compile_candidate_design.py`、`execution_binding.py`、`experiment_campaign.py`、`ideal_acceptance_300mm_simion_candidate.py`、`paper1_c3_j3_mapping.py`、`paper1_c3_j3_publish.py`、`paper1_j2_candidate_pool.py`、`prepare_candidate_run.py`、`prepare_formal_promotion.py`、`three_zone_theory_experiment.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`candidate_comsol_stage.py`、`candidate_simion_stage.py`、`run_candidate.py`、`run_candidate_workflow.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`acceptance_theory.py`、`numerical_case.py`、`run_comparison.py`、`slope_scan.py`。
-- `projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`。
-
-退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。
-
-`machine_contracts` 中只有 `common/integration/resolve_connection.py` 对该桥的调用仅取仓库上下文 `REPO_ROOT`；
-`common/contracts/compile_execution_plan.py`、`plan_design_request.py`、`validate_design_request.py`及
-`projects/rf_multipole_ion_optics/core/compile_design_request.py`同时消费仓库根与科学合同。
-科学API转向规范实现后，仓库根仍归仓库边界，不能将 `REPO_ROOT` 搬入可安装核心。
+`common.contracts.machine_contracts`旧桥已退役；ContractError、JSON/schema校验和普通摘要直接由
+`msplatform.contracts.machine_contracts`提供。确实需要仓库上下文的消费者从
+`common.paths.repository_root`导入`REPO_ROOT`，可安装科学核心不持有仓库根。
 
 跨语言模块字符串还在以下具名入口出现，分别用于实际导入或冻结后的来源探针；不能仅凭AST清单删除桥：
 

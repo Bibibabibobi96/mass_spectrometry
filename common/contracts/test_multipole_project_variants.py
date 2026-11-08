@@ -13,7 +13,7 @@ import tempfile
 import unittest
 
 from common.contracts.build_project_registry import validate_descriptor, validate_structural_variants
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_governed_design_request_file,
 )
@@ -77,6 +77,11 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
                 target = root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / relative, target)
+            root.joinpath("common/paths").mkdir()
+            shutil.copyfile(
+                REPO_ROOT / "common/paths/repository_root.py",
+                root / "common/paths/repository_root.py",
+            )
             runtime = root / "projects" / PROJECT_ID / "runtime"
             runtime.mkdir()
             shutil.copyfile(PROJECT_ROOT / "runtime/design_profile.py", runtime / "design_profile.py")

@@ -640,7 +640,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/contracts/file_identity.py",
             "common/contracts/artifact_identity_archive.py",
             "common/contracts/build_project_registry.py",
-            "common/contracts/machine_contracts.py",
+            "src/msplatform/contracts/machine_contracts.py",
             "common/contracts/frozen_inputs.py",
             "common/comsol/run_comsol_r2025b.ps1",
             "common/comsol/resolve_comsol_64.ps1",

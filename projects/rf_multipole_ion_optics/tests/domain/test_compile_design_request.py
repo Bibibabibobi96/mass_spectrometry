@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.machine_contracts import ContractError, REPO_ROOT, file_sha256
+from common.paths.repository_root import REPO_ROOT
+from msplatform.contracts.machine_contracts import ContractError, file_sha256
 from projects.rf_multipole_ion_optics.core.axial_acceleration import MAX_SEGMENT_COUNT
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     MultipoleDesignCompileError,

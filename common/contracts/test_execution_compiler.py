@@ -10,7 +10,8 @@ from unittest.mock import ANY, patch
 
 
 from common.contracts.compile_execution_plan import compile_execution
-from common.contracts.machine_contracts import REPO_ROOT, load_json
+from common.paths.repository_root import REPO_ROOT
+from msplatform.contracts.machine_contracts import load_json
 from common.contracts.plan_design_request import build_plan
 
 
@@ -37,7 +38,7 @@ class ExecutionCompilerTests(unittest.TestCase):
             plan_path = Path(root) / "design_plan.json"
             request_path.write_text(json.dumps(request), encoding="utf-8")
             if proposal:
-                from common.contracts.machine_contracts import sha256
+                from msplatform.contracts.machine_contracts import sha256
                 (Path(root)/"candidate_proposal.json").write_text(json.dumps(dict(schema_version=1,
                     role="design_candidate_proposal", candidate_id="fixture_candidate",
                     project_id="single_reflection_oa_tof_mass_analyzer", request=dict(path=str(request_path),
@@ -361,7 +362,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     original.write_text('{"value":2}')  # release is observable after every branch
 
     def test_ordinary_profiles_compile_only_declared_scientific_steps_and_empty_ei_is_unavailable(self):
-        from common.contracts.machine_contracts import sha256, validate_schema
+        from msplatform.contracts.machine_contracts import sha256, validate_schema
         projects = ("apertured_tube_electron_impact_ion_source", "dual_cone_tandem_quadrupole_ion_interface",
                     "dual_pressure_rectilinear_ion_processor", "rf_multipole_ion_optics",
                     "single_reflection_oa_tof_mass_analyzer", "transverse_helical_filament_wehnelt_electron_gun")

@@ -1,5 +1,8 @@
 # 工作区与组件输出路径
 
+`repository_root.py`是仓库`REPO_ROOT`的唯一Python边界，仅供确实需要checkout定位的仓库工具使用；
+安装科学合同不携带该路径，冻结执行按实际根／身份合同运输。
+
 `workspace_paths.m`默认解析源码和同级 artifacts 根；`common_artifact_paths.m`要求调用者提供已经存在的
 项目 `runs/<run_id>` 或 `scratch/<task_id>`，并只创建该上下文下的 `comsol/`、`results/`。
 已经发布终态 manifest 的上下文不能复用。目录职责以[生命周期](../../docs/LIFECYCLE.md)为准。

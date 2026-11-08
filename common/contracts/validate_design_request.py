@@ -8,7 +8,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
+from common.paths.repository_root import REPO_ROOT
+from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
 
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}

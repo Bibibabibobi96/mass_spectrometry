@@ -430,7 +430,8 @@
       "command": {
         "runner": "python",
         "arguments": [
-          "common/contracts/build_project_registry.py",
+          "-m",
+          "common.contracts.build_project_registry",
           "--check"
         ]
       },
@@ -576,7 +577,7 @@
           "reason": "workspace_path_transport_changed"
         },
         {
-          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|machine_contracts)\\.py))$",
+          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
           "reason": "installed_scientific_core_changed"
         },
         {
@@ -944,7 +945,7 @@
                 "reason": "optional_cad_dependency_lock_changed"
               },
               {
-                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/(?:file_identity|machine_contracts)\\.py))$",
+                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
                 "reason": "installed_scientific_core_changed"
               }
             ],

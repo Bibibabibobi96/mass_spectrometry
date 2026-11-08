@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.machine_contracts import load_json, validate_schema
+from msplatform.contracts.machine_contracts import load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import (
     build_case_plan, summarize_stage, validate_experiment,
 )

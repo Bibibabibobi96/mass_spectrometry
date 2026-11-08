@@ -6,10 +6,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from common.contracts import machine_contracts
+from common.paths.repository_root import REPO_ROOT
 
 PROJECT = Path(__file__).resolve().parents[2]
-REPO = Path(machine_contracts.__file__).resolve().parents[2]
+REPO = REPO_ROOT
 
 
 def quote(value):

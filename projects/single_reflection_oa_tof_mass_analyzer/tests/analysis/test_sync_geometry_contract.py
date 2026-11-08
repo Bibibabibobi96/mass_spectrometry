@@ -17,7 +17,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
     render_optimization_envelope,
     render_resolved_lua,
 )
-from common.contracts.machine_contracts import sha256
+from msplatform.contracts.machine_contracts import sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
     BASELINE_PATH,
     MODE_PATH,

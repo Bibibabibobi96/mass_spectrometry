@@ -14,7 +14,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import sha256
+from msplatform.contracts.machine_contracts import sha256
 from common.contracts.frozen_inputs import enumerate_python_sources
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
@@ -31,6 +31,7 @@ RELATIVE_PATHS = (
     "common/host_resource_python.py",
     "common/host_resource_python.ps1",
     "common/contracts/run_artifact_support.ps1",
+    "common/paths/repository_root.py",
     "common/paths/workspace_paths.py",
     "common/paths/workspace_paths.ps1",
     "common/contracts/artifact_identity_archive.py",
@@ -78,7 +79,6 @@ RELATIVE_PATHS = (
     "common/simion/process_observation.py",
     "projects/rf_multipole_ion_optics/core/grounded_shield.py",
     "common/simion/aperture.py",
-    "common/contracts/machine_contracts.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py",

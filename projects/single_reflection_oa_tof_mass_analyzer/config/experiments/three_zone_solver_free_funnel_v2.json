@@ -77,8 +77,8 @@
     },
     "three_zone_experiment": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_experiment.py",
-      "bytes": 31856,
-      "sha256": "5B30FDC728F9033D92A1CF853465168981494AD1F39A74B0A002069B31AD58C6"
+      "bytes": 31860,
+      "sha256": "5C37C472D42E6565DB152BEBA1327288C462CE38AB7DDD22A17CA50CD42FE52B"
     },
     "three_zone_cli": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/run_theory.py",

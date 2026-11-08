@@ -34,7 +34,7 @@ from common.paths.workspace_paths import resolve_workspace_paths
 from common.contracts.artifact_naming import validate_run_id
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import load_json
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication, retention_api
 from common.contracts.capacity_protection import renew_capacity_protection_lease, PROTECTION_LEASE_DIRECTORY
@@ -409,6 +409,7 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
                 for alias in node.names:
                     numerical_imports[alias.asname or alias.name] = (node.module, alias.name, node.level)
     numerical_imports["AnalysisSettings"] = ("common.analysis.peak_metrics", "AnalysisSettings", 0)
+    numerical_imports["load_json"] = ("common.contracts.machine_contracts", "load_json", 0)
     for node in ast.parse(source).body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:

@@ -75,6 +75,7 @@ IP交接、实测源及实测分析现直接调用`msplatform.analysis.particle_
 IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
 `resolve_assembly`、`release` 及
 `resource_profile` 仍导入的 `resource_scheduler` 三个兼容桥；刚体变换与粒子物理旧桥均已退出。
+机器合同校验直接使用安装实现，仓库路径边界与科学校验保持分离。
 runner 使用公共导入根，并在每次 Python 调用前校验核心及目标模块来自本次快照；
 缺少冻结核心时拒绝宿主安装补齐。上述桥随具名调用迁移退出，最迟 P4 删除。
 MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒），包括真实冻结源码、

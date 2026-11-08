@@ -12,7 +12,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.machine_contracts import load_json, sha256
+from msplatform.contracts.machine_contracts import load_json, sha256
 from common.paths.workspace_paths import resolve_workspace_paths
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import write_candidate
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run

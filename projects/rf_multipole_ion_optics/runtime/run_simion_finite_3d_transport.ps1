@@ -1540,7 +1540,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
     $validateEvaluation=@'
 import json,sys
 from pathlib import Path
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 result=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 validate_schema(result,'multipole_evidence_evaluation.schema.json')
 expected='PASS' if all(result['checks'].values()) else 'FAIL'

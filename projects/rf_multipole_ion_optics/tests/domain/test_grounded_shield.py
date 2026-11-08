@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 from common.simion.aperture import resolve_rectangular_aperture_discretization
 
 from projects.rf_multipole_ion_optics.core.grounded_shield import (

@@ -21,7 +21,7 @@ from build_project_registry import (
     validate_descriptor,
     validate_legacy_identity_mappings,
 )
-from machine_contracts import load_json, validate_schema
+from msplatform.contracts.machine_contracts import load_json, validate_schema
 from file_identity import repository_text_sha256
 
 

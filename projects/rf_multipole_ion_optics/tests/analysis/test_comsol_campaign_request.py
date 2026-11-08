@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 from projects.rf_multipole_ion_optics.runtime import runtime_profile as runtime
 from projects.rf_multipole_ion_optics.runtime import design_profile as design_provider
 from projects.rf_multipole_ion_optics.runtime.resource_budget import (

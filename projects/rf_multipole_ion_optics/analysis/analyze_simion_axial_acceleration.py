@@ -9,7 +9,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 
 
 PAIRED_POPULATION_POLICY = "intersection_of_transmitted_particle_ids"

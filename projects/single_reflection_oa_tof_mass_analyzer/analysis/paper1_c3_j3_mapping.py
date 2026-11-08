@@ -18,7 +18,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from common.contracts.machine_contracts import validate_schema
+from msplatform.contracts.machine_contracts import validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_candidate_control import (
     FINITE_DIFFERENCE_SCALES,
 )

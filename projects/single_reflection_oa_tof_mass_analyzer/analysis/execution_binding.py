@@ -2,7 +2,7 @@
 from pathlib import Path
 from typing import Any
 
-from common.contracts.machine_contracts import load_json, sha256, validate_schema
+from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 
 
 def resolve_execution_binding(repo_root: Path, project_id: str, bindings: dict[str, str],

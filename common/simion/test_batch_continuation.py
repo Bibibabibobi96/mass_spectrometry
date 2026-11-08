@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from msplatform.execution import recovery as batch_continuation
 from common.simion.batch_continuation import (
     WholeUnitReplayUnit,

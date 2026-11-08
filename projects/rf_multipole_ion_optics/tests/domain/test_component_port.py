@@ -5,7 +5,7 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
-from common.contracts.machine_contracts import ContractError
+from msplatform.contracts.machine_contracts import ContractError
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from projects.rf_multipole_ion_optics.core.component_port import (
     build_assembly_interface,
