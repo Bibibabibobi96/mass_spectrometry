@@ -22,7 +22,9 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 不构成新的COMSOL求解或功能资格。运行与失败收尾见[COMSOL说明](COMSOL.md)。
 
 公共预算观测的冷加载回归同时执行入口已有的规范核心及包资源选择器，再从冻结资源加载唯一实现；
-不再把旧公共桥的文件位置当作函数正文位置。该定向软件验证通过，生产选择器与物理输入未改变。
+不再把旧公共桥的文件位置当作函数正文位置。显式公共表不再重复登记已由整包选择覆盖的host policy、
+machine contracts和recorded removal；回归按实际目的路径拒绝任何重复，同时保持严格校验。该定向软件验证通过，
+生产选择器与物理输入未改变，未启动MATLAB或COMSOL。
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 

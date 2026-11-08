@@ -544,11 +544,9 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common\\contracts\\run_artifact_support.ps1",
             "common\\contracts\\write_run_manifest.py",
             "common\\contracts\\capacity_protection.py",
-            "src\\msplatform\\execution\\recorded_file_removal.py",
             "common\\contracts\\verify_run_manifest.py",
             "common\\host_execution_lease.ps1",
             "common\\host_resource_scheduler.py",
-            "src\\msplatform\\execution\\resources\\host_resource_policy.json",
             "common\\comsol\\run_comsol_r2025b.ps1",
             "common\\comsol\\resolve_comsol_64.ps1",
             "common\\comsol\\livelink_r2025b\\comsolstartup.m",
@@ -583,6 +581,10 @@ foreach($relative in $commonFrozenFiles.Values){
   $env:SIMULATION_PYTHON_EXE=$package.python
   . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
 ''' + selector + r'''
+$destinations=@($commonFrozenFiles.Values)+@($coreSelection|ConvertFrom-Json)
+$resolved=@($destinations|ForEach-Object{[IO.Path]::GetFullPath((Join-Path $snapshotRoot $_))})
+$duplicates=@($resolved|Group-Object|Where-Object Count -gt 1)
+if($duplicates.Count -ne 0){throw "Duplicate frozen destinations: $($duplicates.Name)"}
 }
 Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
 . ./common/resource_budget_support.ps1
@@ -629,18 +631,15 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/gate_catalog.json",
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
-            "src/msplatform/execution/resources/host_resource_policy.json",
             "common/resource_budget_support.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
             "common/contracts/capacity_protection.py",
-            "src/msplatform/execution/recorded_file_removal.py",
             "common/contracts/verify_run_manifest.py",
             "common/contracts/artifact_naming.py",
             "common/contracts/file_identity.py",
             "common/contracts/artifact_identity_archive.py",
             "common/contracts/build_project_registry.py",
-            "src/msplatform/contracts/machine_contracts.py",
             "common/contracts/frozen_inputs.py",
             "common/comsol/run_comsol_r2025b.ps1",
             "common/comsol/resolve_comsol_64.ps1",
