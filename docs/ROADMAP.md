@@ -161,6 +161,8 @@ paired COMSOL主脚本、Cartesian释放读取与CPT步策略helper亦迁入安�
 manifest绑定、搬迁resolver、文件身份复核和失败关闭不变，其余仍有独立职责的staged入口未因此删除。
 出生源request校验及`ReleaseRealization`已迁入`msplatform.ion_release`；只读轨迹分析公开入口迁入
 `msplatform.backends.simion`，旧`api.sample_release`与`api.analyze`均退役，科学语义与安装实际调用保持。
+`build_geometry`的实际stage/owner编排也已迁入SIMION backend，旧API入口删除；29项定向测试通过，
+原生预算、发布与独立RF拒绝不变，未因此新增真实SIMION执行证据。
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

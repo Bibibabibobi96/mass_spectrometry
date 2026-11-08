@@ -169,7 +169,6 @@ class SimionGeometryCompilerTests(unittest.TestCase):
         self.assertEqual(set(selected.components_resolved), {'first', 'second'})
 
     def test_independent_rf_numerics_mapping_and_native_build_fail_closed(self):
-        from msplatform import api
         from msplatform.backends import simion as simion_api
         instrument, numerics = independent_rf_inputs()
         for bad in ({}, {'component_domains': {}},
@@ -184,7 +183,7 @@ class SimionGeometryCompilerTests(unittest.TestCase):
         self.assertNotEqual(remapped.frontend_gems['first'],
                             simion_api.compile_geometry(instrument, numerics=numerics).frontend_gems['first'])
         with self.assertRaisesRegex(ValueError, 'pure compile only'):
-            api.build_geometry(remapped, context=None)
+            simion_api.build_geometry(remapped, context=None)
 
 
     def test_independent_rf_four_six_eight_poles_share_one_compiler(self):

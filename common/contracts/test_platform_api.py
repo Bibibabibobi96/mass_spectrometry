@@ -632,7 +632,7 @@ class PlatformApiTests(unittest.TestCase):
             sentinel = object()
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
                  patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel) as reader:
-                self.assertIs(api.build_geometry(compiled, context=context), sentinel)
+                self.assertIs(simion_api.build_geometry(compiled, context=context), sentinel)
             arguments = owner.call_args.kwargs
             self.assertEqual(arguments["committed_new_bytes"], limits["transient_run_directory_bytes"])
             self.assertEqual(arguments["payload"]["stage_policy"], selected)
