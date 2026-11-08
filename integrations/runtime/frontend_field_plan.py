@@ -3,7 +3,7 @@ from __future__ import annotations
 import json,math
 from pathlib import Path
 from common.contracts.file_identity import file_sha256
-from common.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 from integrations.runtime.single_flight_electrode_contract import require_pa_plus_solution_model,render_pa_plus_solution_model
 
 

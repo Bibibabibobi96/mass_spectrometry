@@ -15,7 +15,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from common.contracts.file_identity import canonical_json_sha256, file_sha256
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     CacheDisposition,
     CacheProbe,
     CachePublication,

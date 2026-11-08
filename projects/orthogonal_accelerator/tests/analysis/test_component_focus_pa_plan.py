@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
-from common.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 
 from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
 from projects.orthogonal_accelerator.analysis.component_focus_pa_cache import expected_files, identity

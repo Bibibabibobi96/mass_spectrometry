@@ -13,12 +13,12 @@ import unittest
 from unittest.mock import patch
 
 import msplatform.execution.cache_generation as cache_generation
-import common.simion.pa_family_cache as pa_family_cache
+import msplatform.backends.simion.pa_family_cache as pa_family_cache
 import msplatform.backends.simion.standalone_pa_response_set as response_set
 from common.contracts import capacity_ledger, capacity_protection, reconcile_artifact_capacity
 from msplatform.execution import capacity_ledger as execution_capacity_ledger
 
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     CacheDisposition,
     PAFamilyCacheError,
     advance_pa_family_cache_transaction,

@@ -190,7 +190,7 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
   Write-RunJson -Path $recipePath -Value $plan.recipe -Depth 20
   $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @([string]$plan.cache_key)
   $CapacitySession.Value=$scope.session
-  $cacheArgs=@('-m','common.simion.pa_family_cache','--cache-root',$CacheRoot,'--identity',$identityPath,'--filenames',($plan.filenames-join','))
+  $cacheArgs=@('-m','msplatform.backends.simion.pa_family_cache','--cache-root',$CacheRoot,'--identity',$identityPath,'--filenames',($plan.filenames-join','))
   $probe=Invoke-LocalFieldPython -Arguments ($cacheArgs+@('--action','probe')) -Name 'local_field_cache_probe'
   $published=$false;$refinePerformed=$false
   $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage pa_refine -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0

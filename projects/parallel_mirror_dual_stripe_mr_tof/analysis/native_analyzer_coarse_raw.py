@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
     build_analyzer_gem,
 )

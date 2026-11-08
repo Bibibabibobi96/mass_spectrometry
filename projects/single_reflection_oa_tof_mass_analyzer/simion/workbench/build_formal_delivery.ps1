@@ -399,7 +399,7 @@ function Invoke-ComponentCache([string[]]$Arguments,[string]$Name) {
   $operation=@{operation_id=('cache_'+$Name);operation_kind='python_metadata';
     observation=@{exit_confirmed=$false;returncode=$null};managed_process_completion=$null}
   $nativeOperations.Add($operation)
-  $code='from common.host_resource_python import await_managed_process_start; await_managed_process_start(); import runpy; runpy.run_module("common.simion.pa_family_cache",run_name="__main__")'
+  $code='from common.host_resource_python import await_managed_process_start; await_managed_process_start(); import runpy; runpy.run_module("msplatform.backends.simion.pa_family_cache",run_name="__main__")'
   $script:allOperationsStopped=$false
   try{
     $operation.managed_process_completion=Invoke-RepositoryManagedPythonProcess -Python $python `

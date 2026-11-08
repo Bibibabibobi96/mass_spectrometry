@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
-from common.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 from msplatform.backends.simion.standalone_pa_response_set import (
     ResponseExport,
     select_standalone_pa_records,

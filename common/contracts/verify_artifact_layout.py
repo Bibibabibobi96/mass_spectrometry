@@ -27,7 +27,7 @@ from common.contracts.artifact_naming import (
 from common.contracts.file_identity import file_sha256
 from common.contracts.execution_aliases import execution_alias_root_is_valid
 
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     PAFamilyCacheError,
     RECOVERY_DIRECTORY,
     load_pa_family_cache_transaction,

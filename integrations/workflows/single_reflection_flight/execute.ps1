@@ -238,7 +238,7 @@ function Confirm-InstrumentFrontendIobRetention {
   $code=@'
 import json,sys
 from pathlib import Path
-from common.simion.pa_family_cache import validate_pa_family_cache_generation
+from msplatform.backends.simion.pa_family_cache import validate_pa_family_cache_generation
 stage=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 seen=set()
 for domain in stage['domains']:

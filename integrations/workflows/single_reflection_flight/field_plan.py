@@ -14,7 +14,7 @@ from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     canonical_pa_family_cache_key,
     validate_pa_family_cache_generation,
 )

@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from common.simion.pa_family_cache import publish_pa_family_cache
+from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
     derive_native_corridor_plan,
 )
@@ -197,7 +197,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         )
 
     def test_freeze_never_hashes_large_pa_payloads(self) -> None:
-        from common.simion import pa_family_cache as cache_module
+        from msplatform.backends.simion import pa_family_cache as cache_module
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import (
             native_corridor_freeze as module,
             native_corridor_identity as identity,

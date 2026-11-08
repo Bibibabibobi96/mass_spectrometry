@@ -11,7 +11,7 @@ import shutil
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     advance_pa_family_cache_transaction, canonical_pa_family_cache_key,
     load_pa_family_cache_transaction, validate_pa_family_cache_generation,
 )

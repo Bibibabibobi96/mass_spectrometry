@@ -839,7 +839,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 )
 
             with patch(
-                "common.simion.pa_family_cache.approve_pa_family_cache_retirement",
+                "msplatform.backends.simion.pa_family_cache.approve_pa_family_cache_retirement",
                 side_effect=approve,
             ) as manager:
                 applied = normal_capacity.apply(planned)

@@ -251,7 +251,7 @@ try{
         $fieldPa=Join-Path $generation 'paired_static_on.pa';$fieldKey=[string]$publication.cache_key
       }
       Set-PairedStage 'published_field_metadata'
-      $cacheManifest=Invoke-PulsePython 'from common.simion.pa_family_cache import validate_pa_family_cache_generation;print(json.dumps(validate_pa_family_cache_generation(Path(sys.argv[1]),expected_cache_key=sys.argv[2],expected_filenames=["paired_static_on.pa"],verify_payload=False)))' `
+      $cacheManifest=Invoke-PulsePython 'from msplatform.backends.simion.pa_family_cache import validate_pa_family_cache_generation;print(json.dumps(validate_pa_family_cache_generation(Path(sys.argv[1]),expected_cache_key=sys.argv[2],expected_filenames=["paired_static_on.pa"],verify_payload=False)))' `
         @($generation,$fieldKey)
       $members=@($cacheManifest.files|Where-Object name -eq 'paired_static_on.pa')
       if($members.Count-ne1){throw 'Published OA field must bind one paired_static_on.pa member.'}

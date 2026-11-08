@@ -160,7 +160,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
                     continue
                 imports.update(ast.unparse(node) for node in ast.walk(tree)
                     if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom) and node.level == 0)
-            self.assertIn('from common.simion.pa_family_cache import validate_pa_family_cache_generation', imports)
+            self.assertIn('from msplatform.backends.simion.pa_family_cache import validate_pa_family_cache_generation', imports)
             imported = subprocess.run([sys.executable, '-B', '-s', '-c', '\n'.join(sorted(imports)) + '\n' +
                 'import sys\nfrom pathlib import Path\n'
                 'import msplatform.contracts.particle_physics as physics\n'

@@ -50,7 +50,7 @@ function Invoke-ProjectPython {
 
 function Invoke-Transaction {
   param([Parameter(Mandatory)][string]$IdentityPath,[string]$Owner='',[string]$VerificationEvidence='',[string]$MemberRecovery='',[string]$ResponseReceipt='',[string]$RetainedInventoryRecovery='',[string]$PublicationMetadataCorrection='')
-  $arguments=@('-m','common.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
     '--identity',$IdentityPath,'--filenames',($bankMembers-join','),'--recovery-policy','none',
     '--published-pin-reason',$pinReason,'--producer-run-config',$runConfig)
   if($Owner){$arguments+=@('--owner',$Owner)}
@@ -99,7 +99,7 @@ function New-ResponseBankMemberRecovery {
 
 function Invoke-CacheProbe {
   param([Parameter(Mandatory)][string]$IdentityPath)
-  $arguments=@('-m','common.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
     '--identity',$IdentityPath,'--filenames',($bankMembers-join','))
   return ((@(Invoke-ProjectPython -Arguments $arguments)-join"`n")|ConvertFrom-Json -Depth 40)
 }
@@ -161,7 +161,7 @@ function Get-CoarseInputs {
 
 function Invoke-CoarseBasisTransaction {
   param([Parameter(Mandatory)][string]$IdentityPath,[Parameter(Mandatory)][string[]]$Names,[string]$Owner='',[string]$Evidence='')
-  $arguments=@('-m','common.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
     '--identity',$IdentityPath,'--filenames',($Names-join','),'--recovery-policy','none',
     '--published-pin-reason','MR-TOF coarse boundary donors reused across native corridor builds','--producer-run-config',$runConfig)
   if($Owner){$arguments+=@('--owner',$Owner)}
@@ -176,7 +176,7 @@ function Ensure-CoarseBasisBank {
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_coarse_basis_bank',
     '--recipe',$recipePath,'--coarse-manifest',$Coarse.manifest,'--builder',$builder,
     '--simion-executable',$simion,'--simion-release','SIMION 2020','--output',$identityPath)|Out-Null
-  $probe=((@(Invoke-ProjectPython -Arguments @('-m','common.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
+  $probe=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
     '--identity',$identityPath,'--filenames',($Coarse.basis_names-join',')))-join"`n")|ConvertFrom-Json -Depth 40)
   if([string]$probe.disposition-eq'hit'){
     return [pscustomobject]@{directory=[string]$probe.generation_directory;cache_key=[string]$probe.cache_key;identity=$identityPath;reused=$true}

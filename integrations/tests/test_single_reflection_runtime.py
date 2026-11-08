@@ -31,7 +31,7 @@ from integrations.workflows.single_reflection_flight.pulse import resolve_phase_
 from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
 from common.simion.particle_batching import plan_single_wave_batches
 from common.contracts.write_run_manifest import file_record
-from common.simion.pa_family_cache import publish_pa_family_cache
+from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
@@ -449,7 +449,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             self.materialize()
 
     def test_common_metadata_binding_does_not_hash_pa_payload(self):
-        with patch("common.simion.pa_family_cache.file_sha256", side_effect=AssertionError("PA payload read")):
+        with patch("msplatform.backends.simion.pa_family_cache.file_sha256", side_effect=AssertionError("PA payload read")):
             result = self.materialize()
         self.assertTrue(all(Path(record["path"]).is_relative_to(self.root / "cache")
                             for record in result["pa_guard_records"][:3]))

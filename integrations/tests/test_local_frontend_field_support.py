@@ -105,7 +105,7 @@ class LocalFrontendFieldSupportTests(unittest.TestCase):
             shutil.copyfile(RUNTIME/'initialize_fast_adjust_pa_basis.lua',initializer)
             altered=json.loads(json.dumps(before['identity']))
             altered['builder_identity']['basis_operations'][0]['arguments'].append('--different-native-setting')
-            from common.simion.pa_family_cache import canonical_pa_family_cache_key
+            from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
             self.assertNotEqual(before['cache_key'],canonical_pa_family_cache_key(altered))
             physical=prepared/'cache_physical_inputs.json';document=json.loads(physical.read_text())
             document['geometry']['changed_physical_boundary']=True;physical.write_text(json.dumps(document))
@@ -498,7 +498,7 @@ Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'ex
         text = SUPPORT.read_text()
         self.assertIn("Invoke-LocalFrontendBasisOperations -Plan $plan", text)
         self.assertNotIn("@('--nogui','--noprompt','fly'", text)
-        self.assertIn('common.simion.pa_family_cache', text)
+        self.assertIn('msplatform.backends.simion.pa_family_cache', text)
         self.assertIn('--response-receipt', text)
 
     def test_frozen_stage_retains_live_public_host_context_before_python_boundary(self):

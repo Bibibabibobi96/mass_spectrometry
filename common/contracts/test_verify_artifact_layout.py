@@ -29,7 +29,7 @@ from common.contracts.test_artifact_identity_archive import (
     LEGACY,
     retirement_fixture,
 )
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     VERIFICATION_EVIDENCE_ROLE,
     advance_pa_family_cache_transaction,
     validate_pa_family_cache_generation,
@@ -278,7 +278,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             projects = artifacts / "projects"
             projects.mkdir(parents=True)
             generation = self.write_common_pa_family_cache(artifacts)
-            with patch("common.simion.pa_family_cache._verify_payload_record",
+            with patch("msplatform.backends.simion.pa_family_cache._verify_payload_record",
                        side_effect=AssertionError("layout read payload bytes")):
                 verify_artifacts_root(projects)
             family = generation / "family.pa0"
@@ -298,7 +298,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             projects.mkdir(parents=True)
             generation = self.write_common_pa_family_cache(artifacts, recovery_policy="xor")
             manifest = validate_pa_family_cache_generation(generation, verify_payload=False)
-            with patch("common.simion.pa_family_cache._verify_payload_record",
+            with patch("msplatform.backends.simion.pa_family_cache._verify_payload_record",
                        side_effect=AssertionError("metadata read PA or parity payload")):
                 verify_artifacts_root(projects)
             with patch("common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
@@ -402,7 +402,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
 
     def test_recovery_projection_validates_noncurrent_generations_only_by_metadata(self) -> None:
         from common.contracts.verify_artifact_layout import _verify_pa_family_recovery_tree
-        from common.simion.pa_family_cache import publish_pa_family_cache, repair_pa_family_cache_generation
+        from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache, repair_pa_family_cache_generation
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

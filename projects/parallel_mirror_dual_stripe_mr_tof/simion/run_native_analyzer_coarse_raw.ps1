@@ -22,13 +22,13 @@ function Invoke-RootPython([string[]]$Arguments){
   return $lines
 }
 function Invoke-Transaction([string]$Identity,[string]$Owner='',[string]$Evidence=''){
-  $arguments=@('-m','common.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,'--identity',$Identity,
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,'--identity',$Identity,
     '--filenames','mrtof_analyzer.pa#','--recovery-policy','none','--published-pin-reason','MR-TOF symmetric full-domain 1 mm boundary source','--producer-run-config',$runConfig)
   if($Owner){$arguments+=@('--owner',$Owner)};if($Evidence){$arguments+=@('--verification-evidence',$Evidence)}
   return ((@(Invoke-RootPython $arguments)-join"`n")|ConvertFrom-Json -Depth 30)
 }
 function Invoke-FallbackTransaction([string]$Identity,[string]$Owner='',[string]$Evidence=''){
-  $arguments=@('-m','common.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,'--identity',$Identity,
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,'--identity',$Identity,
     '--filenames','mrtof_analyzer_global_fallback.pa','--recovery-policy','none','--published-pin-reason','MR-TOF symmetric full-domain 1 mm collision fallback','--producer-run-config',$runConfig)
   if($Owner){$arguments+=@('--owner',$Owner)};if($Evidence){$arguments+=@('--verification-evidence',$Evidence)}
   return ((@(Invoke-RootPython $arguments)-join"`n")|ConvertFrom-Json -Depth 30)
@@ -41,7 +41,7 @@ $identity=Join-Path $resultDir 'coarse_raw_identity.json';$gem=Join-Path $result
 $fallbackIdentity=Join-Path $resultDir 'global_fallback_identity.json';$fallbackVerifyLog=Join-Path $resultDir 'global_fallback_verify.log';$fallbackEvidence=Join-Path $resultDir 'global_fallback_verification.json'
 try{
   Invoke-RootPython @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_analyzer_coarse_raw','--contract',$contract,'--simion-executable',$simion,'--simion-release','SIMION 2020','--identity-output',$identity,'--gem-output',$gem)|Out-Null
-  $probe=((@(Invoke-RootPython @('-m','common.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$identity,'--filenames','mrtof_analyzer.pa#'))-join"`n")|ConvertFrom-Json -Depth 30)
+  $probe=((@(Invoke-RootPython @('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$identity,'--filenames','mrtof_analyzer.pa#'))-join"`n")|ConvertFrom-Json -Depth 30)
   $plan=Get-Content $identity -Raw|ConvertFrom-Json -Depth 20
   [int64]$estimatedBytes=[int64]$plan.geometry.grid_shape[0]*[int64]$plan.geometry.grid_shape[1]*[int64]$plan.geometry.grid_shape[2]*8
   Write-RunJson -Path $fallbackIdentity -Depth 20 -Value ([ordered]@{
@@ -55,7 +55,7 @@ try{
     refine_policy=[ordered]@{operation='byte_identical_standalone_name_copy';refine_performed=$false}
     builder_identity=[ordered]@{short_pa_path_support_sha256=(Get-FileHash (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1') -Algorithm SHA256).Hash}
   })
-  $fallbackProbe=((@(Invoke-RootPython @('-m','common.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$fallbackIdentity,'--filenames','mrtof_analyzer_global_fallback.pa'))-join"`n")|ConvertFrom-Json -Depth 30)
+  $fallbackProbe=((@(Invoke-RootPython @('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$fallbackIdentity,'--filenames','mrtof_analyzer_global_fallback.pa'))-join"`n")|ConvertFrom-Json -Depth 30)
   [int64]$committedBytes=$(if($probe.disposition-eq'hit'){0}else{$estimatedBytes})+$(if($fallbackProbe.disposition-eq'hit'){0}else{$estimatedBytes})
   $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir -CommittedNewBytes $committedBytes -ProtectedPaths @($package.artifact_run_dir) -ProtectedCacheKeys @([string]$probe.cache_key,[string]$fallbackProbe.cache_key) -Owner "mrtof-coarse-raw:$RunId"
   if($probe.disposition-eq'hit'){$publication=$probe}else{

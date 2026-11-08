@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from common.contracts.file_identity import file_sha256
-from common.simion.pa_family_cache import advance_pa_family_cache_transaction
+from msplatform.backends.simion.pa_family_cache import advance_pa_family_cache_transaction
 from common.simion.test_pa_family_cache import identity
 
 

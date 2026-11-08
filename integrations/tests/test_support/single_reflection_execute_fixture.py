@@ -334,7 +334,7 @@ function Invoke-SingleReflectionFrontendFieldStage {
 import json,sys,stat
 from pathlib import Path
 from common.contracts.write_run_manifest import file_record
-from common.simion.pa_family_cache import publish_pa_family_cache
+from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 from integrations.workflows.single_reflection_flight.field_plan import build_field_plan,bind_parent_fields,field_bank
 run,exe,repo=map(Path,sys.argv[1:]);plan=build_field_plan(run/'inputs',exe,repo)
 out=run/'simion/frontend_fields';out.mkdir(parents=True)

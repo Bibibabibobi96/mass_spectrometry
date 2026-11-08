@@ -21,7 +21,7 @@ from integrations.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
 from common.contracts.write_run_manifest import file_record
 from common.simion import pa_family_cache
-from common.simion.pa_family_cache import canonical_pa_family_cache_key, publish_pa_family_cache
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key, publish_pa_family_cache
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / 'integrations/workflows/single_reflection_flight'
@@ -999,7 +999,7 @@ if($FrozenSource-eq'1'){
 import json,sys,shutil
 from pathlib import Path
 from common.contracts.write_run_manifest import file_record
-from common.simion.pa_family_cache import publish_pa_family_cache
+from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 run,prepared,cache=map(Path,sys.argv[1:])
 receipt=json.loads((run/'inputs/frontend_working_field_stage_receipt.json').read_text(encoding='utf-8-sig'))
 design=json.loads((prepared/'inputs/frontend_field_design.json').read_text(encoding='utf-8-sig'))

@@ -20,7 +20,7 @@ from typing import Any, Mapping
 
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.write_run_manifest import file_record
-from common.simion.pa_family_cache import canonical_pa_family_cache_key, canonical_json_sha256
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key, canonical_json_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (
     build_successor_program, validate_native_flight,

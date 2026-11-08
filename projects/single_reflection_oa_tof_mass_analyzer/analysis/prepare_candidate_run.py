@@ -30,7 +30,7 @@ RUNTIME_PATH = PROJECT_ROOT / "config" / "candidate_runtime.json"
 def plan_pa_producer_handoffs(pairs: list[tuple[Path, Path]], *, expected_cache_keys: set[str], artifact_root: Path) -> dict:
     """Read explicit small owner inputs before admission; never inspect a PA."""
     from common.contracts.write_run_manifest import file_record
-    from common.simion.pa_family_cache import load_pa_family_cache_transaction
+    from msplatform.backends.simion.pa_family_cache import load_pa_family_cache_transaction
 
     artifact_root = artifact_root.resolve(strict=True)
     cache = artifact_root / "common/simion/pa_family_cache"
@@ -207,7 +207,7 @@ def freeze_pa_producer_handoffs(run_root: Path, handoff_plan: dict, *, expected_
     from msplatform.execution.recorded_file_removal import write_json_atomic
     from common.contracts.verify_run_manifest import verify_record
     from common.contracts.write_run_manifest import file_record
-    from common.simion.pa_family_cache import load_pa_family_cache_transaction
+    from msplatform.backends.simion.pa_family_cache import load_pa_family_cache_transaction
 
     run_root = run_root.resolve()
     if handoff_plan["declared_cache_keys"] != sorted(expected_cache_keys):

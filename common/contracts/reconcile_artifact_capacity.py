@@ -777,7 +777,7 @@ def _apply_ledger_object(root: Path, item: dict[str, Any], ledger_path: Path) ->
     if item.get("operation") == "request_retirement":
         if item.get("manager") != capacity_ledger.PA_CACHE_MANAGER:
             raise ValueError("published cache manager is not registered")
-        from common.simion.pa_family_cache import approve_pa_family_cache_retirement
+        from msplatform.backends.simion.pa_family_cache import approve_pa_family_cache_retirement
 
         approve_pa_family_cache_retirement(
             target.parent, item["cache_key"], item["generation"],
@@ -877,7 +877,7 @@ def _recover_capacity_ledger_owner(root: Path) -> dict[str, int]:
 
 
 def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
-    from common.simion.pa_family_cache import audit_pa_transaction_maintenance
+    from msplatform.backends.simion.pa_family_cache import audit_pa_transaction_maintenance
 
     return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
 

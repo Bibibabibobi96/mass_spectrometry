@@ -206,7 +206,7 @@ class OperatingPACacheTest(unittest.TestCase):
             canonical_operating_pa_cache_key(legacy)
 
     def test_pointer_failure_never_exposes_partial_publication_as_a_hit(self) -> None:
-        with patch("common.simion.pa_family_cache._publish_pointer", side_effect=OSError("pointer failure")):
+        with patch("msplatform.backends.simion.pa_family_cache._publish_pointer", side_effect=OSError("pointer failure")):
             with self.assertRaisesRegex(OSError, "pointer failure"):
                 publish_operating_pa_cache(self.cache, self.identity, self.outputs)
         self.assertEqual(probe_operating_pa_cache(self.cache, self.identity).disposition, CacheDisposition.MISS)

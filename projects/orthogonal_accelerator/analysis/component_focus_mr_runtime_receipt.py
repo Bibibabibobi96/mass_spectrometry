@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.simion.pa_family_cache import PAFamilyCacheError, validate_pa_family_cache_generation
+from msplatform.backends.simion.pa_family_cache import PAFamilyCacheError, validate_pa_family_cache_generation
 from msplatform.backends.simion.standalone_pa_response_set import (
     StandalonePaResponseSetError,
     validate_standalone_pa_response_set,

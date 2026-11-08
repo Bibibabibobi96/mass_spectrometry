@@ -51,7 +51,7 @@ function Invoke-ProjectPython {
 
 function Get-NativeCorridorTransactionArguments {
   param([string]$Owner='',[string]$VerificationEvidence='')
-  $arguments=@('-m','common.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
     '--identity',$identityPath,'--filenames',($familyMembers-join','),'--recovery-policy','none',
     '--published-pin-reason',$publishedPinReason,'--producer-run-config',$runConfig)
   if($Owner){$arguments+=@('--owner',$Owner)}
@@ -474,7 +474,7 @@ try{
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)-or[int64](Get-Item -LiteralPath $path).Length-ne[int64]$record.bytes-or
        (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash-ne[string]$record.sha256){throw "Frozen input identity differs: $path"}
   }
-  $probe=(@(Invoke-ProjectPython -Arguments @('-m','common.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$identityPath,'--filenames',($familyMembers-join',')))-join"`n")|ConvertFrom-Json -Depth 30
+  $probe=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$identityPath,'--filenames',($familyMembers-join',')))-join"`n")|ConvertFrom-Json -Depth 30
   if([string]$probe.disposition-notin@('hit','miss')){throw "Native-corridor cache is unusable: $($probe.detail)"}
   $cacheKey=[string]$probe.cache_key
   [int64]$remainingPeakBytes=0;$coarseRaw='';$coarseOrigin=''

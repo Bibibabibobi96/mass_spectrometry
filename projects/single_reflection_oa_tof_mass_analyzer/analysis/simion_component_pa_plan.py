@@ -16,7 +16,7 @@ from typing import Any, Iterable, Mapping
 
 from common.contracts.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from common.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
     resolve_physical_geometry,
 )

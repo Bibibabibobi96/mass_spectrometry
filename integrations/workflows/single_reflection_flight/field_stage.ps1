@@ -133,7 +133,7 @@ print(json.dumps(bind_parent_fields(bundle['domains'][1],json.loads(sys.argv[2])
         }
         $cacheKeys+=@($key)
         $keyRoot=Join-Path $CacheRoot $key
-        $cacheArgs=@('-m','common.simion.pa_family_cache','--cache-root',$CacheRoot,'--identity',$identityPath,'--filenames',($plan.filenames-join','))
+        $cacheArgs=@('-m','msplatform.backends.simion.pa_family_cache','--cache-root',$CacheRoot,'--identity',$identityPath,'--filenames',($plan.filenames-join','))
         $transactionArgs=$cacheArgs+@('--action','advance-transaction','--owner',([IO.Path]::GetFileName($run)),'--producer-run-config',(Join-Path $run 'run_config.json'),'--recovery-policy','none','--published-pin-reason','Retain standalone frontend fields required by saved instrument workbenches.')
         $generation=$null;$transaction=$null;$refinePerformed=$false;$published=$false
         [long]$keyBytesBefore=0

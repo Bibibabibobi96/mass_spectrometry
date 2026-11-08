@@ -16,7 +16,7 @@ from common.contracts.frozen_inputs import freeze_file
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from msplatform.backends.comsol.resources import native_resource_directory
-from common.simion.pa_family_cache import (
+from msplatform.backends.simion.pa_family_cache import (
     advance_pa_family_cache_transaction, canonical_pa_family_cache_key,
     load_pa_family_cache_transaction,
 )

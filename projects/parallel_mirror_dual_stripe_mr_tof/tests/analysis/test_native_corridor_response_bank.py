@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from common.contracts.file_identity import file_sha256
 
-from common.simion.pa_family_cache import PAFamilyCacheError, advance_pa_family_cache_transaction
+from msplatform.backends.simion.pa_family_cache import PAFamilyCacheError, advance_pa_family_cache_transaction
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
     NATIVE_RESPONSE_NAMES,
@@ -232,7 +232,7 @@ if($fallbackCalls){throw 'Registered receipt was written outside the public owne
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
             derive_response_bank_identity, FROZEN_NAMES,
         )
-        from common.simion.pa_family_cache import canonical_pa_family_cache_key
+        from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
         with TemporaryDirectory() as directory:
             root = Path(directory)
             values = {"geometry": {}, "gem": {}, "basis_namespace": {}, "mesh": {},
