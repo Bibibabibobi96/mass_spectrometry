@@ -375,6 +375,7 @@ function Invoke-HostResourceTransaction {
           catch {$stdinFailure.Exception.Data['scheduler_process_stdout_collection_error']=[string]$_}
           try {$stdinFailure.Exception.Data['scheduler_process_stderr']=$errorTask.GetAwaiter().GetResult()}
           catch {$stdinFailure.Exception.Data['scheduler_process_stderr_collection_error']=[string]$_}
+          [Console]::Error.WriteLine("HOST_SCHEDULER_STDIN_FAILURE EXIT=$($process.ExitCode) STDERR=$($errorTask.GetAwaiter().GetResult())")
         } catch {
           $stdinFailure.Exception.Data['scheduler_process_collection_error']=[string]$_
         }
