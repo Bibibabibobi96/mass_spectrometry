@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from msplatform.execution import cache_generation
-from common.simion.standalone_pa_response_set import (
+from msplatform.backends.simion.standalone_pa_response_set import (
     POLICY_ID,
     ResponseExport,
     StandalonePaResponseSetError,
@@ -80,7 +80,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
         def persist(path: Path) -> None:
             path.write_bytes(path.read_bytes() + b'-persisted')
 
-        with patch('common.simion.standalone_pa_response_set._flush_writable_source', side_effect=persist):
+        with patch('msplatform.backends.simion.standalone_pa_response_set._flush_writable_source', side_effect=persist):
             self._write_receipt()
         receipt = json.loads((self.root / self.receipt_name).read_text())
         for response in receipt['responses']:
@@ -110,7 +110,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             self.assertEqual(pa_hash.call_count, 2)
             print('PA_SELECTOR_READS baseline=2 bytes=26')
         with (patch('msplatform.execution.cache_generation.file_sha256', wraps=file_sha256) as pa_hash,
-              patch('common.simion.standalone_pa_response_set.file_sha256', wraps=file_sha256) as receipt_hash):
+              patch('msplatform.backends.simion.standalone_pa_response_set.file_sha256', wraps=file_sha256) as receipt_hash):
             selected = select_standalone_pa_records(self.root, manifest, self.receipt_name,
                                                     verify_payload=False)
             self.assertEqual(selected, baseline)
@@ -198,7 +198,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             source = next(row for row in manifest["files"] if row["name"] == "field.pa36")
             source[field] = value
             with (self.subTest(field=field),
-                  patch("common.simion.standalone_pa_response_set._file_record",
+                  patch("msplatform.backends.simion.standalone_pa_response_set._file_record",
                         side_effect=AssertionError("metadata check must not read PA")),
                   self.assertRaisesRegex(StandalonePaResponseSetError, "retained native response source identity differs")):
                 validate_standalone_pa_response_set(self.root, manifest, self.receipt_name,
@@ -274,7 +274,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
         self._write_receipt()
         manifest = self._manifest()
         with patch(
-            "common.simion.standalone_pa_response_set._file_record",
+            "msplatform.backends.simion.standalone_pa_response_set._file_record",
             side_effect=AssertionError("sealed inventory must not be rehashed"),
         ):
             selected = validate_standalone_pa_response_set(

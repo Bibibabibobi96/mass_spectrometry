@@ -16,7 +16,7 @@ from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
 from common.simion.pa_family_cache import canonical_pa_family_cache_key
-from common.simion.standalone_pa_response_set import (
+from msplatform.backends.simion.standalone_pa_response_set import (
     ResponseExport,
     select_standalone_pa_records,
     validate_standalone_pa_response_set,

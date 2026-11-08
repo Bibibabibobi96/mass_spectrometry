@@ -56,7 +56,6 @@ RELATIVE_PATHS = (
     "common/contracts/write_run_manifest.py",
     "common/simion/__init__.py",
     "common/simion/pa_family_cache.py",
-    "common/simion/standalone_pa_response_set.py",
     "common/simion/short_pa_path_support.ps1",
     "common/simion/native_fast_adjust_runtime_support.ps1",
     "common/simion/assemble_native_fast_adjust_family.lua",

@@ -44,7 +44,7 @@ from pathlib import Path
 from common.contracts.file_identity import file_sha256_unbuffered
 from common.contracts.capacity_protection import load_capacity_protection_leases, path_is_protected
 from common.simion.pa_family_cache import validate_pa_family_cache_generation, load_pa_family_cache_transaction
-from common.simion.standalone_pa_response_set import validate_standalone_pa_response_set
+from msplatform.backends.simion.standalone_pa_response_set import validate_standalone_pa_response_set
 p=Path(sys.argv[1]); receipt=sys.argv[2]; raw_name=sys.argv[3]
 ids=tuple(int(value) for value in sys.argv[4].split(','))
 transaction_record=None

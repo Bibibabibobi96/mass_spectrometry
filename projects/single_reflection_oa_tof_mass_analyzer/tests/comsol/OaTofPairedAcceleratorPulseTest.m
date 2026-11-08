@@ -9,7 +9,9 @@ classdef OaTofPairedAcceleratorPulseTest < matlab.unittest.TestCase
         function prepare(testCase)
             project=fileparts(fileparts(fileparts(mfilename('fullpath'))));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'comsol')));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(fileparts(project),'src','msplatform','backends','comsol','resources')));
+            repositoryRoot=fileparts(fileparts(project));
+            resourceRoot=fullfile(repositoryRoot,'src','msplatform','backends','comsol','resources');
+            addpath(resourceRoot); testCase.addTeardown(@() rmpath(resourceRoot));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.root=fixture.Folder;
             testCase.source=array2table([17,100,1,-14,0,-18,3000,-45,90,5; ...

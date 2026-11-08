@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from common.simion.standalone_pa_response_set import (
+from msplatform.backends.simion.standalone_pa_response_set import (
     select_standalone_pa_records,
 )
 
