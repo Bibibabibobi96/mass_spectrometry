@@ -303,6 +303,8 @@ STEP与模板后打开自己的文档；导入完成后、进入查看等待前�
 这是启动时事实，不代表持续存活、窗口可见、模型加载或计算完成；最终退出与保护释放仍以原owner收据为准。
 该新增记录已完成定向软件测试、独立复核及普通SDK12真实SIMION调用核验，不回填旧运行；
 启动事实与最终退出收据的各自适用范围见集成正文。
+宿主事务stdin断管时保留原异常，并附加已启动子进程的退出码与stdout/stderr收集结果；
+这不推断旧CI断管根因。RF恢复测试的外部诊断采用UTF-8替换解码，正式JSON/CSV仍严格校验编码。
 
 `api.resume_run(result_path, mode="finalization", context=context)`接原owner的停止后收尾，
 只读核对原request／completion／容量权威后继续原发布，不回调科学动作。Result是可变运输文件，

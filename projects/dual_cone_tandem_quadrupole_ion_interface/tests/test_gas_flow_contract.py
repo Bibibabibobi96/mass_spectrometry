@@ -166,6 +166,39 @@ class GasFlowContractTests(unittest.TestCase):
         self.assertEqual(summary["row_count"], 100)
         self.assertTrue(summary["quantitative_continuum_claim_allowed"])
 
+    def test_nonfinite_axes_and_interpolation_tolerance_are_rejected(self) -> None:
+        validator = _load_validator()
+        for axis in ("r_values_mm", "z_values_mm"):
+            for value in (float("nan"), float("inf"), float("-inf")):
+                with self.subTest(axis=axis, value=value), tempfile.TemporaryDirectory() as directory:
+                    csv_path, metadata_path = _write_fixture(Path(directory))
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    metadata["grid"][axis][-1] = value
+                    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "axes must be finite"):
+                        validator.validate_gas_field(
+                            csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH
+                        )
+        for value in (float("nan"), float("inf"), float("-inf"), 0.0):
+            with self.subTest(coordinate_tolerance=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                csv_path, metadata_path = _write_fixture(root)
+                numerics = json.loads(NUMERICS_PATH.read_text(encoding="utf-8"))
+                numerics["validation"]["grid_coordinate_absolute_tolerance_mm"] = value
+                numerics_path = root / "numerics.json"
+                numerics_path.write_text(json.dumps(numerics), encoding="utf-8")
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                metadata["source_contract_sha256"]["comsol_solver_numerics"] = hashlib.sha256(
+                    numerics_path.read_bytes()
+                ).hexdigest()
+                metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+                arguments = (csv_path, metadata_path, SCIENCE_PATH, numerics_path, GEOMETRY_PATH)
+                if math.isfinite(value):
+                    self.assertEqual(validator.validate_gas_field(*arguments)["status"], "PASS")
+                else:
+                    with self.assertRaisesRegex(ValueError, "coordinate tolerance"):
+                        validator.validate_gas_field(*arguments)
+
     def test_tampered_field_is_rejected(self) -> None:
         validator = _load_validator()
         with tempfile.TemporaryDirectory() as directory:

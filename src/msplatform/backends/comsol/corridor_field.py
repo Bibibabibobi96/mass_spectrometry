@@ -14,8 +14,9 @@ from msplatform.execution.capacity_ledger import record_capacity_object
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.run_capacity_lifecycle import register_writing, register_writing_range
 from msplatform.execution.terminal_publication import publish_terminal_state
+from msplatform.execution.inputs import freeze_file
 
-from .resources import native_resource_directory, native_resource_path, native_resource_text
+from .resources import native_resource_path, native_resource_text
 from msplatform.execution.retention import apply_retention, build_run_manifest
 from msplatform.backends.comsol.candidate_authority import (
     derive_candidate_authority,
@@ -206,11 +207,11 @@ def prepare(
     if run.exists() or run.parent.name != "runs" or run.parent.parent.name != "parallel_mirror_dual_stripe_mr_tof":
         raise ValueError("prepare requires a new MR project run identity")
     root = run.parents[3]
+    repository_root = repository_root.resolve(strict=True)
     plan.update(
         run_id=run.name,
         run_directory=str(run.resolve()),
-        repo_root=str(repository_root.resolve(strict=True)),
-        matlab_resource_directory=str(native_resource_directory()),
+        repo_root=str(repository_root),
     )
     sources = {"corridor_field.py": Path(__file__), "request.json": request_path,
                "source_model_manifest.json": Path(plan["source_field_manifest"]),
@@ -232,8 +233,19 @@ def prepare(
     register_writing_range(root, run)
     inputs = run / "inputs"
     inputs.mkdir()
+    code_root = inputs / "code"
+    plan.update(matlab_resource_directory=str(inputs.resolve()),
+                python_code_root=str(code_root.resolve()))
     for name, path in sources.items():
         shutil.copyfile(path, inputs / name)
+    package_root = Path(__file__).resolve().parents[3]
+    for source in sorted(package_root.joinpath("msplatform").rglob("*")):
+        if not source.is_file() or source.suffix not in {".py", ".json", ".m"}:
+            continue
+        relative = source.relative_to(package_root)
+        destination = code_root / "src" / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(source, destination)
     for name, value in (("source_authority.json", plan.pop("source_authority")),
                         ("frozen_input.json", plan.pop("candidate_authority")),
                         ("resolved_geometry.json", plan.pop("geometry"))):
@@ -267,7 +279,8 @@ def prepare(
                   artifact_retention=plan["artifact_retention"],parameters=plan,
                   capacity_ledger_lifecycle=dict(schema_version=1,enabled=True,artifact_root=str(root),
                                                light_evidence_budget_bytes=plan["artifact_budget_bytes"]),
-                  inputs={p.name:str(p) for p in inputs.iterdir() if p.is_file()})
+                  inputs={p.relative_to(inputs).as_posix():str(p)
+                          for p in inputs.rglob("*") if p.is_file()})
     write_json_atomic(run / "run_config.json", config)
     register_writing(root, run / "run_config.json")
     return {"run_directory": str(run), "status": "prepared_not_executed"}

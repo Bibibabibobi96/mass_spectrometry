@@ -20,6 +20,7 @@ from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.execution.manifest_records import file_record, record_path, verify_record
+from msplatform.execution.retention import classify_file
 from msplatform.execution.terminal_publication import require_completed_terminal_publication
 from msplatform.ion_release.release import generate_release_states
 
@@ -44,7 +45,7 @@ def _verified_successful_run_reference(
                if record_path(record, base_dir=run) == desired]
     if len(matches) != 1:
         raise ValueError("reference manifest must bind exactly one record for " + relative)
-    verify_record("consumed run reference", matches[0], base_dir=run)
+    verify_record("consumed run reference", matches[0], base_dir=run, retention_classifier=classify_file)
     return desired
 
 
@@ -93,10 +94,10 @@ def _published_producer_result(manifest_path: Path, source_path: Path, producer_
     source_record, producer_record = receipt["injected_source"], receipt["source"]["manifest"]
     if record_path(source_record, base_dir=root) != source:
         raise ValueError("handoff source identity differs from handoff receipt")
-    verify_record("handoff source", source_record, base_dir=root)
+    verify_record("handoff source", source_record, base_dir=root, retention_classifier=classify_file)
     require_completed_terminal_publication(record_path(producer_record, base_dir=root))
-    verify_record("producer manifest", producer_record, base_dir=root)
-    copied = file_record(producer_path)
+    verify_record("producer manifest", producer_record, base_dir=root, retention_classifier=classify_file)
+    copied = file_record(producer_path, retention_classifier=classify_file)
     if any(copied[key] != producer_record[key] for key in ("bytes", "sha256")):
         raise ValueError("producer manifest identity differs from handoff receipt")
     result = receipt.get("producer_result")
@@ -122,7 +123,7 @@ def load_injected_source(contract_path: Path) -> dict[str, Any]:
     for name in ("clock_authority", "source_states", "mother_census", "mother_fates", "producer_manifest"):
         record = contract[name]
         if record is not None:
-            verify_record(name, record, base_dir=path.parent)
+            verify_record(name, record, base_dir=path.parent, retention_classifier=classify_file)
             paths[name] = record_path(record, base_dir=path.parent)
     clock_path = paths["clock_authority"]
     clock = _json(clock_path)
@@ -139,7 +140,7 @@ def load_injected_source(contract_path: Path) -> dict[str, Any]:
     authority = None
     if authority_keys <= contract.keys():
         for name in authority_keys:
-            verify_record(name, contract[name], base_dir=path.parent)
+            verify_record(name, contract[name], base_dir=path.parent, retention_classifier=classify_file)
         authority = {name: record_path(contract[name], base_dir=path.parent) for name in authority_keys}
     else:
         root = path.parent.parent.parent

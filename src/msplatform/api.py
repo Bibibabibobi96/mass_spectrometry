@@ -476,7 +476,8 @@ def export_cad(assembly: assembly_domain.Assembly, *, format: str, options: Mapp
     from msplatform.execution.stage_policy import read_stage_policy
 
     filename = _validate_step_export_options(assembly, format, options)
-    snapshot = dict(composition_plan=assembly.composition_plan, components_resolved=assembly.components_resolved)
+    snapshot = dict(composition_plan=assembly.composition_plan, components_resolved=assembly.components_resolved,
+                    components_source=assembly.components_source)
     assembly_geometry_members(snapshot)
     stage, authority = read_stage_policy(context, "export_cad", required_roles=("solver_native_binary",))
     if stage.get("runtime"):
@@ -678,7 +679,8 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         from msplatform.exporters.step import assembly_geometry_members
         _validate_step_export_options(assembly, format, options)
         return assembly_geometry_members(dict(composition_plan=assembly.composition_plan,
-                                               components_resolved=assembly.components_resolved))
+                                               components_resolved=assembly.components_resolved,
+                                               components_source=assembly.components_source))
 
     if operation == "resolve_component":
         validator, scope = component_catalog.resolve_component, "provider_scientific_document_and_component_interface"

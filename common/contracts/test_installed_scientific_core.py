@@ -351,7 +351,8 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     oa_assembly = assembly_api.assemble(oa_study.recipe, oa_components)
     from msplatform.exporters.step import assembly_geometry_members
     oa_members = assembly_geometry_members(dict(composition_plan=oa_assembly.composition_plan,
-                                               components_resolved=oa_assembly.components_resolved))
+                                               components_resolved=oa_assembly.components_resolved,
+                                               components_source=oa_assembly.components_source))
     assert len(oa_members) == 30
     assert sum(member['representation_role']=='physical_solid' for member in oa_members) == 25
     rf_only = assembly_api.assemble(actual_assembly.composition_plan['recipe'], actual_components,

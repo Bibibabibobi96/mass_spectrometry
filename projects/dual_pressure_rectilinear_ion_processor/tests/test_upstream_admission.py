@@ -258,6 +258,41 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity/frame/clock/mechanical exit"):
             self.load()
 
+    def test_large_unroled_records_use_canonical_retention_and_detect_tampering(self):
+        from msplatform.execution.manifest_records import file_record as canonical_file_record
+        from msplatform.execution.retention import classify_file
+
+        size = 8 * 1024 * 1024
+        for key, name in (("clock_authority", "clock_authority.json"),
+                          ("producer_manifest", "producer_manifest.json")):
+            path = self.inputs / name
+            payload = json.dumps(json.loads(path.read_text(encoding="utf-8"))).encode("utf-8")
+            path.write_bytes(payload + b" " * (size - len(payload)))
+            self.contract[key] = canonical_file_record(path, retention_classifier=classify_file)
+            self.assertNotIn("retention_role", self.contract[key])
+            self.assertEqual(self.contract[key]["bytes"], size)
+        self.publish()
+        result = self.load()["producer_result"]
+        root = self.run / "large_preparation"
+        output = root / "results/multipole_ip"
+        output.mkdir(parents=True)
+        source = output / "ip_injected_source.json"
+        source.write_text(json.dumps(self.contract), encoding="utf-8")
+        receipt_path = output / "preparation_receipt.json"
+        receipt_path.write_text(json.dumps(dict(role="multipole_ip_preparation", status="success",
+            source=dict(manifest=self.contract["producer_manifest"]), injected_source=file_record(source),
+            producer_result=result)), encoding="utf-8")
+        (root / "run_manifest.json").write_text(json.dumps(dict(run_id=root.name,
+            project="instrument_assembly", mode="multipole_ip_preparation", status="success", inputs={},
+            outputs=[file_record(source), file_record(receipt_path)])), encoding="utf-8")
+        self.assertEqual(load_injected_source(source)["producer_result"], result)
+        clock_path = self.inputs / "clock_authority.json"
+        payload = bytearray(clock_path.read_bytes())
+        payload[-1] = 9
+        clock_path.write_bytes(payload)
+        with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+            load_injected_source(source)
+
     def test_published_handoff_uses_public_reference_and_freezes_its_authority(self):
         result = self.load()["producer_result"]
         root = self.run/"preparation"

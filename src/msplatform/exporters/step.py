@@ -9,11 +9,8 @@ from collections.abc import Mapping
 
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
-from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as rf_interface
-from msplatform.components.single_reflection_oa_tof.assembly_interface import resolve_assembly_interface as tof_interface
-from msplatform.components.single_reflection_oa_tof.accelerator_geometry import resolve_accelerator_geometry, apply_side_opening
+from msplatform.components.catalog import _from_provider
 from msplatform.components.rf_multipole.geometry_members import iter_geometry_members as rf_members
-from msplatform.components.orthogonal_accelerator.assembly_interface import build_assembly_interface as oa_interface
 from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members as oa_members
 from msplatform.components.single_reflection_oa_tof.geometry_members import iter_geometry_members as tof_members
 
@@ -24,11 +21,13 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
     Local shapes are retained; the proper local-to-assembly transform is applied
     once only by the exporter. Source refs address the exact resolved snapshot.
     """
-    if not isinstance(assembly,Mapping) or set(assembly)!={'composition_plan','components_resolved'}:
-        raise ValueError('complete Assembly snapshot required')
+    if not isinstance(assembly,Mapping) or set(assembly)!={'composition_plan','components_resolved','components_source'}:
+        raise ValueError('complete Assembly snapshot with component sources required')
     plan,components=assembly['composition_plan'],assembly['components_resolved']
+    sources=assembly['components_source']
     selected=plan['scope']['instance_ids']
-    if not selected or set(plan['components'])!=set(components): raise ValueError('complete parent Assembly resolved coverage differs')
+    if not selected or set(plan['components'])!=set(components) or set(sources)!=set(components):
+        raise ValueError('complete parent Assembly source/resolved coverage differs')
     if compile_assembly_layout(plan['recipe'],plan['components'],local_scope=plan.get('local_scope'))!=plan:
         raise ValueError('CAD Assembly plan differs from its canonical parent layout')
     poses={row['instance_id']:row['transform'] for row in plan['recipe']['instances']}
@@ -37,18 +36,14 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
         interface=plan['components'][instance]
         project=interface['project_id'];resolved=components[instance]
         if project=='rf_multipole_ion_optics':
-            actual=rf_interface(resolved,geometry_profile_id=interface['geometry_profile_id'])
-            members=rf_members(resolved)
+            provider='rf_multipole';members=rf_members(resolved)
         elif project=='orthogonal_accelerator':
-            actual=oa_interface(resolved,geometry_profile_id=interface['geometry_profile_id'])
-            members=oa_members(resolved)
+            provider='orthogonal_accelerator';members=oa_members(resolved)
         elif project=='single_reflection_oa_tof_mass_analyzer':
             if interface['variant_id']!='three_zone_square': raise ValueError('complete TOF STEP requires three_zone_square')
-            projection=apply_side_opening(resolve_accelerator_geometry(resolved,variant_id=interface['variant_id']),side_opening=resolved['mechanical_side_opening'])
-            actual=tof_interface(resolved,projection=projection,geometry_profile_id=interface['geometry_profile_id'])
-            members=tof_members(resolved)
+            provider='single_reflection_oa_tof';members=tof_members(resolved)
         else: raise ValueError('STEP provider not implemented: '+project)
-        if actual!=interface: raise ValueError('CAD resolved design differs from its provider interface')
+        _from_provider(provider,resolved,interface,source_design=sources[instance])
         transform=RigidTransform.from_contract(poses[instance])
         if transform.from_frame_id!=interface['local_frame_id']: raise ValueError('CAD source frame differs from interface')
         identities=set()

@@ -100,6 +100,50 @@ if($script:copies-ne12-or$failureStage-cne'geometry_input_freshness'){throw 'Inc
                 print("GEOMETRY_ADMISSION_CASE=" + json.dumps(facts, sort_keys=True), flush=True)
 
 
+    def test_postprocess_imports_gas_field_from_frozen_repository_snapshot(self):
+        owner = PROJECT / "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1"
+        source = owner.read_text(encoding="utf-8")
+        start = source.index("  $validation=Join-Path $package.result_dir 'gas_field_validation.json'")
+        end = source.index("  $fieldMetadata=", start)
+        block = source[start:end]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot = root / "inputs/repository_snapshot"
+            active = root / "active_source"
+            module = "msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py"
+            for base, marker in ((snapshot, "FROSNAPSHOT"), (active, "ACTIVE_FALLBACK")):
+                target = base / module
+                target.parent.mkdir(parents=True, exist_ok=True)
+                for package in (base / "msplatform", base / "msplatform/components", target.parent):
+                    (package / "__init__.py").write_text("", encoding="utf-8")
+                target.write_text(
+                    "import pathlib,sys\n"
+                    "pathlib.Path(sys.argv[sys.argv.index('--output')+1]).write_text("
+                    + repr(marker) + ",encoding='utf-8')\n",
+                    encoding="utf-8",
+                )
+            script = root / "postprocess.ps1"
+            script.write_text(r"""param($PublicRepo,$Python,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $PublicRepo 'common/contracts/run_artifact_support.ps1')
+$python=$Python
+$package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results')}
+New-Item -ItemType Directory -Path $package.result_dir -Force|Out-Null
+$field='unused';$metadata='unused'
+$frozen=@{gas_flow_science='unused';comsol_solver_numerics='unused';resolved_geometry='unused'}
+$env:PYTHONPATH=Join-Path $Root 'active_source'
+""" + block + r"""
+Get-Content -LiteralPath $validation -Raw
+""", encoding="utf-8")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
+                                     sys.executable, str(root)], cwd=active, capture_output=True,
+                                    text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((root / "results/gas_field_validation.json").read_text(encoding="utf-8"),
+                             "FROSNAPSHOT")
+            self.assertNotIn("ACTIVE_FALLBACK", result.stdout + result.stderr)
+
+
     def test_current_compiler_baseline_pair_and_missing_old_bundle(self):
         from common.contracts.compile_execution_plan import compile_execution
         from msplatform.contracts.machine_contracts import sha256

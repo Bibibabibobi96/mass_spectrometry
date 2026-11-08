@@ -211,11 +211,13 @@ print('DUAL_GEOMETRY_ENVIRONMENT=' + json.dumps(dict(
   }
   $failureStage='independent_gas_field_validation'
   $validation=Join-Path $package.result_dir 'gas_field_validation.json'
-  & $python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field `
-    --csv $field --metadata $metadata --science $frozen.gas_flow_science `
-    --numerics $frozen.comsol_solver_numerics --geometry $frozen.resolved_geometry `
-    --output $validation
-  if($LASTEXITCODE-ne 0){throw 'Independent gas-field validation failed.'}
+  Invoke-RunToolRootContext -RepoRoot (Join-Path $package.input_dir 'repository_snapshot') -Operation {
+    & $python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field `
+      --csv $field --metadata $metadata --science $frozen.gas_flow_science `
+      --numerics $frozen.comsol_solver_numerics --geometry $frozen.resolved_geometry `
+      --output $validation
+    if($LASTEXITCODE-ne 0){throw 'Independent gas-field validation failed.'}
+  }
   $fieldMetadata=Get-Content -LiteralPath $metadata -Raw|ConvertFrom-Json
   Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version=1;role='dual_cone_axisymmetric_gas_flow_summary';status='success'

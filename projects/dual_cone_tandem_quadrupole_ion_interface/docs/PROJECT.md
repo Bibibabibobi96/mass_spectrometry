@@ -17,6 +17,8 @@
 未改变现有气流或轨迹资格，也未把项目 `prepare.py` 整体声明为已安装能力。
 规范组件和backend不保存项目根、默认配置文件或checkout定位逻辑；纯函数与CLI均要求显式输入路径，
 原项目默认体验只由项目verify、prepare和工作流脚本接线提供。
+气流后处理现通过同一运行root机制消费本次`repository_snapshot`；气体轴、坐标容差及密度输入拒绝非有限值，
+零坐标容差保持合法。定向软件回归通过，未运行COMSOL或SIMION。
 项目prepare现直接使用`msplatform.contracts.particle_physics`，不再经旧公共桥；源质量、能量和失败语义不变。
 
 ## 部件判断

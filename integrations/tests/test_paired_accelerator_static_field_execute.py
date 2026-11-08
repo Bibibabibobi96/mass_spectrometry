@@ -401,7 +401,7 @@ foreach($completed in @($true,$false)){
             with self.assertRaises((ValueError,AssertionError)):
                 runtime.prepare_run(run)
 
-    def test_real_frozen_closure_prepares_without_checkout_imports(self):
+    def test_real_frozen_closure_prepares_and_materializes_tasks(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run,author=self.prepared(root)
             command=f". '{ROOT}/integrations/runtime/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/integrations/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
@@ -421,10 +421,33 @@ foreach($completed in @($true,$false)){
                 "assert all(Path(module.__file__).resolve().is_relative_to(Path.cwd().resolve()) "
                 "for name,module in list(__import__('sys').modules.items()) "
                 "if name.startswith(('common.','integrations.','projects.','msplatform')) and getattr(module,'__file__',None)); "
-                "runtime.prepare_run(Path(__import__('sys').argv[1]));print('FROZEN_PREPARE=PASS')",str(run)],
+                "runtime.prepare_run(Path(__import__('sys').argv[1]));"
+                "tasks=runtime.materialize_tasks(Path(__import__('sys').argv[1]),Path.cwd(),Path(__import__('sys').argv[2]));"
+                "resources=Path(runtime.native_resource_directory());"
+                "assert resources==Path.cwd()/'src/msplatform/backends/comsol/resources';"
+                "assert not (resources/'candidate_field.m').exists();"
+                "assert Path(tasks['matlab']).is_file() and Path(tasks['lua']).is_file();"
+                "print('FROZEN_PREPARE_AND_TASKS=PASS')",str(run),str(root/'ordinary.pa')],
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn('FROZEN_PREPARE=PASS',result.stdout)
+            self.assertIn('FROZEN_PREPARE_AND_TASKS=PASS',result.stdout)
+            resources=snapshot/'src/msplatform/backends/comsol/resources'
+            for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
+                         'build_sectioned_geometry.m','build_accelerator_grids.m'):
+                self.assertEqual((resources/name).read_bytes(),
+                    (ROOT/'src/msplatform/backends/comsol/resources'/name).read_bytes())
+            task=(run/'inputs/run_comsol_field.m').read_text(encoding='utf-8')
+            self.assertIn(resources.as_posix(),task)
+            self.assertIn((snapshot/'common/comsol').as_posix(),task)
+            self.assertIn("build_and_export_paired_accelerator_field(",task)
+            shutil.rmtree(resources)
+            result=subprocess.run([sys.executable,'-B','-s','-c',
+                "from pathlib import Path; from integrations.workflows.paired_accelerator_static_field import runtime; "
+                "runtime.materialize_tasks(Path(__import__('sys').argv[1]),Path.cwd(),Path(__import__('sys').argv[2]))",
+                str(run),str(root/'ordinary.pa')],cwd=snapshot,env=environment,capture_output=True,text=True,
+                encoding="utf-8",errors="replace",timeout=60)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('installed COMSOL native resource directory is missing',result.stderr)
 
     def test_task_transport_and_complete_point_collection(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -436,7 +459,8 @@ foreach($completed in @($true,$false)){
             self.assertIn((ROOT/'common/comsol').as_posix(),task)
             for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
                          'build_sectioned_geometry.m','build_accelerator_grids.m'):
-                self.assertEqual(runtime.native_resource_directory()/name,ROOT/'src/msplatform/backends/comsol/resources'/name)
+                self.assertEqual((runtime.native_resource_directory()/name).read_bytes(),
+                    (ROOT/'src/msplatform/backends/comsol/resources'/name).read_bytes())
             build=runtime.field_build_arguments(plan)
             voltages=list(map(float,build['voltages'].split(',')))
             for electrode,value in plan['static_on_electrode_voltages_v'].items():

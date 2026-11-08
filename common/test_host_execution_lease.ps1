@@ -113,6 +113,35 @@ try {
   } finally {
     Set-Item -Path function:Invoke-HostResourceTransaction -Value $realTransaction
   }
+  $fixturePackage = Join-Path $testRoot 'msplatform/execution'
+  New-Item -ItemType Directory -Path $fixturePackage -Force | Out-Null
+  Set-Content -LiteralPath (Join-Path $testRoot 'msplatform/__init__.py') -Value '' -Encoding utf8
+  Set-Content -LiteralPath (Join-Path $fixturePackage '__init__.py') -Value '' -Encoding utf8
+  Set-Content -LiteralPath (Join-Path $fixturePackage 'host_resource_scheduler.py') -Encoding utf8 -Value @'
+import sys
+sys.stderr.buffer.write(b'HOST_SCHEDULER_STDIN_CLOSED_SENTINEL\n')
+sys.stderr.flush()
+sys.exit(23)
+'@
+  $originalWorkspace = $script:HostResourceExecutionContext.workspace
+  $script:HostResourceExecutionContext.workspace = $testRoot
+  try {
+    $stdinError = $null
+    try {
+      $null = Invoke-HostResourceTransaction -StatePath $statePath -Request @{operation='status'}
+    } catch { $stdinError = $_ }
+    if($null-ne$stdinError){Write-Output "STDIN_ERROR_TYPE=$($stdinError.Exception.GetType().FullName) BASE=$($stdinError.Exception.GetBaseException().GetType().FullName) MESSAGE=$($stdinError.Exception.Message)"}
+    Assert-True ($null-ne$stdinError-and$stdinError.Exception.GetBaseException()-is[IO.IOException]) `
+      'A closed scheduler stdin pipe did not preserve its original IOException.'
+    Assert-True ($stdinError.Exception.Data['scheduler_process_exit_code']-eq23) `
+      'The closed-pipe path did not collect the scheduler exit code.'
+    Assert-True ([string]$stdinError.Exception.Data['scheduler_process_stdout']-eq'') `
+      'The closed-pipe fixture produced unexpected stdout.'
+    Assert-True ([string]$stdinError.Exception.Data['scheduler_process_stderr']-match'HOST_SCHEDULER_STDIN_CLOSED_SENTINEL') `
+      'The closed-pipe path lost the scheduler stderr diagnostic.'
+  } finally { $script:HostResourceExecutionContext.workspace = $originalWorkspace }
+  Write-Output 'HOST_RESOURCE_STDIN_CLOSED_TEST=PASS EXIT=23 STDERR=CAPTURED'
+
   $emptyParents = [Collections.Generic.Dictionary[int,int]]::new()
   $snapshotParents = [Collections.Generic.Dictionary[int,int]]::new()
   $snapshotParents[11] = 3; $snapshotParents[12] = 7; $snapshotParents[13] = 0

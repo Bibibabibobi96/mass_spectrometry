@@ -28,6 +28,12 @@ providers, physical ports and explicit poses. TOF reuses its internal OA through
 the provider DAG. Scientific electrode groups and native labels are separate.
 CAD and SIMION are parallel projections; STEP is not a mandatory intermediate
 for solving fields. Ideal zero-thickness surfaces are not made mechanical solids.
+STEP snapshots explicitly retain each component's source design and revalidate
+source→resolved/interface before export; missing sources and resolved-geometry
+tampering fail closed. Paired-static minimal frozen materialization no longer
+requires unrelated `candidate_field.m`, and resource checks compare ownership,
+bytes and task content rather than checkout absolute paths. These are directed
+software checks, not a new native CAD/COMSOL qualification.
 
 | Public stage | Supported behavior and side-effect boundary |
 |---|---|

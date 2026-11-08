@@ -71,6 +71,7 @@ class StepExportTests(unittest.TestCase):
         recipe['instances'].append(instance)
         interfaces['second_rf'] = copy.deepcopy(interfaces['multipole'])
         snapshot['components_resolved']['second_rf'] = copy.deepcopy(snapshot['components_resolved']['multipole'])
+        snapshot['components_source']['second_rf'] = copy.deepcopy(snapshot['components_source']['multipole'])
         snapshot['composition_plan'] = compile_assembly_layout(recipe, interfaces)
         before = copy.deepcopy(snapshot)
         members = assembly_geometry_members(snapshot)
@@ -388,7 +389,8 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
         parts['three'] = component_api.resolve_component(dict(provider_id='orthogonal_accelerator', design=source))
         instrument = assembly_api.assemble(instrument.composition_plan['recipe'], parts)
         snapshot = dict(composition_plan=instrument.composition_plan,
-                        components_resolved=instrument.components_resolved)
+                        components_resolved=instrument.components_resolved,
+                        components_source=instrument.components_source)
         local_probe = [-15.99, 1.0, 2.0]
         pose = next(row['transform'] for row in snapshot['composition_plan']['recipe']['instances']
                     if row['instance_id'] == 'three')

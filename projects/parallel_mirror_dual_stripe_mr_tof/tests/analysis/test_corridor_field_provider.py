@@ -678,6 +678,50 @@ class RefinementWindowProviderTest(unittest.TestCase):
         self.assertIn("awaiting natural completion", finalizer)
         self.assertIn("$process.WaitForExit()", finalizer)
         self.assertNotIn("$process.Kill($true)", finalizer)
+        self.assertIn("Invoke-RunToolRootContext -RepoRoot ([string]$plan.python_code_root)", finalizer)
+
+    def test_run_finalizes_without_original_resources_or_installed_python_code(self):
+        module = "msplatform.backends.comsol.corridor_field"
+        resource_names = (
+            "candidate_field.m", "update_corridor_workpoint_voltages.m",
+            "export_corridor_scalar_field.m", "classify_corridor_conductor_voltage.m",
+        )
+        with tempfile.TemporaryDirectory(prefix="mrtof-original-resources-") as directory:
+            original = Path(directory)
+            for name in resource_names:
+                (original / name).write_bytes(
+                    (Path(__file__).resolve().parents[4] /
+                     "src/msplatform/backends/comsol/resources" / name).read_bytes()
+                )
+            with patch(module + ".native_resource_path", side_effect=lambda name: original / name):
+                run, plan = self.candidate()
+        inputs = run / "inputs"
+        self.assertEqual(Path(plan["matlab_resource_directory"]), inputs)
+        self.assertEqual(Path(plan["python_code_root"]), inputs / "code")
+        self.assertFalse(original.exists())
+        for name in resource_names:
+            self.assertTrue((inputs / name).is_file())
+        bootstrap = (
+            "import runpy,sys;"
+            "from pathlib import Path;"
+            "root=Path(sys.argv[1]);sys.path.insert(0,str(root/'src'));"
+            "import msplatform.execution.capacity_ledger as ledger;"
+            "ledger.record_capacity_object=lambda *args,**kwargs:None;"
+            "sys.argv=['corridor_field','--run-directory',sys.argv[2],'--finalize'];"
+            "runpy.run_module('msplatform.backends.comsol.corridor_field',run_name='__main__')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", "-c", bootstrap,
+             str(inputs / "code"), str(run)],
+            cwd=self.root, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "success")
+        config = json.loads((run / "run_config.json").read_text(encoding="utf-8"))
+        frozen_module = inputs / "code/src/msplatform/backends/comsol/corridor_field.py"
+        frozen_key = frozen_module.relative_to(inputs).as_posix()
+        self.assertIn(frozen_key, config["inputs"])
+        self.assertEqual(Path(config["inputs"][frozen_key]), frozen_module)
 
     def test_warning_artifact_observation_includes_nested_window_payload(self):
         repo = Path(__file__).resolve().parents[4]

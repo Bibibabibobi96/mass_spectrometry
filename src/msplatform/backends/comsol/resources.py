@@ -27,7 +27,10 @@ def native_resource_path(name: str) -> Path:
 
 def native_resource_directory() -> Path:
     """Return the installed directory containing the complete MATLAB closure."""
-    return native_resource_path("candidate_field.m").parent
+    resource = files("msplatform.backends.comsol").joinpath("resources")
+    if not resource.is_dir():
+        raise FileNotFoundError("installed COMSOL native resource directory is missing")
+    return Path(str(resource))
 
 
 def native_resource_text(name: str) -> str:

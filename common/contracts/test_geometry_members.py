@@ -13,7 +13,8 @@ def real_snapshot():
     case=example_api.load_example('rf_oatof_functional_v1')
     parts={name:component_api.resolve_component(req) for name,req in case.component_requests.items()}
     assembly=assembly_api.assemble(case.recipe,parts)
-    return dict(composition_plan=assembly.composition_plan,components_resolved=assembly.components_resolved)
+    return dict(composition_plan=assembly.composition_plan,components_resolved=assembly.components_resolved,
+                components_source=assembly.components_source)
 
 
 class GeometryMemberTests(unittest.TestCase):
@@ -64,6 +65,17 @@ class GeometryMemberTests(unittest.TestCase):
             else: changed['components_resolved']['multipole']['segmentation']['segmented_rod_array']['electrodes'][0]['radius_mm']=float('nan')
             with self.subTest(mutate=mutate),self.assertRaises(ValueError): assembly_geometry_members(changed)
 
+    def test_step_requires_sources_and_rejects_resolved_design_tampering(self):
+        snapshot=real_snapshot()
+        self.assertEqual(len(assembly_geometry_members(snapshot)),77)
+        missing=copy.deepcopy(snapshot);missing.pop('components_source')
+        with self.assertRaisesRegex(ValueError,'component sources'):
+            assembly_geometry_members(missing)
+        changed=copy.deepcopy(snapshot)
+        changed['components_resolved']['oatof']['geometry_mm']['detector_radius'] += 5
+        with self.assertRaisesRegex(ContractError,'source design documents'):
+            assembly_geometry_members(changed)
+
     def test_explicit_local_scope_retains_parent_but_exports_only_selected_instance(self):
         from msplatform.assembly.resolve_assembly import compile_assembly_layout
         snapshot=real_snapshot();plan=snapshot['composition_plan']
@@ -90,7 +102,8 @@ def independent_oa_objects():
     parts = {name: component_api.resolve_component(request)
              for name, request in study.component_requests.items()}
     instrument = assembly_api.assemble(study.recipe, parts)
-    snapshot = dict(composition_plan=instrument.composition_plan, components_resolved=instrument.components_resolved)
+    snapshot = dict(composition_plan=instrument.composition_plan, components_resolved=instrument.components_resolved,
+                    components_source=instrument.components_source)
     return parts, instrument, snapshot
 
 
@@ -125,7 +138,8 @@ class IndependentOAProviderTests(unittest.TestCase):
         local = assembly_api.assemble(instrument.composition_plan['recipe'], parts,
             local_scope=dict(instance_ids=['three'], research_scope='three-zone OA only',
                              boundary_assumptions='Explicit local CAD scope; retain full parent'))
-        selected = dict(composition_plan=local.composition_plan, components_resolved=local.components_resolved)
+        selected = dict(composition_plan=local.composition_plan, components_resolved=local.components_resolved,
+                        components_source=local.components_source)
         members = assembly_geometry_members(selected)
         self.assertEqual({m['instance_id'] for m in members}, {'three'})
         self.assertEqual(len(members), 9)

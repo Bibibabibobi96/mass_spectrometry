@@ -78,20 +78,27 @@ def validate_gas_field(
     z_values = [float(value) for value in grid["z_values_mm"]]
     if not r_values or not z_values:
         raise ValueError("gas-field grid axes must be nonempty")
+    if any(not math.isfinite(value) for value in [*r_values, *z_values]):
+        raise ValueError("gas-field grid axes must be finite")
     if any(b <= a for a, b in zip(r_values, r_values[1:], strict=False)):
         raise ValueError("radial grid must be strictly increasing")
     if any(b <= a for a, b in zip(z_values, z_values[1:], strict=False)):
         raise ValueError("axial grid must be strictly increasing")
 
     expected_columns = export["columns"]
-    coordinate_tolerance = numerics["validation"][
+    coordinate_tolerance = float(numerics["validation"][
         "grid_coordinate_absolute_tolerance_mm"
-    ]
+    ])
+    if not math.isfinite(coordinate_tolerance) or coordinate_tolerance < 0.0:
+        raise ValueError("gas-field coordinate tolerance must be finite and nonnegative")
     gas = science["physics"]["gas_species"]
     density_factor = gas["molar_mass_kg_per_mol"] / gas[
         "universal_gas_constant_j_per_mol_k"
     ]
-    density_tolerance = numerics["validation"]["ideal_gas_relative_tolerance"]
+    density_tolerance = float(numerics["validation"]["ideal_gas_relative_tolerance"])
+    if (not math.isfinite(density_factor) or density_factor <= 0.0
+            or not math.isfinite(density_tolerance) or density_tolerance < 0.0):
+        raise ValueError("gas-field density validation inputs must be finite and physical")
     required_fields = numerics["validation"]["required_fields"]
     fluid_count = 0
     max_knudsen = 0.0

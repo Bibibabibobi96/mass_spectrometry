@@ -94,7 +94,7 @@ try{
     @{outcome=$outcome;failure_message=$failure;wall_seconds=$watch.Elapsed.TotalSeconds;peak_managed_memory_bytes=$peak;resource_threshold_action='warn';resource_warnings=$warnings} |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $inputs 'provider_usage.json') -Encoding utf8
     if($capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity}
-    Invoke-RunToolRootContext -RepoRoot $repo -Operation {
+    Invoke-RunToolRootContext -RepoRoot ([string]$plan.python_code_root) -Operation {
         & $python -m msplatform.backends.comsol.corridor_field --run-directory $RunDirectory --finalize
         if($LASTEXITCODE -ne 0){throw 'Candidate provider terminal publication failed; retain original run for recovery.'}
     }

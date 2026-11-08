@@ -46,3 +46,7 @@ class Assembly:
     @property
     def components_resolved(self) -> dict[str, dict[str, Any]]:
         return {name: value.resolved_design for name, value in self._components.items()}
+
+    @property
+    def components_source(self) -> dict[str, dict[str, Any]]:
+        return {name: value.source_design for name, value in self._components.items()}

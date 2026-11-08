@@ -363,8 +363,23 @@ function Invoke-HostResourceTransaction {
     try {
       $outputTask = $process.StandardOutput.ReadToEndAsync()
       $errorTask = $process.StandardError.ReadToEndAsync()
-      $process.StandardInput.WriteLine((@{request=$Request;snapshot=$snapshot} | ConvertTo-Json -Depth 12 -Compress))
-      $process.StandardInput.Close()
+      try {
+        $process.StandardInput.WriteLine((@{request=$Request;snapshot=$snapshot} | ConvertTo-Json -Depth 12 -Compress))
+        $process.StandardInput.Close()
+      } catch {
+        $stdinFailure=$_
+        try {
+          $process.WaitForExit()
+          $stdinFailure.Exception.Data['scheduler_process_exit_code']=$process.ExitCode
+          try {$stdinFailure.Exception.Data['scheduler_process_stdout']=$outputTask.GetAwaiter().GetResult()}
+          catch {$stdinFailure.Exception.Data['scheduler_process_stdout_collection_error']=[string]$_}
+          try {$stdinFailure.Exception.Data['scheduler_process_stderr']=$errorTask.GetAwaiter().GetResult()}
+          catch {$stdinFailure.Exception.Data['scheduler_process_stderr_collection_error']=[string]$_}
+        } catch {
+          $stdinFailure.Exception.Data['scheduler_process_collection_error']=[string]$_
+        }
+        throw $stdinFailure
+      }
       $transactionWaitMilliseconds=45000
       if($null-ne$WaitTimer-and$WaitTimeoutSeconds-gt0){
         $transactionWaitMilliseconds=[int][Math]::Max(1,[Math]::Min(45000,1000*($WaitTimeoutSeconds-$WaitTimer.Elapsed.TotalSeconds)))

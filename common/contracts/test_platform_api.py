@@ -480,6 +480,7 @@ class PlatformApiTests(unittest.TestCase):
             self.assertEqual(call["expected_operation_ids"], ("export_step",))
             self.assertEqual(call["action"].func, execute_cad_export)
             self.assertEqual(call["action"].keywords["snapshot"]["components_resolved"], assembly.components_resolved)
+            self.assertEqual(call["action"].keywords["snapshot"]["components_source"], assembly.components_source)
             reader.assert_called_once_with({"manifest": {"fixture": True}, "product_id": "cad_geometry"}, expected_kind="cad_geometry")
             self.assertFalse(context.workspace.exists())
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as named_owner, \
@@ -726,6 +727,7 @@ class PlatformApiTests(unittest.TestCase):
         components["multipole"].assembly_interface["ports"].clear()
         assembly.composition_plan["components"].clear()
         assembly.components_resolved["oatof"].clear()
+        assembly.components_source["oatof"].clear()
         assembly.components.clear()
         self.assertEqual((case, components, assembly), before)
         rebuilt = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)

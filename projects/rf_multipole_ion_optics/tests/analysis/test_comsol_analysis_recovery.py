@@ -178,7 +178,7 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
             outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), '-AnalyzeOnly', *(['-ReextractFromModel'] if reextract else []),
                                       '-ParentManifestPath', str(manifest), '-EngineeringBudgetPath', str(budget_path), '-PythonExe', sys.executable,
                                       '-RunId', run_id, '-ResultPath', str(result)],
-                                     cwd=root, text=True, encoding='utf-8', capture_output=True, timeout=300, env=private_host_environment())
+                                     cwd=root, text=True, encoding='utf-8', errors='replace', capture_output=True, timeout=300, env=private_host_environment())
         except subprocess.TimeoutExpired as error:
             for stream in ("stdout", "stderr"):
                 partial = getattr(error, stream)
@@ -188,6 +188,15 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
             raise
         child = root/'artifacts/projects/rf_multipole_ion_optics/runs'/run_id
         return outcome, result, child
+
+    def test_external_process_diagnostics_replace_non_utf8_without_changing_result_files(self):
+        outcome = subprocess.run(
+            [sys.executable, '-c',
+             "import sys;sys.stderr.buffer.write(b'NON_UTF8_DIAGNOSTIC=\\xff');sys.exit(17)"],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30, cwd=REPO,
+        )
+        self.assertEqual(outcome.returncode, 17)
+        self.assertIn('NON_UTF8_DIAGNOSTIC=\ufffd', outcome.stderr)
 
     def test_controlled_cpu_fixture_preserves_real_comsol_admission_process_and_release(self):
         with tempfile.TemporaryDirectory(prefix='rf controlled cpu ') as directory:
@@ -266,7 +275,7 @@ if(@($status.records|Where-Object token -eq $token).Count){throw 'Controlled fix
 Write-Output 'CONTROLLED_CPU_GREEN=real_process_and_released'
 """, encoding='utf-8')
             outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(source), sys.executable, str(root)],
-                                     cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=180,
+                                     cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180,
                                      env=private_host_environment())
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
             for marker in ('CONTROLLED_CPU_RED=cpu_pressure', 'CONTROLLED_CPU_RED=cpu_headroom',
@@ -323,7 +332,7 @@ Write-Output 'CONTROLLED_CPU_GREEN=real_process_and_released'
             resume = subprocess.run(['pwsh', '-NoProfile', '-File', str(WRAPPER), '-ResumeFinalization',
                                      '-RunId', child.name, '-ResultPath', str(result_path),
                                      '-ArtifactRootPath', str(root/'artifacts'), '-PythonExe', sys.executable],
-                                    cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=300, env=private_host_environment())
+                                    cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300, env=private_host_environment())
             self.assertEqual(resume.returncode, 0, resume.stdout+resume.stderr)
             self.assertEqual((child/'run_manifest.json').read_bytes(), before_child)
             self.assertEqual(manifest.read_bytes(), before)
@@ -387,7 +396,7 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
             script = root/'read-original-stage.ps1'
             script.write_text(code, encoding='utf-8')
             outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(manifest)],
-                                     capture_output=True, text=True, encoding='utf-8', cwd=root, timeout=300, env=private_host_environment())
+                                     capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=root, timeout=300, env=private_host_environment())
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
             evidence = json.loads(outcome.stdout.strip().splitlines()[-1])
             self.assertEqual(evidence['basis'], 'frozen_producer_whole_native_PASS_MODEL_SAVED_and_bound_exports')
@@ -396,7 +405,7 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
     def test_analysis_requires_own_budget_and_rejects_insufficient_new_payload_before_new_run(self):
         absent = subprocess.run(['pwsh', '-NoProfile', '-File', str(WRAPPER), '-AnalyzeOnly',
                                  '-ParentManifestPath', 'must-not-open.json', '-PythonExe', sys.executable],
-                                capture_output=True, text=True, encoding='utf-8', cwd=REPO, timeout=300, env=private_host_environment())
+                                capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=REPO, timeout=300, env=private_host_environment())
         self.assertNotEqual(absent.returncode, 0)
         self.assertIn('requires an explicit EngineeringBudgetPath', absent.stdout+absent.stderr)
         with tempfile.TemporaryDirectory() as directory:
@@ -413,7 +422,7 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
     def test_public_wrapper_rejects_scientific_override_before_parent_or_solver_work(self):
         outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(WRAPPER), '-AnalyzeOnly',
                                   '-ParentManifestPath', 'must-not-be-opened.json', '-EngineeringBudgetPath', 'not-read-budget.json', '-EvidenceContractPath', 'today.json',
-                                  '-PythonExe', sys.executable], capture_output=True, text=True, encoding='utf-8', cwd=REPO, timeout=300, env=private_host_environment())
+                                  '-PythonExe', sys.executable], capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=REPO, timeout=300, env=private_host_environment())
         self.assertNotEqual(outcome.returncode, 0)
         self.assertIn('parent frozen scientific authority', outcome.stdout+outcome.stderr)
 
@@ -461,7 +470,7 @@ if($ownerState.analysis_operations.Count){throw 'Unknown Python exit fabricated 
 Write-Output 'UNKNOWN_WRITER_PRESERVED'
 """, encoding='utf-8')
             outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), str(root)],
-                                     capture_output=True, text=True, encoding='utf-8', cwd=REPO, timeout=300, env=private_host_environment())
+                                     capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=REPO, timeout=300, env=private_host_environment())
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
             self.assertIn('UNKNOWN_WRITER_PRESERVED', outcome.stdout)
 
@@ -482,7 +491,7 @@ Invoke-Expression $function[0].Extent.Text
 $source=Get-FiniteComsolAnalysisSource -ManifestPath $Manifest -Python $Python -RepoRoot $Repo -ReextractFromModel
 $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
 """, encoding='utf-8')
-                outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(manifest)], capture_output=True, text=True, encoding='utf-8', cwd=REPO, timeout=300, env=private_host_environment())
+                outcome = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(manifest)], capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=REPO, timeout=300, env=private_host_environment())
                 if valid:
                     self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
                     evidence = json.loads(outcome.stdout.strip().splitlines()[-1])
@@ -963,7 +972,7 @@ $source=Get-FiniteComsolAnalysisSource -ManifestPath $Manifest -Python $Python -
 $source|ConvertTo-Json -Depth 100 -Compress
 """, encoding='utf-8')
             command = ['pwsh', '-NoProfile', '-File', str(script), str(REPO), sys.executable, str(manifest)]
-            outcome = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', cwd=REPO, timeout=300, env=private_host_environment())
+            outcome = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=REPO, timeout=300, env=private_host_environment())
             self.assertEqual(outcome.returncode, 0, outcome.stdout+outcome.stderr)
             source = json.loads(outcome.stdout.strip().splitlines()[-1])
             self.assertEqual(source['stage_evidence']['basis'], 'completed_saved_extraction_child_bound_task_report_and_original_native_owner')
@@ -972,7 +981,7 @@ $source|ConvertTo-Json -Depth 100 -Compress
             report.write_text('TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION\nSTATUS=FAIL\n', encoding='utf-8')
             document['outputs'] = [file_record(path) for path in outputs.iterdir()]+[file_record(report)]
             write(manifest, document)
-            refused = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', cwd=REPO, timeout=300, env=private_host_environment())
+            refused = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=REPO, timeout=300, env=private_host_environment())
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn('SAVED_EXTRACTION_STAGE_EVIDENCE_MISSING', refused.stdout+refused.stderr)
             self.assertEqual(original_manifest.read_bytes(), original_before)

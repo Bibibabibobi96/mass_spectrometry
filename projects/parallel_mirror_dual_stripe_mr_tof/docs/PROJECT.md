@@ -101,6 +101,11 @@ COMSOL backend 不持有 subprocess、ctypes 或环境生命周期；不使用�
 改压前后电压、活动网格与 solver 控制，只清除所选解数据并单次 `runAll`，随后导出基础窗及
 全部有序细分窗；`field_v.pa`、`field_valid.pa`、receipt 与无轨迹资格语义不变。
 本轮只迁移纯编译／准备／收尾及原生资源，没有启动 COMSOL、实际 Compute 或新增场／GUI／Formal 资格。
+prepare 现沿公共源码冻结机制把 `msplatform` Python 闭包及 JSON／MATLAB 资源写入 `inputs/code`，
+并将 plan 的 MATLAB 资源目录改为 run 的 `inputs/`；Child 因而消费已复制的四个项目 MATLAB 文件，
+finalize 通过公共导入根从 `inputs/code` 加载 Python，而不是当前 editable 安装。回归实际删除准备时的
+原 MATLAB 资源目录，并在隔离 Python 进程中完成冻结代码收尾；准备后原安装移走或更新不会改变该闭包。
+公共 PowerShell 启动器、资源／容量入口和 `.venv` 解释器仍由 `repo_root` 提供，故本项不支持整个原仓库移除。
 最终完整 Static 为 1785 项、3 failure、20 error、12 skip；这些失败均来自尚未同步的
 `integrations` 旧 binding/Lua 引用，由主 Agent 在 integration 边界处理。MR 内定向及完整门禁
 未留下其他失败；该结果不冒充完整 Static PASS。
