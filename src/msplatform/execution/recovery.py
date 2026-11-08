@@ -11,11 +11,14 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
+
+if TYPE_CHECKING:
+    from msplatform.execution.context import ExecutionContext
 
 
 WHOLE_UNIT_ROLE = "simion_whole_unit_replay_plan"
@@ -228,3 +231,23 @@ def build_whole_unit_replay_plan(
         json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
     return result
+
+
+def resume_run(run_ref: str | Path, *, mode: str, context: ExecutionContext,
+               completion_api: Callable[[], Any]) -> dict[str, Any]:
+    """Resume original stopped finalization without replaying its scientific action.
+
+    The caller supplies the original operation's completion policy explicitly;
+    execution does not import a backend to infer it. Result remains mutable
+    recovery transport while the original owner verifies its frozen authority.
+    """
+    from msplatform.execution.owner import resume_finalization
+
+    if mode != "finalization":
+        raise ContractError("resume_run currently supports finalization; use analyze for published-data reanalysis")
+    if not callable(completion_api):
+        raise ContractError("finalization requires the original operation's explicit completion policy")
+    path = Path(run_ref)
+    if not path.is_absolute() or not path.is_file():
+        raise ContractError("finalization requires the explicit absolute existing Result path")
+    return resume_finalization(context, path, completion_api=completion_api)

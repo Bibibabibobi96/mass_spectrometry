@@ -137,27 +137,3 @@ def execute_cad_export(session, *, snapshot: Mapping, representation: str,
         required_output_paths=[str(step), str(report)], retention_preserve_paths=[],
         manifest_extra_fields={"products": {"cad_geometry": dict(schema_version=1,
             kind="cad_geometry", status="complete", metadata=metadata, data=records)}})
-
-
-class _NoParticleBatchCompletion:
-    @staticmethod
-    def recoverable_batch_log_kind(path):
-        return None
-
-    @staticmethod
-    def has_recoverable_batch_completion(path):
-        return False
-
-    @staticmethod
-    def recoverable_batch_logs(run_dir):
-        logs = Path(run_dir) / "logs"
-        if logs.is_dir() and any(path.is_file() and
-                (path.match("simion__batch*.trace.log") or path.match("simion__batch*.stdout.log"))
-                for path in logs.iterdir()):
-            raise ValueError("CAD-only action contains unexpected particle batch evidence")
-        return set()
-
-
-def no_particle_batch_completion_api():
-    """Explicit CAD retention policy: partial STEP never grants TRACE recovery."""
-    return _NoParticleBatchCompletion

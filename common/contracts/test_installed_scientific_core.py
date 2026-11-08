@@ -327,16 +327,17 @@ assert reference_count > 0
 
 # The real new user slice runs from installed providers and package resources.
 from unittest.mock import patch
-from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 with patch('subprocess.Popen', side_effect=AssertionError('hidden native action')), \
      patch.object(pathlib.Path, 'mkdir', side_effect=AssertionError('hidden workspace creation')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('hidden file write')):
+    import importlib.util
     study = example_api.load_example('rf_oatof_functional_v1')
     release = ion_release_api.sample_release(study.release)
     assert len(release.rows) == 100 and isinstance(release, ion_release_api.ReleaseRealization)
-    assert not hasattr(api, 'sample_release') and not hasattr(api, 'ReleaseRealization')
+    assert importlib.util.find_spec('msplatform.api') is None
     actual_components = {name:component_api.resolve_component(request) for name,request in study.component_requests.items()}
     actual_assembly = assembly_api.assemble(study.recipe, actual_components)
     actual_geometry = simion_api.compile_geometry(actual_assembly, numerics=study.geometry_numerics)
@@ -395,7 +396,7 @@ publish_terminal_state(read_root, {'status':'failed'}, read_manifest)
 artifact_reference = dict(manifest=file_record(read_root/'run_manifest.json'),product_id='contract')
 with patch('subprocess.Popen', side_effect=AssertionError('read started native action')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('read wrote data')):
-    assert not hasattr(api, 'open_artifact') and not hasattr(api, 'compare_trajectories')
+    assert importlib.util.find_spec('msplatform.api') is None
     from msplatform.execution.artifact_reader import open_artifact
     reopened = open_artifact(artifact_reference,expected_kind='trajectory_result')
     assert reopened.data_path('state') == (root/'neutral-state.csv').resolve()
@@ -585,7 +586,6 @@ class InstalledScientificCoreTests(unittest.TestCase):
         import copy
         from types import SimpleNamespace
         from unittest.mock import patch
-        from msplatform import api
         from msplatform.backends import simion as simion_api
         from msplatform.execution.manifest_records import file_record
         from msplatform.execution.terminal_publication import publish_terminal_state
@@ -598,7 +598,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             namespace = dict(root=Path(directory),fixture=json.loads(json.dumps({'comparison':self.comparison_probe_fixture()})),
                 sys=SimpleNamespace(argv=['probe','fixture.json','0']),file_record=file_record,
-                publish_terminal_state=publish_terminal_state,json=json,copy=copy,pathlib=__import__('pathlib'),patch=patch,api=api,
+                publish_terminal_state=publish_terminal_state,json=json,copy=copy,pathlib=__import__('pathlib'),patch=patch,
                 simion_api=simion_api)
             exec(code,namespace)
             self.assertEqual(namespace['described']['status'],'comparison_completed')

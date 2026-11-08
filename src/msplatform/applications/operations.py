@@ -28,7 +28,7 @@ def _open_simion_model(model: OpenedArtifact | Mapping[str, Any], context: Execu
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
-    from msplatform.exporters.execution import no_particle_batch_completion_api
+    from msplatform.execution.completion import no_particle_batch_completion_api
 
     source = load_field_model(model)
     exe = context.tools.get("simion")
@@ -84,7 +84,7 @@ def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | 
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
-    from msplatform.exporters.execution import no_particle_batch_completion_api
+    from msplatform.execution.completion import no_particle_batch_completion_api
 
     selected = ("simion" if isinstance(model, OpenedArtifact) and model.kind == "prepared_model" else "solidworks") if application is None else application
     if selected == "simion":

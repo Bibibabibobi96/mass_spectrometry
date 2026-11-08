@@ -173,6 +173,10 @@ STEP导出编排与独立冷读检查已迁入`msplatform.exporters`，旧`api.e
 同源Assembly、身份复核、无默认GUI／求解及显式预算语义不变。
 显式SIMION／SolidWorks模型查看已迁入`msplatform.applications`，旧`api.open_model`删除；唯一owner、
 自有进程、原关闭与配置恢复保证不变，本切片仅做软件回归，不启动GUI。
+停止后收尾已迁入`execution.resume_run`并要求显式传入原操作completion policy，旧API入口删除；
+不再由execution反向导入后端猜测策略，原Result、容量、manifest和只读重复调用保证不变。
+纯能力查询已迁入`msplatform.capabilities`，仍直接复用规范provider／compiler／planner；总控`api.py`及其
+活动引用全部退役，普通安装负例明确拒绝旧模块。历史快照与reader不因当前源码入口删除而改写。
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

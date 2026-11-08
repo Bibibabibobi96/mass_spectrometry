@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform import api, applications as applications_api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import applications as applications_api, assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import execution as execution_api
 from msplatform import exporters as exporters_api
 from msplatform import ion_release as ion_release_api
@@ -53,7 +53,7 @@ class PlatformApiTests(unittest.TestCase):
 
     def test_finalization_api_delegates_original_owner_without_an_action_callback(self):
         from msplatform.backends.simion import native_completion
-        from msplatform.exporters.execution import no_particle_batch_completion_api
+        from msplatform.execution.completion import no_particle_batch_completion_api
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -67,21 +67,22 @@ class PlatformApiTests(unittest.TestCase):
             sentinel = {"original_owner_fixture": True}
             with patch("msplatform.execution.owner.resume_finalization", return_value=sentinel) as resume, \
                  patch("subprocess.Popen", side_effect=AssertionError("API must not replay science")):
-                for action, expected in (("solve_fields", native_completion),
-                                         ("export_cad", no_particle_batch_completion_api())):
+                for action, completion in (("solve_fields", lambda: native_completion),
+                                           ("export_cad", no_particle_batch_completion_api)):
                     request.write_text(json.dumps(dict(payload=dict(action=action))), encoding="utf-8")
                     with self.subTest(action=action):
-                        self.assertIs(api.resume_run(result, mode="finalization", context=context), sentinel)
+                        self.assertIs(execution_api.resume_run(result, mode="finalization", context=context,
+                                                               completion_api=completion), sentinel)
                         args, keywords = resume.call_args
                         self.assertEqual(args, (context, result))
-                        self.assertIs(keywords["completion_api"](), expected)
+                        self.assertIs(keywords["completion_api"], completion)
                         self.assertEqual(set(keywords), {"completion_api"})
                 resume.reset_mock()
                 with self.assertRaisesRegex(ContractError, "supports finalization"):
-                    api.resume_run(result, mode="native_checkpoint", context=context)
-                request.write_text(json.dumps(dict(payload=dict(action="unrecognized"))), encoding="utf-8")
+                    execution_api.resume_run(result, mode="native_checkpoint", context=context,
+                                             completion_api=lambda: native_completion)
                 with self.assertRaisesRegex(ContractError, "completion policy"):
-                    api.resume_run(result, mode="finalization", context=context)
+                    execution_api.resume_run(result, mode="finalization", context=context, completion_api=None)
                 resume.assert_not_called()
 
     def test_open_model_dispatches_owned_view_without_export_solve_or_hidden_ack(self):

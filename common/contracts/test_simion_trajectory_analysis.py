@@ -88,7 +88,7 @@ class PublishedTrajectoryAnalysisTests(unittest.TestCase):
         self.assertEqual(result["scientific_qualification"], "not_granted")
 
     def test_public_analyze_opens_exact_product_and_remains_read_only_without_tools(self):
-        from msplatform import api
+        import importlib.util
         source = self.opened()
         before = copy.deepcopy((self.selection, self.method))
         with patch("subprocess.Popen", side_effect=AssertionError("analysis started a tool")), \
@@ -97,7 +97,7 @@ class PublishedTrajectoryAnalysisTests(unittest.TestCase):
             direct = analyze(source, selection=self.selection, method=self.method)
             reopened = analyze(source.reference, selection=self.selection, method=self.method)
         self.assertEqual(direct, reopened)
-        self.assertFalse(hasattr(api, "analyze"))
+        self.assertIsNone(importlib.util.find_spec("msplatform.api"))
         self.assertEqual(direct["status"], "analysis_completed")
         self.assertEqual(direct["producer"]["status"], "failed")
         self.assertEqual(direct["selected_particle_ids"], [7, 99, 123])

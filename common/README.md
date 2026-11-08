@@ -89,7 +89,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from msplatform import api, assembly as assembly_api, components, examples, execution, exporters
+from msplatform import assembly as assembly_api, components, examples, execution, exporters
 
 workspace = (Path.cwd() / "my_study").resolve()
 workspace.mkdir(parents=True, exist_ok=True)
@@ -306,13 +306,14 @@ STEP与模板后打开自己的文档；导入完成后、进入查看等待前�
 宿主事务stdin断管时保留原异常，并附加已启动子进程的退出码与stdout/stderr收集结果；
 这不推断旧CI断管根因。RF恢复测试的外部诊断采用UTF-8替换解码，正式JSON/CSV仍严格校验编码。
 
-`api.resume_run(result_path, mode="finalization", context=context)`接原owner的停止后收尾，
+`execution.resume_run(result_path, mode="finalization", context=context, completion_api=...)`接原owner的停止后收尾；
+调用方显式传入原操作的完成策略，execution不反向导入后端来猜测策略，
 只读核对原request／completion／容量权威后继续原发布，不回调科学动作。Result是可变运输文件，
 传入明确绝对路径；它不能通过删除自身hold字段或标complete解除原容量保护。
 完整终态重复调用还校验原manifest／seal及lease实际释放，随后只读返回。
 不完整单元重跑用`track(..., recovery_reference=...)`的新运行身份，不能将其冒充收尾或native checkpoint。
 
-`api.capabilities({"schema_version":1,"operation":...,"arguments":...}, environment=None)`复用实际纯
+`msplatform.capabilities.capabilities({"schema_version":1,"operation":...,"arguments":...}, environment=None)`复用实际纯
 provider／compiler／planner检验明确输入，不执行原生动作。规划参数及`software_scope`明确区别于执行API；
 缺真实输入返回`insufficient_request`，原validator异常保类型／原因返回`rejected`，未提供纯查询适配的动作
 返回`unsupported`，不据函数存在推定可启动。可选environment只接受调用者明确的版本1工具观测，

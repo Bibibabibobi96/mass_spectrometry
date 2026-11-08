@@ -28,8 +28,8 @@ DOMAIN_IMPORTS = {
     "execution": SCIENTIFIC_DOMAINS | {"execution"},
     "examples": SCIENTIFIC_DOMAINS | {"examples"},
     "exporters": SCIENTIFIC_DOMAINS | {"components", "exporters", "execution"},
-    "applications": SCIENTIFIC_DOMAINS | {"applications", "execution"},
-    "api": SCIENTIFIC_DOMAINS | {"api", "components", "backends", "execution", "examples", "exporters", "applications"},
+    "applications": SCIENTIFIC_DOMAINS | {"applications", "backends", "execution"},
+    "capabilities": SCIENTIFIC_DOMAINS | {"capabilities", "components", "backends", "execution", "examples", "exporters", "applications"},
 }
 HOST_MODULES = {"ctypes", "winreg", "subprocess", "multiprocessing"}
 PATH_LOADERS = {"importlib.util.spec_from_file_location", "importlib.machinery.SourceFileLoader",
@@ -58,10 +58,10 @@ def _namespace_error(module: str) -> str | None:
         return f"undeclared component provider or infrastructure module: {module}"
     if parts[1] == "backends" and len(parts) > 2 and parts[2] not in {"simion", "comsol"}:
         return f"undeclared installed backend: {module}"
-    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution"}:
+    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution", "operations"}:
         return f"undeclared installed exporter: {module}"
     if parts[1] == "applications" and len(parts) > 2 and parts[2] not in {
-            "solidworks", "solidworks_worker", "model_execution", "simion", "simion_model_execution"}:
+            "solidworks", "solidworks_worker", "model_execution", "simion", "simion_model_execution", "operations"}:
         return f"undeclared installed application: {module}"
     return None
 
@@ -303,13 +303,13 @@ lib.import_module('.helper', __package__)
 
     def test_installed_outer_domains_follow_explicit_directions(self):
         allowed = (
-            ("msplatform.api", "from msplatform.components.rf_multipole import design"),
-            ("msplatform.api", "from msplatform.examples import load_example"),
+            ("msplatform.capabilities", "from msplatform.components.rf_multipole import design"),
+            ("msplatform.capabilities", "from msplatform.examples import load_example"),
             ("msplatform.backends.simion.geometry", "from msplatform.execution import recovery"),
             ("msplatform.components.single_reflection_oa_tof.design",
              "from msplatform.components.orthogonal_accelerator import sectioned_geometry"),
             ("msplatform.execution.process", "import subprocess; import os; os.environ.get('PATH')"),
-            ("msplatform.api", "from msplatform.exporters import step"),
+            ("msplatform.capabilities", "from msplatform.exporters import step"),
             ("msplatform.exporters.step", "from msplatform.components.rf_multipole import geometry_members"),
             ("msplatform.applications.solidworks", "from msplatform.execution import owner"),
             ("msplatform.exporters.step", "import cadquery; from OCP.Precision import Precision"),
@@ -317,6 +317,7 @@ lib.import_module('.helper', __package__)
             ("msplatform.applications.model_execution", "from msplatform.execution import owner"),
             ("msplatform.applications.simion", "from msplatform.execution import run_session"),
             ("msplatform.applications.simion_model_execution", "from msplatform.execution import run_session"),
+            ("msplatform.applications.operations", "from msplatform.backends.simion import model"),
             ("msplatform.applications.solidworks_worker", "import subprocess; import os; child = os.environ.copy()"),
         )
         for module, source in allowed:
@@ -327,14 +328,14 @@ lib.import_module('.helper', __package__)
             ("msplatform.assembly.layout", "from msplatform.components.rf_multipole import design"),
             ("msplatform.components.rf_multipole.design", "from msplatform.backends import simion"),
             ("msplatform.execution.process", "from msplatform.components import rf_multipole"),
-            ("msplatform.execution.process", "from msplatform import api"),
-            ("msplatform.api", "import subprocess"),
+            ("msplatform.execution.process", "from msplatform import capabilities"),
+            ("msplatform.capabilities", "import subprocess"),
             ("msplatform.backends.simion.geometry", "import subprocess"),
             ("msplatform.execution.process", "import common.host_resource_scheduler"),
-            ("msplatform.examples", "from msplatform import api"),
+            ("msplatform.examples", "from msplatform import capabilities"),
             ("msplatform.unreviewed.entry", "import math"),
-            ("msplatform.api", "from msplatform.components import unreviewed"),
-            ("msplatform.api", "from msplatform.backends import unreviewed"),
+            ("msplatform.capabilities", "from msplatform.components import unreviewed"),
+            ("msplatform.capabilities", "from msplatform.backends import unreviewed"),
             ("msplatform.contracts.clock", "import importlib; importlib.import_module('msplatform.execution')"),
             ("msplatform.execution.process", "import runpy; runpy.run_path(author_script)"),
             ("msplatform.analysis.example", "from msplatform.exporters import step"),
@@ -344,7 +345,6 @@ lib.import_module('.helper', __package__)
             ("msplatform.exporters.unreviewed", "import math"),
             ("msplatform.applications.unreviewed", "import subprocess"),
             ("msplatform.applications.solidworks_worker", "import ctypes"),
-            ("msplatform.applications.simion", "from msplatform.backends.simion import model"),
             ("msplatform.applications.solidworks_worker", "import multiprocessing"),
             ("msplatform.applications.solidworks_worker", "import sys; sys.path.append(author_checkout)"),
         )

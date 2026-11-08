@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import assembly as assembly_api, capabilities as capability_api, components as component_api, examples as example_api
 from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, PHYSICS
@@ -25,7 +25,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
                                           drive=self.drive, physics=PHYSICS)
 
     def query(self, operation, arguments, **kwargs):
-        return api.capabilities(dict(schema_version=1, operation=operation, arguments=arguments), **kwargs)
+        return capability_api.capabilities(dict(schema_version=1, operation=operation, arguments=arguments), **kwargs)
 
     def test_actual_provider_assembly_and_geometry_compile_without_native_claim(self):
         cases = [("resolve_component", dict(request=next(iter(self.case.component_requests.values())))),
@@ -83,8 +83,9 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         self.assertEqual(result["contract_status"], "accepted", result)
         self.assertIn("not_exported", result["software_scope"])
         self.assertIn("cad-step_optional_dependencies", result["execution_prerequisites"])
+        from msplatform.exporters.operations import _validate_step_export_options
         with self.assertRaises(ValueError):
-            api._validate_step_export_options(self.assembly,"step",dict(self.case.cad_export,precision_mode=True))
+            _validate_step_export_options(self.assembly,"step",dict(self.case.cad_export,precision_mode=True))
         rejected = self.query("export_cad", dict(assembly=self.assembly,format="step",options=dict(self.case.cad_export,precision_mode=True)))
         self.assertEqual(rejected["contract_status"], "rejected")
 
@@ -121,4 +122,4 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         self.assertEqual(rejected["contract_status"], "rejected")
         self.assertIn("explicitly assembled design", rejected["reason"]["message"])
         with self.assertRaises(ValueError):
-            api.capabilities(dict(schema_version=2,operation="track",arguments={}))
+            capability_api.capabilities(dict(schema_version=2,operation="track",arguments={}))

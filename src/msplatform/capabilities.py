@@ -1,53 +1,18 @@
-"""Public staged operations over the platform's unique scientific implementations.
+"""Pure capability planning over canonical domain and backend operations.
 
 Importing this module does not discover tools, open models, or create a workspace.
-Scientific defaults are visible in the versioned example, not inferred here.
+Scientific defaults are visible in versioned examples, not inferred here.
 """
 from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from msplatform import assembly as assembly_domain
 from msplatform import components as component_catalog
 from msplatform.backends import simion as simion_backend
 from msplatform.contracts.machine_contracts import ContractError
-
-if TYPE_CHECKING:
-    from msplatform.execution.context import ExecutionContext
-
-
-def resume_run(run_ref: str | Path, *, mode: str, context: ExecutionContext) -> dict[str, Any]:
-    """Resume original stopped finalization from its explicit Result path.
-
-    Result is mutable recovery transport, so the existing owner verifies the
-    original request, completion, capacity authority and terminal publication.
-    No action callback, field computation or flight is replayed here. Incomplete
-    unit replay remains a separate pending public execution capability.
-    """
-    import json
-    from msplatform.execution.owner import resume_finalization
-
-    if mode != "finalization":
-        raise ContractError("resume_run currently supports finalization; use analyze for published-data reanalysis")
-    path = Path(run_ref)
-    if not path.is_absolute() or not path.is_file():
-        raise ContractError("finalization requires the explicit absolute existing Result path")
-    result = json.loads(path.read_text(encoding="utf-8-sig"))
-    root = Path(result["run_directory"])
-    request = json.loads((root / "inputs/execution_request.json").read_text(encoding="utf-8-sig"))
-    action = request["payload"]["action"]
-    if action in {"build_geometry", "prepare_model", "solve_fields", "track"}:
-        from msplatform.backends.simion import native_completion
-        completion = lambda: native_completion
-    elif action in {"export_cad", "open_model"}:
-        from msplatform.exporters.execution import no_particle_batch_completion_api
-        completion = no_particle_batch_completion_api
-    else:
-        raise ContractError("No installed completion policy for this explicit run action")
-    return resume_finalization(context, path, completion_api=completion)
 
 
 def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] | None = None) -> dict:
@@ -135,8 +100,6 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         signature.bind(**arguments)
         validator(**arguments)
     except (ValueError, TypeError, KeyError) as error:
-        # Existing validators do not expose typed unsupported-vs-invalid errors;
-        # retain the genuine reason rather than guessing from its message.
         result.update(contract_status="rejected", reason=dict(type=type(error).__name__, message=str(error)))
         return result
     result.update(contract_status="accepted", software_scope=scope)
