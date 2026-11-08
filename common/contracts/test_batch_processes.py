@@ -123,8 +123,9 @@ if __name__=="__main__":_main()
                 evidence['diagnostic_errors'].append(name+': '+str(error))
         print(prefix+json.dumps(evidence,sort_keys=True),flush=True)
 
-    def _unmodified_simion_role(self,root,*,failure):
+    def _real_simion_role(self,root,*,failure):
         """Actual heavy admission; Python payloads are not native solver evidence."""
+        observation_seconds = 1 if failure else FORMAL_OBSERVATION_SECONDS
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'shared public GATE required')
         context=ExecutionContext(workspace=root,python_executable=Path(sys.executable),
             powershell_executable=Path(shutil.which('pwsh')),tools={},
@@ -156,6 +157,9 @@ if __name__=="__main__":_main()
         fixed=dict(role='simion_single_wave_particle_batch_plan',coverage='complete_population',particle_count=3,
             batches=[row['scheduler_batch'] for row in specifications])
         plan=prepare_fixed_partition_dispatch(original,fixed,[1,2,3])
+        self.assertEqual(plan['limits']['formal_observation_seconds'],FORMAL_OBSERVATION_SECONDS)
+        if failure:
+            plan['limits']['formal_observation_seconds']=observation_seconds
         self.assertEqual(plan['limits']['launch_stagger_seconds'],LAUNCH_STAGGER_SECONDS)
         self.assertTrue(plan['estimation']['recovered_missing_observation'])
         self.assertEqual(plan['estimation']['kind'],'formal_first_batch_observation')
@@ -223,22 +227,23 @@ if __name__=="__main__":_main()
             self.assertEqual(set(receipt['observations']),{'healthy','failure','pending'})
             self.assertTrue(all(row['exit_code']==0 for row in receipt['observations'].values()))
             self.assertEqual(receipt['not_started'],[])
-        print('UNMODIFIED_SIMION_ROLE_INERT_PROOF='+json.dumps(dict(native_qualification=False,
+        print('REAL_SIMION_ROLE_INERT_PROOF='+json.dumps(dict(native_qualification=False,
             role='SIMION',stage='flight',failure_case=failure,observations=receipt['observations'],
             attempts=receipt['attempts'],host_release=receipt['host_release'],children=children,
             not_started=receipt['not_started'],actual_estimation=actual['estimation'],
             launch_stagger_seconds=LAUNCH_STAGGER_SECONDS,guard_write_after_exit=True,
-            unmodified_resources=True,scope='real_admission_replan_failure_pending_guard_release',
+            unmodified_resources=True,observation_seconds=observation_seconds,
+            scope='real_admission_replan_failure_pending_guard_release',
             live_overlap_claimed=False),sort_keys=True))
 
-    def test_unmodified_simion_role_inert_success_real_admission_and_guards(self):
+    def test_real_simion_role_inert_success_real_admission_and_guards(self):
         with tempfile.TemporaryDirectory() as directory:
-            self._unmodified_simion_role(Path(directory),failure=False)
+            self._real_simion_role(Path(directory),failure=False)
 
-    def test_unmodified_simion_role_failure_replans_stops_pending_and_releases_guards(self):
-        """Unmodified real admission/cancellation; concurrency is policy-selected."""
+    def test_controlled_window_simion_failure_replans_stops_pending_and_releases_guards(self):
+        """Real admission/failure; only the observation window is test-controlled."""
         with tempfile.TemporaryDirectory() as directory:
-            self._unmodified_simion_role(Path(directory),failure=True)
+            self._real_simion_role(Path(directory),failure=True)
 
     def fixture(self,root,*,fault=None,clock_mode="actual"):
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'normal shared GATE required')
