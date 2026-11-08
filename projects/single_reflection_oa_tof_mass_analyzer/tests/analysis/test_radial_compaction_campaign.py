@@ -863,7 +863,7 @@ def run(case_root, run_id, context, managed):
                 )
                 # Construct a self-consistent but semantically wrong external asset.
                 # Production terminal publication correctly refuses this rewrite.
-                from common.contracts.recorded_file_removal import write_json_atomic
+                from msplatform.execution.recorded_file_removal import write_json_atomic
                 write_json_atomic(parent / "summary.json", summary)
                 write_json_atomic(parent / "run_manifest.json", rewritten)
                 with self.assertRaisesRegex(ValueError, "native unit identity differs"):

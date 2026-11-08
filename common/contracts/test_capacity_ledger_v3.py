@@ -29,7 +29,7 @@ WRITING_RANGE = {
 class CapacityLedgerV3Test(unittest.TestCase):
     def key_recovery_fixture(self, root, *, ready_class=False, authority_role="capacity_ledger_retired_path_recovery"):
         from common.contracts.file_identity import file_sha256
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         record = (dict(path="projects/example/runs/evidence", **{"class": "light_evidence"},
                        bytes=17, status="ready", pin=True, pin_reason="retain evidence", owner="example")
                   if ready_class else dict(path="projects/example/scratch/old/empty.log",
@@ -88,7 +88,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 self.assertEqual(ledger.read_bytes(), before)
 
     def test_path_key_restore_replays_both_atomic_publication_boundaries(self):
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         for boundary in ("replace", "complete"):
             with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
@@ -211,7 +211,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 self.assertEqual(ledger.read_bytes(), before)
 
     def test_ready_class_key_restore_replays_atomic_boundaries_and_rejects_source_change(self):
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         for boundary in ('replace', 'complete', 'source_changed', 'source_backup_changed'):
             with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
@@ -243,7 +243,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
 
     def test_object_key_restore_rejects_authenticated_same_path_conflicts(self):
         from common.contracts.file_identity import file_sha256
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         for ready_class in (False, True):
             for changed in ('owner', 'class'):
                 with self.subTest(ready_class=ready_class, changed=changed), tempfile.TemporaryDirectory() as temporary:
@@ -271,7 +271,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
 
     def recovery_fixture(self, root):
         from common.contracts.file_identity import file_sha256
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         relative = "projects/example/runs/retired"
         disposition = dict(id="A"*64, generation="B"*64, manifest_path="run_config.json",
                            files=[dict(path="logs/old.log", bytes=7), dict(path="logs/ok.log", bytes=3)])
@@ -312,7 +312,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
             self.assertEqual(capacity_ledger.restore_retired_disposition_paths(root, **args, apply=True)["status"], "complete")
 
     def test_restore_retired_path_rejects_corrupt_base64_backup(self):
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         for corruption in ("base64", "bytes", "content", "sha256"):
             with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary).resolve()
@@ -362,7 +362,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 root=Path(temporary).resolve()
                 original,ledger,receipt,args=self.recovery_fixture(root)
                 if change=="valid":
-                    from common.contracts.recorded_file_removal import write_json_atomic
+                    from msplatform.execution.recorded_file_removal import write_json_atomic
                     write_json_atomic(ledger,original)
                     args["expected_ledger_sha256"]=file_sha256(ledger)
                 elif change=="ledger_sha":
@@ -376,7 +376,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
 
     def test_restore_retired_path_rejects_receipt_conflicts_and_locked_cas_change(self):
         from common.contracts.file_identity import file_sha256
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         changes = {
             "owner": lambda r: r["owner_disposition_authorization"].update(owner="other"),
             "target": lambda r: r.update(target_path=str(Path(r["target_path"]).parent/"other")),
@@ -413,7 +413,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
             self.assertEqual(ledger.read_bytes(),changed)
 
     def test_restore_retired_path_publication_failures_replay_from_pending(self):
-        from common.contracts.recorded_file_removal import write_json_atomic
+        from msplatform.execution.recorded_file_removal import write_json_atomic
         for failure in ("ledger", "complete"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary).resolve()

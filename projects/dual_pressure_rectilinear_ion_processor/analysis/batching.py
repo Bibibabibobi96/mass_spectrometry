@@ -17,7 +17,7 @@ import tempfile
 import zipfile
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.recorded_file_removal import remove_recorded_files
+from msplatform.execution.recorded_file_removal import remove_recorded_files
 from common.contracts.write_run_manifest import publish_run_manifest, resolve_path, write_json_atomic
 from common.contracts.verify_run_manifest import record_path, verify_record
 from msplatform.contracts.particle_physics import kinetic_energy_ev

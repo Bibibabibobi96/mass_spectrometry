@@ -39,7 +39,7 @@ from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.frozen_inputs import freeze_file, python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import (
     TERMINAL_JOURNAL_NAME, file_record,
@@ -96,7 +96,6 @@ EXTRA_SOURCE_IDS = (
     "common/contracts/frozen_inputs.py",
     "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
     "common/simion/batch_continuation.py",
-    "src/msplatform/backends/simion/native_completion.py",
     "common/simion/resource_profile.py",
     "common/simion/resource_scheduler.py",
 )

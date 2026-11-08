@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts import capacity_protection as protection
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 
 
 # Normal runtime ownership migrated; historical maintenance remains here.

@@ -210,7 +210,7 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         # Minimal fixture namespace for the real initial handshake. Production
         # prepared roots already carry this module in their frozen closure.
         (root / "common/contracts").mkdir(parents=True, exist_ok=True)
-        for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
+        for relative in ("common/host_resource_python.py", "common/contracts/file_identity.py"):
             shutil.copyfile(REPO / relative, root / relative)
         copy_scientific_core(REPO, root)
         budget = root / "budget.json"

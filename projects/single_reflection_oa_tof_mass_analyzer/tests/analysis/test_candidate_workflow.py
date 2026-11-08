@@ -330,7 +330,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 # This explicit software callback has a separate import root;
                 # copy the common handshake bootstrap from the frozen closure.
                 (root / "common/contracts").mkdir(parents=True)
-                for relative in ("common/host_resource_python.py", "common/contracts/recorded_file_removal.py", "common/contracts/file_identity.py"):
+                for relative in ("common/host_resource_python.py", "common/contracts/file_identity.py"):
                     shutil.copyfile(Path(request["prepared"]["import_root"]) / relative, root / relative)
                 helper_relative = Path("projects") / PROJECT_ROOT.name / "tests/analysis/test_support/candidate_fixtures.py"
                 helper = root / "fixture_source" / helper_relative

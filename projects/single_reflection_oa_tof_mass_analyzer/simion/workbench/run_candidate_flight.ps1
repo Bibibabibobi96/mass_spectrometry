@@ -79,7 +79,7 @@ await_managed_process_start()
 import json,sys,time
 from pathlib import Path
 from common.simion.process_observation import run_observed_process
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 request=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 result=json.loads(sys.argv[2]);started=time.perf_counter();exit_code=1
 try:

@@ -25,7 +25,7 @@ from common.contracts.artifact_retention import (
     classify_file,
     validate_retention,
 )
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.artifact_cache_contract import INTEGRATION_CACHE_ROLES
 
 

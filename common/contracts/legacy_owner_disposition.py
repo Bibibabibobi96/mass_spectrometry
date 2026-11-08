@@ -26,7 +26,7 @@ from common.contracts.run_capacity_lifecycle import (
     _partial_retirement_is_protected_with_leases,
     recorded_heavy_identity,
 )
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
 ROLE = "artifact_capacity_owner_retirement_disposition"

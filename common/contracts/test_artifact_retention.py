@@ -375,11 +375,12 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.write_config("compact", None)
         copy = Path(self.temporary.name) / "frozen/common/contracts"
         copy.mkdir(parents=True)
-        for name in ("artifact_retention.py", "recorded_file_removal.py", "file_identity.py"):
+        for name in ("artifact_retention.py", "file_identity.py"):
             shutil.copyfile(REPO_ROOT / "common/contracts" / name, copy / name)
         from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
         snapshot = copy.parents[1]
         copy_scientific_core(REPO_ROOT, snapshot)
+        (snapshot / "src/msplatform/backends/simion/native_completion.py").unlink()
         payload = self.run / "field.pa0"
         payload.write_bytes(b"original field")
         environment = dict(os.environ, PYTHONNOUSERSITE="1")
@@ -394,7 +395,7 @@ class ArtifactRetentionTests(unittest.TestCase):
             text=True, encoding="utf-8", timeout=30,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("native_completion.py", result.stderr)
+        self.assertIn("native_completion", result.stderr)
         self.assertEqual(payload.read_bytes(), b"original field")
         self.assertFalse((self.run / "retention_actions.json").exists())
 

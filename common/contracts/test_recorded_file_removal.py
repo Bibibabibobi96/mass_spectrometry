@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts import recorded_file_removal as removal
+from msplatform.execution import recorded_file_removal as removal
 
 
 class AtomicJsonPublicationTest(unittest.TestCase):

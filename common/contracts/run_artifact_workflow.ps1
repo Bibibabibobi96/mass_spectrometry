@@ -319,7 +319,7 @@ from common.host_resource_python import await_managed_process_start
 await_managed_process_start()
 import importlib, json, sys
 from pathlib import Path
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 request_path, config, session, completion, wait_path = (Path(value).resolve() for value in sys.argv[1:])
 request = json.loads(request_path.read_text(encoding="utf-8-sig"))
 prepared = request["prepared"]

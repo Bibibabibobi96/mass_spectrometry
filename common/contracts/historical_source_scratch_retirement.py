@@ -13,7 +13,7 @@ from typing import Any
 
 from common.contracts import capacity_ledger
 from common.contracts.file_identity import file_sha256
-from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
+from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
 
 RECEIPTS = Path("common") / "capacity_disposal_receipts"
 ROLE = "historical_source_scratch_disposition"

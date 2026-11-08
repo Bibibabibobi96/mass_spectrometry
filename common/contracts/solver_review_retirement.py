@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic as _atomic_json
+from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic as _atomic_json
 from common.contracts.file_identity import file_sha256, file_sha256_unbuffered
 from common.contracts.artifact_retention import classify_file, validate_retention
 from common.contracts import capacity_protection as protection

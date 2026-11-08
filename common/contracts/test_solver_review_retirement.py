@@ -725,7 +725,7 @@ function Exit-HostExecutionLease { param($Lease) }
         first, _ = self._first_partial_batch()
         selected = ["simion/accelerator.pa0", "simion/detector.pa#"]
         plan = self._owner_plan(selected_heavy_paths=selected)
-        from common.contracts.recorded_file_removal import remove_recorded_files
+        from msplatform.execution.recorded_file_removal import remove_recorded_files
 
         def interrupted(root, records, **options):
             yield from remove_recorded_files(root, records, **options)

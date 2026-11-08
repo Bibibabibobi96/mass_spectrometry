@@ -21,7 +21,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.file_identity import FileIdentityGuard, guarded_file_identity
 from common.contracts.particle_count_policy import validate_standard_particle_count
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.contracts.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt

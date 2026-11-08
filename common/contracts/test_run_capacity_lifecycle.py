@@ -1232,7 +1232,7 @@ class MisplacedLightRunRecoveryTests(unittest.TestCase):
                         ledger["objects"][0]["owner"] = "p"
                     else:
                         ledger["objects"][0].update(pin=True, pin_reason="keep")
-                    from common.contracts.recorded_file_removal import write_json_atomic
+                    from msplatform.execution.recorded_file_removal import write_json_atomic
                     write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
                 elif scenario == "changed":
                     (source / "result.json").write_text('{"target":360}')
@@ -1258,7 +1258,7 @@ class MisplacedLightRunRecoveryTests(unittest.TestCase):
                 self.assertEqual(capacity_ledger.resolve_ledger_path(root).read_bytes(), before)
 
     def test_partial_deletion_and_publication_interruptions_resume_without_resetting_bytes(self):
-        from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
+        from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
         for scenario in ("remove", "ledger_pending", "ledger_final", "journal_complete"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()

@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import load_json, sha256
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 from common.contracts.write_run_manifest import (
     TERMINAL_JOURNAL_NAME,
     TERMINAL_LOCK_NAME,

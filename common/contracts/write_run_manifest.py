@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from common.contracts.recorded_file_removal import write_json_atomic
+    from msplatform.execution.recorded_file_removal import write_json_atomic
     from common.contracts.capacity_protection import process_file_lock
 except ModuleNotFoundError:
-    from recorded_file_removal import write_json_atomic
+    from msplatform.execution.recorded_file_removal import write_json_atomic
     from capacity_protection import process_file_lock
 
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts import capacity_ledger
-from common.contracts import recorded_file_removal
+from msplatform.execution import recorded_file_removal
 from common.contracts import reconcile_artifact_capacity as capacity
 from common.contracts.capacity_protection import create_capacity_protection_lease
 

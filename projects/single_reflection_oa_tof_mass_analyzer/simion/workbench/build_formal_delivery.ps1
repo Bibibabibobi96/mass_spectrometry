@@ -218,7 +218,7 @@ await_managed_process_start()
 import json,sys,time
 from pathlib import Path
 from common.simion.process_observation import run_observed_process
-from common.contracts.recorded_file_removal import write_json_atomic
+from msplatform.execution.recorded_file_removal import write_json_atomic
 r=json.loads(sys.argv[1]);d={'exit_confirmed':False,'returncode':None};started=time.perf_counter();exit_code=1
 try:
     p,peak=run_observed_process(r['command'],cwd=Path(r['cwd']),stdout=Path(r['stdout']),stderr=Path(r['stderr']),warning_seconds=1800)
