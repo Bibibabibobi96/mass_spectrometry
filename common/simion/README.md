@@ -73,7 +73,7 @@ Python／PowerShell合成夹具及外层default-vs-false诊断不被自动改写
 不选择电极、器件尺寸、孔径、网格或坐标变换。
 独立正交加速器和连接装配共用这一层；器件CSG、侧孔与两／三区电极组合由加速器项目拥有。
 
-项目间连接的矩形开孔统一调用[`aperture.py`](aperture.py)：机械宽、高任一小于一个cell时失败关闭；
+项目间连接的矩形开孔统一调用[`msplatform.backends.simion.aperture`](../../src/msplatform/backends/simion/aperture.py)：机械宽、高任一小于一个cell时失败关闭；
 非整数cell倍数或孔边缘未落在网格节点时保留机械尺寸并输出机器可读离散警告；GEM减材固定使用
 `exclude_shape_inside_or_on_v1`，不得用隐藏epsilon扩大机械孔。提供者已有的 `notin_inside` 电极边缘合同则
 显式标为 `exclude_shape_inside_only_v1`，保留边缘节点，不冒称两种切口相同。编译或缓存PA后，所有生产消费者还必须

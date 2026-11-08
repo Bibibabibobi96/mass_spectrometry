@@ -59,6 +59,7 @@ metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍
 科学数值、阶段、资格与阈值保持；旧run和冻结输入不回写，缺失、过期或篡改来源仍拒绝。
 质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
 不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。
+Candidate与质量谱冻结声明直接绑定安装SIMION aperture实现；旧公共aperture桥已退出，不改变几何或资产字节。
 
 2026-11-08稳定资产核对定位到`accelerator.pa1.recovery-backup`：其112,550,528字节及SHA-256
 `2ec3efe52bcb081bc40141497332fbcf77a4a4aed5a3c9192b2fed5c39e6aacf`与受管`accelerator.pa1`

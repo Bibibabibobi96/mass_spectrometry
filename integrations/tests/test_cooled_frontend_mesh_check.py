@@ -5,7 +5,7 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from common.simion.aperture import resolve_rectangular_aperture_discretization
+from msplatform.backends.simion.aperture import resolve_rectangular_aperture_discretization
 from integrations.runtime import single_flight_frontend as frontend_core
 from integrations.tests.test_cooled_frontend import cooled_fixture
 from integrations.workflows.cooled_frontend import geometry

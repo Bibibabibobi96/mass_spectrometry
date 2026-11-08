@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from msplatform.contracts.machine_contracts import validate_schema
-from common.simion.aperture import resolve_rectangular_aperture_discretization
+from msplatform.backends.simion.aperture import resolve_rectangular_aperture_discretization
 
 from projects.rf_multipole_ion_optics.core.grounded_shield import (
     render_grounded_circular_to_rectangular_connection,

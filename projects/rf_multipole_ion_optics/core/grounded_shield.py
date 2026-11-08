@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from common.simion.aperture import (
+from msplatform.backends.simion.aperture import (
     resolve_rectangular_aperture_discretization,
 )
 

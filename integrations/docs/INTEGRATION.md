@@ -34,6 +34,8 @@ tampering fail closed. Paired-static minimal frozen materialization no longer
 requires unrelated `candidate_field.m`, and resource checks compare ownership,
 bytes and task content rather than checkout absolute paths. These are directed
 software checks, not a new native CAD/COMSOL qualification.
+Frontend aperture discretization and its frozen declarations now use the installed
+SIMION backend directly; the former common aperture module bridge is retired.
 
 | Public stage | Supported behavior and side-effect boundary |
 |---|---|

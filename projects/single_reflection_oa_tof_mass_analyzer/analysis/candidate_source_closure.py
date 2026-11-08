@@ -78,7 +78,6 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_component_pa.lua",
     "common/simion/process_observation.py",
     "projects/rf_multipole_ion_optics/core/grounded_shield.py",
-    "common/simion/aperture.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py",

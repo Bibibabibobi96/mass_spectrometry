@@ -11,7 +11,7 @@ from typing import Any
 from projects.rf_multipole_ion_optics.simion.simion_geometry import (
     render_grouped_rod_array_gem,
 )
-from common.simion.aperture import resolve_rectangular_aperture_discretization
+from msplatform.backends.simion.aperture import resolve_rectangular_aperture_discretization
 from common.simion.gem_primitives import (
     format_number as _fmt,
 )
