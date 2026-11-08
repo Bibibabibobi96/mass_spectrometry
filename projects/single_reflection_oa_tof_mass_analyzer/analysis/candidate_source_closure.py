@@ -55,7 +55,6 @@ RELATIVE_PATHS = (
     "common/contracts/verify_run_manifest.py",
     "common/contracts/write_run_manifest.py",
     "common/simion/__init__.py",
-    "common/simion/immutable_pa_parity.py",
     "common/simion/pa_family_cache.py",
     "common/simion/standalone_pa_response_set.py",
     "common/simion/short_pa_path_support.ps1",

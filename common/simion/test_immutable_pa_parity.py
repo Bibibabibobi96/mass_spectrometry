@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from common.simion.immutable_pa_parity import (
+from msplatform.execution.immutable_pa_parity import (
     ImmutablePaParityError,
     create_xor_parity_bundle,
     verify_and_recover_xor_parity,

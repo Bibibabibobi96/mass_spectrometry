@@ -33,7 +33,7 @@ from common.simion.pa_family_cache import (
     load_pa_family_cache_transaction,
     validate_pa_family_cache_generation,
 )
-from common.simion.immutable_pa_parity import MANIFEST_FILENAME, PARITY_FILENAME
+from msplatform.execution.immutable_pa_parity import MANIFEST_FILENAME, PARITY_FILENAME
 from msplatform.execution.cache_generation import (
     generation_input as cache_generation_input,
     generation_sha256,
