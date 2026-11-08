@@ -13,7 +13,7 @@ from pathlib import Path
 from common.contracts import capacity_protection as protection
 from common.contracts import capacity_ledger
 from common.contracts.artifact_retention import validate_retention
-from common.contracts.artifact_cache_contract import (
+from msplatform.execution.artifact_cache_contract import (
     INTEGRATION_CACHE_ROLES, INTEGRATION_CACHE_ROOT_BY_ROLE,
 )
 

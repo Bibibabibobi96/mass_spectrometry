@@ -35,7 +35,7 @@ RELATIVE_PATHS = (
     "common/paths/workspace_paths.py",
     "common/paths/workspace_paths.ps1",
     "common/contracts/artifact_identity_archive.py",
-    "common/contracts/artifact_cache_contract.py",
+    "src/msplatform/execution/artifact_cache_contract.py",
     "common/contracts/gui_source_protection.py",
     "common/contracts/artifact_retention.py",
     "src/msplatform/execution/resources/artifact_retention.json",
