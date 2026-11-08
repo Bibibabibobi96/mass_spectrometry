@@ -15,7 +15,7 @@ from typing import Any, Mapping
 
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
-from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
+from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS
 from integrations.workflows.single_reflection_flight.census import read_native_evidence

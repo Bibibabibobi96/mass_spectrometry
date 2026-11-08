@@ -10,7 +10,7 @@ from pathlib import Path
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import require_completed_terminal_publication
-from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
+from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 
 
 def read(path: Path) -> dict:

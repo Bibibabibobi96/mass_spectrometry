@@ -192,6 +192,8 @@ STEP导出编排与独立冷读检查已迁入`msplatform.exporters`，旧`api.e
 消费安装实现，sealed receipt、源保护及失败语义不变。
 `common/simion/pa_family_cache.py`旧桥已删除；OA／MR／integration、公共生命周期、原生CLI和测试patch直接
 消费安装实现。`common.simion.pa_family_cache`仍只作为资产owner身份，不改为源码导入路径。
+`common/simion/batch_continuation.py`旧桥已删除；IP／RF／MR／OA及integration整批恢复直接使用`execution.recovery`，
+完整单元复用、未完成整批重放、原ID／母群／时钟与失败证据不变。
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

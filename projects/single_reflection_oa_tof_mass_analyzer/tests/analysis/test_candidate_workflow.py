@@ -518,7 +518,7 @@ def execute_prepared_run(*args):
                     _execution_resource_source_ids(root)
 
     def test_source_closure_explicit_workflow_extras_share_freezing_and_identity(self):
-        extra = "common/simion/batch_continuation.py"
+        extra = "src/msplatform/execution/recovery.py"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             closure = freeze_candidate_source_closure(

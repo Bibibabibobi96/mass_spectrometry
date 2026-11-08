@@ -24,7 +24,7 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from common.simion.particle_batching import merge_rebased_particle_csvs
 # Import public dependencies before prepare freezes the loaded source closure.
-from common.simion import batch_continuation as batch_continuation
+from msplatform.execution import recovery as batch_continuation
 from common.simion import resource_profile as resource_profile
 from common.simion import resource_scheduler
 from common.simion.particle_source import project_direct_velocity, render_standard_beams, render_source_states
@@ -143,7 +143,7 @@ def _validate_continuation_science(run: Path, predecessor: Path) -> tuple[dict, 
 
 def prepare_completed_reanalysis(run: Path, predecessor: Path) -> dict:
     """Bind an already merged, completely recorded native run without a new Fly."""
-    from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
+    from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 
     run = run.resolve()
     ancestry = continuation_ancestry(predecessor)
@@ -224,7 +224,7 @@ def _partial_unit_source(unit: dict) -> Path:
 
 def prepare_partial_batch_replay(run: Path, predecessor: Path) -> dict:
     """Plan complete native workers from an explicit failed predecessor."""
-    from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
+    from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 
     run, predecessor = run.resolve(), predecessor.resolve(strict=True)
     if run == predecessor:

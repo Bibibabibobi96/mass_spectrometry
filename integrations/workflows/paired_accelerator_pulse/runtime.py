@@ -18,7 +18,7 @@ from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from msplatform.backends.simion.native_completion import (parse_fly_completed_line, require_one_fly_completion,
     frontend_batch_completion_path, validate_frontend_batch_completion)
-from common.simion.batch_continuation import WholeUnitReplayUnit, build_whole_unit_replay_plan
+from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.single_flight_source import (
     binary64_serialization_close, canonical_clock_lua, lua_value, render_restart_fly2, select_timed_pre_pulse_states,
