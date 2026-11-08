@@ -437,7 +437,7 @@ class PlatformApiTests(unittest.TestCase):
             with patch("msplatform.execution.artifact_reader.open_artifact", side_effect=[source, sentinel]) as reader, \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"new": True}}) as owner, \
                  patch("subprocess.Popen", side_effect=AssertionError("hidden native work")):
-                self.assertIs(api.prepare_model(reference, drive=case.drive, physics=case.physics, context=context), sentinel)
+                self.assertIs(simion_api.prepare_model(reference, drive=case.drive, physics=case.physics, context=context), sentinel)
             call = owner.call_args.kwargs
             self.assertEqual(call["expected_operation_ids"], ("materialize_geometry", "build_model", "verify_model"))
             self.assertEqual(call["action"].func, execute_model)
@@ -454,7 +454,7 @@ class PlatformApiTests(unittest.TestCase):
             with patch("msplatform.execution.artifact_reader.open_artifact", return_value=source), \
                  patch("msplatform.execution.owner.run_managed_stage") as refused, \
                  self.assertRaisesRegex(ContractError, "unknown versioned"):
-                api.prepare_model(reference, drive=invalid, physics=case.physics, context=context)
+                simion_api.prepare_model(reference, drive=invalid, physics=case.physics, context=context)
             refused.assert_not_called()
 
     def test_cad_export_dispatch_is_independent_of_fields_and_optional_engine_import(self):

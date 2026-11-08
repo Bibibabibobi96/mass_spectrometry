@@ -210,7 +210,7 @@ SolidWorks兼容查看是后续显式可选动作`api.open_model(cad, applicatio
 可显式覆盖完整科学组映射，不要求作者填写SIMION编号。示例pulse保留既有功能输入的明确时序，
 时钟使用发行包内版本化authority及原32字节零epoch。模型输入来源说明保存在示例的
 `model_input_sources`；这不是新的精度或优化基线。
-`api.prepare_model(geometry, drive=study.drive, physics=study.physics, context=context)`将驱动绑定到
+`msplatform.backends.simion.prepare_model(geometry, drive=study.drive, physics=study.physics, context=context)`将驱动绑定到
 既有几何，单独申请`prepare_model`工程预算和保留政策。自定义clock authority可显式提供
 `drive["clock_authority"]={"contract": <文件record>, "data_root": <绝对数据根>}`；`drive["clock"]`
 仅给`phase_reference_instrument_time_us`，epoch ID与SHA由唯一authority验证器读取，不由作者重复抄写。
