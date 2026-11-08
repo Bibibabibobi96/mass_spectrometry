@@ -89,7 +89,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from msplatform import api, assembly as assembly_api, components, examples, execution
+from msplatform import api, assembly as assembly_api, components, examples, execution, exporters
 
 workspace = (Path.cwd() / "my_study").resolve()
 workspace.mkdir(parents=True, exist_ok=True)
@@ -135,7 +135,7 @@ context = execution.load_environment(
     policy={"host_state_path": Path(os.environ["MSPLATFORM_HOST_STATE"]),
             "stage_policy_path": policy_path},
 )
-cad = api.export_cad(assembly, format="step", options=options, context=context)
+cad = exporters.export_cad(assembly, format="step", options=options, context=context)
 with (workspace / "cad-reference.json").open("x", encoding="utf-8") as stream:
     json.dump(cad.reference, stream, indent=2)
 print(cad.data_path("step"))
@@ -181,7 +181,7 @@ print(cad.metadata)
 可在同一独立进程调用实际STEP冷读检查，无需重新导出、执行owner、点击或启动SolidWorks：
 
 ```python
-inspection = api.inspect_cad(cad, checks={
+inspection = exporters.inspect_cad(cad, checks={
     "schema_version": 1, "kind": "physical_solids_step_v1", "probes": [],
 })
 print(inspection["status"], inspection["failed_checks"])

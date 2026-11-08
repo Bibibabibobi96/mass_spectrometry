@@ -275,7 +275,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
 
     @unittest.skipUnless(importlib.util.find_spec('cadquery'),'optional CadQuery engine unavailable')
     def test_public_inspection_cold_step_probes_no_export_tools_or_writes(self):
-        from msplatform import api
+        from msplatform import exporters
         from msplatform.exporters.step import assembly_geometry_members
         from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
         snapshot = real_snapshot()
@@ -294,8 +294,8 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
                  patch.object(Path,'mkdir',side_effect=AssertionError('mkdir')), \
                  patch.object(Path,'write_text',side_effect=AssertionError('write')), \
                  patch('msplatform.exporters.step.export_assembly_step',side_effect=AssertionError('export')):
-                result = api.inspect_cad(ref,checks=checks)
-                self.assertEqual(result,api.inspect_cad(open_artifact(ref,expected_kind="cad_geometry"),checks=checks))
+                result = exporters.inspect_cad(ref,checks=checks)
+                self.assertEqual(result,exporters.inspect_cad(open_artifact(ref,expected_kind="cad_geometry"),checks=checks))
             self.assertEqual(result['status'],'consistent')
             self.assertEqual([r['actual_step_inside'] for r in result['probes']],[False,True])
             self.assertEqual(result['solid_count'],result['expected_solid_count'])
@@ -307,7 +307,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
     @unittest.skipUnless(importlib.util.find_spec('cadquery'),'optional CadQuery engine unavailable')
     def test_inspection_rejects_bound_report_mismatch_and_reports_wrong_step(self):
         import cadquery as cq
-        from msplatform import api
+        from msplatform import exporters
         checks = dict(schema_version=1,kind='physical_solids_step_v1',probes=[])
         mutations = [lambda r:r['step_record'].update(sha256='A'*64),
                      lambda r:r['projection'].update(length_unit='m'),
@@ -316,21 +316,21 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
         for change in mutations:
             with self.subTest(change=change),tempfile.TemporaryDirectory() as folder:
                 ref = self._publish_cad(Path(folder),real_snapshot(),report_change=change)
-                with self.assertRaises(ValueError): api.inspect_cad(ref,checks=checks)
+                with self.assertRaises(ValueError): exporters.inspect_cad(ref,checks=checks)
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder);wrong = root/'wrong.step'
             cq.exporters.export(cq.Workplane('XY').box(1,1,1),str(wrong))
             ref = self._publish_cad(root,real_snapshot(),step_source=wrong)
-            result = api.inspect_cad(ref,checks=checks)
+            result = exporters.inspect_cad(ref,checks=checks)
             self.assertEqual(result['status'],'mismatch')
             self.assertIn('solid_count_differs',result['failed_checks'])
             for bad in (dict(checks,schema_version=True),dict(checks,kind='all_holes'),dict(checks,extra=True),
                         dict(checks,probes=[dict(probe_id='bad',point_mm=[float('nan'),0,0])])):
-                with self.subTest(checks=bad),self.assertRaises(ValueError): api.inspect_cad(ref,checks=bad)
+                with self.subTest(checks=bad),self.assertRaises(ValueError): exporters.inspect_cad(ref,checks=bad)
 
     @unittest.skipUnless(importlib.util.find_spec('cadquery'),'optional CadQuery engine unavailable')
     def test_inspection_uses_resolver_locations_and_missing_engine_is_explicit(self):
-        from msplatform import api
+        from msplatform import exporters
         import shutil
         checks = dict(schema_version=1,kind='physical_solids_step_v1',probes=[])
         with tempfile.TemporaryDirectory() as folder:
@@ -341,7 +341,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
                 return (moved/'publication'/Path(record['path']).name if Path(record['path']).parent.name=='publication'
                         else moved/Path(record['path']).name)
             source = open_artifact(ref,expected_kind='cad_geometry',resolver=resolver)
-            result = api.inspect_cad(source,checks=checks)
+            result = exporters.inspect_cad(source,checks=checks)
             self.assertEqual(result['status'],'consistent')
             self.assertEqual(source.data_path('step'),moved/'assembly.step')
             original_import = __import__
@@ -349,10 +349,10 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
                 if name=='cadquery': raise ImportError('controlled missing optional dependency')
                 return original_import(name,*args,**kwargs)
             with patch('builtins.__import__',side_effect=blocked),self.assertRaisesRegex(RuntimeError,'optional cad-step'):
-                api.inspect_cad(source,checks=checks)
+                exporters.inspect_cad(source,checks=checks)
             source.data_path('step').write_bytes(b'tampered STEP')
             with self.assertRaisesRegex(AssertionError,'changed'):
-                api.inspect_cad(source,checks=checks)
+                exporters.inspect_cad(source,checks=checks)
 
 
     @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')

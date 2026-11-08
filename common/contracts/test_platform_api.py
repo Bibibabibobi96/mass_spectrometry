@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from msplatform import api, assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import execution as execution_api
+from msplatform import exporters as exporters_api
 from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
@@ -476,7 +477,7 @@ class PlatformApiTests(unittest.TestCase):
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
                  patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel) as reader, \
                  patch("subprocess.Popen", side_effect=AssertionError("hidden solver or GUI")):
-                self.assertIs(api.export_cad(assembly, format="step", options=options, context=context), sentinel)
+                self.assertIs(exporters_api.export_cad(assembly, format="step", options=options, context=context), sentinel)
             call = owner.call_args.kwargs
             self.assertEqual(call["expected_operation_ids"], ("export_step",))
             self.assertEqual(call["action"].func, execute_cad_export)
@@ -486,19 +487,19 @@ class PlatformApiTests(unittest.TestCase):
             self.assertFalse(context.workspace.exists())
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as named_owner, \
                  patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel):
-                api.export_cad(assembly, format="step", options=dict(options,name="RF O'Brien"),context=context)
+                exporters_api.export_cad(assembly, format="step", options=dict(options,name="RF O'Brien"),context=context)
             named = named_owner.call_args.kwargs
             self.assertEqual(named['expected_relative_paths'][0], "results/RF O'Brien.step")
             self.assertEqual(named['action'].keywords['options'], {k:v for k,v in dict(options,name="RF O'Brien").items() if k!='representation'})
             for name in ('../escape', 'CON', 'bad*', '质谱'):
                 with self.subTest(name=name), patch("msplatform.execution.owner.run_managed_stage") as launch:
                     with self.assertRaises(ContractError):
-                        api.export_cad(assembly,format="step",options=dict(options,name=name),context=context)
+                        exporters_api.export_cad(assembly,format="step",options=dict(options,name=name),context=context)
                     launch.assert_not_called()
             stage["artifact_retention"] = dict(policy_version=1, **{"class": "compact"}, reason=None)
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages={"export_cad": stage})), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "cannot retain"), patch("msplatform.execution.owner.run_managed_stage") as launch:
-                api.export_cad(assembly, format="step", options=options, context=context)
+                exporters_api.export_cad(assembly, format="step", options=options, context=context)
             launch.assert_not_called()
 
     def test_field_action_binds_real_model_graph_budget_and_explicit_reuse(self):
