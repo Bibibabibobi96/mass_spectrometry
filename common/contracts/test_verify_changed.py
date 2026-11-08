@@ -487,7 +487,7 @@ exit 0
         self.assertTrue({
             "orthogonal_accelerator_static", "single_reflection_oa_tof_mass_analyzer_static",
                     } <= provider.keys())
-        primitives = self.routed_stages("common/simion/gem_primitives.py")
+        primitives = self.routed_stages("src/msplatform/backends/simion/gem_primitives.py")
         self.assertTrue({
             "simion_common", "orthogonal_accelerator_static",
                     } <= primitives.keys())

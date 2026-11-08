@@ -12,7 +12,7 @@ from projects.rf_multipole_ion_optics.simion.simion_geometry import (
     render_grouped_rod_array_gem,
 )
 from msplatform.backends.simion.aperture import resolve_rectangular_aperture_discretization
-from common.simion.gem_primitives import (
+from msplatform.backends.simion.gem_primitives import (
     format_number as _fmt,
 )
 from integrations.runtime.single_flight_electrode_contract import (

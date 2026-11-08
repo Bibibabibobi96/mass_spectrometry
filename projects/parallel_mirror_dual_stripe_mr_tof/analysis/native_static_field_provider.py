@@ -18,6 +18,7 @@ from typing import Any
 
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.file_identity import file_sha256
+from msplatform.backends.simion import gem_primitives
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
@@ -981,7 +982,7 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     ancestry_bindings = [source]
     if _ip_metadata(source):
         inputs["ion_processor_emitter"] = str(Path(__file__).with_name("ion_processor_assembly.py").resolve())
-        inputs["gem_primitives"] = str(Path(__file__).resolve().parents[3] / "common/simion/gem_primitives.py")
+        inputs["gem_primitives"] = str(Path(gem_primitives.__file__).resolve())
     if reused_basis is not None:
         inputs["source_response_basis"] = inputs["source_binding"]
         inputs["source_binding"] = reused_basis["source_binding_path"]

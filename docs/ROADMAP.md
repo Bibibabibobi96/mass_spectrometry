@@ -179,6 +179,8 @@ STEP导出编排与独立冷读检查已迁入`msplatform.exporters`，旧`api.e
 活动引用全部退役，普通安装负例明确拒绝旧模块。历史快照与reader不因当前源码入口删除而改写。
 `common/contracts/artifact_cache_contract.py`单向桥已退役；结构校验、容量校准与候选冻结直接使用安装执行合同，
 缓存角色和根映射不变，历史资产不迁移。
+`common/simion/gem_primitives.py`旧桥已删除；RF/OA/MR及integration消费者、测试和Changed路由直接使用安装SIMION实现，
+数值序列化与GEM字节不变，MR冻结来源记录实际安装位置。
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

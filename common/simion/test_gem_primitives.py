@@ -1,7 +1,7 @@
 """Device-independent regression for the legacy-GEM serialization primitives."""
 import unittest
 
-from common.simion.gem_primitives import centered_box3d, cylinder_z, format_number
+from msplatform.backends.simion.gem_primitives import centered_box3d, cylinder_z, format_number
 
 
 class GemPrimitivesTest(unittest.TestCase):
