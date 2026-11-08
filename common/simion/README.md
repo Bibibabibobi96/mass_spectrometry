@@ -68,7 +68,7 @@ Python／PowerShell合成夹具及外层default-vs-false诊断不被自动改写
 
 ## 几何与 Workbench
 
-[`gem_primitives.py`](gem_primitives.py)只序列化明确传入的有限坐标与尺寸；Python函数
+[`msplatform.backends.simion.gem_primitives`](../../src/msplatform/backends/simion/gem_primitives.py)只序列化明确传入的有限坐标与尺寸；Python函数
 `centered_box3d`、`cylinder_z`分别生成GEM的`centered_box3D`和沿`z`轴的`cylinder`文本，
 不选择电极、器件尺寸、孔径、网格或坐标变换。
 独立正交加速器和连接装配共用这一层；器件CSG、侧孔与两／三区电极组合由加速器项目拥有。
@@ -134,7 +134,7 @@ full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注�
 
 ## 原生完成事实
 
-[`native_completion.py`](native_completion.py)只解析仓库已实测的 SIMION 2020 原始行
+[`msplatform.backends.simion.native_completion`](../../src/msplatform/backends/simion/native_completion.py)只解析仓库已实测的 SIMION 2020 原始行
 `status,Fly completed. <splats> splats[, <seconds> seconds]`：它提供 splat 数和可选耗时，
 不把这项项目实现表述为供应商稳定 stdout ABI。裸前缀、截断或旧格式不是完成事实；调用方选择自己的
 单日志唯一或多日志显式求和策略，且不相加 elapsed。项目仍负责粒子 ID、时钟、阈值和科学终态。
@@ -509,7 +509,7 @@ standalone 响应的全部 SHA-256 均不改变。该链已在公共租约
 cache消费。二者禁止混用：前者可在发布前flush仍可写的生产者文件，后者永远只读源，并在Windows大PA上仅以
 `robocopy /J`生成的私有快照对manifest验明持久字节，即使源意外丢失只读属性也绝不以`r+b`打开。
 
-[`cache_generation.py`](cache_generation.py)统一提供不同 PA-family 缓存协议共有的直接文件清单、payload/
+[`msplatform.execution.cache_generation`](../../src/msplatform/execution/cache_generation.py)统一提供不同 PA-family 缓存协议共有的直接文件清单、payload/
 immutable generation 摘要，以及按 manifest 文件清单完整物化为可写 run-local 副本的原子复制原语。物化先拒绝
 既有目标，再对私有持久快照计算 SHA-256、逐文件核对 manifest、flush/fsync，最后
 原子发布整个目录；不为同一大型 family 重复执行源预哈希、staging 复哈希和发布后复哈希。目标副本不继承只读源

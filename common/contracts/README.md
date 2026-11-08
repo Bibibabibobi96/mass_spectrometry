@@ -546,7 +546,7 @@ PA cache 的锁、build-lock 与 staging 目录则是可复用 runtime state：P
 
 ### 容量登记、租约与退休
 
-已登记cache目录与role的唯一数据合同为[`artifact_cache_contract.py`](artifact_cache_contract.py)，
+已登记cache目录与role的唯一数据合同为[`msplatform.execution.artifact_cache_contract`](../../src/msplatform/execution/artifact_cache_contract.py)，
 布局检查、历史校准和容量owner共同消费；底层账本不导入布局检查CLI。
 [`gui_source_protection.py`](gui_source_protection.py)统一从current GUI收据投影显式来源保护，
 维护摘要只在单次调用中复用投影，退役决定重新读取当前收据，不保留跨调用缓存。
