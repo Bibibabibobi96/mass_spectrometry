@@ -1440,7 +1440,7 @@ def repair_preserved_native_file(
     every rename boundary. It neither deletes data nor repairs persistent damage.
     """
     from common.contracts.artifact_naming import validate_run_id
-    from common.simion.cache_generation import snapshot_immutable_file
+    from msplatform.execution.cache_generation import snapshot_immutable_file
     root, run, audit = artifact_root.resolve(), run_dir.resolve(), evidence_run.resolve()
     for selected in (run, audit):
         parts = selected.relative_to(root).parts

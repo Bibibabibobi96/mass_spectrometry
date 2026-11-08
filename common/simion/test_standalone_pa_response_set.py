@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
-from common.simion import cache_generation
+from msplatform.execution import cache_generation
 from common.simion.standalone_pa_response_set import (
     POLICY_ID,
     ResponseExport,
@@ -105,11 +105,11 @@ class StandalonePaResponseSetTests(unittest.TestCase):
     def test_metadata_selection_reads_receipt_but_defers_all_pa_payloads(self) -> None:
         self._write_receipt()
         manifest = self._manifest()
-        with patch('common.simion.cache_generation.file_sha256', wraps=file_sha256) as pa_hash:
+        with patch('msplatform.execution.cache_generation.file_sha256', wraps=file_sha256) as pa_hash:
             baseline = select_standalone_pa_records(self.root, manifest, self.receipt_name)
             self.assertEqual(pa_hash.call_count, 2)
             print('PA_SELECTOR_READS baseline=2 bytes=26')
-        with (patch('common.simion.cache_generation.file_sha256', wraps=file_sha256) as pa_hash,
+        with (patch('msplatform.execution.cache_generation.file_sha256', wraps=file_sha256) as pa_hash,
               patch('common.simion.standalone_pa_response_set.file_sha256', wraps=file_sha256) as receipt_hash):
             selected = select_standalone_pa_records(self.root, manifest, self.receipt_name,
                                                     verify_payload=False)
@@ -257,10 +257,10 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(StandalonePaResponseSetError):
                 validate_standalone_pa_response_set(self.root, manifest, self.receipt_name,
                     inventory_is_verified=True)
-        with patch('common.simion.cache_generation.file_sha256', wraps=file_sha256) as hashed:
+        with patch('msplatform.execution.cache_generation.file_sha256', wraps=file_sha256) as hashed:
             selected = select_standalone_pa_records(self.root, original, self.receipt_name)
             self.assertEqual(hashed.call_count, 4)
-        with patch('common.simion.cache_generation.file_sha256', side_effect=AssertionError("PA scan")):
+        with patch('msplatform.execution.cache_generation.file_sha256', side_effect=AssertionError("PA scan")):
             self.assertEqual(select_standalone_pa_records(self.root, original, self.receipt_name,
                 verify_payload=False), selected)
         source.write_bytes(b"X" * source.stat().st_size)

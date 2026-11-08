@@ -725,7 +725,7 @@ class CompletedFieldReuseTests(unittest.TestCase):
                     (owner/"run_manifest.json").write_text(json.dumps(m))
                 if mode=="drift":
                     source=_freeze_completed_field_source(owner,"source_field",root/"frozen")
-                    from common.simion.cache_generation import materialize_direct_inventory
+                    from msplatform.execution.cache_generation import materialize_direct_inventory
                     with self.assertRaisesRegex(RuntimeError,"differs"):
                         materialize_direct_inventory(path.parent,root/"copy",source["inventory"])
                 else:
@@ -854,7 +854,7 @@ class ReplayPackageTests(unittest.TestCase):
                 invalid=dict(author,**{key:value})
                 with self.subTest(key=key),self.assertRaises(ValueError):validate_replay_contract(invalid)
             author["committed_new_bytes"]=1;contract.write_text(json.dumps(author))
-            with patch(MODULE+".freeze_code"),patch("common.simion.cache_generation.materialize_direct_inventory") as copy_payload:
+            with patch(MODULE+".freeze_code"),patch("msplatform.execution.cache_generation.materialize_direct_inventory") as copy_payload:
                 with self.assertRaisesRegex(ValueError,"capacity commitment"):
                     prepare_replay_package(run,contract)
                 copy_payload.assert_not_called()
@@ -932,7 +932,7 @@ class ReplayPackageTests(unittest.TestCase):
                 self._reseal_failed_replay(source)
                 if fault=="unbound":
                     path=source/"run_manifest.json";value=json.loads(path.read_text());value["outputs"]=[r for r in value["outputs"] if r["path"]!=str(folder/"events.csv")];path.write_text(json.dumps(value))
-                with patch(MODULE+".freeze_code"),patch("common.simion.cache_generation.materialize_direct_inventory") as copy_payload:
+                with patch(MODULE+".freeze_code"),patch("msplatform.execution.cache_generation.materialize_direct_inventory") as copy_payload:
                     with self.assertRaises((ValueError,AssertionError)):prepare_replay_package(run,contract)
                     copy_payload.assert_not_called()
 

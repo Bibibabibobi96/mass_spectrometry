@@ -547,7 +547,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
     from msplatform.backends.simion import standalone_pa_composition
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_mesh_diagnostics
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_field_theory
-    from common.simion.cache_generation import materialize_direct_inventory
+    from msplatform.execution.cache_generation import materialize_direct_inventory
 
     assert callable(ip_prism_focus_diagnostics.analyze_focus_study)
     assert callable(ip_prism_local_field_diagnostics.export_field_diagnostics)
@@ -849,7 +849,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
     Large-file identity is checked by the common immutable snapshot primitive.
     """
     from common.contracts.write_run_manifest import require_completed_terminal_publication
-    from common.simion.cache_generation import materialize_direct_inventory
+    from msplatform.execution.cache_generation import materialize_direct_inventory
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_focus_diagnostics import contour_projection_paths
 
     contract = read_json(contract_path)

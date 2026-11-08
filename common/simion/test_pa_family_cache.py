@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import common.simion.cache_generation as cache_generation
+import msplatform.execution.cache_generation as cache_generation
 import common.simion.pa_family_cache as pa_family_cache
 import common.simion.standalone_pa_response_set as response_set
 from common.contracts import capacity_ledger, capacity_protection, reconcile_artifact_capacity

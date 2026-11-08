@@ -391,7 +391,7 @@ function Exit-HostExecutionLease { param($Lease) }
     def test_preserved_payload_view_repair_keeps_large_io_outside_capacity_lock(self):
         from contextlib import contextmanager
         from common.contracts import solver_review_retirement as module
-        from common.simion.cache_generation import snapshot_immutable_file
+        from msplatform.execution.cache_generation import snapshot_immutable_file
         source, audit, options = self._view_repair_fixture()
         original_lock = module.protection.capacity_decision_lock
         original_replace = os.replace
@@ -436,7 +436,7 @@ function Exit-HostExecutionLease { param($Lease) }
             module, "file_sha256_unbuffered", side_effect=checked_hash), mock.patch.object(
             module, "_atomic_json", side_effect=checked_atomic), mock.patch.object(
             module.os, "replace", side_effect=checked_replace), mock.patch(
-            "common.simion.cache_generation.snapshot_immutable_file", side_effect=checked_copy), mock.patch.dict(
+            "msplatform.execution.cache_generation.snapshot_immutable_file", side_effect=checked_copy), mock.patch.dict(
             os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             result = repair_preserved_native_file(self.artifacts, self.target, "simion/collision.pa", audit, **options)
         self.assertEqual(result["status"], "complete")
@@ -469,7 +469,7 @@ function Exit-HostExecutionLease { param($Lease) }
 
     @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
     def test_preserved_payload_view_repair_rejects_bad_snapshot_and_protection(self):
-        from common.simion.cache_generation import snapshot_immutable_file
+        from msplatform.execution.cache_generation import snapshot_immutable_file
         source,audit,options=self._view_repair_fixture()
         before=source.stat().st_ino
         count=0
@@ -482,7 +482,7 @@ function Exit-HostExecutionLease { param($Lease) }
         with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
             "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
             os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
-            with mock.patch("common.simion.cache_generation.snapshot_immutable_file",side_effect=bad_copy), self.assertRaisesRegex(RetirementError,"read views"):
+            with mock.patch("msplatform.execution.cache_generation.snapshot_immutable_file",side_effect=bad_copy), self.assertRaisesRegex(RetirementError,"read views"):
                 repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
             self.assertEqual(source.stat().st_ino,before)
             create_capacity_protection_lease(self.artifacts,lease_id="other",owner="consumer",ttl_seconds=60,protected_paths=[self.target])
@@ -552,7 +552,7 @@ function Exit-HostExecutionLease { param($Lease) }
 
     @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
     def test_preserved_payload_view_repair_original_manifest_cas_after_snapshots(self):
-        from common.simion.cache_generation import snapshot_immutable_file
+        from msplatform.execution.cache_generation import snapshot_immutable_file
         source,audit,options=self._view_repair_fixture()
         original_id=source.stat().st_ino
         def change_manifest(src,dst,record):
@@ -563,7 +563,7 @@ function Exit-HostExecutionLease { param($Lease) }
         with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
             "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
             os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}),mock.patch(
-            "common.simion.cache_generation.snapshot_immutable_file",side_effect=change_manifest),self.assertRaisesRegex(RetirementError,"before quarantine"):
+            "msplatform.execution.cache_generation.snapshot_immutable_file",side_effect=change_manifest),self.assertRaisesRegex(RetirementError,"before quarantine"):
             repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
         self.assertEqual(source.stat().st_ino,original_id)
 

@@ -9,9 +9,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import common.simion.cache_generation as cache_generation
+import msplatform.execution.cache_generation as cache_generation
 
-from common.simion.cache_generation import (
+from msplatform.execution.cache_generation import (
     generation_input,
     generation_sha256,
     inventory_direct_files,
@@ -433,7 +433,7 @@ class CacheGenerationTests(unittest.TestCase):
             (root / "family.pa0").write_bytes(b"payload")
             completed = subprocess.run(
                 [
-                    sys.executable, "-m", "common.simion.cache_generation",
+                    sys.executable, "-m", "msplatform.execution.cache_generation",
                     "--directory", str(root), "--cache-key", "b" * 64,
                     "--provider-run-id", "run-2",
                 ],
@@ -457,7 +457,7 @@ class CacheGenerationTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "common.simion.cache_generation",
+                    "msplatform.execution.cache_generation",
                     "--directory",
                     str(source),
                     "--materialize-manifest",
