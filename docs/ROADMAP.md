@@ -94,13 +94,26 @@ historical native failures and Formal publication requirements remain unchanged.
 V7.2增加同一完整Assembly的独立STEP与PreparedModel首批出口（U07／U08）：CAD／后端并列生成，
 默认不开GUI且不求场／Fly，保存后分别冷打开和继续求场。所选SIMION模型、场及传播链已有普通安装原生证据；
 STEP的实际生成／独立几何校验、历史SolidWorks查看与本次延期范围，均由集成正文分别记录。
-P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需求检验；不以当前能力不足删减目标。
+P4 retains the remaining approved designs and named COMSOL capabilities. P5 tests the same user’s fresh environment and actual new needs; it requires no colleague and cannot absorb unfinished P4 migration or performance targets.
 2026-11-06按V8.1启动唯一P4 Goal，实际起点为本地及`origin/master`共同的`40a13e78`，初始工作区干净，
 公共主机资源账本无活动记录；工作在`task/phase04-platform-rollout`分支推进。W0只读盘点覆盖1852个跟踪源码／配置文件，
 其静态引用与桥候选只用于导航，不作为完整动态消费者或删除证明。当前`rf_oatof_functional_v1`已通过原公共API完成
 组件解析、完整装配和SIMION纯几何编译基线，无原生求解；P3及旧CI证据仍只绑定各自源码与环境，不冒充P4后继验收。
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
+
+V8.2 is the active P4 scope. Formal reusable implementations and workflows belong to
+`src/msplatform`; research inputs, history, tests and development tools remain outside that
+production tree. Existing completed slices are retained. Independent RF raw geometry/model,
+independent two-/three-zone OA geometry and Wehnelt build-only operations have source-bound
+ordinary-install/native evidence in their project status pages; these are not field/Fly or
+scientific qualifications. SFI preparation/pulse and source/result adapters are installed,
+while collection, execution and continuation still require migration. Explicit deployment
+capacity policy and selected failed-output preservation use the existing owner and ledger.
+The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
+and project status pages own the detailed evidence. Full Repository, the original 15-minute
+software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.
+
 
 | 当前对象／职责 | 规范所有者与活动消费者 | 本阶段退出条件 |
 |---|---|---|
@@ -112,6 +125,7 @@ P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需�
 | 既有COMSOL操作 | `backends.comsol`具名入口；真实项目工作流与原生证据 | 只迁移实际能力，不以脚本或假模型冒充完成 |
 | STEP导出／冷读 | `exporters`；CAD和独立几何检查 | 与后端并列消费完整Assembly，无默认GUI |
 | 结果读取／分析／比较 | `results`组合中立I/O与纯`analysis`；离线消费者 | 无隐藏重算／owner，缺失和篡改失败关闭 |
+| Named SFI preparation/pulse | `workflows.single_reflection_flight`; canonical source/results/backend consumers | Installed slice delivered; remaining collection/execution/continuation and affected final acceptance stay OPEN |
 | 环境、恢复与原生查看 | `execution`／`applications`；运行owner与故障矩阵 | 一次部署、单一owner；历史action仅作数据语义读取 |
 | 能力查询 | 各规范操作的校验与显式声明；调用和查询共用分派 | 不再以私有planner签名建立第二套合同 |
 
@@ -370,7 +384,7 @@ P1–P5为平台改造批次，与下述组装M0–M4及项目科学资格分别
 | R12 Windows路径运输 | P1 → P1/P3 | 路径/执行边界：长、Unicode、空格、cwd、argv和别名清理。 |
 | R13 缓存及失效 | P1/P3 → P3/P4 | 冻结/缓存owner：分维身份、变更矩阵、篡改/缺失拒绝及自洽例外。 |
 | R14 科学与工程证据 | P1 → P1–P5 | 各资格所有者：如实区分软件、原生、数值、实验、GUI/CAD。 |
-| R15 API和可安装交付 | P1 → P1/P3/P4/P5 | 公共发行：P1科学核；P3首次真实安装执行、逐资源交付、STEP／PreparedModel及各出口跨进程重开；P4全域推广；P5同事与新需求验收。 |
+| R15 API和可安装交付 | P1 → P1/P3/P4/P5 | 公共发行：P1科学核；P3首次真实安装执行、逐资源交付、STEP／PreparedModel及各出口跨进程重开；P4全域推广；P5: this user validates a fresh environment and actual new needs; unfinished P4 work does not transfer. |
 | R16 文档与规范适应 | P1 → P1/P4 | 各唯一权威：同步规范/检查器/代码/导航，冻结历史不追改。 |
 | R17 覆盖与反馈时间 | P1 → P4 | 验证owner：有效保证不减、固定环境范围计时，原预算不下调。 |
 | R18 真实扩展压力 | P2 → P2/P5 | 新需求提供者/适配：真实替换、局部修改及所需数值/功能证据。 |
