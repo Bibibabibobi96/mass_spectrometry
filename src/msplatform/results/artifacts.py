@@ -19,7 +19,9 @@ from msplatform.io.manifest_records import (
 
 
 ArtifactResolver = Callable[[Mapping[str, Any], Path | None], Path]
-ARTIFACT_KINDS = frozenset({"cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "trajectory_result"})
+ARTIFACT_KINDS = frozenset({
+    "cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "gas_field", "trajectory_result",
+})
 
 
 def _verified_path(record: dict[str, Any], *, label: str, base: Path | None,

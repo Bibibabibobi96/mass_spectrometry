@@ -1,19 +1,19 @@
-function result = build_and_solve_axisymmetric_gas_flow(projectRoot, outputDir)
+function result = build_and_solve_axisymmetric_gas_flow(sciencePath, numericsPath, geometryPath, outputDir, resumeModelPath)
 %BUILD_AND_SOLVE_AXISYMMETRIC_GAS_FLOW Build the declared 2-D axisymmetric HNMF model.
 % This is intentionally fail-closed: an absent license, an unsupported COMSOL
 % feature/property, nonconvergence, or an invalid export raises an error.
 
 arguments
-    projectRoot (1, 1) string
+    sciencePath (1, 1) string
+    numericsPath (1, 1) string
+    geometryPath (1, 1) string
     outputDir (1, 1) string
+    resumeModelPath (1, 1) string = ""
 end
 
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-sciencePath = fullfile(projectRoot, "config", "gas_flow_science.json");
-numericsPath = fullfile(projectRoot, "config", "comsol_solver_numerics.json");
-geometryPath = fullfile(projectRoot, "config", "resolved_geometry.json");
 science = readContract(sciencePath, "dual_cone_axisymmetric_gas_flow_science_contract");
 numerics = readContract(numericsPath, "dual_cone_axisymmetric_gas_flow_comsol_numerics");
 geometry = readContract(geometryPath, "dual_cone_tandem_quadrupole_resolved_geometry");
@@ -35,7 +35,6 @@ bc = science.boundary_conditions;
 proxy = science.geometry_proxy;
 n = numerics;
 
-resumeModelPath = string(getenv("DUAL_CONE_GAS_FLOW_RESUME_MODEL"));
 if strlength(resumeModelPath) > 0
     assert(isfile(resumeModelPath), "GasFlow:ResumeModel", ...
         "The requested converged COMSOL model is missing: %s", resumeModelPath);

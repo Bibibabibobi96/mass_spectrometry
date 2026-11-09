@@ -1,12 +1,23 @@
 # 双锥串联四极杆离子传输接口项目状态
 
+## Installed gas-flow ownership migration
+
+The existing axisymmetric gas builder/task now reside in the installed COMSOL MATLAB directory and
+receive explicit science, numerics, geometry, output and optional resume-model paths. The public
+`solve_axisymmetric_gas_flow` operation uses the canonical managed owner and launcher. The old project
+PowerShell file is research/profile transport only, with explicit deployment/workspace/profile bindings.
+The source contracts remain research inputs; none were copied into a second package default.
+
+Published gas data is read through `msplatform.results.gas_field`, including the explicit historical
+successful-manifest format and its original frozen scientific records. Missing historical inputs do not
+fall back to current project defaults. The gas product excludes MPH from offline data consumption;
+explicit model reexport instead requires published model identity and native writer/release closure.
+No new native solve, installed acceptance or scientific qualification is claimed by this source migration.
+
+
 本文件是当前参数解释、物理链、资格和开放任务的唯一权威。多极杆通用理论见
 [多极杆理论](../../rf_multipole_ion_optics/docs/theory/index.md)，碰撞模型分级见
 [碰撞模型](../../rf_multipole_ion_optics/docs/theory/collisions.md)。
-
-气流入口的运行依赖冻结沿原 `schedulerFiles`、复制及输入身份记录，增加由规范核心源码枚举和
-`pyproject.toml` 包资源声明实际展开的执行资源。冻结后的公共桥读取本次快照中的规范实现，
-不借作者源码补缺；独立加载预算观测的定向软件回归已通过。这不增加 COMSOL 求解或气流资格。
 
 双锥纯几何、COMSOL 气体场校验及两种 Lua 运行场编译已实迁到
 `msplatform.components.dual_cone_tandem_quadrupole_ion_interface`；fractional GEM 编译实迁到
@@ -157,8 +168,8 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 ## 普通执行计划
 
 `axisymmetric_gas_flow_screening_static`保留既有profile身份，普通计划不再先运行整套`static_gate`；独立软件验证、原COMSOL气流／资源／输出准入及Prototype边界保持。
-公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`交原runner冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
-prepare在同一snapshot运行规范组件`geometry --baseline ... --check ...`，实际模块与NumPy沿正式环境记录来源；输入／派生物失配在商业调用前失败。几何准入冻结清单包含规范组件、其包初始化闭包和RF杆数组实现，隔离导入根包含本次`src`，不得借作者checkout补缺。气流成功不代表离子传输或新资格。
+公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`显式交安装操作校验和冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
+安装操作调用同一规范geometry解析器，对显式baseline/resolved进行原逐字节新鲜度检查；输入／派生物失配在商业调用前失败。隔离回归核对本次规范包来源，不借作者checkout补缺。气流成功不代表离子传输或新资格。
 
 纯准备的[树外冻结回归](../tests/test_simion_layer.py)通过公共源码枚举交付规范核心，并保留项目prepare、配置和Program快照；隔离解释器`-I`下核对真实模块来源，缺少原生映射模块时明确拒绝，不借作者路径补洞。两种准备模式保持原输入与无PA生成边界。prepare仍是项目编排入口，只有其新几何依赖迁入规范后端，未整体安装。
 这只证明软件源码闭包，不解除上述SIMION原生运行阻断，也不新增轨迹或物理资格。

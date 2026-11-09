@@ -13,14 +13,14 @@ from uuid import uuid4
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.inputs import freeze_file
 from msplatform.execution.owner import run_managed_stage
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from msplatform.execution.resources import RESOURCE_NAMES, resource_path
 from msplatform.execution.stage_policy import read_stage_policy
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.results.artifacts import OpenedArtifact, open_artifact
-from .resources import LAUNCHER_RESOURCES, native_resource_path
+from .native_execution import (
+    declare_runtime_files, freeze_native_sources, matlab_text, require_launcher_completion,
+)
 
 @dataclass(frozen=True)
 class UnsolvedModelSpec:
@@ -59,61 +59,12 @@ def build_unsolved_model(resolved: dict, baseline: Mapping[str, Any], modes: Map
     return open_artifact({"manifest": result["manifest"], "product_id": "model"}, expected_kind="prepared_model")
 
 
-def _matlab_text(value: Path | str) -> str:
-    return "'" + str(value).replace("'", "''") + "'"
 
 
-def _freeze_sources(session, spec) -> tuple[Path, list[dict]]:
-    root = session.input_dir / "native_sources"
-    sources = [(native_resource_path(name), Path("backends/comsol/matlab") / name) for name in spec.matlab_resources]
-    sources.extend((native_resource_path(name), Path("backends/comsol/launcher") / name)
-                   for name in sorted(LAUNCHER_RESOURCES))
-    sources.extend((resource_path(name), Path("execution/resources") / name)
-                   for name in sorted(RESOURCE_NAMES) if name.endswith(".ps1"))
-    records = []
-    for source, relative in sources:
-        target = session.declare_file(root / "msplatform" / relative, "required_evidence")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        freeze_file(source, target)
-        record = file_record(target, "required_evidence")
-        session.add_input("native_" + relative.as_posix().replace("/", "_").replace(".", "_"), record)
-        records.append(record)
-    return root / "msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1", records
 
 
-def _receipt(path: Path, run_id: str) -> None:
-    value = json.loads(path.read_text(encoding="utf-8-sig"))
-    operations = value.get("operations")
-    if (value.get("role") != "comsol_launcher_completion" or value.get("schema_version") != 1
-            or value.get("run_id") != run_id or not isinstance(operations, list) or len(operations) != 1):
-        raise ValueError("COMSOL launcher completion differs from the one declared attempt")
-    observation = operations[0].get("observation", {})
-    if (observation.get("exit_confirmed") is not True or observation.get("returncode") != 0
-            or type(observation.get("process_id")) is not int or observation["process_id"] <= 0
-            or type(observation.get("process_started_at_utc_ticks")) is not int
-            or observation["process_started_at_utc_ticks"] <= 0):
-        raise ValueError("COMSOL launcher has no successful native exit evidence")
-    release = value.get("host_release", {})
-    if release.get("error") is not None or (release.get("inherited") is not True
-            and release.get("result", {}).get("status") != "released"):
-        raise ValueError("COMSOL launcher host release is unconfirmed")
 
 
-def _runtime_files(session, directory: Path, *, bootstrap: Path) -> None:
-    # Only the canonical launcher's two explicit storage trees and documented
-    # diagnostic filenames are admitted. Other unexpected files fail owner audit.
-    for name in ("comsol_tmp", "comsol_recovery"):
-        root = directory / name
-        if root.is_dir():
-            for path in root.rglob("*"):
-                if path.is_file():
-                    session.declare_file(path, "solver_native_binary")
-    diagnostics = [Path(str(bootstrap) + ".launcher.attempt1." + stream + ".log")
-                   for stream in ("stdout", "stderr")]
-    diagnostics.extend(bootstrap.parent.glob("hs_err_pid*.log"))
-    for path in diagnostics:
-        if path.is_file():
-            session.declare_file(path, "required_evidence")
 
 
 def _report(path: Path, contract: dict, contract_path: Path) -> dict:
@@ -135,7 +86,7 @@ def execute_unsolved_model(session, *, resolved: dict, limits: Mapping[str, Any]
         raise ValueError("COMSOL model requires build_model followed by verify_model")
     if resolved["numerical"]["execution_mode"] != "build_only":
         raise ValueError("COMSOL execution requires the resolved build_only mode")
-    launcher, sources = _freeze_sources(session, spec)
+    launcher, sources = freeze_native_sources(session, spec.matlab_resources)
     contract = session.declare_file(session.input_dir / "resolved_model.json", "required_evidence")
     write_json_atomic(contract, resolved)
     contract_record = file_record(contract, "required_evidence")
@@ -160,9 +111,9 @@ def execute_unsolved_model(session, *, resolved: dict, limits: Mapping[str, Any]
         runtime.mkdir(parents=True)
         function = spec.verify_function if verify else spec.build_function
         values = [model, contract] if verify else [contract, session.run_dir, *spec.build_extra_arguments]
-        call = function + "(" + ",".join(_matlab_text(value) for value in values) + ")"
-        script = ("addpath(" + _matlab_text(matlab) + ");\nresult=" + call + ";\n"
-                  "fid=fopen(" + _matlab_text(report) + ",'w','n','UTF-8');\n"
+        call = function + "(" + ",".join(matlab_text(value) for value in values) + ")"
+        script = ("addpath(" + matlab_text(matlab) + ");\nresult=" + call + ";\n"
+                  "fid=fopen(" + matlab_text(report) + ",'w','n','UTF-8');\n"
                   "assert(fid>=0,'COMSOL:ReportWrite','Cannot write COMSOL report');\n"
                   "cleanup=onCleanup(@()fclose(fid));\nfprintf(fid,'%s',jsonencode(result));\n")
         task.write_text(script, encoding="utf-8", newline="\n")
@@ -185,14 +136,14 @@ def execute_unsolved_model(session, *, resolved: dict, limits: Mapping[str, Any]
             raise
         finally:
             try:
-                _runtime_files(session, runtime, bootstrap=bootstrap)
+                declare_runtime_files(session, runtime, bootstrap=bootstrap)
             except BaseException as secondary:
                 if primary is None:
                     raise
                 primary.add_note(f"COMSOL runtime diagnostic preservation failed: {secondary!r}")
         for record in guards:
             verify_record("COMSOL immutable input", record)
-        _receipt(completion, session.run_id)
+        require_launcher_completion(completion, session.run_id)
         if "STATUS=PASS" not in bootstrap.read_text(encoding="utf-8-sig"):
             raise ValueError("COMSOL bootstrap did not complete its task")
         value = _report(report, resolved, contract)

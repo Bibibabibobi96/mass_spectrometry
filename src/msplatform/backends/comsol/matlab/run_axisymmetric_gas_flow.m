@@ -1,13 +1,11 @@
-% RUN_AXISYMMETRIC_GAS_FLOW Fail-closed batch entry point for COMSOL with MATLAB.
-scriptPath = string(mfilename("fullpath"));
-projectRoot = string(getenv("DUAL_CONE_PROJECT_ROOT"));
-if strlength(projectRoot) == 0
-    projectRoot = fileparts(fileparts(scriptPath));
-end
-outputDir = string(getenv("DUAL_CONE_GAS_FLOW_OUTPUT_DIR"));
-if strlength(outputDir) == 0
-    error("GasFlow:MissingOutput", ...
-        "DUAL_CONE_GAS_FLOW_OUTPUT_DIR must name an explicit output directory.");
+function result = run_axisymmetric_gas_flow(sciencePath, numericsPath, geometryPath, outputDir, resumeModelPath)
+%RUN_AXISYMMETRIC_GAS_FLOW Fail-closed explicit COMSOL gas-flow operation.
+arguments
+    sciencePath (1, 1) string
+    numericsPath (1, 1) string
+    geometryPath (1, 1) string
+    outputDir (1, 1) string
+    resumeModelPath (1, 1) string = ""
 end
 if ~isfolder(outputDir)
     mkdir(outputDir);
@@ -15,7 +13,8 @@ end
 reportPath = fullfile(outputDir, "comsol_run_report.txt");
 writeReport(reportPath, compose("STATUS=RUNNING\nTASK=axisymmetric_gas_flow\n"));
 try
-    result = build_and_solve_axisymmetric_gas_flow(projectRoot, outputDir);
+    result = build_and_solve_axisymmetric_gas_flow( ...
+        sciencePath, numericsPath, geometryPath, outputDir, resumeModelPath);
     report = compose("STATUS=PASS\nMODEL=%s\nFIELD=%s\nMETADATA=%s\n", ...
         result.model_path, result.field_csv_path, result.field_metadata_path);
     writeReport(reportPath, report);
@@ -24,6 +23,8 @@ catch exception
         exception.identifier, exception.message);
     writeReport(reportPath, report);
     rethrow(exception);
+end
+
 end
 
 function writeReport(path, content)

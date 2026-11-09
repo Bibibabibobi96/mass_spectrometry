@@ -176,10 +176,10 @@ class SimionGeometryTests(unittest.TestCase):
 
     def test_validated_comsol_gas_compilation_remains_available(self) -> None:
         compiler = (PROJECT / "workflows/gas_assisted_transport/build_gas_runtime.ps1").read_text(encoding="utf-8")
-        self.assertIn("verify_run_manifest.py", compiler)
-        self.assertIn("--require-status success", compiler)
-        self.assertIn("results\\gas_field_rz.csv", compiler)
-        self.assertIn("results\\gas_field_metadata.json", compiler)
+        self.assertIn("read_gas_field", compiler)
+        self.assertIn("field = read_gas_field(reference)", compiler)
+        self.assertIn('paths["field_csv"]', compiler)
+        self.assertIn('paths["field_metadata"]', compiler)
 
 
 class GasPreparationTests(unittest.TestCase):

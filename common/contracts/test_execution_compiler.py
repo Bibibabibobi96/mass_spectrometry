@@ -233,9 +233,17 @@ class ExecutionCompilerTests(unittest.TestCase):
                     source = private/path
                     source.parent.mkdir(parents=True, exist_ok=True)
                     source.write_text('{"value":2}')
-                    records.append(dict(name=name, relative_path=path))
+                    from msplatform.io.manifest_records import file_record
+                    records.append(dict(file_record(source), name=name, relative_path=path))
                 bundle = root/"resolved.json"
                 bundle.write_text(json.dumps(dict(role="compiled_execution_inputs", project_id=project, root=str(private), files=records)))
+                if project == "dual_cone_tandem_quadrupole_ion_interface":
+                    from msplatform.backends.comsol.gas_flow import compiled_gas_flow_paths
+                    selected = compiled_gas_flow_paths(bundle)
+                    self.assertEqual(len(selected), len(profile["fixed_inputs"]))
+                    for path in selected:
+                        self.assertEqual(json.loads(path.read_text())["value"], 2)
+                    continue
                 harness = root/"freeze.ps1"
                 harness.write_text(r"""param($Repo,$Entry,$Project,$Root,$Bundle,$Variable)
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'

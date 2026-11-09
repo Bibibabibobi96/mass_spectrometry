@@ -48,10 +48,14 @@ try {
       'config\uniform_rear_gas_field.json',
       'config\ion_transport_science.json',
       'config\simion_solver_numerics.json',
-      'comsol\build_and_solve_axisymmetric_gas_flow.m',
       'workflows\gas_assisted_transport\prepare.ps1'
     )
     $requiredCoreFiles = @(
+      'src/msplatform/backends/comsol/matlab/build_and_solve_axisymmetric_gas_flow.m',
+      'src/msplatform/backends/comsol/matlab/run_axisymmetric_gas_flow.m',
+      'src/msplatform/backends/comsol/gas_flow.py',
+      'src/msplatform/backends/comsol/native_execution.py',
+      'src/msplatform/results/gas_field.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\geometry.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_runtime.py',

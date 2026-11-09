@@ -29,7 +29,11 @@
         "simulation_results",
         "interface_state"
       ],
-      "required_bindings": [],
+      "required_bindings": [
+        "deployment_path",
+        "workspace",
+        "engineering_profile"
+      ],
       "steps": [
         {
           "step_id": "comsol_gas_flow",
@@ -43,7 +47,13 @@
             "-PythonExe",
             "{python_exe}",
             "-ResolvedInputsPath",
-            "{resolved_inputs_path}"
+            "{resolved_inputs_path}",
+            "-DeploymentPath",
+            "{deployment_path}",
+            "-Workspace",
+            "{workspace}",
+            "-EngineeringProfile",
+            "{engineering_profile}"
           ]
         }
       ],
@@ -59,7 +69,11 @@
         "gas_flow_science": "config/gas_flow_science.json",
         "comsol_solver_numerics": "config/comsol_solver_numerics.json"
       },
-      "binding_types": {},
+      "binding_types": {
+        "deployment_path": "file",
+        "workspace": "string",
+        "engineering_profile": "string"
+      },
       "purpose": "field_generation",
       "action": "run",
       "tools": [
@@ -67,7 +81,7 @@
         "matlab",
         "python"
       ],
-      "model": "轴对称空包络可压缩气流",
+      "model": "\u8f74\u5bf9\u79f0\u7a7a\u5305\u7edc\u53ef\u538b\u7f29\u6c14\u6d41",
       "scientific_status": "not_evaluated",
       "qualification_support": [
         "none"

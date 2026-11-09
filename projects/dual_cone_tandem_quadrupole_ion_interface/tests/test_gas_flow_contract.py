@@ -13,8 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCIENCE_PATH = PROJECT_ROOT / "config" / "gas_flow_science.json"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
 GEOMETRY_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
-BUILDER_PATH = PROJECT_ROOT / "comsol" / "build_and_solve_axisymmetric_gas_flow.m"
-RUNNER_PATH = PROJECT_ROOT / "comsol" / "run_axisymmetric_gas_flow.m"
+from msplatform.backends.comsol.resources import native_resource_path
+BUILDER_PATH = native_resource_path("build_and_solve_axisymmetric_gas_flow.m")
+RUNNER_PATH = native_resource_path("run_axisymmetric_gas_flow.m")
 INTERFACE_PATH = PROJECT_ROOT / "config" / "gas_field_interface.json"
 
 
@@ -260,8 +261,8 @@ class GasFlowContractTests(unittest.TestCase):
             '"HighMachNumberFlow"',
             "axisymmetric(true)",
             'geom.create("poly_fluid", "Polygon")',
-            '"gas_flow_science.json"',
-            '"comsol_solver_numerics.json"',
+            'sciencePath (1, 1) string',
+            'numericsPath (1, 1) string',
             'study.create("stat", "Stationary")',
             'inlet.set("FlowCondition", "Subsonic")',
             'inlet.set("BoundaryCondition", "Pressure")',
@@ -279,7 +280,7 @@ class GasFlowContractTests(unittest.TestCase):
             'segregated.feature("ss1").set("subadapttol", n.solver.adaptive_step_tolerance)',
             'segregated.set("segterm", "tol")',
             'model.sol("sol1").getPVals()',
-            'DUAL_CONE_GAS_FLOW_RESUME_MODEL',
+            'resumeModelPath (1, 1) string',
             'VariableNames=cellstr(string(science.export_contract.columns))',
             '"GasFlow:ContinuationTerminalState"',
             'hmnf.prop("InconsistentStabilization")',

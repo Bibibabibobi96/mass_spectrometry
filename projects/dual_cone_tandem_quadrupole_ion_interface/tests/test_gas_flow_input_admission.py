@@ -1,171 +1,153 @@
-"""Real frozen original geometry check; no COMSOL or active source fallback."""
+"""Actual installed scientific boundaries in isolated frozen source consumers."""
+
 from pathlib import Path
 import json
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import unittest
+from msplatform.backends.comsol.gas_flow import compiled_gas_flow_paths, resolve_gas_flow_request
+from msplatform.io.manifest_records import file_record
+from .test_gas_flow_contract import _write_fixture
 
 PROJECT = Path(__file__).resolve().parents[1]
 REPO = PROJECT.parents[1]
+NAMES = ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json")
+
+
+def cold(root, code, paths):
+    dependencies = list(dict.fromkeys(sysconfig.get_path(name) for name in ("purelib", "platlib")))
+    bootstrap = "import sys,json,pathlib; sys.path.extend(json.loads(sys.argv[2])); sys.path.insert(0,sys.argv[1]); "
+    return subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            "-B",
+            "-c",
+            bootstrap + code,
+            str(root / "src"),
+            json.dumps(dependencies),
+            *map(str, paths),
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
 
 
 class GasFlowInputAdmissionTests(unittest.TestCase):
     def test_frozen_geometry_pair_and_stale_failure_stop_downstream(self):
-        source = (PROJECT / "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1").read_text(encoding="utf-8")
-        start = source.index("  $geometrySnapshotRoot=Join-Path")
-        end = source.index("  foreach($key in $schedulerFiles.Keys){", start)
-        block = source[start:end]
-        code_paths = (
-            "src/msplatform/__init__.py",
-            "src/msplatform/components/__init__.py",
-            "src/msplatform/components/model.py",
-            "src/msplatform/components/catalog.py",
-            "src/msplatform/contracts/__init__.py",
-            "src/msplatform/contracts/machine_contracts.py",
-            "src/msplatform/io/__init__.py",
-            "src/msplatform/io/file_identity.py",
-            "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/geometry.py",
-            "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/__init__.py",
-            "src/msplatform/components/rf_multipole/round_rod_geometry.py",
-            "src/msplatform/components/rf_multipole/__init__.py",
-        )
         for scenario in ("normal", "stale", "source_changed"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                source_root = root / "active_source"
-                for relative in code_paths:
-                    target = source_root / relative
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(REPO / relative, target)
-                frozen_config = root / "inputs/project_snapshot/config"
-                frozen_config.mkdir(parents=True)
-                for filename in ("baseline.json", "resolved_geometry.json"):
-                    (frozen_config / filename).write_bytes((PROJECT / "config" / filename).read_bytes())
+                shutil.copytree(
+                    REPO / "src/msplatform", root / "src/msplatform", ignore=shutil.ignore_patterns("__pycache__")
+                )
+                paths = []
+                for name in NAMES:
+                    target = root / name
+                    target.write_bytes((PROJECT / "config" / name).read_bytes())
+                    paths.append(target)
                 if scenario == "stale":
-                    with (frozen_config / "resolved_geometry.json").open("a", encoding="utf-8") as stream:
-                        stream.write(" ")
-                fixture = root / "admit.ps1"
-                fixture.write_text(r'''param($PublicRepo,$Python,$Root,$SourceRoot,$Scenario)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $PublicRepo 'common/contracts/run_artifact_support.ps1')
-$realCopy=(Get-Command Copy-VerifiedRunInput).ScriptBlock
-$script:copies=0
-function Copy-VerifiedRunInput {param($Source,$Destination)
- $result=& $realCopy -Source $Source -Destination $Destination
- $script:copies++
- if($Scenario-eq'source_changed'-and$script:copies-eq12){
-  foreach($p in Get-ChildItem -LiteralPath $SourceRoot -Recurse -File -Filter '*.py'){
-   [IO.File]::WriteAllText($p.FullName,"raise RuntimeError('ACTIVE_REPO_FALLBACK')")
-  }
- }
- return $result
-}
-$repoRoot=$SourceRoot;$python=$Python;$package=@{input_dir=(Join-Path $Root 'inputs')}
-$env:PYTHONPATH=$SourceRoot
-$frozen=@{geometry_baseline=(Join-Path $Root 'inputs/project_snapshot/config/baseline.json');resolved_geometry=(Join-Path $Root 'inputs/project_snapshot/config/resolved_geometry.json')}
-$downstream=0;$caught=$null
-Push-Location $SourceRoot
-try{
- try{
-''' + block + r'''
-  $downstream++
- }catch{$caught=$_.Exception.Message}
-}finally{Pop-Location}
-if($Scenario-eq'stale'){
- if($caught-cne'Frozen dual-cone baseline and resolved geometry differ.'-or$downstream-ne0){throw 'Stale input did not stop prepare'}
-}else{
- if($caught-or$downstream-ne1){throw ('Valid frozen input rejected: '+$caught)}
- if(-not$geometryValidationEnvironment.numpy.version-or-not$geometryValidationEnvironment.numpy.module_path){throw 'Actual NumPy dependency was not recorded'}
- foreach($entry in $geometryValidationEnvironment.owned_modules.PSObject.Properties){
-  foreach($path in $entry.Value){if(-not[IO.Path]::GetFullPath($path).StartsWith([IO.Path]::GetFullPath($geometrySnapshotRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Owned module escaped frozen snapshot'}}
- }
-}
-if($script:copies-ne12-or$failureStage-cne'geometry_input_freshness'){throw 'Incorrect frozen closure or failure stage'}
-@{scenario=$Scenario;copies=$script:copies;downstream=$downstream;source_poisoned=($Scenario-eq'source_changed');numpy_version=$(if($Scenario-ne'stale'){$geometryValidationEnvironment.numpy.version}else{$null})}|ConvertTo-Json -Compress
-'GEOMETRY_INPUT_ADMISSION=PASS'
-''', encoding="utf-8")
-                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(REPO),
-                                         sys.executable, str(root), str(source_root), scenario], cwd=root,
-                                        capture_output=True, text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("GEOMETRY_INPUT_ADMISSION=PASS", result.stdout)
+                    paths[1].write_bytes(paths[1].read_bytes() + b" ")
+                if scenario == "source_changed":
+                    poison = root / "active_source/msplatform/backends/comsol"
+                    poison.mkdir(parents=True)
+                    (poison / "gas_flow.py").write_text("raise RuntimeError('ACTIVE_REPO_FALLBACK')", encoding="utf-8")
+                code = """
+from msplatform.backends.comsol.gas_flow import resolve_gas_flow_request
+import numpy
+request=resolve_gas_flow_request(*map(pathlib.Path,sys.argv[3:7]))
+assert set(request['inputs'])=={'baseline','geometry','science','numerics'}
+assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+           for name,module in sys.modules.items() if name=='msplatform' or name.startswith('msplatform.'))
+print('GEOMETRY_INPUT_ADMISSION=PASS NUMPY='+numpy.__version__)
+"""
+                result = cold(root, code, paths)
+                if scenario == "stale":
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("resolved geometry is stale", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("GEOMETRY_INPUT_ADMISSION=PASS NUMPY=", result.stdout)
                 self.assertNotIn("ACTIVE_REPO_FALLBACK", result.stdout + result.stderr)
-                self.assertIn("stale_or_missing=" if scenario == "stale" else "RESOLVED_GEOMETRY=PASS",
-                              result.stdout + result.stderr)
-                facts = json.loads(result.stdout.splitlines()[-2])
-                self.assertEqual(facts["copies"], len(code_paths))
-                self.assertEqual(facts["downstream"], 0 if scenario == "stale" else 1)
-                print("GEOMETRY_ADMISSION_CASE=" + json.dumps(facts, sort_keys=True), flush=True)
-
+                self.assertFalse((root / "artifacts").exists())
 
     def test_postprocess_imports_gas_field_from_frozen_repository_snapshot(self):
-        owner = PROJECT / "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1"
-        source = owner.read_text(encoding="utf-8")
-        start = source.index("  $validation=Join-Path $package.result_dir 'gas_field_validation.json'")
-        end = source.index("  $fieldMetadata=", start)
-        block = source[start:end]
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            snapshot = root / "inputs/repository_snapshot"
-            active = root / "active_source"
-            module = "msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py"
-            for base, marker in ((snapshot, "FROSNAPSHOT"), (active, "ACTIVE_FALLBACK")):
-                target = base / module
-                target.parent.mkdir(parents=True, exist_ok=True)
-                for package in (base / "msplatform", base / "msplatform/components", target.parent):
-                    (package / "__init__.py").write_text("", encoding="utf-8")
-                target.write_text(
-                    "import pathlib,sys\n"
-                    "pathlib.Path(sys.argv[sys.argv.index('--output')+1]).write_text("
-                    + repr(marker) + ",encoding='utf-8')\n",
-                    encoding="utf-8",
-                )
-            script = root / "postprocess.ps1"
-            script.write_text(r"""param($PublicRepo,$Python,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $PublicRepo 'common/contracts/run_artifact_support.ps1')
-$python=$Python
-$package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results')}
-New-Item -ItemType Directory -Path $package.result_dir -Force|Out-Null
-$field='unused';$metadata='unused'
-$frozen=@{gas_flow_science='unused';comsol_solver_numerics='unused';resolved_geometry='unused'}
-$env:PYTHONPATH=Join-Path $Root 'active_source'
-""" + block + r"""
-Get-Content -LiteralPath $validation -Raw
-""", encoding="utf-8")
-            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
-                                     sys.executable, str(root)], cwd=active, capture_output=True,
-                                    text=True, encoding="utf-8", errors="replace", timeout=30)
+            shutil.copytree(
+                REPO / "src/msplatform", root / "src/msplatform", ignore=shutil.ignore_patterns("__pycache__")
+            )
+            csv_path, metadata_path = _write_fixture(root)
+            paths = [csv_path, metadata_path]
+            for name in NAMES[2:] + NAMES[1:2]:
+                target = root / name
+                target.write_bytes((PROJECT / "config" / name).read_bytes())
+                paths.append(target)
+            code = """
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field
+assert pathlib.Path(gas_field.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+gas_field.validate_gas_field(*map(pathlib.Path,sys.argv[3:8]))
+print('FROSNAPSHOT')
+"""
+            result = cold(root, code, paths)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual((root / "results/gas_field_validation.json").read_text(encoding="utf-8"),
-                             "FROSNAPSHOT")
+            self.assertIn("FROSNAPSHOT", result.stdout)
             self.assertNotIn("ACTIVE_FALLBACK", result.stdout + result.stderr)
-
+            (root / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py").unlink()
+            missing = cold(root, code, paths)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("gas_field", missing.stderr)
 
     def test_current_compiler_baseline_pair_and_missing_old_bundle(self):
         from common.contracts.compile_execution_plan import compile_execution
         from msplatform.contracts.machine_contracts import sha256
+
         registry_path = REPO / "config/project_registry.json"
-        # Same compiler-boundary plan fixture used by the current common owner;
-        # this does not claim the scientific request planner accepts a gas metric.
-        owner = PROJECT / "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1"
         for scenario in ("compiled_pair", "missing_baseline", "stale_resolved"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 request_path = root / "request.json"
                 request_path.write_text("{}", encoding="utf-8")
-                plan = dict(role="solver_neutral_design_plan", request_status="approved",
-                            project_id=PROJECT.name, capability_id="axisymmetric_gas_flow_field_generation",
-                            mode="axisymmetric_gas_flow_screening", requested_evidence_level="plan",
-                            run_id="20260720_130000__analysis__repo__design-request", operating_points=[],
-                            objectives=[], design_variables=[], constraints=[], required_outputs=[],
-                            provenance=dict(request=dict(path=str(request_path), sha256=sha256(request_path)),
-                                            project_registry=dict(sha256=sha256(registry_path))))
+                deployment = root / "machine.json"
+                deployment.write_text("{}", encoding="utf-8")
+                plan = dict(
+                    role="solver_neutral_design_plan",
+                    request_status="approved",
+                    project_id=PROJECT.name,
+                    capability_id="axisymmetric_gas_flow_field_generation",
+                    mode="axisymmetric_gas_flow_screening",
+                    requested_evidence_level="plan",
+                    run_id="20260720_130000__analysis__repo__design-request",
+                    operating_points=[],
+                    objectives=[],
+                    design_variables=[],
+                    constraints=[],
+                    required_outputs=[],
+                    provenance=dict(
+                        request=dict(path=str(request_path), sha256=sha256(request_path)),
+                        project_registry=dict(sha256=sha256(registry_path)),
+                    ),
+                )
                 plan_path = root / "plan.json"
                 plan_path.write_text(json.dumps(plan), encoding="utf-8")
-                compiled = compile_execution(plan_path, registry_path, purpose="field_generation", qualification="none")
+                compiled = compile_execution(
+                    plan_path,
+                    registry_path,
+                    bindings=dict(
+                        deployment_path=str(deployment),
+                        workspace=str(root / "new workspace"),
+                        engineering_profile="local",
+                    ),
+                    purpose="field_generation",
+                    qualification="none",
+                )
                 self.assertEqual(compiled["status"], "EXECUTION_READY", compiled.get("blockers"))
                 expected = {"geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics"}
                 self.assertEqual({row["name"] for row in compiled["resolved_inputs"]}, expected)
@@ -175,54 +157,31 @@ Get-Content -LiteralPath $validation -Raw
                     target = private / row["relative_path"]
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(row["content"], encoding="utf-8", newline="")
-                    records.append({**row, "path": str(target)})
+                    records.append(dict(row, path=str(target)))
                 if scenario == "missing_baseline":
                     records = [row for row in records if row["name"] != "geometry_baseline"]
                 if scenario == "stale_resolved":
-                    record = next(row for row in records if row["name"] == "resolved_geometry")
-                    with Path(record["path"]).open("a", encoding="utf-8") as stream:
-                        stream.write(" ")
+                    target = private / "config/resolved_geometry.json"
+                    target.write_bytes(target.read_bytes() + b" ")
                 bundle = root / "compiled_inputs.json"
-                bundle.write_text(json.dumps(dict(role="compiled_execution_inputs", project_id=PROJECT.name,
-                                                 root=str(private), files=records)), encoding="utf-8")
-                script = root / "compiled_pair.ps1"
-                script.write_text(r"""param($Repo,$Python,$Owner,$Root,$Bundle,$Scenario)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-$repoRoot=$Repo;$python=$Python;$projectId='dual_cone_tandem_quadrupole_ion_interface'
-$projectRoot=Join-Path $Root 'today';$ResolvedInputsPath=$Bundle;$compiledInputs=$null
-$package=@{input_dir=(Join-Path $Root 'inputs')};$frozen=[ordered]@{}
-$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
-$assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$sourceFiles'},$true)
-$selection=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$ResolvedInputsPath'},$true)
-$loop=$ast.Find({param($n)$n-is[Management.Automation.Language.ForEachStatementAst]-and$n.Condition.Extent.Text-eq'$sourceFiles.Keys'},$true)
-if($null-eq$assignment-or$null-eq$selection-or$null-eq$loop){throw 'Actual compiled selection boundary missing'}
-Invoke-Expression $assignment.Extent.Text
-# Poison today's defaults. Only the exact four compiler-captured definitions are usable.
-foreach($relative in $sourceFiles.Values){$p=Join-Path $projectRoot $relative;New-Item -ItemType Directory -Force -Path (Split-Path $p)|Out-Null;[IO.File]::WriteAllText($p,'{}')}
-$source=[IO.File]::ReadAllText($Owner)
-$start=$source.IndexOf('  $geometrySnapshotRoot=Join-Path')
-$end=$source.IndexOf('  foreach($key in $schedulerFiles.Keys){',$start)
-$admission=$source.Substring($start,$end-$start)
-$downstream=0;$caught=$null
-try{
- Invoke-Expression $selection.Extent.Text
- Invoke-Expression $loop.Extent.Text
- Invoke-Expression $admission
- $downstream++
-}catch{$caught=$_.Exception.Message}
-switch($Scenario){
- 'missing_baseline' {if($caught-notlike'*geometry_baseline*recompile*'-or$downstream-ne0){throw ('Old bundle silently used today baseline: '+$caught)}}
- 'stale_resolved' {if($caught-cne'Frozen dual-cone baseline and resolved geometry differ.'-or$downstream-ne0){throw ('Mismatched pair entered downstream: '+$caught)}}
- default {
-  if($caught-or$downstream-ne1){throw ('Real compiler pair rejected: '+$caught)}
-  foreach($record in $compiledInputs.files){if([IO.File]::ReadAllText($frozen[$record.name])-cne[IO.File]::ReadAllText((Join-Path $compiledInputs.root $record.relative_path))){throw 'Runner substituted a compiled definition'}}
- }
-}
-'CURRENT_COMPILED_PAIR=PASS'
-""", encoding="utf-8")
-                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
-                                         sys.executable, str(owner), str(root), str(bundle), scenario],
-                                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("CURRENT_COMPILED_PAIR=PASS", result.stdout)
+                bundle.write_text(
+                    json.dumps(
+                        dict(
+                            role="compiled_execution_inputs", project_id=PROJECT.name, root=str(private), files=records
+                        )
+                    ),
+                    encoding="utf-8",
+                )
+                if scenario == "compiled_pair":
+                    paths = compiled_gas_flow_paths(bundle)
+                    resolved = resolve_gas_flow_request(*paths)
+                    self.assertEqual(len(resolved["inputs"]), 4)
+                    for path, record in zip(paths, records):
+                        self.assertEqual(file_record(path)["sha256"], record["sha256"])
+                    self.assertFalse((root / "new workspace").exists())
+                elif scenario == "missing_baseline":
+                    with self.assertRaisesRegex(ValueError, "geometry_baseline"):
+                        compiled_gas_flow_paths(bundle)
+                else:
+                    with self.assertRaisesRegex(AssertionError, "changed"):
+                        compiled_gas_flow_paths(bundle)

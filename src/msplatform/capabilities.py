@@ -88,6 +88,11 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         validator, scope = resolve_ei_build_request, "resolved_EI_build_only_request_not_native_model"
         result["execution_prerequisites"] = ["execution_owner_and_stage_policy", "explicit_COMSOL_and_MATLAB", "native_save_and_fresh_reopen"]
         result["limitations"] = ["unsolved_collision_counting_model_not_heavy_ion_source_or_scientific_qualification"]
+    elif operation == "solve_axisymmetric_gas_flow":
+        from msplatform.backends.comsol.gas_flow import resolve_gas_flow_request
+        validator, scope = resolve_gas_flow_request, "validated_gas_flow_inputs_not_solved"
+        result["execution_prerequisites"] = ["execution_owner_and_stage_policy", "explicit_COMSOL_CFD_and_MATLAB"]
+        result["limitations"] = ["prototype_axisymmetric_empty_enclosure_gas_flow_not_ion_transport_or_scientific_qualification"]
     elif operation == "build_wehnelt_model":
         from msplatform.backends.comsol.wehnelt_model import resolve_wehnelt_build_request
         validator, scope = resolve_wehnelt_build_request, "resolved_Wehnelt_build_only_request_not_native_model"
@@ -109,7 +114,7 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
     try:
         signature.bind(**arguments)
         validator(**arguments)
-    except (ValueError, TypeError, KeyError) as error:
+    except (ValueError, TypeError, KeyError, OSError) as error:
         result.update(contract_status="rejected", reason=dict(type=type(error).__name__, message=str(error)))
         return result
     result.update(contract_status="accepted", software_scope=scope)

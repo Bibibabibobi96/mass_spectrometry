@@ -1,41 +1,36 @@
+[CmdletBinding(DefaultParameterSetName='Run')]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ComsolRunDirectory,
-    [Parameter(Mandatory = $true)]
-    [string]$OutputDir,
-    [string]$PythonExe = ''
+  [Parameter(Mandatory=$true,ParameterSetName='Run')][string]$ComsolRunDirectory,
+  [Parameter(Mandatory=$true,ParameterSetName='Reference')][string]$SourceReferencePath,
+  [Parameter(Mandatory=$true)][string]$InterfacePath,
+  [Parameter(Mandatory=$true)][string]$OutputDir,
+  [Parameter(Mandatory=$true)][string]$PythonExe
 )
-
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
-$python = if ($PythonExe) {
-    (Resolve-Path -LiteralPath $PythonExe).Path
-} else {
-    Join-Path $repoRoot '.venv\Scripts\python.exe'
-}
-$runDirectory = [IO.Path]::GetFullPath($ComsolRunDirectory)
-$outputDirectory = [IO.Path]::GetFullPath($OutputDir)
-$null = New-Item -ItemType Directory -Path $outputDirectory -Force
-$runManifest = Join-Path $runDirectory 'run_manifest.json'
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $runManifest `
-    --require-status success --require-local-run-config
-if ($LASTEXITCODE -ne 0) {
-    throw "COMSOL source run manifest verification failed with exit code $LASTEXITCODE."
-}
-$csv = Join-Path $runDirectory 'results\gas_field_rz.csv'
-$metadata = Join-Path $runDirectory 'results\gas_field_metadata.json'
-$runtime = Join-Path $outputDirectory 'gas_field_runtime.lua'
-$manifest = Join-Path $outputDirectory 'gas_field_manifest.json'
+$ErrorActionPreference='Stop'
+$code=@"
+import json
+import sys
+from pathlib import Path
+from msplatform.io.manifest_records import file_record
+from msplatform.results.gas_field import read_gas_field
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime import export_runtime
 
-& $python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime `
-    --csv $csv --metadata $metadata --output-lua $runtime --output-manifest $manifest `
-    --science (Join-Path $projectRoot 'config\gas_flow_science.json') `
-    --numerics (Join-Path $projectRoot 'config\comsol_solver_numerics.json') `
-    --geometry (Join-Path $projectRoot 'config\resolved_geometry.json') `
-    --interface (Join-Path $projectRoot 'config\gas_field_interface.json')
-if ($LASTEXITCODE -ne 0) {
-    throw "COMSOL-to-SIMION gas runtime compilation failed with exit code $LASTEXITCODE."
-}
-Write-Output "SIMION_GAS_FIELD_MANIFEST=$manifest"
+if sys.argv[1] == "Reference":
+    reference = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8-sig"))
+else:
+    manifest = Path(sys.argv[2]).resolve() / "run_manifest.json"
+    reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+field = read_gas_field(reference)
+paths = field.data_locations
+output = Path(sys.argv[4]).resolve()
+export_runtime(
+    paths["field_csv"], paths["field_metadata"],
+    output / "gas_field_runtime.lua", output / "gas_field_manifest.json",
+    paths["science"], paths["numerics"], paths["geometry"], Path(sys.argv[3]).resolve(),
+)
+print("SIMION_GAS_FIELD_MANIFEST=" + str(output / "gas_field_manifest.json"))
+"@
+$source=if($PSCmdlet.ParameterSetName-eq'Reference'){$SourceReferencePath}else{$ComsolRunDirectory}
+& $PythonExe -I -B -c $code $PSCmdlet.ParameterSetName $source $InterfacePath $OutputDir
+if($LASTEXITCODE-ne0){throw "Published gas runtime compilation failed with exit code $LASTEXITCODE."}

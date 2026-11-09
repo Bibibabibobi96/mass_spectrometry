@@ -9,6 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 
 NATIVE_RESOURCES = frozenset({
+    "build_and_solve_axisymmetric_gas_flow.m", "run_axisymmetric_gas_flow.m",
     "build_wehnelt_model.m", "phase1_geometry_coil_transverse.m",
     "phase2_electrostatics_coil_transverse.m", "phase4_thermal_emission_coil_transverse.m",
     "load_wehnelt_contract.m", "apply_wehnelt_contract_parameters.m",

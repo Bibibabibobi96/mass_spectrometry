@@ -98,7 +98,7 @@ class EiModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             session = InertComsolSession(Path(directory), model_relative_paths=ei_model.NATIVE_MODEL.model_relative_paths, failure="process")
             resolved = ei_model.resolve_ei_build_request(*inputs(), mode_id="build_only_smoke")
-            with patch.object(model_execution, "_runtime_files", side_effect=OSError("inert secondary diagnostics")):
+            with patch.object(model_execution, "declare_runtime_files", side_effect=OSError("inert secondary diagnostics")):
                 with self.assertRaisesRegex(RuntimeError, "inert original") as caught:
                     model_execution.execute_unsolved_model(session, resolved=resolved, limits={}, spec=ei_model.NATIVE_MODEL)
             self.assertTrue(any("inert secondary diagnostics" in note for note in caught.exception.__notes__))

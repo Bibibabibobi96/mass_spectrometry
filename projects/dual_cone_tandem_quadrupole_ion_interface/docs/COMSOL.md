@@ -22,29 +22,51 @@ MATLAB 源码中没有隐藏入口压力、出口压力、温度、分子直径�
 生命周期统一见[仓库操作指南](../../../docs/OPERATIONS.md)。以下命令在仓库根的 PowerShell Core 中
 执行，先将 `<run_id>` 替换为预登记的新运行身份：
 
-```powershell
-./projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1 `
-  -RunId <timestamp>__sim__comsol__dual-cone-gas-flow
+The production operation is installed as `msplatform.backends.comsol.solve_axisymmetric_gas_flow`.
+It accepts four explicit scientific paths and an `ExecutionContext` from `execution.load_environment`.
+The two MATLAB functions live only in `msplatform/backends/comsol/matlab`; neither reads a project root
+or `DUAL_CONE_*` environment variables. Physical equations, High Mach interface, paired continuation,
+terminal pressure/stabilization, lower-limit rejection and mass-balance checks retain their existing meaning.
+
+```python
+from pathlib import Path
+from msplatform.execution import load_environment
+from msplatform.backends.comsol import solve_axisymmetric_gas_flow
+
+context = load_environment(Path("deployment/machine.json").absolute(),
+                           workspace=Path("study").absolute(), profile="local")
+field = solve_axisymmetric_gas_flow(
+    Path("inputs/baseline.json").absolute(), Path("inputs/resolved_geometry.json").absolute(),
+    Path("inputs/gas_flow_science.json").absolute(), Path("inputs/comsol_solver_numerics.json").absolute(),
+    context=context,
+)
+print(field.reference)
 ```
 
-该入口已登记为项目计划级 runner：它创建不可覆盖的标准运行包、冻结输入，并按 `prepare`、`solver`、
-`postprocess` 三阶段向公共主机调度器申报资源；公共 COMSOL launcher 独立管理求解器阶段及其子进程，
-项目 runner 不再持有覆盖整条链的旧式独占租约。入口最终发布经校验的 summary 与 manifest。任务报告
-不能代替 run 三件套，也不能因 `STATUS=PASS` 自动取得 Candidate 或 Formal 资格。
-当前三个阶段均没有经过可靠峰值测量，因此使用 `unknown` 保守预算；不得根据运行前瞬时 CPU 或空闲内存
-推断可以与另一项未知峰值商业求解并行。runner 显式传递并恢复 `SIMULATION_PYTHON_EXE`，且在 run 输入
-中冻结 PowerShell 前置检查、调度 facade/core/policy、COMSOL launcher、LiveLink bootstrap、失败分类、
-环境预检和安装解析器的源码身份。
-运行身份由这些冻结副本及manifest哈希确定；运行完成时不再与可能已由另一任务合法更新的活动工作树
-逐字节比较，避免把并发源码演进误判为本次冻结求解失败。`run_config.json`在求解前同时记录每个冻结
-输入的SHA-256，执行入口使用冻结launcher，独立字段验证器也显式读取冻结的science、numerics和geometry。
-项目后处理从中央`COMSOL/postprocess`阶段取得轻任务预算，不在项目内复制容量常量。
-异常写入 `comsol_run_report.txt` 的 `STATUS=FAIL` 并重新抛出；只有求解、插值与质量守恒检查均通过
-才写 `STATUS=PASS`，不允许改用其他物理接口或从中间解导出合格场。
+The selected stage policy must declare `solve_gas_flow`, with the existing explicit process limits,
+zero automatic retries and a retention class allowing `solver_native_binary`. Machine tools must name
+`python`, `powershell`, `comsol_launcher` and `matlab_root`. No default commercial installation or
+repository-local Python is searched. Initial native budgets need an explicit assessment; software fixtures
+are not resource measurements.
 
-已完成的 continuation 失败、孔板质量守恒失败及空包络原型通过过程见
-[原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。当前资格见
-[PROJECT](PROJECT.md#当前资格)，本说明只维护模型设置与操作。
+The installed CLI is `python -I -m msplatform.backends.comsol.gas_flow`; use `--help` for its explicit
+scientific/deployment arguments. The registered research profile still transports `RunId` and its four
+frozen scientific definitions. It now requires `deployment_path`, `workspace` and `engineering_profile`
+bindings through the existing execution compiler. Its PowerShell file only invokes the installed CLI;
+it no longer creates another run owner, capacity session or launcher.
+
+The normal owner freezes selected MATLAB/launcher/execution sources and input bytes, records the actual
+native exit/release facts, and validates the exported field before publishing a `gas_field` product.
+This product contains CSV, metadata and original scientific contracts; offline reading does not require
+or hash the MPH. The model is a separately identified manifest output. Native execution and qualification
+remain unverified until a new governed run supplies evidence.
+
+Explicit reexport of a converged model uses `resume={"manifest": ..., "model": ..., "completion": ...}`
+file records. The reader requires completed terminal publication, exact published model/writer-completion
+membership, matching original scientific inputs, actual native exit and resource release. A failed export
+can qualify only through those facts; a missing CSV is not a circular prerequisite. The existing MATLAB
+stored terminal-tuple checks still run. This is reexport, not native checkpoint continuation or automatic
+recompute. Original model bytes remain protected and are never saved by this path.
 
 ## 几何与边界
 
@@ -64,9 +86,9 @@ MATLAB 源码中没有隐藏入口压力、出口压力、温度、分子直径�
 
 成功运行应产生：
 
-- `axisymmetric_gas_flow.mph`
-- `gas_field_rz.csv`
-- `gas_field_metadata.json`
+- `comsol/axisymmetric_gas_flow.mph`
+- `comsol/gas_field_rz.csv`
+- `comsol/gas_field_metadata.json`
 - `comsol_run_report.txt`
 
 CSV 必须按 `z` 主序、`r` 次序排列，列顺序严格为：
@@ -94,7 +116,8 @@ python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_fi
 
 ```powershell
 projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\build_gas_runtime.ps1 `
-  -ComsolRunDirectory <已验证的COMSOL运行目录>
+  -ComsolRunDirectory <published_run_directory> -InterfacePath <explicit_interface_json> `
+  -OutputDir <explicit_output_directory> -PythonExe <installed_python>
 ```
 
 编译器将径向速度映射到三维笛卡尔分量，切割单元按上述有效角点权重处理；无有效流体支撑或越出治理域时立即报错，不做域外外推或最近邻填充。
@@ -109,3 +132,11 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 COMSOL 接口依据：[Compressible Flow for All Mach Numbers](https://doc.comsol.com/6.4/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.45.html) 与 [High Mach Number Flow 的 Outlet](https://doc.comsol.com/6.4/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.21.html)。
 
 [返回项目状态](PROJECT.md)
+
+## Migration validation boundary
+
+The new installed operation and reader require ordinary-install and governed native acceptance.
+Inert tests use explicitly marked synthetic files only; they do not establish COMSOL solve success,
+High Mach license availability, convergence, grid adequacy, quantitative CFD or ion transmission.
+Official COMSOL 6.4 High Mach documentation was reviewed on 2026-11-09; this migration changes input
+transport/ownership and retains the existing physics/API expressions rather than substituting a new model.
