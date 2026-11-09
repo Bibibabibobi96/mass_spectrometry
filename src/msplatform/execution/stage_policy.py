@@ -10,6 +10,23 @@ from .manifest_records import file_record, verify_record
 from .artifact_retention import validate_retention, load_policy
 
 
+def merge_overrides(*layers) -> dict:
+    """Merge only existing engineering sections; final values use stage validation."""
+    result = {}
+    for layer in layers:
+        if not isinstance(layer, dict):
+            raise ValueError("Engineering overrides must map actions to policy sections")
+        for action, sections in layer.items():
+            if (not isinstance(action, str) or not isinstance(sections, dict)
+                    or set(sections) - {"limits", "artifact_retention", "runtime"}
+                    or any(not isinstance(value, dict) for value in sections.values())):
+                raise ValueError("Overrides may contain only engineering policy sections")
+            target = result.setdefault(action, {})
+            for section, values in sections.items():
+                target.setdefault(section, {}).update(copy.deepcopy(values))
+    return result
+
+
 def read_stage_policy(context: ExecutionContext, action: str, *,
                       required_roles: tuple[str, ...] = ()) -> tuple[dict[str, Any], dict[str, Any]]:
     """Return one selected budget and its exact existing file authority.
@@ -27,6 +44,16 @@ def read_stage_policy(context: ExecutionContext, action: str, *,
             or document["role"] != "execution_stage_policy" or not isinstance(document["stages"], dict)):
         raise ValueError("Unsupported execution stage policy")
     stage = copy.deepcopy(document["stages"].get(action))
+    environment = context.environment
+    if environment is not None:
+        overrides = environment["overrides"]
+        if set(overrides) - set(document["stages"]):
+            raise ValueError("Engineering overrides reference an undeclared action")
+        if isinstance(stage, dict):
+            for section, values in overrides.get(action, {}).items():
+                if not isinstance(stage.get(section, {}), dict):
+                    raise ValueError("Invalid engineering policy section")
+                stage.setdefault(section, {}).update(values)
     if (not isinstance(stage, dict) or not {"limits", "artifact_retention"} <= set(stage)
             or set(stage) - {"limits", "artifact_retention", "runtime"}
             or ("runtime" in stage and not isinstance(stage["runtime"], dict))):

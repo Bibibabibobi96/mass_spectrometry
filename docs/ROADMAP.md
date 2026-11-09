@@ -220,8 +220,13 @@ eight workers). Frozen import bootstrap order and the active three-zone CLI auth
 corrections; blocked project stages are not accepted by the common result. The canonical retirement reader
 now receives its explicit classifier, including the exact frozen IOB seed context; role-less large evidence,
 actual lifecycle resealing, tamper refusal and lock-held verification retain their original guarantees.
-Saved deployment/profile loading, results ownership, remaining native rollout and the original performance
-targets remain OPEN. No new MATLAB/COMSOL/SIMION, GUI or Formal qualification is claimed by this takeover.
+Saved deployment/profile loading now reads one explicit machine document, selects engineering overrides
+through the existing stage-policy validator and freezes their provenance in the existing run owner. The
+24 platform tests and real wheel/sdist outside-tree probe passed (143.242 seconds for installation).
+Results ownership, remaining native rollout and the original performance targets remain OPEN.
+No new COMSOL/SIMION, GUI or Formal qualification is claimed by this takeover. MATLAB R2025b rejected
+the migrated helper directory named `resources` before executing tests; its canonical layout correction
+and actual helper-class acceptance remain separate from package delivery/text checks.
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

@@ -40,9 +40,25 @@ from msplatform.contracts import machine_contracts
 from msplatform import execution
 
 root = pathlib.Path.cwd()
-environment = execution.load_environment(workspace=root/'machine-study',
-    tools={'python': pathlib.Path(sys.executable), 'powershell': root/'explicit-pwsh.exe'},
-    policy={'host_state_path': root/'shared-host.sqlite3'})
+deployment = dict(schema_version=1, role='execution_environment',
+    tools={'python': sys.executable, 'powershell': 'explicit-pwsh.exe'},
+    policy={'host_state_path': 'shared-host.sqlite3'},
+    profiles={'standard': {'stage_policy_path': 'stages.json',
+        'overrides': {'export_cad': {'limits': {'wall_clock_seconds': 700}}}}})
+stage = dict(limits=dict(wall_clock_seconds=600, transient_run_directory_bytes=104857600,
+    process_tree_working_set_bytes=4294967296, minimum_system_available_memory_bytes=1073741824,
+    compact_final_retained_bytes=104857600, automatic_retry_count=0),
+    artifact_retention={'policy_version': 1, 'class': 'solver_review', 'reason': 'Installed deployment probe'})
+(root/'machine.json').write_text(json.dumps(deployment), encoding='utf-8')
+(root/'stages.json').write_text(json.dumps(dict(schema_version=1, role='execution_stage_policy',
+    stages={'export_cad': stage})), encoding='utf-8')
+environment = execution.load_environment(root/'machine.json', workspace=root/'machine-study',
+    profile='standard', overrides={'export_cad': {'limits': {'wall_clock_seconds': 900}}})
+from msplatform.execution.stage_policy import read_stage_policy
+assert read_stage_policy(environment, 'export_cad')[0]['limits']['wall_clock_seconds'] == 900
+assert environment.environment['profile'] == 'standard'
+assert environment.host_state_path == root/'shared-host.sqlite3'
+assert environment.powershell_executable == root/'explicit-pwsh.exe'
 assert environment.workspace == root/'machine-study'
 assert not environment.workspace.exists()
 fixture = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))

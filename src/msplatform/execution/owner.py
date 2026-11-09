@@ -185,6 +185,11 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
     after safe finalization; its secondary errors never replace that first error.
     """
     validate_run_id(run_id)
+    environment = context.environment
+    if environment is not None:
+        if "execution_environment" in payload:
+            raise ValueError("Execution environment provenance is owned by the managed stage")
+        payload = dict(payload, execution_environment=environment)
     if (set(descriptor) != {"project", "mode", "software"}
             or not isinstance(descriptor["project"], str)
             or re.fullmatch(r"[a-z][a-z0-9_]*", descriptor["project"]) is None
@@ -196,6 +201,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         raise ValueError("Workflow capacity requires a nonnegative integer commitment")
     if not commitment_inputs:
         raise ValueError("Workflow capacity requires its frozen budget authority")
+    if environment is not None and environment["source"] is not None:
+        commitment_inputs = [*commitment_inputs, environment["source"]]
     for index, record in enumerate([action_record, *commitment_inputs]):
         verify_record(f"owner authority {index}", dict(record))
     source_callable = action.func if isinstance(action, partial) else action

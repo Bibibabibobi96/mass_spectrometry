@@ -19,6 +19,40 @@ from msplatform.execution.artifact_reader import open_artifact
 from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
 
 
+def expert_context(*, workspace, tools, policy):
+    """Backend wiring fixtures use the explicit expert constructor."""
+    from msplatform.execution.resources import resource_path
+    return execution_api.ExecutionContext(workspace=Path(workspace).absolute(),
+        python_executable=tools["python"], powershell_executable=tools["powershell"], tools=tools,
+        host_state_path=policy["host_state_path"],
+        policy_path=policy.get("policy_path", resource_path("host_resource_policy.json")),
+        execution_root=policy.get("execution_root"), stage_policy_path=policy.get("stage_policy_path"))
+
+
+def deployment_fixture(base):
+    stage = dict(limits=dict(wall_clock_seconds=600, transient_run_directory_bytes=104857600,
+        process_tree_working_set_bytes=4294967296, minimum_system_available_memory_bytes=1073741824,
+        compact_final_retained_bytes=104857600, automatic_retry_count=0),
+        artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="Deployment regression"))
+    stage_path = base / "stages.json"
+    stage_path.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
+        stages=dict(export_cad=stage))), encoding="utf-8")
+    document = dict(schema_version=1, role="execution_environment",
+        tools=dict(python="python.exe", powershell="pwsh.exe"), policy=dict(host_state_path="shared.sqlite3"),
+        profiles=dict(standard=dict(stage_policy_path="stages.json",
+            overrides=dict(export_cad=dict(limits=dict(wall_clock_seconds=700))))))
+    path = base / "machine.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path, document, stage
+
+
+def deployment_action(session):
+    path = session.declare_file(session.result_dir / "evidence.txt", "required_evidence")
+    path.write_text("deployment owner evidence", encoding="utf-8")
+    return dict(status="success", summary={}, output_paths=[str(path)], required_output_paths=[str(path)],
+        retention_preserve_paths=[], manifest_extra_fields={})
+
+
 def compile_example():
     case = example_api.load_example("rf_oatof_functional_v1")
     components = {name: component_api.resolve_component(request) for name, request in case.component_requests.items()}
@@ -61,7 +95,7 @@ class PlatformApiTests(unittest.TestCase):
             request = root / "inputs/execution_request.json"
             result = root / "result.json"
             result.write_text(json.dumps(dict(run_directory=str(root))), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root,
+            context = expert_context(workspace=root,
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3"))
             sentinel = {"original_owner_fixture": True}
@@ -110,7 +144,7 @@ class PlatformApiTests(unittest.TestCase):
                 artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="Viewer transport fixture"))
             policy = root / "policy.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages=dict(open_model=stage))), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root / "uncreated",
+            context = expert_context(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), solidworks=exe),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = {"software_fixture": True}
@@ -177,7 +211,7 @@ class PlatformApiTests(unittest.TestCase):
                     stages=dict(open_model=stage))), encoding="utf-8")
 
             write_policy()
-            context = execution_api.load_environment(workspace=root / "uncreated",
+            context = expert_context(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=exe),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = {"software_transport_fixture": True}
@@ -257,7 +291,7 @@ class PlatformApiTests(unittest.TestCase):
                 artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="Software dispatch fixture"))
             policy = root / "policy.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages=dict(track=stage))), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root / "uncreated",
+            context = expert_context(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             propagation = dict(schema_version=1, scope="continuous_assembly", end_policy=dict(maximum_particle_age_us=200.),
@@ -430,7 +464,7 @@ class PlatformApiTests(unittest.TestCase):
             policy = root / "stages.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
                 stages={"prepare_model": stage})), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root / "study",
+            context = expert_context(workspace=root / "study",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             reference = {"manifest": {"fixture": True}, "product_id": "geometry"}
@@ -471,7 +505,7 @@ class PlatformApiTests(unittest.TestCase):
                 compact_final_retained_bytes=104857600, automatic_retry_count=0),
                 artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="CAD software fixture"))
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy", stages={"export_cad": stage})), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root / "new study",
+            context = expert_context(workspace=root / "new study",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = object()
@@ -536,7 +570,7 @@ class PlatformApiTests(unittest.TestCase):
             policy = root / "policy.json"
             policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
                 stages=dict(solve_fields=stage))), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root / "uncreated",
+            context = expert_context(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = object()
@@ -583,7 +617,7 @@ class PlatformApiTests(unittest.TestCase):
                 compact_final_retained_bytes=104857600, automatic_retry_count=0)
             stage = dict(limits=limits, artifact_retention=dict(policy_version=1,
                 **{"class": "solver_review"}, reason="Explicit software fixture only"))
-            context = execution_api.load_environment(workspace=root / "uncreated",
+            context = expert_context(workspace=root / "uncreated",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=path))
 
@@ -628,7 +662,7 @@ class PlatformApiTests(unittest.TestCase):
             policy = dict(schema_version=1, role="execution_stage_policy", stages={"build_geometry": selected})
             path = root / "stages.json"
             path.write_text(json.dumps(policy), encoding="utf-8")
-            context = execution_api.load_environment(workspace=root / "new study",
+            context = expert_context(workspace=root / "new study",
                 tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
                 policy=dict(host_state_path=root / "state.sqlite3", execution_root=root / "aliases", stage_policy_path=path))
             sentinel = object()
@@ -818,23 +852,124 @@ class PlatformApiTests(unittest.TestCase):
             assembly_api.mate_ports(up, down, rotation=[[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]], gap_mm=0.)
 
     def test_execution_configuration_does_not_create_or_probe_workspace(self):
+        from msplatform.execution.stage_policy import read_stage_policy
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
-            workspace = base / "new study 中文"
+            path, document, original = deployment_fixture(base)
+            workspace = base / "new study \u4e2d\u6587"
+            overrides = dict(export_cad=dict(limits=dict(wall_clock_seconds=900)))
             with patch("subprocess.Popen", side_effect=AssertionError("process probe")), \
                  patch.object(Path, "mkdir", side_effect=AssertionError("directory creation")):
-                context = execution_api.load_environment(workspace=workspace,
-                    tools={"python": base/"python.exe", "powershell": base/"pwsh.exe"},
-                    policy={"host_state_path": base/"shared.sqlite3", "policy_path": base/"policy.json",
-                            "execution_root":base/"short_aliases"})
-                defaults = execution_api.load_environment(workspace=workspace,
-                    tools={"python":base/"python.exe","powershell":base/"pwsh.exe"},
-                    policy={"host_state_path":base/"shared.sqlite3"})
-            self.assertEqual(context.workspace, workspace)
-            self.assertEqual(context.execution_root,base/"short_aliases")
-            self.assertEqual(defaults.policy_path.name,"host_resource_policy.json")
-            self.assertEqual(defaults.execution_root,workspace/"artifacts/common/execution_aliases")
+                context = execution_api.load_environment(path, workspace=workspace,
+                    profile="standard", overrides=overrides)
+                stage, authority = read_stage_policy(context, "export_cad")
+                other = execution_api.load_environment(path, workspace=base / "other study", profile="standard")
+                document["policy"].update(policy_path="host-policy.json", execution_root="shared-aliases")
+                path.write_text(json.dumps(document), encoding="utf-8")
+                explicit = execution_api.load_environment(path, workspace=workspace, profile="standard")
+            self.assertEqual(stage["limits"]["wall_clock_seconds"], 900)
+            self.assertEqual(original["limits"]["wall_clock_seconds"], 600)
+            self.assertEqual(context.host_state_path, base / "shared.sqlite3")
+            self.assertEqual(other.host_state_path, context.host_state_path)
+            self.assertNotEqual(other.workspace, context.workspace)
+            self.assertEqual(explicit.host_state_path, context.host_state_path)
+            self.assertEqual(explicit.policy_path, base / "host-policy.json")
+            self.assertEqual(explicit.execution_root, base / "shared-aliases")
+            self.assertEqual(context.python_executable, base / "python.exe")
+            self.assertEqual(context.stage_policy_path, base / "stages.json")
+            self.assertEqual(Path(authority["path"]), base / "stages.json")
+            self.assertEqual(context.policy_path.name, "host_resource_policy.json")
+            self.assertEqual(context.execution_root, workspace / "artifacts/common/execution_aliases")
+            overrides["export_cad"]["limits"]["wall_clock_seconds"] = 1
+            snapshot = context.environment
+            snapshot["overrides"]["export_cad"]["limits"]["wall_clock_seconds"] = 2
+            self.assertEqual(context.environment["overrides"]["export_cad"]["limits"]["wall_clock_seconds"], 900)
+            self.assertEqual(context.environment["source"]["path"], str(path))
             self.assertFalse(workspace.exists())
+            self.assertEqual(json.loads(path.read_text()), document)
+
+    def test_saved_environment_rejects_science_unknown_profiles_and_malformed_overrides(self):
+        from msplatform.execution.stage_policy import read_stage_policy
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            path, document, _ = deployment_fixture(base)
+            with self.assertRaisesRegex(ContractError, "named"):
+                execution_api.load_environment(path, workspace=base / "study", profile="missing")
+            for invalid in (False, [], 0, {"tools": {"python": {}}}, {"export_cad": {"numerics": {}}}):
+                with self.subTest(overrides=invalid), self.assertRaises(ValueError):
+                    execution_api.load_environment(path, workspace=base / "study", profile="standard", overrides=invalid)
+            for invalid in ({"export_cad": {"limits": {"mesh_mm": 1}}},
+                            {"export_cad": {"limits": {"automatic_retry_count": 1}}},
+                            {"unknown": {"limits": {"wall_clock_seconds": 1}}}):
+                context = execution_api.load_environment(path, workspace=base / "study", profile="standard", overrides=invalid)
+                with self.subTest(overrides=invalid), self.assertRaises(ValueError):
+                    read_stage_policy(context, "export_cad")
+            with self.assertRaisesRegex(ContractError, "absolute"):
+                execution_api.load_environment(document, workspace=base / "study", profile="standard")
+            document["tools"] = {key: str(base / value) for key, value in document["tools"].items()}
+            document["policy"]["host_state_path"] = str(base / "shared.sqlite3")
+            document["profiles"]["standard"]["stage_policy_path"] = str(base / "stages.json")
+            context = execution_api.load_environment(document, workspace=base / "other", profile="standard")
+            document["tools"]["python"] = str(base / "changed.exe")
+            self.assertEqual(context.python_executable, base / "python.exe")
+            self.assertIsNone(context.environment["source"])
+            self.assertEqual(read_stage_policy(context, "export_cad")[0]["limits"]["wall_clock_seconds"], 700)
+
+    def test_saved_environment_real_owner_freezes_profile_effective_policy_and_authorities(self):
+        from types import SimpleNamespace
+        from msplatform.execution import owner
+        from msplatform.execution.stage_policy import read_stage_policy
+        from msplatform.execution.manifest_records import file_record
+        from msplatform.execution.capacity_admission import _capacity_policy
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            path, document, _ = deployment_fixture(base)
+            import shutil
+            document["tools"] = dict(python=sys.executable, powershell=shutil.which("pwsh"))
+            path.write_text(json.dumps(document), encoding="utf-8")
+            context = execution_api.load_environment(path, workspace=base / "study", profile="standard",
+                overrides=dict(export_cad=dict(limits=dict(wall_clock_seconds=900))))
+            stage, authority = read_stage_policy(context, "export_cad")
+            policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
+            with patch.object(owner, "_capacity_policy", return_value=policy), \
+                 patch("msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
+                result = owner.run_managed_stage(context,
+                    descriptor=dict(project="instrument_assembly", mode="geometry", software=[]),
+                    run_id="20261109_120000__build__python__deployment", payload=dict(stage_policy=stage),
+                    committed_new_bytes=1048576, commitment_inputs=[authority],
+                    retention=dict(policy_version=1, **{"class": "compact"}, reason=None),
+                    expected_operation_ids=[], operation_dependencies={}, action=deployment_action,
+                    action_record=file_record(Path(__file__), "required_evidence"),
+                    completion_api=lambda: SimpleNamespace(recoverable_batch_logs=lambda root: set()))
+            self.assertEqual(result["status"], "success")
+            run = Path(result["run_directory"])
+            request = json.loads((run / "inputs/execution_request.json").read_text())
+            config = json.loads((run / "run_config.json").read_text())
+            self.assertEqual(request["payload"]["execution_environment"], context.environment)
+            self.assertEqual(config["parameters"], request["payload"])
+            self.assertEqual(request["payload"]["stage_policy"]["limits"]["wall_clock_seconds"], 900)
+            self.assertEqual([row["path"] for row in request["capacity"]["commitment_inputs"]],
+                [str(base / "stages.json"), str(path)])
+            manifest = json.loads(Path(result["manifest"]["path"]).read_text())
+            self.assertEqual(manifest["inputs"]["owner_authority_2"], context.environment["source"])
+            self.assertFalse(context.host_state_path.exists())
+
+    def test_saved_environment_source_changes_fail_before_owner_creates_workspace(self):
+        from msplatform.execution.owner import run_managed_stage
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            path, _, stage = deployment_fixture(base)
+            context = execution_api.load_environment(path, workspace=base / "study", profile="standard")
+            path.write_text("{}", encoding="utf-8")
+            from msplatform.execution.manifest_records import file_record
+            record = file_record(base / "stages.json", "required_evidence")
+            with self.assertRaisesRegex(AssertionError, "manifest owner authority 2 byte count changed"):
+                run_managed_stage(context, descriptor=dict(project="fixture", mode="test", software=[]),
+                    run_id="20261109_120001__build__python__changed-deployment",
+                    payload={}, committed_new_bytes=1, commitment_inputs=[record], retention=stage["artifact_retention"],
+                    expected_operation_ids=(), operation_dependencies={}, action=deployment_action,
+                    action_record=file_record(Path(__file__), "required_evidence"))
+            self.assertFalse(context.workspace.exists())
 
 
 if __name__ == "__main__":

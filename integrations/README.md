@@ -11,26 +11,55 @@
 `verify_integration.ps1`默认执行完整Ruff与测试发现；Repository范围沿公共catalog分为四组，按实际需要完成一次preflight，
 各组在独立GATE预算内执行明确模块并即时报告失败与耗时。分组PASS不单独代表完整集成门禁通过。
 
-## 一次机器配置
+## Saved machine deployment
 
-普通安装后，机器工具与同机共享账本只通过`msplatform.execution.load_environment`加载；它返回显式
-`ExecutionContext`，不搜索作者checkout、其他venv或原生程序，也不创建工作区。调用方提供工作区、
-Python／PowerShell实际路径和共享`host_state_path`；可选执行、阶段与资源策略仍显式覆盖。
+Configure one machine document once, then select a named engineering profile for each
+study with `msplatform.execution.load_environment`. The loader reads explicit files;
+it neither probes tools nor creates the study, ledger, aliases or policy files. Relative
+references are anchored to the deployment file directory. A supplied mapping requires
+absolute references. Python and PowerShell paths must name the intended installed tools.
+
+For example, save `machine.json` beside `stages.json`:
+
+```json
+{
+  "schema_version": 1,
+  "role": "execution_environment",
+  "tools": {"python": "C:/tools/msplatform/python.exe", "powershell": "C:/Program Files/PowerShell/7/pwsh.exe"},
+  "policy": {"host_state_path": "C:/shared/msplatform/host-resources.sqlite3"},
+  "profiles": {
+    "standard": {"stage_policy_path": "stages.json"},
+    "long_export": {"stage_policy_path": "stages.json", "overrides": {"export_cad": {"limits": {"wall_clock_seconds": 900}}}}
+  }
+}
+```
+
+The stage file uses the existing `execution_stage_policy` format shown in the
+[standalone STEP tutorial](../common/README.md#独立导出-step普通安装后的最短完整例子).
+Optional machine policy fields are `policy_path` (host resource policy) and
+`execution_root` (shared short execution aliases). Omission uses the installed host
+policy and the workspace's existing alias convention. The shared host ledger belongs
+to the machine, never an individual study or profile.
 
 ```python
-import sys
 from pathlib import Path
 from msplatform import execution
 
 context = execution.load_environment(
-    workspace=Path("study").absolute(),
-    tools={"python": Path(sys.executable), "powershell": Path("pwsh").absolute()},
-    policy={"host_state_path": Path("shared/host-resources.sqlite3").absolute()},
+    Path("deployment/machine.json").absolute(),
+    workspace=Path("study").absolute(), profile="standard",
+    overrides={"export_cad": {"limits": {"wall_clock_seconds": 900}}},
 )
+print(context.environment)  # independent profile, overrides and exact source record
 ```
 
-科学尺寸、驱动、源、判据和研究数值不进入该机器配置。独立源与离线分析无需构造它；几何编译、
-换源复用和改变分析继续使用各自领域入口，不要求商业工具或默认GUI。旧`api.execution_context`已退役。
+Profile and per-call overrides merge existing engineering sections (`limits`,
+`artifact_retention`, `runtime`); the original stage-policy owner validates the effective
+action. Scientific dimensions, drives, sources, solver numerics and qualification criteria
+stay in domain requests. Managed runs freeze the selected profile, overrides, effective
+stage and exact deployment/stage authorities in their normal request and manifest chain.
+Independent sources and offline analysis need no execution context. `ExecutionContext`
+remains an explicit expert constructor for callers already holding resolved paths.
 
 ## 配方解析
 

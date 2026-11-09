@@ -76,19 +76,16 @@ py -3.11 -m venv .venv
 PYTHONPATH或作者checkout。下面代码保存为新工作目录的`export_step.py`，用该虚拟环境的
 `python.exe -I export_step.py`运行。只需设置两个本机配置：实际PowerShell路径，以及部署时已确定的
 **同机共享**host账本绝对路径；后者与该机器其他平台任务相同，不按study另建以绕过准入。
-示例通过环境变量显式传入该路径，变量只是本次调用输入，不是新的配置权威：
+Save these paths once in the machine deployment described below; daily studies select its engineering profile:
 
 ```powershell
-# 下面是本工作区已有部署位置；另一机器应换成其实际共享账本路径。
-$env:MSPLATFORM_HOST_STATE = 'C:\Users\Liao\mass_spectrometry\artifacts\common\host_resources.sqlite3'
+# Configure deployment/machine.json once with this machine's actual tool and shared ledger paths.
 .\.venv\Scripts\python.exe -I export_step.py
 ```
 
 ```python
 import json
-import os
 from pathlib import Path
-import sys
 from msplatform import assembly as assembly_api, components, examples, execution, exporters
 
 workspace = (Path.cwd() / "my_study").resolve()
@@ -107,39 +104,40 @@ print(json.dumps(options, indent=2))
 # options = {**options, "name": "RF-OA-TOF assembly"}
 # Omitting name preserves results/assembly.step.
 
-policy_path = workspace / "export-stage-policy.json"
-stage_policy = {
-    "schema_version": 1, "role": "execution_stage_policy",
-    "stages": {"export_cad": {
-        "limits": {
-            "wall_clock_seconds": 600,
-            "transient_run_directory_bytes": 104857600,
-            "process_tree_working_set_bytes": 4294967296,
-            "minimum_system_available_memory_bytes": 1073741824,
-            "compact_final_retained_bytes": 104857600,
-            "automatic_retry_count": 0,
-        },
-        "artifact_retention": {
-            "policy_version": 1, "class": "solver_review",
-            "reason": "Retain independent STEP and its complete source/report",
-        },
-    }},
-}
-# 独立新study首次运行；不覆盖已有输入或引用。
-with policy_path.open("x", encoding="utf-8") as stream:
-    json.dump(stage_policy, stream, indent=2)
+# Reuse the saved machine deployment described in integrations/README.md.
+# Its selected stage_policy_path points to the engineering policy below.
 context = execution.load_environment(
-    workspace=workspace,
-    tools={"python": Path(sys.executable),
-           "powershell": Path("C:/Program Files/PowerShell/7/pwsh.exe")},
-    policy={"host_state_path": Path(os.environ["MSPLATFORM_HOST_STATE"]),
-            "stage_policy_path": policy_path},
+    Path("deployment/machine.json").absolute(), workspace=workspace, profile="standard",
 )
 cad = exporters.export_cad(assembly, format="step", options=options, context=context)
 with (workspace / "cad-reference.json").open("x", encoding="utf-8") as stream:
     json.dump(cad.reference, stream, indent=2)
 print(cad.data_path("step"))
 print(cad.data_path("report"))
+```
+
+Save the following once as `deployment/stages.json`, beside the machine document
+from the [deployment guide](../integrations/README.md#saved-machine-deployment). The
+shared host ledger and tools are declared there; daily studies reuse that deployment.
+
+```json
+{
+  "schema_version": 1, "role": "execution_stage_policy",
+  "stages": {"export_cad": {
+    "limits": {
+      "wall_clock_seconds": 600,
+      "transient_run_directory_bytes": 104857600,
+      "process_tree_working_set_bytes": 4294967296,
+      "minimum_system_available_memory_bytes": 1073741824,
+      "compact_final_retained_bytes": 104857600,
+      "automatic_retry_count": 0
+    },
+    "artifact_retention": {
+      "policy_version": 1, "class": "solver_review",
+      "reason": "Retain independent STEP and its complete source/report"
+    }
+  }}
+}
 ```
 
 上述预算沿本批实际导出使用的600秒／100MiB载荷与保留／4GiB进程树内存／1GiB可用内存，
@@ -379,7 +377,6 @@ F5与continuous03的已发布inputs选择规范正文／资源，不证明其余
 |旧路径|规范所有者／资源|本轮精确生产引用|退出责任|
 |---|---|---|---|
 |`common/contracts/artifact_retention.py`|`msplatform.execution.resources`<br>`msplatform.execution`|`common/contracts/`：`legacy_capacity_backfill.py`、`legacy_capacity_calibration.py`、`legacy_owner_disposition.py`、`reconcile_interrupted_compact_runs.py`、`run_artifact_support.ps1`、`run_capacity_lifecycle.py`、`solver_review_retirement.py`、`stage_reuse.py`、`verify_artifact_layout.py`、`write_run_manifest.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`|公共执行／缓存／钟所有者；最迟P4|
-|`common/contracts/run_capacity_lifecycle.py`|`msplatform.execution`|`common/contracts/`：`invoke_solver_review_retirement.ps1`、`legacy_owner_disposition.py`、`reconcile_artifact_capacity.py`、`run_artifact_support.ps1`、`run_artifact_workflow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`finalize_gui_replay.ps1`、`prepare_gui_replay.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`、`run_downstream_workpoint_iteration.ps1`、`run_ip_prism_distance_study.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/simion/`：`run_native_static_field_provider.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`mass_spectrum_reanalysis.py`、`prepare_candidate_run.py`<br>`integrations/workflows/single_reflection_flight/`：`continuation.py`|公共执行／缓存／钟所有者；最迟P4|
 |`common/contracts/write_run_manifest.py`|`msplatform.execution`<br>`msplatform.execution.terminal_publication`|`common/contracts/`：`run_artifact_support.ps1`、`run_artifact_workflow.ps1`、`run_capacity_lifecycle.py`、`stage_reuse.py`、`verify_run_manifest.py`<br>`common/simion/`：`workbench_seed.py`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`batching.py`、`component_exit.py`、`extraction_phase_space_comparison.py`、`geometry_comparison.py`、`gui_replay.py`、`upstream_admission.py`<br>`projects/dual_pressure_rectilinear_ion_processor/simion/`：`run_functional.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`corridor_field_provider.py`、`downstream_workpoint_iteration.py`、`ion_processor_assembly.py`、`ip_prism_aperture_diagnostics.py`、`ip_prism_distance_study.py`、`ip_prism_field_theory.py`、`ip_prism_local_field_diagnostics.py`、`ip_prism_mesh_diagnostics.py`、`joint_flight_preparation.py`、`mrtof_batch_continuation.py`、`mrtof_batch_flight.py`、`prepared_joint_diagnostics.py`、`prepared_joint_trial.py`、`two_prism_simion_trial.py`<br>`projects/rf_multipole_ion_optics/analysis/`：`plot_transport_phase_diagnostics.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`register_simion_layout_template.ps1`、`run_finite_3d_transport.ps1`、`run_round_rod_field_screen.ps1`、`simion_batch_continuation.py`、`simion_field_checkpoint.py`、`_transport_run_artifacts.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_run_lifecycle.py`、`candidate_source_closure.py`、`experiment_campaign.py`、`ideal_acceptance_300mm_simion_candidate.py`、`mass_spectrum_reanalysis.py`、`paper1_c3_j3_publish.py`、`prepare_candidate_run.py`、`publish_ideal_acceptance_aperture_comparison.py`、`stage_formal_simion_runtime.py`、`three_zone_t5_simion_candidate.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`register_candidate_layout_template.ps1`、`run_ideal_field_diagnostic.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/accelerator_transverse_field_uniformity/`：`run_accelerator_transverse_field_uniformity.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/cross_solver_diagnostics/`：`run_cross_solver_diagnostics.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/`：`candidate_comsol_stage.py`、`run_candidate_workflow.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`run_formal_validation.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`run_comparison.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/`：`run_mass_spectrum_candidate.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/`：`run_compensation.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/`：`run_theory.py`<br>`projects/transverse_helical_filament_wehnelt_electron_gun/`：`run_build_only_smoke.ps1`<br>`integrations/runtime/`：`paired_accelerator_model.py`、`standalone_field_bank.py`<br>`integrations/workflows/accelerator_interface/`：`execute.ps1`、`prepare.py`<br>`integrations/workflows/cooled_frontend/`：`execute.ps1`、`field_design.py`、`mesh_check.py`、`prepare.py`、`reference.py`、`reference_support.ps1`、`runtime.py`<br>`integrations/workflows/local_frontend/`：`analyze.py`、`execute.ps1`、`prepare.py`、`replay.py`、`runtime.py`<br>`integrations/workflows/multipole_ip/`：`prepare.py`<br>`integrations/workflows/paired_accelerator_pulse/`：`execute.ps1`、`prepare.py`、`runtime.py`<br>`integrations/workflows/paired_accelerator_static_field/`：`prepare.py`、`runtime.py`<br>`integrations/workflows/prepared_joint/`：`analysis.py`、`execute.ps1`<br>`integrations/workflows/single_reflection_flight/`：`collect.py`、`continuation.py`、`downstream_fields.py`、`execute.ps1`、`prepare.py`、`runtime.py`|公共执行／缓存／钟所有者；最迟P4|
 |`common/host_resource_python.py`|`msplatform.execution.process_transport`|`common/`：`gate_catalog.json`、`host_resource_python.ps1`<br>`common/contracts/`：`run_artifact_workflow.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`mirror_exact_k_operating_point.py`、`mirror_fixed_grid_voltage_correction.py`、`mirror_l0_hardware_candidate.py`、`mirror_l0_l1_hardware_candidate.py`、`run_mirror_exact_k_operating_point.ps1`、`run_mirror_l0_l1_candidate.ps1`、`run_two_prism_segmented_continuation.ps1`、`run_two_prism_segmented_coverage.ps1`、`two_prism_segmented_coverage.py`、`two_prism_segmented_voltage_continuation.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_ideal_transport.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_candidate_flight.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/ideal_source_comparison/`：`run_comparison.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`integrations/config/`：`runtime_dependencies.json`|公共执行／缓存／钟所有者；最迟P4|
 |`integrations/runtime/build_single_flight_program.py`|`msplatform.execution.resources`<br>`msplatform.backends.simion.tracking_program`|`integrations/runtime/`：`local_frontend_field_support.ps1`、`standalone_field_bank.py`<br>`integrations/workflows/cooled_frontend/`：`program.py`、`runtime.py`<br>`integrations/workflows/local_frontend/`：`runtime.py`<br>`integrations/workflows/single_reflection_flight/`：`collect.py`、`continuation.py`、`prepare.py`、`pulse.py`、`runtime.py`|integration所有者；最迟P4|

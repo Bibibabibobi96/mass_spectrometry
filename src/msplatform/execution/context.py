@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
+import json
 from pathlib import Path
 from msplatform.contracts.machine_contracts import ContractError
 from types import MappingProxyType
@@ -25,6 +27,12 @@ class ExecutionContext:
     policy_path: Path
     execution_root: Path | None = None
     stage_policy_path: Path | None = None
+    _environment_json: str | None = None
+
+    @property
+    def environment(self) -> dict | None:
+        """Independent snapshot of the selected engineering deployment."""
+        return json.loads(self._environment_json) if self._environment_json is not None else None
 
     def __post_init__(self) -> None:
         for name in ("workspace", "python_executable", "powershell_executable",
@@ -53,19 +61,61 @@ class ExecutionContext:
         object.__setattr__(self, "tools", MappingProxyType(tools))
 
 
-def load_environment(*, workspace: str | Path, tools: Mapping[str, str | Path],
-                     policy: Mapping[str, str | Path]) -> ExecutionContext:
-    """Load one explicit machine environment without probing or creating paths."""
+def load_environment(configuration: str | Path | Mapping, *, workspace: str | Path,
+                     profile: str, overrides: Mapping | None = None) -> ExecutionContext:
+    """Select a saved machine deployment and engineering profile without writes.
+
+    File-relative references are anchored to that file. Mapping references must
+    be absolute. Overrides affect stage engineering policy only, never science,
+    tools or the shared host ledger.
+    """
+    from .manifest_records import file_record, verify_record
+    source = None
+    base = None
+    if isinstance(configuration, Mapping):
+        document = copy.deepcopy(dict(configuration))
+    else:
+        path = Path(configuration).absolute()
+        source = file_record(path, "required_evidence")
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+        verify_record("execution environment", source)
+        base = path.parent
+    if (not isinstance(document, dict) or set(document) != {"schema_version", "role", "tools", "policy", "profiles"}
+            or type(document["schema_version"]) is not int or document["schema_version"] != 1
+            or document["role"] != "execution_environment"):
+        raise ContractError("Unsupported execution environment")
+    tools, policy, profiles = document["tools"], document["policy"], document["profiles"]
     if not isinstance(tools, Mapping) or not {"python", "powershell"} <= tools.keys():
         raise ContractError("execution tools must explicitly declare python and powershell")
     required_policy = {"host_state_path"}
     if (not isinstance(policy, Mapping) or not required_policy <= policy.keys()
-            or set(policy) - required_policy - {"policy_path", "execution_root", "stage_policy_path"}):
-        raise ContractError("execution policy requires host_state_path; policy_path, execution_root and stage_policy_path are optional")
+            or set(policy) - required_policy - {"policy_path", "execution_root"}):
+        raise ContractError("execution policy requires host_state_path; policy_path and execution_root are optional")
+    if not isinstance(profiles, Mapping) or not isinstance(profile, str) or profile not in profiles:
+        raise ContractError("Select an explicitly named engineering profile")
+    selected = profiles[profile]
+    if (not isinstance(selected, Mapping) or "stage_policy_path" not in selected
+            or set(selected) - {"stage_policy_path", "overrides"}):
+        raise ContractError("Engineering profile requires stage_policy_path and optional overrides")
+    def reference(value):
+        path = Path(value)
+        if not path.is_absolute():
+            if base is None:
+                raise ContractError("Mapping execution references must be absolute")
+            path = base / path
+        return path.absolute()
     from msplatform.execution.resources import resource_path
-    policy_path = Path(policy["policy_path"]) if "policy_path" in policy else resource_path("host_resource_policy.json")
-    return ExecutionContext(workspace=Path(workspace).absolute(), python_executable=Path(tools["python"]),
-        powershell_executable=Path(tools["powershell"]), tools={key: Path(value) for key, value in tools.items()},
-        host_state_path=Path(policy["host_state_path"]), policy_path=policy_path,
-        execution_root=Path(policy["execution_root"]) if "execution_root" in policy else None,
-        stage_policy_path=Path(policy["stage_policy_path"]) if "stage_policy_path" in policy else None)
+    resolved_tools = {key: reference(value) for key, value in tools.items()}
+    resolved_policy = {key: reference(value) for key, value in policy.items()}
+    stage_path = reference(selected["stage_policy_path"])
+    from .stage_policy import merge_overrides
+    merged = merge_overrides(selected.get("overrides", {}), {} if overrides is None else overrides)
+    environment = dict(profile=profile, overrides=merged, source=source,
+        tools={key: str(value) for key, value in resolved_tools.items()},
+        policy={key: str(value) for key, value in resolved_policy.items()}, stage_policy_path=str(stage_path))
+    return ExecutionContext(workspace=Path(workspace).absolute(), python_executable=resolved_tools["python"],
+        powershell_executable=resolved_tools["powershell"], tools=resolved_tools,
+        host_state_path=resolved_policy["host_state_path"],
+        policy_path=resolved_policy.get("policy_path", resource_path("host_resource_policy.json")),
+        execution_root=resolved_policy.get("execution_root"), stage_policy_path=stage_path,
+        _environment_json=json.dumps(environment))
