@@ -166,7 +166,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
 
     def test_end_to_end_runner_produces_each_full_response_from_coarse_basis(self) -> None:
         source = (PROJECT / 'simion' / 'run_native_corridor_qualification.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn("common.simion.pa_family_cache", source)
+        self.assertIn("'-m','msplatform.backends.simion.pa_family_cache'", source)
         self.assertIn("--action','probe'", source)
         self.assertIn("'--action','advance-transaction'", source)
         self.assertIn("'--recovery-policy','none'", source)
