@@ -1,7 +1,7 @@
 """COMSOL backend operations; compilation and publication start no native process."""
 from typing import Any
 
-__all__ = ["build_ei_model", "compile_request", "finalize", "prepare", "resolve_completed_provider"]
+__all__ = ["build_ei_model", "build_wehnelt_model", "compile_request", "finalize", "prepare", "resolve_completed_provider"]
 
 
 def __getattr__(name: str) -> Any:
@@ -11,5 +11,8 @@ def __getattr__(name: str) -> Any:
     if name == "build_ei_model":
         from .ei_model import build_ei_model
         return build_ei_model
+    if name == "build_wehnelt_model":
+        from .wehnelt_model import build_wehnelt_model
+        return build_wehnelt_model
     from . import corridor_field
     return getattr(corridor_field, name)

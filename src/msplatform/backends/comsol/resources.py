@@ -9,6 +9,11 @@ from importlib.resources import files
 from pathlib import Path
 
 NATIVE_RESOURCES = frozenset({
+    "build_wehnelt_model.m", "phase1_geometry_coil_transverse.m",
+    "phase2_electrostatics_coil_transverse.m", "phase4_thermal_emission_coil_transverse.m",
+    "load_wehnelt_contract.m", "apply_wehnelt_contract_parameters.m",
+    "wehnelt_contract_parameter_bindings.m", "verify_wehnelt_contract_parameters.m",
+    "verify_wehnelt_model.m",
     "ms_stage1_ei_source.m", "load_ei_source_contract.m", "comsolstartup.m",
     "verify_ei_source_model.m", "verify_ei_source_parameter_bindings.m", "ei_source_unit_text.m",
     "build_accelerator_grids.m",

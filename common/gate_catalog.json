@@ -2975,6 +2975,14 @@
           "reason": "wehnelt_path_changed"
         },
         {
+          "prefix": "src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/",
+          "reason": "wehnelt_contract_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/comsol/(?:wehnelt_model\\.py|model_execution\\.py|matlab/(?:build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m)$",
+          "reason": "wehnelt_model_implementation_changed"
+        },
+        {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
@@ -3014,6 +3022,14 @@
         {
           "prefix": "projects/apertured_tube_electron_impact_ion_source/",
           "reason": "electron_impact_path_changed"
+        },
+        {
+          "prefix": "src/msplatform/components/apertured_tube_electron_impact_ion_source/",
+          "reason": "ei_source_contract_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/comsol/(?:ei_model\\.py|model_execution\\.py|matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text)\\.m)$",
+          "reason": "ei_source_model_implementation_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",

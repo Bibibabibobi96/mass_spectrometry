@@ -16,10 +16,11 @@ from msplatform.execution.inputs import enumerate_python_sources
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
+MATLAB = REPO_ROOT / "src/msplatform/backends/comsol/matlab"
 ACTIVE_SCRIPTS = (
-    PROJECT_ROOT / "phase1_geometry_coil_transverse.m",
-    PROJECT_ROOT / "phase2_electrostatics_coil_transverse.m",
-    PROJECT_ROOT / "phase4_thermal_emission_coil_transverse.m",
+    MATLAB / "phase1_geometry_coil_transverse.m",
+    MATLAB / "phase2_electrostatics_coil_transverse.m",
+    MATLAB / "phase4_thermal_emission_coil_transverse.m",
 )
 
 
@@ -33,9 +34,9 @@ class MatlabContractBindingTests(unittest.TestCase):
         }
         cls.combined = "\n".join(cls.sources.values())
         cls.binding = (
-            PROJECT_ROOT / "apply_wehnelt_contract_parameters.m"
+            MATLAB / "wehnelt_contract_parameter_bindings.m"
         ).read_text(encoding="utf-8")
-        cls.loader = (PROJECT_ROOT / "load_wehnelt_contract.m").read_text(
+        cls.loader = (MATLAB / "load_wehnelt_contract.m").read_text(
             encoding="utf-8"
         )
         cls.build_task = (
@@ -231,7 +232,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "Remove-RunPackageExecutionAlias -Package $package",
             "comsol\\build_only_smoke.m",
             "config\\resolved_model.json",
-            "WEHNELT_ARTIFACT_ROOT",
+            "MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY",
             "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
             "-CapacityLedgerLifecycleEnabled",
             "Apply-RunArtifactRetention",
@@ -636,12 +637,6 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
         project_relatives = (
             "run_build_only_smoke.ps1",
             "comsol/build_only_smoke.m",
-            "egun_paths.m",
-            "load_wehnelt_contract.m",
-            "apply_wehnelt_contract_parameters.m",
-            "phase1_geometry_coil_transverse.m",
-            "phase2_electrostatics_coil_transverse.m",
-            "phase4_thermal_emission_coil_transverse.m",
             "config/baseline.json",
             "config/numerical_modes.json",
             "config/resolved_model.json",

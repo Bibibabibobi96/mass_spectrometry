@@ -6,11 +6,13 @@
 ## 活动入口
 
 - 受治理商业入口：`../run_build_only_smoke.ps1 -RunId <run_id>`
-- 几何：`../phase1_geometry_coil_transverse.m`
-- 静电：`../phase2_electrostatics_coil_transverse.m`
-- 热发射CPT：`../phase4_thermal_emission_coil_transverse.m`
-- 合同绑定：`../apply_wehnelt_contract_parameters.m`
-- MATLAB路径：`../egun_paths.m`
+- Installed Python operation: `msplatform.backends.comsol.build_wehnelt_model` uses the same managed owner and LiveLink launcher as the EI operation; neither entry adds a second scheduler or publisher.
+- 几何：[`phase1_geometry_coil_transverse.m`](../../../src/msplatform/backends/comsol/matlab/phase1_geometry_coil_transverse.m)
+- 静电：[`phase2_electrostatics_coil_transverse.m`](../../../src/msplatform/backends/comsol/matlab/phase2_electrostatics_coil_transverse.m)
+- 热发射CPT：[`phase4_thermal_emission_coil_transverse.m`](../../../src/msplatform/backends/comsol/matlab/phase4_thermal_emission_coil_transverse.m)
+- 合同绑定：[`apply_wehnelt_contract_parameters.m`](../../../src/msplatform/backends/comsol/matlab/apply_wehnelt_contract_parameters.m)
+- Run paths: each canonical stage requires `(resolvedContractPath, runDirectory)` from the existing owner; no environment or checkout discovery.
+- Read-only cold verification: [`verify_wehnelt_model.m`](../../../src/msplatform/backends/comsol/matlab/verify_wehnelt_model.m) targets only the final unsolved phase4 MPH and never sets parameters, Compute or saves it.
 - 项目门禁：`../verify_project.ps1`
 - build-only生产任务：`../comsol/build_only_smoke.m`
 

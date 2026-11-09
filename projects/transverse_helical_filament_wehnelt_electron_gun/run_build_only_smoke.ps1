@@ -187,7 +187,7 @@ function New-BuildSummary {
 }
 
 $environmentNames = @(
-  'WEHNELT_RUN_ID','WEHNELT_ARTIFACT_ROOT',
+  'MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY',
   'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE','SIMULATION_PYTHON_EXE'
 )
 $savedEnvironment = Save-RunEnvironment -Names $environmentNames
@@ -267,12 +267,6 @@ try {
   $projectFrozenFiles = [ordered]@{
     runner = 'run_build_only_smoke.ps1'
     task_script = 'comsol\build_only_smoke.m'
-    paths = 'egun_paths.m'
-    contract_loader = 'load_wehnelt_contract.m'
-    parameter_binding = 'apply_wehnelt_contract_parameters.m'
-    phase1 = 'phase1_geometry_coil_transverse.m'
-    phase2 = 'phase2_electrostatics_coil_transverse.m'
-    phase4 = 'phase4_thermal_emission_coil_transverse.m'
     baseline = 'config\baseline.json'
     numerical_modes = 'config\numerical_modes.json'
     resolved_contract = 'config\resolved_model.json'
@@ -423,8 +417,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
     "STARTED_AT_UTC=$([DateTime]::UtcNow.ToString('o'))"
     'TERMINAL_STATE=pending'
   )
-  $env:WEHNELT_RUN_ID = $RunId
-  $env:WEHNELT_ARTIFACT_ROOT = $artifactRoot
+  $env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY = [string]$package.run_dir
   try {
     $commercialWrapperInvocationAttempted = $true
     . (Join-Path (Split-Path -Parent ($frozenInputs.comsol_runner)) 'resolve_comsol_64.ps1')

@@ -88,6 +88,11 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         validator, scope = resolve_ei_build_request, "resolved_EI_build_only_request_not_native_model"
         result["execution_prerequisites"] = ["execution_owner_and_stage_policy", "explicit_COMSOL_and_MATLAB", "native_save_and_fresh_reopen"]
         result["limitations"] = ["unsolved_collision_counting_model_not_heavy_ion_source_or_scientific_qualification"]
+    elif operation == "build_wehnelt_model":
+        from msplatform.backends.comsol.wehnelt_model import resolve_wehnelt_build_request
+        validator, scope = resolve_wehnelt_build_request, "resolved_Wehnelt_build_only_request_not_native_model"
+        result["execution_prerequisites"] = ["execution_owner_and_stage_policy", "explicit_COMSOL_and_MATLAB", "native_save_and_fresh_reopen"]
+        result["limitations"] = ["unsolved_thermal_electron_model_not_beam_current_or_scientific_qualification"]
     else:
         result["reason"] = "No pure planning adapter for this requested operation; no execution was attempted"
         return result

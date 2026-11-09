@@ -32,6 +32,25 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_installed_source_models_reach_their_original_project_owner(self):
+        cases = (
+            ("src/msplatform/backends/comsol/matlab/ms_stage1_ei_source.m",
+             {"apertured_tube_electron_impact_ion_source_static"}),
+            ("src/msplatform/components/apertured_tube_electron_impact_ion_source/resolve_contract.py",
+             {"apertured_tube_electron_impact_ion_source_static"}),
+            ("src/msplatform/backends/comsol/matlab/build_wehnelt_model.m",
+             {"transverse_helical_filament_wehnelt_electron_gun_static"}),
+            ("src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/resolve_contract.py",
+             {"transverse_helical_filament_wehnelt_electron_gun_static"}),
+            ("src/msplatform/backends/comsol/model_execution.py",
+             {"apertured_tube_electron_impact_ion_source_static",
+              "transverse_helical_filament_wehnelt_electron_gun_static"}),
+        )
+        for path, owners in cases:
+            with self.subTest(path=path):
+                self.assertTrue((REPO_ROOT / path).is_file(), path)
+                self.assertTrue(owners <= self.routed_stages(path).keys(), path)
+
     def test_published_results_dependencies_select_the_reader_once(self):
         module = 'common/contracts/test_artifact_reader.py'
         for path in ('src/msplatform/results/__init__.py', 'src/msplatform/results/artifacts.py',

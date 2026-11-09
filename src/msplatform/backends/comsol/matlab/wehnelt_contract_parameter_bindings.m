@@ -1,6 +1,5 @@
-function verified = apply_wehnelt_contract_parameters(model, contract)
-%APPLY_WEHNELT_CONTRACT_PARAMETERS Bind resolved values to GUI parameters.
-
+function parameters = wehnelt_contract_parameter_bindings(contract)
+%WEHNELT_CONTRACT_PARAMETER_BINDINGS Original resolved GUI expression table.
     physical = contract.physical;
     filament = physical.filament;
     geometry = physical.geometry_mm;
@@ -103,18 +102,6 @@ function verified = apply_wehnelt_contract_parameters(model, contract)
             'Usable-electron upper energy bound'
     };
 
-    parameterGroup = model.param;
-    for index = 1:size(parameters, 1)
-        parameterGroup.set(parameters{index, 1}, parameters{index, 2}, ...
-            parameters{index, 3});
-    end
-    for index = 1:size(parameters, 1)
-        actual = char(parameterGroup.get(parameters{index, 1}));
-        assert(strcmp(actual, parameters{index, 2}), ...
-            'COMSOL parameter %s is not bound to the resolved contract.', ...
-            parameters{index, 1});
-    end
-    verified = true;
 end
 
 function text = with_unit(value, unit)

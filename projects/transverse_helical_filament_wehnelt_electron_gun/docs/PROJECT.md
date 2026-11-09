@@ -10,9 +10,9 @@
 当前物理基线为5匝横置螺旋钨丝、2700 K热发射的Wehnelt电子枪，面向EI离子源的电子利用率，不声明
 成像级轴对称束斑。活动源码链为：
 
-1. `../phase1_geometry_coil_transverse.m`；
-2. `../phase2_electrostatics_coil_transverse.m`；
-3. `../phase4_thermal_emission_coil_transverse.m`。
+1. [`phase1_geometry_coil_transverse.m`](../../../src/msplatform/backends/comsol/matlab/phase1_geometry_coil_transverse.m);
+2. [`phase2_electrostatics_coil_transverse.m`](../../../src/msplatform/backends/comsol/matlab/phase2_electrostatics_coil_transverse.m);
+3. [`phase4_thermal_emission_coil_transverse.m`](../../../src/msplatform/backends/comsol/matlab/phase4_thermal_emission_coil_transverse.m).
 
 机器参数链为`config/baseline.json + config/numerical_modes.json →
 msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract →
@@ -30,6 +30,36 @@ identity checks use their exact frozen relative paths, without duplicate manifes
 existing real-selector test and changed-bootstrap negative test retain these guarantees.
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
+
+## Installed implementation migration
+
+The installed builders require explicit resolved-contract and owner-run paths.
+They retain the original geometry, mesh, ES/CPT configuration, intermediate MPH
+filenames, full-mode science and negative electron charge/mass. The project copies
+and `egun_paths` are retired. One canonical table supplies all 41 GUI bindings to
+the setter and independent read-only verification; cold verification never repairs
+saved values. The MATLAB `build_wehnelt_model` wrapper retains all three stage
+reports. The Python operation shares the existing managed-owner/launcher execution
+implementation with EI, with explicit scientific inputs and engineering policy.
+
+Integrated software validation passed 47 parents (197 outcome records) in 47.923
+seconds, including the original binding/freezer checks and both model operations'
+owner success/failure paths. All 20 pure MATLAB cases passed in 0.5630784 seconds.
+Ordinary wheel/sdist acceptance passed five parents in 127.916 seconds. Original
+builder bodies and the parameter table/formatting are preserved after explicit
+signature/path wiring and trailing-newline normalization.
+
+Ordinary-wheel native run `20261109_164018__build__comsol__wehnelt-model-972f8cf52b6d`
+saved the original three-stage chain (751,590 / 15,624,994 / 15,788,416 bytes) and
+reopened the final model in a separate COMSOL process. It confirmed four physical
+domains, a complete mesh, the original study/solver trees, empty solution data,
+electron mass and charge −1, requested inlet count 3, Thermal distribution and
+Freeze walls. All three MPH identities were unchanged across cold verification.
+All 343 installed files matched the accepted wheel; all 104 loaded package origins
+were in its fresh site-packages. Both observed operations exited zero and released
+host leases; the owner published a complete unsolved `prepared_model` with writers
+stopped. No field/particle solving, current/efficiency, GUI or new Candidate/Formal
+qualification is claimed.
 
 ## 资格状态
 

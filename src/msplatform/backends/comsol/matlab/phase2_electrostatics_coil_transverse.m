@@ -1,4 +1,4 @@
-function result = phase2_electrostatics_coil_transverse(resolvedContractPath)
+function result = phase2_electrostatics_coil_transverse(resolvedContractPath, runDirectory)
 % Phase 2 (transverse-coil variant): materials, voltage boundary
 % conditions, electrostatics solve, potential/field result plots for the
 % electron gun geometry with the filament coil's own axis PERPENDICULAR
@@ -7,19 +7,25 @@ function result = phase2_electrostatics_coil_transverse(resolvedContractPath)
 % lineage in docs/history and the current COMSOL_API.md guidance.
 % The selected resolved mode determines whether the solver is executed.
 
-componentRoot = fileparts(mfilename('fullpath'));
-addpath(componentRoot);
-paths = egun_paths();
 if nargin < 1 || isempty(resolvedContractPath)
-    error('A resolved Wehnelt contract path is required; no defaults exist.');
+    error('Wehnelt:MissingContract', ...
+        'A resolved Wehnelt contract path is required; no defaults exist.');
 end
+if nargin < 2 || isempty(runDirectory)
+    error('Wehnelt:MissingRunDirectory', ...
+        'An explicit owner-provided Wehnelt run directory is required.');
+end
+runDirectory = char(runDirectory);
+assert(isfolder(runDirectory), 'Wehnelt:RunDirectoryMissing', ...
+    'The owner-provided Wehnelt run directory does not exist: %s', runDirectory);
+modelWorkspaceDir = fullfile(runDirectory, 'comsol');
 contract = load_wehnelt_contract(char(resolvedContractPath));
 executionMode = contract.numerical.execution_mode;
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-modelPath = fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT.mph');
-savePath  = fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT_ES.mph');
+modelPath = fullfile(modelWorkspaceDir, 'ElectronGun_CoilT.mph');
+savePath  = fullfile(modelWorkspaceDir, 'ElectronGun_CoilT_ES.mph');
 if any(strcmp(cell(ModelUtil.tags()), 'Model'))
     ModelUtil.remove('Model');
 end
@@ -140,7 +146,7 @@ sl2 = pg2.create('slice2', 'Slice');
 sl2.set('quickplane', 'zx'); sl2.set('quickznumber', '1'); sl2.set('quickxnumber', '1'); sl2.set('quickynumber', '1');
 sl2.set('expr', 'es.normE');
 
-resultsDir = paths.resultsDir;
+resultsDir = fullfile(runDirectory, 'results');
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 imgV = model.result.export.create('imgV', 'Image');
 imgV.set('plotgroup', 'pg_V'); imgV.set('pngfilename', fullfile(resultsDir, 'potential_distribution_coilT.png'));

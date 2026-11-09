@@ -2,11 +2,15 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
-addpath(projectRoot);
+repoRoot = fileparts(fileparts(projectRoot));
+addpath(fullfile(repoRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
+runDirectory = getenv('MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY');
+assert(~isempty(runDirectory), 'The public owner must provide its run execution directory.');
 resolvedContractPath = fullfile(projectRoot, 'config', 'resolved_model.json');
-geometry = phase1_geometry_coil_transverse(resolvedContractPath);
-electrostatic = phase2_electrostatics_coil_transverse(resolvedContractPath);
-thermal = phase4_thermal_emission_coil_transverse(resolvedContractPath);
+result = build_wehnelt_model(resolvedContractPath, runDirectory);
+geometry = result.phases.geometry;
+electrostatic = result.phases.electrostatic;
+thermal = result.phases.thermal;
 assert(strcmp(geometry.status, 'PASS'), ...
     'Wehnelt geometry build-only result did not pass.');
 assert(strcmp(electrostatic.status, 'PASS'), 'Wehnelt electrostatic build-only result did not pass.');

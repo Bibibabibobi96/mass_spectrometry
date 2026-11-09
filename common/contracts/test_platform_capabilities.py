@@ -48,6 +48,40 @@ class EIBuildCapabilitiesTests(unittest.TestCase):
         self.assertEqual(self.query(missing)["missing_arguments"], ["mode_id"])
 
 
+class WehneltBuildCapabilitiesTests(unittest.TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parents[2] / "projects/transverse_helical_filament_wehnelt_electron_gun/config"
+        self.arguments = dict(baseline=json.loads((root / "baseline.json").read_text(encoding="utf-8")),
+            modes=json.loads((root / "numerical_modes.json").read_text(encoding="utf-8")),
+            mode_id="build_only_smoke", evidence_particle_count=3)
+
+    def query(self, arguments):
+        return capability_api.capabilities(dict(schema_version=1, operation="build_wehnelt_model", arguments=arguments))
+
+    def test_actual_wehnelt_request_does_not_start_or_discover_commercial_tools(self):
+        original = copy.deepcopy(self.arguments)
+        with patch("subprocess.Popen", side_effect=AssertionError("native process")), \
+             patch("shutil.which", side_effect=AssertionError("host discovery")), \
+             patch.object(Path, "mkdir", side_effect=AssertionError("workspace")), \
+             patch.object(Path, "write_text", side_effect=AssertionError("write")):
+            result = self.query(self.arguments)
+        self.assertEqual(result["contract_status"], "accepted", result)
+        self.assertEqual(result["validator"], "msplatform.backends.comsol.wehnelt_model.resolve_wehnelt_build_request")
+        self.assertEqual(result["native_qualification"], "not_granted")
+        self.assertEqual(result["execution_readiness"], "not_assessed")
+        self.assertEqual(self.arguments, original)
+
+    def test_count_and_electron_contract_are_required_and_full_mode_is_not_build_only(self):
+        missing = dict(self.arguments)
+        del missing["evidence_particle_count"]
+        self.assertEqual(self.query(missing)["missing_arguments"], ["evidence_particle_count"])
+        invalid = copy.deepcopy(self.arguments)
+        invalid["baseline"]["particle"]["charge_state"] = 1
+        self.assertEqual(self.query(invalid)["contract_status"], "rejected")
+        full = dict(self.arguments, mode_id="functional_reference", evidence_particle_count=100)
+        self.assertEqual(self.query(full)["contract_status"], "rejected")
+
+
 class PlatformCapabilitiesTests(unittest.TestCase):
     def setUp(self):
         self.case = example_api.load_example("rf_oatof_functional_v1")

@@ -18,8 +18,17 @@
 ## 执行与产物
 
 从本项目目录运行 `./run_build_only_smoke.ps1 -RunId <run_id>`，使用显式且符合仓库合同的新运行身份。
-该入口只执行已注册的构建检查；参数、失败收尾、三阶段职责及输出判据见 COMSOL 实施说明。
+The three stage implementations and contract helpers have one canonical owner in [`msplatform.backends.comsol/matlab`](../../src/msplatform/backends/comsol/matlab). The public `build_wehnelt_model(resolvedContractPath, runDirectory)` wrapper calls all three stages and retains their individual results. Each stage requires `(resolvedContractPath, runDirectory)` and retains the original intermediate MPH chain. The project wrapper freezes those package resources and supplies its explicit owner run directory; the obsolete `egun_paths.m` path discovery is retired. Parameters, failure handling and stage/output criteria remain in the COMSOL implementation guide.
 当前构建能力不代表粒子求解、收集效率或 Candidate/Formal 资格。
+
+For an ordinary installation, call
+`msplatform.backends.comsol.build_wehnelt_model(baseline, modes,
+mode_id='build_only_smoke', evidence_particle_count=3, context=environment)`.
+The two mappings are the editable scientific documents linked above. Load the
+environment once with `execution.load_environment`; its profile must declare
+`build_wehnelt_model` and tools `comsol_launcher`/`matlab_root`. The inlet count
+configures the unsolved model and does not create a particle realization. The
+returned artifact includes the final model and both intermediate MPH files.
 
 新产物进入 `artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/runs/<run_id>/`。
 旧谱系与改名前资产按 [PROJECT](docs/PROJECT.md#产物边界) 及 descriptor 只读定位。

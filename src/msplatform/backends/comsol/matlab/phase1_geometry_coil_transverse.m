@@ -1,4 +1,4 @@
-function result = phase1_geometry_coil_transverse(resolvedContractPath)
+function result = phase1_geometry_coil_transverse(resolvedContractPath, runDirectory)
 % Phase 1 (transverse-coil variant): electron gun geometry with the
 % helical tungsten filament mounted so its OWN helix axis is
 % PERPENDICULAR to the gun's beam axis (axis = x), like a small spring
@@ -13,12 +13,18 @@ function result = phase1_geometry_coil_transverse(resolvedContractPath)
 % circumferentially as in the coaxial design (which caused ~92% of cold-
 % emitted electrons to self-absorb on a neighboring turn).
 
-componentRoot = fileparts(mfilename('fullpath'));
-addpath(componentRoot);
-paths = egun_paths();
 if nargin < 1 || isempty(resolvedContractPath)
-    error('A resolved Wehnelt contract path is required; no defaults exist.');
+    error('Wehnelt:MissingContract', ...
+        'A resolved Wehnelt contract path is required; no defaults exist.');
 end
+if nargin < 2 || isempty(runDirectory)
+    error('Wehnelt:MissingRunDirectory', ...
+        'An explicit owner-provided Wehnelt run directory is required.');
+end
+runDirectory = char(runDirectory);
+assert(isfolder(runDirectory), 'Wehnelt:RunDirectoryMissing', ...
+    'The owner-provided Wehnelt run directory does not exist: %s', runDirectory);
+modelWorkspaceDir = fullfile(runDirectory, 'comsol');
 contract = load_wehnelt_contract(char(resolvedContractPath));
 import com.comsol.model.*
 import com.comsol.model.util.*
@@ -129,11 +135,11 @@ gi = mphgeominfo(model, 'geom1');
 fprintf('Geometry build complete.\n');
 disp(gi);
 
-if ~exist(paths.modelWorkspaceDir, 'dir'), mkdir(paths.modelWorkspaceDir); end
-model.save(fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT.mph'));
+if ~exist(modelWorkspaceDir, 'dir'), mkdir(modelWorkspaceDir); end
+model.save(fullfile(modelWorkspaceDir, 'ElectronGun_CoilT.mph'));
 fprintf('SUCCESS: model saved.\n');
 result = struct('status', 'PASS', ...
-    'model_path', fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT.mph'), ...
+    'model_path', fullfile(modelWorkspaceDir, 'ElectronGun_CoilT.mph'), ...
     'contract_loaded', true, ...
     'contract_project_id', contract.project_id, ...
     'selected_mode_id', contract.selected_mode_id, ...

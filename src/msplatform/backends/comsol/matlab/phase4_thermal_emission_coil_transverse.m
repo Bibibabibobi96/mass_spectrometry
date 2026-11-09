@@ -1,4 +1,4 @@
-function result = phase4_thermal_emission_coil_transverse(resolvedContractPath)
+function result = phase4_thermal_emission_coil_transverse(resolvedContractPath, runDirectory)
 % Thermal CPT emission for the transverse-coil electron gun
 % (helix axis perpendicular to the beam axis), directly comparable to
 % the historical axial/coaxial coil under the same resolved baseline,
@@ -6,12 +6,18 @@ function result = phase4_thermal_emission_coil_transverse(resolvedContractPath)
 % physical collection surface or wall-resolved loss mechanism.
 % The selected resolved mode determines whether particle tracing is executed.
 
-componentRoot = fileparts(mfilename('fullpath'));
-addpath(componentRoot);
-paths = egun_paths();
 if nargin < 1 || isempty(resolvedContractPath)
-    error('A resolved Wehnelt contract path is required; no defaults exist.');
+    error('Wehnelt:MissingContract', ...
+        'A resolved Wehnelt contract path is required; no defaults exist.');
 end
+if nargin < 2 || isempty(runDirectory)
+    error('Wehnelt:MissingRunDirectory', ...
+        'An explicit owner-provided Wehnelt run directory is required.');
+end
+runDirectory = char(runDirectory);
+assert(isfolder(runDirectory), 'Wehnelt:RunDirectoryMissing', ...
+    'The owner-provided Wehnelt run directory does not exist: %s', runDirectory);
+modelWorkspaceDir = fullfile(runDirectory, 'comsol');
 contract = load_wehnelt_contract(char(resolvedContractPath));
 executionMode = contract.numerical.execution_mode;
 particle = contract.physical.particle;
@@ -20,8 +26,8 @@ terminalOutcomes = contract.physical.terminal_outcomes;
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-modelPath = fullfile(paths.modelWorkspaceDir, 'ElectronGun_CoilT_ES.mph');
-savePath  = fullfile(paths.modelWorkspaceDir, ...
+modelPath = fullfile(modelWorkspaceDir, 'ElectronGun_CoilT_ES.mph');
+savePath  = fullfile(modelWorkspaceDir, ...
     'transverse_helical_filament_wehnelt_electron_gun__model.mph');
 if any(strcmp(cell(ModelUtil.tags()), 'Model'))
     ModelUtil.remove('Model');
@@ -67,7 +73,7 @@ model.sol('sol2').createAutoSequence('std2');
 model.sol('sol2').feature('v1').set('notsolmethod', 'sol');
 model.sol('sol2').feature('v1').set('notsol', 'sol1');
 if strcmp(executionMode, 'build_only')
-    if ~exist(paths.modelWorkspaceDir, 'dir'), mkdir(paths.modelWorkspaceDir); end
+    if ~exist(modelWorkspaceDir, 'dir'), mkdir(modelWorkspaceDir); end
     model.save(savePath);
     result = struct('status', 'PASS', 'execution_mode', executionMode, ...
         'model_path', savePath, 'cpt_tree_built', true, ...
@@ -84,7 +90,7 @@ end
 model.sol('sol2').runAll;
 fprintf('SUCCESS: Particle tracing (thermal, transverse coil) solved.\n');
 
-resultsDir = paths.resultsDir;
+resultsDir = fullfile(runDirectory, 'results');
 if ~exist(resultsDir, 'dir'), mkdir(resultsDir); end
 pdset1 = model.result.dataset.create('pdset1', 'Particle');
 pdset1.set('solution', 'sol2');
@@ -138,7 +144,7 @@ end
 fprintf('KE[eV] among valid: min=%.4f max=%.4f mean=%.4f median=%.4f\n', ...
     min(KEv), max(KEv), mean(KEv), median(KEv));
 
-if ~exist(paths.modelWorkspaceDir, 'dir'), mkdir(paths.modelWorkspaceDir); end
+if ~exist(modelWorkspaceDir, 'dir'), mkdir(modelWorkspaceDir); end
 model.save(savePath);
 fprintf('\nSUCCESS: model saved to %s\n', savePath);
 result = struct('status', 'PASS', 'execution_mode', executionMode, ...
