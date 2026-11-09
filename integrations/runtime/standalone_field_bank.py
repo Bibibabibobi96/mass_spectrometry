@@ -10,7 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from msplatform.execution.retention import file_record
 
-from integrations.runtime.build_single_flight_program import resolve_standalone_dynamic_operating_coefficients
+from msplatform.backends.simion.tracking_program import resolve_standalone_dynamic_operating_coefficients
 from msplatform.backends.simion.electrode_contract import (
     require_pa_plus_solution_model,
 )

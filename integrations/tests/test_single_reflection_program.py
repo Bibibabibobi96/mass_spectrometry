@@ -11,11 +11,13 @@ import math
 from pathlib import Path
 import re
 import subprocess
+import sys
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.runtime.build_single_flight_program import (
+from msplatform.backends.simion.tracking_program import (
     build_successor_program, _upstream_rod_drive, validate_native_flight,
     STANDALONE_DYNAMIC_FIELD_BANK_ROLE, STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,
@@ -54,7 +56,7 @@ def response_paths(bank, directory):
 
 
 def field_observation_spec(*, anchor=11, clock='test-clock', source_instance='multipole'):
-    from integrations.runtime.build_single_flight_program import FIELD_OBSERVATION_BUCKETS
+    from msplatform.backends.simion.tracking_program import FIELD_OBSERVATION_BUCKETS
     windows = ((-5.,-4.,-4.5,None),(-3.,-2.,-2.5,0.),(-1.,0.,-.5,math.pi/2),
                (1.,2.,1.5,math.pi),(9.,10.,10.,None),(10.,11.,10.,None),
                (12.,13.,13.,None),(13.,14.,13.,None))
@@ -555,7 +557,7 @@ end
                 bank if isinstance(bank, dict) else self.dynamic, self.root)
         instances, _ = native_frontend_instances(kwargs['frontend_geometry']['composition_plan'])
         providers = {instances[0]: self.upstream} if instances else {}
-        return build_successor_program(providers,self.design,self.oatof,**kwargs)
+        return build_successor_program(providers,self.design,self.oatof,**kwargs, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
     def test_plan5_actual_program_callbacks_keep_rf_clock_and_pulse_with_scientific_maps(self):
@@ -661,7 +663,7 @@ end
             **{key: value for key, value in self.sources.items() if key!='voltage_waveforms_source'})
         instances, _ = native_frontend_instances(self.geometry['composition_plan'])
         with self.assertRaisesRegex(TypeError, 'voltage_waveforms_source'):
-            build_successor_program({instances[0]: self.upstream}, self.design, self.oatof, **kwargs)
+            build_successor_program({instances[0]: self.upstream}, self.design, self.oatof, **kwargs, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
     def test_pulse_hook_delegates_edge_caps_to_injected_public_math(self):
@@ -886,10 +888,10 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
             with self.subTest(multipoles=count):
                 providers, design, oatof, kwargs, names = self.multiple_provider_inputs(count)
                 metadata = {}
-                program = build_successor_program(providers, design, oatof, **kwargs, build_metadata=metadata)
+                program = build_successor_program(providers, design, oatof, **kwargs, build_metadata=metadata, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))
                 self.assertEqual(metadata['rf_instance_order'], names)
                 self.assertEqual(program, build_successor_program(dict(reversed(list(providers.items()))),
-                    design, oatof, **kwargs))
+                    design, oatof, **kwargs, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig')))
                 geometry = kwargs['frontend_geometry']
                 for index, name in enumerate(names, 1):
                     ids = geometry['electrode_bindings'][name].values()
@@ -1006,7 +1008,7 @@ print('MULTIPLE_INDEPENDENT_RF_PROGRAM=PASS COUNT='..#drives)
                 elif mutation=='missing_pulse': row.pop('pulse_delta_pa_basename')
                 else: row.pop('rf_reference_voltage_v')
                 with self.assertRaises(ValueError):
-                    build_successor_program(providers, design, oatof, **actual)
+                    build_successor_program(providers, design, oatof, **actual, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))
 
     @unittest.skipUnless(LUA.is_file(),"plain Lua interpreter unavailable")
     def test_local_oatof_uses_real_two_field_callbacks_without_any_rod_drive(self):
@@ -1025,7 +1027,7 @@ print('MULTIPLE_INDEPENDENT_RF_PROGRAM=PASS COUNT='..#drives)
         self.flight["pulse"]=dict(mode="timed",time_us=43.,width_us=.5)
         self.dynamic["dynamic_roles"]=[dict(role="accelerator_main",instance_index=3,
             carrier_pa_basename="frontend.carrier_off.pa",pulse_delta_pa_basename="frontend.pulse_delta.pa")]
-        from integrations.runtime.build_single_flight_program import _resolve_standalone_dynamic_field_bank
+        from msplatform.backends.simion.tracking_program import _resolve_standalone_dynamic_field_bank
         # Existing three-field consumers must still fail closed on missing RF.
         with self.assertRaisesRegex(ValueError,"RF response"):
             _resolve_standalone_dynamic_field_bank(self.dynamic,{"accelerator_main":3})
@@ -1819,7 +1821,7 @@ print('NATIVE_FULL_PROGRAM=PASS')
     @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
     def test_actual_dynamic_glue_held_off_opens_only_rf_or_no_responses(self):
         # Synthetic PA vectors exercise emitted callbacks, not a numerical field.
-        from integrations.runtime.build_single_flight_program import (
+        from msplatform.backends.simion.tracking_program import (
             _resolve_standalone_dynamic_field_bank,_bind_standalone_dynamic_field_paths,_standalone_dynamic_field_lua)
         for count in (0,2,3):
             row=dict(role='accelerator_main',instance_index=3,carrier_pa_basename='carrier.pa')
@@ -1842,7 +1844,7 @@ local single_flight_rf_drives={}
 for i=1,3 do local k=i;single_flight_rf_drives[i]={differential_at=function() return k end} end
 local single_flight_pulse={is_active_at=function() error('held-off queried pulse response') end}
 ion_instance=3;ion_px_mm=0;ion_py_mm=0;ion_pz_mm=0
-''' + _standalone_dynamic_field_lua(specs) + f'''
+''' + _standalone_dynamic_field_lua(specs, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig')) + f'''
 single_flight_initialize_standalone_dynamic_fields()
 assert(opened=={count})
 ion_dvoltsx_gu=10;ion_dvoltsy_gu=0;ion_dvoltsz_gu=0
@@ -1875,15 +1877,50 @@ print('HELD_OFF_RESPONSE_FIXTURE=PASS')
                 initial_velocities_mm_per_us=[[float(r[f'velocity_{a}_m_s'])/1000 for a in 'xyz'] for r in rows],
                 standalone_dynamic_field_bank=bank,standalone_dynamic_field_paths=response_paths(bank,self.root),
                 downstream_static_fields=self.static,**self.sources)
-            program=build_successor_program({},design,oatof,**options)
+            program=build_successor_program({},design,oatof,**options, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))
             self.assertEqual([point['kind'] for point in design['working_points']],['carrier_off'])
             self.assertNotIn('frontend.pulse_delta.pa',program)
             self.assertIn('local handoff_pulse_mode=2',program)
             options['flight']={**flight,'pulse':{'mode':'timed','time_us':43.,'width_us':3.}}
             with self.assertRaisesRegex(ValueError,'armed native flight requires'):
-                build_successor_program({},design,oatof,**options)
+                build_successor_program({},design,oatof,**options, native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))
 
 
+
+
+class TrackingProgramImportBoundaryTests(unittest.TestCase):
+    def test_cold_canonical_renderer_requires_selected_module_and_helper(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "src"
+            shutil.copytree(ROOT / "src/msplatform", source / "msplatform")
+            helper = root / "native_run_path.lua"
+            helper.write_bytes(resource_path("native_run_path.lua").read_bytes())
+            code = """import sys, pathlib
+sys.path.insert(0, sys.argv[1])
+from msplatform.backends.simion import tracking_program as renderer
+assert pathlib.Path(renderer.__file__).is_relative_to(pathlib.Path(sys.argv[1]))
+assert not any(k.split('.')[0] in ('common','projects','integrations') for k in sys.modules)
+helper=pathlib.Path(sys.argv[2]).read_text(encoding='utf-8-sig')
+plain=renderer._standalone_dynamic_field_lua([], native_path_projection=False)
+projected=renderer._standalone_dynamic_field_lua([], native_path_source=helper)
+assert projected==renderer.project_program_paths(plain,helper)
+try:renderer._standalone_dynamic_field_lua([])
+except ValueError:pass
+else:raise AssertionError('missing explicit frozen helper accepted')
+"""
+            command = [sys.executable, "-I", "-B", "-c", code, str(source), str(helper)]
+            positive = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+            self.assertEqual(positive.returncode, 0, positive.stdout + positive.stderr)
+            helper.unlink()
+            missing_helper = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(missing_helper.returncode, 0)
+            self.assertIn("FileNotFoundError", missing_helper.stderr)
+            helper.write_bytes(resource_path("native_run_path.lua").read_bytes())
+            (source / "msplatform/backends/simion/tracking_program.py").unlink()
+            missing_module = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(missing_module.returncode, 0)
+            self.assertIn("ImportError", missing_module.stderr)
 
 if __name__ == "__main__":
     unittest.main()

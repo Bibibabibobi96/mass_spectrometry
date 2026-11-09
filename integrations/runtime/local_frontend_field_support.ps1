@@ -260,7 +260,7 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
 import json,sys
 from pathlib import Path
 from integrations.runtime.standalone_field_bank import resolve_mode_states,composition_terms,read_response_normalization
-from integrations.runtime.build_single_flight_program import STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,STANDALONE_DYNAMIC_FIELD_BANK_ROLE,STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION
+from msplatform.backends.simion.tracking_program import STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,STANDALONE_DYNAMIC_FIELD_BANK_ROLE,STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION
 p,selection,output,normalization_path=map(Path,sys.argv[1:5])
 f=json.loads((p/'frontend_contract.json').read_text());u=json.loads((p/'guide_contract.json').read_text())
 states=resolve_mode_states(u,f,f['pa_plus_solution_model'])

@@ -17,7 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
-from integrations.runtime.build_single_flight_program import (
+from msplatform.backends.simion.tracking_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,
     _resolve_standalone_dynamic_field_bank,
 )

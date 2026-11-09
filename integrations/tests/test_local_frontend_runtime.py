@@ -19,7 +19,7 @@ from common.contracts.file_identity import file_sha256
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
-from integrations.runtime.build_single_flight_program import (
+from msplatform.backends.simion.tracking_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_ROLE, STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )

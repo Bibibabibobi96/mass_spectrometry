@@ -16,7 +16,7 @@ from msplatform.backends.simion.pa_family_cache import (
     advance_pa_family_cache_transaction, canonical_pa_family_cache_key,
     load_pa_family_cache_transaction, validate_pa_family_cache_generation,
 )
-from integrations.runtime.build_single_flight_program import (
+from msplatform.backends.simion.tracking_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION, _resolve_standalone_dynamic_field_bank,
 )

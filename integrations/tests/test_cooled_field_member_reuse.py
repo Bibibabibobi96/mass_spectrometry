@@ -1,6 +1,8 @@
 """Small public-cache transactions; inert bytes never claim native solutions."""
 from __future__ import annotations
 
+from msplatform.execution.resources import resource_path
+
 import copy
 import json
 from pathlib import Path
@@ -13,7 +15,7 @@ from unittest.mock import patch
 from integrations.tests.test_cooled_frontend import cooled_request_fixture, REPO
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from integrations.workflows.cooled_frontend import runtime
-from integrations.runtime.build_single_flight_program import _standalone_dynamic_field_lua
+from msplatform.backends.simion.tracking_program import _standalone_dynamic_field_lua
 
 
 class CooledFieldMemberReuseTests(unittest.TestCase):
@@ -27,7 +29,7 @@ class CooledFieldMemberReuseTests(unittest.TestCase):
                 spec = dict(role="accelerator", instance_index=1, carrier_pa_basename="carrier.pa",
                     rf_differential_pa_paths=[], pulse_delta_pa_basename="pulse.pa",
                     pulse_delta_pa_path="pulse.pa", pulse_delta_scale=scale)
-                program = _standalone_dynamic_field_lua([spec]) + r'''
+                program = _standalone_dynamic_field_lua([spec], native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig')) + r'''
 local pa={nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1,symmetry='planar',potential_type='electric',path='carrier.pa'}
 function pa:field_vc() return 1,2,3 end
 local instance={pa=pa,filename='carrier.pa',wb_to_pa_coords=function() return 0,0,0 end}

@@ -1,6 +1,8 @@
 """Artifact-free unified real-electrode geometry and mode regressions."""
 from __future__ import annotations
 
+from msplatform.execution.resources import resource_path
+
 import copy
 import hashlib
 import json
@@ -20,7 +22,7 @@ from integrations.workflows.cooled_frontend.runtime import fields
 from integrations.workflows.cooled_frontend.program import build_program
 from msplatform.workflows.local_frontend import runtime as shared_runtime
 from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
-from integrations.runtime.build_single_flight_program import _standalone_dynamic_field_lua
+from msplatform.backends.simion.tracking_program import _standalone_dynamic_field_lua
 from integrations.tests.frontend_fixtures import canonical_frontend_fixture, canonical_three_zone_frontend_fixture
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_cooled_buncher import buncher_fixture, native_pose
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract
@@ -911,7 +913,7 @@ LUA=Path(shutil.which("lua") or r"C:\Program Files\SIMION-2020\lua.exe")
 class CooledCallbackTests(unittest.TestCase):
     def test_field_composition_collision_order_and_id_stream_reset(self):
         source=(REPO/"integrations/workflows/cooled_frontend/cooled_frontend.lua").read_text(encoding="utf-8").replace("adjustable ","")
-        harness=_standalone_dynamic_field_lua([])+r'''
+        harness=_standalone_dynamic_field_lua([], native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))+r'''
 local module_path=assert(arg[1])
 local public=assert(loadfile(arg[2]))()
 local edge_calls,step_order={},{}

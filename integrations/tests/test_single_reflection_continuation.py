@@ -162,7 +162,7 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             prepare_phase_continuation(self.preparation,current,self.run,'baseline')
 
     def test_bound_parent_projection_cannot_self_authenticate_physical_side_effect(self):
-        from integrations.runtime.build_single_flight_program import project_program_paths
+        from msplatform.backends.simion.tracking_program import project_program_paths
         current=self._current_workbench()
         parent=self._parent(current)
         workbench_path=parent/'results/single_reflection/workbench_preparation.json'
@@ -734,7 +734,7 @@ class SingleReflectionContinuationTests(unittest.TestCase):
                         case["iob_pa_guard_records"] = [*copy.deepcopy(parent_wb["pa_guard_records"]), *copy_guards]
                         # Relocate the frozen numerical controls, then forward-render
                         # the native Program using its actual bound transport source.
-                        from integrations.runtime.build_single_flight_program import project_program_paths
+                        from msplatform.backends.simion.tracking_program import project_program_paths
                         numerical = Path(case["outputs"]["numerical_program"]["path"])
                         text = numerical.read_text(encoding="utf-8")
                         for old, new in changes:

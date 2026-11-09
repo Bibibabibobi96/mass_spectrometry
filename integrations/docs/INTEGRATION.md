@@ -213,7 +213,7 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
 
 可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
-规格校验见[`validate_native_field_observation`](../runtime/build_single_flight_program.py)，
+规格校验见[`validate_native_field_observation`](../../src/msplatform/backends/simion/tracking_program.py)，
 实际冻结与批次选择见[`field_evidence._field_observation`](../../src/msplatform/workflows/single_reflection_flight/field_evidence.py)。
 省略时不插入观测；请求时只记录实际查询，不改变源、场控制或积分步。软件测试不代替真实Fly读数与GUI验收。
 
@@ -937,14 +937,14 @@ Modern Program-based local/cooled and paired-pulse preparation/runtime now use t
 ### Shared initial-state record reader
 
 The installed local frontend runtime reads its frozen initial-state CSV through
-`msplatform.backends.simion.source.load_initial_state`. The SFI Program wrapper
-has no separate reader body or re-export. The reader preserves row order,
+`msplatform.backends.simion.source.load_initial_state`. The retired SFI Program
+wrapper has no reader body or re-export. The reader preserves row order,
 explicit positive unique row IDs, each original instrument-time value and
 per-row velocity conversion from m/s to mm/us. It does not resample, reset
 births, reinterpret the mother-cohort row map, validate a producer or launch a
-process. Payload and exception semantics are unchanged. The root SFI Program
-wrapper still owns its remaining project path-default injection and is not
-retired by this reader extraction.
+process. Payload and exception semantics are unchanged. Program rendering now
+uses the canonical installed backend directly, with explicitly selected frozen
+native-path helper bytes; the obsolete root wrapper is retired.
 ### Installed single-reflection field planning
 
 `msplatform.workflows.single_reflection_flight.field_plan.build_field_plan(prepared, executable)`
@@ -1002,3 +1002,7 @@ physical/priority/interface negatives, private-bootstrap path/count/grid guards,
 success cleanup and public-owner failed partial preservation. Actual SIMION
 build/cold reopen/Fly for this successor remains pending; software tests do not
 grant propagation or scientific qualification.
+
+The retired Program wrapper has no active import compatibility entry. Scientific
+rendering uses `msplatform.backends.simion.tracking_program`; every projected
+Program receives its explicitly selected frozen native-path helper bytes.
