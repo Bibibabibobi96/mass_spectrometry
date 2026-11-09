@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from msplatform.backends.comsol.gas_flow import compiled_gas_flow_paths, resolve_gas_flow_request
 from msplatform.io.manifest_records import file_record
-from .test_gas_flow_contract import _write_fixture
+from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_gas_flow_contract import _write_fixture
 
 PROJECT = Path(__file__).resolve().parents[1]
 REPO = PROJECT.parents[1]
