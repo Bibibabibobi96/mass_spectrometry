@@ -210,6 +210,9 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
                                expected_kind="field_bundle")
         reuse_reference = reused.reference
         references.append({"manifest_record": reuse_reference["manifest"]})
+        if reused.metadata.get("field_representation") == "producer_owned_rf_fractional_family":
+            original = reused.metadata.get("family_producer_reference", reused.reference)
+            references.append({"manifest_record": original["manifest"]})
     graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference)
     result = run_managed_stage(context,
         descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),

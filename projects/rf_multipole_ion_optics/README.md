@@ -111,3 +111,10 @@ fixture／未知目录的owner发现沿公共目录；Core／Static内部集合�
 新运行的owner为`rf_multipole_ion_optics`，产物进入工作区
 `artifacts/projects/rf_multipole_ion_optics/`。旧run、manifest、源和资格保留原owner与字节身份，
 由[历史索引](docs/history/README.md)定位；旧结果不会因目录合并变成新项目已通过的证据。
+
+The same installed `solve_fields` now plans independent RF fields with explicit
+`numerics={"refine_policy":"vendor_default"}` or `{"refine_policy":"explicit_convergence",
+"convergence_v":{"<actual domain>":<positive volts>}}`. It keeps the actual fractional family at
+its producer and accepts `reuse_fields` only for the same spatial operator; no particle source,
+pulse, Fly or private copy of a published family is introduced. See the
+[field-stage boundary and validation](docs/PROJECT.md#independent-rf-fractional-fields).

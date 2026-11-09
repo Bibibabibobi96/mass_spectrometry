@@ -10,6 +10,7 @@ GEM_TEMPLATES = {
 }
 
 NATIVE_RESOURCES = frozenset({
+    "audit_rf_field_family.lua", "refine_rf_field_family.lua",
     "oatof_analyzer_component.lua",
     "model_drive.lua",
     "build_model_iob.lua",

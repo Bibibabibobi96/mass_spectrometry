@@ -435,6 +435,18 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
         raise AssertionError('installed RF model accepted a missing required surface witness')
 
     from msplatform.backends.simion.field_execution import plan_fields_execution
+    rf_field_plan = plan_fields_execution(rf_model, numerics=dict(refine_policy='vendor_default'))
+    assert rf_field_plan['expected_operation_ids'] == ['materialize_geometry','refine_multipole','audit_fields']
+    rf_field_query = query_capabilities(dict(schema_version=1, operation='solve_fields', arguments=dict(
+        model=rf_model, numerics=dict(refine_policy='vendor_default'))))
+    assert rf_field_query['contract_status'] == 'accepted' and rf_field_query['native_qualification'] == 'not_granted'
+    assert rf_field_query['validator'] == 'msplatform.backends.simion.field_execution.plan_fields_execution'
+    assert plan_fields_execution(rf_model, numerics=dict(refine_policy='explicit_convergence',
+        convergence_v={'multipole':.001}), reuse_fields_reference={})['expected_operation_ids'] == ['audit_fields']
+    from msplatform.backends.simion.resources import native_resource_path
+    import msplatform
+    for name in ['refine_rf_field_family.lua','audit_rf_field_family.lua']:
+        assert native_resource_path(name).is_file() and native_resource_path(name).is_relative_to(pathlib.Path(msplatform.__file__).parent)
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
     model_components = {name:actual_geometry.components_resolved[name] for name in selected}
     model_drive = project_resolved_drive(actual_geometry, model_components, pulse=study.drive['pulse'],

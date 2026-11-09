@@ -839,3 +839,52 @@ those are not the immutable published-cache protocol. Copying a published family
 This model-only slice neither changes that protocol nor retires the existing RF Program, field
 checkpoint, finite transport, interface or mass-filter workflows. No field/trajectory, GUI or
 scientific qualification is granted.
+
+
+## Independent RF fractional fields
+
+The public `solve_fields` planner/action has an RF-only branch using the same RunSession,
+capacity owner, process owner and FieldBundle publication as the existing TOF branch. New solves
+materialize only the published unsolved raw PA# and fractional companion, then Refine each actual
+RF numerical domain. The original group/native-ID mapping, geometry, anisotropic grid, physical
+metal/vacuum witnesses and exact bounded surface observations are retained. The native readback
+opens the actual PA0/response family without Refine, FastAdjust, save, source or Fly; it does not
+claim field convergence or trajectory qualification from a finite readback.
+
+Refinement is an explicit numerical selection: `refine_policy="vendor_default"` omits a
+convergence override and records the actual executable identity, preserving the existing project
+CLI's default Refine semantics. `refine_policy="explicit_convergence"` requires `convergence_v`
+for exactly the selected domains, with positive finite values. No new tolerance is chosen by the
+library. Both policies bind the actual vendor and refiner/auditor source bytes in spatial identity.
+Current model drive and clock stay in each product, while RF phase/frequency/source/analysis do not
+become spatial cache keys for the linear electrostatic basis.
+
+The representation is explicitly `producer_owned_rf_fractional_family`, not detached standalone
+cache responses. An explicit reused bundle must match the spatial identity and the complete exact
+same-stem PA#/PA0/PA-electrode/surface inventory. A reused bundle retains one reference to the
+original producer, not a search or producer chain. Both the selected bundle and original producer
+are passed to existing source protection; all original family files are passed as
+`immutable_input_records` to each native consumer. The existing process owner verifies frozen
+identity using write/delete-denying handles until confirmed process drain. No published family is
+copied or renamed. This does not reopen the closed standalone-cache/long-PA isolation boundary.
+
+Official references reviewed 2026-11-09: SIMION2020 installed `docs/simion.chm`,
+`command_line_interface.html` (Refine `--convergence`, `--resume`), `lua_simion.html::simion.command`
+(existing batch-command interface), and `lua_simion.pas.html` (`pas:open`, electric/grid metadata,
+`electrode_numbers`, `point`, `potentials_minmax`, `surface_info`, `close`). The headless Lua refiner
+uses that official batch interface, so the existing explicit synchronous-I/O prelude applies before
+Refine without changing the shared native-I/O contract. The cold audit compares the original
+fractional witness values exactly, including nil values; it neither scans a whole volume nor
+requires artificial fractional offsets from an aligned legal grid.
+
+Software validation passed 43 distinct parent tests / 118 parent-and-subtest outcomes in 130.592 s
+across the new RF suite and four unchanged original field/model modules. After adding actual cold
+report rows, the final RF suite passed 13 parents / 33 outcomes in 7.204 s; focused Ruff passed.
+AST comparison preserves the original TOF action/planner bodies after removal of only the new RF
+dispatch nodes, and all 143 original installed-probe assertions remain. Ordinary wheel and
+sdist-rebuilt-wheel acceptance passed five parents / 16 outcomes in 128.754 s, with both source
+trees blocked from the installed consumer. The first installation attempt failed because a new
+probe assertion lacked its explicit package import; that failed result remains preserved, and the
+fix changes no production semantics. No new SIMION field run has been executed. Tracking, safe native fractional-family reuse and scientific
+qualification remain pending actual evidence; the existing finite/interface/mass-filter project
+workflows and checkpoint consumers are retained.
