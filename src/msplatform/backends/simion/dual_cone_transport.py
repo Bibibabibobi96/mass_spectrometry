@@ -144,7 +144,8 @@ def _render_run_config(
             f"  second_cone_v={science['electric_field']['static_electrodes_v']['second_cone']:.15g},",
             f"  downstream_aperture_plate_v={science['electric_field']['static_electrodes_v']['downstream_aperture_plate']:.15g},",
             f"  rf_steps_per_period={int(trajectory['rf_steps_per_period'])},",
-            f"  maximum_time_us={trajectory['maximum_time_us']:.15g},",
+            f"  maximum_time_us={trajectory['maximum_time_us']:.15g},"
+            f"  maximum_step_us={trajectory['maximum_step_us']:.15g},",
             # Stop one half PA cell before the physical end so SDS does not
             # evaluate the gas field beyond its declared domain on the terminal step.
             f"  downstream_workbench_z_mm={terminal_workbench_z:.15g},",
@@ -254,14 +255,15 @@ def prepare_transport(
     gas_science = _load(gas_science_path, "dual_cone_axisymmetric_gas_flow_science_contract")
     if science.get("trajectory_authority") != "simion":
         raise ValueError("SIMION must remain the trajectory authority")
-    interval = numerics["trajectory"].get("sample_interval_us")
-    if (
-        isinstance(interval, bool)
-        or not isinstance(interval, (int, float))
-        or not math.isfinite(interval)
-        or interval <= 0
-    ):
-        raise ValueError("SIMION trajectory sample_interval_us must be explicit, positive and finite")
+    for name in ("sample_interval_us", "maximum_step_us"):
+        value = numerics["trajectory"].get(name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ValueError("SIMION trajectory " + name + " must be explicit, positive and finite")
 
     from msplatform.backends.simion.resources import native_resource_path
 

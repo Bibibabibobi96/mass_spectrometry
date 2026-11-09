@@ -56,10 +56,15 @@ function segment.fast_adjust()
 end
 
 function segment.tstep_adjust()
-  ion_time_step = math.min(ion_time_step, stage_1.timestep_cap_us, stage_2.timestep_cap_us)
+  ion_time_step = math.min(ion_time_step, stage_1.timestep_cap_us, stage_2.timestep_cap_us,
+    config.maximum_step_us)
 end
 
 function segment.initialize_run()
+  -- Official SIMION callback coverage includes particles outside PA volumes.
+  -- No efield_adjust/mfield_adjust is supplied: this defines no external field.
+  sim_segment_global = 1
+  print('DUAL_CONE_CALLBACK_COVERAGE=GLOBAL ENABLED=' .. tostring(sim_segment_global))
   seed(config.random_seed)
   trajectory_stream = assert(io.open(config.trajectory_csv, 'w'))
   final_stream = assert(io.open(config.final_state_csv, 'w'))

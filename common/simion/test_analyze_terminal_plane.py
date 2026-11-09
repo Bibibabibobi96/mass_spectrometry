@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.simion.analyze_terminal_plane import analyze_terminal_plane
+from msplatform.analysis.terminal_plane import analyze_terminal_plane
 
 
 HEADER = "ion_number,time_us,x_mm,y_mm,z_mm,vx_mm_per_us,vy_mm_per_us,vz_mm_per_us,splat\n"

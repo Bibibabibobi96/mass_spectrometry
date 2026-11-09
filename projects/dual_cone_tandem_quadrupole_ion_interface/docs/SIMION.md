@@ -68,3 +68,27 @@ COMSOL CSV 先由 `msplatform.components.dual_cone_tandem_quadrupole_ion_interfa
 [原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。
 
 [返回项目状态](PROJECT.md)
+
+
+## Fresh managed transport implementation
+
+The public scientific entry is
+`msplatform.workflows.dual_cone_transport.run_gas_assisted_transport`. It takes
+explicit resolved geometry, SIMION numerics, ion transport science, gas interface,
+gas science and source-spec paths, a published gas-field reference, the official
+five-file SDS directory, and the existing deployment ExecutionContext. The explicit
+engineering stage policy must define `dual_cone_transport`; no RF or gas-solve
+budget is silently inherited.
+
+This entry composes fresh geometry build, Refine, field audit, IOB build/reopen and
+Fly under one RunSession. Tracking cannot trigger a hidden Refine. The public result
+is an existing manifest-bound `trajectory_result`; final CSV and metrics can be
+read through its explicit data members, or analyzed by
+`msplatform.analysis.terminal_plane.analyze_terminal_plane` with the declared full
+source count and axis. The family is unpublished until writer closure; there is no
+published-family copy or cache-open path.
+
+Software wiring and native qualification are separate. Native execution of this
+new path is pending its reviewed request and budget; independent stage publication,
+saved-field reuse, GUI and scientific qualification remain OPEN. See PROJECT for
+the numerical-cap correction and preserved historical results.

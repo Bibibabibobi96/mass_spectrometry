@@ -10,3 +10,5 @@ for _,row in ipairs(spec.instances) do row.path=native_path(row.path) end
 for _,row in ipairs(spec.response_fields) do row.path=native_path(row.path) end
 assert(loadfile(directory..'/iob_core.lua'))()(spec,mode,native_path)
 if spec.role=='independent_rf_tracking_iob' then print(mode=='build' and 'INDEPENDENT_RF_TRACKING_IOB=PASS' or 'INDEPENDENT_RF_TRACKING_IOB_REOPEN=PASS') end
+
+if spec.role=='dual_cone_tracking_iob' then print(mode=='build' and 'DUAL_CONE_TRACKING_IOB=PASS' or 'DUAL_CONE_TRACKING_IOB_REOPEN=PASS') end

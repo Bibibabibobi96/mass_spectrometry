@@ -63,7 +63,7 @@ def _aperture_plate_electrode(plate: dict[str, Any], electrode_id: int) -> str:
     ])
 
 
-def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
+def geometry_grid(resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[str, Any]:
     if resolved.get("role") != "dual_cone_tandem_quadrupole_resolved_geometry":
         raise ValueError("resolved geometry role differs")
     if numerics.get("role") != "dual_cone_simion_solver_numerics":
@@ -88,13 +88,29 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
         raise ValueError("SIMION transverse offsets must center the governed PA span")
     if not math.isclose(offset_z, -z_min):
         raise ValueError("SIMION axial offset must place the governed upstream plane at zero")
+    extents = (transverse_span, transverse_span, observation_end - z_min)
+    sizes = [extent / mmgu + 1 for extent in extents]
+    if any(not math.isfinite(value) or value < 3 or not value.is_integer() for value in sizes):
+        raise ValueError("SIMION domain extents must define an integer grid of at least three nodes")
+    return {"nx": int(sizes[0]), "ny": int(sizes[1]), "nz": int(sizes[2]),
+            "dx_mm": mmgu, "dy_mm": mmgu, "dz_mm": mmgu}
+
+
+def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
+    grid = geometry_grid(resolved, numerics)
+    mmgu = grid["dx_mm"]
+    transverse_span = (grid["nx"] - 1) * mmgu
+    axial_span = (grid["nz"] - 1) * mmgu
+    geometry = resolved["geometry_mm"]
+    radius = float(geometry["low_pressure_enclosure"]["radius_mm"])
+    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
     lines = [
         "; Generated from config/resolved_geometry.json; do not edit.",
         "; Device-to-array map is governed by config/simion_solver_numerics.json.",
         "; C0 limitation: stage-1 upstream faces are flat at the minimum resolved z.",
         "; The cone-following cut remains blocked pending a governed project CSG mask.",
         f"# local mmgu = {_number(mmgu)}",
-        f"pa_define($(51/mmgu+1),$(51/mmgu+1),$({_number(observation_end - z_min)}/mmgu+1),"
+        f"pa_define($({_number(transverse_span)}/mmgu+1),$({_number(transverse_span)}/mmgu+1),$({_number(axial_span)}/mmgu+1),"
         "planar,non-mirror,electric,,$(mmgu),surface=fractional)",
         "",
         f"locate({_number(offset_x)},{_number(offset_y)},{_number(offset_z)}) {{",

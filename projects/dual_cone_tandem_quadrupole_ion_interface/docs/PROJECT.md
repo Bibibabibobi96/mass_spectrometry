@@ -62,6 +62,85 @@ full wheel/sdist suite belongs to the preceding source epoch; it was not rerun f
 this one-call classification repair.
 
 
+## Fresh SIMION transport restoration under software validation
+
+The new fresh workflow composes explicit geometry build, Refine, fractional
+family readback, source-bearing IOB build/reopen and Fly through one existing
+RunSession. Its native family remains unpublished in that producer run until all
+writers close. It neither consumes a copied published family nor introduces a
+second cache/owner. Independent PreparedModel/fields/source operations and saved
+field reuse remain REQUIRED OPEN P4 work. No new native execution or qualification
+has yet been performed for this implementation.
+
+Pure regression reproduced two existing parameter defects: GEM emitted a fixed
+51 mm transverse span despite a legal changed enclosure radius, and the Program
+ignored the declared trajectory.maximum_step_us. The sole geometry compiler now
+derives GEM and audit grid from the same request; the current default GEM bytes
+are unchanged. The Program consumes the explicit maximum step and caps it together
+with the existing RF bound. Historical native inputs/results are unchanged and
+must not be described as having applied this previously omitted cap.
+
+The existing RF-named Refine/audit Lua resources are shared native family utilities
+in this slice; their retained markers do not assign RF component or product
+identity to dual-cone geometry. Their neutral naming is deferred until the pending
+RF integration permits one coordinated change, without rewriting historical receipts.
+
+Official method review (2026-11-09): SIMION2020 docs/simion.chm simion.pas API;
+[online abridged API](https://simion.com/info/lua_simion.pas.html) documents integer
+point iteration. The existing generic raw builder uses actual native electrode
+IDs and node witnesses, then its original surface_info witness algorithm; it does
+not duplicate cone CSG or adjust the grid when a thin feature lacks a witness.
+The optional scan reports visited nodes and CPU seconds; native scan cost remains
+unmeasured pending the separately reviewed execution budget. Native mesh accuracy,
+GUI, collision qualification and Formal status remain ungranted.
+
+### Declared frame scope of the native adapter
+
+The current monolithic PA uses one identity-rotation, unit-scale workbench instance.
+The device-to-workbench translation remains the explicit numerical contract (the
+current case is 25.5, 25.5, 2 mm). Source positions add that translation; source
+velocities convert m/s to mm/us and birth seconds to microseconds. Gas queries
+subtract the same translation, while gas velocity axes remain unchanged in m/s.
+Actual Program/source projection tests retain the complete 100-particle mother
+and check these transformations and gas Pa/Torr/K units.
+
+The canonical IOB role rejects a nonidentity instance pose or scale before native
+workbench loading. Arbitrary translated/rotated placements require an explicit
+inverse gas-frame transform and velocity rotation, plus source/birth projection
+validation; they remain OPEN P11 work. RF near-gimbal evidence does not qualify
+the gas/SDS adapter. No science, grid or current source request was changed.
+
+### Independent stage projections: implementation versus availability
+
+`dual_cone_stages` now validates stage-specific scientific projections. Geometry
+requires only resolved geometry and PA/workbench numerics; the driven unsolved
+model adds explicit electric drive, clock and existing external-linear physics.
+Neither stage requires gas, SDS, source, trajectory settings or a one-particle
+smoke fallback. The seven native drive rows use the existing source-free
+`model_drive.lua`/`rf_drive.lua` consumer. Pure Lua readback is not native IOB proof.
+
+The field identity binds actual geometry/raw/surface/witness records, all seven
+IDs, boundary physics, refinement and tool/refiner/auditor identities. Gas, source,
+observation and RF drive values do not contaminate this spatial basis. Changing
+drive creates a new model while an explicitly selected compatible basis can be
+reused. Saved-field tracking plans contain only IOB build/reopen and Fly; collision
+mass, diameter, diffusion, source and official SDS identities remain explicit.
+
+| Boundary | Current evidence | Still required for availability |
+|---|---|---|
+| Geometry/model alone | Gas/source-free projections; existing seven-group Lua consumer | Native zero-source IOB roles and independently managed save/reopen publication |
+| Fields alone | Pure solve/reuse graph, operator identity and exact product-closure validation | Guarded unsolved-geometry transport, native Refine/readback and independent field publication |
+| Saved-field Fly | Graph excludes build-geometry/Refine; original producer/closed writer checks | Protected original-family native qualification, explicit gas/source preparation and clock projection, managed Fly-only publication |
+
+The current fresh full workflow is not these independent public stages. Projection
+plans report `not_executed`. Canonical dual-cone IOB roles are implemented and
+inertly checked, but their native validation and managed independent-stage publication
+remain pending; no native receipt is
+manufactured. P10/P12 remain OPEN P4 requirements. Product readers use existing
+manifest-bound kinds and require the relevant native files, clock records and
+known successful writer receipts; no second result manager, owner or registry was
+added. Inert owner-graph fixtures validate dependency enforcement only.
+
 ## Installed gas-flow ownership migration
 
 The existing axisymmetric gas builder/task now reside in the installed COMSOL MATLAB directory and
@@ -290,3 +369,44 @@ published data products with component/backend/execution imports and MPH access
 forbidden. That read proves current data interpretation; it does not relabel the
 365-payload native source as the later package epoch. Gas-assisted ion Fly, GUI,
 scientific qualification and complete P4 software/performance acceptance remain open.
+
+The fresh workflow binds its audited eleven family/witness identities through IOB
+creation, closed reopen and Fly. Original prepared source/configuration, gas-runtime,
+RF-kernel and five SDS records are verified before binding; copied Program/FLY2
+identities are fixed before IOB creation, verified after that writable save boundary,
+and guarded with the newly created IOB for reopen and Fly. This corrects a static
+Fly guard omission; it is not evidence of an earlier physical-result defect. Real
+inert process regressions deny basis/control write and delete attempts and reject
+a changed original identity before payload launch; unknown-writer protection retains
+its existing generic regression. No dual-cone vendor Fly has run in this epoch.
+
+The fresh operation accepts only the existing engineering runtime field
+`simion_allow_asynchronous_io` (explicit boolean). Its selected value reaches all
+six native operations, including Fly, through the canonical verified native-I/O
+prelude; omitted mode keeps vendor-default behavior. A native request on this
+Windows host selects false explicitly. Inert public-owner checks cover false, true,
+omitted and malformed selections; no new native result is inferred from them.
+
+The first installed fresh native attempt stopped at raw namespace validation,
+before Refine or Fly. GEM compilation and PA save succeeded. A read-only scan
+using installed official PA.py found exactly all seven declared raw metal labels
+(1, 2, 3, 11, 12, 21, 22); the original PA hash remained unchanged. The failure
+was the builder's use of fast-adjustable electrode metadata on raw PA#. The
+successor validates every raw metal point against the declared set and captures
+its first physical witness, with missing and late extra labels rejected. It keeps
+the same geometry, grid, source, surface validation and no-witness default branch.
+This correction has software regressions; it is not a successful native rerun.
+
+The corrected raw-checker native epoch completed geometry build, Refine and
+fractional-family audit, then stopped at IOB creation. Its caller had serialized
+a canonical bootstrap path while the canonical writer projected the seed into
+the process-local execution alias; the strict seed-local invariant correctly
+rejected that mismatch. The caller now declares canonical file roles but supplies
+owned bootstrap and Fly IOB/FLY2 execution spellings consistently. Core assertions,
+seed data, original PA family and scientific inputs are unchanged. A regression
+feeds the actual public action's materialized spec and the actual native path
+projector through canonical Lua build/reopen, with missing/wrong bootstrap controls
+rejected before native writes. This is software proof; no subsequent native Fly
+or transport qualification is implied by the correction.
+
+Callback completeness: the installed Program now explicitly enables official SIMION global callbacks, retaining outside-PA terminal states as unknown code 0 and existing SDS support-loss code 3 with per-particle deduplication. The actual-Lua dispatcher regression reproduces missing coverage before the fix and complete terminal census after it. SDS8.1.2.7 excludes instance 0 from collision acceleration/diffusion; no external electric/magnetic field is supplied. This software proof is not native Fly qualification; the two earlier native failures remain unchanged.

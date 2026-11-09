@@ -54,17 +54,17 @@ Python／PowerShell合成夹具及外层default-vs-false诊断不被自动改写
 | 并发、资源画像及中断续算 | [调度与恢复](#调度与恢复) |
 | 查旧 Fly 入口审计 | [只读历史入口](PRODUCTION_FLY_AUDIT.md) |
 
-## 既有终态CSV诊断
+## Terminal-state CSV analysis
 
-[`analyze_terminal_plane.py`](analyze_terminal_plane.py)保留为独立的既有终态CSV分析工具：显式给出
-完整source count、pass code和横向轴心，输出终态分类、传输子表与等权空间统计。它不重建轨迹或穿面，
-也不从文件存在授予物理传输资格。直接Python消费者目前只有相邻测试；输入格式仍由双锥接口保留的
-`gas_assisted_transport.lua`输出，但该项目的原生运行入口已经退役，不能称为活动生产链调用。
+The sole implementation and explicit CLI are
+[`msplatform.analysis.terminal_plane`](../../src/msplatform/analysis/terminal_plane.py).
+It retains the original complete-source census, terminal code counts, transmitted
+subset and equal-weight spatial statistics. Code 0 remains an unclassified native
+terminal; this reader does not recreate trajectories or grant transport qualification.
+The former root implementation is retired and its original tests use this owner.
 
-正确工作区保有双锥20260914两份N100运行的真实终态输入与metrics，其小记录身份已核验；
-这些run未绑定分析器源码，尚不能独立重放run-local代码闭包，因此不按“仅测试import”删除该CLI。
-保留范围只限这个既有CSV合同；退出条件是所属项目的历史输入／冻结分析可独立重放，或当前受管分析
-完成同输入等价替代，随后一起移除CLI及专用测试。新器件不复制这套统计，仍从公共canonical诊断边界接入。
+Historical dual-cone terminal CSVs remain interpretable without changing their
+original manifests or claiming a frozen run-local analyzer closure that was absent.
 
 ## 几何与 Workbench
 

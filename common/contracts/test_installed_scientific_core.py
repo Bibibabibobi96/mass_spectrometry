@@ -170,6 +170,26 @@ configs=[(output/'solver/simion/run_config.lua').read_text().replace(str(output)
 assert configs[0].replace('trajectory_sample_interval_us=1,','trajectory_sample_interval_us=2,')==configs[1]
 for name in ('dual_cone_tandem.gem','c0_smoke.fly2','source_states.lua','gas_assisted_transport.lua','simion_rf_drive.lua'):
     assert (cone_outputs[0]/'solver/simion'/name).read_bytes()==(cone_outputs[1]/'solver/simion'/name).read_bytes()
+# Explicit installed projections; these are not completed native stages.
+from msplatform.backends.simion import dual_cone_stages as dual_stage_api
+from msplatform.workflows import dual_cone_transport as dual_stage_workflow
+from msplatform.backends.simion.model import RF_PHYSICS as dual_stage_physics
+from importlib.resources import files as dual_stage_files
+assert pathlib.Path(dual_stage_api.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+assert pathlib.Path(dual_stage_workflow.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+dual_stage_numbers={key:copy.deepcopy(cone['numerics'][key]) for key in ('schema_version','role','pa','workbench')}
+dual_stage_numbers['pa'].pop('refine_policy')
+dual_stage_geometry=dual_stage_api.plan_geometry_stage(resolved=cone['resolved'],numerics=dual_stage_numbers)
+assert dual_stage_geometry['sampled_particles']==0 and dual_stage_geometry['refine_calls']==0
+assert dual_stage_geometry['fly_calls']==0 and dual_stage_geometry['native_status']=='not_executed'
+dual_stage_authority=json.loads(dual_stage_files('msplatform.examples').joinpath('instrument_clock_authority_v1.json').read_text())
+dual_stage_clock=dict(clock_epoch_id=dual_stage_authority['clock_epoch_id'],authority_sha256=dual_stage_authority['authority']['sha256'],phase_reference_instrument_time_us=0)
+dual_stage_model=dual_stage_api.plan_model_stage(dual_stage_geometry['projection'],electric_field=cone['ion_transport_science']['electric_field'],clock=dual_stage_clock,physics=dual_stage_physics)
+assert dual_stage_model['sampled_particles']==0 and dual_stage_model['refine_calls']==0
+assert len(dual_stage_model['projection']['native_drive_rows'])==7
+assert dual_stage_model['projection']['source_status']=='not_requested'
+assert 'simion_model_drive' in dual_stage_api.render_model_stage_configuration(dual_stage_model['projection'])
+assert callable(dual_stage_workflow.run_gas_assisted_transport)
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field
 assert callable(corridor_field.compile_request)

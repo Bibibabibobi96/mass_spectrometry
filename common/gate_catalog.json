@@ -735,6 +735,38 @@
         {
           "exact": "src/msplatform/contracts/test_report_cloc_delta.py",
           "reason": "cloc_contract_tests_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_transport_execution.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_transport.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_geometry.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/dual_cone_transport.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/terminal_plane.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/build_frontend_geometry.lua",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/dual_cone_gas_assisted_transport.lua",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_stages.py",
+          "reason": "dual_cone_independent_stage_projection_changed"
         }
       ],
       "command": {
@@ -1147,6 +1179,70 @@
               "common/contracts/test_trajectory_analysis.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/dual_cone_transport_execution.py",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/dual_cone_transport.py",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/dual_cone_geometry.py",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/dual_cone_transport.py",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/analysis/terminal_plane.py",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/build_frontend_geometry.lua",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/dual_cone_gas_assisted_transport.lua",
+                "reason": "dual_cone_transport_operation_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/refine_rf_field_family.lua",
+                "reason": "dual_cone_native_operation_dependency_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/audit_rf_field_family.lua",
+                "reason": "dual_cone_native_operation_dependency_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/iob_core.lua",
+                "reason": "dual_cone_native_operation_dependency_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/build_tracking_iob.lua",
+                "reason": "dual_cone_native_operation_dependency_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/dual_cone_stages.py",
+                "reason": "dual_cone_independent_stage_projection_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/build_model_iob.lua",
+                "reason": "dual_cone_source_free_model_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_dual_cone_transport_execution.py",
+              "common/contracts/test_dual_cone_transport.py",
+              "common/contracts/test_dual_cone_stages.py",
+              "common/contracts/test_dual_cone_iob.py",
+              "common/contracts/test_dual_cone_native_guards.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"
@@ -1264,6 +1360,10 @@
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/terminal_plane.py",
+          "reason": "canonical_terminal_analysis_changed"
         }
       ],
       "command": {
@@ -1324,6 +1424,18 @@
             ],
             "modules": [
               "common/simion/test_managed_process_completion.py"
+            ],
+            "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/terminal_plane.py",
+                "reason": "canonical_terminal_analysis_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_analyze_terminal_plane.py"
             ],
             "dependency_profile": "stdlib"
           }
@@ -3081,6 +3193,50 @@
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
           "reason": "shared_simion_rf_drive_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_transport_execution.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_geometry.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/dual_cone_transport.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/terminal_plane.py",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/build_frontend_geometry.lua",
+          "reason": "dual_cone_transport_operation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/refine_rf_field_family.lua",
+          "reason": "dual_cone_native_operation_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/audit_rf_field_family.lua",
+          "reason": "dual_cone_native_operation_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/iob_core.lua",
+          "reason": "dual_cone_native_operation_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/build_tracking_iob.lua",
+          "reason": "dual_cone_native_operation_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/dual_cone_stages.py",
+          "reason": "dual_cone_independent_stage_projection_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/build_model_iob.lua",
+          "reason": "dual_cone_source_free_model_consumer_changed"
         }
       ],
       "command": {

@@ -738,6 +738,21 @@ foreach($scope in @('Owner','Repository')){
             self.assertEqual(len(selected), len(cases))
             return selected
 
+    def test_dual_cone_operation_and_terminal_analysis_select_actual_consumers(self) -> None:
+        paths = ["src/msplatform/backends/simion/dual_cone_stages.py",
+                 "src/msplatform/workflows/dual_cone_transport.py",
+                 "src/msplatform/backends/simion/dual_cone_transport_execution.py",
+                 "src/msplatform/backends/simion/dual_cone_geometry.py",
+                 "src/msplatform/analysis/terminal_plane.py"]
+        cases = [dict(stage="common_contracts", paths=[path]) for path in paths]
+        cases.append(dict(stage="simion_common", paths=[paths[-1]]))
+        selected = self.selections(REPO_ROOT, cases)
+        for result in selected[:-1]:
+            self.assertIn("common/contracts/test_dual_cone_transport_execution.py", result["Modules"])
+            self.assertIn("common/contracts/test_dual_cone_transport.py", result["Modules"])
+            self.assertIn("common/contracts/test_dual_cone_stages.py", result["Modules"])
+        self.assertEqual(selected[-1]["Modules"], ["common/simion/test_analyze_terminal_plane.py"])
+
     def test_unmapped_simion_source_preserves_native_exclusions(self) -> None:
         paths = ["src/msplatform/execution/recovery.py",
                  "src/msplatform/backends/simion/gem_primitives.py",
