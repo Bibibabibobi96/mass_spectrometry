@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
-from projects.orthogonal_accelerator.analysis.component_focus_simion_source import materialize
+from msplatform.backends.simion.oa_focus_source import materialize
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import analyze
 from common.contracts.write_run_manifest import build_run_manifest
 
@@ -34,7 +34,7 @@ foreach($name in @('Invoke-FocusFrozenPython','Initialize-FocusFrozenPython')){
 $modules=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'},$true)|ForEach-Object{
  $elements=@($_.CommandElements);for($i=0;$i-lt$elements.Count-1;$i++){if($elements[$i].Extent.Text-eq'-Module'){$elements[$i+1].Extent.Text}}
 })
-if(($modules-join',')-ne'msplatform.ion_release.cylinder,projects.orthogonal_accelerator.analysis.component_focus_simion_source,projects.orthogonal_accelerator.analysis.component_focus_analysis'){throw 'Actual leaf scientific invocations differ'}
+if(($modules-join',')-ne'msplatform.ion_release.cylinder,msplatform.backends.simion.oa_focus_source,projects.orthogonal_accelerator.analysis.component_focus_analysis'){throw 'Actual leaf scientific invocations differ'}
 New-Item -ItemType Directory -Path (Join-Path $Root inputs),(Join-Path $Root results),(Join-Path $Root simion) -Force|Out-Null
 $dataFiles=Get-Content $Data -Raw|ConvertFrom-Json -AsHashtable
 foreach($pair in $dataFiles.GetEnumerator()){Copy-VerifiedRunInput $pair.Value (Join-Path $Root ('inputs/'+$pair.Key))|Out-Null}
@@ -52,7 +52,7 @@ try{
  if(-not[object]::ReferenceEquals($OutputEncoding,$savedEncoding)){throw 'Package enumeration changed caller OutputEncoding'}
  if($Mode-eq'failure'){
   $cases=@()
-  foreach($relative in @('projects/orthogonal_accelerator/config/component_contract.json','projects/orthogonal_accelerator/analysis/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py')){
+  foreach($relative in @('projects/orthogonal_accelerator/config/component_contract.json','projects/orthogonal_accelerator/analysis/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
    $path=Join-Path $context.code_root $relative;$bytes=[IO.File]::ReadAllBytes($path);Remove-Item -LiteralPath $path
    try{
     $vendorCalls=0
@@ -67,7 +67,7 @@ try{
   $receipt=Join-Path $Root 'inputs/release_receipt.json';$release=Join-Path $Root 'inputs/release.csv'
   Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.ion_release.cylinder -Arguments @('--materialize',(Join-Path $Root 'inputs/release_spec.json'),'--state-table',$release,'--receipt',$receipt)
   if($LASTEXITCODE-ne0){throw 'Frozen release failed'}
-  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module projects.orthogonal_accelerator.analysis.component_focus_simion_source -Arguments @('--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--provider-plan',(Join-Path $Root 'inputs/component_focus_pa_plan.json'),'--resolved-projection',(Join-Path $Root 'inputs/resolved_projection.json'),'--fly2',(Join-Path $Root 'simion/source.fly2'),'--source-states',(Join-Path $Root 'simion/source.lua'),'--receipt',(Join-Path $Root 'results/source_projection.json'))
+  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.backends.simion.oa_focus_source -Arguments @('--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--provider-plan',(Join-Path $Root 'inputs/component_focus_pa_plan.json'),'--resolved-projection',(Join-Path $Root 'inputs/resolved_projection.json'),'--fly2',(Join-Path $Root 'simion/source.fly2'),'--source-states',(Join-Path $Root 'simion/source.lua'),'--receipt',(Join-Path $Root 'results/source_projection.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen projection failed'}
   Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module projects.orthogonal_accelerator.analysis.component_focus_analysis -Arguments @('--events',(Join-Path $Root 'inputs/events.csv'),'--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--output',(Join-Path $Root 'results/analysis.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen scientific analysis failed'}
@@ -151,7 +151,7 @@ class FocusFrozenPythonTests(unittest.TestCase):
             self.assertFalse(any(path.name.startswith("test_") for path in copied))
             origins = json.loads((run / "results/python_execution.json").read_text(encoding="utf-8"))
             self.assertEqual([row["module"] for row in origins], ["preflight", "msplatform.ion_release.cylinder",
-                "projects.orthogonal_accelerator.analysis.component_focus_simion_source",
+                "msplatform.backends.simion.oa_focus_source",
                 "projects.orthogonal_accelerator.analysis.component_focus_analysis"])
             self.assertTrue(all(Path(path).is_relative_to(code) for row in origins for path in row["module_paths"].values()))
             self.assertTrue(all(Path(row["geometry_contract_path"]).is_relative_to(code) for row in origins))
@@ -160,5 +160,5 @@ class FocusFrozenPythonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run, _, _ = self.invoke(Path(directory), "failure")
             cases = json.loads((run / "results/failure_cases.json").read_text(encoding="utf-8-sig"))
-            self.assertEqual(len(cases), 3)
+            self.assertEqual(len(cases), 4)
             self.assertTrue(all(row["exit_code"] != 0 and row["vendor_calls"] == 0 for row in cases))

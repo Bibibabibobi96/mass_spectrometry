@@ -86,7 +86,7 @@
     "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
     "analysis/two_zone_geometry.py",
     "analysis/component_focus_analysis.py",
-    "analysis/component_focus_simion_source.py",
+    "src/msplatform/backends/simion/oa_focus_source.py",
     "simion/component_focus.lua",
     "simion/build_component_focus_iob.lua",
     "simion/run_component_focus_flight.ps1",

@@ -3,7 +3,7 @@ import tempfile, unittest
 from pathlib import Path
 import json
 from msplatform.ion_release.release import generate_release_states, materialize_release
-from projects.orthogonal_accelerator.analysis.component_focus_simion_source import materialize
+from msplatform.backends.simion.oa_focus_source import materialize
 
 
 def write_provider_plan(root: Path, local_exit_z_mm: float = 6.0) -> Path:
@@ -11,6 +11,9 @@ def write_provider_plan(root: Path, local_exit_z_mm: float = 6.0) -> Path:
 
 class SimionSourceTests(unittest.TestCase):
  def test_complete_projection_preserves_release_units_ids_and_bound_identities(self):
+  import importlib.util
+  self.assertEqual(materialize.__module__, 'msplatform.backends.simion.oa_focus_source')
+  self.assertIsNone(importlib.util.find_spec('projects.orthogonal_accelerator.analysis.component_focus_simion_source'))
   self.assertEqual(materialize.__globals__['validate_materialized_release'].__module__, 'msplatform.ion_release.release')
   self.assertEqual(materialize.__globals__['kinetic_energy_ev'].__module__, 'msplatform.contracts.particle_physics')
   self.assertEqual(materialize.__globals__['file_sha256'].__module__, 'msplatform.io.file_identity')
@@ -99,7 +102,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $source=Join-Path $Repo 'projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
 $calls=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'-and
- @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'projects.orthogonal_accelerator.analysis.component_focus_simion_source'}).Count},$true))
+ @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'msplatform.backends.simion.oa_focus_source'}).Count},$true))
 if($calls.Count-ne1){throw 'Expected one actual frozen source call'}
 $inputs=$Root;$releaseReceipt=Join-Path $Root 'release_receipt.json';$runCampaign=Join-Path $Root 'campaign.json'
 $projectionPath=Join-Path $Root 'resolved projection.json';$fly=Join-Path $Root 'component_focus_input.fly2'
@@ -114,7 +117,7 @@ Invoke-Expression $calls[0].Extent.Text
    selected=subprocess.run([shutil.which('pwsh'),'-NoProfile','-File',str(harness),str(repo),str(root),sys.executable],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
    self.assertEqual(selected.returncode,0,selected.stdout+selected.stderr)
    call=json.loads(selected.stdout)
-   self.assertEqual(call['module'],'projects.orthogonal_accelerator.analysis.component_focus_simion_source')
+   self.assertEqual(call['module'],'msplatform.backends.simion.oa_focus_source')
    self.assertEqual(call['arguments'],['--release-receipt',str(receipt),'--campaign',str(campaign_path),'--provider-plan',str(root/'component_focus_pa_plan.json'),'--resolved-projection',str(projection),'--fly2',str(fly),'--source-states',str(source_states),'--receipt',str(root/'projection_receipt.json')])
    self.assertEqual(call['code_root'],str(root/'frozen code'))
    actual=subprocess.run([sys.executable,'-m',call['module'],*call['arguments']],cwd=repo,capture_output=True,text=True,encoding='utf-8',timeout=30)

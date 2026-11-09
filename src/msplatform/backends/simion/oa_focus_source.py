@@ -1,4 +1,8 @@
-"""Project-owned projection of common release states into one focus IOB."""
+"""Legacy closed two-zone OA source projection into its explicit focus PA frame.
+
+This file adapter preserves contiguous release IDs and exit-z translation;
+it is separate from the general platform source/handoff coordinate API.
+"""
 from __future__ import annotations
 
 import argparse

@@ -101,7 +101,7 @@ resolved或三区领域文档，以稳定角色和环序号发布科学组；mem
 
 ### 组件工作流与验收
 
-`analysis/component_focus_simion_source.py` 直接调用 `msplatform.ion_release` 的释放校验、
+`msplatform.backends.simion.oa_focus_source` 直接调用 `msplatform.ion_release` 的释放校验、
 `msplatform.contracts.particle_physics` 的动能函数及 `msplatform.io.file_identity` 的文件身份函数；
 相邻测试核对实际函数来源。组件聚焦CSV writer现直接冻结安装SIMION backend的`scientific_event_csv.lua`；
 列顺序、精度和原文件身份保持，不再读取旧common/simion副本。跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
@@ -404,3 +404,24 @@ bounded Fast Adjust/ideal-field contrast workflows, parent-coupled/Dirichlet fie
 the remaining legacy seed-helper consumers. Those remain separate P4 migration work.
 Actual OA native field/Fly, GUI and scientific qualification remain OPEN; software and
 inert observed-process evidence must not be described as commercial solver acceptance.
+
+
+### Installed legacy closed-focus source projection
+
+`python -m msplatform.backends.simion.oa_focus_source` consumes explicit release receipt,
+campaign, provider PA plan and optional resolved projection, and writes the selected FLY2,
+source-state Lua and receipt paths. The original project source body is retired. This is
+the legacy contiguous-ID, x-mirrored closed-focus PA-frame adapter with exit-z translation;
+it does not replace the general canonical source/handoff API or resample particles.
+Units, first-gap enclosure, energies, birth times and source/output byte identities remain
+those of the existing release and projection contracts. No owner, Refine or Fly is required
+for this vendor-independent serialization stage. The existing flight caller freezes and
+executes this canonical implementation; the remaining focus analysis still has its own
+explicit frozen project/profile closure.
+
+P4 OPEN: closed-focus PA-plan/analysis/workflow/native migration, bounded FastAdjust and
+ideal-field contrast, parent-coupled/Dirichlet paths and the eight legacy seed-closure
+consumers. In particular, `component_focus_pa_plan.derive` currently disallows the
+`mesh_mm_per_gu` projection key before reading it and consequently uses the fixed
+0.25/0.25/0.1 mm grid. Explicit mesh authority must be resolved in the P4 plan migration;
+this static constraint is not a reproduced native error and is not deferred to P5.

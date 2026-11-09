@@ -159,7 +159,7 @@ class ComponentContractTest(unittest.TestCase):
             frozen_bytes=(json.dumps(document)+"\n").encode("utf-8")
             provider.write_bytes(frozen_bytes)
             for relative in document["implementation_modules"]:
-                target=provider.parents[1]/relative
+                target=(root/relative if relative.startswith('src/msplatform/') else provider.parents[1]/relative)
                 target.parent.mkdir(parents=True,exist_ok=True)
                 target.write_text("# Historical declared-source identity fixture; never executed.\n")
             result=load_component_contract(root, api_version=2)
