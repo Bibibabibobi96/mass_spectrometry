@@ -79,7 +79,7 @@ def canonical_three_zone_frontend_fixture() -> tuple[dict, dict, dict]:
 
 def canonical_two_zone_frontend_contract() -> dict:
     """Return the two-zone provider metadata consumed by analysis fixtures."""
-    from integrations.runtime.single_flight_electrode_contract import (
+    from msplatform.backends.simion.electrode_contract import (
         TWO_ZONE_BARE_VARIANT,
         frontend_electrodes,
         resolve_two_zone_bare_pa_plus_solution_model,

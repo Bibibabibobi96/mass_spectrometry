@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from msplatform.components.rf_multipole.compile_design_request import compile_design_request
 from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
-from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view, render_physical_gem
 from projects.rf_multipole_ion_optics.tests.domain.test_simion_geometry import resolved_design, shell
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
@@ -80,7 +80,7 @@ class ElectrodeTopologyTests(unittest.TestCase):
                 build_simion_electrode_map(source, topology, requested_native_ids=mapping)
 
     def test_legacy_actual_relabelled_table_agrees_with_geometry_and_voltage(self):
-        from integrations.runtime.single_flight_electrode_contract import physical_multipole_voltages
+        from msplatform.backends.simion.electrode_contract import physical_multipole_voltages
 
         for labels in ([2, 1, 4, 3],):
             with self.subTest(labels=labels):

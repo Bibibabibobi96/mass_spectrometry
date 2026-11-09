@@ -561,18 +561,6 @@
             "prepared_joint",
             "single_reflection_flight"
           ]
-        },
-        {
-          "source_repo_path": "projects/orthogonal_accelerator/simion",
-          "consumers": [
-            "accelerator_interface",
-            "cooled_frontend",
-            "local_frontend",
-            "oa_mr",
-            "paired_accelerator_static_field",
-            "prepared_joint",
-            "single_reflection_flight"
-          ]
         }
       ],
       "python_modules": []
@@ -600,14 +588,7 @@
           ]
         }
       ],
-      "python_modules": [
-        {
-          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/electrode_mapping.py",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        }
-      ]
+      "python_modules": []
     },
     {
       "provider_scope": "project",

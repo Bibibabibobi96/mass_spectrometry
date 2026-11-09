@@ -25,7 +25,7 @@ from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from common.contracts.verify_run_manifest import record_path, verify_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.ion_release.release import validate_release_spec
-from integrations.runtime.single_flight_electrode_contract import render_pa_plus_solution_model
+from msplatform.backends.simion.electrode_contract import render_pa_plus_solution_model
 from integrations.runtime.single_flight_frontend import compile_frontend
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS, transform_source_rows
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract, export_guide_assembly_interface

@@ -20,7 +20,7 @@ from msplatform.backends.simion.pa_family_cache import (
 )
 
 from integrations.runtime.single_flight_frontend import frontend_electrode_maps
-from integrations.runtime.single_flight_electrode_contract import multipole_rod_pieces, scientific_multipole_rod_pieces
+from msplatform.backends.simion.electrode_contract import multipole_rod_pieces, scientific_multipole_rod_pieces
 
 KINDS = ('carrier_off', 'rf_reference', 'pulse_delta')
 

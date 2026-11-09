@@ -23,7 +23,7 @@ from projects.orthogonal_accelerator.tests.analysis.test_assembly_interface impo
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
-from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 
 

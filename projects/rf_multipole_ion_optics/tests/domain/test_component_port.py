@@ -12,7 +12,7 @@ from msplatform.backends.simion.rf_observations import prepare_exit_observation_
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
-from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
+from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
 
 
 class MultipoleComponentPortTests(unittest.TestCase):

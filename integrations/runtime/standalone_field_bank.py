@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 from common.contracts.write_run_manifest import file_record
 
 from integrations.runtime.build_single_flight_program import resolve_standalone_dynamic_operating_coefficients
-from integrations.runtime.single_flight_electrode_contract import (
+from msplatform.backends.simion.electrode_contract import (
     require_pa_plus_solution_model,
 )
 

@@ -5,7 +5,7 @@ import copy
 import unittest
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import resolve_frontend_field_domain
-from projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping import (
+from msplatform.backends.simion.tof_electrode_mapping import (
     native_frontend_electrodes, validate_frontend_electrode_map,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_assembly_interface import (

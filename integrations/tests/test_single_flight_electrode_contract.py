@@ -5,7 +5,7 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from integrations.runtime.single_flight_electrode_contract import (
+from msplatform.backends.simion.electrode_contract import (
     physical_multipole_voltages, scientific_multipole_voltages, scientific_multipole_rod_pieces,
 )
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
@@ -22,7 +22,7 @@ class SingleFlightElectrodeContractTests(unittest.TestCase):
         source['particle_source'] = dict(original_ids=[7,19], birth_time_s=[.1,.2])
         before = copy.deepcopy(source)
         mapping = dict(rod_group_1=23, rod_group_2=17, grounded_shell=31)
-        with patch('integrations.runtime.single_flight_electrode_contract.physical_electrode_view',
+        with patch('msplatform.backends.simion.electrode_contract.physical_electrode_view',
                    side_effect=AssertionError('scientific path called legacy view')):
             carrier, groups = scientific_multipole_voltages(source, mapping)
         self.assertEqual(carrier, {23:9.5,17:4.5,31:0.})

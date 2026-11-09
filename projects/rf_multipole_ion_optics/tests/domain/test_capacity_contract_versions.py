@@ -14,7 +14,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     validate_design_request, validate_resolved_design, validate_resolved_design_contract,
 )
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
-from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
 from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request, multipole_catalog
 

@@ -33,7 +33,7 @@ def sample_geometry(cross_section: str, three_zone: bool) -> tuple[dict, dict]:
 
 class SectionedAcceleratorTest(unittest.TestCase):
     def test_migration_preserves_two_three_zone_square_circular_bytes(self) -> None:
-        from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
+        from msplatform.backends.simion.accelerator_renderer import render_accelerator_local_geometry
 
         # Square projections remain frozen; cylindrical side-entry tools now
         # cross the curved inner wall instead of leaving off-axis metal.

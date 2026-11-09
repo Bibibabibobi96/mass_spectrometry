@@ -15,7 +15,7 @@ from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
     resolve_execution_binding,
     resolve_runtime_profile,
 )
-from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_simion_solver_numerics
+from msplatform.backends.simion.numerics import normalize_simion_solver_numerics
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]

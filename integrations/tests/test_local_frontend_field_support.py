@@ -23,7 +23,7 @@ from integrations.runtime.build_single_flight_program import (
 )
 
 from integrations.runtime.single_flight_frontend import compile_frontend
-from integrations.runtime.single_flight_electrode_contract import render_pa_plus_solution_model
+from msplatform.backends.simion.electrode_contract import render_pa_plus_solution_model
 from integrations.tests.frontend_fixtures import canonical_frontend_fixture, canonical_three_zone_frontend_fixture
 
 ROOT = Path(__file__).resolve().parents[2]

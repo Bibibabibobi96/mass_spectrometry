@@ -21,7 +21,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     operating_mode_source_label,
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_simion_solver_numerics
+from msplatform.backends.simion.numerics import normalize_simion_solver_numerics
 from msplatform.components.rf_multipole.source_validation import load_release_spec
 
 

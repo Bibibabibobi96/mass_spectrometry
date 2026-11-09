@@ -9,7 +9,7 @@ import unittest
 from msplatform.backends.simion.bare_three_zone_component import (
     render_bare_three_zone_electrode_body,
 )
-from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
+from msplatform.backends.simion.accelerator_renderer import render_accelerator_local_geometry
 
 
 def three_zone_requirements_fixture() -> dict:

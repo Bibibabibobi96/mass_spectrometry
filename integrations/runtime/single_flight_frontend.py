@@ -16,7 +16,7 @@ from msplatform.backends.simion.aperture import resolve_rectangular_aperture_dis
 from msplatform.backends.simion.gem_primitives import (
     format_number as _fmt,
 )
-from integrations.runtime.single_flight_electrode_contract import (
+from msplatform.backends.simion.electrode_contract import (
     ROD_ELECTRODE_IDS,
     THREE_ZONE_BARE_VARIANT,
     frontend_electrodes,
@@ -45,7 +45,7 @@ def _canonical_three_zone_component(component: dict[str, Any], *, cells: dict[st
     from msplatform.backends.simion.bare_three_zone_component import (
         render_bare_three_zone_electrode_body,
     )
-    from integrations.runtime.single_flight_electrode_contract import (
+    from msplatform.backends.simion.electrode_contract import (
         project_pa_plus_mode_voltages, resolve_three_zone_bare_pa_plus_solution_model,
     )
     required = {"schema_version", "role", "variant_id", "geometry_profile_id", "requirements",
@@ -121,7 +121,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
     from msplatform.backends.simion.two_zone_candidate import (
         resolve_closed_two_zone_electrodes, render_closed_two_zone_electrode_body,
     )
-    from integrations.runtime.single_flight_electrode_contract import (
+    from msplatform.backends.simion.electrode_contract import (
         project_pa_plus_mode_voltages, resolve_two_zone_bare_pa_plus_solution_model,
     )
     required = {"schema_version", "role", "variant_id", "geometry_profile_id", "requirements",

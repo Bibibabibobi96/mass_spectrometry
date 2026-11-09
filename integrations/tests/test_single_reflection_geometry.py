@@ -15,12 +15,12 @@ from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physi
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 # These fixtures exercise the explicitly retained request-v9/native-v1 reader.
-from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface as build_assembly_interface
+from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface as build_assembly_interface
 from msplatform.backends.simion.geometry import (
     compile_frontend_geometry, render_frontend_body, render_frontend_domain,
 )
 from integrations.tests.frontend_fixtures import compile_geometry_and_port
-from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
+from msplatform.backends.simion.accelerator_renderer import render_accelerator_local_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_assembly_interface import candidate_300mm_fixture as accelerator_fixture
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import project_side_opening, resolve_accelerator_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
@@ -194,9 +194,9 @@ def scientific_inputs(sources, oatof, root, *, local=False, legacy_inputs=None):
     from common.contracts.write_run_manifest import file_record
     from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as current_interface
     from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
-    from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
+    from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import resolve_frontend_field_domain
-    from projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping import native_frontend_electrodes
+    from msplatform.backends.simion.tof_electrode_mapping import native_frontend_electrodes
 
     names = list(sources)
     if legacy_inputs is None:
@@ -249,7 +249,7 @@ class ScientificFrontendGeometryTests(unittest.TestCase):
         source,oatof = source_fixture(),candidate_300mm_fixture()
         original_import = builtins.__import__
         def reject_new_backend(name,*args,**kwargs):
-            if name == 'projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping':
+            if name == 'msplatform.backends.simion.tof_electrode_mapping':
                 raise AssertionError('legacy plan loaded the new scientific backend adapter')
             return original_import(name,*args,**kwargs)
         with patch('builtins.__import__',side_effect=reject_new_backend):
@@ -259,7 +259,7 @@ class ScientificFrontendGeometryTests(unittest.TestCase):
             self.assertNotIn('backend_electrode_bindings',geometry)
 
     def test_plan5_real_groups_keep_legacy_metal_pose_and_complete_domain(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.simion.electrode_mapping import native_frontend_electrodes
+        from msplatform.backends.simion.tof_electrode_mapping import native_frontend_electrodes
         oatof = candidate_300mm_fixture()
         for source in (source_fixture(), multipole_source('octupole'), multipole_source('octupole', shell=True)):
             with self.subTest(segmented=source['segmentation']['segmented_rod_array'] is not None,
