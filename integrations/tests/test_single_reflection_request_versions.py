@@ -105,14 +105,24 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo `
                                      capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             inventory = json.loads((output / "code_inventory.json").read_text(encoding="utf-8-sig"))["dependencies"]
-            for schema in (SCHEMA, SCHEMA_V10):
-                relative = schema.relative_to(ROOT).as_posix()
+            external = Path(directory) / "independent installed resources"
+            external.mkdir()
+            for schema, version in ((SCHEMA, 9), (SCHEMA_V10, 10)):
+                # The tested freezer selects checkout sources; the imported
+                # validator may legitimately come from an ordinary installation.
+                relative = "src/msplatform/workflows/single_reflection_flight/" + schema.name
+                source = ROOT / relative
                 rows = [row for row in inventory if row["source_repo_path"] == relative]
                 self.assertEqual(len(rows), 1, relative)
                 frozen = output / rows[0]["frozen_filename"]
-                self.assertEqual(frozen.read_bytes(), schema.read_bytes())
-                self.assertEqual(json.loads(frozen.read_text())["properties"]["schema_version"]["const"],
-                                 9 if schema == SCHEMA else 10)
+                copied = external / schema.name
+                shutil.copyfile(schema, copied)
+                for location in (schema, copied):
+                    with self.subTest(version=version, location=location):
+                        self.assertEqual(frozen.read_bytes(), source.read_bytes())
+                        self.assertEqual(frozen.read_bytes(), location.read_bytes())
+                        self.assertEqual(json.loads(frozen.read_text())["properties"]["schema_version"]["const"],
+                                         version)
 
 
 if __name__ == "__main__":
