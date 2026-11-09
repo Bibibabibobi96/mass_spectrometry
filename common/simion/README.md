@@ -148,7 +148,7 @@ full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注�
 
 ## PA 缓存与工作点
 
-[`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
+[`pa_family_cache.py`](../../src/msplatform/backends/simion/pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
 数值身份与精确文件清单。family可以只有一份工作PA，沿同一事务、owner和generation协议发布；
 独立求解单元的划分与审计证据边界见[统一复用规则](../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)。
 身份包含resolved geometry、GEM、xyz网格、网格相位、surface、SIMION可执行文件
@@ -541,7 +541,7 @@ parity损坏、pointer并发漂移或新generation任一验证失败均保持旧
 [主机资源调度](../../docs/OPERATIONS.md#主机资源调度)。公共执行器先核验父重任务许可，内部worker不重复
 申请主机许可；以下规划与实时启动检查共同决定可运行的worker数，不把重任务许可解释为资源已全部空闲。
 
-[`resource_scheduler.py`](resource_scheduler.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
+[`simion_dispatch.py`](../../src/msplatform/execution/simion_dispatch.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
 物理内存观测统一使用`physical_memory_bytes()`返回可用／总量；已退役无消费者的单值包装，实际准入和恢复策略不变。
 项目只提交总粒子数、独立性和网格、RF步数、trajectory quality、PA哈希等客观数值身份；CPU、内存、并发、
 安全系数、观察时长和危险处置均由公共层固定，项目参数会被拒绝。粒子数只改变运行时间，不用来假定单进程
@@ -582,7 +582,7 @@ Windows分配失败、真实进程非零退出仍保留失败证据并失败闭�
 跨项目的复用与中断恢复规则以[开发标准：昂贵阶段复用与中断恢复](../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)
 为唯一正文；这里仅说明现有公共 API 的职责和接入边界。
 
-[`batch_continuation.py`](batch_continuation.py)的`build_whole_unit_replay_plan`
+[`recovery.py`](../../src/msplatform/execution/recovery.py)的`build_whole_unit_replay_plan`
 复用每个独立工作单元的完整终态产物，生成新的 run 输入，
 不恢复正在运行的 SIMION 进程、不拼接未完成批的粒子片段，也不推断项目的物理终态。
 前驱也可为已发布的`success`，用于重做分析或发布而不重新Fly；`running`／live仍拒绝。
@@ -606,7 +606,7 @@ RF finite每个case按实际缺批重新检查覆盖，仍在运行的观测work
 项目 adapter 只需提供其冻结的科学输入投影、独立单位及实际终态判据；项目 runner 负责把生成的 plan 接到新的执行与结果物化。公共层不把这些物理语义、粒子
 分类或项目结果布局变成第二套通用合同。
 
-PA family 的可恢复发布／复用由[`pa_family_cache.py`](pa_family_cache.py)的事务和 generation API 承担；
+PA family 的可恢复发布／复用由[`pa_family_cache.py`](../../src/msplatform/backends/simion/pa_family_cache.py)的事务和 generation API 承担；
 运行期 Fast Adjust 私有 family 由[`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)
 从已发布 generation 重建。两者均不保存或恢复供应商进程的内存状态。当前公共层尚未提供把任意
 项目 runner 自动接入 continuation 的 CLI：各项目保留上述窄 adapter，避免公共层猜测日志语法或完成语义。

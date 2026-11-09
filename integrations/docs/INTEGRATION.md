@@ -490,7 +490,7 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 
 [运行依赖清单](../config/runtime_dependencies.json)与[冻结器](../runtime/dependencies.ps1)按明确owner／consumer复制实际来源。
 schema 3 按提供者声明 `python_packages`／`python_modules`，由公共
-[`enumerate_python_sources`](../../common/contracts/frozen_inputs.py)派生交付闭包，默认只枚举生产Python源码。
+[`enumerate_python_sources`](../../src/msplatform/execution/inputs.py)派生交付闭包，默认只枚举生产Python源码。
 `python_packages` 可显式声明 `resource_suffixes`；`repository_core` 范围的 `msplatform` 提供者以
 `src/msplatform` 为唯一核心来源，并用 `.schema.json` 选择同包的唯一权威schema资源。
 其余 Lua、MATLAB、JSON 等动态资源继续由 `files` 显式声明。9 个工作流传入其已解析的 Python，

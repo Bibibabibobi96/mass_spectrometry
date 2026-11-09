@@ -243,7 +243,7 @@ SIMION 的输入复制、GEM→PA、已确认仅构建 IOB 的 Lua、cache 物�
 重任务 `flight` 阶段，随后重新准入普通轻任务 `postprocess`。轻任务仍遵守现有资源预算与实时压力检查，
 未知峰值不作为判重依据。case 间的合并和指标分析保留 flight 许可，避免重复切换。
 有 dispatch plan 的单批 flight 也通过公共批执行器检查实时 CPU 和完整内存安全预算，临时不足时等待。
-观察时长、启动间隔、内存余量和恢复次数由 `common/simion/resource_scheduler.py` 生成的冻结
+观察时长、启动间隔、内存余量和恢复次数由 `msplatform.execution.simion_dispatch` 生成的冻结
 dispatch plan 传递；PowerShell 检查合法范围及恢复闭合关系，不另锁定默认数值。资源压力回执记录
 实际 critical 阈值和持续时间。
 内部批次复用外层重任务许可，不增加 allocation 文件或
@@ -269,7 +269,7 @@ SIMION杆电压只消费[公共RF驱动kernel](../../../common/simion/README.md#
 [`test_simion_rf_drive.lua`](../tests/domain/test_simion_rf_drive.lua)，不加载Workbench/PA，不refine、不Fly。
 
 SIMION 完整 PA basis 的内容寻址、完整字节库存、损坏判定、原子发布及 run-local 物化统一委托
-[`common/simion/pa_family_cache.py`](../../../common/simion/pa_family_cache.py)。本项目只声明多极杆的 PA 命名、已冻结
+[`msplatform.backends.simion.pa_family_cache`](../../../src/msplatform/backends/simion/pa_family_cache.py)。本项目只声明多极杆的 PA 命名、已冻结
 数值身份和 runtime-profile 的复用授权；缓存 generation 不携带 GEM、IOB、Lua 等 run-local sidecar。
 损坏 generation 必须失败关闭，不能由运行器删除或覆盖；按保留/容量治理决定后续精确清理。该缓存仍是
 可重建性能层，不能替代 run 输入或证据。
