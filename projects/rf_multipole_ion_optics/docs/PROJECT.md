@@ -1,5 +1,14 @@
 # RF多极杆离子光学项目状态
 
+P4 frozen-source verification now copies the canonical scientific package instead of the retired
+particle-physics bridge. Its real CLI runs with `-I -S`, explicit dependency directories and checks
+that every loaded platform module comes from the frozen tree. The full-package mutation test keeps
+all 269 members and 538 deletion/tamper checks, but checks each damaged member first in the same
+complete inventory, then restores the original order. This avoids repeated prefix hashing without
+changing production validation, original assertions or the 120-second subprocess limit. The two
+complete test modules passed 18 cases in the isolated review; the original Repository timeout is
+retained as a failed result, not reclassified as a pass. No solver or scientific qualification follows.
+
 本文件是本项目当前事实、结构变体资格、有效结论和开放任务的唯一正文。运行方法见
 [实现说明](IMPLEMENTATION.md)，理论与物理约定见[理论索引](theory/index.md)，
 跨器件结果由[集成状态](../../../integrations/docs/INTEGRATION.md)维护。

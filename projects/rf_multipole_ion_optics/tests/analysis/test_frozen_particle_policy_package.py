@@ -460,7 +460,10 @@ $restoredAfterSuccess = (
     (Get-Location).Path -ceq $startingDirectory
 )
 $mutationRejectCount = 0
-foreach ($entry in @($package.files)) {{
+$originalFiles = @($package.files)
+try {{
+foreach ($entry in $originalFiles) {{
+    $package.files = @($entry) + @($originalFiles | Where-Object {{ $_.path -cne $entry.path }})
     $bytes = [IO.File]::ReadAllBytes([string]$entry.path)
     Remove-Item -LiteralPath ([string]$entry.path)
     try {{ Assert-FrozenPythonPackage -Package $package }}
@@ -471,6 +474,7 @@ foreach ($entry in @($package.files)) {{
     catch {{ $mutationRejectCount += 1 }}
     [IO.File]::WriteAllBytes([string]$entry.path,$bytes)
 }}
+}} finally {{ $package.files = $originalFiles }}
 $generator = Get-FrozenPythonPackageFile -Package $package -RelativePath `
     'projects/rf_multipole_ion_optics/workflows/interface_readiness/generate_particle_table.py'
 [IO.File]::WriteAllText($generator,"raise RuntimeError('FROZEN_POISON_EXECUTED')`n")

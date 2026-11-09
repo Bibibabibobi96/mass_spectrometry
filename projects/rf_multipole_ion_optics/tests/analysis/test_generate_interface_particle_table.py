@@ -7,12 +7,14 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
 
+from msplatform.execution.inputs import enumerate_python_sources
 from common.contracts.particle_state import canonical_sources, ion11_sources
 from projects.rf_multipole_ion_optics.analysis.generate_official_particle_table import (
     generate as generate_official_table,
@@ -308,10 +310,6 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     frozen_project / "analysis" / "paired_particle_source_bundle.py",
                 ),
                 (
-                    REPOSITORY_ROOT / "common" / "contracts" / "particle_physics.py",
-                    code_root / "common" / "contracts" / "particle_physics.py",
-                ),
-                (
                     REPOSITORY_ROOT
                     / "common"
                     / "contracts"
@@ -370,18 +368,37 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     / "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
                 ),
             )
+            copies += tuple((REPOSITORY_ROOT / relative, code_root / relative)
+                for relative in enumerate_python_sources(REPOSITORY_ROOT,
+                    package_roots=['src/msplatform'], provider_root='src/msplatform',
+                    resource_suffixes=('.schema.json',)))
             for source, destination in copies:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
             environment = os.environ.copy()
-            environment["PYTHONPATH"] = str(code_root)
+            environment.pop("PYTHONPATH", None)
             environment["PYTHONNOUSERSITE"] = "1"
+            dependency_roots = [sysconfig.get_path("purelib"), sysconfig.get_path("platlib"),
+                *[sysconfig.get_path(name, vars=dict(base=sys.base_prefix, platbase=sys.base_prefix))
+                  for name in ("purelib", "platlib")]]
+            bootstrap = """
+import json, pathlib, runpy, sys
+root = pathlib.Path(sys.argv.pop(1)).resolve()
+dependencies = json.loads(sys.argv.pop(1))
+sys.path.extend(dict.fromkeys(dependencies))
+sys.path[:0] = [str(root / 'src'), str(root)]
+import msplatform
+assert pathlib.Path(msplatform.__file__).resolve().is_relative_to(root / 'src')
+assert 'sitecustomize' not in sys.modules
+module = 'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table'
+sys.argv = [module, *sys.argv[1:]]
+runpy.run_module(module, run_name='__main__')
+for name, loaded in tuple(sys.modules.items()):
+    if name.startswith('msplatform') and getattr(loaded, '__file__', None):
+        assert pathlib.Path(loaded.__file__).resolve().is_relative_to(root / 'src'), name
+"""
             result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "projects.rf_multipole_ion_optics.workflows."
-                    "interface_readiness.generate_particle_table",
+                [sys.executable, "-I", "-S", "-B", "-c", bootstrap, str(code_root), json.dumps(dependency_roots),
                     "--source-family",
                     str(SOURCE_FAMILY),
                     "--distribution",
