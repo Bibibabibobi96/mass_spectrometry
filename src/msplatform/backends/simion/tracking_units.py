@@ -68,14 +68,15 @@ def tracking_applicability(plan):
     from msplatform.execution.resources import resource_path
     names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
              'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
-    if plan['flight'].get('tracking_kind')=='independent_rf':
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'}:
         names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
+        if plan['flight']['tracking_kind']=='independent_oa':names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
     resources = {name:hashlib.sha256(native_resource_path(name).read_bytes()).hexdigest() for name in names}
     resources['native_run_path.lua'] = hashlib.sha256(resource_path('native_run_path.lua').read_bytes()).hexdigest()
     resources['tracking_program.py'] = hashlib.sha256(Path(tracking_program.__file__).read_bytes()).hexdigest()
     resources['tracking_execution.py'] = hashlib.sha256(Path(__file__).with_name('tracking_execution.py').read_bytes()).hexdigest()
     resources['tracking_units.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    if plan['flight'].get('tracking_kind')=='independent_rf':
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'}:
         for name in ('rf_tracking_program.py','rf_tracking_execution.py','rf_tracking_collection.py'):
             resources[name]=hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
     fields = ('source_realization','field_manifest_identity','model_identity_sha256','rows','native_source_rows','source_provenance',

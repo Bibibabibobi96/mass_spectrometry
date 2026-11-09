@@ -1,4 +1,4 @@
-"""Collect independent RF native states without TOF pulse or reflectron taxonomy."""
+"""Collect shared independent RF/OA native states without TOF reflectron taxonomy."""
 from __future__ import annotations
 import copy
 import json
@@ -104,6 +104,10 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
                 classification_is_mutually_exclusive_and_exhaustive=True),unknown_is_loss=False),
         original_mother={key:copy.deepcopy(source_provenance[key]) for key in
             ('mother_particle_ids','mother_records','mother_fates','clock_authority_sha256','clock_records')})
+    if flight.get('tracking_kind')=='independent_oa':
+        result.update(component_kind='orthogonal_accelerator',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1',native_pulse_state_recording='not_requested')
+        result['census']['role']='oa_full_mother_census'
+        result['census']['terminal_taxonomy']['role']='oa_raw_terminal_taxonomy'
     if observation is not None:result['plane_observations']=observation
     if policy is not None:result.update(propagation_stop=policy,propagation_scope='segmented_upstream',observation_complete=observation['status']=='complete')
     return result

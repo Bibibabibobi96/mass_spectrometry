@@ -43,8 +43,8 @@ def _birth_states(packet, geometry):
     plan = geometry['composition_plan']
     poses = {row['instance_id']:RigidTransform.from_contract(row['transform']) for row in plan['recipe']['instances']}
     from .frontend import native_frontend_instances
-    independent_rf = geometry.get('role') == 'simion_independent_rf_geometry'
-    tof = None if independent_rf else native_frontend_instances(plan)[1]
+    independent_component = geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'}
+    tof = None if independent_component else native_frontend_instances(plan)[1]
     projected = []
     for row in rows:
         instance = row['source_component_id']
@@ -54,7 +54,7 @@ def _birth_states(packet, geometry):
         if row['frame_id'] != interface['local_frame_id']:
             raise ValueError('birth state frame differs from its real provider local frame')
         target = geometry['native_frame_id']
-        pose = poses[instance] if independent_rf else relative_transform(poses[instance],poses[tof])
+        pose = poses[instance] if independent_component else relative_transform(poses[instance],poses[tof])
         if pose.to_frame_id != target:
             # The current compiled frontend uses the selected TOF frame. Do not
             # guess a second world-frame conversion for unsupported assemblies.
@@ -82,11 +82,11 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     """
     document = require_prepared_model(model)
     raw_geometry = model_geometry(model).frontend_geometry
-    independent_rf = raw_geometry.get('role') == 'simion_independent_rf_geometry'
-    geometry = (dict(raw_geometry,native_frame_id=document['native_frame_id']) if independent_rf else
+    independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'}
+    geometry = (dict(raw_geometry,native_frame_id=document['native_frame_id']) if independent_component else
                 model_geometry(model,downstream_drive=True).frontend_geometry)
     expected = {'schema_version','scope','end_policy','consumed_plane_events','stop'}
-    if independent_rf:
+    if independent_component:
         expected.add('dynamics')
         if not isinstance(propagation,Mapping) or propagation.get('dynamics') != dict(kinematics='nonrelativistic',collisions='none',space_charge='none'):
             raise ValueError('RF tracking requires explicit collision-free nonrelativistic external-field dynamics')
@@ -134,19 +134,20 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         raise ValueError('tracking absolute deadline is not later than each actual start')
     rf = any(row['kind']=='rf' for row in document['native_drive_rows'])
     keys = {'maximum_step_us','trajectory_quality',*({'rf_steps_per_period'} if rf else set())}
-    if independent_rf and isinstance(numerics,Mapping) and 'grouped' in numerics:
+    if independent_component and isinstance(numerics,Mapping) and 'grouped' in numerics:
         keys.add('grouped')
     if not isinstance(numerics,Mapping) or set(numerics) != keys:
         raise ValueError('tracking numerics must not contain source, drive or field-solve controls')
     horizon = max((deadlines[row['particle_id']]-row['instrument_time_us'] for row in rows),default=value)
     flight_input = dict(numerics,maximum_flight_us=horizon)
-    if not independent_rf:
+    if not independent_component:
         flight_input['pulse'] = copy.deepcopy(document['drive']['pulse'])
     if 'observation_times_us' in observations:
         flight_input['observation_times_us'] = copy.deepcopy(observations['observation_times_us'])
-    if independent_rf:
+    if independent_component:
         from .rf_tracking_program import validate_rf_flight
         flight = validate_rf_flight(flight_input,requires_rf=rf)
+        if raw_geometry['role']=='simion_independent_oa_geometry':flight['tracking_kind']='independent_oa'
     else:
         flight = validate_native_flight(flight_input,requires_rf=rf)
     from dataclasses import asdict
@@ -173,7 +174,7 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
     The existing solved source-free workbench is the bootstrap; no new raw PA,
     neutral placeholder, GEM2PA or refinement is necessary for tracking.
     """
-    if compiled.frontend_geometry.get('role') == 'simion_independent_rf_geometry':
+    if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'}:
         from .rf_tracking_execution import plan_rf_tracking_workbench
         return plan_rf_tracking_workbench(compiled,carriers=carriers,run_directory=run_directory,
             program=program,native_source_rows=native_source_rows,native_path_resource=native_path_resource)
@@ -221,7 +222,7 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     The caller obtains frontend_records from FieldBundle domain/member data keys
     and downstream_assets from the unique full-family closure validator.
     """
-    if plan['flight'].get('tracking_kind') == 'independent_rf':
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'}:
         from .rf_tracking_program import render_rf_controls
         return render_rf_controls(model,plan,assets=frontend_records,native_sources=native_sources)
     from .field_bank import field_bank
@@ -423,7 +424,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             continue
         subset = slice_tracking_plan(plan,unit)
         controls = _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
-            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind')=='independent_rf' else _artifact_record(source,'downstream_audit'),
+            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'} else _artifact_record(source,'downstream_audit'),
             native_sources=sources)
         row['build_metadata'] = controls['build_metadata']
         batches.append(dict(source_row_range=unit['source_row_range'],expected_particle_ids=unit['expected_particle_ids'],
@@ -561,7 +562,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     document = require_prepared_model(model)
     if meta.get('model_identity_sha256')!=document['model_identity_sha256'] or meta.get('clock')!=document['drive']['clock']:
         raise ValueError('FieldBundle model/clock identity differs')
-    if model_geometry(model).frontend_geometry.get('role')=='simion_independent_rf_geometry':
+    if model_geometry(model).frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'}:
         from .rf_tracking_execution import execute_rf_tracking
         return execute_rf_tracking(session,source=source,model=model,document=document,particles=particles,
             propagation=propagation,observations=observations,numerics=numerics,limits=limits,
@@ -666,7 +667,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     small('propagation',session.input_dir/'propagation.json',value=plan['propagation'])
     small('observations',session.input_dir/'observations.json',value=plan['observations'])
     small('tracking_numerics',session.input_dir/'tracking_numerics.json',value=plan['numerics'])
-    if plan['flight'].get('tracking_kind')=='independent_rf':
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'}:
         import inspect
         from . import rf_tracking_execution,rf_tracking_program,rf_tracking_collection
         for module in (rf_tracking_execution,rf_tracking_program,rf_tracking_collection):
@@ -684,14 +685,15 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     else:
         resource_names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
             'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
-        if plan['flight'].get('tracking_kind')=='independent_rf':
+        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'}:
             resource_names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
+            if plan['flight']['tracking_kind']=='independent_oa':resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
         frozen = {}
         for name in resource_names:
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))
         native_path = small('resource_native_run_path.lua',session.input_dir/'native_sources/native_run_path.lua',source_path=resource_path('native_run_path.lua'))
-        if plan['flight'].get('tracking_kind')=='independent_rf':
-            sources={name:Path(frozen[name]['path']).read_text(encoding='utf-8-sig') for name in ('model_drive.lua','rf_drive.lua','rf_tracking.lua')}
+        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'}:
+            sources={name:Path(frozen[name]['path']).read_text(encoding='utf-8-sig') for name in resource_names if name not in {'build_tracking_iob.lua','iob_core.lua'}}
         else:
             names = dict(analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',
                 frontend_hook_source='single_flight_frontend_hook.lua',rf_drive_kernel_source='rf_drive.lua',voltage_waveforms_source='voltage_waveforms.lua')
@@ -726,5 +728,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         native_calls=collection['native_calls'],refine_calls=0,field_recomputed=False,scientific_qualification='not_granted',
         shared_dispatcher_migration='installed',unit_count=len(plan['units']),unit_size=unit_size,
         reused_unit_count=len(recovery['reused_unit_keys']) if recovery else 0)
+    if plan['flight'].get('tracking_kind')=='independent_oa':
+        metadata.update(component_kind='orthogonal_accelerator',tracking_kind='independent_oa',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(status='success',summary=metadata,output_paths=paths,required_output_paths=paths,retention_preserve_paths=[],
         manifest_extra_fields={'products':{'trajectory':dict(schema_version=1,kind='trajectory_result',status='complete',metadata=metadata,data=data)}})

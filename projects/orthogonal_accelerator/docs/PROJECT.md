@@ -371,3 +371,29 @@ with native-zero/Neumann boundaries; extraneous joint-coupling requests are reje
 the same planner before execution. Existing legacy two-zone field/Fly and parent-coupled
 capabilities remain a separate migration obligation where present. Multiple placed PA
 instances alone do not establish a common field solution.
+
+### Independent OA tracking software closure
+
+The existing installed `track` operation now accepts the explicit two/three-zone OA
+PreparedModel bound to its original independent fractional FieldBundle. It reuses the
+single source/clock transform, ordinal unit dispatcher, protected original family,
+IOB writer, collector, recovery and run owner. OA native roles, component/census and
+metadata remain OA; the unchanged RF-named native-state wire is documented as legacy
+shared transport format, with unknown native terminals never interpreted as losses.
+No pulse-state observation is inferred from absent recordings.
+
+Static and pulsed scientific group voltages come from the sole `model_drive.lua`.
+Timed/held-off OA receives the existing pulse hook and voltage waveform implementation;
+timed steps cap at both physical pulse edges in the canonical absolute instrument clock.
+No source/Fly operation requests Refine or privately copies a published PA family.
+The supplier basis is SIMION2020 Supplemental Documentation, `time_dependent_field.html`
+([Time-Dependent Field](https://simion.com/info/time_dependent_field.html)), read 2026-11-10:
+quasi-static fast-adjustable electrode superposition and explicit waveform timestep
+control. Existing `single_flight_pulse_hook.lua`/`voltage_waveforms.lua` remain the
+single step-gate implementation; no new field formula or radiation/collision model is added.
+
+This independent-domain software slice does not replace legacy closed two-zone focus,
+bounded Fast Adjust/ideal-field contrast workflows, parent-coupled/Dirichlet fields or
+the remaining legacy seed-helper consumers. Those remain separate P4 migration work.
+Actual OA native field/Fly, GUI and scientific qualification remain OPEN; software and
+inert observed-process evidence must not be described as commercial solver acceptance.

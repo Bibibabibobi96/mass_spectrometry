@@ -301,7 +301,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
-    if meta.get('field_representation')=='producer_owned_rf_fractional_family':
+    if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
     if recovery is not None:

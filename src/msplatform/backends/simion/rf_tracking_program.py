@@ -1,4 +1,4 @@
-"""Pulse-free RF Program projection using the existing RF and source-clock owners."""
+"""Independent RF/OA Program projection using the existing model, pulse and source-clock owners."""
 from __future__ import annotations
 import copy
 import math
@@ -44,7 +44,13 @@ def render_rf_controls(model,plan,*,assets,native_sources):
     prefix='simion.workbench_program()\n'
     prefix+='local rf_model_config=(function()\n'+config+'\nend)()\n'
     prefix+='local rf_kernel=(function()\n'+resource('rf_drive.lua')+'\nend)()\n'
-    prefix+='local rf_consumer=(function()\n'+resource('model_drive.lua')+'\nend)().new(rf_model_config,rf_kernel,nil,nil)\n'
+    oa=plan['flight'].get('tracking_kind')=='independent_oa'
+    if oa:
+        prefix+='local oa_pulse_hook=(function()\n'+resource('single_flight_pulse_hook.lua')+'\nend)()\n'
+        prefix+='local oa_waveforms=(function()\n'+resource('voltage_waveforms.lua')+'\nend)()\n'
+        prefix+='local rf_consumer=(function()\n'+resource('model_drive.lua')+'\nend)().new(rf_model_config,rf_kernel,oa_pulse_hook,oa_waveforms)\n'
+    else:
+        prefix+='local rf_consumer=(function()\n'+resource('model_drive.lua')+'\nend)().new(rf_model_config,rf_kernel,nil,nil)\n'
     arrays=dict(single_flight_source_particle_id=ids,single_flight_time_origin_us=[r['instrument_time_us'] for r in plan['rows']],
         single_flight_absolute_deadline_us=[plan['absolute_deadlines_us_by_particle_id'][pid] for pid in ids],
         rf_initial_velocities=[[r['velocity_'+a+'_m_s']/1000 for a in 'xyz'] for r in plan['rows']],
@@ -57,6 +63,10 @@ def render_rf_controls(model,plan,*,assets,native_sources):
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
     program=prefix+resource('rf_tracking.lua')
+    if oa and document['drive'].get('pulse',{}).get('mode')=='timed':
+        pulse=document['drive']['pulse']
+        program+='\nlocal oa_step_pulse=oa_pulse_hook.compile_physical{voltage_waveforms=oa_waveforms,pulse_mode=function() return 1 end,pulse_time_us='+lua_value(pulse['time_us'])+',pulse_width_us='+lua_value(pulse['width_us'])+'}\n'
+        program+='local oa_original_tstep=segment.tstep_adjust\nfunction segment.tstep_adjust() oa_original_tstep();ion_time_step=oa_step_pulse.cap_timestep_at(single_flight_instrument_time_us(),ion_time_step) end\n'
     definitions=plan['observations']['plane_observations']
     if definitions:
         program=_instrument_plane_observations(program,definitions,geometry,
@@ -66,9 +76,10 @@ def render_rf_controls(model,plan,*,assets,native_sources):
             marker='  if cut then\n'
             if program.count(marker)!=1:raise ValueError('RF cut terminal hook differs')
             program=program.replace(marker,marker+"    rf_emit_current('terminal','accepted_cut')\n",1)
-    metadata=dict(tracking_kind='independent_rf',plane_observations=copy.deepcopy(definitions) if definitions else None,
+    metadata=dict(tracking_kind=plan['flight']['tracking_kind'],plane_observations=copy.deepcopy(definitions) if definitions else None,
         consumed_plane_events=copy.deepcopy(plan['propagation']['consumed_plane_events']),propagation_stop=copy.deepcopy(plan['propagation']['stop']),
         source_clock=dict(original_birth_times_us=[r['particle_birth_time_us'] for r in plan['rows']],
             absolute_deadlines_us=[plan['absolute_deadlines_us_by_particle_id'][pid] for pid in ids]))
+    if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
         immutable_input_records=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]],flight=plan['flight'])

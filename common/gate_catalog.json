@@ -1294,6 +1294,27 @@
               "common/contracts/test_simion_rf_fields.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/simion/(?:rf_tracking_(?:execution|program|collection)|tracking_(?:execution|collection|units)|operations)\\.py$",
+                "reason": "independent_oa_tracking_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/simion/resources/(?:iob_core|build_tracking_iob|model_drive|single_flight_pulse_hook|voltage_waveforms|rf_tracking)\\.lua$",
+                "reason": "independent_oa_tracking_resources_changed"
+              },
+              {
+                "exact": "common/contracts/test_simion_rf_tracking.py",
+                "reason": "shared_tracking_protocol_fixture_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_oa_tracking.py",
+              "common/contracts/test_simion_rf_tracking.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"

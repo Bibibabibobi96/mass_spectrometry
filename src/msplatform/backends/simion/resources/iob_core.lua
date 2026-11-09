@@ -11,7 +11,7 @@ local model_only=mode=='build_model' or mode=='verify_model'
 local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_only
 local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
-local component_tracking=spec.role=='independent_rf_tracking_iob' or spec.role=='dual_cone_tracking_iob'
+local component_tracking=spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or component_tracking or dual_cone
 local independent_marker=dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
@@ -351,7 +351,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     -- The complete RF slot path/grid/pose, electrode map, metal/vacuum and
     -- fractional witnesses were checked above. TOF interface/priority probe
     -- definitions do not describe an independent RF instrument.
-    print((dual_cone and 'DUAL_CONE_TRACKING_COLD=PASS INSTANCES=' or 'INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES=')..count..' FLY=False REFINE=False')
+    print((dual_cone and 'DUAL_CONE_TRACKING_COLD=PASS INSTANCES=' or spec.role=='independent_oa_tracking_iob' and 'INDEPENDENT_OA_TRACKING_COLD=PASS INSTANCES=' or 'INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES=')..count..' FLY=False REFINE=False')
     return
   end
   -- SIMION 2020 official lua_simion.wb.html#simion.wb..find_at:

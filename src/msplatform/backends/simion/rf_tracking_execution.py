@@ -1,4 +1,4 @@
-"""RF field/source binding and structural IOB projection; no independent run owner."""
+"""Independent RF/OA field/source binding and structural IOB projection; no independent run owner."""
 from pathlib import Path
 from .artifacts import NativeStagePlan
 from .model import model_geometry
@@ -37,7 +37,8 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
     spec=root/'inputs/tracking_iob.lua'
     original=projection.materializations[str(root/'inputs/geometry_iob.lua')]
     text='local spec=(function()\n'+original+'\nend)()\n'
-    text+="spec.role='independent_rf_tracking_iob'\nspec.output_iob="+lua_value(str(output))+"\nspec.response_fields={}\n"
+    kind='OA' if compiled.frontend_geometry['role']=='simion_independent_oa_geometry' else 'RF'
+    text+="spec.role="+lua_value('independent_'+kind.lower()+'_tracking_iob')+"\nspec.output_iob="+lua_value(str(output))+"\nspec.response_fields={}\n"
     for index,name in enumerate(names,1):
         asset=carriers[name]
         surface=next(row for row in asset['family_records'] if row['path'].endswith('.pa-surf'))
@@ -55,6 +56,6 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
     operations=tuple(dict(operation_id=name,role='SIMION',stage='prepare',
         arguments=['--nogui','--noprompt','lua',str(wrapper),str(spec),mode,str(native_path_resource)],
         outputs=[str(output),*bootstraps] if mode=='build' else [],success_marker=marker)
-        for name,mode,marker in [('build_tracking_iob','build','INDEPENDENT_RF_TRACKING_IOB=PASS'),
-                                ('verify_tracking_iob','verify','INDEPENDENT_RF_TRACKING_IOB_REOPEN=PASS')])
+        for name,mode,marker in [('build_tracking_iob','build','INDEPENDENT_'+kind+'_TRACKING_IOB=PASS'),
+                                ('verify_tracking_iob','verify','INDEPENDENT_'+kind+'_TRACKING_IOB_REOPEN=PASS')])
     return NativeStagePlan(materials,projection.input_copies,operations,(str(output),*bootstraps))

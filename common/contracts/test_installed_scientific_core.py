@@ -660,6 +660,21 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     assert rf_tracking_query['contract_status']=='accepted' and rf_tracking_query['native_qualification']=='not_granted'
     assert 'RF_DYNAMICS_V1' in render_rf_controls(rf_model,rf_tracking_plan,assets={},native_sources={})['program']
     assert native_resource_path('rf_tracking.lua').is_relative_to(pathlib.Path(msplatform.__file__).parent)
+    oa_packet=copy.deepcopy(rf_packet)
+    oa_packet['clock']={key:oa_drive['clock'][key] for key in ('clock_epoch_id','authority_sha256')}
+    oa_state=oa_packet['rows'][0]
+    oa_state.update(source_component_id='two',target_component_id='two',clock_epoch_id=oa_drive['clock']['clock_epoch_id'],
+        frame_id=oa_geometry.frontend_geometry['composition_plan']['components']['two']['local_frame_id'])
+    oa_packet['mother']['records']={oa_state['particle_id']:dict(oa_state,source_component_entry_time_us=1.25)}
+    oa_args=dict(rf_tracking_args,particles=oa_packet,numerics=dict(maximum_step_us=.01,trajectory_quality=0))
+    oa_tracking=plan_tracking_execution(oa_model,**oa_args)
+    assert oa_tracking['flight']['tracking_kind']=='independent_oa'
+    assert oa_tracking['source_provenance']['mother_particle_ids']==[oa_state['particle_id']]
+    oa_controls=render_rf_controls(oa_model,oa_tracking,assets={},native_sources={})
+    assert oa_controls['build_metadata']['component_kind']=='orthogonal_accelerator'
+    assert 'oa_pulse_hook' in oa_controls['program'] and 'pulse' not in oa_tracking['flight']
+    assert query_capabilities(dict(schema_version=1,operation='track',arguments=dict(model=oa_model,**oa_args)))['contract_status']=='accepted'
+
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
     model_components = {name:actual_geometry.components_resolved[name] for name in selected}
     model_drive = project_resolved_drive(actual_geometry, model_components, pulse=study.drive['pulse'],
