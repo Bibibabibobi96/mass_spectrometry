@@ -803,7 +803,7 @@ exit 0
 
 
     def test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates(self):
-        source = 'integrations/workflows/single_reflection_flight/field_plan.py'
+        source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
         expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                     for path in (REPO_ROOT / 'integrations/tests').glob('test_*.py')
@@ -847,7 +847,7 @@ exit 0
                 self.assertTrue(all(row['dependency_profile'] == route['dependency_profile'] for row in rows))
 
     def test_field_plan_mapping_keeps_missing_unknown_and_renamed_source_conservative(self):
-        source = 'integrations/workflows/single_reflection_flight/field_plan.py'
+        source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
         dependency = next(row for row in route['test_selection']['dependencies']
                           if any(match.get('exact') == source for match in row['matches']))

@@ -18,7 +18,7 @@ from msplatform.execution.retention import file_record
 from msplatform.backends.simion.source import lua_value as _lua_value
 from msplatform.results.single_reflection_source import instance_design_record
 from msplatform.backends.simion.frontend import native_frontend_instances
-from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
+from msplatform.backends.simion.field_identity import working_point_member_id
 from msplatform.backends.simion.tof_geometry import derive_simion_geometry, resolve_physical_geometry
 from msplatform.backends.simion.downstream import _validate_provider_inputs
 from msplatform.backends.simion.resources import gem_template_path

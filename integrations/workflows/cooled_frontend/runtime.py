@@ -21,7 +21,7 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION, _resolve_standalone_dynamic_field_bank,
 )
 from msplatform.workflows.local_frontend import runtime as shared
-from integrations.workflows.single_reflection_flight.field_plan import laplace_member_identity
+from msplatform.backends.simion.field_identity import laplace_member_identity
 
 
 FIELD_ROLE = "rf_oatof_cooled_frontend_field_stage"

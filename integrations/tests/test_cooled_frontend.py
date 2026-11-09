@@ -709,7 +709,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                 "from msplatform.io.manifest_records import file_record,verify_record; "
                 "import msplatform.workflows.local_frontend.runtime as local; "
                 "import integrations.workflows.cooled_frontend.runtime as cooled; "
-                "import integrations.workflows.single_reflection_flight.field_plan as fields; "
+                "import msplatform.workflows.single_reflection_flight.field_plan as fields; "
                 "root=Path.cwd().resolve(); "
                 "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in (seed,local,cooled,fields,tracking)); "
                 "source=seed.structural_seed_path(1); destination=Path(sys.argv[2])/'seed/1_instance_seed.iob'; "

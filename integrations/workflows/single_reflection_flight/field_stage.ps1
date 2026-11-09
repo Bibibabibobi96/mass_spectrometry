@@ -72,10 +72,10 @@ function Invoke-SingleReflectionFrontendFieldStage {
   $planCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.field_plan import build_field_plan
-print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
+from msplatform.workflows.single_reflection_flight.field_plan import build_field_plan
+print(json.dumps(build_field_plan(*map(Path,sys.argv[1:3]))))
 '@
-  $bundle=Invoke-FrontendFieldPython -Arguments @('-c',$planCode,$prepared,$SimionExe,$RepoRoot) -Name 'frontend_working_plan'
+  $bundle=Invoke-FrontendFieldPython -Arguments @('-c',$planCode,$prepared,$SimionExe) -Name 'frontend_working_plan'
   $fieldHandoffs=@{}
   $requestPath=Join-Path $prepared 'request.json'
   if(Test-Path -LiteralPath $requestPath){
@@ -102,7 +102,7 @@ print(json.dumps(build_field_plan(*map(Path,sys.argv[1:4]))))
       $bindCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.field_plan import bind_parent_fields
+from msplatform.workflows.single_reflection_flight.field_plan import bind_parent_fields
 bundle=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 print(json.dumps(bind_parent_fields(bundle['domains'][1],json.loads(sys.argv[2]))))
 '@
@@ -169,7 +169,7 @@ print(json.dumps(bind_parent_fields(bundle['domains'][1],json.loads(sys.argv[2])
           $reuseCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.field_plan import reusable_audit
+from msplatform.backends.simion.field_audit import reusable_audit
 print(json.dumps(reusable_audit(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig')),Path(sys.argv[2]),Path(sys.argv[3]))))
 '@
           $reuse=Invoke-FrontendFieldPython -Arguments @('-c',$reuseCode,$planPath,$generation,$verifier) -Name ($prefix+'_audit_reuse')
@@ -231,7 +231,7 @@ print(json.dumps(reusable_audit(json.loads(Path(sys.argv[1]).read_text(encoding=
           $specCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.field_plan import write_audit_spec
+from msplatform.backends.simion.field_audit import write_audit_spec
 plan=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 plan['working_points'][0]['path']=sys.argv[3]
 write_audit_spec(plan,Path(sys.argv[2]),Path('.'),Path(sys.argv[4]))
@@ -250,7 +250,7 @@ write_audit_spec(plan,Path(sys.argv[2]),Path('.'),Path(sys.argv[4]))
           $stampCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.field_plan import audit_input_identity
+from msplatform.backends.simion.field_audit import audit_input_identity
 from common.contracts.file_identity import file_sha256
 p=Path(sys.argv[1]);report=json.loads(p.read_text())
 report['audit_input_sha256']=audit_input_identity(json.loads(Path(sys.argv[2]).read_text(encoding='utf-8-sig')))
@@ -310,7 +310,7 @@ p.write_text(json.dumps(report),encoding='utf-8')
   }
   $bankCode=@'
 import json,sys
-from integrations.workflows.single_reflection_flight.field_plan import field_bank
+from msplatform.backends.simion.field_bank import field_bank
 design=json.loads(sys.argv[1])
 print(json.dumps(field_bank(design,sys.argv[2].split(','))))
 '@

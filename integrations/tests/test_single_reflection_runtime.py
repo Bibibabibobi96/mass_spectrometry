@@ -26,7 +26,7 @@ from integrations.tests.test_single_reflection_geometry import reframe_parent
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.workflows.single_reflection_flight import field_evidence
 from integrations.workflows.single_reflection_flight import runtime
-from integrations.workflows.single_reflection_flight.field_plan import frontend_field_identity
+from msplatform.backends.simion.field_identity import frontend_field_identity
 from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch

@@ -1,47 +1,24 @@
-"""Resolve direct working-field cache inputs; never read particle sources or PA data."""
+"""Plan explicit parent/entrance working fields without reading PA or source payloads."""
 from __future__ import annotations
-from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
-from msplatform.backends.simion.field_bank import field_bank as field_bank
-
-from msplatform.backends.simion.field_audit import (
-    audit_input_identity as audit_input_identity,
-    reusable_audit as reusable_audit,
-    write_audit_spec as write_audit_spec,
-)
 
 import json
 import math
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
-from msplatform.backends.simion.pa_family_cache import (
-    canonical_pa_family_cache_key,
-)
-
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 from msplatform.backends.simion.frontend import frontend_electrode_maps
 from msplatform.backends.simion.electrode_contract import multipole_rod_pieces, scientific_multipole_rod_pieces
+from msplatform.backends.simion.field_identity import (
+    working_point_member_id, _member_projection, _domain_inputs, _parent_boundary,
+)
+from msplatform.backends.simion.resources import native_resource_path
+from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
 
 KINDS = ('carrier_off', 'rf_reference', 'pulse_delta')
-
-
-
-
 AUDIT_NAME = 'frontend_working_fields_audit.json'
 _SOURCE_RECEIPT = 'frontend_field_source_receipt.json'
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def bind_parent_fields(domain_plan: dict, parent_fields: dict) -> dict:
@@ -60,7 +37,6 @@ def bind_parent_fields(domain_plan: dict, parent_fields: dict) -> dict:
 
 
 
-
 def _check_source_physics(member: dict) -> None:
     source = member['frozen_field_source']
     identity = source['identity']
@@ -69,6 +45,7 @@ def _check_source_physics(member: dict) -> None:
                  _member_projection(identity, point, member_id=member['member_id']))
     if projected != member['identity']:
         raise ValueError(f"{member['member_id']}: frozen field source physical identity differs")
+
 
 
 def _bound_source_audit(manifest: dict, record: dict | None) -> dict | None:
@@ -158,7 +135,8 @@ def _frozen_field_source(prepared: Path, design: dict, plans: list[dict]) -> boo
     return True
 
 
-def build_field_plan(prepared: Path, executable: Path, repo: Path) -> dict:
+
+def build_field_plan(prepared: Path, executable: Path) -> dict:
     """Validate schema3 domain inputs once; bind the fine key after parent publication."""
     design = json.loads((prepared / 'frontend_field_design.json').read_text(encoding='utf-8-sig'))
     geometry = json.loads((prepared / 'frontend_geometry.json').read_text(encoding='utf-8-sig'))
@@ -205,8 +183,8 @@ def build_field_plan(prepared: Path, executable: Path, repo: Path) -> dict:
     if has_rf and (type(reference) not in (int, float) or not math.isfinite(reference) or reference <= 0):
         raise ValueError('RF reference must be finite and positive')
     builders = {
-        'operating_builder': repo / 'src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua',
-        'exporter': repo / 'src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua',
+        'operating_builder': native_resource_path('build_dirichlet_patch_operating_pa.lua'),
+        'exporter': native_resource_path('export_detached_standalone_pa.lua'),
     }
     authority = dict(simion_identity=dict(release='SIMION 2020', executable_bytes=executable.stat().st_size,
                                          executable_sha256=file_sha256(executable)),
@@ -264,22 +242,3 @@ def build_field_plan(prepared: Path, executable: Path, repo: Path) -> dict:
     frozen = _frozen_field_source(prepared, design, plans)
     return dict(domains=plans, frozen_field_source=frozen,
                 **({'rf_reference_voltage_v': reference} if has_rf else {}))
-
-
-
-
-
-
-
-
-
-
-from msplatform.backends.simion.field_identity import (
-    working_point_member_id as working_point_member_id,
-    _require_sha256 as _require_sha256,
-    _member_projection as _member_projection,
-    laplace_member_identity as laplace_member_identity,
-    _domain_inputs as _domain_inputs,
-    _parent_boundary as _parent_boundary,
-    frontend_field_identity as frontend_field_identity,
-)

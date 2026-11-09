@@ -945,3 +945,15 @@ births, reinterpret the mother-cohort row map, validate a producer or launch a
 process. Payload and exception semantics are unchanged. The root SFI Program
 wrapper still owns its remaining project path-default injection and is not
 retired by this reader extraction.
+### Installed single-reflection field planning
+
+`msplatform.workflows.single_reflection_flight.field_plan.build_field_plan(prepared, executable)`
+consumes explicit frozen field design, geometry and source receipts, plus the selected
+SIMION executable identity. It locates the two existing installed Lua resources; it
+neither discovers an author checkout nor reads PA payloads, samples particles or
+starts a solver. Parent/optional entrance-refinement ordering, parent Dirichlet
+binding, schema2/3 source evidence, durable retired-alias audit resolution and cache
+identities are unchanged. Backend identity, bank and audit kernels retain their
+existing owners. The old root planning module is retired with its actual consumers.
+SFI runtime, downstream publication and PowerShell stage orchestration remain
+separate migration work; installed metadata planning is not native qualification.

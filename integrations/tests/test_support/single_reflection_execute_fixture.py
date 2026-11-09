@@ -335,8 +335,9 @@ import json,sys,stat
 from pathlib import Path
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
-from integrations.workflows.single_reflection_flight.field_plan import build_field_plan,bind_parent_fields,field_bank
-run,exe,repo=map(Path,sys.argv[1:]);plan=build_field_plan(run/'inputs',exe,repo)
+from msplatform.workflows.single_reflection_flight.field_plan import build_field_plan,bind_parent_fields
+from msplatform.backends.simion.field_bank import field_bank
+run,exe,repo=map(Path,sys.argv[1:]);plan=build_field_plan(run/'inputs',exe)
 out=run/'simion/frontend_fields';out.mkdir(parents=True)
 write=lambda p,v:p.write_text(json.dumps(v),encoding='utf-8',newline='\n')
 domains=[];parent_fields={}

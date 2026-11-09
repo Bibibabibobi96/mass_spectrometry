@@ -33,7 +33,7 @@ from integrations.runtime.build_single_flight_program import (
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2, lua_value as _lua_value
 from msplatform.results.single_reflection_source import instance_design_record
 from msplatform.backends.simion.frontend import native_frontend_instances
-from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
+from msplatform.backends.simion.field_identity import working_point_member_id
 
 from msplatform.workflows.single_reflection_flight.field_evidence import _SLOTS, load_downstream_fields
 from msplatform.workflows.single_reflection_flight.field_evidence import _small_record

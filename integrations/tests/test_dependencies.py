@@ -31,6 +31,67 @@ def load(path: Path) -> dict:
 
 
 class DependencyTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_single_reflection_field_plan_uses_only_frozen_module_and_lua_resources(self) -> None:
+        from integrations.tests.test_single_reflection_field_stage import prepared
+        from msplatform.workflows.single_reflection_flight.field_plan import build_field_plan
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "study").mkdir()
+            run, _ = prepared(root / "study", entrance_refinement=True)
+            expected = build_field_plan(run / "inputs", Path(sys.executable))
+            destination = root / "snapshot_inputs"
+            script = root / "freeze.ps1"
+            script.write_text("""param($Repo,$Destination,$Python)
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
+""", encoding="utf-8")
+            frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
+                                    str(REPO_ROOT), str(destination), sys.executable], cwd=root,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=120)
+            self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+            snapshot = destination / "runtime_snapshot"
+            module = "src/msplatform/workflows/single_reflection_flight/field_plan.py"
+            resources = ["src/msplatform/backends/simion/resources/" + name for name in
+                         ("build_dirichlet_patch_operating_pa.lua", "export_detached_standalone_pa.lua")]
+            self.assertFalse((snapshot / "integrations/workflows/single_reflection_flight/field_plan.py").exists())
+            selected = load(destination / "code_inventory.json")["dependencies"]
+            for relative in [module, *resources]:
+                self.assertEqual(sum(row["source_repo_path"] == relative for row in selected), 1)
+            for relative in [module, *resources]:
+                self.assertEqual((snapshot / relative).read_bytes(), (REPO_ROOT / relative).read_bytes())
+            code = """import sys,json
+from pathlib import Path
+sys.path[:0]=json.loads(sys.argv[1])
+from msplatform.workflows.single_reflection_flight import field_plan
+from msplatform.backends.simion import resources
+root=Path.cwd().resolve()
+assert Path(field_plan.__file__).resolve().is_relative_to(root)
+assert Path(resources.__file__).resolve().is_relative_to(root)
+print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3]))))
+"""
+            command = [sys.executable, "-I", "-B", "-c", code,
+                       json.dumps(python_import_roots(snapshot)), str(run / "inputs"), sys.executable]
+            def cold():
+                return subprocess.run(command, cwd=snapshot, capture_output=True, text=True,
+                                      encoding="utf-8", timeout=60)
+            result = cold()
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout), expected)
+            self.assertEqual([d["domain_id"] for d in expected["domains"]], ["parent", "entrance_refinement"])
+            for relative in [module, *resources]:
+                with self.subTest(missing=relative):
+                    target = snapshot / relative
+                    original = target.read_bytes()
+                    target.unlink()
+                    try:
+                        missing = cold()
+                        self.assertNotEqual(missing.returncode, 0, missing.stdout)
+                        self.assertIn(target.stem, missing.stderr)
+                    finally:
+                        target.write_bytes(original)
+
     def test_dependency_enumerator_single_package_resources_preserve_exact_inventory(self) -> None:
         from msplatform.execution.inputs import enumerate_python_sources
 

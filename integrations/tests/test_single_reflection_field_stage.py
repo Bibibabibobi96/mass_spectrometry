@@ -13,7 +13,12 @@ from unittest.mock import patch
 
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_author_instances
 from integrations.tests.test_single_reflection_fields import multipole_source
-from integrations.workflows.single_reflection_flight.field_plan import KINDS, bind_parent_fields, build_field_plan, field_bank, frontend_field_identity, audit_input_identity, write_audit_spec, reusable_audit, _bound_source_audit
+from msplatform.workflows.single_reflection_flight.field_plan import (
+    KINDS, bind_parent_fields, build_field_plan, _bound_source_audit,
+)
+from msplatform.backends.simion.field_bank import field_bank
+from msplatform.backends.simion.field_identity import frontend_field_identity
+from msplatform.backends.simion.field_audit import audit_input_identity, write_audit_spec, reusable_audit
 from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
@@ -32,7 +37,7 @@ def prepared(root: Path, *, source=None, entrance_refinement=False, local=False)
     else:
         request, run, _ = fixture(root, source=source, entrance_refinement=entrance_refinement)
     prepare(request, run)
-    return run, build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'][0]
+    return run, build_field_plan(run / 'inputs', Path(sys.executable))['domains'][0]
 
 
 class DirectFieldPlanTests(unittest.TestCase):
@@ -68,7 +73,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                     destination = case/'components/multipole/resolved_design.json'
                     destination.parent.mkdir(parents=True)
                     destination.write_text(json.dumps(source),encoding='utf-8')
-                    plan = build_field_plan(case,Path(sys.executable),ROOT)['domains'][0]
+                    plan = build_field_plan(case,Path(sys.executable))['domains'][0]
                     self.assertEqual(len(plan['physical_samples']), len(design['domains'][0]['physical_samples']))
                     keys.append([member['cache_key'] for member in plan['members']])
                 self.assertEqual(keys[0],keys[1])
@@ -129,7 +134,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                     inputs = run / 'inputs'
                     actual = ((inputs / 'frontend.gem').read_bytes(),
                               (inputs / 'projected_source.csv').read_bytes(),
-                              build_field_plan(inputs, Path(sys.executable), ROOT))
+                              build_field_plan(inputs, Path(sys.executable)))
                     if reference is None:
                         reference = actual
                     else:
@@ -154,7 +159,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                 else: bindings[first]['2'] = bindings[first]['1']
                 path.write_text(json.dumps(geometry), encoding='utf-8')
                 with self.subTest(change=change), self.assertRaises(ValueError):
-                    build_field_plan(run / 'inputs', Path(sys.executable), ROOT)
+                    build_field_plan(run / 'inputs', Path(sys.executable))
             # Physical rod groups are raw electrode sources now.  Reordering
             # their binding records is valid when their solver IDs remain
             # unique; this must not retain the removed PA+ mode restriction.
@@ -162,7 +167,7 @@ class DirectFieldPlanTests(unittest.TestCase):
             valid_bindings = valid['electrode_bindings'][first]
             valid_bindings['1'], valid_bindings['2'] = valid_bindings['2'], valid_bindings['1']
             path.write_text(json.dumps(valid), encoding='utf-8')
-            self.assertTrue(build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'])
+            self.assertTrue(build_field_plan(run / 'inputs', Path(sys.executable))['domains'])
 
     def test_downstream_moves_preserve_actual_frontend_inputs_and_cache_key(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -186,7 +191,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                 actual = dict(geometry=json.loads((inputs / 'frontend_geometry.json').read_text()),
                     design=json.loads((inputs / 'frontend_field_design.json').read_text()),
                     gem=(inputs / 'frontend.gem').read_bytes(),
-                    plan=build_field_plan(inputs, Path(sys.executable), ROOT))
+                    plan=build_field_plan(inputs, Path(sys.executable)))
                 if baseline is None:
                     baseline = actual
                     continue
@@ -230,14 +235,15 @@ class DirectFieldPlanTests(unittest.TestCase):
                 with self.subTest(case=case):
                     assertion = self.assertEqual if case.startswith('sample_') else self.assertNotEqual
                     assertion([m['cache_key'] for m in baseline['members']],
-                        [m['cache_key'] for m in build_field_plan(inputs, Path(sys.executable), ROOT)['domains'][0]['members']])
+                        [m['cache_key'] for m in build_field_plan(inputs, Path(sys.executable))['domains'][0]['members']])
 
     def test_two_rf_sources_preserve_scope_and_bind_explicit_member_boundary(self):
         import hashlib
         from integrations.tests.test_single_reflection_geometry import multi_inputs, quadrupole_source, candidate_300mm_fixture
         from msplatform.backends.simion.geometry import compile_frontend_geometry
         from msplatform.backends.simion.fields import prepare_field_design, POLICY
-        from integrations.workflows.single_reflection_flight.field_plan import _check_source_physics, _member_projection, _parent_boundary
+        from msplatform.workflows.single_reflection_flight.field_plan import _check_source_physics
+        from msplatform.backends.simion.field_identity import _member_projection, _parent_boundary
         sources = [quadrupole_source(r0=4., dc=1., frequency_hz=1e6, phase_rad=.1),
                    quadrupole_source(r0=4.5, dc=2., frequency_hz=1.1e6, phase_rad=.2)]
         oatof = candidate_300mm_fixture()
@@ -286,7 +292,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                 'surface', 'boundary_policy', 'rf_reference_voltage_v', 'simion_identity', 'builder_identity'})
             self.assertFalse(any(name.endswith(('.pa0', '.pa#', '.pa+')) for member in plan['members'] for name in member['filenames']))
             (run / 'inputs/source.csv').write_text('unrelated source change')
-            self.assertEqual(plan, build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'][0])
+            self.assertEqual(plan, build_field_plan(run / 'inputs', Path(sys.executable))['domains'][0])
             bank = field_bank(json.loads((run/'inputs/frontend_field_design.json').read_text()), ['parent'])['dynamic_roles'][0]
             self.assertEqual(bank['instance_index'], 1)
             self.assertEqual(bank['rf_differential_pa_basenames'], ['frontend.rf_reference.pa'])
@@ -305,7 +311,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                 elif field == 'convergence': design['domains'][0]['refine_convergence_v']['carrier_off'] *= 2
                 else: design['rf_reference_voltage_v'] *= 2
                 path.write_text(json.dumps(design))
-                self.assertNotEqual([m['cache_key'] for m in plan['members']], [m['cache_key'] for m in build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'][0]['members']])
+                self.assertNotEqual([m['cache_key'] for m in plan['members']], [m['cache_key'] for m in build_field_plan(run / 'inputs', Path(sys.executable))['domains'][0]['members']])
             for field in ('boundary', 'grid', 'missing_voltage', 'missing_sample', 'duplicate_sample', 'nonfinite'):
                 design = copy.deepcopy(original)
                 if field == 'boundary': design['domains'][0]['boundary_policy'] = 'zero_dirichlet'
@@ -316,20 +322,20 @@ class DirectFieldPlanTests(unittest.TestCase):
                 else: design['domains'][0]['refine_convergence_v']['rf_reference'] = float('nan')
                 path.write_text(json.dumps(design))
                 with self.subTest(field=field), self.assertRaises(ValueError):
-                    build_field_plan(run / 'inputs', Path(sys.executable), ROOT)
+                    build_field_plan(run / 'inputs', Path(sys.executable))
 
     def test_gem_drift_rejected_and_actual_builder_changes_key(self):
         with tempfile.TemporaryDirectory() as directory:
             run, plan = prepared(Path(directory))
-            module = 'integrations.workflows.single_reflection_flight.field_plan.file_sha256'
+            module = 'msplatform.workflows.single_reflection_flight.field_plan.file_sha256'
             def changed_builder(path):
                 return '0'*64 if Path(path).name == 'build_dirichlet_patch_operating_pa.lua' else file_sha256(path)
             with patch(module, side_effect=changed_builder):
-                self.assertNotEqual([m['cache_key'] for m in plan['members']], [m['cache_key'] for m in build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'][0]['members']])
+                self.assertNotEqual([m['cache_key'] for m in plan['members']], [m['cache_key'] for m in build_field_plan(run / 'inputs', Path(sys.executable))['domains'][0]['members']])
             with (run / 'inputs/frontend.gem').open('a') as stream:
                 stream.write('\n; changed geometry\n')
             with self.assertRaisesRegex(ValueError, 'GEM identity'):
-                build_field_plan(run / 'inputs', Path(sys.executable), ROOT)
+                build_field_plan(run / 'inputs', Path(sys.executable))
 
     def test_local_plan_keeps_actual_11_to_35_namespace_and_only_off_pulse_fields(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -355,7 +361,7 @@ class DirectFieldPlanTests(unittest.TestCase):
                     changed['working_points'][0]['electrode_voltages_v']['1'] = 0.
                 (run/'inputs/frontend_field_design.json').write_text(json.dumps(changed))
                 with self.subTest(defect=defect), self.assertRaises(ValueError):
-                    build_field_plan(run/'inputs', Path(sys.executable), ROOT)
+                    build_field_plan(run/'inputs', Path(sys.executable))
 
     def test_fine_identity_uses_published_parent_and_guard_is_not_a_solve_input(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -363,7 +369,7 @@ class DirectFieldPlanTests(unittest.TestCase):
             request, run, _ = fixture(root, entrance_refinement=True)
             prepare(request, run)
             inputs = run / 'inputs'
-            bundle = build_field_plan(inputs, Path(sys.executable), ROOT)
+            bundle = build_field_plan(inputs, Path(sys.executable))
             parent, fine = bundle['domains']
             authority = {member['member_id']: dict(cache_key=member['cache_key'], record=dict(
                 kind=member['working_points'][0]['kind'], path='frontend.'+member['member_id']+'.pa',
@@ -446,7 +452,7 @@ assert(store['raw.pa#']['1,1,1'][1]==12,'raw IDs changed')
             root = Path(directory)
             run, plan = prepared(root, source=source, entrance_refinement=entrance_refinement, local=local)
             if entrance_refinement:
-                plan = build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'][1]
+                plan = build_field_plan(run / 'inputs', Path(sys.executable))['domains'][1]
             spec = root / 'spec.tsv'
             write_audit_spec(plan, root / 'raw.pa#', root, spec)
             # Feed every actual provider piece / voltage table to a bounded PA double.
@@ -506,7 +512,7 @@ arg={spec,report};dofile(helper);assert(active==0)
                 path.write_text(json.dumps(request))
                 prepare(path,run)
                 design=json.loads((run/'inputs/frontend_field_design.json').read_text())
-                domain=build_field_plan(run/'inputs',Path(sys.executable),ROOT)['domains'][0]
+                domain=build_field_plan(run/'inputs',Path(sys.executable))['domains'][0]
                 plans.append({m['member_id']:m['cache_key'] for m in domain['members']})
                 row=field_bank(design,['parent'])['dynamic_roles'][0]
                 self.assertEqual('pulse_delta_pa_basename' in row,not held)
@@ -560,7 +566,7 @@ class FrozenFieldSourcePlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run, plan = prepared(Path(directory))
             identity = self._declare_frozen_parent_source(run / 'inputs', plan)
-            actual = build_field_plan(run / 'inputs', Path(sys.executable), ROOT)
+            actual = build_field_plan(run / 'inputs', Path(sys.executable))
             self.assertTrue(actual['frozen_field_source'])
             self.assertEqual(actual['domains'][0]['members'][0]['frozen_field_source']['identity'], identity)
             self.assertEqual(actual['domains'][0]['members'][0]['frozen_field_source']['cache_key'], canonical_pa_family_cache_key(identity))
@@ -577,12 +583,12 @@ class FrozenFieldSourcePlanTests(unittest.TestCase):
             design['working_points'][2]['electrode_voltages_v']['17'] += 1e-12
             design_path.write_text(json.dumps(design))
             with self.assertRaisesRegex(ValueError, 'pulse_delta.*physical identity'):
-                build_field_plan(run/'inputs', Path(sys.executable), ROOT)
+                build_field_plan(run/'inputs', Path(sys.executable))
             request_path = run/'inputs/request.json'
             request = json.loads(request_path.read_text())
             request['providers']['frontend_field_reuse_members'] = ['carrier_off', 'rf_reference']
             request_path.write_text(json.dumps(request))
-            current = build_field_plan(run/'inputs', Path(sys.executable), ROOT)['domains'][0]
+            current = build_field_plan(run/'inputs', Path(sys.executable))['domains'][0]
             for index in (0, 1):
                 member = current['members'][index]
                 source = member['frozen_field_source']
@@ -603,7 +609,7 @@ class FrozenFieldSourcePlanTests(unittest.TestCase):
             inputs = run / 'inputs'
             # An undeclared stray receipt cannot change the route.
             (inputs / 'frontend_field_source_receipt.json').write_text('{}', encoding='utf-8')
-            self.assertFalse(build_field_plan(inputs, Path(sys.executable), ROOT)['frozen_field_source'])
+            self.assertFalse(build_field_plan(inputs, Path(sys.executable))['frozen_field_source'])
             identity = self._declare_frozen_parent_source(inputs, plan)
             identity['builder_identity']['operating_builder'] = 'F' * 64
             identity_path = inputs / 'frontend_field_source_parent_identity.json'
@@ -614,17 +620,17 @@ class FrozenFieldSourcePlanTests(unittest.TestCase):
             receipt['domains'][0]['cache_identity_record'] = file_record(identity_path)
             receipt_path.write_text(json.dumps(receipt), encoding='utf-8')
             with self.assertRaisesRegex(ValueError, 'cache key|physical identity'):
-                build_field_plan(inputs, Path(sys.executable), ROOT)
+                build_field_plan(inputs, Path(sys.executable))
             identity_path.unlink()
             with self.assertRaisesRegex(ValueError, 'identity copy differs'):
-                build_field_plan(inputs, Path(sys.executable), ROOT)
+                build_field_plan(inputs, Path(sys.executable))
 
     def test_frozen_generation_metadata_uses_public_metadata_without_reading_pa_payloads(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run, plan = prepared(root)
             self._declare_frozen_parent_source(run / 'inputs', plan)
-            source_plan = build_field_plan(run / 'inputs', Path(sys.executable), ROOT)['domains'][0]['members'][0]
+            source_plan = build_field_plan(run / 'inputs', Path(sys.executable))['domains'][0]['members'][0]
             source_plan = dict(source_plan['frozen_field_source'], filenames=source_plan['frozen_field_source']['cache_filenames'],
                 frozen_field_source=dict(working_points=[source_plan['frozen_field_source']['record']]))
             generation = Path(source_plan['generation_directory'])

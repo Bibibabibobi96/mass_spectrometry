@@ -1859,7 +1859,7 @@ print('HELD_OFF_RESPONSE_FIXTURE=PASS')
 
     def test_actual_local_held_off_carrier_only_program_and_armed_guard(self):
         import csv
-        from integrations.workflows.single_reflection_flight.field_plan import field_bank
+        from msplatform.backends.simion.field_bank import field_bank
         with tempfile.TemporaryDirectory() as directory:
             path,run,request,_=release_fixture(Path(directory),local=True)
             flight=dict(pulse={'mode':'held_off'},maximum_flight_us=200.,maximum_step_us=.001,trajectory_quality=10)
