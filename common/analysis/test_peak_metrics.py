@@ -1,6 +1,9 @@
 """Hand-calculated peak widths and invalid numerical-domain regressions."""
 
 from dataclasses import replace
+from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 import numpy as np
@@ -9,6 +12,35 @@ from msplatform.analysis.peak_metrics import (
     AnalysisSettings, bootstrap_resolution_difference, compare_peak_shapes, half_height_width,
     compute_peak_metrics, compute_time_peak_metrics, compute_nominal_mass_peak_metrics,
 )
+
+
+class PeakDependencyBoundaryTests(unittest.TestCase):
+    def test_missing_scipy_fails_actual_metrics_without_loading_it_for_settings(self):
+        source = Path(__file__).resolve().parents[2] / "src"
+        code = """import sys,importlib.abc
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+class MissingScipy(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname=='scipy' or fullname.startswith('scipy.'):
+   raise ModuleNotFoundError('SciPy required for actual peak metrics: '+fullname)
+sys.meta_path.insert(0,MissingScipy())
+import numpy as np
+from msplatform.analysis import peak_metrics as metrics
+assert Path(metrics.__file__).is_relative_to(Path(sys.argv[1]))
+assert not any(name=='scipy' or name.startswith('scipy.') for name in sys.modules)
+settings=metrics.AnalysisSettings()
+sample=np.array([1.,2.,3.,4.,5.])
+for call in (lambda:metrics._kde_density(sample,sample,settings),
+             lambda:metrics.compute_time_peak_metrics(sample),
+             lambda:metrics.compare_peak_shapes(sample,sample+1.)):
+ try:call()
+ except ModuleNotFoundError as error:assert 'SciPy required for actual peak metrics' in str(error)
+ else:raise AssertionError('missing SciPy accepted by actual numerical metrics')
+"""
+        result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(source)],
+                                cwd=source.parent, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 class AnalysisSettingsTests(unittest.TestCase):

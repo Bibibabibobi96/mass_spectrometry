@@ -12,7 +12,6 @@ from numbers import Integral, Real
 from typing import Any
 
 import numpy as np
-from scipy import stats
 
 
 FWHM_FACTOR = 2.0 * np.sqrt(2.0 * np.log(2.0))
@@ -73,6 +72,8 @@ def _kde_density(
     grid: np.ndarray,
     settings: AnalysisSettings,
 ) -> np.ndarray:
+    from scipy import stats
+
     factor = settings.bandwidth_multiplier * sample.size ** (-1.0 / 5.0)
     estimator = stats.gaussian_kde(sample, bw_method=factor)
     return np.asarray(estimator(grid), dtype=float)
@@ -190,6 +191,8 @@ def _validate_equal_weights(weights: np.ndarray | None, count: int) -> float:
 def _time_peak_metrics(
     tof: np.ndarray, settings: AnalysisSettings,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    from scipy import stats
+
     time_grid = _spectrum_grid(tof, settings)
     time_density = _kde_density(tof, time_grid, settings)
     width, left, right, peak_index = half_height_width(time_grid, time_density)
@@ -437,6 +440,8 @@ def compare_peak_shapes(
     Callers establish their common source provenance; no IDs are generated,
     sorted or intersected here.
     """
+
+    from scipy import stats
 
     settings = settings or AnalysisSettings()
     left = _as_valid_sample(left_tof_us, "left_tof_us")

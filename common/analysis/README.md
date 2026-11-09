@@ -168,3 +168,10 @@ geometry与local-focus测试继续验证完整输出及原粒子证据，functio
 [oa-TOF峰形测试](../../projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_peak_metrics.py)、
 [场比较测试](../../projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_field_comparison_contracts.py)；
 MR及integration另测其输入接线和科学合同。修改公共函数后用[Changed软件验证](../../docs/OPERATIONS.md#软件验证与科学证据)查看受影响消费者。
+
+## Peak-statistics dependency
+
+Importing peak settings does not initialize SciPy. The canonical KDE, time-peak
+statistics and shape-comparison functions import `scipy.stats` when they execute;
+a missing required dependency propagates as an error. Numerical formulas,
+settings, outputs and the public SIMION analysis entry remain unchanged.
