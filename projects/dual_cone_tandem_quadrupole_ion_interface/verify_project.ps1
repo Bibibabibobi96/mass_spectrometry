@@ -57,7 +57,7 @@ try {
       'src/msplatform/backends/comsol/native_execution.py',
       'src/msplatform/results/gas_field.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\geometry.py',
-      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field.py',
+      'src\msplatform\contracts\gas_field.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_runtime.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\uniform_gas_runtime.py',
       'src\msplatform\backends\simion\dual_cone_geometry.py'

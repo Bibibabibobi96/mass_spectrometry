@@ -20,7 +20,7 @@ INTERFACE_PATH = PROJECT_ROOT / "config" / "gas_field_interface.json"
 
 
 def _load_validator():
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field
+    from msplatform.contracts import gas_field
 
     return gas_field
 

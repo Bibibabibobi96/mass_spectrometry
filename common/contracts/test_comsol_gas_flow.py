@@ -258,7 +258,7 @@ sys.path.extend(json.loads(sys.argv[2]))
 sys.path.insert(0,sys.argv[1])
 class NoExecution:
  def find_spec(self,name,path=None,target=None):
-  if name=='msplatform.execution' or name.startswith('msplatform.execution.'):
+  if any(name==prefix or name.startswith(prefix+'.') for prefix in ('msplatform.execution','msplatform.components','msplatform.backends')):
    raise AssertionError('READ_ONLY_IMPORTED_EXECUTION:'+name)
 sys.meta_path.insert(0,NoExecution())
 from msplatform.results.gas_field import read_gas_field

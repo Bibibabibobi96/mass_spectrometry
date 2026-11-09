@@ -607,6 +607,35 @@ try:
 finally:
     mpip_schema_backup.rename(mpip_module.SCHEMA)
 
+gas_reader_code = """
+import sys,json,pathlib,sysconfig
+class OfflineReader:
+ def find_spec(self,name,path=None,target=None):
+  if any(name==p or name.startswith(p+'.') for p in ('msplatform.components','msplatform.backends','msplatform.execution')):
+   raise AssertionError('OFFLINE_GAS_READER_REVERSE_IMPORT:'+name)
+sys.meta_path.insert(0,OfflineReader())
+from msplatform.results.gas_field import read_gas_field
+import msplatform.contracts.gas_field as contract
+assert pathlib.Path(contract.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+field=read_gas_field(json.loads(sys.argv[1]))
+assert field.kind=='gas_field' and 'model' not in field.data_locations
+print('INSTALLED_OFFLINE_GAS_READER=PASS')
+"""
+import subprocess
+gas_reference = json.dumps(fixture['gas_field_reference'])
+gas_read = subprocess.run([sys.executable, '-I', '-c', gas_reader_code, gas_reference],
+                          cwd=root, capture_output=True, timeout=30)
+assert gas_read.returncode == 0 and b'INSTALLED_OFFLINE_GAS_READER=PASS' in gas_read.stdout, gas_read.stderr
+gas_contract_path = pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/contracts/gas_field.py'
+gas_contract_backup = gas_contract_path.with_suffix('.absent')
+gas_contract_path.rename(gas_contract_backup)
+try:
+    missing_gas = subprocess.run([sys.executable, '-I', '-c', gas_reader_code, gas_reference],
+                                cwd=root, capture_output=True, timeout=30)
+    assert missing_gas.returncode != 0 and b'gas_field' in missing_gas.stderr, missing_gas.stderr
+finally:
+    gas_contract_backup.rename(gas_contract_path)
+
 for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
     (prepared_run/'inputs').mkdir(parents=True)
@@ -831,6 +860,26 @@ class InstalledScientificCoreTests(unittest.TestCase):
         workbench.write_text(json.dumps(case.workbench),encoding='utf-8')
         return dict(preparation=str(preparation),workbench=str(workbench),run=str(case.run),log=str(case.log),
                     expected=collect_log(case.preparation,case.workbench,case.run,case.log))
+
+    def gas_field_probe_fixture(self, root: Path) -> dict:
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_gas_flow_contract import (
+            PROJECT_ROOT, _write_fixture,
+        )
+        from msplatform.io.manifest_records import file_record
+        producer = root / "published-gas-field"
+        producer.mkdir()
+        csv_path, metadata = _write_fixture(producer)
+        inputs = {}
+        for name in ("gas_flow_science", "comsol_solver_numerics", "resolved_geometry"):
+            target = producer / (name + ".json")
+            target.write_bytes((PROJECT_ROOT / "config" / target.name).read_bytes())
+            inputs[name] = file_record(target)
+        manifest = producer / "run_manifest.json"
+        manifest.write_text(json.dumps(dict(schema_version=2, role="simulation_run_manifest",
+            project="dual_cone_tandem_quadrupole_ion_interface", mode="axisymmetric_gas_flow_screening",
+            run_id="installed-gas-reader", status="success", inputs=inputs,
+            outputs=[file_record(csv_path), file_record(metadata)])), encoding="utf-8")
+        return dict(manifest=file_record(manifest), product_id="gas_field")
 
     def multipole_ip_probe_fixture(self) -> str:
         from integrations.tests.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
@@ -1140,6 +1189,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               paired_static=paired,
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
+                                              gas_field_reference=self.gas_field_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')

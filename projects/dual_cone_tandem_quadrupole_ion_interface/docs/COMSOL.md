@@ -102,7 +102,7 @@ z_index,r_index,z_mm,r_mm,p_pa,temperature_k,u_z_m_per_s,u_r_m_per_s,rho_kg_per_
 运行后必须执行独立验证：
 
 ```powershell
-python -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field `
+python -m msplatform.contracts.gas_field `
   --csv C:\absolute\path\gas_field_rz.csv `
   --metadata C:\absolute\path\gas_field_metadata.json `
   --science projects\dual_cone_tandem_quadrupole_ion_interface\config\gas_flow_science.json `

@@ -12,15 +12,15 @@ Published gas data is read through `msplatform.results.gas_field`, including the
 successful-manifest format and its original frozen scientific records. Missing historical inputs do not
 fall back to current project defaults. The gas product excludes MPH from offline data consumption;
 explicit model reexport instead requires published model identity and native writer/release closure.
-No new native solve, installed acceptance or scientific qualification is claimed by this source migration.
+The source migration and the separately frozen installed native acceptance below are distinct epochs; neither grants scientific qualification.
 
 
 本文件是当前参数解释、物理链、资格和开放任务的唯一权威。多极杆通用理论见
 [多极杆理论](../../rf_multipole_ion_optics/docs/theory/index.md)，碰撞模型分级见
 [碰撞模型](../../rf_multipole_ion_optics/docs/theory/collisions.md)。
 
-双锥纯几何、COMSOL 气体场校验及两种 Lua 运行场编译已实迁到
-`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`；fractional GEM 编译实迁到
+Dual-cone geometry and the gas runtime compiler are installed in
+`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`; exported gas data validation is owned by `msplatform.contracts.gas_field`. Fractional GEM compilation is installed in
 `msplatform.backends.simion.dual_cone_geometry`。杆数组与杆 GEM 分别直接复用
 `msplatform.components.rf_multipole.round_rod_geometry` 和 `msplatform.backends.simion.rf_geometry`，
 旧项目内五个对应模块已退役且无转发桥。resolved JSON、GEM 与均匀场 Lua 已逐字节对照；
@@ -178,3 +178,53 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 
 gas-flow profile 的 baseline 与 resolved geometry 传入原 runner；prepare 冻结原 resolver 和输入并核对新鲜度，失配在下游原生调用前失败。
 能力查询与执行编译见[公共合同](../../../common/contracts/README.md#执行dry-run)；READY 仅描述声明条件。
+
+### Gas-field data contract ownership
+
+`msplatform.contracts.gas_field` is the sole pure validator of the exported
+axisymmetric field and its explicit science/numerics/geometry records. Producer,
+SIMION runtime compiler and offline results reader consume that same validator;
+the former component module is retired without an import alias. The original
+validation algorithm, CLI arguments, identities, thresholds and claim scope are
+unchanged. The results reader retains strict manifest/hash/terminal checks and
+requires no component, backend or execution imports. This relocation does not
+change or rerun the already frozen native gas-flow operation.
+
+This ownership repair passed 25 focused boundary/reader/producer/contract tests
+and the original five-method ordinary wheel/sdist acceptance (including offline
+reader origin and missing-validator rejection in both installed rounds). No new
+COMSOL/SIMION solve or scientific qualification was performed.
+
+### Installed gas-flow native acceptance (2026-11-09)
+
+An ordinary 365-payload wheel, SHA-256
+`defe92f298459e0697fa207fb3ee520baaf695d072fcd0e53c189c8b5107ba54`,
+completed build `20261109_195300__sim__comsol__p4-gas-installed-build-r1`
+and separate model reexport `20261109_200643__sim__comsol__p4-gas-installed-reexport-r1`.
+Their manifests are respectively
+`64895B2CBF78C49038F0961906FD68CBBD8811EF1ED5D91338D56DE78878656D` and
+`BA815D8690BE81E1A2ED8FF0F9536D4AB86DF92F87D464BFE534EAE4BB702F7D`.
+Both native operations returned zero with known writer births, confirmed exits and
+released shared-host resources; capacity ledger closure and absent protection leases
+were checked independently. The 11,541,539-byte original MPH retained SHA-256
+`680BECB779F0261AC7873DD661F5DBAB8BC57CC4F6F0DDA508E11BB3593900D4`
+through reexport. No source, frozen contract or installed payload was changed.
+
+Both field exports validated 295,236 rows (236,104 fluid), mass-balance relative
+error 0.008456419398312964, maximum Mach 4.51920108889889 and maximum Knudsen
+0.0342367589765737; terminal artificial diffusion remained 0.1. These are the
+existing empty-enclosure prototype contract results, not calibration, convergence,
+ion transport or Formal qualification. The provisional engineering profile was
+3600 seconds, 8 GiB process memory, 1 GiB files, 1 GiB available-RAM reserve and
+zero retries; these were user-selected limits, not measured solver requirements.
+Usage telemetry retained its last running samples rather than a final maximum;
+sampled build/reexport peaks were about 3.516/3.276 GB. Final process/resource
+closure is established by completion receipts and live ledger/process checks,
+not by those stale usage snapshots.
+
+A separate ordinary-installed offline reader passed with execution imports and
+MPH opens forbidden. The later contracts-owner source also reopened both original
+published data products with component/backend/execution imports and MPH access
+forbidden. That read proves current data interpretation; it does not relabel the
+365-payload native source as the later package epoch. Gas-assisted ion Fly, GUI,
+scientific qualification and complete P4 software/performance acceptance remain open.

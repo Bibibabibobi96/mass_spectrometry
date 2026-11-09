@@ -12,7 +12,7 @@ from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry im
     resolve_geometry,
     serialized,
 )
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import (
+from msplatform.contracts.gas_field import (
     _load_json,
     SCIENCE_ROLE,
     NUMERICS_ROLE,

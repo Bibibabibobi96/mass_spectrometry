@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from typing import Any
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import validate_gas_field
+from msplatform.contracts.gas_field import validate_gas_field
 from .artifacts import ArtifactResolver, OpenedArtifact, open_artifact
 
 
