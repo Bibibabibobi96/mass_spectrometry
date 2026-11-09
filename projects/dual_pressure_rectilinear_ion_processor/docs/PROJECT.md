@@ -241,7 +241,7 @@ loss_count／diagnostic_losses.csv语义明确为非出口终止，包含timeout
 新增带权手算、ID顺序、比例不变与完整CSV身份回归另测。快照／冷却专用旧等权矩没有被暗改为新beam方法。
 真实冻结副本已运行带权beam计算，删除冻结公共模块后失败且不回退活动仓库。
 
-几何图与局部OA复用[公共图形导出](../../../common/analysis/figure_export.py)，保留原名称、PNG／SVG、
+几何图与局部OA复用[公共图形导出](../../../src/msplatform/io/figure_export.py)，保留原名称、PNG／SVG、
 IP的210 DPI及白底。manifest记录实际导出的尺寸／格式／DPI／字节，路径整批预检；失败只清理本批创建文件。
 六模块合计80项通过，包含真实PNG／SVG渲染；冻结副本实际导出与缺模块拒绝也通过。
 冻结回归以同一参数化执行循环保留五类实际计算／导出、冻结源码来源及逐模块删除后拒绝回读仓库的检查。
