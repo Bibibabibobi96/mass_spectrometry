@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import unittest
 
-from common.simion.particle_source import render_standard_beams
+from msplatform.backends.simion.source import render_standard_beams
 
 
 REPOSITORY = Path(__file__).resolve().parents[4]

@@ -1,5 +1,40 @@
 # 双锥串联四极杆离子传输接口项目状态
 
+## Installed SIMION input preparation
+
+The pure preparation implementation is `msplatform.backends.simion.dual_cone_transport.prepare_transport`;
+its Program is an installed SIMION resource. Explicit transport/release/interface contracts remain research
+inputs. The public operation can consume a published gas-field reference using its original frozen data and
+contracts; producer geometry and gas science must match the selected transport inputs. It does not interpret
+gas pressure as an electric field or perform PA refinement/Fly. Uniform-gas runtime preparation remains a
+separate explicitly identified control. The old project implementation and serializer bridge are retired.
+
+A reproduced pre-existing defect accepted a COMSOL runtime manifest made for different producer geometry;
+the migrated preparation now rejects that mismatch. Official collision_sds initialization also previously
+ignored the declared nitrogen mass/diameter and diffusion switch, leaving its air defaults active. The
+Program now uses the installed official `SDS.init` hook to bind those three explicit values before SDS
+mass-data completion. This is a behavior correction from default air to declared nitrogen, not an inherited
+native trajectory PASS. Original mass/diameter/diffusion defaults are not silently redefined.
+
+Official API evidence: SIMION-2020 `examples/collision_sds/collision_sds.lua`, version
+`8.1.2.7.20140407`, user-init documentation near line807 and initialize_run before massdata completion
+near1349, reviewed2026-11-09; [vendor collision-model overview](https://simion.com/info/ion_gas_collisions.html).
+The five official SDS files remain explicitly provided installation resources frozen by identity, never
+vendored into Git. Plain-Lua initialization tests are not ion Fly or CFD qualification. The trajectory observation interval is explicitly selected by `trajectory.sample_interval_us` in the
+current research SIMION numerical input (1 microsecond for the existing case). Preparation requires a
+positive finite value; no implicit fallback is applied. Historical frozen inputs and results remain unchanged.
+Native dual-cone
+seven-electrode fractional field/transport integration remains OPEN; the installed RF-specific family
+operation does not by itself support this geometry. Prototype, uncalibrated gas and GUI/Formal limits remain.
+
+
+Integrated acceptance passed 28 focused transport/source/routing tests and five ordinary
+wheel/sdist-rebuilt-wheel parents. All 376 package payloads match main source and
+both wheels exactly. The installed probe exercised explicit 1/2-microsecond preparation,
+site-packages resource origins and frozen Program/RF bytes without PA creation or Fly.
+The three source serializer algorithms remain AST-identical to their retired owner.
+
+
 ## Installed gas-flow ownership migration
 
 The existing axisymmetric gas builder/task now reside in the installed COMSOL MATLAB directory and

@@ -114,7 +114,21 @@ if config.mode == 'gas_assisted_transport' then
   for _,name in ipairs{'pressure_pa','temperature_k','velocity_m_s'} do
     assert(type(field[name]) == 'function', 'gas field omits ' .. name)
   end
+  local function positive_parameter(value, name)
+    assert(type(value) == 'number' and value == value and value > 0 and value < math.huge,
+      name .. ' must be a positive finite number')
+  end
+  positive_parameter(config.collision_gas_mass_amu, 'collision_gas_mass_amu')
+  positive_parameter(config.collision_gas_diameter_nm, 'collision_gas_diameter_nm')
+  assert(config.diffusion_enabled == 0 or config.diffusion_enabled == 1,
+    'diffusion_enabled must be 0 or 1')
   local SDS = simion.import(assert(config.collision_sds_lua), 'noinstall')
+  -- Official collision_sds 8.1.2.7 init runs before mass-data completion.
+  function SDS.init()
+    adjustable SDS_collision_gas_mass_amu = config.collision_gas_mass_amu
+    adjustable SDS_collision_gas_diameter_nm = config.collision_gas_diameter_nm
+    adjustable SDS_diffusion = config.diffusion_enabled
+  end
   local function query_or_boundary_loss(query, fallback, x, y, z)
     if gas_support_lost[ion_number] then return unpack(fallback) end
     local result = {pcall(query, x-config.device_x_offset_mm,

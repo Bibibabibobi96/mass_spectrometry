@@ -19,6 +19,7 @@
   },
   "trajectory": {
     "rf_steps_per_period": 80,
+    "sample_interval_us": 1.0,
     "trajectory_quality": 0,
     "maximum_time_us": 3000.0,
     "maximum_step_us": 0.0125,

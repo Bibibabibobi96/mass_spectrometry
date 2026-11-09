@@ -17,12 +17,10 @@ from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
     render_gem,
 )
-from projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare import (
-    GAS_INTERFACE,
-    SDS_FILES,
-    prepare,
-    validate_gas_field_manifest,
+from msplatform.backends.simion.dual_cone_transport import (
+    SDS_FILES, prepare_transport, validate_runtime_manifest,
 )
+from msplatform.backends.simion.resources import native_resource_path
 from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import (
     export_uniform_runtime,
 )
@@ -33,9 +31,17 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.plot_simion_tra
 
 
 PROJECT = Path(__file__).resolve().parents[1]
+GAS_INTERFACE = PROJECT / "config" / "gas_field_interface.json"
 DEFAULT_RESOLVED = PROJECT / "config" / "resolved_geometry.json"
 DEFAULT_NUMERICS = PROJECT / "config" / "simion_solver_numerics.json"
 UNIFORM_SPEC = PROJECT / "config" / "uniform_rear_gas_field.json"
+
+
+def prepare(output_dir, **kwargs):
+    return prepare_transport(output_dir, resolved_path=DEFAULT_RESOLVED,
+        numerics_path=DEFAULT_NUMERICS, science_path=PROJECT / "config/ion_transport_science.json",
+        interface_path=GAS_INTERFACE, gas_science_path=PROJECT / "config/gas_flow_science.json",
+        source_spec_path=PROJECT / "config/cylindrical_ion_source.json", **kwargs)
 
 
 def load(path: Path) -> dict:
@@ -150,7 +156,7 @@ class SimionGeometryTests(unittest.TestCase):
             self.assertEqual(stage["rf_amplitude_v_zero_to_peak_per_group"], 300.0)
 
     def test_program_composes_shared_rf_and_official_sds_without_python_tracking(self) -> None:
-        program = (PROJECT / "simion" / "programs" / "gas_assisted_transport.lua").read_text(
+        program = native_resource_path("dual_cone_gas_assisted_transport.lua").read_text(
             encoding="utf-8"
         )
         self.assertIn("loadfile(assert(config.rf_drive_kernel))", program)
@@ -172,7 +178,7 @@ class SimionGeometryTests(unittest.TestCase):
             program.index("function segment.other_actions()"),
             program.index("terminal_code[ion_number] = 3"),
         )
-        self.assertIn("trajectory_samples.csv", (PROJECT / "simion" / "prepare.py").read_text(encoding="utf-8"))
+        self.assertIn("trajectory_samples.csv", (PROJECT.parents[1] / "src/msplatform/backends/simion/dual_cone_transport.py").read_text(encoding="utf-8"))
 
     def test_validated_comsol_gas_compilation_remains_available(self) -> None:
         compiler = (PROJECT / "workflows/gas_assisted_transport/build_gas_runtime.ps1").read_text(encoding="utf-8")
@@ -205,10 +211,9 @@ class GasPreparationTests(unittest.TestCase):
             self.assertEqual((output / "preparation_receipt.json").read_bytes(), original_receipt)
 
     def test_preparation_rejects_missing_selected_source_and_changed_copy(self) -> None:
-        module = "projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with mock.patch(module + ".PROGRAM", root / "missing.lua"):
+            with mock.patch("msplatform.backends.simion.resources.native_resource_path", return_value=root / "missing.lua"):
                 with self.assertRaises(FileNotFoundError):
                     prepare(root / "missing_source", mode="c0_gem_smoke")
             copy_file = shutil.copyfile
@@ -228,7 +233,7 @@ class GasPreparationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "snapshot"
             for relative in ("common/contracts", "common/ion_release", "common/simion",
-                             "projects/" + PROJECT.name + "/config", "projects/" + PROJECT.name + "/simion"):
+                             "projects/" + PROJECT.name + "/config"):
                 shutil.copytree(repo / relative, snapshot / relative,
                     ignore=lambda folder, names: [name for name in names
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
@@ -242,24 +247,32 @@ class GasPreparationTests(unittest.TestCase):
             kernel_record = freeze_file(repo / kernel, snapshot / kernel)
             self.assertEqual(kernel_record["sha256"], file_sha256(repo / kernel))
             self.assertEqual((snapshot / kernel).read_bytes(), (repo / kernel).read_bytes())
+            program = Path("src/msplatform/backends/simion/resources/dual_cone_gas_assisted_transport.lua")
+            program_record = freeze_file(repo / program, snapshot / program)
+            self.assertEqual(program_record["sha256"], file_sha256(repo / program))
+            self.assertEqual((snapshot / program).read_bytes(), (repo / program).read_bytes())
 
             code = r"""
 from pathlib import Path
 from msplatform.execution import inputs as frozen_inputs
-from projects.dual_cone_tandem_quadrupole_ion_interface.simion import prepare as p
+from msplatform.backends.simion import dual_cone_transport as p
 from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
 assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
 assert Path(frozen_inputs.__file__).resolve().is_relative_to(Path.cwd())
 import sys
 case = Path(sys.argv[2]); case.mkdir()
-c0 = p.prepare(case / 'c0', mode='c0_gem_smoke')
+config=Path.cwd() / 'projects/dual_cone_tandem_quadrupole_ion_interface/config'
+kwargs=dict(resolved_path=config/'resolved_geometry.json', numerics_path=config/'simion_solver_numerics.json',
+ science_path=config/'ion_transport_science.json',interface_path=config/'gas_field_interface.json',
+ gas_science_path=config/'gas_flow_science.json',source_spec_path=config/'cylindrical_ion_source.json')
+c0 = p.prepare_transport(case / 'c0', mode='c0_gem_smoke',**kwargs)
 export_uniform_runtime((case / 'field.lua').resolve(), (case / 'manifest.json').resolve(),
                        spec_path=Path.cwd() / 'projects/dual_cone_tandem_quadrupole_ion_interface/config/uniform_rear_gas_field.json',
-                       interface_path=p.GAS_INTERFACE)
+                       interface_path=kwargs["interface_path"])
 sds = case / 'sds'; sds.mkdir()
 for name in p.SDS_FILES:
     (sds/name).write_text('inert fixture\n', encoding='utf-8')
-gas = p.prepare(case / 'gas', mode='gas_assisted_transport',
+gas = p.prepare_transport(case / 'gas', mode='gas_assisted_transport',**kwargs,
                 collision_sds_dir=sds, gas_field_manifest=case / 'manifest.json')
 for receipt in (c0, gas):
     record = receipt['inputs']['resolved_geometry']
@@ -331,7 +344,7 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             path = root / "manifest.json"
             path.write_text(json.dumps(manifest), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "SHA-256 differs"):
-                validate_gas_field_manifest(path, interface)
+                validate_runtime_manifest(path, interface)
 
     def test_valid_gas_package_freezes_official_sds_closure_by_hash(self) -> None:
         interface = load(GAS_INTERFACE)
@@ -404,7 +417,7 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             self.assertIn("local z_rear = 3", source)
             self.assertIn("local uz_rear, ur_rear = 100, 0", source)
             self.assertIn("no fluid support outside declared envelope", source)
-            validate_gas_field_manifest(manifest_path, load(GAS_INTERFACE))
+            validate_runtime_manifest(manifest_path, load(GAS_INTERFACE))
 
 
 if __name__ == "__main__":

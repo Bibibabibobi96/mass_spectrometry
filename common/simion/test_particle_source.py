@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from common.simion.particle_source import project_direct_velocity, render_source_states, render_standard_beams
+from msplatform.backends.simion.source import project_direct_velocity, render_source_states, render_standard_beams
 
 
 class StandardBeamTests(unittest.TestCase):

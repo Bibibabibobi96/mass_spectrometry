@@ -53,6 +53,8 @@ try {
     $requiredCoreFiles = @(
       'src/msplatform/backends/comsol/matlab/build_and_solve_axisymmetric_gas_flow.m',
       'src/msplatform/backends/comsol/matlab/run_axisymmetric_gas_flow.m',
+      'src/msplatform/backends/simion/dual_cone_transport.py',
+      'src/msplatform/backends/simion/resources/dual_cone_gas_assisted_transport.lua',
       'src/msplatform/backends/comsol/gas_flow.py',
       'src/msplatform/backends/comsol/native_execution.py',
       'src/msplatform/results/gas_field.py',

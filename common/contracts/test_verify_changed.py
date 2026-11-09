@@ -1367,13 +1367,20 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", multipole)
 
         for shared_path in (
-            "common/simion/particle_source.py",
+            "src/msplatform/backends/simion/source.py",
             "common/comsol/create_multipole_round_rods.m",
         ):
             routed = self.routed_stages(shared_path)
             self.assertIn("rf_multipole_domain_tests", routed)
-            if shared_path.startswith("common/simion/"):
+            if shared_path == "src/msplatform/backends/simion/source.py":
                 self.assertIn("instrument_assembly_integration", routed)
+                for consumer in (
+                    "simion_common", "rf_multipole_generated_publications",
+                    "orthogonal_accelerator_static", "parallel_mirror_dual_stripe_mr_tof_static",
+                    "dual_pressure_rectilinear_ion_processor_static",
+                    "dual_cone_tandem_quadrupole_ion_interface_static",
+                ):
+                    self.assertIn(consumer, routed)
             for project_id in (
                 "rf_multipole_quadrupole",
                 "rf_multipole_hexapole",

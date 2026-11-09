@@ -361,7 +361,7 @@ try{
                 source_code = ["projects/rf_multipole_ion_optics/runtime/simion_particle_source.py",
                     "src/msplatform/components/rf_multipole/source_validation.py",
                     "projects/rf_multipole_ion_optics/core/interface_geometry.py",
-                    "common/simion/particle_source.py", "src/msplatform/contracts/particle_physics.py"]
+                    "src/msplatform/backends/simion/source.py", "src/msplatform/contracts/particle_physics.py"]
                 inventory.write_text(json.dumps({"files": [
                     {"path": "projects/rf_multipole_ion_optics/simion/simion_transport.lua", "sha256": "ABC"},
                     {"path": "projects/rf_multipole_ion_optics/analysis/fixture.py", "sha256": run.name},

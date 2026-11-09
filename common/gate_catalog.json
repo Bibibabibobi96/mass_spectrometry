@@ -483,6 +483,10 @@
       "repository_integration_group": "fast",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
+        {
           "regex": "^projects/rf_multipole_ion_optics/(?!tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "rf_multipole_project_changed"
         },
@@ -1214,6 +1218,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
+        {
           "regex": "^src/msplatform/(?:backends/simion/(?:pa_family_cache|standalone_pa_response_set)|execution/(?:cache_generation|immutable_pa_parity|capacity_ledger|artifact_cache_contract)|io/file_identity)\\.py$",
           "reason": "installed_simion_cache_closure_changed"
         },
@@ -1378,6 +1386,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
+        {
           "regex": "^projects/rf_multipole_ion_optics/(?!runtime/comsol_solver_numerics\\.ps1$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
           "reason": "rf_multipole_domain_changed"
         },
@@ -1530,6 +1542,10 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+        {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
         {
           "regex": "^projects/parallel_mirror_dual_stripe_mr_tof/analysis/(?!test_)[^/]+\\.py$",
           "reason": "prepared_joint_provider_changed"
@@ -1842,6 +1858,10 @@
       "project_id": "orthogonal_accelerator",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_consumer_changed"
+        },
+        {
           "exact": "common/contracts/expected_values.py",
           "reason": "reference_comparison_dependency_changed"
         },
@@ -1889,6 +1909,10 @@
       "repository_integration_group": "regression",
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
+        {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_consumer_changed"
+        },
         {
           "prefix": "projects/parallel_mirror_dual_stripe_mr_tof/",
           "reason": "parallel_mirror_dual_stripe_mr_tof_path_changed"
@@ -2328,6 +2352,10 @@
       ],
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
+        {
           "prefix": "projects/rf_multipole_ion_optics/variants/quadrupole/",
           "reason": "quadrupole_variant_changed"
         },
@@ -2612,6 +2640,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
+        {
           "prefix": "projects/rf_multipole_ion_optics/variants/hexapole/",
           "reason": "hexapole_variant_changed"
         },
@@ -2724,6 +2756,10 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+        {
+          "exact": "src/msplatform/backends/simion/source.py",
+          "reason": "installed_source_serialization_changed"
+        },
         {
           "prefix": "projects/rf_multipole_ion_optics/variants/octupole/",
           "reason": "octupole_variant_changed"
@@ -2855,7 +2891,7 @@
           "reason": "shared_cylinder_release_changed"
         },
         {
-          "exact": "common/simion/particle_source.py",
+          "exact": "src/msplatform/backends/simion/source.py",
           "reason": "shared_simion_source_changed"
         },
         {
@@ -2931,6 +2967,14 @@
           "reason": "dual_cone_tandem_quadrupole_ion_interface_changed"
         },
         {
+          "exact": "src/msplatform/backends/simion/dual_cone_transport.py",
+          "reason": "installed_dual_cone_preparation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/dual_cone_gas_assisted_transport.lua",
+          "reason": "installed_dual_cone_program_changed"
+        },
+        {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
@@ -2955,7 +2999,7 @@
           "reason": "shared_simion_rf_drive_dependency_changed"
         },
         {
-          "exact": "common/simion/particle_source.py",
+          "exact": "src/msplatform/backends/simion/source.py",
           "reason": "shared_simion_particle_source_dependency_changed"
         },
         {

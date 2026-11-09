@@ -1,30 +1,28 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory=$true)][string]$OutputDir,
-  [ValidateSet('c0_gem_smoke','gas_assisted_transport')][string]$Mode='gas_assisted_transport',
-  [string]$GasFieldManifest='',
-  [string]$SimionExe='C:\Program Files\SIMION-2020\simion.exe',
-  [string]$PythonExe=''
+ [Parameter(Mandatory=$true)][string]$OutputDir,
+ [Parameter(Mandatory=$true)][ValidateSet('c0_gem_smoke','gas_assisted_transport')][string]$Mode,
+ [Parameter(Mandatory=$true)][string]$PythonExe,
+ [Parameter(Mandatory=$true)][string]$ResolvedGeometry,
+ [Parameter(Mandatory=$true)][string]$Numerics,
+ [Parameter(Mandatory=$true)][string]$TransportScience,
+ [Parameter(Mandatory=$true)][string]$GasInterface,
+ [Parameter(Mandatory=$true)][string]$GasScience,
+ [Parameter(Mandatory=$true)][string]$SourceSpec,
+ [string]$GasFieldManifest='', [string]$GasFieldReference='',
+ [string]$CollisionSdsDirectory='', [string]$SimionExe=''
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-$arguments=@('-m','projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare','--output-dir',[IO.Path]::GetFullPath($OutputDir),'--mode',$Mode)
-if(Test-Path -LiteralPath $SimionExe -PathType Leaf){$arguments+=@('--simion-exe',[IO.Path]::GetFullPath($SimionExe))}
-if($Mode -eq 'gas_assisted_transport'){
-  if(-not(Test-Path -LiteralPath $SimionExe -PathType Leaf)){throw "SIMION executable is missing: $SimionExe"}
-  if([string]::IsNullOrWhiteSpace($GasFieldManifest)){throw 'Gas-assisted preparation requires -GasFieldManifest.'}
-  $sdsDir=Join-Path (Split-Path -Parent (Split-Path -Parent $SimionExe)) 'SIMION-2020\examples\collision_sds'
-  if(-not(Test-Path -LiteralPath $sdsDir -PathType Container)){
-    $sdsDir=Join-Path (Split-Path -Parent $SimionExe) 'examples\collision_sds'
-  }
-  $arguments+=@('--gas-field-manifest',[IO.Path]::GetFullPath($GasFieldManifest),'--collision-sds-dir',$sdsDir)
+if($PSVersionTable.PSEdition-ne'Core'-or$PSVersionTable.PSVersion.Major-lt7){throw 'PowerShell Core 7 is required.'}
+$arguments=@('-I','-B','-m','msplatform.backends.simion.dual_cone_transport',
+ '--output-dir',[IO.Path]::GetFullPath($OutputDir),'--mode',$Mode,
+ '--resolved',[IO.Path]::GetFullPath($ResolvedGeometry),'--numerics',[IO.Path]::GetFullPath($Numerics),
+ '--science',[IO.Path]::GetFullPath($TransportScience),'--interface',[IO.Path]::GetFullPath($GasInterface),
+ '--gas-science',[IO.Path]::GetFullPath($GasScience),'--source-spec',[IO.Path]::GetFullPath($SourceSpec))
+foreach($pair in @(@('--gas-field-manifest',$GasFieldManifest),@('--gas-field-reference',$GasFieldReference),
+ @('--collision-sds-dir',$CollisionSdsDirectory),@('--simion-exe',$SimionExe))){
+ if(-not[string]::IsNullOrWhiteSpace($pair[1])){$arguments+=@($pair[0],[IO.Path]::GetFullPath($pair[1]))}
 }
-Push-Location $repoRoot
-try{
-  & $python @arguments
-  if($LASTEXITCODE-ne 0){throw "Dual-cone SIMION preparation failed for mode '$Mode'."}
-}finally{Pop-Location}
+& $PythonExe @arguments
+if($LASTEXITCODE-ne 0){throw 'Dual-cone installed input preparation failed.'}

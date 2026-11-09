@@ -1,6 +1,6 @@
 # SIMION公共实现与验证
 
-本目录保存不含器件身份、专用坐标系或运行模式假设的SIMION公共实现。`particle_source.py`接收已经由
+本目录保存不含器件身份、专用坐标系或运行模式假设的SIMION公共实现。`msplatform.backends.simion.source`接收已经由
 上游适配器转换到工作台语义的 beam 或逐粒子状态并生成 FLY2/Lua 文本；多极杆的 ION11 和 canonical 字段映射
 仍由 `projects/rf_multipole_ion_optics/runtime/simion_particle_source.py` 负责。
 `render_source_states(..., significant_digits=17)`用于binary64往返精确投影；默认15位保持既有源文本不变。
@@ -41,7 +41,7 @@ Python／PowerShell合成夹具及外层default-vs-false诊断不被自动改写
 
 | 任务 | 入口 |
 |---|---|
-| 将已冻结的粒子状态投影和序列化为 FLY2 | [粒子序列化](particle_source.py)：`project_direct_velocity`共用6D、时间及直接速度投影；坐标变换、原ID映射和科学能量仍由消费者拥有 |
+| 将已冻结的粒子状态投影和序列化为 FLY2 | [粒子序列化](../../src/msplatform/backends/simion/source.py)：`project_direct_velocity`共用6D、时间及直接速度投影；坐标变换、原ID映射和科学能量仍由消费者拥有 |
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
 | 冻结工作台seed小配套、定义独立Laplace成员 | [共用工作台种子与独立场成员](#共用工作台种子与独立场成员) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |

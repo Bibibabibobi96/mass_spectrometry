@@ -91,7 +91,7 @@ particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_sta
 
 receipt 绑定完整版本化请求、canonical 状态、顺序粒子 ID、CSV 字节数和 SHA-256。`validate_materialized_release`
 重新生成表并拒绝任一身份或内容差异。该层不运行求解器，也不构造 FLY2；SIMION 使用者可在通过验证后调用
-[`common/simion/particle_source.py`](../simion/particle_source.py) 的纯渲染器。
+[`src/msplatform/backends/simion/source.py`](../../src/msplatform/backends/simion/source.py) 的纯渲染器。
 
 圆柱 receipt 校验和连续轴向体积源物化均只生成一次完整状态，并复用该状态计算表与身份，避免为同一
 请求再次采样；CSV 与 receipt 的字段、数值和身份语义保持不变。

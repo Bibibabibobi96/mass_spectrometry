@@ -21,7 +21,7 @@ from common.contracts import artifact_retention
 from msplatform.execution import run_capacity_lifecycle
 from common.simion import resource_profile, particle_batching
 from msplatform.execution import simion_dispatch as resource_scheduler
-from common.simion.particle_source import render_standard_beams
+from msplatform.backends.simion.source import render_standard_beams
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometry import prepare_geometry
 

@@ -23,7 +23,7 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_number
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
-from common.simion.particle_source import project_direct_velocity, render_source_states, render_standard_beams
+from msplatform.backends.simion.source import project_direct_velocity, render_source_states, render_standard_beams
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import (
     resolve_ip_mr_connection, validate_component_exit_binding,

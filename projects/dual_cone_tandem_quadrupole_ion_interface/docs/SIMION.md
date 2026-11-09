@@ -10,34 +10,24 @@
 
 当前数值合同和 GEM 固定使用 fractional 表面增强。公共 standalone PA 导出暂不支持保留 `.pa-surf`；不能改为无表面增强，也不能把已发布原生 `.paN` 交给 SIMION。因此原生 C0、共享 Fly 及两种气体来源的运行 wrapper 已整体退役，SIMION transport 执行 profile 已撤下，不保留旧名或阻断 stub。COMSOL 气流、canonical 场校验和纯输入准备继续可用。公共能力验证完成后，再沿统一 PA 事务和资源调度机制建立运行入口。恢复条件及历史资格见 [PROJECT](PROJECT.md#当前资格)。
 
-## 可执行的纯准备
+## Installed pure preparation
 
-无碰撞 C0 输入准备（不执行供应商）：
+Use `msplatform.backends.simion.dual_cone_transport.prepare_transport` or its installed CLI
+`python -I -m msplatform.backends.simion.dual_cone_transport --help`. Supply the resolved geometry,
+SIMION numerics, ion-transport science, gas interface, gas science and release specification explicitly.
+`trajectory.sample_interval_us` is the explicit positive finite observation cadence in SIMION numerics;
+it changes sampling output only, not RF stepping or maximum integration time.
+Gas preparation additionally selects either a published `gas_field` reference (CSV/metadata/original
+contracts read through the canonical reader) or an explicit validated runtime manifest. Official SDS's
+five files are supplied by an explicit installation directory, with no installation finder or checkout
+fallback. The research `prepare.ps1` transports these paths to the installed CLI only.
 
-```powershell
-projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\prepare.ps1 `
-  -Mode c0_gem_smoke `
-  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\scratch\<task_id>
-```
-
-它生成原 fractional GEM、输入副本和准备 receipt，不创建 PA 或传输率证据。
-
-COMSOL 气体场升级路径的输入准备：
-
-```powershell
-projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\prepare.ps1 `
-  -Mode gas_assisted_transport -GasFieldManifest <comsol-export-manifest.json> `
-  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\runs\<run_id>
-```
-
-在 COMSOL 场 manifest 缺失、字段/坐标域不符、Lua 场文件缺失或 SHA-256 漂移时，入口在调用
-SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 `null`，表示尚无全局 current 场；
-每次运行仍可显式消费已校验的 COMSOL 场 manifest 或规定均匀场，且须冻结来源。
-
-准备阶段从 SIMION 安装目录的 `examples\collision_sds` 冻结并哈希
-`collision_sds.lua`、`mbmr.dat`、`textfilelib.lua`、`arraylib.lua` 和 `m_defs.dat`。这些 SIMION 官方、
-受许可约束的文件只进入运行目录，不复制进 Git。RF 电压计算冻结并复用
-[`rf_drive.lua`](../../../src/msplatform/backends/simion/resources/rf_drive.lua)；粒子文件由 `common/simion/particle_source.py` 序列化。
+The Program and RF kernel come from canonical installed resources. Particle serialization is owned by
+`msplatform.backends.simion.source`; release sampling by `msplatform.ion_release.release`. The Program
+uses official `SDS.init` to bind the explicitly requested collision gas mass, diameter and diffusion switch
+before official initialization. Source/code migration and inert initialization do not authorize native
+Fly or lift the seven-electrode fractional integration restriction above. See PROJECT for the reproduced
+prior unused-knob behavior and vendor API evidence.
 
 当前源圆柱半径为 `1.5 mm`，位于半径 `5 mm` 的上游储气腔内。源可以宽于第一锥 `1 mm` 孔半径；
 运行器保留这些离子，并让锥孔电极几何和一致的 COMSOL 流体支持边界代理决定其能否进入下游。

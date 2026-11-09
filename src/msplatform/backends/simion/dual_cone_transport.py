@@ -5,15 +5,16 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from common.ion_release.release import materialize_release_from_file
-from common.simion.particle_source import render_standard_beams, render_source_states
+from msplatform.ion_release.release import materialize_release_from_file
+from msplatform.backends.simion.source import render_standard_beams, render_source_states
 from msplatform.backends.simion import dual_cone_geometry
 from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
@@ -21,16 +22,6 @@ from msplatform.backends.simion.dual_cone_geometry import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_geometry.json"
-DEFAULT_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
-SCIENCE = PROJECT_ROOT / "config" / "ion_transport_science.json"
-GAS_INTERFACE = PROJECT_ROOT / "config" / "gas_field_interface.json"
-GAS_FLOW_SCIENCE = PROJECT_ROOT / "config" / "gas_flow_science.json"
-CYLINDRICAL_SOURCE = PROJECT_ROOT / "config" / "cylindrical_ion_source.json"
-RF_KERNEL = REPO_ROOT / "src/msplatform/backends/simion/resources/rf_drive.lua"
-PROGRAM = PROJECT_ROOT / "simion" / "programs" / "gas_assisted_transport.lua"
 SDS_FILES = ("collision_sds.lua", "mbmr.dat", "textfilelib.lua", "arraylib.lua", "m_defs.dat")
 SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
 
@@ -42,7 +33,7 @@ def _load(path: Path, role: str) -> dict[str, Any]:
     return value
 
 
-def validate_gas_field_manifest(path: Path, interface: dict[str, Any]) -> tuple[dict[str, Any], Path]:
+def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[dict[str, Any], Path]:
     manifest = _load(path, interface["runtime_artifact_contract"]["manifest_role"])
     required = set(interface["runtime_artifact_contract"]["required_manifest_keys"])
     if set(manifest) != required:
@@ -69,16 +60,20 @@ def validate_gas_field_manifest(path: Path, interface: dict[str, Any]) -> tuple[
             if file_sha256(source_path).upper() != str(source_file["sha256"]).upper():
                 raise ValueError(f"COMSOL gas-field {role} SHA-256 differs")
         hashes = source_record["source_contract_sha256"]
-        if not isinstance(hashes, dict) or set(hashes) != {
-            "gas_flow_science",
-            "comsol_solver_numerics",
-            "resolved_geometry",
-        } or any(not SHA256.fullmatch(str(value)) for value in hashes.values()):
+        if (
+            not isinstance(hashes, dict)
+            or set(hashes)
+            != {
+                "gas_flow_science",
+                "comsol_solver_numerics",
+                "resolved_geometry",
+            }
+            or any(not SHA256.fullmatch(str(value)) for value in hashes.values())
+        ):
             raise ValueError("COMSOL gas-field source-contract identities differ")
     else:
         if set(source_record) != {"kind", "spec_sha256", "interface_sha256"} or any(
-            not SHA256.fullmatch(str(source_record[key]))
-            for key in ("spec_sha256", "interface_sha256")
+            not SHA256.fullmatch(str(source_record[key])) for key in ("spec_sha256", "interface_sha256")
         ):
             raise ValueError("uniform gas-field source identities differ")
     if manifest["coordinate_frame"] != interface["runtime_artifact_contract"]["coordinate_frame"]:
@@ -108,14 +103,14 @@ def _lua_string(value: str | Path) -> str:
 
 
 def _render_run_config(
-    *, mode: str, science: dict[str, Any], numerics: dict[str, Any],
-    resolved: dict[str, Any], solver: Path
+    *, mode: str, science: dict[str, Any], numerics: dict[str, Any], resolved: dict[str, Any], solver: Path
 ) -> str:
     def stage_record(name: str) -> str:
         stage = science["electric_field"][name]
         ids = stage["electrode_group_ids"]
         return (
-            "{waveform=" + _lua_string(stage["waveform"])
+            "{waveform="
+            + _lua_string(stage["waveform"])
             + f",frequency_hz={stage['frequency_hz']:.15g},phase_rad={stage['phase_rad']:.15g}"
             + f",rf_amplitude_v={stage['rf_amplitude_v_zero_to_peak_per_group']:.15g}"
             + f",dc_amplitude_v={stage['dc_amplitude_v_per_group']:.15g}"
@@ -133,40 +128,47 @@ def _render_run_config(
     terminal_device_z = float(plate["downstream_observation_end_z_mm"]) - 0.5 * pa_cell_z
     offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
     terminal_workbench_z = terminal_device_z + offset_z
-    return "\n".join([
-        "return {",
-        f"  mode={_lua_string(mode)},",
-        f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
-        f"  collision_sds_lua={_lua_string(collision_lua)},",
-        f"  gas_field_lua={_lua_string(gas_lua)},",
-        f"  trajectory_csv={_lua_string(results / 'trajectory_samples.csv')},",
-        f"  final_state_csv={_lua_string(results / 'particle_final_state.csv')},",
-        "  trajectory_sample_interval_us=1,",
-        f"  stage_1={stage_record('stage_1')},",
-        f"  stage_2={stage_record('stage_2')},",
-        f"  first_cone_v={science['electric_field']['static_electrodes_v']['first_cone']:.15g},",
-        f"  second_cone_v={science['electric_field']['static_electrodes_v']['second_cone']:.15g},",
-        f"  downstream_aperture_plate_v={science['electric_field']['static_electrodes_v']['downstream_aperture_plate']:.15g},",
-        f"  rf_steps_per_period={int(trajectory['rf_steps_per_period'])},",
-        f"  maximum_time_us={trajectory['maximum_time_us']:.15g},",
-        # Stop one half PA cell before the physical end so SDS does not
-        # evaluate the gas field beyond its declared domain on the terminal step.
-        f"  downstream_workbench_z_mm={terminal_workbench_z:.15g},",
-        f"  device_x_offset_mm={offset_x:.15g},device_y_offset_mm={offset_y:.15g},device_z_offset_mm={offset_z:.15g},",
-        f"  random_seed={int(trajectory['random_seed'])},",
-        f"  collision_gas_mass_amu={gas['collision_gas_mass_amu']:.15g},",
-        f"  collision_gas_diameter_nm={gas['collision_gas_diameter_nm']:.15g},",
-        f"  diffusion_enabled={1 if gas['diffusion_enabled'] else 0},",
-        "}",
-        "",
-    ])
+    return "\n".join(
+        [
+            "return {",
+            f"  mode={_lua_string(mode)},",
+            f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
+            f"  collision_sds_lua={_lua_string(collision_lua)},",
+            f"  gas_field_lua={_lua_string(gas_lua)},",
+            f"  trajectory_csv={_lua_string(results / 'trajectory_samples.csv')},",
+            f"  final_state_csv={_lua_string(results / 'particle_final_state.csv')},",
+            f"  trajectory_sample_interval_us={trajectory['sample_interval_us']:.15g},",
+            f"  stage_1={stage_record('stage_1')},",
+            f"  stage_2={stage_record('stage_2')},",
+            f"  first_cone_v={science['electric_field']['static_electrodes_v']['first_cone']:.15g},",
+            f"  second_cone_v={science['electric_field']['static_electrodes_v']['second_cone']:.15g},",
+            f"  downstream_aperture_plate_v={science['electric_field']['static_electrodes_v']['downstream_aperture_plate']:.15g},",
+            f"  rf_steps_per_period={int(trajectory['rf_steps_per_period'])},",
+            f"  maximum_time_us={trajectory['maximum_time_us']:.15g},",
+            # Stop one half PA cell before the physical end so SDS does not
+            # evaluate the gas field beyond its declared domain on the terminal step.
+            f"  downstream_workbench_z_mm={terminal_workbench_z:.15g},",
+            f"  device_x_offset_mm={offset_x:.15g},device_y_offset_mm={offset_y:.15g},device_z_offset_mm={offset_z:.15g},",
+            f"  random_seed={int(trajectory['random_seed'])},",
+            f"  collision_gas_mass_amu={gas['collision_gas_mass_amu']:.15g},",
+            f"  collision_gas_diameter_nm={gas['collision_gas_diameter_nm']:.15g},",
+            f"  diffusion_enabled={1 if gas['diffusion_enabled'] else 0},",
+            "}",
+            "",
+        ]
+    )
 
 
 def _materialize_gas_source(
-    *, frozen: Path, solver: Path, resolved: dict[str, Any], gas_science: dict[str, Any],
-    numerics: dict[str, Any]
+    *,
+    frozen: Path,
+    solver: Path,
+    resolved: dict[str, Any],
+    gas_science: dict[str, Any],
+    numerics: dict[str, Any],
+    source_spec_path: Path,
 ) -> tuple[Path, Path, dict[str, Any]]:
-    spec = _load(CYLINDRICAL_SOURCE, "repository_ion_release")
+    spec = _load(source_spec_path, "repository_ion_release")
     geometry = spec["geometry"]
     radius = float(geometry["radius_mm"])
     z_min = float(geometry["center_mm"][2]) - 0.5 * float(geometry["height_mm"])
@@ -180,7 +182,7 @@ def _materialize_gas_source(
 
     source_csv = frozen / "cylindrical_ion_source.csv"
     source_receipt = frozen / "cylindrical_ion_source_receipt.json"
-    receipt = materialize_release_from_file(CYLINDRICAL_SOURCE, source_csv, source_receipt)
+    receipt = materialize_release_from_file(source_spec_path, source_csv, source_receipt)
     offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
     beams: list[dict[str, Any]] = []
     states: list[dict[str, Any]] = []
@@ -194,17 +196,33 @@ def _materialize_gas_source(
         y = offset_y + float(row["y_mm"])
         z = offset_z + float(row["z_mm"])
         tob = float(row["birth_time_s"]) * 1e6
-        beams.append({
-            "tob": format(tob, ".15g"), "mass": format(mass, ".15g"),
-            "charge": int(row["charge_state"]), "x": format(x, ".15g"),
-            "y": format(y, ".15g"), "z": format(z, ".15g"),
-            "direction": tuple(format(value, ".15g") for value in (vx, vy, vz)),
-            "ke": format(energy, ".15g"), "cwf": 1, "color": 3,
-        })
-        states.append({
-            "particle_id": int(row["particle_id"]), "t": tob, "x": x, "y": y, "z": z,
-            "vx": vx / 1000.0, "vy": vy / 1000.0, "vz": vz / 1000.0, "ke": energy,
-        })
+        beams.append(
+            {
+                "tob": format(tob, ".15g"),
+                "mass": format(mass, ".15g"),
+                "charge": int(row["charge_state"]),
+                "x": format(x, ".15g"),
+                "y": format(y, ".15g"),
+                "z": format(z, ".15g"),
+                "direction": tuple(format(value, ".15g") for value in (vx, vy, vz)),
+                "ke": format(energy, ".15g"),
+                "cwf": 1,
+                "color": 3,
+            }
+        )
+        states.append(
+            {
+                "particle_id": int(row["particle_id"]),
+                "t": tob,
+                "x": x,
+                "y": y,
+                "z": z,
+                "vx": vx / 1000.0,
+                "vy": vy / 1000.0,
+                "vz": vz / 1000.0,
+                "ke": energy,
+            }
+        )
     fly2 = solver / "gas_source.fly2"
     states_path = solver / "gas_source_states.lua"
     fly2.write_text(render_standard_beams(beams), encoding="utf-8")
@@ -212,32 +230,70 @@ def _materialize_gas_source(
     return fly2, states_path, receipt
 
 
-def prepare(
+def prepare_transport(
     output_dir: Path,
     *,
     mode: str,
+    resolved_path: Path,
+    numerics_path: Path,
+    science_path: Path,
+    interface_path: Path,
+    gas_science_path: Path,
+    source_spec_path: Path,
+    gas_field_reference: dict | None = None,
     collision_sds_dir: Path | None = None,
     gas_field_manifest: Path | None = None,
     simion_exe: Path | None = None,
 ) -> dict[str, Any]:
     if mode not in {"c0_gem_smoke", "gas_assisted_transport"}:
         raise ValueError("unsupported SIMION preparation mode")
-    resolved = _load(DEFAULT_RESOLVED, "dual_cone_tandem_quadrupole_resolved_geometry")
-    numerics = _load(DEFAULT_NUMERICS, "dual_cone_simion_solver_numerics")
-    science = _load(SCIENCE, "dual_cone_simion_ion_transport_science")
-    interface = _load(GAS_INTERFACE, "dual_cone_simion_gas_field_interface")
-    gas_science = _load(GAS_FLOW_SCIENCE, "dual_cone_axisymmetric_gas_flow_science_contract")
+    resolved = _load(resolved_path, "dual_cone_tandem_quadrupole_resolved_geometry")
+    numerics = _load(numerics_path, "dual_cone_simion_solver_numerics")
+    science = _load(science_path, "dual_cone_simion_ion_transport_science")
+    interface = _load(interface_path, "dual_cone_simion_gas_field_interface")
+    gas_science = _load(gas_science_path, "dual_cone_axisymmetric_gas_flow_science_contract")
     if science.get("trajectory_authority") != "simion":
         raise ValueError("SIMION must remain the trajectory authority")
+    interval = numerics["trajectory"].get("sample_interval_us")
+    if (
+        isinstance(interval, bool)
+        or not isinstance(interval, (int, float))
+        or not math.isfinite(interval)
+        or interval <= 0
+    ):
+        raise ValueError("SIMION trajectory sample_interval_us must be explicit, positive and finite")
 
+    from msplatform.backends.simion.resources import native_resource_path
+
+    program = native_resource_path("dual_cone_gas_assisted_transport.lua")
+    rf_kernel = native_resource_path("rf_drive.lua")
+    producer = None
+    if gas_field_reference is not None:
+        if gas_field_manifest is not None:
+            raise ValueError("Select one explicit gas field product or runtime manifest")
+        from msplatform.results.gas_field import read_gas_field
+
+        producer = read_gas_field(gas_field_reference)
+        selected = {"geometry": resolved_path, "science": gas_science_path}
+        for name, path in selected.items():
+            if file_sha256(path).upper() != producer.data_records[name]["sha256"].upper():
+                raise ValueError("Gas producer " + name + " differs from selected transport inputs")
     validated_gas: tuple[dict[str, Any], Path] | None = None
     validated_sds_root: Path | None = None
     if mode == "gas_assisted_transport":
-        if gas_field_manifest is None:
+        if gas_field_manifest is None and producer is None:
             raise ValueError("gas-assisted preparation requires --gas-field-manifest")
         if collision_sds_dir is None:
             raise ValueError("gas-assisted preparation requires --collision-sds-dir")
-        validated_gas = validate_gas_field_manifest(gas_field_manifest, interface)
+        if gas_field_manifest is not None:
+            validated_gas = validate_runtime_manifest(gas_field_manifest, interface)
+            source = validated_gas[0]["source"]
+            if source["kind"] == "validated_comsol_axisymmetric_rz":
+                hashes = source["source_contract_sha256"]
+                if hashes["resolved_geometry"].upper() != file_sha256(resolved_path).upper():
+                    raise ValueError("Gas producer geometry differs from selected transport geometry")
+                if hashes["gas_flow_science"].upper() != file_sha256(gas_science_path).upper():
+                    raise ValueError("Gas producer science differs from selected transport gas science")
         validated_sds_root = collision_sds_dir.resolve(strict=True)
         missing_sds = [name for name in SDS_FILES if not (validated_sds_root / name).is_file()]
         if missing_sds:
@@ -252,37 +308,84 @@ def prepare(
     gem = solver / "dual_cone_tandem.gem"
     gem.write_text(render_gem(resolved, numerics), encoding="utf-8")
     inputs: dict[str, Any] = {
-        "resolved_geometry": freeze_file(DEFAULT_RESOLVED, frozen / "resolved_geometry.json"),
-        "simion_solver_numerics": freeze_file(DEFAULT_NUMERICS, frozen / "simion_solver_numerics.json"),
-        "ion_transport_science": freeze_file(SCIENCE, frozen / "ion_transport_science.json"),
-        "gas_field_interface": freeze_file(GAS_INTERFACE, frozen / "gas_field_interface.json"),
-        "rf_drive_kernel": freeze_file(RF_KERNEL, solver / "simion_rf_drive.lua"),
-        "simion_program": freeze_file(PROGRAM, solver / "gas_assisted_transport.lua"),
+        "resolved_geometry": freeze_file(resolved_path, frozen / "resolved_geometry.json"),
+        "simion_solver_numerics": freeze_file(numerics_path, frozen / "simion_solver_numerics.json"),
+        "ion_transport_science": freeze_file(science_path, frozen / "ion_transport_science.json"),
+        "gas_field_interface": freeze_file(interface_path, frozen / "gas_field_interface.json"),
+        "rf_drive_kernel": freeze_file(rf_kernel, solver / "simion_rf_drive.lua"),
+        "simion_program": freeze_file(program, solver / "gas_assisted_transport.lua"),
         "gem": {"path": str(gem), "sha256": file_sha256(gem)},
     }
 
-    source = science["ion"]
-    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
-    center_x, center_y, z_source = offset_x, offset_y, offset_z - 1.0
-    fly2 = solver / "c0_smoke.fly2"
-    fly2.write_text(
-        render_standard_beams([{
-            "tob": 0.0, "mass": source["mass_amu"], "charge": source["charge_state"],
-            "x": center_x, "y": center_y, "z": z_source,
-            "ke": source["source_kinetic_energy_ev"], "az": 0.0, "el": 0.0,
-            "cwf": 1.0, "color": 1,
-        }]),
-        encoding="utf-8",
-    )
-    states = solver / "source_states.lua"
-    states.write_text(render_source_states([{
-        "particle_id": 1, "t": 0.0, "x": center_x, "y": center_y, "z": z_source,
-        "vx": 0.0, "vy": 0.0, "vz": 0.0, "ke": source["source_kinetic_energy_ev"],
-    }]), encoding="utf-8")
-    inputs["particle_fly2"] = {"path": str(fly2), "sha256": file_sha256(fly2)}
-    inputs["source_states"] = {"path": str(states), "sha256": file_sha256(states)}
+    if mode == "c0_gem_smoke":
+        source = science["ion"]
+        offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
+        center_x, center_y, z_source = offset_x, offset_y, offset_z - 1.0
+        fly2 = solver / "c0_smoke.fly2"
+        fly2.write_text(
+            render_standard_beams(
+                [
+                    {
+                        "tob": 0.0,
+                        "mass": source["mass_amu"],
+                        "charge": source["charge_state"],
+                        "x": center_x,
+                        "y": center_y,
+                        "z": z_source,
+                        "ke": source["source_kinetic_energy_ev"],
+                        "az": 0.0,
+                        "el": 0.0,
+                        "cwf": 1.0,
+                        "color": 1,
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        states = solver / "source_states.lua"
+        states.write_text(
+            render_source_states(
+                [
+                    {
+                        "particle_id": 1,
+                        "t": 0.0,
+                        "x": center_x,
+                        "y": center_y,
+                        "z": z_source,
+                        "vx": 0.0,
+                        "vy": 0.0,
+                        "vz": 0.0,
+                        "ke": source["source_kinetic_energy_ev"],
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        inputs["particle_fly2"] = {"path": str(fly2), "sha256": file_sha256(fly2)}
+        inputs["source_states"] = {"path": str(states), "sha256": file_sha256(states)}
 
     if mode == "gas_assisted_transport":
+        if producer is not None:
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime import export_runtime
+
+            paths = producer.data_locations
+            gas_field_manifest = frozen / "compiled_gas_field_manifest.json"
+            export_runtime(
+                paths["field_csv"],
+                paths["field_metadata"],
+                solver / "compiled_gas_field.lua",
+                gas_field_manifest,
+                paths["science"],
+                paths["numerics"],
+                paths["geometry"],
+                interface_path,
+            )
+            validated_gas = validate_runtime_manifest(gas_field_manifest, interface)
+            inputs["gas_producer_manifest"] = freeze_file(
+                Path(producer.reference["manifest"]["path"]), frozen / "gas_producer_manifest.json"
+            )
+            for name in ("science", "numerics", "geometry"):
+                inputs["gas_producer_" + name] = freeze_file(paths[name], frozen / ("gas_producer_" + name + ".json"))
         assert validated_gas is not None and validated_sds_root is not None
         assert gas_field_manifest is not None
         manifest, runtime = validated_gas
@@ -290,20 +393,19 @@ def prepare(
         inputs["gas_field_runtime"] = freeze_file(runtime, solver / "gas_field_runtime.lua")
         (solver / "collision_sds").mkdir()
         inputs["simion_official_collision_sds"] = {
-            name: freeze_file(validated_sds_root / name, solver / "collision_sds" / name)
-            for name in SDS_FILES
+            name: freeze_file(validated_sds_root / name, solver / "collision_sds" / name) for name in SDS_FILES
         }
         inputs["gas_field_manifest_identity"] = manifest
         source_fly2, source_states, source_receipt = _materialize_gas_source(
-            frozen=frozen, solver=solver, resolved=resolved, gas_science=gas_science,
-            numerics=numerics
+            frozen=frozen,
+            solver=solver,
+            resolved=resolved,
+            gas_science=gas_science,
+            numerics=numerics,
+            source_spec_path=source_spec_path,
         )
-        inputs["gas_flow_science"] = freeze_file(
-            GAS_FLOW_SCIENCE, frozen / "gas_flow_science.json"
-        )
-        inputs["cylindrical_ion_source_spec"] = freeze_file(
-            CYLINDRICAL_SOURCE, frozen / "cylindrical_ion_source.json"
-        )
+        inputs["gas_flow_science"] = freeze_file(gas_science_path, frozen / "gas_flow_science.json")
+        inputs["cylindrical_ion_source_spec"] = freeze_file(source_spec_path, frozen / "cylindrical_ion_source.json")
         inputs["cylindrical_ion_source_csv"] = {
             "path": str((frozen / "cylindrical_ion_source.csv").resolve()),
             "sha256": file_sha256(frozen / "cylindrical_ion_source.csv"),
@@ -314,15 +416,11 @@ def prepare(
             "identity": source_receipt,
         }
         inputs["particle_fly2"] = {"path": str(source_fly2), "sha256": file_sha256(source_fly2)}
-        inputs["source_states"] = {
-            "path": str(source_states), "sha256": file_sha256(source_states)
-        }
+        inputs["source_states"] = {"path": str(source_states), "sha256": file_sha256(source_states)}
 
     run_config = solver / "run_config.lua"
     run_config.write_text(
-        _render_run_config(
-            mode=mode, science=science, numerics=numerics, resolved=resolved, solver=solver
-        ),
+        _render_run_config(mode=mode, science=science, numerics=numerics, resolved=resolved, solver=solver),
         encoding="utf-8",
     )
     inputs["simion_run_config"] = {"path": str(run_config), "sha256": file_sha256(run_config)}
@@ -337,11 +435,7 @@ def prepare(
             "surface": numerics["pa"]["surface_enhancement"],
             "simion_identity": {"executable_sha256": file_sha256(executable)},
             "refine_policy": numerics["pa"]["refine_policy"],
-            "builder_identity": {
-                "geometry_compiler_sha256": file_sha256(
-                    Path(dual_cone_geometry.__file__).resolve()
-                )
-            },
+            "builder_identity": {"geometry_compiler_sha256": file_sha256(Path(dual_cone_geometry.__file__).resolve())},
         }
         identity_path = frozen / "pa_cache_identity.json"
         identity_path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
@@ -374,13 +468,28 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--mode", required=True, choices=("c0_gem_smoke", "gas_assisted_transport"))
+    for name in ("resolved", "numerics", "science", "interface", "gas-science", "source-spec"):
+        parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--collision-sds-dir", type=Path)
     parser.add_argument("--gas-field-manifest", type=Path)
+    parser.add_argument("--gas-field-reference", type=Path)
     parser.add_argument("--simion-exe", type=Path)
     args = parser.parse_args()
-    receipt = prepare(
+    reference = (
+        None
+        if args.gas_field_reference is None
+        else json.loads(args.gas_field_reference.read_text(encoding="utf-8-sig"))
+    )
+    receipt = prepare_transport(
         args.output_dir,
         mode=args.mode,
+        resolved_path=args.resolved,
+        numerics_path=args.numerics,
+        science_path=args.science,
+        interface_path=args.interface,
+        gas_science_path=args.gas_science,
+        source_spec_path=args.source_spec,
+        gas_field_reference=reference,
         collision_sds_dir=args.collision_sds_dir,
         gas_field_manifest=args.gas_field_manifest,
         simion_exe=args.simion_exe,

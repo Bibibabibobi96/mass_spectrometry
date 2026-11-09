@@ -141,6 +141,34 @@ manifest = export_uniform_runtime(root/'uniform.lua', root/'uniform-manifest.jso
     spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
 assert manifest['role'] == 'dual_cone_gas_field_export'
 assert (root/'uniform.lua').read_bytes() == cone['uniform_lua'].encode()
+from msplatform.backends.simion import dual_cone_transport
+assert pathlib.Path(dual_cone_transport.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+cone_input = root / ('cone-input-' + sys.argv[2])
+cone_input.mkdir()
+for name in ('resolved','numerics','ion_transport_science','gas_field_interface','gas_flow_science','source_spec'):
+    (cone_input/(name+'.json')).write_text(json.dumps(cone[name]), encoding='utf-8')
+cone_outputs = []
+for interval in (1,2):
+    numerical = json.loads(json.dumps(cone['numerics']))
+    numerical['trajectory']['sample_interval_us'] = interval
+    numerical_path = cone_input/('numerics-'+str(interval)+'.json')
+    numerical_path.write_text(json.dumps(numerical), encoding='utf-8')
+    cone_output = root / ('cone-c0-'+sys.argv[2]+'-'+str(interval))
+    receipt = dual_cone_transport.prepare_transport(cone_output, mode='c0_gem_smoke',
+        resolved_path=cone_input/'resolved.json', numerics_path=numerical_path,
+        science_path=cone_input/'ion_transport_science.json', interface_path=cone_input/'gas_field_interface.json',
+        gas_science_path=cone_input/'gas_flow_science.json', source_spec_path=cone_input/'source_spec.json')
+    assert receipt['qualified_evidence'] is False and receipt['collision_model']=='none'
+    assert not list(cone_output.rglob('*.pa*'))
+    for name in ('rf_drive_kernel','simion_program'):
+        record=receipt['inputs'][name]
+        assert pathlib.Path(record['source_path']).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+        assert pathlib.Path(record['frozen_path']).read_bytes()==pathlib.Path(record['source_path']).read_bytes()
+    cone_outputs.append(cone_output)
+configs=[(output/'solver/simion/run_config.lua').read_text().replace(str(output),'<RUN>') for output in cone_outputs]
+assert configs[0].replace('trajectory_sample_interval_us=1,','trajectory_sample_interval_us=2,')==configs[1]
+for name in ('dual_cone_tandem.gem','c0_smoke.fly2','source_states.lua','gas_assisted_transport.lua','simion_rf_drive.lua'):
+    assert (cone_outputs[0]/'solver/simion'/name).read_bytes()==(cone_outputs[1]/'solver/simion'/name).read_bytes()
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field
 assert callable(corridor_field.compile_request)
@@ -1139,7 +1167,8 @@ class InstalledScientificCoreTests(unittest.TestCase):
             dual_cone = {name: json.loads((cone_config / filename).read_text(encoding='utf-8'))
                 for name, filename in (('baseline', 'baseline.json'), ('resolved', 'resolved_geometry.json'),
                     ('numerics', 'simion_solver_numerics.json'), ('uniform_rear_gas_field', 'uniform_rear_gas_field.json'),
-                    ('gas_field_interface', 'gas_field_interface.json'))}
+                    ('gas_field_interface', 'gas_field_interface.json'), ('ion_transport_science','ion_transport_science.json'),
+                    ('gas_flow_science','gas_flow_science.json'), ('source_spec','cylindrical_ion_source.json'))}
             dual_cone['gem'] = render_gem(dual_cone['resolved'], dual_cone['numerics'])
             for name in ('uniform_rear_gas_field', 'gas_field_interface'):
                 (root/(name+'.json')).write_text(json.dumps(dual_cone[name]), encoding='utf-8')

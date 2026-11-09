@@ -46,7 +46,7 @@ LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费�
 单位响应的尺寸、原点、电极映射、网格、Refine误差与源码身份必须冻结；几何壁碰撞和状态事件由实际积分记录。
 
 公共离子初态和receipt来自`common/ion_release/release.py`，FLY2序列化复用
-`common/simion/particle_source.py`。单槽IOB从公共干净种子派生，运行包装复用公共容量生命周期与主机租约。
+`src/msplatform/backends/simion/source.py`。单槽IOB从公共干净种子派生，运行包装复用公共容量生命周期与主机租约。
 源、场、时钟、数值、程序和HS1输入必须冻结至run-local并进入manifest。
 
 ## 官方资料查证

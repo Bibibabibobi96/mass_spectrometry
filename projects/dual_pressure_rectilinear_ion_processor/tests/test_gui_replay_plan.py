@@ -348,7 +348,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             analyze.assert_not_called()
 
     def test_complete_hundred_particle_controls_stay_private_and_byte_exact(self) -> None:
-        from common.simion.particle_source import render_source_states, render_standard_beams
+        from msplatform.backends.simion.source import render_source_states, render_standard_beams
         states = [dict(particle_id=i, t=0, x=i, y=0, z=0, vx=1, vy=0, vz=0, ke=5) for i in range(1,101)]
         beams = [dict(tob=0, mass=524, charge=1, x=i, y=0, z=0, direction=[1,0,0], ke=5, cwf=1, color=1) for i in range(1,101)]
         (self.baseline/"simion/source_states.lua").write_text(render_source_states(states), encoding="utf-8")

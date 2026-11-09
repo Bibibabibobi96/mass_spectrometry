@@ -4,6 +4,9 @@
 导引器。它是三重四极杆质量分析器 Q1 之前的独立离子传输组件；当前公开尺寸与 SCIEX QJet/Q0 类
 前端相似，但尚无足够证据绑定厂商或型号。
 
+Installed SIMION pure preparation is `msplatform.backends.simion.dual_cone_transport`;
+see [`docs/SIMION.md`](docs/SIMION.md) for explicit inputs and the separate native transport restriction.
+
 Installed gas-flow operations and explicit deployment/profile usage are described in
 [`docs/COMSOL.md`](docs/COMSOL.md); project parameters remain explicit research inputs.
 

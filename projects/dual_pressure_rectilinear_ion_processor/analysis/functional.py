@@ -32,7 +32,7 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
 from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
-from common.simion.particle_source import project_direct_velocity, render_standard_beams, render_source_states
+from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.backends.simion.ip_geometry import render_gem

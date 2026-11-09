@@ -16,7 +16,7 @@ import sys
 import unittest
 import uuid
 
-from common.simion.particle_source import render_standard_beams
+from msplatform.backends.simion.source import render_standard_beams
 from msplatform.contracts.particle_count import validate_positive_particle_count
 
 REPO = Path(__file__).resolve().parents[4]
@@ -220,7 +220,7 @@ program:close()
  $stage='native_source_position'
  $null=Invoke-FixtureNative probe_source @('--nogui','--noprompt','lua',$probe) $childOperations @{CHECKPOINT_IOB=$activeIob;CHECKPOINT_CHILD_IOB=(Join-Path $child 'simion/quad_monolithic.iob');CHECKPOINT_SOURCE_REPORT=$sourceReport}
  $sourceFly=Join-Path $package.input_dir 'native_position_particles.fly2'
- & $Python -c 'import sys;from pathlib import Path;from common.simion.particle_source import render_standard_beams;x,y,z=map(float,Path(sys.argv[1]).read_text().strip().split(","));Path(sys.argv[2]).write_text(render_standard_beams([dict(tob=0,mass=100,charge=1,x=x,y=y,z=z,direction=(1,0,0),ke=.1,cwf=1,color=1)]),encoding="ascii")' $sourceReport $sourceFly
+ & $Python -c 'import sys;from pathlib import Path;from msplatform.backends.simion.source import render_standard_beams;x,y,z=map(float,Path(sys.argv[1]).read_text().strip().split(","));Path(sys.argv[2]).write_text(render_standard_beams([dict(tob=0,mass=100,charge=1,x=x,y=y,z=z,direction=(1,0,0),ke=.1,cwf=1,color=1)]),encoding="ascii")' $sourceReport $sourceFly
  if($LASTEXITCODE-ne0){throw 'Native source projection failed.'}
  $config.inputs.consumer_native_particles=$sourceFly
  Write-RunJson -Path $package.run_config -Value $config -Depth 20

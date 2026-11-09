@@ -14,7 +14,7 @@ from msplatform.contracts.particle_physics import (
     kinetic_energy_ev,
 )
 from msplatform.components.rf_multipole.source_validation import load_validated_source
-from common.simion.particle_source import render_source_states, render_standard_beams
+from msplatform.backends.simion.source import render_source_states, render_standard_beams
 from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain
 
 
