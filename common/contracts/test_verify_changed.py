@@ -1593,15 +1593,15 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
-        completed = subprocess.run(
-            [pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
-             "-PlanOnly", "-ChangedPath", "common/contracts/test_changed_test_selection.py"],
-            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
-        self.assertIsNotNone(selected, completed.stdout)
-        request, _ = self.plan("-ChangedPath", "common/contracts/test_changed_test_selection.py")
+        arguments = ("-ChangedPath", "common/contracts/test_changed_test_selection.py")
+        # This representative must execute the CLI even if another test warmed the cache.
+        cache = dict(getattr(type(self), "_plans", {}))
+        cache.pop(arguments, None)
+        self.addCleanup(setattr, type(self), "_plans", getattr(type(self), "_plans", {}))
+        type(self)._plans = cache
+        request, output = self.plan(*arguments)
+        selected = re.search(r"SELECTED_STAGES=([^\s]+)", output)
+        self.assertIsNotNone(selected, output)
         contract_rows = [row for row in request["stages"]
                          if row["selected"] and (row["name"] == "common_contracts"
                          or row["name"].startswith("common_contracts__tests_"))]
