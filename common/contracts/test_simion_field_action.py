@@ -1,4 +1,5 @@
 """Actual public-example field action/owner with explicitly inert native transports."""
+from contextlib import contextmanager
 from functools import partial
 from importlib.resources import files
 import inspect
@@ -8,6 +9,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -30,6 +32,29 @@ from msplatform.io.manifest_records import file_record
 from msplatform.execution.payload_inputs import materialize_payloads
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession
+
+
+@contextmanager
+def measured_boundary(phase, boundary, *, operation_id=None):
+    """Retain raw elapsed boundaries; do not attribute their residual cost."""
+    started = time.perf_counter_ns()
+    facts = dict(phase=phase, boundary=boundary, operation_id=operation_id,
+        started_monotonic_ns=started, status="completed")
+    primary = None
+    try:
+        yield facts
+    except BaseException as failure:
+        primary = failure
+        facts["status"] = "failed"
+        raise
+    finally:
+        try:
+            facts["elapsed_ns"] = time.perf_counter_ns() - started
+            print("INERT_FIELD_BOUNDARY_TIMING=" + json.dumps(facts), flush=True)
+        except BaseException as diagnostic:
+            if primary is None:
+                raise
+            primary.add_note("Field boundary timing diagnostic failed: " + repr(diagnostic))
 
 
 def public_case():
@@ -140,21 +165,32 @@ class FieldActionTests(unittest.TestCase):
                     else: code += "assert p.is_file();"
                     code += 'print('+repr(marker)+')'
                     kwargs['arguments'] = ['-c',code]
-                try:
-                    return actual_process(session, operation_id, **kwargs)
-                except BaseException as failure:
-                    failure.add_note('INERT_PHASE='+case+' OP='+operation_id+' COMPLETED='+json.dumps(session._completed))
-                    for path in session.log_dir.rglob('*.stderr.log'):
-                        failure.add_note('INERT_STDERR='+path.read_text(encoding='utf-8'))
-                    raise
+                with measured_boundary(case, "actual_process_transport", operation_id=operation_id) as timing:
+                    try:
+                        receipt = actual_process(session, operation_id, **kwargs)
+                        timing["receipt_identity"] = dict(observation=receipt.get("observation"),
+                            host_release=receipt.get("host_release"))
+                        return receipt
+                    except BaseException as failure:
+                        receipt = getattr(failure, "receipt", None)
+                        if isinstance(receipt, dict):
+                            timing["receipt_identity"] = dict(observation=receipt.get("observation"),
+                                host_release=receipt.get("host_release"))
+                        failure.add_note('INERT_PHASE='+case+' OP='+operation_id+' COMPLETED='+json.dumps(session._completed))
+                        for path in session.log_dir.rglob('*.stderr.log'):
+                            failure.add_note('INERT_STDERR='+path.read_text(encoding='utf-8'))
+                        raise
             with patch.dict(os.environ, environment), patch.object(owner, '_capacity_policy', return_value=policy), patch(
                     'msplatform.execution.capacity_admission._capacity_policy', return_value=policy), patch.object(
                     RunSession, 'run_process', new=inert_transport), patch(
                     'msplatform.execution.processes.resource_path',
                     side_effect=lambda name: fixture_owner if name == 'process_owner.ps1' else resource_path(name)):
-                published = owner.run_managed_stage(context, **base,
-                    run_id='20261104_120000__test__python__field-model-source', expected_operation_ids=[],
-                    operation_dependencies={}, action=publish_model)
+                case = 'model'
+                with measured_boundary(case, "run_managed_stage") as timing:
+                    published = owner.run_managed_stage(context, **base,
+                        run_id='20261104_120000__test__python__field-model-source', expected_operation_ids=[],
+                        operation_dependencies={}, action=publish_model)
+                    timing["manifest_record"] = published['manifest']
                 model_ref = dict(manifest=published['manifest'], product_id='model')
                 self.assertEqual(load_field_model(model_ref).model.document, model.document)
                 field_refs, outcomes = [], []
@@ -168,10 +204,12 @@ class FieldActionTests(unittest.TestCase):
                             reuse_fields_reference=reuse)
                     references = [dict(manifest_record=model_ref['manifest'])]
                     if reuse: references.append(dict(manifest_record=reuse['manifest']))
-                    result = owner.run_managed_stage(context, **base,
-                        run_id='20261104_120000__test__python__field-action-'+case,
-                        expected_operation_ids=graph['expected_operation_ids'], operation_dependencies=graph['operation_dependencies'],
-                        source_references=references, action=action)
+                    with measured_boundary(case, "run_managed_stage") as timing:
+                        result = owner.run_managed_stage(context, **base,
+                            run_id='20261104_120000__test__python__field-action-'+case,
+                            expected_operation_ids=graph['expected_operation_ids'], operation_dependencies=graph['operation_dependencies'],
+                            source_references=references, action=action)
+                        timing["manifest_record"] = result['manifest']
                     reference = dict(manifest=result['manifest'], product_id='fields')
                     artifact = open_artifact(reference, expected_kind='field_bundle')
                     print('INERT_FIELD_PHASE_COMPLETE='+json.dumps(dict(case=case,

@@ -303,7 +303,23 @@ duplicate test or changing production budgets. The public GATE run passed in 67.
 software payload waited 45.515 seconds for a validated replan, the failing payload exited 7, pending work
 never started, immutable protection held, and the independent SIMION and GATE leases released. This
 restores the original OS failure-window combination; the complete performance targets remain OPEN.
-RF Static另有一项既存COMSOL恢复测试非UTF-8诊断解码错误，稳定复现，不与本迁移混报为成功。
+Current takeover acceptance at `70cddb63` plus test-only field timing completed the full Repository
+scope with eight workers: 46 PASS, 4 FAIL, 12 NOT_APPLICABLE; 6,833 distinct parent tests
+(6,808 success, 21 skip, one failure, three errors) and 7,774 successful subtests. Public wall was
+2,807.993174 seconds. All stages drained; six native Dirichlet tests actually succeeded. The four
+failures were the retired MR cache-path expectation, Candidate journal-constant reference, RF frozen
+fixture's deleted physics bridge and its full-inventory mutation timeout. The exact-HEAD remote
+Changed run separately ended with 20 PASS, 2 FAIL and 11 BLOCKED, also exposing the normal-interpreter
+dependency-path assumption in the publisher probe. Both failed runs remain failed evidence.
+The original default-duration failure method passed in 69.000129 seconds in this Repository run.
+Field-owner timing passed in 198.273739 seconds: model 1.667571, cold 150.273922 and reuse 44.865038;
+the eight cold and eight reuse process boundaries summed to 145.771629 and 41.334603 seconds.
+Cold frontend/downstream calls dominated at 124.970290 seconds. These boundaries include nested
+inert OS operations and cache work; their residuals do not establish publication, CPU, lock or CIM
+causes. Child usage files were temporary, so a finer split was not retained. No speedup ratio or
+15-minute/owner-budget closure follows from these measurements.
+The earlier RF diagnostic-decoding failure remains historical failed evidence; all 15 COMSOL
+analysis-recovery software tests succeeded in the current Repository run. No new COMSOL solve was run.
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。
