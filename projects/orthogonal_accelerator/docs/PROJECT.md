@@ -1,3 +1,20 @@
+## Installed recorded-focus analysis and bounded adjustment
+
+The sole recorded closed-two-zone focus analyzer is `msplatform.analysis.oa_focus`;
+its bounded voltage-decision state machine is `msplatform.workflows.oa_focus_fast_adjust`.
+Current analyzer and controller-state records use protocol revision 2. Their
+validated profile-content SHA is a scientific authority bound at initialization and
+checked when consuming state or analysis. Revision-1 historical files are retained
+unchanged but are not accepted for a new controller continuation; there is no fallback.
+Both require explicit geometry-profile content in Python and an explicit component
+contract on their CLI. They use the existing campaign validator and ideal two-zone
+formula, without selecting a project default. The native trial loop remains in its
+existing PowerShell runner and invokes the installed modules through the shared
+frozen Python transport. Raw events, original release/clock identities, full cohort,
+unknown/not-reached distinction, hard energy gates and bounded correction policy
+are preserved. MR energy-reference evaluation uses the gaps of its actual frozen
+provider plan, not a checkout profile. This source migration is not native qualification.
+
 # 正交脉冲加速器项目状态
 
 ## Installed legacy closed-focus PA planning
@@ -22,8 +39,7 @@ The existing leaf Python freezer now lives once in `simion/focus_python.ps1` and
 serves flight and PA-plan preparation with explicit input-name lists. The PA planner
 runs through that frozen `-I` execution boundary; cache/native lifecycle remains
 with its existing runner. This migration and software regression do not establish
-new native build, Refine, Fly, convergence or qualification. Legacy focus analysis,
-FastAdjust, parent-coupled/Dirichlet workflows and the separately recorded seed-helper
+new native build, Refine, Fly, convergence or qualification. Legacy parent-coupled/Dirichlet workflows and the separately recorded seed-helper
 consumer migration remain open.
 
 

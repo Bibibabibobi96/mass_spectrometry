@@ -86,7 +86,7 @@ auto为`min(8, logical_processors)`）。普通非重型GATE记录CPU但不因�
 .\common\verify.ps1 -Scope Owner -Owner orthogonal_accelerator
 .\common\verify.ps1 -Scope Repository
 # 可选预览
-.\common\verify.ps1 -ChangedPath projects/orthogonal_accelerator/analysis/component_focus_analysis.py -PlanOnly
+.\common\verify.ps1 -ChangedPath src/msplatform/analysis/oa_focus.py -PlanOnly
 ```
 
 职责与依赖只在[`common/gate_catalog.json`](../common/gate_catalog.json)维护。普通验证不认证全部Git历史，

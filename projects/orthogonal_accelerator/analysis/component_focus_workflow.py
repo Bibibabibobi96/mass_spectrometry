@@ -17,7 +17,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 from msplatform.ion_release.release import validate_release_spec
-from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
+from msplatform.analysis.oa_focus import _load_campaign
 from msplatform.backends.simion.oa_focus_plan import derive
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state, time_to_plane_s
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
@@ -192,7 +192,7 @@ def compile_workflow(request_path: Path, release_path: Path) -> dict[str, Any]:
         temporary_campaign = Path(directory) / "campaign.json"
         try:
             temporary_campaign.write_text(json.dumps(campaign, indent=2) + "\n", encoding="utf-8")
-            _load_campaign(temporary_campaign)
+            _load_campaign(temporary_campaign, geometry_profile=load_geometry_profile(request["geometry_profile_id"]))
             plan = derive(temporary_campaign, geometry_profile=load_geometry_profile(campaign["geometry_profile_id"]),
                           mesh_mm_per_gu=request["numerics"]["mesh_mm_per_gu"])
         except OSError as error:

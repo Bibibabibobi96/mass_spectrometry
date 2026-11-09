@@ -1893,6 +1893,10 @@
         {
           "prefix": "src/msplatform/workflows/local_frontend/",
           "reason": "canonical_local_frontend_workflow_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "reason": "installed_oa_focus_dependency_changed"
         }
       ],
       "command": {
@@ -2147,6 +2151,10 @@
         {
           "regex": "^src/msplatform/backends/simion/(?:oa_compiler|oa_focus_source|oa_focus_plan|two_zone_candidate|rectangular_accelerator|bare_three_zone_component|accelerator_renderer|accelerator_projection)\\.py$",
           "reason": "installed_oa_backend_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "reason": "installed_oa_focus_dependency_changed"
         }
       ],
       "command": {
@@ -2207,6 +2215,10 @@
         {
           "exact": "src/msplatform/io/scientific_csv.py",
           "reason": "scientific_csv_reader_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "reason": "installed_oa_focus_dependency_changed"
         }
       ],
       "command": {
@@ -2463,6 +2475,10 @@
         {
           "prefix": "src/msplatform/backends/simion/",
           "reason": "installed_tof_backend_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "reason": "installed_oa_focus_dependency_changed"
         }
       ],
       "command": {

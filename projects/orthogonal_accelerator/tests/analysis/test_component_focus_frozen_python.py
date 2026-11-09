@@ -14,7 +14,7 @@ import unittest
 
 from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
 from msplatform.backends.simion.oa_focus_source import materialize
-from projects.orthogonal_accelerator.analysis.component_focus_analysis import analyze
+from msplatform.analysis.oa_focus import analyze
 from msplatform.execution.manifest_publication import build_run_manifest
 
 REPO = Path(__file__).resolve().parents[4]
@@ -37,7 +37,7 @@ foreach($name in @('Invoke-FocusFrozenPython','Initialize-FocusFrozenPython')){
 $modules=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'},$true)|ForEach-Object{
  $elements=@($_.CommandElements);for($i=0;$i-lt$elements.Count-1;$i++){if($elements[$i].Extent.Text-eq'-Module'){$elements[$i+1].Extent.Text}}
 })
-if(($modules-join',')-ne'msplatform.ion_release.cylinder,msplatform.backends.simion.oa_focus_source,projects.orthogonal_accelerator.analysis.component_focus_analysis'){throw 'Actual leaf scientific invocations differ'}
+if(($modules-join',')-ne'msplatform.ion_release.cylinder,msplatform.backends.simion.oa_focus_source,msplatform.analysis.oa_focus'){throw 'Actual leaf scientific invocations differ'}
 New-Item -ItemType Directory -Path (Join-Path $Root inputs),(Join-Path $Root results),(Join-Path $Root simion) -Force|Out-Null
 $dataFiles=Get-Content $Data -Raw|ConvertFrom-Json -AsHashtable
 foreach($pair in $dataFiles.GetEnumerator()){Copy-VerifiedRunInput $pair.Value (Join-Path $Root ('inputs/'+$pair.Key))|Out-Null}
@@ -55,7 +55,7 @@ try{
  if(-not[object]::ReferenceEquals($OutputEncoding,$savedEncoding)){throw 'Package enumeration changed caller OutputEncoding'}
  if($Mode-eq'failure'){
   $cases=@()
-  foreach($relative in @('projects/orthogonal_accelerator/config/component_contract.json','projects/orthogonal_accelerator/analysis/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
+  foreach($relative in @('projects/orthogonal_accelerator/config/component_contract.json','src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
    $path=Join-Path $context.code_root $relative;$bytes=[IO.File]::ReadAllBytes($path);Remove-Item -LiteralPath $path
    try{
     $vendorCalls=0
@@ -72,12 +72,19 @@ try{
   if($LASTEXITCODE-ne0){throw 'Frozen release failed'}
   Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.backends.simion.oa_focus_source -Arguments @('--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--provider-plan',(Join-Path $Root 'inputs/component_focus_pa_plan.json'),'--resolved-projection',(Join-Path $Root 'inputs/resolved_projection.json'),'--fly2',(Join-Path $Root 'simion/source.fly2'),'--source-states',(Join-Path $Root 'simion/source.lua'),'--receipt',(Join-Path $Root 'results/source_projection.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen projection failed'}
-  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module projects.orthogonal_accelerator.analysis.component_focus_analysis -Arguments @('--events',(Join-Path $Root 'inputs/events.csv'),'--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--output',(Join-Path $Root 'results/analysis.json'))
+  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.analysis.oa_focus -Arguments @('--component-contract',(Join-Path $context.code_root 'projects/orthogonal_accelerator/config/component_contract.json'),'--events',(Join-Path $Root 'inputs/events.csv'),'--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--output',(Join-Path $Root 'results/analysis.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen scientific analysis failed'}
  }
  if($env:PYTHONPATH-cne$Repo){throw 'Scientific adapter changed caller environment'}
 }finally{$env:PYTHONPATH=$oldPath}
 '''
+
+
+def _geometry_profile():
+    import json
+    from pathlib import Path
+    document=json.loads((Path(__file__).resolve().parents[2]/"config/component_contract.json").read_text(encoding="utf-8"))
+    return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
@@ -108,7 +115,7 @@ class FocusFrozenPythonTests(unittest.TestCase):
         projection = root / "projection.json"
         projection.write_text(json.dumps(campaign["simion_projection"]), encoding="utf-8")
         events = fixture.write_events()
-        expected = analyze(events, fixture.receipt, fixture.campaign)
+        expected = analyze(events, fixture.receipt, fixture.campaign, geometry_profile=_geometry_profile())
         fly, source = root / "expected.fly2", root / "expected.lua"
         materialize(fixture.receipt, fixture.campaign, plan, fly, source, campaign["simion_projection"])
         return {"campaign.json": str(fixture.campaign), "campaign_template.json": str(fixture.campaign),
@@ -158,7 +165,7 @@ class FocusFrozenPythonTests(unittest.TestCase):
             origins = json.loads((run / "results/python_execution.json").read_text(encoding="utf-8"))
             self.assertEqual([row["module"] for row in origins], ["preflight", "msplatform.ion_release.cylinder",
                 "msplatform.backends.simion.oa_focus_source",
-                "projects.orthogonal_accelerator.analysis.component_focus_analysis"])
+                "msplatform.analysis.oa_focus"])
             self.assertTrue(all(Path(path).is_relative_to(code) for row in origins for path in row["module_paths"].values()))
             self.assertTrue(all(Path(row["geometry_contract_path"]).is_relative_to(code) for row in origins))
 

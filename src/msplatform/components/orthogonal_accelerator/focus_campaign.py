@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 from msplatform.ion_release.release import validate_release_spec
+from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
 
 class ComponentFocusError(ValueError):
@@ -63,3 +64,8 @@ def validate_campaign(value: dict[str, Any], *, geometry_profile: Mapping[str, f
             or min(_finite(projection[key], key) for key in ("focus_plane_padding_mm", "positive_z_enclosure_padding_mm")) <= 0.0):
         raise ComponentFocusError("component-focus SIMION projection contract is invalid")
     return value
+
+
+def geometry_profile_identity(geometry_profile: Mapping[str, float | int]) -> str:
+    """Bind the validated physical profile, independently of file/display paths."""
+    return canonical_json_sha256(validate_geometry_profile(geometry_profile))

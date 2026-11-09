@@ -33,7 +33,7 @@ from msplatform.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
-from projects.orthogonal_accelerator.analysis.component_focus_analysis import (
+from msplatform.analysis.oa_focus import (
     _component_energy_per_charge_v,
     _target_axial_energy_per_charge_v,
 )
@@ -412,7 +412,7 @@ def _accelerator_geometric_exit_reference(
             "Ey": source_energy["Ey"],
             "Ez": (
                 _target_axial_energy_per_charge_v(
-                    resolved_campaign, source_provider[2],
+                    resolved_campaign, source_provider[2], geometry_profile=layout,
                 )
                 + source_energy["Ez"]
             ),

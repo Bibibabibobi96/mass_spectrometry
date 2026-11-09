@@ -14,26 +14,22 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.scientific_csv import iter_csv_rows
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.ion_release.release import validate_materialized_release
-from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
+from msplatform.components.orthogonal_accelerator.accelerator_time_focus import time_to_fixed_plane_s
 
-from msplatform.components.orthogonal_accelerator.focus_campaign import ComponentFocusError, _finite, validate_campaign
+from msplatform.components.orthogonal_accelerator.focus_campaign import ComponentFocusError, _finite, validate_campaign, geometry_profile_identity
 
 
-def _load_campaign(path: Path) -> dict[str, Any]:
-    """Read an explicitly supplied campaign and its project-owned profile."""
+def _load_campaign(path: Path, *, geometry_profile: dict[str, Any]) -> dict[str, Any]:
+    """Read an explicitly supplied campaign against explicit profile content."""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ComponentFocusError("component-focus campaign is unreadable") from error
-    profile_id = value.get("geometry_profile_id") if isinstance(value, dict) else None
-    # Invalid identities go to the sole validator, without selecting a project file.
-    profile = load_geometry_profile(profile_id) if profile_id is not None else None
-    return validate_campaign(value, geometry_profile=profile)
+    return validate_campaign(value, geometry_profile=geometry_profile)
 
 _CSV_FIELDS = ("kind", "ion", "code", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 _REQUIRED = {
@@ -108,6 +104,7 @@ def _arrival_time_diagnostics(hits: list[tuple[dict[str, float], dict[str, float
 
 def _ideal_two_zone_contrast(
     hits: dict[int, tuple[dict[str, float], dict[str, float]]], campaign: dict[str, Any],
+    *, geometry_profile: dict[str, Any],
 ) -> dict[str, Any]:
     """Pair native hits with the ideal model at the same plane and clock.
 
@@ -115,7 +112,7 @@ def _ideal_two_zone_contrast(
     require every requested ideal arrival and at least two pairs. Differences
     describe this reference comparison; they do not identify a physical cause.
     """
-    profile = load_geometry_profile(campaign["geometry_profile_id"])
+    profile = geometry_profile
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     point = campaign["operating_point"]
     voltages = point["electrode_voltages_v"]
@@ -245,8 +242,8 @@ def _component_energy_per_charge_v(mass_amu: float, charge_state: float, velocit
     return kinetic_energy_ev(mass_amu, velocity_m_s, 0.0, 0.0) / abs(charge_state)
 
 
-def _target_axial_energy_per_charge_v(campaign: dict[str, Any], release_z_mm: float | None = None) -> float:
-    profile = load_geometry_profile(campaign["geometry_profile_id"])
+def _target_axial_energy_per_charge_v(campaign: dict[str, Any], release_z_mm: float | None = None, *, geometry_profile: dict[str, Any]) -> float:
+    profile = geometry_profile
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
     release_z = _finite(
         campaign["release_spec"]["geometry"]["center_mm"][2] if release_z_mm is None else release_z_mm,
@@ -264,14 +261,14 @@ def _target_axial_energy_per_charge_v(campaign: dict[str, Any], release_z_mm: fl
 
 def _exit_energy_assessment(
     sources: dict[int, dict[str, float]], events: dict[int, dict[str, dict[str, float]]],
-    campaign: dict[str, Any], plane_tolerance: float,
+    campaign: dict[str, Any], plane_tolerance: float, *, geometry_profile: dict[str, Any],
 ) -> dict[str, Any]:
     species, acceptance = campaign["release_spec"]["species"], campaign["acceptance"]
     mass = _finite(species["mass_amu"], "release mass")
     charge = _finite(species["charge_state"], "release charge state")
     if mass <= 0.0 or charge == 0.0:
         raise ComponentFocusError("release species is invalid")
-    target_axial = _target_axial_energy_per_charge_v(campaign)
+    target_axial = _target_axial_energy_per_charge_v(campaign, geometry_profile=geometry_profile)
     slow_tolerance = _finite(acceptance["maximum_exit_slow_energy_error_per_charge_v"], "exit slow-energy tolerance")
     axial_tolerance = _finite(acceptance["maximum_exit_axial_energy_error_per_charge_v"], "exit axial-energy tolerance")
     transverse_tolerance = _finite(acceptance["maximum_exit_transverse_energy_error_per_charge_v"], "exit transverse-energy tolerance")
@@ -292,7 +289,7 @@ def _exit_energy_assessment(
         measured_slow = _component_energy_per_charge_v(mass, charge, exit_state["vy_mm_us"] * 1000.0)
         measured_transverse = _component_energy_per_charge_v(mass, charge, exit_state["vx_mm_us"] * 1000.0)
         measured_axial = _component_energy_per_charge_v(mass, charge, exit_state["vz_mm_us"] * 1000.0)
-        expected_axial = _target_axial_energy_per_charge_v(campaign, source["z_mm"]) + source_axial
+        expected_axial = _target_axial_energy_per_charge_v(campaign, source["z_mm"], geometry_profile=geometry_profile) + source_axial
         slow_residual, axial_residual = measured_slow - source_slow, measured_axial - expected_axial
         transverse_residual = measured_transverse - source_transverse
         source_vx = source["vx_m_s"] / 1000.0
@@ -360,8 +357,8 @@ def _exit_energy_assessment(
         "passed": slow_passed and axial_passed and transverse_passed and velocity_bias_passed,
     }
 
-def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Path) -> dict[str, Any]:
-    campaign = _load_campaign(campaign_path)
+def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Path, *, geometry_profile: dict[str, Any]) -> dict[str, Any]:
+    campaign = _load_campaign(campaign_path, geometry_profile=geometry_profile)
     sources, release = _source_rows(release_receipt_path, campaign)
     events = _events(event_csv_path)
     if sorted(events) != sorted(sources):
@@ -401,14 +398,14 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
         warnings.append("longitudinal_time_spread_exceeds_target")
     transport_ok = fraction == _finite(acceptance["required_transport_fraction"], "required transport")
     focus_ok = peak_to_peak_time_ns is not None and peak_to_peak_time_ns <= _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread")
-    exit_energy = _exit_energy_assessment(sources, events, campaign, plane_tolerance)
+    exit_energy = _exit_energy_assessment(sources, events, campaign, plane_tolerance, geometry_profile=geometry_profile)
     slow_energy_ok = bool(exit_energy["cohort"]["slow_energy_passed"])
     axial_energy_ok = bool(exit_energy["cohort"]["axial_energy_passed"])
     transverse_energy_ok = bool(exit_energy["cohort"]["transverse_energy_passed"])
     transverse_velocity_bias_ok = bool(exit_energy["cohort"]["transverse_velocity_bias_passed"])
     hard_gate_passed = transport_ok and slow_energy_ok and axial_energy_ok and transverse_energy_ok and transverse_velocity_bias_ok
     return {
-        "schema_version": 1, "role": "orthogonal_accelerator_component_focus_analysis",
+        "schema_version": 2, "role": "orthogonal_accelerator_component_focus_analysis",
         "status": "candidate_complete" if hard_gate_passed else "candidate_incomplete",
         "qualification": "candidate_prototype_numeric_component_focus_only",
         "geometry_profile_id": campaign["geometry_profile_id"], "particle_count": total,
@@ -425,10 +422,10 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
             "propagation_duration_peak_to_peak_ns": (max(focus["t_us"]-source["t_us"] for source, focus in hits.values())-min(focus["t_us"]-source["t_us"] for source, focus in hits.values()))*1000.0 if len(hits)>=2 else None},
         "exit_energy_assessment": exit_energy,
         "arrival_time_diagnostics": _arrival_time_diagnostics(list(hits.values())),
-        "ideal_field_contrast": _ideal_two_zone_contrast(hits, campaign),
+        "ideal_field_contrast": _ideal_two_zone_contrast(hits, campaign, geometry_profile=geometry_profile),
         "warnings": warnings, "hard_gate": {"complete_transport_passed": transport_ok, "exit_slow_energy_passed": slow_energy_ok, "exit_axial_energy_passed": axial_energy_ok, "exit_transverse_energy_passed": transverse_energy_ok, "exit_transverse_velocity_bias_passed": transverse_velocity_bias_ok},
         "time_focus_assessment": {"passed": focus_ok, "threshold_ns": _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread"), "exceedance_policy": acceptance["time_spread_exceedance"]},
-        "identity": {"campaign_sha256": file_sha256(campaign_path).lower(), "release_receipt_sha256": file_sha256(release_receipt_path).lower(), "release_state_table_sha256": release["state_table"]["sha256"], "event_csv_sha256": file_sha256(event_csv_path).lower()},
+        "identity": {"geometry_profile_sha256": geometry_profile_identity(geometry_profile), "campaign_sha256": file_sha256(campaign_path).lower(), "release_receipt_sha256": file_sha256(release_receipt_path).lower(), "release_state_table_sha256": release["state_table"]["sha256"], "event_csv_sha256": file_sha256(event_csv_path).lower()},
         "simion_projection": campaign["simion_projection"],
         "limitations": ["Component-only result; it does not qualify system transport, detector arrival, or mass resolution."],
     }
@@ -440,10 +437,13 @@ def main() -> int:
     parser.add_argument("--release-receipt", required=True, type=Path)
     parser.add_argument("--campaign", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--component-contract", required=True, type=Path)
     args = parser.parse_args()
     try:
-        result = analyze(args.events, args.release_receipt, args.campaign)
-    except (OSError, ValueError) as error:
+        campaign = json.loads(args.campaign.read_text(encoding="utf-8"))
+        profile = json.loads(args.component_contract.read_text(encoding="utf-8"))["geometry_profiles"][campaign["geometry_profile_id"]]
+        result = analyze(args.events, args.release_receipt, args.campaign, geometry_profile=profile)
+    except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"ACCELERATOR_COMPONENT_FOCUS_ANALYSIS=FAIL ERROR={error}")
         return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)

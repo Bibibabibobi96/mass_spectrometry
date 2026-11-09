@@ -572,6 +572,12 @@ exit 0
                 self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", stages)
         self.assertTrue(downstream <= self.routed_stages(
             prefix + "analysis/component_focus_analysis.py").keys())
+        for installed in ("src/msplatform/analysis/oa_focus.py",
+                          "src/msplatform/workflows/oa_focus_fast_adjust.py"):
+            with self.subTest(installed=installed):
+                stages = self.routed_stages(installed)
+                self.assertTrue(downstream <= stages.keys())
+                self.assertIn("orthogonal_accelerator_static", stages)
 
     def test_ip_tests_preserve_actual_integration_fixture_consumers(self) -> None:
         prefix = "projects/dual_pressure_rectilinear_ion_processor/"

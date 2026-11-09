@@ -784,6 +784,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             "numerical_domain": {"local_exit_z_mm": 6.0},
             "requirements": {"placement": {"global_exit_z_mm": 0.0}},
             "layout": {
+                **load_geometry_profile("closed_two_zone_compact_mr_axial_r3_gap1_4mm"),
                 "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
             },
         }

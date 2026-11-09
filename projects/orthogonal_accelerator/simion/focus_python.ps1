@@ -23,11 +23,12 @@ try:
         sys.argv=[module,*arguments]
         runpy.run_module(module,run_name="__main__",alter_sys=True)
     else:
-        for name in ("msplatform.ion_release.cylinder","msplatform.backends.simion.oa_focus_source","projects.orthogonal_accelerator.analysis.component_focus_analysis"):
+        for name in ("msplatform.ion_release.cylinder","msplatform.backends.simion.oa_focus_source","msplatform.analysis.oa_focus"):
             importlib.import_module(name)
         campaign=json.loads(Path(arguments[0]).read_text(encoding="utf-8-sig"))
-        from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
-        load_geometry_profile(campaign["geometry_profile_id"])
+        from msplatform.components.orthogonal_accelerator.focus_campaign import validate_campaign
+        contract=json.loads((root/"projects/orthogonal_accelerator/config/component_contract.json").read_text(encoding="utf-8"))
+        validate_campaign(campaign,geometry_profile=contract["geometry_profiles"][campaign["geometry_profile_id"]])
 finally:
     paths={name:str(Path(value.__file__).resolve()) for name,value in sys.modules.items()
            if name.split('.')[0] in ("common","projects","msplatform") and getattr(value,"__file__",None)}

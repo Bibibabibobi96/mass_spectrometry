@@ -10,10 +10,17 @@ from unittest.mock import patch
 from msplatform.contracts.particle_physics import kinetic_energy_ev, speed_m_s_from_kinetic_energy_ev
 from msplatform.ion_release.release import generate_release_states, materialize_release
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
-from projects.orthogonal_accelerator.analysis.component_focus_analysis import ComponentFocusError, _ideal_two_zone_contrast, analyze
+from msplatform.analysis.oa_focus import ComponentFocusError, _ideal_two_zone_contrast, analyze
 
 ROOT = Path(__file__).resolve().parents[2]
 CAMPAIGN = ROOT / "config" / "two_zone_component_focus_campaign.json"
+
+
+def _geometry_profile():
+    import json
+    from pathlib import Path
+    document=json.loads((Path(__file__).resolve().parents[2]/"config/component_contract.json").read_text(encoding="utf-8"))
+    return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
 
 
 class ComponentFocusAnalysisTests(unittest.TestCase):
@@ -57,7 +64,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         return path
 
     def test_accepts_complete_negative_z_full_population(self) -> None:
-        result = analyze(self.write_events(), self.receipt, self.campaign)
+        result = analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(result["status"], "candidate_complete")
         self.assertEqual(result["focus_particle_count"], 3)
         self.assertEqual(result["loss_particle_count"], 0)
@@ -79,7 +86,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
                 fields[7] = "0.001"
                 lines[index] = ",".join(fields)
         events.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        result = analyze(events, self.receipt, self.campaign)
+        result = analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(result["status"], "candidate_incomplete")
         self.assertFalse(result["hard_gate"]["exit_transverse_velocity_bias_passed"])
         self.assertAlmostEqual(
@@ -97,14 +104,14 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         focus[8] = "1"
         lines[3] = ",".join(focus)
         events.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        result = analyze(events, self.receipt, self.campaign)
+        result = analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(result["status"], "candidate_incomplete")
         self.assertFalse(result["hard_gate"]["exit_slow_energy_passed"])
 
     def test_accepts_with_warning_when_the_longitudinal_time_spread_exceeds_target(self) -> None:
         events = self.write_events()
         events.write_text(events.read_text(encoding="utf-8").replace("focus,3,,0.1", "focus,3,,0.102").replace("exit,3,,0.1", "exit,3,,0.102"), encoding="utf-8")
-        result = analyze(events, self.receipt, self.campaign)
+        result = analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(result["status"], "candidate_complete")
         self.assertIn("longitudinal_time_spread_exceeds_target", result["warnings"])
         self.assertFalse(result["time_focus_assessment"]["passed"])
@@ -120,14 +127,14 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
                 fields[3] = str(0.1 + self.states[int(fields[1])]["z_mm"] * 0.001)
             rewritten.append(",".join(fields))
         events.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
-        diagnostics = analyze(events, self.receipt, self.campaign)["arrival_time_diagnostics"]
+        diagnostics = analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())["arrival_time_diagnostics"]
         self.assertEqual(diagnostics["status"], "source_z_dominated")
         self.assertGreater(diagnostics["coordinate_associations"]["z_mm"]["pearson_r"], 0.99)
         self.assertEqual(diagnostics["edge_field_evidence"], "not_determined_from_arrival_coordinate_association")
         self.assertEqual(diagnostics["numerical_convergence"], "not_assessed_from_one_numerics_setting")
 
     def test_emits_matching_uniform_field_contrast_for_every_result(self) -> None:
-        result = analyze(self.write_events(), self.receipt, self.campaign)
+        result = analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())
         contrast = result["ideal_field_contrast"]
         self.assertEqual(contrast["field_model"], "two_zone_piecewise_uniform_ideal_field_v1")
         self.assertTrue(contrast["same_release_and_runtime_voltages"])
@@ -150,7 +157,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
                 hits = {particle: (state, {"t_us": 5.0 + time_to_fixed_plane_s(
                     voltages[1], voltages[2], 4.0, 30.0, 34.0-state["z_mm"],
                     0.0, -offset, 100.0)*1e6}) for particle, state in sources.items()}
-                result = _ideal_two_zone_contrast(hits, campaign)
+                result = _ideal_two_zone_contrast(hits, campaign, geometry_profile=_geometry_profile())
                 self.assertAlmostEqual(result["ideal_peak_to_peak_t_ns"], expected, places=7)
                 self.assertEqual(result["observation_plane_offset_from_exit_mm"], offset)
                 self.assertEqual(result["diagnosis"], "observed_comparison_cause_unassessed")
@@ -162,7 +169,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
                     for state in sources.values()]
         hits = {particle: (state, {"t_us": 5.0 + arrival / 1000.0})
                 for (particle, state), arrival in zip(sources.items(), arrivals, strict=True)}
-        result = _ideal_two_zone_contrast(hits, campaign)
+        result = _ideal_two_zone_contrast(hits, campaign, geometry_profile=_geometry_profile())
         self.assertAlmostEqual(result["native_minus_ideal_peak_to_peak_t_ns"], 0.0, places=12)
         self.assertAlmostEqual(result["paired_time_difference_ns"]["rms"], 0.0, places=9)
 
@@ -178,7 +185,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         return events
 
     def test_partial_hits_compare_only_the_same_ids_without_changing_mother_denominator(self) -> None:
-        result = analyze(self.retain_focus_ids({1, 3}), self.receipt, self.campaign)
+        result = analyze(self.retain_focus_ids({1, 3}), self.receipt, self.campaign, geometry_profile=_geometry_profile())
         contrast = result["ideal_field_contrast"]
         self.assertEqual((result["particle_count"], result["focus_particle_count"], result["loss_particle_count"]), (3, 2, 1))
         self.assertEqual(result["transport_fraction"], 2 / 3)
@@ -188,13 +195,13 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         self.assertFalse(result["hard_gate"]["complete_transport_passed"])
         self.assertEqual(contrast["requested_particle_ids"], [1, 3])
         self.assertEqual(contrast["paired_particle_ids"], [1, 3])
-        full = analyze(self.write_events(), self.receipt, self.campaign)["ideal_field_contrast"]
+        full = analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())["ideal_field_contrast"]
         self.assertNotAlmostEqual(contrast["ideal_peak_to_peak_t_ns"], full["ideal_peak_to_peak_t_ns"], places=6)
 
     def test_zero_and_single_hit_have_no_width_or_cause_conclusion(self) -> None:
         for ids, status in ((set(), "unavailable_no_focus_hits"), ({3}, "single_pair_no_width_conclusion")):
             with self.subTest(ids=ids):
-                result = analyze(self.retain_focus_ids(ids), self.receipt, self.campaign)
+                result = analyze(self.retain_focus_ids(ids), self.receipt, self.campaign, geometry_profile=_geometry_profile())
                 contrast = result["ideal_field_contrast"]
                 self.assertEqual(contrast["status"], status)
                 self.assertEqual(contrast["paired_particle_count"], len(ids))
@@ -215,8 +222,8 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
             if calls == 2:
                 raise ValueError("test-only no ideal crossing")
             return real(*args, **kwargs)
-        with patch("projects.orthogonal_accelerator.analysis.component_focus_analysis.time_to_fixed_plane_s", side_effect=propagate):
-            result = analyze(self.write_events(), self.receipt, self.campaign)
+        with patch("msplatform.analysis.oa_focus.time_to_fixed_plane_s", side_effect=propagate):
+            result = analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())
         contrast = result["ideal_field_contrast"]
         self.assertEqual(contrast["status"], "incomplete_ideal_propagation")
         self.assertEqual(contrast["requested_particle_count"], 3)
@@ -236,7 +243,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         materialize_release(campaign["release_spec"], self.state, self.receipt)
         events = self.write_events()
         with self.assertRaisesRegex(ComponentFocusError, "clock differs"):
-            analyze(events, self.receipt, self.campaign)
+            analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())
         with events.open(encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
         for row in rows:
@@ -244,28 +251,28 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         with events.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
             writer.writeheader(); writer.writerows(rows)
-        result = analyze(events, self.receipt, self.campaign)
+        result = analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())
         pairs = result["ideal_field_contrast"]["particle_pairs"]
         self.assertTrue(all(row["source_t_us"] == 7.0 and row["ideal_arrival_t_us"] > 7.0 for row in pairs))
         self.assertTrue(all(row["native_arrival_t_us"] == 7.1 for row in pairs))
 
     def test_rejects_focus_event_off_the_declared_plane(self) -> None:
         with self.assertRaises(ComponentFocusError):
-            analyze(self.write_events(focus_z=-0.2), self.receipt, self.campaign)
+            analyze(self.write_events(focus_z=-0.2), self.receipt, self.campaign, geometry_profile=_geometry_profile())
 
     def test_rejects_source_event_identity_mismatch(self) -> None:
         events = self.write_events()
         first = self.states[2]["x_mm"]
         events.write_text(events.read_text(encoding="utf-8").replace(f"source,2,,0,{first}", "source,2,,0,9"), encoding="utf-8")
         with self.assertRaisesRegex(ComponentFocusError, "differs from common release state"):
-            analyze(events, self.receipt, self.campaign)
+            analyze(events, self.receipt, self.campaign, geometry_profile=_geometry_profile())
 
     def test_rejects_receipt_for_different_release_specification(self) -> None:
         campaign = json.loads(self.campaign.read_text(encoding="utf-8"))
         campaign["release_spec"]["particle_count"] = 2
         self.campaign.write_text(json.dumps(campaign), encoding="utf-8")
         with self.assertRaisesRegex(ComponentFocusError, "specification differs"):
-            analyze(self.write_events(), self.receipt, self.campaign)
+            analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())
 
     def test_actual_runner_freezes_public_csv_writer_companion(self) -> None:
         import subprocess
@@ -292,7 +299,7 @@ Invoke-Expression $copies[0].Extent.Text | Out-Null
 
     def test_public_stream_reader_retains_header_contract_and_rejects_bad_rows(self) -> None:
         from msplatform.io.scientific_csv import iter_csv_rows
-        from projects.orthogonal_accelerator.analysis import component_focus_analysis as focus
+        from msplatform.analysis import oa_focus as focus
         events = self.write_events()
         with patch.object(focus, "iter_csv_rows", wraps=iter_csv_rows) as reader:
             result = focus._events(events)
@@ -334,7 +341,7 @@ $tables=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.HashtableA
 if($tables.Count-ne1){throw 'Expected one component summary identity boundary'}
 $pipeline=$tables[0];while($pipeline-isnot[Management.Automation.Language.PipelineAst]){$pipeline=$pipeline.Parent}
 $analysisCalls=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'-and
- @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'projects.orthogonal_accelerator.analysis.component_focus_analysis'}).Count},$true))
+ @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'msplatform.analysis.oa_focus'}).Count},$true))
 if($analysisCalls.Count-ne1){throw 'Expected one actual frozen analysis call'}
 $family=Join-Path $Root 'parent';$generation=Join-Path $Root 'generation';$controller=Join-Path $Root 'private controller.pa0'
 $summary=Join-Path $Root 'summary.json';$analysis=Join-Path $Root 'analysis.json'
@@ -369,10 +376,13 @@ finally {$guard.Dispose()}
         self.assertEqual(summary["runtime_controller_bytes"], controller.stat().st_size)
         self.assertEqual(summary["status"], "candidate_incomplete")
         arguments = observed["analysis"]["arguments"]
-        self.assertEqual(arguments, ["--events", str(events), "--release-receipt", str(self.receipt),
+        self.assertEqual(arguments, ["--component-contract", str(self.root / "frozen code/projects/orthogonal_accelerator/config/component_contract.json"), "--events", str(events), "--release-receipt", str(self.receipt),
                                     "--campaign", str(self.campaign), "--output", str(self.root / "analysis.json")])
         self.assertEqual(observed["analysis"]["code_root"], str(self.root / "frozen code"))
         self.assertEqual(observed["analysis"]["python"], sys.executable)
+        frozen_contract = self.root / "frozen code/projects/orthogonal_accelerator/config/component_contract.json"
+        frozen_contract.parent.mkdir(parents=True, exist_ok=True)
+        frozen_contract.write_bytes((repo / "projects/orthogonal_accelerator/config/component_contract.json").read_bytes())
         actual = subprocess.run([sys.executable, "-m", observed["analysis"]["module"], *arguments],
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)

@@ -5,13 +5,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.orthogonal_accelerator.analysis.component_focus_fast_adjust import (
+from msplatform.components.orthogonal_accelerator.focus_campaign import geometry_profile_identity
+
+from msplatform.workflows.oa_focus_fast_adjust import (
     _candidate_campaign, _tier, initialize, record_analysis,
 )
 
 
 PROJECT = Path(__file__).resolve().parents[2]
 CAMPAIGN = PROJECT / "config" / "two_zone_component_focus_campaign.json"
+
+
+def _geometry_profile():
+    import json
+    from pathlib import Path
+    document=json.loads((Path(__file__).resolve().parents[2]/"config/component_contract.json").read_text(encoding="utf-8"))
+    return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
 
 
 class ComponentFocusFastAdjustTests(unittest.TestCase):
@@ -35,7 +44,8 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
         geometry_ok = cohort_slow <= 0.05 and cohort_transverse <= 0.05
         path = self.root / name
         path.write_text(json.dumps({
-            "role": "orthogonal_accelerator_component_focus_analysis",
+            "schema_version": 2, "role": "orthogonal_accelerator_component_focus_analysis",
+            "identity": {"geometry_profile_sha256": geometry_profile_identity(_geometry_profile())},
             "status": "candidate_complete" if accepted else "candidate_incomplete",
             "focus_metrics": {"peak_to_peak_t_ns": 2.0},
             "hard_gate": {"complete_transport_passed": True,
@@ -59,13 +69,39 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
         }), encoding="utf-8")
         return path
 
+    def test_explicit_profile_authority_cannot_mix_state_or_analysis(self) -> None:
+        from msplatform.workflows.oa_focus_fast_adjust import ComponentFocusFastAdjustError
+        profile = _geometry_profile()
+        other = dict(profile)
+        other["gap_2_mm"] += 1.0
+        state = initialize(self.campaign_path, 7, geometry_profile=profile)
+        self.assertEqual(state["schema_version"], 2)
+        analysis = self.write_analysis("profile.json", 0.01, 0.4)
+        with self.assertRaisesRegex(ComponentFocusFastAdjustError, "state belongs to a different geometry profile"):
+            record_analysis(state, analysis, self.campaign, geometry_profile=other)
+        self.assertEqual(state["records"], [])
+        value = json.loads(analysis.read_text(encoding="utf-8"))
+        value["identity"]["geometry_profile_sha256"] = geometry_profile_identity(other)
+        analysis.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(ComponentFocusFastAdjustError, "analysis belongs to a different geometry profile"):
+            record_analysis(state, analysis, self.campaign, geometry_profile=profile)
+        self.assertEqual(state["records"], [])
+        old_state = dict(state)
+        old_state["schema_version"] = 1
+        with self.assertRaisesRegex(ComponentFocusFastAdjustError, "state is invalid"):
+            record_analysis(old_state, analysis, self.campaign, geometry_profile=profile)
+        value["schema_version"] = 1
+        analysis.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(ComponentFocusFastAdjustError, "analysis identity is invalid"):
+            record_analysis(state, analysis, self.campaign, geometry_profile=profile)
+
     def test_geometry_gate_precedes_voltage_search(self) -> None:
-        state = initialize(self.campaign_path, 7)
+        state = initialize(self.campaign_path, 7, geometry_profile=_geometry_profile())
         state = record_analysis(
             state,
             self.write_analysis("geometry_bad.json", -0.4, -1.6, cohort_slow=0.4),
             self.campaign,
-        )
+            geometry_profile=_geometry_profile())
         self.assertEqual(state["status"], "exhausted")
         self.assertFalse(state["records"][0]["geometry_acceptable"])
         self.assertEqual(
@@ -74,16 +110,16 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
         )
 
     def test_uses_one_real_voltage_probe_then_continuous_axial_solution(self) -> None:
-        state = initialize(self.campaign_path, 7)
+        state = initialize(self.campaign_path, 7, geometry_profile=_geometry_profile())
         initial_y = state["next_parameters"]["instance_center_y_mm"]
-        state = record_analysis(state, self.write_analysis("base.json", 0.01, -1.6), self.campaign)
+        state = record_analysis(state, self.write_analysis("base.json", 0.01, -1.6), self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(state["phase"], "gain_probe")
         self.assertEqual(state["next_parameters"]["instance_center_y_mm"], initial_y)
-        state = record_analysis(state, self.write_analysis("gain.json", 0.01, -0.6), self.campaign)
+        state = record_analysis(state, self.write_analysis("gain.json", 0.01, -0.6), self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(state["phase"], "solution")
         self.assertEqual(state["next_parameters"]["instance_center_y_mm"], initial_y)
         self.assertIsInstance(state["next_parameters"]["finite_3d_gain_correction_v"], float)
-        state = record_analysis(state, self.write_analysis("solution.json", 0.01, -0.01, accepted=True), self.campaign)
+        state = record_analysis(state, self.write_analysis("solution.json", 0.01, -0.01, accepted=True), self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(state["status"], "accepted")
         self.assertIsNone(state["next_parameters"])
 
@@ -93,27 +129,27 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
         self.assertEqual(_tier(20.0), 0.01)
 
     def test_exhaustion_is_bounded(self) -> None:
-        state = initialize(self.campaign_path, 4)
+        state = initialize(self.campaign_path, 4, geometry_profile=_geometry_profile())
         for name, residuals in (("b", (.01, -1.6)), ("g", (.01, -.6)),
                                 ("s", (.01, -.2)), ("g2", (.01, -.1))):
-            state = record_analysis(state, self.write_analysis(name + ".json", *residuals), self.campaign)
+            state = record_analysis(state, self.write_analysis(name + ".json", *residuals), self.campaign, geometry_profile=_geometry_profile())
         self.assertEqual(state["status"], "exhausted")
         self.assertIsNone(state["next_parameters"])
 
     def test_center_axial_closure_does_not_waive_cohort_axial_gate(self) -> None:
-        state = initialize(self.campaign_path, 7)
+        state = initialize(self.campaign_path, 7, geometry_profile=_geometry_profile())
         state = record_analysis(
             state,
             self.write_analysis("spread.json", 0.01, 0.01, cohort_axial=0.2),
             self.campaign,
-        )
+            geometry_profile=_geometry_profile())
         self.assertEqual(state["status"], "exhausted")
         self.assertFalse(state["records"][0]["accepted"])
         self.assertTrue(state["records"][0]["center_axial_energy_passed"])
 
     def test_candidate_changes_only_runtime_pose_and_voltage_not_pa_identity(self) -> None:
         parameters = {"instance_center_y_mm": 2.0, "finite_3d_gain_correction_v": 25.0}
-        candidate = _candidate_campaign(self.campaign, parameters)
+        candidate = _candidate_campaign(self.campaign, parameters, geometry_profile=_geometry_profile())
         candidate_path = self.root / "candidate.json"
         candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
         self.assertEqual(candidate["release_spec"], self.campaign["release_spec"])
@@ -124,6 +160,9 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
 
     def test_runner_reuses_existing_pa_and_applies_retention(self) -> None:
         runner = (PROJECT / "simion" / "run_component_focus_fast_adjust.ps1").read_text(encoding="utf-8")
+        self.assertEqual(runner.count("-Module msplatform.workflows.oa_focus_fast_adjust"), 6)
+        self.assertNotIn("Push-Location $repoRoot", runner)
+        self.assertEqual(runner.count("'--component-contract',$componentContract"), 6)
         workflow = (PROJECT / "simion" / "run_component_focus_workflow.ps1").read_text(encoding="utf-8")
         self.assertIn("run_component_focus_flight.ps1", runner)
         self.assertNotIn("run_component_focus_pa.ps1", runner)
