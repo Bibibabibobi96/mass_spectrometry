@@ -35,7 +35,7 @@ _TIMES = [0., .5, 1., 2., 3.]
 
 def geometry_frontend(*, three_zone: bool = False) -> dict:
     """Compile real provider geometry without external artifact fixtures."""
-    from integrations.runtime.single_flight_frontend import compile_frontend
+    from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
     if not three_zone:
         return compile_direct_mr_frontend()
     upstream, connection, component = canonical_three_zone_frontend_fixture()
@@ -177,7 +177,7 @@ def aperture_triplet(crossing: dict, before: dict | None = None, after: dict | N
 
 class ActualFirstGapTests(unittest.TestCase):
     def test_sectioned_provider_capture_uses_world_bounds_without_fabricated_frames(self):
-        from integrations.runtime.single_flight_frontend import compile_frontend
+        from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
         upstream, connection, component = canonical_three_zone_frontend_fixture()
         _, frontend = compile_frontend(upstream, connection, accelerator_component=component,
                                        cell_mm_xyz=dict(x=.1, y=.2, z=.1), target_solver_frame="mrtof_global_cartesian")

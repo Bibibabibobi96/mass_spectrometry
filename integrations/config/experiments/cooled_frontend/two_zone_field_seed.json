@@ -115,7 +115,25 @@
       "39": 499.3682898123634,
       "40": 249.6841449061817
     },
-    "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1"
+    "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1",
+    "geometry_profile": {
+      "gap_1_mm": 4.0,
+      "gap_2_mm": 30.0,
+      "ring_count": 15,
+      "ring_thickness_z_mm": 1.0,
+      "aperture_width_x_mm": 25.0,
+      "aperture_height_y_mm": 26.0,
+      "qualified_source_envelope_radius_mm": 1.0,
+      "qualified_source_envelope_height_mm": 1.0,
+      "electrode_outer_width_x_mm": 40.0,
+      "electrode_outer_height_y_mm": 30.0,
+      "guard_outer_width_x_mm": 44.0,
+      "guard_outer_height_y_mm": 34.0,
+      "guard_wall_thickness_mm": 1.0,
+      "lateral_clearance_mm": 1.0,
+      "repeller_thickness_z_mm": 2.0,
+      "rear_gap_mm": 1.0
+    }
   },
   "numerics": {
     "cell_mm_xyz": {

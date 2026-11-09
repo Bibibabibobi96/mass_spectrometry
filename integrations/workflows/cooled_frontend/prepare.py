@@ -16,7 +16,7 @@ from common.contracts.file_identity import file_sha256
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
-from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
+from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
 from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
@@ -225,7 +225,8 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
         raise ValueError("accelerator placement belongs only to the frozen parent composition plan")
     actual_cooler = export_cooled_buncher_assembly_interface(conditioner, guide)
     actual_accelerator = resolve_assembly_interface(
-        component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1
+        component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1,
+        geometry_profile=component.get("geometry_profile")
     )
     if plan["components"][upstream_id] != actual_cooler:
         raise ValueError("selected cooler provider interface differs from frozen parent composition plan")

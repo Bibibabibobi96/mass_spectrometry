@@ -244,7 +244,7 @@ def scientific_inputs(sources, oatof, root, *, local=False, legacy_inputs=None):
 class ScientificFrontendGeometryTests(unittest.TestCase):
     def test_legacy_plan_does_not_load_the_scientific_backend_adapter(self):
         import builtins
-        from integrations.runtime.single_flight_frontend import frontend_electrode_maps
+        from msplatform.backends.simion.frontend import frontend_electrode_maps
 
         source,oatof = source_fixture(),candidate_300mm_fixture()
         original_import = builtins.__import__
@@ -284,7 +284,7 @@ class ScientificFrontendGeometryTests(unittest.TestCase):
                 self.assertGreater(len(actual['composition_plan']['components']['oatof']['component_electrodes']), 25)
 
     def test_plan5_binding_scope_records_aliases_and_capacity_fail_closed(self):
-        from integrations.runtime.single_flight_frontend import frontend_electrode_maps
+        from msplatform.backends.simion.frontend import frontend_electrode_maps
         oatof, source = candidate_300mm_fixture(), multipole_source('octupole')
         with tempfile.TemporaryDirectory() as directory:
             options, _ = scientific_inputs({'multipole':source}, oatof, Path(directory))

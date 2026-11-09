@@ -247,7 +247,7 @@ assert result['ports']['axial_exit']['center_mm']==[0.0,0.0,0.0]
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_actual_frontend_adapter_does_not_render_unused_local_pa(self) -> None:
-        from integrations.runtime.single_flight_frontend import _canonical_component
+        from msplatform.backends.simion.bare_frontend_geometry import _canonical_component
         from integrations.tests.frontend_fixtures import canonical_frontend_fixture
         _, _, component = canonical_frontend_fixture()
         with patch("msplatform.backends.simion.two_zone_candidate.render_closed_two_zone_local_pa",

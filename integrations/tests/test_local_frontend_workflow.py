@@ -30,7 +30,7 @@ from integrations.workflows.local_frontend.prepare import (
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract, export_guide_assembly_interface
 from msplatform.backends.simion.two_zone_candidate import compile_closed_two_zone_accelerator
-from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
+from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
 
 REPO = Path(__file__).resolve().parents[2]
@@ -83,7 +83,7 @@ def fixture(workspace: Path) -> tuple[Path, dict]:
              port["center_mm"][2]-resolved.local_exit_z_mm]
     common_frame = "multipole_cartesian_z_axis_v1"
     guide = RigidTransform(common_frame, "mrtof_global_cartesian", [[0, -1, 0], [0, 0, 1], [-1, 0, 0]], shift)
-    interface = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1)
+    interface = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1, geometry_profile=component.get("geometry_profile"))
     oa_pose = RigidTransform(interface["local_frame_id"], "mrtof_global_cartesian", **component.pop("transform"))
     recipe = dict(schema_version=1, role="assembly_recipe", integration_id="instrument_assembly", recipe_id="local_guide_oa",
                   assembly_frame_id="mrtof_global_cartesian", position_tolerance_mm=1e-9, angular_tolerance_rad=1e-12,
@@ -112,7 +112,7 @@ def write_fixture_plan(workspace, request, recipe=None):
     component = request["accelerator_component"]
     edge = recipe["connections"][0]
     components = {edge["upstream"]["instance_id"]: export_guide_assembly_interface(guide),
-                  edge["downstream"]["instance_id"]: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1)}
+                  edge["downstream"]["instance_id"]: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1, geometry_profile=component.get("geometry_profile"))}
     plan = compile_assembly_layout(recipe, components)
     path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     request["composition_plan"] = file_record(path)
@@ -628,6 +628,7 @@ class LocalFrontendTests(unittest.TestCase):
                         grid1_z_mm=4., intermediate2_z_mm=19., grid2_z_mm=34., ring_count=2,
                         ring_thickness_mm=.5, ring_z_mm=[11.5, 26.5])
         component = self.request["accelerator_component"]
+        component.pop("geometry_profile")  # Two-zone-only explicit mechanical authority.
         component.update(variant_id="three_zone", geometry_profile_id="explicit_synthetic_three_zone_fixture",
             requirements=dict(schema_version=1, role="orthogonal_accelerator_bare_three_zone_requirements",
                               variant_id="three_zone", geometry=geometry),

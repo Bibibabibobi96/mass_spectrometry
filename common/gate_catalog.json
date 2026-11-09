@@ -1915,6 +1915,25 @@
           {
             "matches": [
               {
+                "exact": "src/msplatform/backends/simion/bare_frontend_geometry.py",
+                "reason": "installed_bare_frontend_geometry_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_local_frontend_workflow.py",
+              "integrations/tests/test_local_frontend_field_support.py",
+              "integrations/tests/test_local_frontend_runtime.py",
+              "integrations/tests/test_local_frontend_analysis.py",
+              "integrations/tests/test_cooled_frontend.py",
+              "integrations/tests/test_cooled_geometry_overlay.py",
+              "integrations/tests/test_single_reflection_geometry.py",
+              "integrations/tests/test_dependencies.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "exact": "integrations/workflows/single_reflection_flight/field_plan.py",
                 "reason": "single_reflection_shared_field_plan_changed"
               }

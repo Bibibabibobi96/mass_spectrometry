@@ -22,7 +22,7 @@ from integrations.runtime.build_single_flight_program import (
     _resolve_standalone_dynamic_field_bank,
 )
 
-from integrations.runtime.single_flight_frontend import compile_frontend
+from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 from msplatform.backends.simion.electrode_contract import render_pa_plus_solution_model
 from integrations.tests.frontend_fixtures import canonical_frontend_fixture, canonical_three_zone_frontend_fixture
 

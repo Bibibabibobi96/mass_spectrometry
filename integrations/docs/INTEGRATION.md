@@ -313,6 +313,17 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 
 ## 局部前端执行与复核
 
+The bare-guide/OA geometry compiler is installed as `msplatform.backends.simion.bare_frontend_geometry`.
+Two-zone callers explicitly provide `geometry_profile` content with its identity; the backend never loads
+a project profile or checkout. The stored cooled `two_zone_field_seed.json` is an independent,
+complete fixed study parameter set: its explicit profile was expanded without numerical changes from
+`projects/orthogonal_accelerator/config/component_contract.json` at baseline `bd1e4ae3`, profile
+`closed_two_zone_compact_mr_axial_r3_gap1_4mm`. It is not another current component default and does
+not auto-track that project profile. Interface validation and geometry compilation consume the same
+request profile body; frozen historical requests/plans remain unchanged.
+This compiler migration does not change field, pulse, mother-population, clock or native qualification.
+
+
 [裸导引入口](../workflows/local_frontend/execute.ps1)和[冷却入口](../workflows/cooled_frontend/execute.ps1)
 各自接收schema 3请求；冻结完整父plan，默认full或显式local，不复制组件内部几何。
 从仓库根替换路径运行；以下最后一条会启动商业求解，须有对应科学运行授权及显式预算：

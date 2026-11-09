@@ -19,7 +19,7 @@ from integrations.workflows.cooled_frontend import runtime as cooled_runtime
 from integrations.workflows.cooled_frontend.runtime import fields
 from integrations.workflows.cooled_frontend.program import build_program
 from integrations.workflows.local_frontend import runtime as shared_runtime
-from integrations.runtime.single_flight_frontend import compile_frontend
+from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 from integrations.runtime.build_single_flight_program import _standalone_dynamic_field_lua
 from integrations.tests.frontend_fixtures import canonical_frontend_fixture, canonical_three_zone_frontend_fixture
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_cooled_buncher import buncher_fixture, native_pose
@@ -65,9 +65,9 @@ def cooled_request_fixture(workspace,variant="three_zone"):
         drive=drive,pressure_scale=0,field_source=None,common_pulse_decision=None,
         design_targets=dict(thermal_sigma_y_mm=.4,static_release_energy_gain_ev=5.),
         pulse=dict(policy_id="actual_field_reference_exit_centering_v1",target="oa_exit_geometric_center",reference_temperature_policy="provider_gas_temperature"))
-    from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
+    from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
     native = native_pose(guide, connection["spatial_registration"])
-    oa = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1)
+    oa = resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1, geometry_profile=component.get("geometry_profile"))
     oa_pose = RigidTransform(oa["local_frame_id"], "mrtof_global_cartesian", component.pop("transform")["rotation"],
                             [0., 51.5, 34.] if variant == "three_zone" else [0., 51.5, 0.]).to_contract()
     recipe = dict(schema_version=1, role="assembly_recipe", integration_id="instrument_assembly",
@@ -152,6 +152,55 @@ def publish_inert_fields(run, cache_root):
 
 
 class CooledFrontendTests(unittest.TestCase):
+    def test_stored_two_zone_request_projects_explicit_profile_without_artifacts(self):
+        from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
+
+        stored = REPO / "integrations/config/experiments/cooled_frontend/two_zone_field_seed.json"
+        authored = json.loads(stored.read_text(encoding="utf-8"))
+        component = copy.deepcopy(authored["accelerator_component"])
+        parent_path = (stored.parent / authored["composition_plan"]["path"]).resolve()
+        parent = json.loads(parent_path.read_text(encoding="utf-8"))
+        pose = next(row["transform"] for row in parent["recipe"]["instances"]
+                    if row["project_id"] == "orthogonal_accelerator")
+        component["transform"] = {key: pose[key] for key in ("rotation", "translation_mm")}
+        before = copy.deepcopy(component)
+        guide, connection, _, conditioner, _ = cooled_fixture("two_zone")
+        gem, frontend = compile_cooled_frontend(
+            guide, connection, component, conditioner,
+            cell_mm_xyz=authored["numerics"]["cell_mm_xyz"], exit_gap_mm=1.)
+        self.assertEqual(component, before)
+        self.assertEqual(frontend["accelerator_component"]["geometry_profile"], component["geometry_profile"])
+        self.assertIn("pa_define(", gem)
+        actual_interface = resolve_assembly_interface(
+            component["requirements"], geometry_profile_id=component["geometry_profile_id"],
+            geometry_profile=component["geometry_profile"], schema_version=1)
+        self.assertIn(actual_interface, parent["components"].values())
+        del component["geometry_profile"]
+        with self.assertRaisesRegex(ValueError, "explicit canonical two-zone"):
+            compile_cooled_frontend(guide, connection, component, conditioner,
+                                   cell_mm_xyz=authored["numerics"]["cell_mm_xyz"], exit_gap_mm=1.)
+
+    def test_prepare_two_zone_uses_same_changed_profile_for_interface_and_geometry(self):
+        from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
+
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            path, request = cooled_request_fixture(workspace, "two_zone")
+            component = request["accelerator_component"]
+            component["geometry_profile"]["guard_outer_width_x_mm"] += 2.
+            component["geometry_profile"]["electrode_outer_width_x_mm"] += 2.
+            parent = json.loads(_parent_path(request).read_text())
+            parent["components"]["accelerator"] = resolve_assembly_interface(
+                component["requirements"], geometry_profile_id=component["geometry_profile_id"],
+                geometry_profile=component["geometry_profile"], schema_version=1)
+            _replace_parent(request, compile_assembly_layout(parent["recipe"], parent["components"]))
+            path.write_text(json.dumps(request), encoding="utf-8")
+            result = prepare_cooled_frontend(path, None, REPO, workspace)
+            self.assertEqual(result["frontend"]["accelerator_component"]["geometry_profile"],
+                             component["geometry_profile"])
+            self.assertEqual(result["particle_count"], 100)
+            self.assertTrue(result["source_states_preserved"])
+
     def test_program_quality_range_does_not_relax_other_numerics(self):
         with tempfile.TemporaryDirectory() as directory:
             _,request=cooled_request_fixture(Path(directory))

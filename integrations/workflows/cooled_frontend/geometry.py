@@ -7,7 +7,7 @@ from typing import Any
 
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.backends.simion.gem_primitives import format_number
-from integrations.runtime.single_flight_frontend import (
+from msplatform.backends.simion.bare_frontend_geometry import (
     _canonical_grid, finalize_frontend_geometry, prepare_bare_frontend_geometry,
 )
 from msplatform.backends.simion.ip_frontend_geometry import render_cooled_buncher_gem_fragment

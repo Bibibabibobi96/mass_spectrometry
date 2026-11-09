@@ -1,15 +1,14 @@
 """Compile explicit bare-guide geometry and resolve native frontend instance bindings."""
 
 from __future__ import annotations
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
-from projects.orthogonal_accelerator.analysis.sectioned_geometry import resolve_bare_three_zone_component
+from msplatform.components.orthogonal_accelerator.sectioned_geometry import resolve_bare_three_zone_component
 
 import json
 import math
 from typing import Any
 
-from projects.rf_multipole_ion_optics.simion.simion_geometry import (
+from msplatform.backends.simion.rf_geometry import (
     render_grouped_rod_array_gem,
 )
 from msplatform.backends.simion.aperture import resolve_rectangular_aperture_discretization
@@ -124,7 +123,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
     from msplatform.backends.simion.electrode_contract import (
         project_pa_plus_mode_voltages, resolve_two_zone_bare_pa_plus_solution_model,
     )
-    required = {"schema_version", "role", "variant_id", "geometry_profile_id", "requirements",
+    required = {"schema_version", "role", "variant_id", "geometry_profile_id", "geometry_profile", "requirements",
                 "transform", "local_electrode_ids", "electrode_voltages_v", "pulse_voltage_policy_id"}
     if (not isinstance(component, dict) or set(component) != required or type(component["schema_version"]) is not int or component["schema_version"] != 1
             or component["role"] != "rf_oatof_accelerator_component" or component["variant_id"] != "two_zone"):
@@ -141,7 +140,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
     if (not isinstance(translation, list) or len(translation) != 3
             or any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) for v in translation)):
         raise ValueError("component translation must be finite xyz")
-    resolved = resolve_closed_two_zone_electrodes(component["requirements"], geometry_profile_id=component["geometry_profile_id"], geometry_profile=_load_oa_geometry_profile(component["geometry_profile_id"]))
+    resolved = resolve_closed_two_zone_electrodes(component["requirements"], geometry_profile_id=component["geometry_profile_id"], geometry_profile=component["geometry_profile"])
     # Recipe poses use the mechanical exit-origin frame. Canonical electrodes
     # retain the explicit legacy PA-coordinate projection consumed by CAD and
     # voltage sampling; transform that projection back exactly once.
@@ -399,10 +398,3 @@ def _outward_aligned_boundary(
     else:
         raise ValueError("numerical boundary side is invalid")
     return origin + index * cell
-
-from msplatform.backends.simion.frontend import (
-    native_frontend_instances as native_frontend_instances,
-    _electrodes as _electrodes,
-    frontend_electrode_maps as frontend_electrode_maps,
-    frontend_accelerator_operating_voltages as frontend_accelerator_operating_voltages,
-)

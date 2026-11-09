@@ -30,7 +30,8 @@ def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
     volts = {15: 0.0, 22: 4400.0, 23: 4000.0, 24: 0.0,
              **{int(row["id"]): 4000 * (row["center_z_mm"] - 6) / 30 for row in resolved.rings}}
     component = dict(schema_version=1, role="rf_oatof_accelerator_component", variant_id="two_zone",
-                     geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm", requirements=requirements,
+                     geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+                     geometry_profile=dict(_load_oa_geometry_profile("closed_two_zone_compact_mr_axial_r3_gap1_4mm")), requirements=requirements,
                      transform=dict(rotation=[[0, 1, 0], [1, 0, 0], [0, 0, -1]], translation_mm=[0, 0, 34]),
                      local_electrode_ids={str(key): value for key, value in ids.items()},
                      electrode_voltages_v={str(key): value for key, value in volts.items()},
@@ -107,7 +108,7 @@ def canonical_two_zone_frontend_contract() -> dict:
 
 def compile_direct_mr_frontend() -> dict:
     """Compile the direct-MR geometry used by rendering tests."""
-    from integrations.runtime.single_flight_frontend import compile_frontend
+    from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 
     upstream, connection, component = canonical_frontend_fixture()
     # Mechanical exit-origin pose; the SIMION projection remains at PA z=-40.
