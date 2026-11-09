@@ -815,6 +815,50 @@ class InstalledScientificCoreTests(unittest.TestCase):
         print(f'INSTALLED_CORE_COMMAND_SECONDS={time.perf_counter() - started:.3f} COMMAND={arguments[:3]}')
         return stdout
 
+    def test_probe_author_guard_allows_hosted_stdlib_lazy_import_but_denies_checkout(self) -> None:
+        import ast
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                      and node.name == "test_wheel_and_sdist_install_and_compute_outside_worktree")
+        keyword = next(node for node in ast.walk(method) if isinstance(node, ast.keyword)
+                       and node.arg == "author_source_roots")
+        global_site = Path(sys.base_prefix) / "Lib/site-packages"
+        marker = global_site / "msplatform/__init__.py"
+        original_is_file = Path.is_file
+        # Model the hosted runner's installed core without writing its Python installation.
+        with patch.object(Path, "is_file", lambda path: path == marker or original_is_file(path)):
+            roots = eval(compile(ast.Expression(keyword.value), "<actual-author-roots>", "eval"),
+                         dict(REPO_ROOT=REPO_ROOT, Path=Path,
+                              sys=SimpleNamespace(path=[str(REPO_ROOT / "src"), str(global_site)])))
+        statements = ast.parse(INSTALLED_PROBE).body
+        start = next(index for index, node in enumerate(statements) if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "blocked_source_roots" for target in node.targets))
+        end = next(index for index in range(start, len(statements)) if isinstance(statements[index], ast.Expr)
+                   and isinstance(statements[index].value, ast.Call)
+                   and isinstance(statements[index].value.func, ast.Attribute)
+                   and statements[index].value.func.attr == "addaudithook")
+        guard = ast.unparse(ast.Module(body=statements[start:end + 1], type_ignores=[]))
+        program = "import json, pathlib, os, sys\nfixture=json.loads(sys.argv[1]);root=pathlib.Path.cwd()\n" + guard + "\n" + r'''
+from email import message_from_string
+assert message_from_string("Subject: lazy stdlib\n\nbody")["Subject"] == "lazy stdlib"
+try:
+    pathlib.Path(fixture["repo_root"], "README.md").read_bytes()
+except AssertionError as failure:
+    assert "installed action accessed an author tree" in str(failure)
+else:
+    raise AssertionError("actual author checkout was readable")
+print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = dict(repo_root=str(REPO_ROOT), author_source_roots=roots)
+            result = subprocess.run([sys.executable, "-I", "-c", program, json.dumps(fixture)],
+                cwd=directory, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED", result.stdout)
+
     def test_command_transport_preserves_non_utf8_diagnostics_and_failure_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             program = "import sys;sys.stdout.write('accepted');sys.stderr.buffer.write(bytes.fromhex('b5'))"
@@ -1260,8 +1304,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
             paired = dict(expected_plan=prepare_paired_field(root/'paired-request.json', root/'paired-installed'))
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
-                                              author_source_roots=sorted({str(REPO_ROOT), *(str(Path(value).resolve().parent)
-                                                  for value in sys.path if value and (Path(value)/'msplatform/__init__.py').is_file())}),
+                                              author_source_roots=[str(REPO_ROOT)],
                                               recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),

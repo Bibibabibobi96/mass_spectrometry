@@ -597,7 +597,7 @@ class PlatformApiTests(unittest.TestCase):
                 reader.assert_called_once_with({"manifest": {"fixture": True}, "product_id": "fields"},
                                                expected_kind="field_bundle")
                 reuse = dict(manifest=reference["manifest"], product_id="prior-fields")
-                reader.side_effect = [SimpleNamespace(reference=reuse), sentinel]
+                reader.side_effect = [SimpleNamespace(reference=reuse, metadata={"backend": "simion", "field_status": "available", "source_status": "not_requested"}), sentinel]
                 self.assertIs(simion_api.solve_fields(reference, numerics=numerics, context=context, reuse_fields=reuse), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["action"].keywords["reuse_fields_reference"], reuse)

@@ -1022,3 +1022,20 @@ Python prepared请求可选提供`prepared.native_input_paths`绝对文件路径
 本次消除重复场景与重复恢复调用，未将其表述为完整公共套件性能达标。
 
 源原生输入的容量authority解析沿现有 `Invoke-RunCapacityCommand -StandardInputJson` 通过UTF-8标准输入运输Session、SourceReferences及输入路径，不把可能含完整准入诊断的大JSON放入Windows命令行；缺省调用、manifest/活保护校验与非零stderr诊断保持原合同。
+
+### Installed-test and native-interpreter fixture portability
+
+Installed acceptance blocks the explicit author checkout and explicitly supplied
+additional source roots. Inferring author roots from parents of arbitrary
+`sys.path` entries incorrectly blocked the hosted runner's Python standard
+library when its scientific core was installed globally. A cold-process regression
+now proves that lazy standard-library email parsing succeeds while checkout reads
+remain denied; the actual installed action and its origin/resource checks are unchanged.
+The field-reuse fixture supplies the published field metadata consumed by the
+existing operation. The optional RF Lua readback test follows its neighboring
+interpreter-availability rule; it executed locally rather than skipping.
+
+Four targeted main-checkout tests passed in 1.712 s. Original remote failures remain
+recorded; this is not a new full-Repository or native solver acceptance. Official
+CLOC 2.10, 33139db3 to this test-only repair: total +31 code lines, production 0,
+tests +31, zero unclassified files; full language counts/filter remain in task evidence.

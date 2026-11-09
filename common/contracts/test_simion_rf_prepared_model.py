@@ -143,6 +143,7 @@ class RfPreparedModelTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'explicit raw and surface records'):
                 plan_model_preparation(model,geometry_assets=bad,run_directory=root/'other',seed_record=seed,native_path_resource=resource_path('native_run_path.lua'))
 
+    @unittest.skipUnless(fixture.LUA.is_file(), "standalone Lua interpreter unavailable")
     def test_actual_lua_rf_readback_does_not_initialize_any_pulse(self):
         compiled,components,drive=rf_inputs()
         for groups in drive['groups'].values():
