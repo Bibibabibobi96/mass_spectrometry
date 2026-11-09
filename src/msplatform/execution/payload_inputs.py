@@ -8,7 +8,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession

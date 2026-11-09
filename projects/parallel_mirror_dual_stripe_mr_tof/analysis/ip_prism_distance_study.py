@@ -467,7 +467,7 @@ def _freeze_completed_field_source(owner: Path, field_id: str, destination: Path
     field identity and complete finite/range result qualify this payload only.
     """
     from common.contracts.verify_run_manifest import record_path, verify_record
-    from common.contracts.write_run_manifest import require_completed_terminal_publication
+    from msplatform.io.manifest_records import require_completed_terminal_publication
 
     owner = owner.resolve()
     require_completed_terminal_publication(owner/"run_manifest.json")
@@ -850,7 +850,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
     The public runner enters its capacity session before this materialization.
     Large-file identity is checked by the common immutable snapshot primitive.
     """
-    from common.contracts.write_run_manifest import require_completed_terminal_publication
+    from msplatform.io.manifest_records import require_completed_terminal_publication
     from msplatform.execution.cache_generation import materialize_direct_inventory
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_focus_diagnostics import contour_projection_paths
 

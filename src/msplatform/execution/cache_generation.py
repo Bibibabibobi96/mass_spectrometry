@@ -22,7 +22,7 @@ from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.execution.file_identity import file_sha256_unbuffered
+from msplatform.io.file_identity import file_sha256_unbuffered
 
 
 SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")

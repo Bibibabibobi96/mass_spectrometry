@@ -283,7 +283,7 @@ Write-Output 'PRIVATE_STATE_ISOLATED'
         return context,resources/'process_owner.ps1'
 
     def test_start_snapshot_failure_preserves_primary_and_drains_real_guarded_child(self):
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         identity_anchor = 'try{$rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks}'
         write_anchor = '$usage.process_start=$facts\n  Write-ResourceUsage -Usage $usage -Path $Observation.usage_path'
         for identity_failure,write_failure in ((False,True),(True,False),(True,True)):
@@ -388,7 +388,7 @@ Write-Output "REJECTED=$count"
             (resources/'resource_process_support.ps1').write_text(instrumented, encoding='utf-8')
             payload = root/'guarded.bin'
             payload.write_bytes(b'ORIGINAL_IMMUTABLE')
-            from msplatform.execution.manifest_records import file_record
+            from msplatform.io.manifest_records import file_record
             record = file_record(payload, 'required_evidence')
             parameters = dict(working_directory=root, run_directory=root, stdout_path=root/'out.log',
                 stderr_path=root/'err.log', usage_path=root/'usage.json', role='GATE', stage='window_style_software',
@@ -461,7 +461,7 @@ class NormalOwnerTests(unittest.TestCase):
             policy_path=resource_path("host_resource_policy.json"), execution_root=root / "aliases")
 
     def _arguments(self, root, action):
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         budget = root / "budget.json"
         budget.write_text('{"bytes":1048576}', encoding="utf-8")
         return dict(descriptor=dict(project="instrument_assembly", mode="geometry", software=[]),
@@ -610,7 +610,7 @@ class NormalOwnerTests(unittest.TestCase):
         from msplatform.execution import owner
         from msplatform.execution.capacity_ledger import load_capacity_ledger
         from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             context = self._context(root)
@@ -657,7 +657,7 @@ class NormalOwnerTests(unittest.TestCase):
     def test_four_units_reuse_two_complete_and_replay_interrupted_and_unstarted_once(self):
         from types import SimpleNamespace
         from msplatform.execution import owner
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         from msplatform.execution.recovery import build_whole_unit_replay_plan, WholeUnitReplayUnit
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -746,7 +746,7 @@ class NormalOwnerTests(unittest.TestCase):
 
     def test_callable_record_must_bind_actual_source_before_workspace_creation(self):
         from msplatform.execution import owner
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             context = self._context(root)

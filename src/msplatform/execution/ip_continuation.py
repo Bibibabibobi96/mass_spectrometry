@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from msplatform.execution.manifest_records import record_path, verify_record
-from msplatform.execution.terminal_publication import require_completed_terminal_publication
+from msplatform.io.manifest_records import record_path, verify_record
+from msplatform.io.manifest_records import require_completed_terminal_publication
 
 
 def _read(path: Path) -> dict[str, Any]:

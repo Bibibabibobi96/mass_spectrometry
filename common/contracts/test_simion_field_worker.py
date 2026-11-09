@@ -20,7 +20,7 @@ from msplatform.backends.simion.resources import native_resource_path
 from msplatform.execution import owner
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession
 from msplatform.execution.processes import ProcessExecutionError
@@ -78,7 +78,7 @@ class FieldWorkerTests(unittest.TestCase):
                 host_state_path=root/'private.sqlite3', policy_path=resource_path('host_resource_policy.json'))
             script = root/'preflight_worker.py'
             script.write_text('''import sys
-from msplatform.execution import manifest_records
+from msplatform.io import manifest_records
 from msplatform.backends.simion import field_worker
 manifest_records._UNBUFFERED_SOLVER_PAYLOAD_BYTES=1
 def forbidden(*args,**kwargs): raise AssertionError('EXECUTABLE_MUST_NOT_USE_PA_UNBUFFERED_READER')

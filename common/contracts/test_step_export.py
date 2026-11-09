@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from common.contracts.test_geometry_members import real_snapshot, independent_oa_snapshot, independent_oa_objects
 from msplatform.exporters.step import export_assembly_step
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results.artifacts import open_artifact
 
 
 class StepExportTests(unittest.TestCase):
@@ -251,7 +251,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
 
 
     def _publish_cad(self, root, snapshot, *, report_change=None, step_source=None):
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         from msplatform.execution.terminal_publication import publish_terminal_state
         options = dict(write_pcurves=True,precision_mode=0)
         path = root / 'assembly.step'

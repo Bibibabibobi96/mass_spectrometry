@@ -12,8 +12,8 @@ from msplatform.assembly.handoff import HandoffMother
 from msplatform.backends.simion.source import project_source_states
 from msplatform.backends.simion.trajectory_analysis import analyze, analyze_published_trajectory
 from msplatform.contracts.clock import ClockIdentity
-from msplatform.execution.artifact_reader import open_artifact
-from msplatform.execution.manifest_records import file_record
+from msplatform.results.artifacts import open_artifact
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.terminal_publication import publish_terminal_state
 from common.contracts.test_handoff import state
 

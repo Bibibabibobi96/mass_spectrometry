@@ -10,7 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from msplatform.execution.manifest_records import verify_record
+from msplatform.io.manifest_records import verify_record
 from msplatform.execution.recovery import (
     WholeUnitReplayUnit, build_whole_unit_replay_plan, _whole_unit_artifact_hashes,
 )

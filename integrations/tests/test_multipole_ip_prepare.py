@@ -411,7 +411,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity"):
             self.execute()
         self.request["source"]["run_id"] = "source_run"
-        from common.contracts.write_run_manifest import TERMINAL_JOURNAL_NAME
+        from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
         (self.source / TERMINAL_JOURNAL_NAME).write_text("{}")
         with self.assertRaisesRegex(ValueError, "publication is incomplete"):
             self.execute()

@@ -20,7 +20,7 @@ from msplatform.backends.simion.tracking_units import partition_tracking_units,s
 from msplatform.execution import owner
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession
 

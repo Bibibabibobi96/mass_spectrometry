@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from msplatform.execution.artifact_reader import OpenedArtifact, open_artifact
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.results.artifacts import OpenedArtifact, open_artifact
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 from msplatform.execution.run_session import RunSession

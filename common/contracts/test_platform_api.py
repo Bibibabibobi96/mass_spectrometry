@@ -15,7 +15,7 @@ from msplatform import exporters as exporters_api
 from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results.artifacts import open_artifact
 from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
 
 
@@ -121,8 +121,8 @@ class PlatformApiTests(unittest.TestCase):
 
     def test_open_model_dispatches_owned_view_without_export_solve_or_hidden_ack(self):
         from msplatform.applications.model_execution import execute_open_model
-        from msplatform.execution.artifact_reader import OpenedArtifact
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.results.artifacts import OpenedArtifact
+        from msplatform.io.manifest_records import file_record
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -180,8 +180,8 @@ class PlatformApiTests(unittest.TestCase):
         from msplatform.applications.simion_model_execution import execute_simion_open_model
         from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
         from msplatform.backends.simion.model_view_preparation import prepare_view
-        from msplatform.execution.artifact_reader import OpenedArtifact
-        from msplatform.execution.manifest_records import file_record, verify_record
+        from msplatform.results.artifacts import OpenedArtifact
+        from msplatform.io.manifest_records import file_record, verify_record
 
         case, _, _, compiled = compile_example()
         components = {name: compiled.components_resolved[name]
@@ -255,8 +255,8 @@ class PlatformApiTests(unittest.TestCase):
         from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
         from msplatform.backends.simion.tracking_execution import execute_tracking
         from msplatform.contracts.clock import ClockIdentity
-        from msplatform.execution.artifact_reader import OpenedArtifact
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.results.artifacts import OpenedArtifact
+        from msplatform.io.manifest_records import file_record
 
         case, _, _, compiled = compile_example()
         with tempfile.TemporaryDirectory() as directory:
@@ -303,7 +303,7 @@ class PlatformApiTests(unittest.TestCase):
             # Real provider/model/source/clock planning; only owner/publication
             # transport is substituted. This is not a native or full-owner test.
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
-                 patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel), \
+                 patch("msplatform.results.artifacts.open_artifact", return_value=sentinel), \
                  patch("subprocess.Popen", side_effect=AssertionError("planning launched a process")):
                 result = simion_api.track(fields, release, propagation=propagation, observations=observations, numerics=numerics, context=context)
                 self.assertIs(result, sentinel)
@@ -470,7 +470,7 @@ class PlatformApiTests(unittest.TestCase):
             reference = {"manifest": {"fixture": True}, "product_id": "geometry"}
             source = SimpleNamespace(reference=reference, data_path=lambda name: compiled_path)
             sentinel = object()
-            with patch("msplatform.execution.artifact_reader.open_artifact", side_effect=[source, sentinel]) as reader, \
+            with patch("msplatform.results.artifacts.open_artifact", side_effect=[source, sentinel]) as reader, \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"new": True}}) as owner, \
                  patch("subprocess.Popen", side_effect=AssertionError("hidden native work")):
                 self.assertIs(simion_api.prepare_model(reference, drive=case.drive, physics=case.physics, context=context), sentinel)
@@ -487,7 +487,7 @@ class PlatformApiTests(unittest.TestCase):
             self.assertEqual(reader.call_args.kwargs["expected_kind"], "prepared_model")
             invalid = case.drive
             invalid["clock_authority"] = {"example_resource": "missing.json"}
-            with patch("msplatform.execution.artifact_reader.open_artifact", return_value=source), \
+            with patch("msplatform.results.artifacts.open_artifact", return_value=source), \
                  patch("msplatform.execution.owner.run_managed_stage") as refused, \
                  self.assertRaisesRegex(ContractError, "unknown versioned"):
                 simion_api.prepare_model(reference, drive=invalid, physics=case.physics, context=context)
@@ -510,7 +510,7 @@ class PlatformApiTests(unittest.TestCase):
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             sentinel = object()
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
-                 patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel) as reader, \
+                 patch("msplatform.results.artifacts.open_artifact", return_value=sentinel) as reader, \
                  patch("subprocess.Popen", side_effect=AssertionError("hidden solver or GUI")):
                 self.assertIs(exporters_api.export_cad(assembly, format="step", options=options, context=context), sentinel)
             call = owner.call_args.kwargs
@@ -521,7 +521,7 @@ class PlatformApiTests(unittest.TestCase):
             reader.assert_called_once_with({"manifest": {"fixture": True}, "product_id": "cad_geometry"}, expected_kind="cad_geometry")
             self.assertFalse(context.workspace.exists())
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as named_owner, \
-                 patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel):
+                 patch("msplatform.results.artifacts.open_artifact", return_value=sentinel):
                 exporters_api.export_cad(assembly, format="step", options=dict(options,name="RF O'Brien"),context=context)
             named = named_owner.call_args.kwargs
             self.assertEqual(named['expected_relative_paths'][0], "results/RF O'Brien.step")
@@ -541,7 +541,7 @@ class PlatformApiTests(unittest.TestCase):
         from types import SimpleNamespace
         from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
         from msplatform.backends.simion.field_execution import execute_fields
-        from msplatform.execution.manifest_records import file_record, verify_record
+        from msplatform.io.manifest_records import file_record, verify_record
 
         case, _, _, compiled = compile_example()
         selected = compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]
@@ -578,7 +578,7 @@ class PlatformApiTests(unittest.TestCase):
             # public example/model; this is not a field or native acceptance.
             with patch("msplatform.backends.simion.field_closure.load_field_model", return_value=source), \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
-                 patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel) as reader:
+                 patch("msplatform.results.artifacts.open_artifact", return_value=sentinel) as reader:
                 self.assertIs(simion_api.solve_fields(reference, numerics=numerics, context=context), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["expected_operation_ids"], ("materialize_geometry", "frontend_parent_carrier_off",
@@ -648,7 +648,7 @@ class PlatformApiTests(unittest.TestCase):
             self.assertFalse(context.workspace.exists())
 
     def test_geometry_action_dispatches_the_bound_plan_budget_and_owner_only(self):
-        from msplatform.execution.manifest_records import verify_record
+        from msplatform.io.manifest_records import verify_record
         from msplatform.execution.stage_policy import read_stage_policy
         from msplatform.backends.simion.geometry_execution import execute_geometry
         _, _, _, compiled = compile_example()
@@ -667,7 +667,7 @@ class PlatformApiTests(unittest.TestCase):
                 policy=dict(host_state_path=root / "state.sqlite3", execution_root=root / "aliases", stage_policy_path=path))
             sentinel = object()
             with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
-                 patch("msplatform.execution.artifact_reader.open_artifact", return_value=sentinel) as reader:
+                 patch("msplatform.results.artifacts.open_artifact", return_value=sentinel) as reader:
                 self.assertIs(simion_api.build_geometry(compiled, context=context), sentinel)
             arguments = owner.call_args.kwargs
             self.assertEqual(arguments["committed_new_bytes"], limits["transient_run_directory_bytes"])
@@ -919,7 +919,7 @@ class PlatformApiTests(unittest.TestCase):
         from types import SimpleNamespace
         from msplatform.execution import owner
         from msplatform.execution.stage_policy import read_stage_policy
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         from msplatform.execution.capacity_admission import _capacity_policy
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -961,7 +961,7 @@ class PlatformApiTests(unittest.TestCase):
             path, _, stage = deployment_fixture(base)
             context = execution_api.load_environment(path, workspace=base / "study", profile="standard")
             path.write_text("{}", encoding="utf-8")
-            from msplatform.execution.manifest_records import file_record
+            from msplatform.io.manifest_records import file_record
             record = file_record(base / "stages.json", "required_evidence")
             with self.assertRaisesRegex(AssertionError, "manifest owner authority 2 byte count changed"):
                 run_managed_stage(context, descriptor=dict(project="fixture", mode="test", software=[]),

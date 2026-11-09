@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from msplatform.contracts.machine_contracts import ContractError
-from msplatform.execution import artifact_reader
+from msplatform.results import artifacts as artifact_reader
 
 if TYPE_CHECKING:
-    from msplatform.execution.artifact_reader import OpenedArtifact
+    from msplatform.results.artifacts import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
 
 
@@ -24,7 +24,7 @@ def _open_simion_model(model: OpenedArtifact | Mapping[str, Any], context: Execu
     from msplatform.backends.simion.model import model_geometry
     from msplatform.backends.simion.model_view_preparation import prepare_view
     from msplatform.backends.simion.resources import structural_seed_path
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
@@ -79,8 +79,8 @@ def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | 
     from functools import partial
     from uuid import uuid4
     from msplatform.applications.model_execution import execute_open_model
-    from msplatform.execution.artifact_reader import OpenedArtifact
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.results.artifacts import OpenedArtifact
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy

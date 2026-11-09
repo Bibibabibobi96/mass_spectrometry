@@ -13,7 +13,7 @@ from common.contracts.test_simion_native_plans import SEED
 from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.geometry_execution import execute_geometry, GEOMETRY_RESOURCES
 from msplatform.backends.simion.native_plans import plan_geometry_build
-from msplatform.execution.manifest_records import verify_record
+from msplatform.io.manifest_records import verify_record
 
 
 class InertSession:

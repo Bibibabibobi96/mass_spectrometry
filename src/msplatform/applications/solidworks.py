@@ -12,7 +12,7 @@ import math
 import re
 from pathlib import Path
 
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 
 
 class SolidWorksApplicationError(RuntimeError):

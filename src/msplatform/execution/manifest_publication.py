@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from msplatform.execution.artifact_naming import validate_run_id
-from msplatform.execution.manifest_records import file_record, _json_bytes
-from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME, TERMINAL_JOURNAL_NAME
+from msplatform.io.manifest_records import file_record, _json_bytes
+from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 
 
 def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:

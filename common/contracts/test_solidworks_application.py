@@ -425,7 +425,7 @@ class SolidWorksApplicationTests(unittest.TestCase):
             self.assertEqual(len(self.app.documents), 74)
 
     def test_interconnect_argument_and_template_diagnostics_bind_actual_inputs(self):
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
 
         with self.session(session_mode="owned_child", owned_process_id=1234) as session:
             receipt = session.receipt

@@ -404,7 +404,7 @@ assert len(actual_components['oatof'].assembly_interface['component_electrodes']
 assert len(actual_geometry.downstream_specs) == 3 and all(actual_geometry.frontend_gems.values())
 from msplatform.backends.simion.resources import gem_template_path, native_resource_path, structural_seed_path
 from msplatform.execution.resources import resource_path
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.terminal_publication import publish_terminal_state
 # A declared software data fixture checks installed reading, not native science.
 read_root = root/('published_contract_fixture_' + sys.argv[2])
@@ -419,10 +419,33 @@ artifact_reference = dict(manifest=file_record(read_root/'run_manifest.json'),pr
 with patch('subprocess.Popen', side_effect=AssertionError('read started native action')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('read wrote data')):
     assert importlib.util.find_spec('msplatform.api') is None
-    from msplatform.execution.artifact_reader import open_artifact
+    from msplatform.results.artifacts import open_artifact
     reopened = open_artifact(artifact_reference,expected_kind='trajectory_result')
     assert reopened.data_path('state') == (root/'neutral-state.csv').resolve()
     assert reopened.producer['status'] == 'failed'
+import subprocess
+read_only_probe = """
+import importlib.abc,json,pathlib,sys,sysconfig
+class RejectExecutionImports(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'msplatform.execution' or fullname.startswith('msplatform.execution.') or fullname.split('.')[0] in {'common','projects','integrations'}:
+            raise AssertionError('installed data reader imported execution/repository code: '+fullname)
+sys.meta_path.insert(0,RejectExecutionImports())
+from msplatform import results
+opened=results.open_artifact(json.loads(sys.argv[1]),expected_kind='trajectory_result')
+assert opened.producer['status']=='failed'
+assert opened.data_path('state').is_file()
+purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+for name,module in tuple(sys.modules.items()):
+    if name=='msplatform' or name.startswith('msplatform.'):
+        assert pathlib.Path(module.__file__).resolve().is_relative_to(purelib),(name,module.__file__)
+assert not any(name=='msplatform.execution' or name.startswith('msplatform.execution.') for name in sys.modules)
+print('INSTALLED_READ_ONLY_RESULTS=PASS')
+"""
+read_only = subprocess.run([sys.executable,'-I','-B','-c',read_only_probe,json.dumps(artifact_reference)],
+    cwd=read_root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+assert read_only.returncode==0,read_only.stdout+read_only.stderr
+assert 'INSTALLED_READ_ONLY_RESULTS=PASS' in read_only.stdout
 # Reuse the repository's manifest-bound comparison fixture as plain data.
 # All identities/records below are newly bound to consumer-owned small files.
 comparison = fixture['comparison']
@@ -477,7 +500,7 @@ with patch('subprocess.Popen',side_effect=AssertionError('comparison launched to
      patch.object(pathlib.Path,'mkdir',side_effect=AssertionError('comparison created workspace')), \
      patch.object(pathlib.Path,'write_text',side_effect=AssertionError('comparison wrote data')):
     from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
-    from msplatform.execution.artifact_reader import open_artifact
+    from msplatform.results.artifacts import open_artifact
     described = compare_published_trajectories(open_artifact(comparison_ref, expected_kind='trajectory_result'),
         open_artifact(comparison_ref, expected_kind='trajectory_result'), selection=comparison['selection'],
         method=dict(schema_version=1,kind='event_time_position'))
@@ -609,7 +632,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
         from msplatform.backends import simion as simion_api
-        from msplatform.execution.manifest_records import file_record
+        from msplatform.io.manifest_records import file_record
         from msplatform.execution.terminal_publication import publish_terminal_state
         statements = ast.parse(INSTALLED_PROBE).body
         start = next(i for i,node in enumerate(statements) if isinstance(node,ast.Assign)

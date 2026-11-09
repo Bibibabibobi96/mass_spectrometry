@@ -22,7 +22,7 @@ from msplatform.backends.simion.resources import native_resource_path
 from msplatform.execution import owner
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.payload_inputs import materialize_payloads
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession
@@ -270,7 +270,7 @@ class DownstreamWorkerTests(unittest.TestCase):
 
     def test_large_executable_evidence_role_preserves_bytes_sha_and_avoids_pa_reader(self):
         from msplatform.backends.simion import downstream_fields_worker as worker
-        from msplatform.execution import manifest_records
+        from msplatform.io import manifest_records
         if not os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN'):
             self.skipTest('public GATE lease required for no-launch downstream preflight')
         with tempfile.TemporaryDirectory() as directory:

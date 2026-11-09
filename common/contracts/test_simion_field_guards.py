@@ -18,7 +18,7 @@ from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.resources import resource_path
 from msplatform.execution.terminal_publication import publish_terminal_state
 

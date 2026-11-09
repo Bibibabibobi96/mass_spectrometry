@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from msplatform.execution.manifest_records import record_path, verify_record
+from msplatform.io.manifest_records import record_path, verify_record
 
 
 def load_transport_producer_result(manifest: Mapping[str, Any], base: Path) -> dict[str, Any]:

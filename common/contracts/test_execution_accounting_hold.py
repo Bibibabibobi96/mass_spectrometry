@@ -13,7 +13,7 @@ from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.capacity_ledger import load_capacity_ledger
 from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.resources import resource_path
 

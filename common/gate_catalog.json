@@ -1106,7 +1106,7 @@
           {
             "matches": [
               {
-                "regex": "^src/msplatform/(?:api\\.py|execution/(?:artifact_reader|manifest_records|terminal_publication)\\.py)$",
+                "regex": "^src/msplatform/(?:results/(?:__init__|artifacts)|io/(?:manifest_records|file_identity)|execution/terminal_publication)\\.py$",
                 "reason": "published_artifact_reader_changed"
               }
             ],

@@ -6,16 +6,9 @@ from typing import Any
 from msplatform.execution.file_lock import process_file_lock
 from msplatform.execution.recorded_file_removal import write_json_atomic
 
-TERMINAL_JOURNAL_NAME = ".run_terminal_publication.json"
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 TERMINAL_LOCK_NAME = ".run_terminal_publication.lock"
 TERMINAL_STATUSES = {"success", "failed", "interrupted", "superseded"}
-
-
-def require_completed_terminal_publication(manifest_path: Path) -> None:
-    """Reject a manifest while its sibling journal still owns completion."""
-
-    if (manifest_path.resolve().parent / TERMINAL_JOURNAL_NAME).is_file():
-        raise ValueError("run terminal publication is incomplete; replay its journal")
 
 
 def _can_replace_provisional(existing: dict[str, Any], target: dict[str, Any], allowed: bool) -> bool:

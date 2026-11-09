@@ -69,7 +69,7 @@ def load_environment(configuration: str | Path | Mapping, *, workspace: str | Pa
     be absolute. Overrides affect stage engineering policy only, never science,
     tools or the shared host ledger.
     """
-    from .manifest_records import file_record, verify_record
+    from msplatform.io.manifest_records import file_record, verify_record
     source = None
     base = None
     if isinstance(configuration, Mapping):

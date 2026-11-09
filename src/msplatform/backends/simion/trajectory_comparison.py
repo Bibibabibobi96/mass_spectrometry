@@ -8,7 +8,7 @@ from msplatform.analysis.propagation_comparison import compare_observed_events, 
 from msplatform.analysis.particle_census import subset_efficiency
 from msplatform.assembly.handoff import HandoffMother
 from msplatform.contracts.clock import require_same_clock
-from msplatform.execution.artifact_reader import _record
+from msplatform.io.manifest_records import validate_file_record
 from .trajectory_analysis import _load_published_trajectory, _classifications
 
 
@@ -16,7 +16,7 @@ def _field_reference(source, loaded):
     declared = json.loads(source.data_path("field_reference").read_text(encoding="utf-8-sig"))
     if declared != loaded["collection"]["field_reference"] or set(declared) != {"manifest", "product_id"}:
         raise ValueError("collection field reference differs from its verified published data")
-    record = _record(declared["manifest"], "original field manifest")
+    record = validate_file_record(declared["manifest"], "original field manifest")
     if not isinstance(declared["product_id"], str) or not declared["product_id"]:
         raise ValueError("original field product ID is missing")
     return declared, (record["bytes"], record["sha256"].upper(), declared["product_id"])

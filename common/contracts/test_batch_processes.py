@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.processes import ProcessExecutionError,run_observed_process_group
 from msplatform.execution.resources import resource_path
 from msplatform.execution.simion_dispatch import plan_simion_dispatch,prepare_fixed_partition_dispatch

@@ -8,17 +8,17 @@ from typing import TYPE_CHECKING, Any
 
 from msplatform.assembly.model import Assembly
 from msplatform.contracts.machine_contracts import ContractError
-from msplatform.execution import artifact_reader
+from msplatform.results import artifacts as artifact_reader
 
 if TYPE_CHECKING:
-    from msplatform.execution.artifact_reader import OpenedArtifact
+    from msplatform.results.artifacts import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
 
 
 def inspect_cad(result: OpenedArtifact | Mapping[str, Any], *, checks: Mapping[str, Any]) -> dict[str, Any]:
     """Independently cold-read published STEP data; no export, owner or viewer."""
     import json
-    from msplatform.execution.artifact_reader import OpenedArtifact
+    from msplatform.results.artifacts import OpenedArtifact
     from msplatform.exporters.step import inspect_assembly_step
     source = result if isinstance(result, OpenedArtifact) else artifact_reader.open_artifact(result, expected_kind="cad_geometry")
     if source.kind != "cad_geometry" or not isinstance(checks, Mapping) or set(checks) != {"schema_version", "kind", "probes"}:
@@ -69,7 +69,7 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     from msplatform.exporters.step import assembly_geometry_members
     from msplatform.exporters.execution import execute_cad_export
     from msplatform.execution.completion import no_particle_batch_completion_api
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
 

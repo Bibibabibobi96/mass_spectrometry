@@ -11,7 +11,8 @@ from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from common.contracts import verify_run_manifest, write_run_manifest
-from msplatform.execution import manifest_records, manifest_publication
+from msplatform.io import manifest_records
+from msplatform.execution import manifest_publication
 
 
 VERIFIER = Path(__file__).with_name("verify_run_manifest.py")
@@ -137,7 +138,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
             (root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(verify_run_manifest.verified_successful_run_reference(
                 root, path.name, project="assembly", mode="prepare"), path)
-            journal = root / write_run_manifest.TERMINAL_JOURNAL_NAME
+            journal = root / manifest_records.TERMINAL_JOURNAL_NAME
             journal.write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "terminal publication is incomplete"):
                 invoke(manifest)
@@ -244,7 +245,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                 with self.assertRaisesRegex(SystemExit, "missing run inputs"):
                     write_run_manifest.main()
             self.assertEqual(manifest.read_bytes(), b"previous publication")
-            (root / write_run_manifest.TERMINAL_JOURNAL_NAME).write_text("{}")
+            (root / manifest_records.TERMINAL_JOURNAL_NAME).write_text("{}")
             with patch.object(sys, "argv", ["writer", "--run-config", str(config), "--status", "success"]):
                 with self.assertRaisesRegex(SystemExit, "publication is incomplete"):
                     write_run_manifest.main()

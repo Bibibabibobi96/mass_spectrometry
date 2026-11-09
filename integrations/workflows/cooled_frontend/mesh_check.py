@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from common.contracts.write_run_manifest import require_completed_terminal_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from .geometry import compile_cooled_frontend, compile_field_plan
 from .prepare import prepare_cooled_frontend
 from .runtime import _verified_small_record, fields

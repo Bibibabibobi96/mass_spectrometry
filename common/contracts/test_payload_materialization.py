@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.payload_inputs import materialize_payloads, _outputs
 from msplatform.execution.processes import ProcessExecutionError
 from msplatform.execution.resources import resource_path
@@ -118,7 +118,7 @@ class PayloadMaterializationTests(unittest.TestCase):
             script = r'''
 . $env:PAYLOAD_LEAF -UnbufferedIdentityReader {
  param($Source,$Length)
- $value=@(& $env:TEST_PYTHON -I -B -c 'import sys;from msplatform.execution.file_identity import file_sha256_unbuffered;print(file_sha256_unbuffered(sys.argv[1]))' $Source)
+ $value=@(& $env:TEST_PYTHON -I -B -c 'import sys;from msplatform.io.file_identity import file_sha256_unbuffered;print(file_sha256_unbuffered(sys.argv[1]))' $Source)
  if($LASTEXITCODE-ne0){throw 'real unbuffered reader failed'}
  return $value
 }

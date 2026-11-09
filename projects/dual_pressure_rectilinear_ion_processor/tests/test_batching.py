@@ -9,7 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 from msplatform.execution.resources import resource_path
-from msplatform.execution import ip_continuation, manifest_records
+from msplatform.execution import ip_continuation
+from msplatform.io import manifest_records
 import tempfile
 import unittest
 from unittest.mock import patch

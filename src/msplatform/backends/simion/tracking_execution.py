@@ -286,7 +286,7 @@ def _unique_inputs(records):
 def _verified_handoff_source(session, source_reference, particles, plan, geometry):
     """Bind actual incoming states to published observations, not caller assertions."""
     import json
-    from msplatform.execution.artifact_reader import open_artifact
+    from msplatform.results.artifacts import open_artifact
     from .model_execution import _protected_source
     from .source import prepare_plane_handoff_states
     from msplatform.contracts.particle_state import binary64_serialization_close
@@ -370,7 +370,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
                             recovery, dispatch_profiles):
     """Prepare whole units, dispatch actual Fly operations, then collect once."""
     import json
-    from msplatform.execution.manifest_records import file_record,verify_record
+    from msplatform.io.manifest_records import file_record,verify_record
     from msplatform.execution.recorded_file_removal import write_json_atomic
     from msplatform.execution.simion_dispatch import plan_simion_dispatch,prepare_fixed_partition_dispatch
     from .native_io import apply_native_io_mode
@@ -516,9 +516,9 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     import inspect
     import json
     from dataclasses import asdict
-    from msplatform.execution.artifact_reader import OpenedArtifact,open_artifact
+    from msplatform.results.artifacts import OpenedArtifact,open_artifact
     from msplatform.execution.inputs import freeze_file
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.resources import resource_path
     from .artifacts import CompiledPreparedModel
     from .field_closure import require_downstream_reuse

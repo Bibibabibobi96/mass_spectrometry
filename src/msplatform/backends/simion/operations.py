@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any
 
 from msplatform.assembly.model import Assembly
 from msplatform.contracts.machine_contracts import ContractError
-from msplatform.execution import artifact_reader
+from msplatform.results import artifacts as artifact_reader
 from .compiler import CompiledSimionGeometry, compile_geometry as compile_simion_geometry
 from .rf_compiler import compile_independent_multipoles
 
 if TYPE_CHECKING:
     from msplatform.assembly.handoff import HandoffResult
-    from msplatform.execution.artifact_reader import OpenedArtifact
+    from msplatform.results.artifacts import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
     from msplatform.ion_release.authoring import ReleaseRealization
 
@@ -34,7 +34,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
     from msplatform.backends.simion.native_plans import plan_geometry_build
     from msplatform.backends.simion.resources import structural_seed_path
     from msplatform.backends.simion import native_completion
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
 
@@ -92,9 +92,9 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     from msplatform.backends.simion.model_execution import execute_model
     from msplatform.backends.simion.resources import structural_seed_path
     from msplatform.backends.simion import native_completion
-    from msplatform.execution.artifact_reader import OpenedArtifact
+    from msplatform.results.artifacts import OpenedArtifact
     from msplatform.execution.clock_authority import validate_clock_authority
-    from msplatform.execution.manifest_records import file_record, verify_record
+    from msplatform.io.manifest_records import file_record, verify_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
@@ -182,8 +182,8 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
     from msplatform.backends.simion.field_closure import load_field_model
     from msplatform.backends.simion.field_execution import execute_fields, plan_fields_execution
     from msplatform.backends.simion import native_completion
-    from msplatform.execution.artifact_reader import OpenedArtifact
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.results.artifacts import OpenedArtifact
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
@@ -252,8 +252,8 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     from msplatform.backends.simion.tracking_execution import execute_tracking, plan_tracking_execution
     from msplatform.backends.simion.tracking_units import inspect_tracking_recovery
     from msplatform.backends.simion import native_completion
-    from msplatform.execution.artifact_reader import OpenedArtifact
-    from msplatform.execution.manifest_records import file_record
+    from msplatform.results.artifacts import OpenedArtifact
+    from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.ion_release.authoring import ReleaseRealization

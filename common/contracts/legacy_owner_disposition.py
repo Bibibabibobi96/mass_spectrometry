@@ -31,7 +31,7 @@ from msplatform.execution.run_capacity_lifecycle import (
     recorded_heavy_identity,
 )
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.io.file_identity import canonical_json_sha256
 
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")

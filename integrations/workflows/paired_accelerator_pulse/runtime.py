@@ -15,7 +15,8 @@ from msplatform.execution.resources import resource_path
 from common.analysis.particle_events import group_particle_events, iter_particle_event_fields
 from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.backends.simion.native_completion import (parse_fly_completed_line, require_one_fly_completion,
     frontend_batch_completion_path, validate_frontend_batch_completion)
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan

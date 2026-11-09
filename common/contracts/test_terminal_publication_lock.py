@@ -11,9 +11,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.capacity_protection import process_file_lock
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from common.contracts.write_run_manifest import (
-    TERMINAL_JOURNAL_NAME, TERMINAL_LOCK_NAME, build_run_manifest,
-    publish_run_manifest, publish_terminal_state, replay_terminal_publication,
+    TERMINAL_LOCK_NAME,
+    build_run_manifest,
+    publish_run_manifest,
+    publish_terminal_state,
+    replay_terminal_publication,
 )
 from common.contracts import write_run_manifest
 from msplatform.execution import terminal_publication

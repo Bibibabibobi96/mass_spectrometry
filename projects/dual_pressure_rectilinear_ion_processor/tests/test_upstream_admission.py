@@ -259,7 +259,7 @@ class AdmissionTests(unittest.TestCase):
             self.load()
 
     def test_large_unroled_records_use_canonical_retention_and_detect_tampering(self):
-        from msplatform.execution.manifest_records import file_record as canonical_file_record
+        from msplatform.io.manifest_records import file_record as canonical_file_record
         from msplatform.execution.retention import classify_file
 
         size = 8 * 1024 * 1024
@@ -317,7 +317,7 @@ class AdmissionTests(unittest.TestCase):
             freeze_injected_source(admission, destination)
             frozen = load_injected_source(destination/"inputs/injected_source.json")
             self.assertEqual(frozen["producer_result"], result)
-            from common.contracts.write_run_manifest import TERMINAL_JOURNAL_NAME
+            from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
             journal = root/TERMINAL_JOURNAL_NAME
             journal.write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "terminal publication is incomplete"):

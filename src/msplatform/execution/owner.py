@@ -19,11 +19,12 @@ from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.capacity_session import enter_capacity_session, exit_capacity_session, renew_capacity_session
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.manifest_publication import build_run_manifest
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.run_paths import create_execution_alias, path_capacity, remove_execution_alias
 from msplatform.execution.run_session import RunSession
-from msplatform.execution.terminal_publication import TERMINAL_JOURNAL_NAME, TERMINAL_LOCK_NAME
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
+from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
 from msplatform.execution.workflow_publication import publish_workflow_terminal
 
 

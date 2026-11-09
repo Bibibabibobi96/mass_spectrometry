@@ -17,7 +17,8 @@ from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from common.integration.resolve_assembly import derive_assembly_scope
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import load_validated_source
 from common.ion_release.cylinder import CANONICAL_COLUMNS

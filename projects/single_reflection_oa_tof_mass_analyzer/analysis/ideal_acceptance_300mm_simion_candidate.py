@@ -29,7 +29,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import load_json, validate_schema
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import require_completed_terminal_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_theory import (
     axial_time_coefficients,
 )

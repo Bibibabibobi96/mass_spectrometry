@@ -21,12 +21,12 @@ from msplatform.backends.simion.field_closure import load_field_model
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
 from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.execution import owner
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results.artifacts import open_artifact
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.payload_inputs import materialize_payloads
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession

@@ -913,7 +913,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
 class NativeFieldReferenceTests(unittest.TestCase):
     def test_source_projection_and_child_publication_reference_owner_without_payload_rereads(self) -> None:
         from common.contracts import verify_run_manifest, write_run_manifest
-        from msplatform.execution import manifest_records
+        from msplatform.io import manifest_records
         from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

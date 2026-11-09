@@ -21,7 +21,7 @@ from msplatform.components.single_reflection_oa_tof.accelerator_electrical impor
     resolve_accelerator_electrical_design,
 )
 from msplatform.components.single_reflection_oa_tof.accelerator_geometry import resolve_accelerator_geometry
-from msplatform.execution.manifest_records import file_record, record_path, verify_record
+from msplatform.io.manifest_records import file_record, record_path, verify_record
 
 _ROLE = "oatof_paired_accelerator_static_field_request"
 _REQUIRED_RECORDS = {"parent_manifest", "frontend_geometry", "oatof_resolved"}

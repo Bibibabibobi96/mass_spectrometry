@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from common.contracts import test_simion_trajectory_analysis as analysis_fixtures
 from msplatform.backends.simion.trajectory_comparison import compare_published_trajectories
-from msplatform.execution.artifact_reader import open_artifact
-from msplatform.execution.manifest_records import file_record
+from msplatform.results.artifacts import open_artifact
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.terminal_publication import publish_terminal_state
 
 

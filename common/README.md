@@ -168,7 +168,7 @@ item exclusions remain the identity authority; imported body order is not an ide
 ```python
 import json
 from pathlib import Path
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results import open_artifact
 ref = json.loads(Path("my_study/cad-reference.json").read_text(encoding="utf-8"))
 cad = open_artifact(ref, expected_kind="cad_geometry")
 print(cad.data_path("step"))  # 原manifest发布绑定及文件bytes/SHA复核
@@ -223,12 +223,16 @@ SolidWorks兼容查看是后续显式可选动作`applications.open_model(cad, a
 不能传latest、改变源来暗中求场，或把未求解PA当已有场。普通安装和 worker 运输已有分阶段证据；
 完整场包发布、后续Fly及搬迁后继续执行的范围仍查集成正文，不能从接口存在推定完成。
 
-`msplatform.execution.artifact_reader.open_artifact(reference, expected_kind=...)`读取显式manifest record和`product_id`，校验已完成发布的
+`msplatform.results.open_artifact(reference, expected_kind=...)`读取显式manifest record和`product_id`，校验已完成发布的
 所选数据闭包；不恢复执行环境、不运行求解器。发布者在原manifest的`products`字段绑定版本1产品：
 `schema_version/kind/status/metadata/data`，其中`status="complete"`，`data`每个具名成员是同一manifest
 inputs／outputs中的原文件record。reference为`{"manifest": <文件record>, "product_id": <具名产品>}`。
 返回的`OpenedArtifact`提供metadata／原producer状态／data_records的独立视图，`data_path(name)`在
 后续消费前核对该成员身份。读取不授予场映射适用性或科学资格，实际track／analysis仍执行其领域合同。
+The reader imports only read-only I/O and data contracts. Exact file records, publication-incomplete
+checks and Windows closed-file identity belong to `msplatform.io`; importing results does not load
+execution owners, publication writers, locks, schedulers or historical code. Active consumers use this
+entry directly; the former execution reader/record/identity modules are removed rather than forwarded.
 新产物的数据成员可用manifest相对路径；旧绝对引用搬迁需显式`resolver(record, base_directory)`返回
 精确绝对路径，保留原record/hash，不按latest搜索。`data_locations`与`manifest_location`返回打开时已验证的
 实际位置快照，不替代后续`data_path`复核或原owner的写入保护。搬迁后的数据可读不自动改变原容量owner；

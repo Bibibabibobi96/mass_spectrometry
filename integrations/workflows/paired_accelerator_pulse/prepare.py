@@ -16,7 +16,7 @@ from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from msplatform.contracts.particle_physics import AMU_KG
 from common.contracts.verify_run_manifest import record_path
-from common.contracts.write_run_manifest import require_completed_terminal_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from integrations.analysis.build_comsol_prepulse_replay import build_comsol_prepulse_replay
 from integrations.runtime.paired_accelerator_model import load_paired_static_model_source
 from integrations.runtime.single_flight_source import (

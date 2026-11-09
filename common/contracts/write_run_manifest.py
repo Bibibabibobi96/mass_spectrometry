@@ -18,14 +18,13 @@ except ModuleNotFoundError:
     from capacity_protection import process_file_lock
 
 
-from msplatform.execution import manifest_records as _manifest_records
+from msplatform.io import manifest_records as _manifest_records
 from msplatform.execution import manifest_publication as _manifest_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.execution.terminal_publication import (
-    TERMINAL_JOURNAL_NAME as TERMINAL_JOURNAL_NAME,
     TERMINAL_LOCK_NAME as TERMINAL_LOCK_NAME,
     TERMINAL_STATUSES,
     _can_replace_provisional,
-    require_completed_terminal_publication,
     replay_terminal_publication as replay_terminal_publication,
     publish_terminal_state as publish_terminal_state,
 )

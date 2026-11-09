@@ -15,8 +15,8 @@ from typing import Any, Mapping
 
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.capacity_protection import load_capacity_protection_leases
-from msplatform.execution.file_identity import guarded_file_identity
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.file_identity import guarded_file_identity
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.processes import ProcessExecutionError, run_observed_process, inherited_host_token
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.io.file_identity import file_sha256

@@ -2,7 +2,7 @@
 from pathlib import Path
 import json
 from msplatform.io.file_identity import file_sha256, canonical_json_sha256
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from .pa_family_cache import load_pa_family_cache_transaction
 from .field_identity import render_audit_spec
 

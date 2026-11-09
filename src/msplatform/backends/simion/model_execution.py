@@ -13,11 +13,11 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results.artifacts import open_artifact
 from msplatform.contracts.clock import ClockIdentity, require_same_clock
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 from msplatform.execution.run_session import RunSession

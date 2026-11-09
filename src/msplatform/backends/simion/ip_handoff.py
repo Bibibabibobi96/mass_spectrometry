@@ -19,9 +19,9 @@ from msplatform.backends.simion.transport_result import load_transport_producer_
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from msplatform.execution.clock_authority import validate_clock_authority
-from msplatform.execution.manifest_records import file_record, record_path, verify_record
+from msplatform.io.manifest_records import file_record, record_path, verify_record
 from msplatform.execution.retention import classify_file
-from msplatform.execution.terminal_publication import require_completed_terminal_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.ion_release.release import generate_release_states
 
 SCHEMA = Path(str(files("msplatform.backends.simion").joinpath("resources/ip_injected_source.schema.json")))

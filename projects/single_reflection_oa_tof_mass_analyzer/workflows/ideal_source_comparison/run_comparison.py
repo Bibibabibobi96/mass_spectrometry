@@ -36,7 +36,8 @@ from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import load_json
 from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication, retention_api
+from common.contracts.write_run_manifest import file_record, retention_api
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from common.contracts.capacity_protection import renew_capacity_protection_lease, PROTECTION_LEASE_DIRECTORY
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import (

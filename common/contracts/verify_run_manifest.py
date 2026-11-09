@@ -7,12 +7,14 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from msplatform.execution import manifest_records as _manifest_records
+from msplatform.io import manifest_records as _manifest_records
 
 try:
-    from common.contracts.write_run_manifest import file_record as file_record, require_completed_terminal_publication, retention_api
+    from common.contracts.write_run_manifest import file_record as file_record, retention_api
+    from msplatform.io.manifest_records import require_completed_terminal_publication
 except ModuleNotFoundError:
-    from write_run_manifest import file_record as file_record, require_completed_terminal_publication, retention_api
+    from write_run_manifest import file_record as file_record, retention_api
+    from msplatform.io.manifest_records import require_completed_terminal_publication
 
 
 record_path = _manifest_records.record_path

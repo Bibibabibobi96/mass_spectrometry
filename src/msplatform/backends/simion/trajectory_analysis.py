@@ -12,7 +12,7 @@ from msplatform.analysis.particle_census import subset_efficiency
 from msplatform.assembly.handoff import HandoffMother, _validate_mother
 from msplatform.contracts.clock import ClockIdentity, require_same_clock
 from msplatform.contracts.particle_state import validate_component_particle_state_rows
-from msplatform.execution.artifact_reader import OpenedArtifact
+from msplatform.results.artifacts import OpenedArtifact
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.backends.simion.source import execution_particle_ids
 
@@ -194,7 +194,7 @@ def analyze(result: OpenedArtifact | Mapping[str, Any], *,
     supply them. The common time reference is not a particle birth or age.
     """
     from msplatform.contracts.machine_contracts import ContractError
-    from msplatform.execution.artifact_reader import open_artifact
+    from msplatform.results.artifacts import open_artifact
 
     source = result if isinstance(result, OpenedArtifact) else open_artifact(result, expected_kind="trajectory_result")
     if source.kind != "trajectory_result" or source.metadata.get("backend") != "simion":

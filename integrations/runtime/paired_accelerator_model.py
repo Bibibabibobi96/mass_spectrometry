@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from integrations.runtime.single_flight_source import published_producer_input
 
 

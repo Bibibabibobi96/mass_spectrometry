@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Mapping
 
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.exporters.step import step_export_filename
 
 WORKER_CODE = "from msplatform.exporters.execution import export_worker;import sys;export_worker(sys.argv[1])"

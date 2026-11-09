@@ -20,10 +20,10 @@ from msplatform.backends.simion.field_closure import load_field_model, data_reco
 from msplatform.backends.simion.model_view_preparation import prepare_view
 from msplatform.backends.simion.native_plans import plan_solve_fields
 from msplatform.execution import owner
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results.artifacts import open_artifact
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.payload_inputs import materialize_payloads
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession

@@ -21,8 +21,8 @@ def tracking_action_fixture(self, root):
     from msplatform.backends.simion.field_bank import field_bank
     from msplatform.backends.simion.field_identity import working_point_member_id
     from msplatform.backends.simion.native_plans import plan_solve_fields
-    from msplatform.execution.artifact_reader import OpenedArtifact
-    from msplatform.execution.manifest_records import file_record,verify_record
+    from msplatform.results.artifacts import OpenedArtifact
+    from msplatform.io.manifest_records import file_record,verify_record
     producer=root/'producer';producer.mkdir()
     records={}
     def put(key,name,*,value=None,raw=None):
@@ -350,7 +350,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         import tempfile
         from unittest.mock import patch
         from msplatform.backends.simion.tracking_execution import execute_tracking
-        from msplatform.execution.artifact_reader import OpenedArtifact
+        from msplatform.results.artifacts import OpenedArtifact
 
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -379,7 +379,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 metadata=product['metadata'],records=product['data'],paths={key:Path(row['path']) for key,row in product['data'].items()},producer={})
             zero=Session(root/'zero');zero.expected_operation_ids=();zero.operation_dependencies={}
             with patch('msplatform.backends.simion.model_execution._protected_source'),patch(
-                    'msplatform.execution.artifact_reader.open_artifact',return_value=parent):
+                    'msplatform.results.artifacts.open_artifact',return_value=parent):
                 zero_result=execute_tracking(zero,fields_reference=artifact,particles=empty,
                     propagation=dict(self.policy,scope='state_relaunch'),observations={'plane_observations':[]},
                     numerics=self.numerics,limits={},source_reference=parent.reference)

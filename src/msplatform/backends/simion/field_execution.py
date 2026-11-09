@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.resources import resource_path
 from msplatform.io.file_identity import file_sha256
 from .field_bank import field_bank

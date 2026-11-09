@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic as _atomic_json
-from msplatform.execution.file_identity import file_sha256, file_sha256_unbuffered
+from msplatform.io.file_identity import file_sha256, file_sha256_unbuffered
 from msplatform.execution.retention import classify_file
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution import capacity_protection as protection
-from msplatform.execution.manifest_records import record_path, verify_record
+from msplatform.io.manifest_records import record_path, verify_record
 
 RECEIPT_NAME = "solver_review_retirement_receipt.json"
 HEAVY_ROLES = {"solver_native_binary", "dense_trajectory"}

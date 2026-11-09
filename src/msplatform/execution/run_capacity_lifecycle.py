@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from msplatform.execution import capacity_ledger, capacity_protection
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
 from msplatform.execution.retention import classify_file
 from msplatform.execution.solver_review_retirement import (
@@ -385,8 +385,8 @@ def resolve_consumed_run_capacity_owner(manifest_record: dict[str, Any], *,
     source protection lease has been acquired. Scientific applicability and PA
     byte protection remain the consuming project's responsibility.
     """
-    from msplatform.execution.manifest_records import record_path
-    from msplatform.execution.terminal_publication import require_completed_terminal_publication
+    from msplatform.io.manifest_records import record_path
+    from msplatform.io.manifest_records import require_completed_terminal_publication
 
     manifest_path = record_path(manifest_record)
     if manifest_path.name != "run_manifest.json":

@@ -21,9 +21,9 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_cha
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.execution.ip_continuation import continuation_ancestry, continuation_protection_paths
-from msplatform.execution.manifest_records import file_record, record_path, verify_record
+from msplatform.io.manifest_records import file_record, record_path, verify_record
 from msplatform.execution.solver_review_retirement import verify_retirement
-from msplatform.execution.terminal_publication import require_completed_terminal_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENT_VALUES = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")

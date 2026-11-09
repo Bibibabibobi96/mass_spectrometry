@@ -15,7 +15,7 @@ from msplatform.backends.simion.model_execution import execute_model, _protected
 from msplatform.backends.simion.native_plans import plan_model_preparation
 from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
 from msplatform.backends.simion.source import lua_value
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.resources import resource_path
 from msplatform.execution.terminal_publication import publish_terminal_state
 
@@ -43,7 +43,7 @@ class _InertModelSession:
         return path
 
     def add_input(self, name, record):
-        from msplatform.execution.manifest_records import verify_record
+        from msplatform.io.manifest_records import verify_record
         verify_record(name, record)
         self.inputs[name] = record
 

@@ -14,7 +14,7 @@ $script:PayloadIdentityPython=[string]$request.python_executable
 . (Join-Path $PSScriptRoot 'payload_file_support.ps1') -UnbufferedIdentityReader {
   param($Source,$Length)
   $digest=@(& $script:PayloadIdentityPython -I -B -X utf8 -c `
-    'import sys;from msplatform.execution.file_identity import file_sha256_unbuffered;print(file_sha256_unbuffered(sys.argv[1]))' $Source)
+    'import sys;from msplatform.io.file_identity import file_sha256_unbuffered;print(file_sha256_unbuffered(sys.argv[1]))' $Source)
   if($LASTEXITCODE-ne0){throw 'Installed unbuffered payload identity failed.'}
   return $digest
 }

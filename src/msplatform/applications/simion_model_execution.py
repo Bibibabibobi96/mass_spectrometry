@@ -6,7 +6,7 @@ import inspect
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.run_session import RunSession
 from .simion import open_prepared_model
 

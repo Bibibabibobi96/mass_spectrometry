@@ -9,7 +9,7 @@ from unittest import mock
 
 from common.contracts.file_identity import file_sha256, guarded_file_identity
 from common.contracts import stage_reuse
-from msplatform.execution import file_identity
+from msplatform.io import file_identity
 from common.contracts.stage_reuse import (
     StageReuseError,
     validate_and_write_stage_reuse,

@@ -793,7 +793,8 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
     from common.contracts.capacity_ledger import load_capacity_ledger
     from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
     from common.contracts.verify_run_manifest import record_path, verify_record
-    from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+    from common.contracts.write_run_manifest import file_record
+    from msplatform.io.manifest_records import require_completed_terminal_publication
     parent = parent.resolve(strict=True)
     manifest_path = parent / "run_manifest.json"
     require_completed_terminal_publication(manifest_path)

@@ -18,7 +18,7 @@ HASH_CHUNK_BYTES = 1024 * 1024
 from msplatform.io.file_identity import file_sha256, canonical_json_sha256 as canonical_json_sha256
 
 
-from msplatform.execution.file_identity import (
+from msplatform.io.file_identity import (
     FileIdentityGuard as FileIdentityGuard,
     guarded_file_identity as guarded_file_identity,
     file_sha256_unbuffered as file_sha256_unbuffered,

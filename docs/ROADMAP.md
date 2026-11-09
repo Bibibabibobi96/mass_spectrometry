@@ -157,8 +157,17 @@ paired COMSOL主脚本、Cartesian释放读取与CPT步策略helper亦迁入安�
 普通构建、Candidate冻结源码、同步、重追踪及MATLAB测试同步使用安装目录，三份MATLAB字节保持，未启动原生求解。
 单反射飞行管、反射镜和检测器variant Lua的三份旧项目转发桥现已删除；smoke、冻结依赖、集成及真实Lua测试直接消费安装实现，
 不再保留重复冻结条目或到期别名。
-`api.open_artifact`纯转发别名现已退役，生产内部调用、测试及教程直接消费`execution.artifact_reader`；
+`api.open_artifact`纯转发别名现已退役，生产内部调用、测试及教程直接消费`results.open_artifact`；
 manifest绑定、搬迁resolver、文件身份复核和失败关闭不变，其余仍有独立职责的staged入口未因此删除。
+Read-only products now belong to `results`; exact records, incomplete-publication checks and existing
+Windows closed-file identity share the neutral `io` owner. Execution keeps journal publication/replay,
+writer locks and lifecycle control. Old execution reader/record/identity modules and active references
+are removed; backend collection, mother/clock validation and scientific interpretation remain backend duties.
+The original 102-parent reader/identity/publication/analysis/comparison/STEP/boundary matrix passed;
+actual frozen consumers and new-path Changed routing bring focused coverage to 118 distinct parents.
+Both ordinary installed-product probe rounds completed successfully with a fresh reader process that
+rejects execution/repository imports. The outer standalone unittest summary was not retained, so a
+complete current-source joint gate remains required rather than inferring its exit or wall time.
 出生源request校验及`ReleaseRealization`已迁入`msplatform.ion_release`；只读轨迹分析公开入口迁入
 `msplatform.backends.simion`，旧`api.sample_release`与`api.analyze`均退役，科学语义与安装实际调用保持。
 `build_geometry`的实际stage/owner编排也已迁入SIMION backend，旧API入口删除；29项定向测试通过，
@@ -228,7 +237,8 @@ actual lifecycle resealing, tamper refusal and lock-held verification retain the
 Saved deployment/profile loading now reads one explicit machine document, selects engineering overrides
 through the existing stage-policy validator and freezes their provenance in the existing run owner. The
 24 platform tests and real wheel/sdist outside-tree probe passed (143.242 seconds for installation).
-Results ownership, remaining native rollout and the original performance targets remain OPEN.
+Results reading now has its own read-only domain; remaining result-interface consolidation,
+native rollout and the original performance targets remain OPEN.
 No new COMSOL/SIMION, GUI or Formal qualification is claimed by this takeover. MATLAB R2025b rejected
 the migrated helper directory named `resources` before executing tests. The eleven byte-identical sources
 now use the canonical `matlab` directory, with selectors, wheel metadata, callers, frozen declarations

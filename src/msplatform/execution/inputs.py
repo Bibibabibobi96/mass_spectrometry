@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from .manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 
 
 def freeze_file(source: Path, destination: Path, *, retention_classifier: Any = None) -> dict[str, Any]:

@@ -7,7 +7,7 @@ from threading import RLock
 from typing import Any, Mapping, Sequence
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.capacity_session import renew_capacity_session
-from msplatform.execution.manifest_records import verify_record
+from msplatform.io.manifest_records import verify_record
 from msplatform.execution.processes import ProcessExecutionError, run_observed_process, run_observed_process_group
 from msplatform.execution.recorded_file_removal import write_json_atomic
 

@@ -28,9 +28,9 @@ from uuid import uuid4
 
 from msplatform.execution import capacity_ledger, capacity_protection
 from msplatform.io.file_identity import canonical_json_sha256, file_sha256
-from msplatform.execution.file_identity import file_sha256_unbuffered
+from msplatform.io.file_identity import file_sha256_unbuffered
 from msplatform.execution.recorded_file_removal import remove_recorded_files
-from msplatform.execution.manifest_records import verify_record
+from msplatform.io.manifest_records import verify_record
 from msplatform.execution.cache_generation import (
     PAYLOAD_VERIFICATION_RETRY_DELAY_S,
     _flush_writable_source,

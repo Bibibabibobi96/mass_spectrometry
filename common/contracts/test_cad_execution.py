@@ -15,7 +15,7 @@ from unittest.mock import patch
 from msplatform.exporters.execution import WORKER_CODE, execute_cad_export, export_worker
 from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.run_session import RunSession
-from msplatform.execution.manifest_records import verify_record
+from msplatform.io.manifest_records import verify_record
 
 
 class InertSession:

@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 from msplatform.execution.manifest_publication import build_run_manifest
-from msplatform.execution.terminal_publication import (
-    publish_terminal_state, replay_terminal_publication, TERMINAL_JOURNAL_NAME,
-)
+from msplatform.execution.terminal_publication import publish_terminal_state, replay_terminal_publication
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 
 
 def publish_workflow_terminal(completion_path: Path, session_path: Path, wait_path: Path | None, *,

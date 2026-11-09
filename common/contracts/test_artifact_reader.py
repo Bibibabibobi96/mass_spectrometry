@@ -12,10 +12,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform.execution.artifact_reader import open_artifact
-from msplatform.execution.manifest_records import file_record
+from msplatform.results.artifacts import open_artifact
+from msplatform.io.manifest_records import file_record
 from msplatform.io.file_identity import file_sha256
-from msplatform.execution.terminal_publication import publish_terminal_state, TERMINAL_JOURNAL_NAME
+from msplatform.execution.terminal_publication import publish_terminal_state
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 
 
 class ArtifactReaderTests(unittest.TestCase):
@@ -90,11 +91,18 @@ class ArtifactReaderTests(unittest.TestCase):
         program = """
 import json,sys
 from pathlib import Path
-from msplatform.execution.artifact_reader import open_artifact
+import importlib.abc
+class RejectExecutionImports(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'msplatform.execution' or fullname.startswith('msplatform.execution.') or fullname.split('.')[0] in {'common', 'projects', 'integrations'}:
+            raise AssertionError('data reader imported execution or a repository owner: '+fullname)
+sys.meta_path.insert(0, RejectExecutionImports())
+from msplatform.results import open_artifact
 result=open_artifact(json.loads(Path(sys.argv[1]).read_text()),expected_kind='trajectory_result')
 assert result.metadata['mother_ids']==[7,42]
 assert result.data_path('observations').read_text().splitlines()[2]=='42,12'
 print(result.producer['status'])
+assert not any(name == 'msplatform.execution' or name.startswith('msplatform.execution.') for name in sys.modules)
 """
         completed = subprocess.run([sys.executable,"-I","-c",program,str(reference_path)], cwd=other,
             env=dict(os.environ, PATH="", PYTHONPATH="", SIMION_HOME=""), capture_output=True,
@@ -164,8 +172,8 @@ print(result.producer['status'])
         document["products"]["flight"]["data"]["observations"] = copy.deepcopy(record)
         reference = self.reference_after_manifest_edit(document)
         reference["manifest"]["retention_role"] = "scientific_metadata"
-        with patch("msplatform.execution.manifest_records._UNBUFFERED_SOLVER_PAYLOAD_BYTES",8), \
-             patch("msplatform.execution.manifest_records.file_sha256_unbuffered",wraps=file_sha256) as unbuffered, \
+        with patch("msplatform.io.manifest_records._UNBUFFERED_SOLVER_PAYLOAD_BYTES",8), \
+             patch("msplatform.io.manifest_records.file_sha256_unbuffered",wraps=file_sha256) as unbuffered, \
              patch("msplatform.execution.resources.resource_path",side_effect=AssertionError("policy lookup")):
             result = open_artifact(reference,expected_kind="trajectory_result")
             self.assertEqual(result.data_path("observations"),self.data)

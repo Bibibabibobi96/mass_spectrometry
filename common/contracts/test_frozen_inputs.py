@@ -58,7 +58,7 @@ class FrozenInputTests(unittest.TestCase):
             if os.name == "nt":
                 classifier = lambda path, **kwargs: "required_evidence"
                 with patch("msplatform.execution.inputs.file_record", wraps=__import__(
-                        "msplatform.execution.manifest_records", fromlist=["file_record"]).file_record) as recorded:
+                        "msplatform.io.manifest_records", fromlist=["file_record"]).file_record) as recorded:
                     frozen = freeze_file(source, target, retention_classifier=classifier)
                 self.assertIs(recorded.call_args.kwargs["retention_classifier"], classifier)
                 self.assertEqual(source.read_bytes(), target.read_bytes())

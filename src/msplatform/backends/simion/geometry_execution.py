@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession
 
@@ -32,7 +32,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     normal owner. A same-projection native reopen does not prove relocation;
     that qualification is deliberately recorded separately.
     """
-    from msplatform.execution.manifest_records import verify_record
+    from msplatform.io.manifest_records import verify_record
 
     if not isinstance(compiled, CompiledSimionGeometry):
         raise TypeError("SIMION geometry requires a compiled scientific geometry")

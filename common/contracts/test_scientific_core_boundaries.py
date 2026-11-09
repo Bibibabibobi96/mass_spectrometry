@@ -24,11 +24,12 @@ DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
     "components": SCIENTIFIC_DOMAINS | {"components"},
-    "backends": SCIENTIFIC_DOMAINS | {"components", "backends", "execution"},
-    "execution": SCIENTIFIC_DOMAINS | {"execution"},
+    "backends": SCIENTIFIC_DOMAINS | {"components", "backends", "execution", "results"},
+    "execution": SCIENTIFIC_DOMAINS | {"execution", "results"},
+    "results": SCIENTIFIC_DOMAINS | {"results"},
     "examples": SCIENTIFIC_DOMAINS | {"examples"},
-    "exporters": SCIENTIFIC_DOMAINS | {"components", "exporters", "execution"},
-    "applications": SCIENTIFIC_DOMAINS | {"applications", "execution"},
+    "exporters": SCIENTIFIC_DOMAINS | {"components", "exporters", "execution", "results"},
+    "applications": SCIENTIFIC_DOMAINS | {"applications", "execution", "results"},
     "capabilities": SCIENTIFIC_DOMAINS | {"capabilities", "components", "backends", "execution", "examples", "exporters", "applications"},
 }
 HOST_MODULES = {"ctypes", "winreg", "subprocess", "multiprocessing"}
@@ -91,6 +92,7 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
     if parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain != "applications":
         return f"{source_domain} imports optional application machinery: {target}"
     if (parts[0] in HOST_MODULES and source_domain != "execution"
+            and not (source_module == "msplatform.io.file_identity" and parts[0] == "ctypes")
             and not (source_domain == "applications" and parts[0] == "subprocess")):
         return f"{source_domain} imports host/process machinery: {target}"
     if parts[0] not in sys.stdlib_module_names | set(sys.builtin_module_names) | dependencies:
@@ -160,6 +162,7 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
                 aliases[node.targets[0].id] = name
         name = _qualified_name(node, aliases)
         if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
+                and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records"})
                 and not (source_domain == "applications" and name == "os.environ")):
             errors.append(f"{node.lineno}: scientific core probes host/search-path state: {name}")
         if not isinstance(node, ast.Call):
@@ -328,12 +331,23 @@ lib.import_module('.helper', __package__)
             ("msplatform.applications.simion_model_execution", "from msplatform.execution import run_session"),
             ("msplatform.applications.operations", "from msplatform.backends.simion import model"),
             ("msplatform.applications.solidworks_worker", "import subprocess; import os; child = os.environ.copy()"),
+            ("msplatform.results.artifacts", "from msplatform.io.manifest_records import verify_record"),
+            ("msplatform.io.file_identity", "import ctypes; import os; supported = os.name == 'nt'"),
+            ("msplatform.io.manifest_records", "import os; windows = os.name == 'nt'"),
         )
         for module, source in allowed:
             with self.subTest(module=module, source=source):
                 self.assertEqual(core_boundary_errors(source, module, dependencies={"cadquery", "OCP", "pythoncom"}), [])
         rejected = (
             ("msplatform.contracts.clock", "from msplatform.execution import recovery"),
+            ("msplatform.results.artifacts", "from msplatform.execution import owner"),
+            ("msplatform.results.artifacts", "import subprocess"),
+            ("msplatform.analysis.example", "from msplatform.results import open_artifact"),
+            ("msplatform.io.file_identity", "import subprocess"),
+            ("msplatform.io.file_identity", "import winreg"),
+            ("msplatform.io.file_identity", "import os; os.environ.get('PATH')"),
+            ("msplatform.io.manifest_records", "import ctypes"),
+            ("msplatform.io.other", "import os; os.name"),
             ("msplatform.assembly.layout", "from msplatform.components.rf_multipole import design"),
             ("msplatform.components.rf_multipole.design", "from msplatform.backends import simion"),
             ("msplatform.execution.process", "from msplatform.components import rf_multipole"),

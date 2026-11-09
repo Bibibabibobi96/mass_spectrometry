@@ -102,7 +102,7 @@ def dispatch_request_for_field(run: Path, c: dict, pa_sha: str, retain: bool, *,
 
 def _validate_continuation_science(run: Path, predecessor: Path) -> tuple[dict, dict]:
     """Verify frozen science before reusing either the population or a batch."""
-    from common.contracts.write_run_manifest import require_completed_terminal_publication
+    from msplatform.io.manifest_records import require_completed_terminal_publication
     manifest_path = predecessor / "run_manifest.json"
     require_completed_terminal_publication(manifest_path)
     manifest = _read(manifest_path)

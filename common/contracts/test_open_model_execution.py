@@ -14,10 +14,10 @@ from unittest.mock import patch
 
 from msplatform.applications.model_execution import execute_open_model
 from msplatform.applications import solidworks_worker
-from msplatform.execution.artifact_reader import open_artifact
+from msplatform.results.artifacts import open_artifact
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
-from msplatform.execution.manifest_records import file_record
+from msplatform.io.manifest_records import file_record
 from msplatform.execution import owner
 from msplatform.execution.payload_inputs import materialize_payloads
 from msplatform.execution.resources import resource_path

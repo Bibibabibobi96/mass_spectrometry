@@ -12,8 +12,8 @@ from typing import Mapping, Any
 
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.processes import inherited_host_token
-from msplatform.execution.file_identity import guarded_file_identity
-from msplatform.execution.manifest_records import file_record, verify_record
+from msplatform.io.file_identity import guarded_file_identity
+from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.io.file_identity import file_sha256
 from .artifacts import CompiledPreparedModel

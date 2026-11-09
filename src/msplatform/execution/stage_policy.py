@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from .context import ExecutionContext
-from .manifest_records import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 from .artifact_retention import validate_retention, load_policy
 
 

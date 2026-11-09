@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from msplatform.execution.artifact_reader import OpenedArtifact
+from msplatform.results.artifacts import OpenedArtifact
 from msplatform.execution.run_session import RunSession
 from .field_closure import load_field_model
 from .model_execution import _execute_model_preparation, _protected_source, _require_materializer

@@ -9,6 +9,7 @@ from unittest import mock
 
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution import terminal_publication as publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 
 
 class RunTerminalPublicationTests(unittest.TestCase):
@@ -44,11 +45,11 @@ class RunTerminalPublicationTests(unittest.TestCase):
 
             self.assertTrue((root / publication.TERMINAL_JOURNAL_NAME).is_file())
             with self.assertRaisesRegex(ValueError, "publication is incomplete"):
-                publication.require_completed_terminal_publication(
+                require_completed_terminal_publication(
                     root / "run_manifest.json"
                 )
             publication.replay_terminal_publication(root)
-            publication.require_completed_terminal_publication(root / "run_manifest.json")
+            require_completed_terminal_publication(root / "run_manifest.json")
             self.assertEqual(publication.publish_terminal_state(root, summary, manifest), (summary, manifest))
             self.assertFalse((root / publication.TERMINAL_JOURNAL_NAME).exists())
 

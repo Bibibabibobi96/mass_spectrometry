@@ -362,7 +362,8 @@ function Get-FiniteComsolAnalysisSource {
   $code=@'
 import json,re,sys
 from pathlib import Path
-from common.contracts.write_run_manifest import file_record,require_completed_terminal_publication
+from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from common.contracts.file_identity import file_sha256
 def admit(path,reextract,allow_cold=True,require_native_payload=True):
     path=path.resolve(strict=True);root=path.parent

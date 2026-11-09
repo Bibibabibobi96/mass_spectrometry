@@ -105,12 +105,14 @@
 
 | 域 | 允许依赖及副作用边界 |
 |---|---|
-| `contracts`／`assembly`／`analysis`／`ion_release`／`io` | 科学域与已声明依赖；不反向依赖器件、后端、运行器或宿主探测。 |
+| `contracts`／`assembly`／`analysis`／`ion_release` | 科学域与已声明依赖；不反向依赖器件、后端、运行器或宿主探测。 |
+| `io` | Explicit file identity, manifest records and read-only publication checks. Windows file handles and platform selection are limited to exact file reading/identity; no process, environment discovery, scheduler, ledger or publication writer. |
+| `results` | Published-product reading over neutral I/O and data contracts; no execution owner, backend, provider or host discovery. Opening data does not confer scientific applicability or qualification. |
 | `components` | 科学域及本链明确交付的器件实现；提供者拥有物理知识，不调用后端、求解器或执行owner。 |
-| `backends` | 科学域、器件与唯一execution；纯编译和显式原生动作分开，不私建调度或运行状态机。 |
-| `execution` | 科学合同／I/O与执行实现；只消费外层传入的科学政策和回调，不反导器件、后端或API。 |
-| `exporters` | 科学域、器件及execution；可选CAD内核只在明确导出动作使用，不进入科学内层。 |
-| `applications` | 科学域及execution；仅`applications.operations`可导入具名SIMION模型读取、几何／视图准备与资源模块。显式原生应用适配可加载COM，具名worker可启动并持有自己的应用进程，继承显式子进程环境；资源、发布与外层观测仍使用唯一execution。不能改进程搜索路径、导入求场／轨迹编排或借此向科学域开放宿主能力。 |
+| `backends` | 科学域、器件、只读results与唯一execution；纯编译和显式原生动作分开，不私建调度或运行状态机。 |
+| `execution` | 科学合同／I/O、只读results与执行实现；只消费外层传入的科学政策和回调，不反导器件、后端或API。 |
+| `exporters` | 科学域、器件、只读results及execution；可选CAD内核只在明确导出动作使用，不进入科学内层。 |
+| `applications` | 科学域、只读results及execution；仅`applications.operations`可导入具名SIMION模型读取、几何／视图准备与资源模块。显式原生应用适配可加载COM，具名worker可启动并持有自己的应用进程，继承显式子进程环境；资源、发布与外层观测仍使用唯一execution。不能改进程搜索路径、导入求场／轨迹编排或借此向科学域开放宿主能力。 |
 | `capabilities`／`examples` | 能力查询只组合上述唯一实现；版本化例子只读包内展开数据。import不探测许可证、建工作目录或运行工具。 |
 
 包资源与代码共同交付，冻结使用该次快照中的同一资源；不得在缺件时搜索作者checkout或当前安装。
@@ -127,7 +129,8 @@
 
 本轮结构选择以可验证的职责分离为依据：保留已有源、布局、峰形及科学基础的数学实现，
 因为独立 oracle 与真实消费者回归提供了有效基线；将这些实现搬到规范包，原文件改为有期限的单向桥。
-普通文件摘要从含 Windows 主机机制的旧模块提取，主机保护、运行根与资源控制继续由仓库实现拥有。
+File digests and Windows closed-file identity share the neutral I/O implementation. Resource admission,
+run roots, publication/replay and writer lifecycle remain execution responsibilities.
 使用标准 src 安装隔离当前目录与发行边界，完整 schema 单元随规范校验器交付；
 算法、平台机制、资源和兼容调用分别验收，使现有输入/输出保证可逐项追溯。
 

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Mapping
 
-from msplatform.execution.artifact_reader import OpenedArtifact, open_artifact
+from msplatform.results.artifacts import OpenedArtifact, open_artifact
 from msplatform.io.file_identity import canonical_json_sha256
 from .artifacts import CompiledPreparedModel
 from .model import model_geometry, require_prepared_model

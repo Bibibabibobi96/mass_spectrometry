@@ -12,7 +12,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from msplatform.execution.manifest_records import verify_record
+from msplatform.io.manifest_records import verify_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import native_resource_path
 

@@ -11,24 +11,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import json
 from pathlib import Path
-import re
 from typing import Any
 
-from msplatform.execution.manifest_records import record_path, verify_record
-from msplatform.execution.terminal_publication import require_completed_terminal_publication
+from msplatform.io.manifest_records import (
+    record_path, verify_record, validate_file_record, require_completed_terminal_publication,
+)
 
 
 ArtifactResolver = Callable[[Mapping[str, Any], Path | None], Path]
 ARTIFACT_KINDS = frozenset({"cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "trajectory_result"})
-
-
-def _record(value: Any, label: str) -> dict[str, Any]:
-    if (not isinstance(value, Mapping) or value.get("exists") is not True
-            or not isinstance(value.get("path"), str) or not value["path"]
-            or type(value.get("bytes")) is not int or value["bytes"] < 0
-            or not re.fullmatch(r"[0-9a-fA-F]{64}", str(value.get("sha256", "")))):
-        raise ValueError(f"{label} requires a complete existing file record")
-    return copy.deepcopy(dict(value))
 
 
 def _verified_path(record: dict[str, Any], *, label: str, base: Path | None,
@@ -130,7 +121,7 @@ def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
     product_id = reference["product_id"]
     if not isinstance(product_id, str) or not product_id.strip():
         raise ValueError("artifact product_id must be explicit")
-    manifest_record = _record(reference["manifest"], "manifest")
+    manifest_record = validate_file_record(reference["manifest"], "manifest")
     manifest_path = _verified_path(manifest_record, label="manifest", base=None, resolver=resolver)
     require_completed_terminal_publication(manifest_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
@@ -154,7 +145,7 @@ def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
     for name, value in product["data"].items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("artifact data member names must be explicit")
-        record = _record(value, name)
+        record = validate_file_record(value, name)
         if record not in bound:
             raise ValueError(f"artifact data member is not bound by the run manifest: {name}")
         records[name] = record

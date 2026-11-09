@@ -21,7 +21,7 @@ from common.contracts.file_identity import (
 )
 from common.contracts import write_formal_asset_manifest, write_run_manifest
 from common.contracts import file_identity
-from msplatform.execution import file_identity as execution_file_identity
+from msplatform.io import file_identity as execution_file_identity
 
 
 def legacy_sha256(path: Path) -> str:

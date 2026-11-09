@@ -32,6 +32,18 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_published_results_dependencies_select_the_reader_once(self):
+        module = 'common/contracts/test_artifact_reader.py'
+        for path in ('src/msplatform/results/__init__.py', 'src/msplatform/results/artifacts.py',
+                     'src/msplatform/io/manifest_records.py', 'src/msplatform/io/file_identity.py',
+                     'src/msplatform/execution/terminal_publication.py'):
+            with self.subTest(path=path):
+                plan, _ = self.plan('-ChangedPath', path)
+                modules = [value for row in plan['stages']
+                           if row.get('command', {}).get('arguments', [])[:2] == ['-m', 'common.gate_unittest']
+                           for value in row['command']['arguments'][2:]]
+                self.assertEqual(modules.count(module), 1)
+
     def test_dirichlet_native_selection_has_one_public_simion_owner(self):
         module = 'common/simion/test_dirichlet_patch_basis.py'
         for arguments in (('-Scope', 'Repository'),

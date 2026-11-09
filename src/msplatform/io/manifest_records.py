@@ -1,12 +1,15 @@
 """Exact manifest file records and verification, independent of tools and workflow policy."""
 from __future__ import annotations
+import copy
+from collections.abc import Mapping
 import hashlib
+import re
 import json
 import os
 from pathlib import Path
 from typing import Any
 from msplatform.io.file_identity import file_sha256
-from msplatform.execution.file_identity import file_sha256_unbuffered
+from msplatform.io.file_identity import file_sha256_unbuffered
 
 # Original closed solver-native payload I/O tier, not a scientific threshold.
 _UNBUFFERED_SOLVER_PAYLOAD_BYTES = 8 * 1024 * 1024
@@ -86,3 +89,22 @@ def verify_record(
         raise AssertionError(f"manifest {name} byte count changed: {path}")
     if actual["sha256"] != str(record.get("sha256", "")).upper():
         raise AssertionError(f"manifest {name} SHA-256 changed: {path}")
+
+
+TERMINAL_JOURNAL_NAME = ".run_terminal_publication.json"
+
+
+def require_completed_terminal_publication(manifest_path: Path) -> None:
+    """Reject a manifest while its sibling journal still owns completion."""
+
+    if (manifest_path.resolve().parent / TERMINAL_JOURNAL_NAME).is_file():
+        raise ValueError("run terminal publication is incomplete; replay its journal")
+
+
+def validate_file_record(value: Any, label: str) -> dict[str, Any]:
+    if (not isinstance(value, Mapping) or value.get("exists") is not True
+            or not isinstance(value.get("path"), str) or not value["path"]
+            or type(value.get("bytes")) is not int or value["bytes"] < 0
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", str(value.get("sha256", "")))):
+        raise ValueError(f"{label} requires a complete existing file record")
+    return copy.deepcopy(dict(value))

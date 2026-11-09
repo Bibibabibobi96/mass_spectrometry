@@ -16,7 +16,7 @@ try{
   if($protected){
     . (Join-Path $PSScriptRoot 'payload_file_support.ps1') -UnbufferedIdentityReader {
       param([string]$Source,[int64]$Length)
-      $digest=& $request.context.python_executable -I -B -c 'from msplatform.execution.file_identity import file_sha256_unbuffered;import sys;print(file_sha256_unbuffered(sys.argv[1]))' $Source
+      $digest=& $request.context.python_executable -I -B -c 'from msplatform.io.file_identity import file_sha256_unbuffered;import sys;print(file_sha256_unbuffered(sys.argv[1]))' $Source
       if($LASTEXITCODE-ne0){throw 'Immutable input unbuffered identity verification failed.'}
       $digest
     }

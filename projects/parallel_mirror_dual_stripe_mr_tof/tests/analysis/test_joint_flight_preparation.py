@@ -613,7 +613,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
                     native=dict(refinement_windows=[dict(mode='native_static_pa', scalar_pa='fine.pa', **grid)]),
                     runtime=runtime, output=output)
                 if case in ('outputs_only', 'inputs_only', 'split', 'identical', 'relative', 'fresh_declared', 'reused'):
-                    with patch('msplatform.execution.manifest_records.file_sha256', wraps=file_sha256) as hash_file:
+                    with patch('msplatform.io.manifest_records.file_sha256', wraps=file_sha256) as hash_file:
                         result = prepare_interface_field_audit(**arguments)
                     self.assertFalse(any(Path(call.args[0]).name.startswith('processor.pa')
                                          for call in hash_file.call_args_list))

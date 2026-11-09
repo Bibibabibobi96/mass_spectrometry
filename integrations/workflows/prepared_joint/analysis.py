@@ -12,7 +12,7 @@ from pathlib import Path
 
 from common.contracts.capacity_ledger import load_capacity_ledger
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import require_completed_terminal_publication
+from msplatform.io.manifest_records import require_completed_terminal_publication
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
 
 
