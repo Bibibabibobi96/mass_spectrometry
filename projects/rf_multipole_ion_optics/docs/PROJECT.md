@@ -833,7 +833,9 @@ capacity lease was absent after completion. Original raw geometry, fractional su
 records remained byte-identical. No Refine, Fly, source sampling or GUI was requested. This proves
 the declared unsolved-model operation, not RF field/tracking or scientific qualification.
 
-Independent RF fields/tracking remain OPEN. Existing RF runs use producer-owned fractional families;
+Independent RF field publication/reuse and the declared quadrupole collision-free tracking chain
+have the functional evidence recorded below. Other RF variants and scientific qualification are
+not covered by that tracking acceptance. Existing RF runs use producer-owned fractional families;
 those are not the immutable published-cache protocol. Copying a published family or exposing private
 `.pa#` paths cannot replace the [closed isolation boundary](../../../docs/tools/SIMION_REFERENCE.md#长pa输入路径).
 This model-only slice neither changes that protocol nor retires the existing RF Program, field
@@ -928,8 +930,9 @@ verified, with the eight original family files unchanged. The 66 surface cells, 
 All 54 frozen acceptance inputs and 365 installed package files remained unchanged. No new
 Refine, family copy, Fly, source sampling or GUI occurred. This is native reuse/publication
 evidence for the declared quadrupole scope, not a solver-accuracy or broader-variant qualification.
-Tracking and scientific qualification remain open; finite/interface/mass-filter project workflows
-and checkpoint consumers are retained.
+The field-stage evidence above does not itself validate tracking; the separate tracking results
+follow below. Scientific qualification remains open, and finite/interface/mass-filter project
+workflows and checkpoint consumers remain active for their complete migration.
 
 
 ### Installed batching dependency
