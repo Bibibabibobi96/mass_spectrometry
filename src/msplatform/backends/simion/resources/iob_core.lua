@@ -10,11 +10,12 @@ local fields_only=mode=='build_fields' or mode=='verify_fields'
 local model_only=mode=='build_model' or mode=='verify_model'
 local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_only
 local source_free=geometry_only or fields_only
+local rf_tracking=spec.role=='independent_rf_tracking_iob'
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
-local independent_rf=spec.role=='independent_rf_geometry_iob_build' or independent_oa
+local independent_rf=spec.role=='independent_rf_geometry_iob_build' or independent_oa or rf_tracking
 local independent_marker=independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_rf or mode=='build_geometry' or mode=='verify_geometry'
-  or (model_only and not independent_oa),'independent geometry/model mode is unsupported')
+  or (model_only and not independent_oa) or (rf_tracking and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_rf),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances
@@ -99,7 +100,7 @@ for _,extension in ipairs(source_free and {'.lua','.ion','.con','.rec'} or {'.lu
     companions[path]=input:read('*a');input:close()
   end
 end
-if independent_rf then
+if independent_rf and not rf_tracking then
   for _,base in ipairs({stem,assert(spec.seed_iob):gsub('%.iob$','')}) do
     for _,extension in ipairs({'.wgem','.lua','.ion','.con','.rec'}) do
       local file=io.open(base..extension,'rb')
@@ -144,6 +145,13 @@ local function verify_rf(item,row)
       assert(near(value,expected),'RF point differs from original rigid transform')
     end
   end
+  if rf_tracking then
+    assert(row.path:match('%.pa0$'),'RF tracking requires the original solved carrier')
+    local actual={}
+    for _,eid in ipairs(item.pa.electrode_numbers) do actual[eid]=true end
+    for _,eid in ipairs(row.response_ids) do assert(actual[eid],'RF solved carrier mapping differs');actual[eid]=nil end
+    assert(next(actual)==nil,'RF carrier contains an undeclared electrode')
+  end
   local surface=assert(io.open(row.fractional_surface,'rb'),'fractional companion missing before IOB load')
   assert(surface:seek('end')>0);surface:close()
   local witnesses=assert(io.open(row.surface_witnesses,'rb'))
@@ -161,13 +169,13 @@ local function verify_rf(item,row)
   witnesses:close();assert(checked>0,'fractional surface witnesses empty')
   for _,sample in ipairs(row.physical_samples) do
     local potential,metal=item.pa:point(unpack(sample.gu))
-    assert(metal==(sample.metal~=false) and (sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')
+    assert(metal==(sample.metal~=false) and (rf_tracking or sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')
   end
 end
 
 if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='verify_fields' then
   local interfaces
-  if not geometry_only then
+  if not geometry_only and not rf_tracking then
   assert(type(spec.response_fields)=='table','prepared response field paths are required')
   interfaces=assert(spec.interface_field_probes,'resolved interface field probes are required')
   assert(#interfaces==2,'OA exit and reflectron entry interface probes are required')
@@ -235,7 +243,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   end
   -- Check the actual canonical sidecar paths independently, before loading
   -- the carrier slots. Only one response PA is resident at a time.
-  if not geometry_only then
+  if not geometry_only and not rf_tracking then
   for _,row in ipairs(spec.response_fields) do
     local response=assert(simion.pas:open(row.path),'response path did not load: '..row.path)
     local okay,message=pcall(function()
@@ -324,6 +332,13 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   end
   if geometry_only then
     print((independent_rf and independent_marker..'_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
+    return
+  end
+  if rf_tracking then
+    -- The complete RF slot path/grid/pose, electrode map, metal/vacuum and
+    -- fractional witnesses were checked above. TOF interface/priority probe
+    -- definitions do not describe an independent RF instrument.
+    print('INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES='..count..' FLY=False REFINE=False')
     return
   end
   -- SIMION 2020 official lua_simion.wb.html#simion.wb..find_at:
@@ -445,7 +460,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   return
 end
 local bootstrap={}
-if source_free then
+if source_free or rf_tracking then
   assert(type(spec.bootstrap_paths)=='table' and #spec.bootstrap_paths==count,'explicit private bootstrap PA paths required')
   local parent=assert(spec.seed_iob):gsub('\\','/'):match('^(.*)/')
   for _,extension in ipairs({'.lua','.fly2','.ion','.con','.rec','.wgem'}) do
@@ -470,7 +485,7 @@ if source_free then
 end
 simion.command('"'..assert(spec.seed_iob)..'"')
 assert(#simion.wb.instances==count, 'public container must contain the declared slots')
-if source_free then
+if source_free or rf_tracking then
   -- Inspect all loaded paths before changing any slot: no author PA may be
   -- silently read and then replaced to conceal a failed relative seed.
   local reference=assert(simion.pas:open())
@@ -512,7 +527,7 @@ for path,data in pairs(companions) do
   local output=assert(io.open(path,'wb'));output:write(data);output:close()
 end
 assert(okay,message)
-if source_free then
+if source_free or rf_tracking then
   -- The independently reopened output is the final path/pose proof; this
   -- process must still verify all real slots before dropping intermediates.
   local reference=assert(simion.pas:open())
@@ -529,6 +544,8 @@ if source_free then
   end
   reference:close();simion.pas:close()
   for _,path in ipairs(bootstrap) do assert(os.remove(path),'cannot remove owned neutral bootstrap') end
+end
+if source_free then
   require_zero_particle_control(stem..'.fly2')
   for _,extension in ipairs({'.lua','.ion','.con','.rec','.wgem'}) do
     local handle=io.open(stem..extension,'rb')

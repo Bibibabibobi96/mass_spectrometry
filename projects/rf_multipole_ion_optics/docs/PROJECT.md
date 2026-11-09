@@ -938,3 +938,174 @@ Active batching callers now consume the sole installed
 `msplatform.backends.simion.particle_batching` implementation. Existing batch
 plans, ID rebasing, emission ordering and project-owned scientific checks are
 unchanged. This migration provides no new native or scientific qualification.
+
+## Independent RF tracking
+
+The installed public `track` planner/action now dispatches a producer-owned RF fractional
+FieldBundle without a TOF, pulse, response-slot placeholder, Refine or published-family copy.
+Selected and original producer references use the existing source protection, immutable input
+handles, RunSession, fixed ordinal units, shared dispatcher, whole-unit recovery and trajectory
+publisher. Only the small structural IOB container is copied; the original PA0/response/surface
+family is reopened under its existing protected identity. The original TOF branch retains its
+controls and behavior through the shared bound-source action.
+
+`propagation.dynamics` explicitly selects `kinematics="nonrelativistic"`, `collisions="none"`
+and `space_charge="none"`. The Program writes and reports the official `sim_relativity=0` and
+`sim_repulsion="none"` controls. Optional `numerics.grouped` is integer 0 or 1 and controls
+scheduling only; omission preserves the structural container's setting. Grouped execution with
+repulsion disabled is still independent-particle propagation. This operation does not add a
+collision, relativistic or space-charge model. Numerical controls are explicit maximum step,
+trajectory quality, and RF steps per period when RF is active; the existing RF kernel owns
+the waveform formulas and period-derived timestep cap.
+
+Birth positions and velocities are transformed once into the actual assembly frame. Original
+sparse IDs, species, signed charge, weights, full mother records, original births and absolute
+instrument time remain bound. Source velocity is restored through the canonical source helper.
+The existing plane observer retains direction, occurrence, accepted-step brackets, consumed
+boundary evidence and explicit record-cap incompleteness. Accepted deadline/cut END evidence is
+kept separately from raw native terminate START state. Unexplained native terminals remain
+`unknown_native_terminal`, never inferred loss. Empty handoff cohorts preserve the full mother
+and request no native operations. Read-only census uses the existing trajectory analysis.
+
+Official SIMION2020 references reviewed 2026-11-09: installed `docs/simion.chm`,
+`workbench_program_extensions.html` (`sim_grouped`, `sim_repulsion`, `sim_relativity`, allowed
+initialize_run writes), `user_programming.html` (initialize/fast_adjust/tstep_adjust/other_actions/
+terminate), and [the official trajectory programming reference](https://simion.com/info/trajectory_programming.html).
+The official [user-programming reference](https://simion.com/docs/advanced_class/11-user_programming_tricks.pdf)
+defines native mass in amu and signed charge in elementary-charge units. Current-instance
+fast_adjust assigns only that domain's native electrode targets through the already installed
+model/RF drive consumer. No duplicate field or RF formula is introduced.
+
+Software evidence: the four original tracking/unit/native-plan/RF-model modules passed 33 parents
+and 87 outcomes before the final dynamics addition. The new eleven-parent RF suite then passed
+21 outcomes in 42.861 seconds, including plain Lua callback/kernel/clock tests, actual proper-plane
+recrossing/cap/cut wire, and a real managed owner with an explicitly inert supplier. That owner
+test verifies original-family write denial, actual process exit/release, strict artifact reading,
+full mother and signed species, read-only census and a zero-survivor successor with no extra
+process. It is not SIMION evidence. Earlier new-fixture failures remain recorded: an invalid
+track-stage reserve key, an invented aggregate writer flag, provider port/velocity wiring and an
+incorrect analysis status expectation. Production guards and existing assertions were preserved.
+
+The final new RF, original observer/collection and published-analysis batch passed 79 parents /
+318 outcomes in 86.428 seconds without skips. Ordinary wheel and sdist-rebuilt-wheel acceptance
+passed five parents / sixteen outcomes in 146.222 seconds, including actual installed RF source
+planning, capability dispatch and Program/resource loading with author trees blocked. The first
+installation round correctly rejected a new typed-source fixture's empty CSV parent-ID value;
+the fixture now explicitly uses null, preserving the canonical validator. That failure remains.
+Actual RF Fly functional evidence is recorded below; scientific accuracy qualification remains open.
+Existing finite/interface/mass-filter project workflows and checkpoint consumers remain
+active until their complete scientific outputs and callers are migrated. Existing state_relaunch
+rules still require explicit native-frame mapping and verified producer/model identity; the
+current cut policy remains the existing segmented_upstream scope. No new native-checkpoint or
+cross-model continuation claim is made.
+
+The first ordinary-wheel native tracking attempt,
+`20261109_214329__sim__simion__track-89ef1f49e4e5`, failed before Fly. IOB construction exited
+zero; the separate cold reader loaded the original RF PA0 and passed its path/grid/pose, response
+mapping, physical-node and fractional-witness checks, then incorrectly required TOF-specific
+priority probes. Failed-owner finalization also found the writer's undeclared 388-byte neutral
+bootstrap. Both native processes exited (0/1) and released their host grants; all 58 frozen inputs
+and 378 installed package files remained unchanged. The original failed run, package and driver
+remain immutable evidence. After explicit user authorization, the exact unused 388-byte bootstrap was removed after
+fresh SHA-256, writer-birth absence and saved-IOB binding checks. Its byte-identical evidence
+copy and original completion bytes remain unchanged. The original frozen public owner resumed
+normal finalization as FAILED/complete, retaining ProcessExecutionError and releasing all its
+own and source-protection leases. No other payload was removed.
+
+The repair returns from the RF cold branch only after those actual RF checks; the TOF probe
+requirements remain unchanged. The RF plan declares its exact per-instance bootstrap paths and
+the existing tracking owner registers all planned outputs before a supplier can create them.
+The established post-save slot checks and bootstrap close/removal also apply to RF; zero-source
+checks remain specific to source-free builds. Two regressions first reproduced the exact native
+priority failure and real-owner undeclared-file finalization failure. After repair they passed
+seven outcomes in 44.268 seconds, including retained mapping/pose/metal/surface rejection and an
+actually generated inert intermediate. This is software evidence, not a native retry or Fly PASS.
+The final RF/original tracking-unit/native-plan/observer/collection batch passed 97 parents and
+385 outcomes in 454.046 seconds, without skips. The repaired ordinary wheel and sdist-rebuilt wheel
+passed five parents / sixteen outcomes in 195.407 seconds; all 378 package members match source
+and both wheels. A final two-parent check passed in 90.392 seconds after adding the requested
+real-owner success case where the inert writer creates and removes its declared bootstrap before
+exit: normal publication and strict reading succeed, the missing temporary remains declared in
+the completion, and all actual host/capacity leases release. The retained-intermediate and
+zero-native/full-mother cases remain. These software results do not establish native Fly success;
+the subsequent native attempt is recorded below.
+
+The repaired-wheel native attempt `20261109_221147__sim__simion__track-c392bfd524d3` passed IOB
+construction and separate cold reopening, with its neutral bootstrap removed by the writer.
+Its first Fly failed: SIMION denied reading `ion_splat` from `segment.terminate`. The retained raw
+log contains 100 births, 200 shared states and 50 accepted deadline endpoints, but no completed
+Fly or trajectory product. The three supplier processes exited 0/0/1 and released their host
+grants. This owner finalized as FAILED/complete with its own and source-protection leases absent;
+all 58 frozen inputs, 378 installed package members and original fractional family stayed unchanged.
+R2 failure evidence remains unchanged; the separately authorized R1 finalization is recorded above.
+
+The callback audit uses the installed SIMION2020 supplemental help and the primary
+[ASMS reserved-variable table](https://simion.com/info/asms_short_course.html#session-10-user-programs),
+reviewed 2026-11-09. Core position, velocity, time-of-flight, mass, charge, particle number and
+instance reads are available in every program segment; `ion_splat` reads are restricted to
+initialize/other_actions. It has no required RF result consumer, so the RF wire and outcome omit
+that unavailable scalar rather than fabricate a terminal value or substitute a cached cause.
+Unknown terminal categories retain their existing meaning. The generic accepted-cut END wire
+still records the valid other_actions `raw_ion_splat=0` evidence and remains unchanged.
+
+The [official workbench extension](https://simion.com/info/workbench_program_extensions.html#sim_segment_global)
+also documents callback coverage outside PA instances. The installed executable is 8.2.0.11;
+`sim_segment_global=1` is set in its permitted initialize_run phase and included in the actual
+dynamics readback. The collector requires integer one, including for instance-zero terminal
+observations. This defines no field/force override or workbench-domain extension. It addresses a
+documented default-zero observation gap; R2 did not independently reproduce that gap because
+its first forbidden terminal read aborted Fly.
+
+A plain-Lua fixture enforces the official reserved-variable read/write permissions for every
+RF callback. It reproduced the exact terminate-access error before repair, then passed after
+repair. It also checks full-cohort instance-zero callbacks, unknown rather than loss despite an
+arbitrary prior splat flag, and separate deadline endpoint evidence. Missing/zero/boolean coverage
+readbacks are rejected. The full affected RF, original observer/collection and trajectory-analysis
+batch passed 81 parents / 328 outcomes in 111.099 seconds without skips. Subsequent R3 native functional evidence follows; scientific qualification remains open.
+The five ordinary-installation parents passed sixteen outcomes in 145.968 seconds, including an
+actual installed RF parser call with an explicit inert instance-zero terminal and rejection of
+the retired scalar. Wheel/sdist byte identity and blocked author roots remain required; this
+software fixture is not native trajectory evidence.
+
+
+The callback-corrected ordinary-wheel campaign completed with N=100 on the declared independent
+segmented quadrupole, grounded enclosure/endcaps, anisotropic grid and proper near-gimbal pose.
+It retained sparse particle identities, full mother records, two signed-charge species, weights,
+original births and absolute instrument clock. Continuous tracking produced 100 plane events,
+200 shared states and 100 explicit deadline censors; the segmented cut produced 100 actual
+accepted plane states/cut stops. Relaunch consumed those states at a different explicit maximum
+timestep (.007 versus .01 microseconds) and produced 100 explicit deadline censors. The explicit
+empty-handoff successor preserved the mother cohort and launched no supplier process; it is
+not evidence of physical total loss. The respective run identities are
+`20261109_223927__sim__simion__track-a0cd8391985d`,
+`20261109_224035__sim__simion__track-ae8f924eef49`,
+`20261109_224138__sim__simion__track-781408df490f` and
+`20261109_224244__sim__simion__track-4330c55f9943`.
+
+The three nonempty runs each performed build/cold-IOB-reopen/Fly; all nine exact PID/birth
+identities exited zero and released their host grants. All four owners published SUCCESS/complete
+with confirmed writers and absent own/source capacity leases. Strict reads verified respectively
+49/49/50/25 distinct manifest records. A separate fresh ordinary-installed reader reopened all
+four products with zero supplier processes. All 58 frozen acceptance inputs, all 378 installed
+package files and the original fractional family remained unchanged. The RF dynamics readback
+confirmed global callback coverage one. Evidence is retained under the workspace evidence root
+`rf-tracking-native-r3/native-summary.json`, `fresh-reader.json` and `closure-audit.json`; original
+R1/R2 failure records are retained separately.
+
+This accepts only this quadrupole collision-free functional chain, not accuracy/convergence,
+all RF variants, a field-domain extension or Candidate/Formal qualification. There was no Refine,
+published-family copy, GUI or source change during the native campaign. Existing finite/interface/
+mass-filter project workflows remain active and open for their complete migration.
+
+
+The combined integration retains the later installed admission, recorded-diagnostics and beam
+kernels, the CI author-root guard regression and the gas resource selector. Its source/wheel/
+sdist-rebuilt-wheel join verified 396 package members with zero mismatches; five installation
+parents / sixteen outcomes passed in 201.615 seconds. Independent integration review verified
+ten RF production files byte-identical to the native R3 epoch; the resource selector differs
+only by retaining the newer gas entry. Main-tree RF regression passed thirteen parents in
+70.955 seconds and released its GATE lease; focused Ruff passed. These combined-tree software
+checks do not relabel the earlier native epoch or close the final Repository/performance scope.
+CLOC 2.10, 756ea890 to this integration, reports code total +797, production +381, tests +416,
+with zero unclassified files; full per-language counts and filters are retained outside Git in
+`cloc-rf-main.txt` under the workspace takeover evidence directory.

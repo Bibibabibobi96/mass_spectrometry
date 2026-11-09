@@ -43,7 +43,8 @@ def _birth_states(packet, geometry):
     plan = geometry['composition_plan']
     poses = {row['instance_id']:RigidTransform.from_contract(row['transform']) for row in plan['recipe']['instances']}
     from .frontend import native_frontend_instances
-    _, tof = native_frontend_instances(plan)
+    independent_rf = geometry.get('role') == 'simion_independent_rf_geometry'
+    tof = None if independent_rf else native_frontend_instances(plan)[1]
     projected = []
     for row in rows:
         instance = row['source_component_id']
@@ -53,7 +54,7 @@ def _birth_states(packet, geometry):
         if row['frame_id'] != interface['local_frame_id']:
             raise ValueError('birth state frame differs from its real provider local frame')
         target = geometry['native_frame_id']
-        pose = relative_transform(poses[instance],poses[tof])
+        pose = poses[instance] if independent_rf else relative_transform(poses[instance],poses[tof])
         if pose.to_frame_id != target:
             # The current compiled frontend uses the selected TOF frame. Do not
             # guess a second world-frame conversion for unsupported assemblies.
@@ -80,8 +81,15 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     references are verified by the execution action, not self-certified here.
     """
     document = require_prepared_model(model)
-    geometry = model_geometry(model,downstream_drive=True).frontend_geometry
+    raw_geometry = model_geometry(model).frontend_geometry
+    independent_rf = raw_geometry.get('role') == 'simion_independent_rf_geometry'
+    geometry = (dict(raw_geometry,native_frame_id=document['native_frame_id']) if independent_rf else
+                model_geometry(model,downstream_drive=True).frontend_geometry)
     expected = {'schema_version','scope','end_policy','consumed_plane_events','stop'}
+    if independent_rf:
+        expected.add('dynamics')
+        if not isinstance(propagation,Mapping) or propagation.get('dynamics') != dict(kinematics='nonrelativistic',collisions='none',space_charge='none'):
+            raise ValueError('RF tracking requires explicit collision-free nonrelativistic external-field dynamics')
     if (not isinstance(propagation,Mapping) or set(propagation) != expected
             or type(propagation['schema_version']) is not int or propagation['schema_version'] != 1
             or propagation['scope'] not in {'continuous_assembly','segmented_upstream','state_relaunch'}):
@@ -126,13 +134,21 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         raise ValueError('tracking absolute deadline is not later than each actual start')
     rf = any(row['kind']=='rf' for row in document['native_drive_rows'])
     keys = {'maximum_step_us','trajectory_quality',*({'rf_steps_per_period'} if rf else set())}
+    if independent_rf and isinstance(numerics,Mapping) and 'grouped' in numerics:
+        keys.add('grouped')
     if not isinstance(numerics,Mapping) or set(numerics) != keys:
         raise ValueError('tracking numerics must not contain source, drive or field-solve controls')
     horizon = max((deadlines[row['particle_id']]-row['instrument_time_us'] for row in rows),default=value)
-    flight_input = dict(numerics,pulse=copy.deepcopy(document['drive']['pulse']),maximum_flight_us=horizon)
+    flight_input = dict(numerics,maximum_flight_us=horizon)
+    if not independent_rf:
+        flight_input['pulse'] = copy.deepcopy(document['drive']['pulse'])
     if 'observation_times_us' in observations:
         flight_input['observation_times_us'] = copy.deepcopy(observations['observation_times_us'])
-    flight = validate_native_flight(flight_input,requires_rf=rf)
+    if independent_rf:
+        from .rf_tracking_program import validate_rf_flight
+        flight = validate_rf_flight(flight_input,requires_rf=rf)
+    else:
+        flight = validate_native_flight(flight_input,requires_rf=rf)
     from dataclasses import asdict
     result = dict(source_realization=asdict(particles) if isinstance(particles,HandoffResult) else copy.deepcopy(particles),
         schema_version=1,role='simion_tracking_plan',model_identity_sha256=document['model_identity_sha256'],
@@ -157,6 +173,10 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
     The existing solved source-free workbench is the bootstrap; no new raw PA,
     neutral placeholder, GEM2PA or refinement is necessary for tracking.
     """
+    if compiled.frontend_geometry.get('role') == 'simion_independent_rf_geometry':
+        from .rf_tracking_execution import plan_rf_tracking_workbench
+        return plan_rf_tracking_workbench(compiled,carriers=carriers,run_directory=run_directory,
+            program=program,native_source_rows=native_source_rows,native_path_resource=native_path_resource)
     from .native_plans import plan_field_workbench
     from .resources import structural_seed_path, STRUCTURAL_SEEDS, native_resource_path
     from .field_identity import _require_sha256
@@ -201,6 +221,9 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     The caller obtains frontend_records from FieldBundle domain/member data keys
     and downstream_assets from the unique full-family closure validator.
     """
+    if plan['flight'].get('tracking_kind') == 'independent_rf':
+        from .rf_tracking_program import render_rf_controls
+        return render_rf_controls(model,plan,assets=frontend_records,native_sources=native_sources)
     from .field_bank import field_bank
     from .field_identity import working_point_member_id
     from .frontend import native_frontend_instances
@@ -400,7 +423,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             continue
         subset = slice_tracking_plan(plan,unit)
         controls = _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
-            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=_artifact_record(source,'downstream_audit'),
+            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind')=='independent_rf' else _artifact_record(source,'downstream_audit'),
             native_sources=sources)
         row['build_metadata'] = controls['build_metadata']
         batches.append(dict(source_row_range=unit['source_row_range'],expected_particle_ids=unit['expected_particle_ids'],
@@ -414,8 +437,14 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         for number,(path,text) in enumerate(native_plan.materializations.items(),1):
             name = 'tracking_control_'+str(number) if plan['unit_size'] is None else 'tracking_control__'+key+'_'+str(number)
             control_records[path] = small(name,Path(path),text=text)
+        seed_records=[]
+        for number,copy_row in enumerate(native_plan.input_copies,1):
+            verify_record('tracking structural container',copy_row['source_record'])
+            seed_records.append(small('tracking_seed__'+key+'_'+str(number),Path(copy_row['destination']),source_path=copy_row['source_record']['path']))
         iob = session.declare_file(native_plan.declared_outputs[0],'solver_native_binary')
-        immutable = _unique_inputs([*borrowed,*frozen.values(),native_path,control_records[str(root/'inputs/tracking_iob.lua')]])
+        for generated in native_plan.declared_outputs[1:]:
+            session.declare_file(generated,'solver_native_binary')
+        immutable = _unique_inputs([*borrowed,*seed_records,*frozen.values(),native_path,control_records[str(root/'inputs/tracking_iob.lua')]])
         for operation,name in zip(native_plan.operations,unit['operation_ids'][:2],strict=True):
             arguments = [str(session.input_dir/'native_sources'/Path(value).name)
                          if Path(value).name in resource_names else value for value in operation['arguments']]
@@ -515,16 +544,11 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     """
     import inspect
     import json
-    from dataclasses import asdict
     from msplatform.results.artifacts import OpenedArtifact,open_artifact
-    from msplatform.execution.inputs import freeze_file
-    from msplatform.io.manifest_records import file_record
-    from msplatform.execution.resources import resource_path
     from .artifacts import CompiledPreparedModel
     from .field_closure import require_downstream_reuse
     from .field_identity import working_point_member_id
     from .model_execution import _protected_source,_clock_reference
-    from .resources import native_resource_path
 
     if 'immutable_input_records' not in inspect.signature(session.run_process).parameters:
         raise ValueError('tracking requires the installed immutable-input observed-process boundary')
@@ -537,6 +561,12 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     document = require_prepared_model(model)
     if meta.get('model_identity_sha256')!=document['model_identity_sha256'] or meta.get('clock')!=document['drive']['clock']:
         raise ValueError('FieldBundle model/clock identity differs')
+    if model_geometry(model).frontend_geometry.get('role')=='simion_independent_rf_geometry':
+        from .rf_tracking_execution import execute_rf_tracking
+        return execute_rf_tracking(session,source=source,model=model,document=document,particles=particles,
+            propagation=propagation,observations=observations,numerics=numerics,limits=limits,
+            source_reference=source_reference,allow_asynchronous_io=allow_asynchronous_io,unit_size=unit_size,
+            recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles)
     compiled = model_geometry(model,downstream_drive=True)
     geometry = compiled.frontend_geometry
     _,downstream = require_downstream_reuse(source,meta['downstream_identity'])
@@ -572,6 +602,25 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
             raise ValueError('field workbench has an undeclared automatic source/Program companion')
     borrowed.extend((field_workbench,zero_control))
     _protected_source(session,source.reference['manifest'],required_paths=[row['path'] for row in borrowed])
+    return _execute_tracking_bound_source(session,source=source,model=model,document=document,compiled=compiled,
+        geometry=geometry,design=design,stored_bank=stored_bank,frontend=frontend,downstream=downstream,
+        field_workbench=field_workbench,borrowed=borrowed,original_clock=original_clock,relative_epoch=relative_epoch,
+        particles=particles,propagation=propagation,observations=observations,numerics=numerics,limits=limits,
+        source_reference=source_reference,allow_asynchronous_io=allow_asynchronous_io,unit_size=unit_size,
+        recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles)
+
+
+def _execute_tracking_bound_source(session,*,source,model,document,compiled,geometry,design,stored_bank,
+        frontend,downstream,field_workbench,borrowed,original_clock,relative_epoch,particles,propagation,observations,
+        numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles):
+    """The same unit runner and result publisher for verified TOF/RF source bindings."""
+    import json
+    from dataclasses import asdict
+    from msplatform.execution.inputs import freeze_file
+    from msplatform.io.manifest_records import file_record
+    from msplatform.execution.resources import resource_path
+    from .model_execution import _protected_source,_clock_reference
+    from .resources import native_resource_path
     records = {}
 
     def small(name, target, *, value=None, source_path=None, text=None):
@@ -617,6 +666,12 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     small('propagation',session.input_dir/'propagation.json',value=plan['propagation'])
     small('observations',session.input_dir/'observations.json',value=plan['observations'])
     small('tracking_numerics',session.input_dir/'tracking_numerics.json',value=plan['numerics'])
+    if plan['flight'].get('tracking_kind')=='independent_rf':
+        import inspect
+        from . import rf_tracking_execution,rf_tracking_program,rf_tracking_collection
+        for module in (rf_tracking_execution,rf_tracking_program,rf_tracking_collection):
+            small('rf_source_'+module.__name__.rsplit('.',1)[-1],session.input_dir/'native_sources'/Path(module.__file__).name,
+                source_path=Path(inspect.getsourcefile(module)))
     if parent_source is not None:
         small('source_reference',session.input_dir/'source_reference.json',value=parent_source.reference)
     output = session.declare_file(session.result_dir/'collection.json','required_evidence')
@@ -629,13 +684,18 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     else:
         resource_names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
             'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
+        if plan['flight'].get('tracking_kind')=='independent_rf':
+            resource_names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
         frozen = {}
         for name in resource_names:
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))
         native_path = small('resource_native_run_path.lua',session.input_dir/'native_sources/native_run_path.lua',source_path=resource_path('native_run_path.lua'))
-        names = dict(analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',
-            frontend_hook_source='single_flight_frontend_hook.lua',rf_drive_kernel_source='rf_drive.lua',voltage_waveforms_source='voltage_waveforms.lua')
-        sources = {key:Path(frozen[value]['path']).read_text(encoding='utf-8-sig') for key,value in names.items()}
+        if plan['flight'].get('tracking_kind')=='independent_rf':
+            sources={name:Path(frozen[name]['path']).read_text(encoding='utf-8-sig') for name in ('model_drive.lua','rf_drive.lua','rf_tracking.lua')}
+        else:
+            names = dict(analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',
+                frontend_hook_source='single_flight_frontend_hook.lua',rf_drive_kernel_source='rf_drive.lua',voltage_waveforms_source='voltage_waveforms.lua')
+            sources = {key:Path(frozen[value]['path']).read_text(encoding='utf-8-sig') for key,value in names.items()}
         sources['native_path_source'] = Path(native_path['path']).read_text(encoding='utf-8-sig')
         collection,native_calls = _execute_tracking_units(session,model=model,plan=plan,design=design,
             stored_bank=stored_bank,frontend=frontend,downstream=downstream,source=source,

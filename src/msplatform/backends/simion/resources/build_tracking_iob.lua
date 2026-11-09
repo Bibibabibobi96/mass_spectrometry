@@ -8,4 +8,5 @@ assert(mode=='build' or mode=='verify','unsupported tracking workbench operation
 for _,key in ipairs({'seed_iob','output_iob'}) do spec[key]=native_path(spec[key]) end
 for _,row in ipairs(spec.instances) do row.path=native_path(row.path) end
 for _,row in ipairs(spec.response_fields) do row.path=native_path(row.path) end
-return assert(loadfile(directory..'/iob_core.lua'))()(spec,mode,native_path)
+assert(loadfile(directory..'/iob_core.lua'))()(spec,mode,native_path)
+if spec.role=='independent_rf_tracking_iob' then print(mode=='build' and 'INDEPENDENT_RF_TRACKING_IOB=PASS' or 'INDEPENDENT_RF_TRACKING_IOB_REOPEN=PASS') end

@@ -118,3 +118,7 @@ The same installed `solve_fields` now plans independent RF fields with explicit
 its producer and accepts `reuse_fields` only for the same spatial operator; no particle source,
 pulse, Fly or private copy of a published family is introduced. See the
 [field-stage boundary and validation](docs/PROJECT.md#independent-rf-fractional-fields).
+
+Independent RF `track` uses that published family directly with the same owner and fixed-unit
+recovery. Its explicit collision-free dynamics, RF timestep, clock, observations and current
+validation boundary are recorded in [PROJECT](docs/PROJECT.md#independent-rf-tracking).

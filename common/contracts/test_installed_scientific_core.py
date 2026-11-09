@@ -478,6 +478,30 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     import msplatform
     for name in ['refine_rf_field_family.lua','audit_rf_field_family.lua']:
         assert native_resource_path(name).is_file() and native_resource_path(name).is_relative_to(pathlib.Path(msplatform.__file__).parent)
+    from msplatform.backends.simion.tracking_execution import plan_tracking_execution
+    from msplatform.backends.simion.rf_tracking_program import render_rf_controls
+    rf_state=copy.deepcopy(state_row)
+    rf_state.update(parent_particle_id=None,source_component_id='multipole',target_component_id='multipole',
+        frame_id=rf_geometry.frontend_geometry['composition_plan']['components']['multipole']['local_frame_id'],
+        clock_epoch_id=rf_model_drive['clock']['clock_epoch_id'],state_event='source_birth',
+        instrument_time_us=1.25,particle_birth_time_us=1.25,lineage_birth_time_us=1.25,
+        particle_age_us=0.,lineage_age_us=0.,last_component_elapsed_time_us=0.,phase_reference_id=None,phase_rad=None)
+    rf_packet=dict(schema_version=1,role='canonical_release_realization',state_kind='source_birth',rows=[rf_state],
+        clock={k:rf_model_drive['clock'][k] for k in ('clock_epoch_id','authority_sha256')},
+        mother=dict(records={rf_state['particle_id']:dict(rf_state,source_component_entry_time_us=1.25)},
+                    fates=[dict(particle_id=rf_state['particle_id'],category='released')]),realization=dict(spec=dict(particle_count=1)))
+    rf_tracking_args=dict(particles=rf_packet,clock_records={k:dict(path='C:/pure-fixture/'+k+'.json',exists=True,bytes=32,sha256='A'*64)
+        for k in ('clock_authority','instrument_epoch')},propagation=dict(schema_version=1,scope='continuous_assembly',
+        end_policy=dict(maximum_particle_age_us=2.),consumed_plane_events=[],stop=None,
+        dynamics=dict(kinematics='nonrelativistic',collisions='none',space_charge='none')),
+        observations=dict(plane_observations=[]),numerics=dict(maximum_step_us=.01,trajectory_quality=5,rf_steps_per_period=32,grouped=1))
+    rf_tracking_plan=plan_tracking_execution(rf_model,**rf_tracking_args)
+    assert rf_tracking_plan['flight']['tracking_kind']=='independent_rf' and 'pulse' not in rf_tracking_plan['flight']
+    assert rf_tracking_plan['absolute_deadlines_us_by_particle_id']=={rf_state['particle_id']:3.25}
+    rf_tracking_query=query_capabilities(dict(schema_version=1,operation='track',arguments=dict(model=rf_model,**rf_tracking_args)))
+    assert rf_tracking_query['contract_status']=='accepted' and rf_tracking_query['native_qualification']=='not_granted'
+    assert 'RF_DYNAMICS_V1' in render_rf_controls(rf_model,rf_tracking_plan,assets={},native_sources={})['program']
+    assert native_resource_path('rf_tracking.lua').is_relative_to(pathlib.Path(msplatform.__file__).parent)
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
     model_components = {name:actual_geometry.components_resolved[name] for name in selected}
     model_drive = project_resolved_drive(actual_geometry, model_components, pulse=study.drive['pulse'],
@@ -489,6 +513,34 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     assert planned_fields['expected_operation_ids'][-2:] == ['build_fields','verify_fields']
 assert len(actual_components['oatof'].assembly_interface['component_electrodes']) == 42
 assert len(actual_geometry.downstream_specs) == 3 and all(actual_geometry.frontend_gems.values())
+# Explicit inert RF wire fixture exercises the installed parser, not SIMION.
+from msplatform.backends.simion.rf_tracking_collection import collect_rf_tracking_logs
+wire_source=rf_tracking_plan['rows'][0]
+rf_control=render_rf_controls(rf_model,rf_tracking_plan,assets={},native_sources={})
+wire_birth=dict(event='source_release',reason='none',particle_id=wire_source['particle_id'],ion=1,
+    instrument_time_us=wire_source['instrument_time_us'],mass_amu=wire_source['mass_amu'],charge_state=wire_source['charge_state'],instance=1)
+wire_birth.update({a+'_mm':wire_source['position_'+a+'_mm'] for a in 'xyz'})
+wire_birth.update({'v'+a+'_mm_per_us':wire_source['velocity_'+a+'_m_s']/1000 for a in 'xyz'})
+wire_terminal=dict(wire_birth,event='terminal',reason='unknown',instrument_time_us=wire_source['instrument_time_us']+.5,instance=0)
+wire_path=root/('installed-inert-rf-wire-'+sys.argv[2]+'.log')
+def rf_wire_text(terminal):
+    return '\n'.join(['RF_DYNAMICS_V1: {"grouped":1,"repulsion":"none","relativity":0,"segment_global":1}',
+        'RF_NATIVE_STATE_V1: '+json.dumps(wire_birth),'RF_NATIVE_STATE_V1: '+json.dumps(terminal),'status,Fly completed. 1 splats'])+'\n'
+wire_path.write_text(rf_wire_text(wire_terminal),encoding='utf-8')
+rf_wire_args=dict(source_rows={wire_source['particle_id']:wire_source},source_provenance=rf_tracking_plan['source_provenance'],
+    flight=rf_tracking_plan['flight'],batches=[dict(source_row_range=[1,1],expected_particle_ids=[wire_source['particle_id']],build_metadata=rf_control['build_metadata'])])
+wire_collection=collect_rf_tracking_logs([wire_path],**rf_wire_args)
+assert wire_collection['native_terminals'][0]['instance']==0
+assert wire_collection['census']['terminal_taxonomy']['particle_outcomes'][0]['category']=='unknown_native_terminal'
+assert wire_collection['census']['unknown_is_loss'] is False
+wire_path.write_text(rf_wire_text(dict(wire_terminal,raw_ion_splat=4)),encoding='utf-8')
+try:
+    collect_rf_tracking_logs([wire_path],**rf_wire_args)
+except ValueError as error:
+    assert 'wire fields differ' in str(error), str(error)
+else:
+    raise AssertionError('installed RF wire accepted retired unavailable terminal scalar')
+wire_path.write_text(rf_wire_text(wire_terminal),encoding='utf-8')
 from msplatform.backends.simion.resources import gem_template_path, native_resource_path, structural_seed_path
 from msplatform.execution.resources import resource_path
 from msplatform.io.manifest_records import file_record
