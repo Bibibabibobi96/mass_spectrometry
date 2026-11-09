@@ -35,6 +35,30 @@ site-packages resource origins and frozen Program/RF bytes without PA creation o
 The three source serializer algorithms remain AST-identical to their retired owner.
 
 
+Full-data preparation exposed the existing Windows 8 MiB file-identity boundary:
+the 12,146,449-byte compiled gas runtime lacked a classification. Its freeze now
+supplies contextual `required_evidence` through the existing API; the global tier,
+solver-native read policy and four-field receipt identity remain unchanged. A valid
+large-Lua public-input regression and the original missing/tamper tests passed;
+main affected modules passed 22 tests in 6.119 seconds.
+
+A fresh ordinary 376-payload wheel, SHA-256
+`3882563b48fdf8686a539ab71e57f4cd33d669f4cda116ead7d79d689798f599`,
+then prepared both original 295,236-row gas products listed below. Both produced
+identical 12,146,449-byte runtime data and retained the full 100-particle source,
+IDs, equal weights, birth clock and six-dimensional source values. Standalone Lua
+queries verified the declared Pa/K/m/s units, radial projection, coordinate offsets
+and Pa-to-Torr conversion at four explicit grid points per product. Original gas
+data, contracts, MPH and the five official SDS files remained unchanged. All 376
+installed payloads matched the accepted wheel before and after the check.
+The original classification failure and a separate diagnostic audit error are
+retained; the final check changed no science input, grid, particle count or tolerance.
+These are data/preparation checks: no commercial application, Refine, ion Fly or GUI
+ran, and no CFD accuracy or ion-transport qualification is granted. The earlier
+full wheel/sdist suite belongs to the preceding source epoch; it was not rerun for
+this one-call classification repair.
+
+
 ## Installed gas-flow ownership migration
 
 The existing axisymmetric gas builder/task now reside in the installed COMSOL MATLAB directory and

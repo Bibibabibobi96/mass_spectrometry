@@ -390,7 +390,12 @@ def prepare_transport(
         assert gas_field_manifest is not None
         manifest, runtime = validated_gas
         inputs["gas_field_manifest"] = freeze_file(gas_field_manifest, frozen / "gas_field_manifest.json")
-        inputs["gas_field_runtime"] = freeze_file(runtime, solver / "gas_field_runtime.lua")
+        inputs["gas_field_runtime"] = freeze_file(
+            runtime,
+            solver / "gas_field_runtime.lua",
+            # Embedded gas lookup data is required evidence, not a native solver payload.
+            retention_classifier=lambda _path, **_metadata: "required_evidence",
+        )
         (solver / "collision_sds").mkdir()
         inputs["simion_official_collision_sds"] = {
             name: freeze_file(validated_sds_root / name, solver / "collision_sds" / name) for name in SDS_FILES

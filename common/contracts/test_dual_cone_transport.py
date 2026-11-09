@@ -223,3 +223,59 @@ class PublishedGasPreparationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "producer geometry"):
                 prepare_transport(root / "negative", **kwargs)
             self.assertFalse((root / "negative").exists())
+
+
+class LargeGasRuntimeFreezeTests(unittest.TestCase):
+    def test_public_preparation_freezes_large_valid_runtime_with_original_receipt_shape(self):
+        from msplatform.backends.simion.dual_cone_transport import prepare_transport, SDS_FILES
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import PROJECT
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import (
+            export_uniform_runtime,
+        )
+        from msplatform.io.file_identity import file_sha256
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = PROJECT / "config"
+            runtime = root / "large-field.lua"
+            manifest_path = root / "field.json"
+            export_uniform_runtime(
+                runtime,
+                manifest_path,
+                spec_path=config / "uniform_rear_gas_field.json",
+                interface_path=config / "gas_field_interface.json",
+            )
+            # A valid Lua comment makes this real public input cross the existing
+            # 8MiB file-identity tier without inventing a native result.
+            runtime.write_bytes(b"--" + b"x" * (8 * 1024 * 1024) + b"\n" + runtime.read_bytes())
+            original = runtime.read_bytes()
+            manifest = json.loads(manifest_path.read_text())
+            manifest["runtime_lua"]["sha256"] = file_sha256(runtime).lower()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            sds = root / "sds"
+            sds.mkdir()
+            for name in SDS_FILES:
+                (sds / name).write_text("INERT_PREPARATION_ONLY", encoding="utf-8")
+            output = root / "prepared"
+            receipt = prepare_transport(
+                output,
+                mode="gas_assisted_transport",
+                resolved_path=config / "resolved_geometry.json",
+                numerics_path=config / "simion_solver_numerics.json",
+                science_path=config / "ion_transport_science.json",
+                interface_path=config / "gas_field_interface.json",
+                gas_science_path=config / "gas_flow_science.json",
+                source_spec_path=config / "cylindrical_ion_source.json",
+                collision_sds_dir=sds,
+                gas_field_manifest=manifest_path,
+            )
+            record = receipt["inputs"]["gas_field_runtime"]
+            self.assertGreater(record["bytes"], 8 * 1024 * 1024)
+            self.assertEqual(set(record), {"source_path", "frozen_path", "sha256", "bytes"})
+            self.assertEqual(Path(record["frozen_path"]).read_bytes(), original)
+            self.assertEqual(runtime.read_bytes(), original)
+            self.assertEqual(file_sha256(Path(record["frozen_path"])), record["sha256"])
+            self.assertEqual(file_sha256(runtime), record["sha256"])
+            self.assertLess((output / "preparation_receipt.json").stat().st_size, 32 * 1024)
+            self.assertFalse(receipt["qualified_evidence"])
+            self.assertEqual(list(output.rglob("*.pa*")), [])
