@@ -155,12 +155,21 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
     errors, aliases, _ = _import_errors(tree, package, dependencies, source_domain, module)
     if error := _namespace_error(module):
         errors.append(error)
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             name = _qualified_name(node.value, aliases)
             if name:
                 aliases[node.targets[0].id] = name
         name = _qualified_name(node, aliases)
+        if (source_domain == "applications" and isinstance(node, (ast.Name, ast.Attribute))
+                and name.split(".")[:3] == ["msplatform", "backends", "simion"]):
+            parent = parents.get(node)
+            # A legal preparation member includes package-prefix attributes.
+            # Check the full access, not those intermediate prefixes.
+            if not (isinstance(parent, ast.Attribute) and parent.value is node):
+                if error := _target_error(name, dependencies, source_domain, module):
+                    errors.append(f"{node.lineno}: {error}")
         if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
                 and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records"})
                 and not (source_domain == "applications" and name == "os.environ")):
@@ -312,6 +321,30 @@ import importlib as lib
 lib.import_module('.helper', __package__)
 """
         self.assertEqual(core_boundary_errors(source, "msplatform.analysis.example", dependencies={"numpy", "scipy"}), [])
+
+    def test_applications_child_import_does_not_authorize_simion_sibling_access(self):
+        module = "msplatform.applications.operations"
+        for child in ("field_closure", "model", "model_view_preparation", "resources"):
+            allowed = (
+                f"import msplatform.backends.simion.{child}; value = msplatform.backends.simion.{child}.member",
+                f"import msplatform.backends.simion.{child} as preparation; value = preparation.member",
+                f"from msplatform.backends.simion import {child} as preparation; value = preparation.member",
+                f"import msplatform.backends.simion.{child}; preparation = msplatform.backends.simion.{child}; value = preparation.member",
+            )
+            for source in allowed:
+                with self.subTest(source=source):
+                    self.assertEqual(core_boundary_errors(source, module, dependencies=set()), [])
+        rejected = (
+            "import msplatform.backends.simion.model; track = msplatform.backends.simion.track; solve_fields = msplatform.backends.simion.solve_fields",
+            "import msplatform.backends.simion.model; msplatform.backends.simion.track()",
+            "import msplatform.backends.simion.model; backend = msplatform.backends.simion; backend.solve_fields()",
+            "import msplatform.backends.simion.model as preparation; import msplatform.backends.simion.resources; operation = msplatform.backends.simion.solve_fields",
+            "import msplatform.backends.simion.model; operation = msplatform.backends.simion.track; operation()",
+        )
+        for source in rejected:
+            with self.subTest(source=source):
+                errors = core_boundary_errors(source, module, dependencies=set())
+                self.assertTrue(any("applications import exceeds named SIMION model preparation" in error for error in errors))
 
     def test_installed_outer_domains_follow_explicit_directions(self):
         allowed = (

@@ -23,6 +23,10 @@
 只进入本次涉及的实现边界。文档结构与链接由`verify_documentation.ps1`和`documentation_links.py`检查；
 跨语言实现规则由`verify_development_standards.py`检查；受管文本字节由`verify_repository_text_bytes.py`检查。
 这些门禁的统一调度仍由下述目录负责，不在本页维护第二份阶段名单。
+The existing scientific-boundary check also examines qualified SIMION accesses from applications:
+an ordinary preparation-submodule import must not authorize access to sibling field or tracking
+operations through Python's implicitly bound parent package. Named preparation modules and members
+remain allowed; this is a dependency check, not a runtime reflection sandbox.
 
 ## 科学核心发行与旧入口
 
