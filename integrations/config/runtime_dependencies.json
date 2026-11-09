@@ -245,19 +245,6 @@
           ]
         },
         {
-          "source_repo_path": "common/integration",
-          "consumers": [
-            "accelerator_interface",
-            "cooled_frontend",
-            "local_frontend",
-            "multipole_ip",
-            "oa_mr",
-            "paired_accelerator_static_field",
-            "prepared_joint",
-            "single_reflection_flight"
-          ]
-        },
-        {
           "source_repo_path": "common/paths",
           "consumers": [
             "accelerator_interface",

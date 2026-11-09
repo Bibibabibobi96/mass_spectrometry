@@ -15,7 +15,7 @@ from unittest.mock import patch
 from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
-from common.integration.resolve_connection import resolve_assembly_recipe, verify_composition_plan
+from msplatform.workflows.connection_inputs import resolve_assembly_recipe, verify_composition_plan
 
 
 def direct_fixture() -> tuple[dict, dict]:
@@ -272,29 +272,29 @@ class DirectAssemblyTests(unittest.TestCase):
             for name, value in (("recipe", self.recipe), ("components", self.components),
                                 ("local_scope", declaration)):
                 (root / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
-            command = [sys.executable, "-m", "common.integration.resolve_connection"]
+            command = [sys.executable, "-m", "msplatform.workflows.connection_inputs"]
             result = subprocess.run(command + ["--recipe", str(root / "recipe.json"),
                 "--components", str(root / "components.json"), "--local-scope", str(root / "local_scope.json"),
-                "--repo-root", str(root), "--plan-output", str(root / "plan.json")],
+                "--source-root", str(root), "--plan-output", str(root / "plan.json")],
                 cwd=REPO_ROOT, capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             path = root / "plan.json"
             plan = json.loads(path.read_text())
             self.assertEqual(plan["local_scope"], declaration)
             self.assertIn("local_scope", plan["input_files"])
-            result = subprocess.run(command + ["--verify-plan", str(path), "--verify-repo-root", str(root)],
+            result = subprocess.run(command + ["--verify-plan", str(path), "--source-root", str(root)],
                 cwd=REPO_ROOT, capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             edited = copy.deepcopy(plan)
             edited["scope"]["boundary_connection_ids"] = []
             path.write_text(json.dumps(edited), encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "differs"):
-                verify_composition_plan(path, repo_root=root)
+                verify_composition_plan(path, source_root=root)
             path.write_text(json.dumps(plan), encoding="utf-8")
             declaration["boundary_assumptions"] = "Changed assumption"
             (root / "local_scope.json").write_text(json.dumps(declaration), encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "local_scope source identity is stale"):
-                verify_composition_plan(path, repo_root=root)
+                verify_composition_plan(path, source_root=root)
             result = subprocess.run(command + ["--local-scope", str(root / "local_scope.json")],
                 cwd=REPO_ROOT, capture_output=True, text=True, timeout=60)
             self.assertNotEqual(result.returncode, 0)
@@ -501,14 +501,14 @@ class DirectAssemblyTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "common.integration.resolve_connection",
+                    "msplatform.workflows.connection_inputs",
                     "--recipe",
                     str(recipe_path),
                     "--components",
                     str(components_path),
                     "--plan-output",
                     str(plan_path),
-                    "--repo-root",
+                    "--source-root",
                     str(root),
                 ],
                 cwd=REPO_ROOT,
@@ -519,17 +519,17 @@ class DirectAssemblyTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            verify_composition_plan(plan_path, repo_root=root)
+            verify_composition_plan(plan_path, source_root=root)
             plan = json.loads(plan_path.read_text())
             plan["connection_checks"][0]["gap_mm"] = 2
             plan_path.write_text(json.dumps(plan), encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "differs"):
-                verify_composition_plan(plan_path, repo_root=root)
+                verify_composition_plan(plan_path, source_root=root)
             plan = resolve_assembly_recipe(recipe_path, components_path, root)
             plan_path.write_text(json.dumps(plan), encoding="utf-8")
             components_path.write_text(json.dumps({}), encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "stale"):
-                verify_composition_plan(plan_path, repo_root=root)
+                verify_composition_plan(plan_path, source_root=root)
 
 
 if __name__ == "__main__":

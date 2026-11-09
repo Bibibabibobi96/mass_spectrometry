@@ -13,7 +13,7 @@ import unittest
 
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
-from common.integration.resolve_connection import resolve_assembly_recipe, verify_composition_plan
+from msplatform.workflows.connection_inputs import resolve_assembly_recipe, verify_composition_plan
 from msplatform.assembly.electrode_binding import ElectrodeKey, validate_electrode_bindings
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.contracts.machine_contracts import ContractError
@@ -152,7 +152,7 @@ class ScientificProviderAssemblyTests(unittest.TestCase):
             plan = resolve_assembly_recipe(recipe_path, components_path, root)
             self.assertEqual(plan["schema_version"], 5)
             plan_path = write_json(root / "plan.json", plan)
-            verify_composition_plan(plan_path, repo_root=root)
+            verify_composition_plan(plan_path, source_root=root)
             before = copy.deepcopy(plan)
             declaration = dict(instance_ids=["guide_b", "oa"], research_scope="last real RF and OA",
                                boundary_assumptions="first guide omitted only in declared local scope")
@@ -161,11 +161,11 @@ class ScientificProviderAssemblyTests(unittest.TestCase):
             self.assertEqual(local["scope"]["boundary_connection_ids"], ["a_to_b"])
             self.assertEqual(local["scope"]["connection_ids"], ["b_to_oa"])
             local_path = write_json(root / "local_plan.json", local)
-            verify_composition_plan(local_path, repo_root=root)
+            verify_composition_plan(local_path, source_root=root)
             self.assertEqual(plan, before)
             recipe_path.write_text(recipe_path.read_text(encoding="utf-8") + " ", encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "stale"):
-                verify_composition_plan(plan_path, repo_root=root)
+                verify_composition_plan(plan_path, source_root=root)
 
     def test_missing_provider_record_stale_identity_and_unknown_version_fail(self):
         with tempfile.TemporaryDirectory() as directory:

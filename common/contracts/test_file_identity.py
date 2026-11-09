@@ -10,15 +10,8 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from common.contracts.file_identity import (
-    HASH_CHUNK_BYTES,
-    canonical_json_sha256,
-    file_sha256,
-    file_sha256_unbuffered,
-    files_have_same_identity,
-    files_match_manifest_records,
-    repository_text_sha256,
-)
+from common.contracts.file_identity import HASH_CHUNK_BYTES, canonical_json_sha256, file_sha256, file_sha256_unbuffered, files_have_same_identity, files_match_manifest_records
+from msplatform.io.file_identity import repository_text_sha256
 from common.contracts import write_formal_asset_manifest, write_run_manifest
 from common.contracts import file_identity
 from msplatform.io import file_identity as execution_file_identity

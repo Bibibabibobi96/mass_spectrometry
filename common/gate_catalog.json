@@ -1533,6 +1533,14 @@
         {
           "exact": "src/msplatform/assembly/port_mating.py",
           "reason": "canonical_port_mating_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/connection_inputs.py",
+          "reason": "installed_connection_input_adapter_changed"
+        },
+        {
+          "exact": "src/msplatform/io/file_identity.py",
+          "reason": "connection_source_identity_changed"
         }
       ],
       "command": {

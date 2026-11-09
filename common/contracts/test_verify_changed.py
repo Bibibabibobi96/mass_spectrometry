@@ -32,6 +32,11 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_installed_connection_inputs_selects_existing_contract_owner(self):
+        for path in ("src/msplatform/workflows/connection_inputs.py", "src/msplatform/io/file_identity.py"):
+            with self.subTest(path=path):
+                self.assertIn("integration_common", self.routed_stages(path))
+
     def test_installed_source_models_reach_their_original_project_owner(self):
         cases = (
             ("src/msplatform/backends/comsol/matlab/ms_stage1_ei_source.m",

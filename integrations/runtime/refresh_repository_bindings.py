@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from common.contracts.file_identity import repository_text_sha256
+from msplatform.io.file_identity import repository_text_sha256
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _PORT = "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"

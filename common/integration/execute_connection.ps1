@@ -5,6 +5,7 @@ param(
     [string]$ResolvedConnection,
     [string]$PythonExe,
     [string]$RepoRoot,
+    [string]$ArtifactRoot = '',
     [switch]$ValidateOnly,
     [switch]$PrepareOnly,
     [string]$AdapterEntrypoint = '',
@@ -31,13 +32,12 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Python 3.11 executable not found: $PythonExe"
 }
 
-# The resolver is repository-owned code.  Keep its module root as the current
-# directory even when the composition itself is validated against a separately
-# materialized repository root (as exercised by the public ValidateOnly API).
-& $PythonExe -m common.integration.resolve_connection `
-    --verify-plan $CompositionPlan `
-    --resolved $ResolvedConnection `
-    --verify-repo-root $RepoRoot
+# Repository research adapter harness; scientific resolution uses the installed CLI.
+$verifyArguments = @('-m', 'msplatform.workflows.connection_inputs',
+    '--verify-plan', $CompositionPlan, '--resolved', $ResolvedConnection,
+    '--source-root', $RepoRoot)
+if ($ArtifactRoot) { $verifyArguments += @('--artifact-root', $ArtifactRoot) }
+& $PythonExe @verifyArguments
 if ($LASTEXITCODE -ne 0) {
     throw 'Composition plan validation failed.'
 }

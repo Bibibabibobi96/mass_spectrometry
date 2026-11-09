@@ -11,8 +11,9 @@ from pathlib import Path
 
 from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from common.contracts.file_identity import file_sha256, repository_text_sha256
-from common.integration.resolve_connection import (
+from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import repository_text_sha256
+from msplatform.workflows.connection_inputs import (
     derive_direct_mating_translation,
     derive_mating_translation_with_gap,
     load_connection_profile_registry,
@@ -284,12 +285,12 @@ class ResolveConnectionTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             load_connection_profile_registry(self.registry_path)
         with self.assertRaises(ContractError):
-            resolve_connection_profile(registry, "grounded_tube", repo_root=self.repo_root)
+            resolve_connection_profile(registry, "grounded_tube", source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects")
 
     def _resolve(self) -> dict:
         registry = load_connection_profile_registry(self.registry_path)
         return resolve_connection_profile(
-            registry, "grounded_tube", repo_root=self.repo_root
+            registry, "grounded_tube", source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects"
         )
 
     def _write_artifact_inputs(self) -> Path:
@@ -325,6 +326,67 @@ class ResolveConnectionTests(unittest.TestCase):
             },
         )
         return registry_path
+
+    def test_nested_artifact_base_keeps_raw_identity_and_source_normalization(self) -> None:
+        registry_path = self._write_artifact_inputs()
+        original_base = self.workspace_root / "artifacts/projects"
+        nested_base = self.repo_root / "artifacts/projects"
+        shutil.copytree(original_base, nested_base)
+        registry_path = nested_base / registry_path.relative_to(original_base)
+        resolved_path, plan_path = self.repo_root / "resolved.json", self.repo_root / "plan.json"
+        write_resolved_and_plan(
+            registry_path, "grounded_tube", resolved_path, plan_path,
+            source_root=self.repo_root, artifact_root=nested_base,
+        )
+        verify_composition_plan(resolved_path=resolved_path, plan_path=plan_path,
+                                source_root=self.repo_root, artifact_root=nested_base)
+        resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+        record = resolved["sources"]["upstream_authority"]
+        self.assertTrue(record["path"].startswith("artifacts/projects/"))
+        artifact = nested_base / Path(*Path(record["path"]).parts[2:])
+        self.assertEqual(record["sha256"], file_sha256(artifact))
+        self.assertNotEqual(record["sha256"], repository_text_sha256(artifact))
+        # A source authority remains LF-normalized even beside a nested artifact base.
+        source_bytes = self.downstream_source_path.read_bytes()
+        source_hash = repository_text_sha256(self.downstream_source_path)
+        source_raw_hash = file_sha256(self.downstream_source_path)
+        source_lf = source_bytes.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        self.downstream_source_path.write_bytes(
+            source_lf if b"\r\n" in source_bytes else source_lf.replace(b"\n", b"\r\n")
+        )
+        self.assertEqual(repository_text_sha256(self.downstream_source_path), source_hash)
+        self.assertNotEqual(file_sha256(self.downstream_source_path), source_raw_hash)
+        verify_composition_plan(resolved_path=resolved_path, plan_path=plan_path,
+                                source_root=self.repo_root, artifact_root=nested_base)
+        # EOL-only artifact mutation must be rejected by actual plan reverification.
+        original_artifact = artifact.read_bytes()
+        normalized_artifact = repository_text_sha256(artifact)
+        artifact.write_bytes(original_artifact.replace(b"\r\n", b"\n"))
+        self.assertEqual(repository_text_sha256(artifact), normalized_artifact)
+        self.assertNotEqual(file_sha256(artifact), record["sha256"])
+        with self.assertRaisesRegex(ContractError, "source SHA-256 is stale"):
+            verify_composition_plan(resolved_path=resolved_path, plan_path=plan_path,
+                                    source_root=self.repo_root, artifact_root=nested_base)
+
+    def test_artifact_base_is_explicit_and_independent_of_source_parent(self) -> None:
+        registry_path = self._write_artifact_inputs()
+        registry = load_connection_profile_registry(registry_path)
+        old_base = self.workspace_root / "artifacts/projects"
+        explicit_base = self.workspace_root / "external_artifact_authorities"
+        old_base.rename(explicit_base)
+        resolved = resolve_connection_profile(
+            registry, "grounded_tube", source_root=self.repo_root, artifact_root=explicit_base,
+        )
+        record = resolved["sources"]["upstream_authority"]
+        self.assertTrue(record["path"].startswith("artifacts/projects/"))
+        actual = explicit_base / Path(*Path(record["path"]).parts[2:])
+        self.assertEqual(record["sha256"], file_sha256(actual))
+        self.assertNotEqual(record["sha256"], repository_text_sha256(actual))
+
+    def test_artifact_references_do_not_discover_a_sibling_directory(self) -> None:
+        registry = load_connection_profile_registry(self._write_artifact_inputs())
+        with self.assertRaisesRegex(ContractError, "explicit artifact_root"):
+            resolve_connection_profile(registry, "grounded_tube", source_root=self.repo_root)
 
     def test_resolves_explicit_five_tuple_and_source_hashes(self) -> None:
         resolved = self._resolve()
@@ -386,7 +448,7 @@ class ResolveConnectionTests(unittest.TestCase):
         validate_schema(template, "connection_profile.schema.json")
         with self.assertRaisesRegex(ContractError, "port binding is unresolved"):
             resolve_connection_profile(
-                registry, "grounded_tube", repo_root=self.repo_root
+                registry, "grounded_tube", source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects"
             )
 
         run_local = json.loads(json.dumps(registry))
@@ -394,7 +456,7 @@ class ResolveConnectionTests(unittest.TestCase):
         upstream.pop("port_binding")
         upstream["port_contract"] = self.upstream_relative
         resolved = resolve_connection_profile(
-            run_local, "grounded_tube", repo_root=self.repo_root
+            run_local, "grounded_tube", source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects"
         )
         self.assertEqual(resolved["compatibility"]["status"], "pass")
 
@@ -434,7 +496,7 @@ class ResolveConnectionTests(unittest.TestCase):
             "grounded_tube",
             resolved_path,
             plan_path,
-            repo_root=self.repo_root,
+            source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects",
         )
         resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
         sources = resolved["sources"]
@@ -447,7 +509,7 @@ class ResolveConnectionTests(unittest.TestCase):
             sources["upstream_authority"]["sha256"],
             repository_text_sha256(authority_path),
         )
-        verify_composition_plan(plan_path, resolved_path, repo_root=self.repo_root)
+        verify_composition_plan(plan_path, resolved_path, source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects")
 
     def test_artifact_authority_rejects_stale_raw_byte_hash(self) -> None:
         registry_path = self._write_artifact_inputs()
@@ -460,7 +522,7 @@ class ResolveConnectionTests(unittest.TestCase):
         source_path.write_bytes(source_path.read_bytes().replace(b"\r\n", b"\n"))
         with self.assertRaisesRegex(ContractError, "authority source SHA-256 is stale"):
             resolve_connection_profile(
-                registry, "grounded_tube", repo_root=self.repo_root
+                registry, "grounded_tube", source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects"
             )
 
     def test_rejects_workspace_top_level_and_parent_traversal(self) -> None:
@@ -472,7 +534,7 @@ class ResolveConnectionTests(unittest.TestCase):
                 "grounded_tube",
                 self.repo_root / "output/resolved_connection.json",
                 self.repo_root / "output/composition_plan.json",
-                repo_root=self.repo_root,
+                source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects",
             )
         traversing = self.repo_root / ".." / "scratch" / "profiles.json"
         with self.assertRaisesRegex(ContractError, "parent traversal"):
@@ -481,7 +543,7 @@ class ResolveConnectionTests(unittest.TestCase):
                 "grounded_tube",
                 self.repo_root / "output/resolved_connection.json",
                 self.repo_root / "output/composition_plan.json",
-                repo_root=self.repo_root,
+                source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects",
             )
 
     def test_port_path_schemas_reject_absolute_and_parent_traversal(self) -> None:
@@ -509,14 +571,14 @@ class ResolveConnectionTests(unittest.TestCase):
             "grounded_tube",
             resolved_path,
             plan_path,
-            repo_root=self.repo_root,
+            source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects",
         )
-        verify_composition_plan(plan_path, resolved_path, repo_root=self.repo_root)
+        verify_composition_plan(plan_path, resolved_path, source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects")
         resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
         resolved["effective_clear_radius_mm"] = 1.9
         self._write_json(resolved_path, resolved)
         with self.assertRaisesRegex(ContractError, "SHA-256 is stale"):
-            verify_composition_plan(plan_path, resolved_path, repo_root=self.repo_root)
+            verify_composition_plan(plan_path, resolved_path, source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects")
 
     def test_reverification_rejects_changed_component_port(self) -> None:
         resolved_path = self.repo_root / "output/resolved_connection.json"
@@ -526,13 +588,13 @@ class ResolveConnectionTests(unittest.TestCase):
             "grounded_tube",
             resolved_path,
             plan_path,
-            repo_root=self.repo_root,
+            source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects",
         )
         self.upstream["mating_surface"]["aperture_radius_mm"] = 2.4
         self._write_json(self.upstream_path, self.upstream)
         with self.assertRaisesRegex(ContractError, "source SHA-256 is stale"):
             verify_composition_plan(
-                plan_path, resolved_path, repo_root=self.repo_root
+                plan_path, resolved_path, source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects"
             )
 
     def test_rejects_stale_authority_and_binding_value_drift(self) -> None:
@@ -702,7 +764,7 @@ class ResolveConnectionTests(unittest.TestCase):
             "grounded_tube",
             resolved_path,
             plan_path,
-            repo_root=self.repo_root,
+            source_root=self.repo_root, artifact_root=self.workspace_root / "artifacts/projects",
         )
         completed = subprocess.run(
             [

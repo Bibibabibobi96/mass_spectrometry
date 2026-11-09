@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import repository_text_sha256
+from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
 from projects.rf_multipole_ion_optics.core.compile_design_request import (
     MultipoleDesignCompileError,

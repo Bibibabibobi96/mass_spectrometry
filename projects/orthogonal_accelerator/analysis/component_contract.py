@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import repository_text_sha256
+from msplatform.io.file_identity import repository_text_sha256
 
 
 def _source_path(root: Path, value: str, label: str) -> Path:

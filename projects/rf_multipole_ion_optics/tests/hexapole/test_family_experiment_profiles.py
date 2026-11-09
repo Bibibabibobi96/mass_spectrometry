@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import repository_text_sha256
+from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import validate_schema
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile

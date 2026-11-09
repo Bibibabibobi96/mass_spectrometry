@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from common.contracts.file_identity import repository_text_sha256
+from msplatform.io.file_identity import repository_text_sha256
 from integrations.runtime.refresh_repository_bindings import (
     _PORT, compile_publications, publication_differences, write_publications,
 )

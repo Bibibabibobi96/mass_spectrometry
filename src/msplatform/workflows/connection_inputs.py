@@ -10,17 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import (
     ContractError,
     load_json,
     sha256,
     validate_schema,
 )
-from common.contracts.file_identity import (
-    canonical_json_sha256 as _canonical_sha256,
-    repository_text_sha256,
-)
+from msplatform.io.file_identity import canonical_json_sha256 as _canonical_sha256
+from msplatform.io.file_identity import repository_text_sha256
 from msplatform.io.file_identity import file_sha256
 from msplatform.assembly.port_mating import (
     _dot as _dot, _norm as _norm, _subtract as _subtract,
@@ -52,44 +49,40 @@ class _ManagedFile:
     repository_text: bool
 
 
-def _managed_file(repo_root: Path, reference: str | Path) -> _ManagedFile:
-    """Resolve one explicit repository or workspace artifact file reference."""
-    root = repo_root.resolve()
-    workspace_root = root.parent
-    artifacts_root = (workspace_root / "artifacts" / "projects").resolve()
+def _managed_file(source_root: str | Path | None, reference: str | Path, *, artifact_root: str | Path | None = None) -> _ManagedFile:
+    """Resolve explicit source or legacy artifact bases; never discover a checkout."""
+    if source_root is None:
+        raise ContractError("connection file references require an explicit source_root")
+    root = Path(source_root).resolve()
+    artifacts = Path(artifact_root).resolve() if artifact_root is not None else None
     raw = Path(reference)
     if ".." in raw.parts:
         raise ContractError(f"connection source contains parent traversal: {reference}")
-
     if raw.is_absolute():
         candidate = raw.resolve()
+    elif raw.as_posix().startswith("artifacts/projects/"):
+        if artifacts is None:
+            raise ContractError("legacy artifact references require an explicit artifact_root")
+        candidate = (artifacts / Path(*raw.parts[2:])).resolve()
     else:
-        normalized = raw.as_posix()
-        base = workspace_root if normalized.startswith("artifacts/projects/") else root
-        candidate = (base / raw).resolve()
-
-    try:
-        relative_repo = candidate.relative_to(root)
-    except ValueError:
-        relative_repo = None
-    if relative_repo is not None:
-        managed = _ManagedFile(
-            path=candidate,
-            portable_path=relative_repo.as_posix(),
-            repository_text=True,
-        )
-    else:
+        candidate = (root / raw).resolve()
+    # Explicit artifact ownership takes precedence inside a nested source base.
+    relative_artifact = None
+    if artifacts is not None:
         try:
-            candidate.relative_to(artifacts_root)
+            relative_artifact = candidate.relative_to(artifacts)
+        except ValueError:
+            pass
+    if relative_artifact is not None:
+        managed = _ManagedFile(candidate, "artifacts/projects/" + relative_artifact.as_posix(), False)
+    else:
+        if not raw.is_absolute() and raw.as_posix().startswith("artifacts/projects/"):
+            raise ContractError(f"connection source is outside explicit artifact root: {reference}")
+        try:
+            relative_source = candidate.relative_to(root)
         except ValueError as exc:
-            raise ContractError(
-                f"connection source is outside repository and artifacts/projects: {reference}"
-            ) from exc
-        managed = _ManagedFile(
-            path=candidate,
-            portable_path=candidate.relative_to(workspace_root).as_posix(),
-            repository_text=False,
-        )
+            raise ContractError(f"connection source is outside repository and artifacts/projects (explicit source and artifact roots): {reference}") from exc
+        managed = _ManagedFile(candidate, relative_source.as_posix(), True)
     if not candidate.is_file():
         raise ContractError(f"connection source is missing: {reference}")
     return managed
@@ -116,10 +109,10 @@ def _pointer_value(document: Any, pointer: str) -> Any:
 
 
 def _validate_port_authority(
-    port: dict[str, Any], port_path: Path, repo_root: Path
+    port: dict[str, Any], port_path: Path, source_root: Path, *, artifact_root: str | Path | None = None
 ) -> tuple[str, str]:
     authority = port["authority"]
-    source = _managed_file(repo_root, authority["source_contract"])
+    source = _managed_file(source_root, authority["source_contract"], artifact_root=artifact_root)
     if source.path == port_path.resolve():
         raise ContractError("component port cannot cite itself as physical authority")
     source_hash = _managed_sha256(source)
@@ -211,18 +204,19 @@ def _resolve_profile(
     downstream_port: dict[str, Any],
     upstream_path: Path,
     downstream_path: Path,
-    repo_root: Path,
+    source_root: Path,
+    *, artifact_root: str | Path | None = None,
 ) -> dict[str, Any]:
     validate_schema(upstream_port, "component_port.schema.json")
     validate_schema(downstream_port, "component_port.schema.json")
     upstream_authority_hash, upstream_authority_path = _validate_port_authority(
-        upstream_port, upstream_path, repo_root
+        upstream_port, upstream_path, source_root, artifact_root=artifact_root
     )
     downstream_authority_hash, downstream_authority_path = _validate_port_authority(
-        downstream_port, downstream_path, repo_root
+        downstream_port, downstream_path, source_root, artifact_root=artifact_root
     )
-    upstream_port_source = _managed_file(repo_root, upstream_path)
-    downstream_port_source = _managed_file(repo_root, downstream_path)
+    upstream_port_source = _managed_file(source_root, upstream_path, artifact_root=artifact_root)
+    downstream_port_source = _managed_file(source_root, downstream_path, artifact_root=artifact_root)
 
     upstream_ref = profile["upstream"]
     downstream_ref = profile["downstream"]
@@ -436,7 +430,7 @@ def _resolve_profile(
 
 
 def resolve_connection_profile(
-    registry: dict[str, Any], profile_id: str, repo_root: str | Path = REPO_ROOT
+    registry: dict[str, Any], profile_id: str, source_root: str | Path, *, artifact_root: str | Path | None = None
 ) -> dict[str, Any]:
     """Resolve one explicitly selected profile and both referenced component ports."""
     validate_schema(registry, "connection_profile_registry.schema.json")
@@ -457,16 +451,16 @@ def resolve_connection_profile(
             "upstream port binding is unresolved: "
             f"{profile['upstream']['port_binding']}"
         )
-    root = Path(repo_root)
-    upstream_path = _managed_file(root, profile["upstream"]["port_contract"]).path
-    downstream_path = _managed_file(root, profile["downstream"]["port_contract"]).path
+    root = Path(source_root)
+    upstream_path = _managed_file(root, profile["upstream"]["port_contract"], artifact_root=artifact_root).path
+    downstream_path = _managed_file(root, profile["downstream"]["port_contract"], artifact_root=artifact_root).path
     return _resolve_profile(
         profile,
         load_json(upstream_path),
         load_json(downstream_path),
         upstream_path,
         downstream_path,
-        root,
+        root, artifact_root=artifact_root,
     )
 
 
@@ -493,13 +487,14 @@ def write_resolved_and_plan(
     profile_id: str,
     resolved_output: str | Path,
     plan_output: str | Path,
-    repo_root: str | Path = REPO_ROOT,
+    source_root: str | Path,
+    *, artifact_root: str | Path | None = None,
 ) -> tuple[Path, Path]:
-    root = Path(repo_root).resolve()
-    registry_source = _managed_file(root, registry_path)
+    root = Path(source_root).resolve()
+    registry_source = _managed_file(root, registry_path, artifact_root=artifact_root)
     registry_file = registry_source.path
     registry = load_connection_profile_registry(registry_file)
-    resolved = resolve_connection_profile(registry, profile_id, repo_root=root)
+    resolved = resolve_connection_profile(registry, profile_id, source_root=root, artifact_root=artifact_root)
     resolved["sources"]["profile_registry"] = {
         "path": registry_source.portable_path,
         "sha256": _managed_sha256(registry_source),
@@ -520,18 +515,18 @@ def write_resolved_and_plan(
 
 
 def resolve_assembly_recipe(
-    recipe_path: str | Path, components_path: str | Path, repo_root: str | Path,
-    *, local_scope_path: str | Path | None = None,
+    recipe_path: str | Path, components_path: str | Path, source_root: str | Path,
+    *, local_scope_path: str | Path | None = None, artifact_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Load explicit recipe/provider files and bind their content identities."""
     from msplatform.assembly.resolve_assembly import compile_assembly_layout, validate_composition_plan_contract
 
-    root = Path(repo_root).resolve()
-    sources = {name: _managed_file(root, path) for name, path in (
+    root = Path(source_root).resolve()
+    sources = {name: _managed_file(root, path, artifact_root=artifact_root) for name, path in (
         ("recipe", recipe_path), ("components", components_path),
     )}
     if local_scope_path is not None:
-        sources["local_scope"] = _managed_file(root, local_scope_path)
+        sources["local_scope"] = _managed_file(root, local_scope_path, artifact_root=artifact_root)
     plan = compile_assembly_layout(
         load_json(sources["recipe"].path), load_json(sources["components"].path),
         local_scope=load_json(sources["local_scope"].path) if "local_scope" in sources else None,
@@ -544,7 +539,7 @@ def resolve_assembly_recipe(
     return plan
 
 
-def _verify_assembly_plan(plan: dict[str, Any], repo_root: str | Path) -> None:
+def _verify_assembly_plan(plan: dict[str, Any], source_root: str | Path | None, *, artifact_root: str | Path | None = None) -> None:
     """Rebuild the layout from frozen inputs and, when present, recheck files."""
     from msplatform.assembly.resolve_assembly import compile_assembly_layout
 
@@ -553,7 +548,7 @@ def _verify_assembly_plan(plan: dict[str, Any], repo_root: str | Path) -> None:
     )
     if "input_files" in plan:
         for name, record in plan["input_files"].items():
-            source = _managed_file(Path(repo_root), record["path"])
+            source = _managed_file(source_root, record["path"], artifact_root=artifact_root)
             if _managed_sha256(source) != record["sha256"] or load_json(source.path) != plan[name]:
                 raise ContractError(f"assembly {name} source identity is stale")
         expected["input_files"] = plan["input_files"]
@@ -563,14 +558,15 @@ def _verify_assembly_plan(plan: dict[str, Any], repo_root: str | Path) -> None:
 def verify_composition_plan(
     plan_path: str | Path,
     resolved_path: str | Path | None = None,
-    repo_root: str | Path = REPO_ROOT,
+    source_root: str | Path | None = None,
+    *, artifact_root: str | Path | None = None,
 ) -> None:
     from msplatform.assembly.resolve_assembly import validate_composition_plan_contract
 
     plan = load_json(Path(plan_path))
     validate_composition_plan_contract(plan)
     if plan["schema_version"] in (3, 4, 5):
-        _verify_assembly_plan(plan, repo_root)
+        _verify_assembly_plan(plan, source_root, artifact_root=artifact_root)
         return
     if resolved_path is None:
         raise ContractError("pair composition plan verification requires resolved_path")
@@ -585,7 +581,7 @@ def verify_composition_plan(
         or plan["coupling_mode"] != resolved["coupling_mode"]
     ):
         raise ContractError("composition plan identity differs from resolved connection")
-    root = Path(repo_root)
+    root = source_root
     for source_name in (
         "profile_registry",
         "upstream_port",
@@ -596,7 +592,7 @@ def verify_composition_plan(
         source = resolved["sources"].get(source_name)
         if source is None:
             continue
-        source_file = _managed_file(root, source["path"])
+        source_file = _managed_file(root, source["path"], artifact_root=artifact_root)
         if source["sha256"] != _managed_sha256(source_file):
             raise ContractError(f"resolved connection source SHA-256 is stale: {source_name}")
 
@@ -610,10 +606,10 @@ def main() -> None:
     parser.add_argument("--profile-id")
     parser.add_argument("--resolved-output", type=Path)
     parser.add_argument("--plan-output", type=Path)
-    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--artifact-root", type=Path)
     parser.add_argument("--verify-plan", type=Path)
     parser.add_argument("--resolved", type=Path)
-    parser.add_argument("--verify-repo-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args()
     if args.recipe is not None:
         if args.plan_output is None or args.components is None or any(
@@ -623,8 +619,10 @@ def main() -> None:
             )
         ):
             parser.error("--recipe requires --components and --plan-output and excludes pair/verification inputs")
+        if args.source_root is None:
+            parser.error("resolution requires an explicit --source-root")
         plan = resolve_assembly_recipe(
-            args.recipe, args.components, args.repo_root, local_scope_path=args.local_scope,
+            args.recipe, args.components, args.source_root, local_scope_path=args.local_scope, artifact_root=args.artifact_root,
         )
         args.plan_output.parent.mkdir(parents=True, exist_ok=True)
         args.plan_output.write_text(
@@ -637,7 +635,7 @@ def main() -> None:
         parser.error("--local-scope requires --recipe")
     if args.verify_plan is not None:
         verify_composition_plan(
-            args.verify_plan, args.resolved, repo_root=args.verify_repo_root
+            args.verify_plan, args.resolved, source_root=args.source_root, artifact_root=args.artifact_root
         )
         print("COMPOSITION_PLAN=PASS")
         return
@@ -651,12 +649,14 @@ def main() -> None:
         parser.error(
             "resolution requires --registry, --profile-id, --resolved-output and --plan-output"
         )
+    if args.source_root is None:
+        parser.error("resolution requires an explicit --source-root")
     resolved_path, plan_path = write_resolved_and_plan(
         args.registry,
         args.profile_id,
         args.resolved_output,
         args.plan_output,
-        repo_root=args.repo_root,
+        source_root=args.source_root, artifact_root=args.artifact_root,
     )
     print(f"CONNECTION_RESOLUTION=PASS RESOLVED={resolved_path} PLAN={plan_path}")
 

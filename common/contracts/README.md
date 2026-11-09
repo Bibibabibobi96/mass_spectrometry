@@ -283,9 +283,7 @@ PowerShell 消费者可用`Enter-RunTerminalConsumptionGuard -RunDirectory <sour
 MR实测源与共同场有限脉冲准备已复用同一入口，原有文件身份、物理约束和CSV解析仍由各自owner负责。
 表示检查与现有EI／电子枪真实消费回归见`test_strict_json.py`及两项目`test_resolve_contract.py`。
 
-`file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
-manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
-LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。
+Canonical SHA-256 helpers live in [`msplatform.io.file_identity`](../../src/msplatform/io/file_identity.py), independent of repository discovery and execution owners. They return uppercase hexadecimal digests. `file_sha256` identifies raw manifest/artifact bytes; `repository_text_sha256` preserves the existing LF-normalized source-authority identity across CRLF/CR/LF text. Callers choose the declared identity policy and remain responsible for path scope, size and evidence qualification. The repository helper no longer defines or reexports `repository_text_sha256`.
 
 [`execution.inputs.freeze_file(source, destination)`](../../src/msplatform/execution/inputs.py)冻结显式选定的小配置、源码或观测文件：
 以源文件的原始字节记录核验副本，返回目的文件record及`source_path`；缺源、目的已存在或副本身份不符均失败。

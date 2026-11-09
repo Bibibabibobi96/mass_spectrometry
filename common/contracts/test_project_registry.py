@@ -22,7 +22,7 @@ from build_project_registry import (
     validate_legacy_identity_mappings,
 )
 from msplatform.contracts.machine_contracts import load_json, validate_schema
-from file_identity import repository_text_sha256
+from msplatform.io.file_identity import repository_text_sha256
 
 
 MULTIPOLE_PROJECT_ID = "rf_multipole_ion_optics"

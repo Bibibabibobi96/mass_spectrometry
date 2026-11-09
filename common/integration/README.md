@@ -1,6 +1,6 @@
 # 公共器件连接合同层
 
-The installed layout API is `msplatform.assembly.resolve_assembly`; its former repository alias has retired. The existing `resolve_connection` file adapter calls that canonical API directly and retains its explicit repository file-identity responsibilities. See the [public entry](../README.md#科学核心发行与旧入口) for the migration context.
+The installed layout API is `msplatform.assembly.resolve_assembly`. Explicit input-file resolution, paired-port authority checks and plan verification now belong to `msplatform.workflows.connection_inputs`; the old repository Python entry has retired. This directory retains regression tests and the repository research adapter harness `execute_connection.ps1`, which calls the installed CLI and retains its existing explicit adapter/authorization checks. It is not a second scientific resolver or installed execution owner.
 
 本目录实现[连接架构](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)中的求解器中立公共边界。项目拥有provided/required port；
 `integrations/`拥有具体装配和物理工作流；本目录只负责
@@ -19,9 +19,9 @@ The installed layout API is `msplatform.assembly.resolve_assembly`; its former r
 
 - `compile_assembly_layout(recipe, components, *, local_scope=None)`：校验完整父配方的直接位姿、真实端面、法向和间隙，并派生实际范围；
 - `derive_assembly_scope(parent_plan, *, local_scope=None)`：核对完整父plan的内嵌配方与接口，再派生默认full或显式local范围；不重新读取来源路径；
-- `resolve_assembly_recipe(recipe_path, components_path, repo_root=..., local_scope_path=None)`：读取显式来源并冻结其身份；
+- `resolve_assembly_recipe(recipe_path, components_path, source_root=..., artifact_root=None, local_scope_path=None)`：读取显式来源并冻结其身份；
 - `load_connection_profile_registry(path)`：读取并校验一个integration的profile注册表；
-- `resolve_connection_profile(registry, profile_id, repo_root=...)`：按显式profile加载两端port，
+- `resolve_connection_profile(registry, profile_id, source_root=..., artifact_root=None)`：按显式profile加载两端port，
   先复核port对项目物理合同的authority SHA与JSON Pointer绑定，再检查身份、状态schema、坐标/法向、
   单位、时钟、间隙、孔径、电位和场责任区；
 - `write_resolved_and_plan(...)`：写出包含源SHA-256的resolved connection及引用其SHA-256的plan；
@@ -65,7 +65,7 @@ parent = compile_assembly_layout(recipe, components)
 # local = derive_assembly_scope(parent, local_scope=scope)
 ```
 
-计算边界和验证语义由本页上述合同定义；文件冻结/发布仍由仓库文件适配器负责。
+计算边界和验证语义由本页上述合同定义；Explicit input-file binding and verification use the installed connection-input workflow. They do not publish a run or start a solver.
 
 ## 执行边界
 
@@ -103,3 +103,11 @@ port 是项目物理合同的发布视图，不是第二权威。每个port必�
 零长度直连允许空场责任段；正长度连接必须由无重叠、无空洞的连续segments覆盖。`field_overlap`
 必须包含integration拥有的场区。所有数值均在profile读取前由JSON Schema限制，旋转正交性、法向
 相对关系和覆盖连续性由解析器进行语义校验。
+
+## Installed explicit file inputs
+
+Use `msplatform.workflows.connection_inputs.resolve_assembly_recipe(recipe_path, components_path, source_root, local_scope_path=...)` for full/local recipe files, and `verify_composition_plan(plan_path, source_root=...)` to recheck their bound source bytes. An embedded assembly plan without `input_files` can be verified without a source root. No checkout is discovered.
+
+Paired-v1 operations use `load_connection_profile_registry`, `resolve_connection_profile`, `write_resolved_and_plan` and `verify_composition_plan` from the same module. Supply `source_root` explicitly and, when consuming legacy `artifacts/projects/...` records, an explicit `artifact_root` pointing to that payload base. The bases need not be siblings. Existing paired schemas keep their declared `projects/...` and `artifacts/projects/...` layouts. Source authorities retain LF-normalized text identity; artifact authorities retain raw-byte identity. Historical paths, records and hashes are not rewritten.
+
+The installed CLI is `python -m msplatform.workflows.connection_inputs`; pass `--source-root` and, when needed, `--artifact-root` alongside the existing recipe/profile/verification inputs. It has no implicit repository-root default. Pure layout, scientific parameters, compatibility tolerances, and execution authorization remain separate responsibilities.

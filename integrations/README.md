@@ -92,10 +92,10 @@ remains an explicit expert constructor for callers already holding resolved path
 从仓库根使用公共入口，先替换占位路径：
 
 ```powershell
-.\.venv\Scripts\python.exe -m common.integration.resolve_connection `
+.\.venv\Scripts\python.exe -m msplatform.workflows.connection_inputs --source-root . `
   --recipe "<recipe.json>" --components "<resolved-components.json>" `
   --plan-output "<run-inputs>/composition_plan.json"
-.\.venv\Scripts\python.exe -m common.integration.resolve_connection `
+.\.venv\Scripts\python.exe -m msplatform.workflows.connection_inputs --source-root . `
   --verify-plan "<run-inputs>/composition_plan.json"
 ```
 

@@ -8,7 +8,6 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Iterable, TypeAlias
 
-import hashlib
 
 
 FilePath: TypeAlias = str | PathLike[str]
@@ -26,15 +25,6 @@ from msplatform.io.file_identity import (
 )
 
 
-def repository_text_sha256(path: FilePath) -> str:
-    """Hash Git-managed UTF-8 text after canonical CRLF/CR to LF conversion.
-
-    This identity is only for repository text authorities.  Solver outputs,
-    manifests, frozen run inputs and other artifacts must continue to use
-    :func:`file_sha256` so their original bytes remain auditable.
-    """
-    payload = Path(path).read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-    return hashlib.sha256(payload).hexdigest().upper()
 
 
 

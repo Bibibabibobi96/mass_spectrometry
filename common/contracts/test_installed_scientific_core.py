@@ -29,6 +29,7 @@ import numpy as np
 from urllib.parse import urljoin
 from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+from msplatform.workflows.connection_inputs import resolve_assembly_recipe, verify_composition_plan
 from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics, half_height_width
 from msplatform.analysis.peak_metrics import compute_nominal_mass_peak_metrics
 from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
@@ -93,7 +94,7 @@ for name, module in tuple(sys.modules.items()):
         assert origin.is_relative_to(pathlib.Path(sys.prefix).resolve()), (name, origin)
         assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name, origin)
         origins[name] = str(origin)
-assert {'msplatform.workflows.multipole_ip.prepare', 'msplatform.backends.simion.rf_observations',
+assert {'msplatform.workflows.connection_inputs', 'msplatform.workflows.multipole_ip.prepare', 'msplatform.backends.simion.rf_observations',
         'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.analysis.pulse_selection',
@@ -279,6 +280,18 @@ for mutation in ('strategy', 'count'):
 recipe, components = fixture['recipe'], fixture['components']
 before = copy.deepcopy((recipe, components))
 parent = compile_assembly_layout(recipe, components)
+connection_recipe, connection_components = root/'connection-recipe.json', root/'connection-components.json'
+connection_recipe.write_text(json.dumps(recipe), encoding='utf-8')
+connection_components.write_text(json.dumps(components), encoding='utf-8')
+file_plan = resolve_assembly_recipe(connection_recipe, connection_components, root)
+assert {key:value for key,value in file_plan.items() if key != 'input_files'} == parent
+connection_plan = root/'connection-plan.json'
+connection_plan.write_text(json.dumps(file_plan), encoding='utf-8')
+verify_composition_plan(connection_plan, source_root=root)
+connection_components.unlink()
+try: verify_composition_plan(connection_plan, source_root=root)
+except machine_contracts.ContractError as error: assert 'missing' in str(error)
+else: raise AssertionError('missing connection provider file accepted')
 assert (recipe, components) == before
 check = parent['connection_checks'][0]
 assert check['upstream_center_mm'] == [0, -68, 32]
