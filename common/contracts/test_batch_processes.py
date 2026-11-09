@@ -125,7 +125,7 @@ if __name__=="__main__":_main()
 
     def _real_simion_role(self,root,*,failure):
         """Actual heavy admission; Python payloads are not native solver evidence."""
-        observation_seconds = 1 if failure else FORMAL_OBSERVATION_SECONDS
+        observation_seconds = FORMAL_OBSERVATION_SECONDS
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'shared public GATE required')
         context=ExecutionContext(workspace=root,python_executable=Path(sys.executable),
             powershell_executable=Path(shutil.which('pwsh')),tools={},
@@ -158,8 +158,6 @@ if __name__=="__main__":_main()
             batches=[row['scheduler_batch'] for row in specifications])
         plan=prepare_fixed_partition_dispatch(original,fixed,[1,2,3])
         self.assertEqual(plan['limits']['formal_observation_seconds'],FORMAL_OBSERVATION_SECONDS)
-        if failure:
-            plan['limits']['formal_observation_seconds']=observation_seconds
         self.assertEqual(plan['limits']['launch_stagger_seconds'],LAUNCH_STAGGER_SECONDS)
         self.assertTrue(plan['estimation']['recovered_missing_observation'])
         self.assertEqual(plan['estimation']['kind'],'formal_first_batch_observation')
@@ -240,8 +238,8 @@ if __name__=="__main__":_main()
         with tempfile.TemporaryDirectory() as directory:
             self._real_simion_role(Path(directory),failure=False)
 
-    def test_controlled_window_simion_failure_replans_stops_pending_and_releases_guards(self):
-        """Real admission/failure; only the observation window is test-controlled."""
+    def test_unmodified_simion_role_failure_replans_stops_pending_and_releases_guards(self):
+        """Real admission/failure with the unmodified formal observation window."""
         with tempfile.TemporaryDirectory() as directory:
             self._real_simion_role(Path(directory),failure=True)
 

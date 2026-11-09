@@ -287,6 +287,12 @@ IP原生仪器时序及15电极Lua驱动已分迁component／SIMION backend，�
 仅输入计划观察窗口由45改为1秒，真实OS进程、独立SIMION准入、replan、失败停新、guard与释放断言不变，
 生产默认值及replan输出的45秒策略不变。首轮夹具误要求replan输出也改为1秒而失败，该FAIL保留，
 修正测试期望后才形成上述PASS轮；此项不是原生SIMION求解性能证据。
+That one-second controlled-window measurement does not qualify the original default-duration failure
+case. The original method identity and actual 45-second observation were restored without adding a
+duplicate test or changing production budgets. The public GATE run passed in 67.781 seconds: the healthy
+software payload waited 45.515 seconds for a validated replan, the failing payload exited 7, pending work
+never started, immutable protection held, and the independent SIMION and GATE leases released. This
+restores the original OS failure-window combination; the complete performance targets remain OPEN.
 RF Static另有一项既存COMSOL恢复测试非UTF-8诊断解码错误，稳定复现，不与本迁移混报为成功。
 其余器件／后端、结果、部署、两个性能热点和旧桥退出继续在同一Goal内关闭。
 新电极组字段为`electrode_group_id`，component3／plan5／binding2与request10明确升版，旧格式原义保持；
