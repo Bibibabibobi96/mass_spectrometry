@@ -787,3 +787,46 @@ that venv; all 321 installed files matched the verified wheel. Its three native 
 zero, cold reopening retained 48/66 nonnil surface witnesses, and all 47 manifest/request records
 verified. No checkout fallback, source sampling, Refine, Fly or GUI was used. This does not qualify
 new RF field/tracking modes or close the full P4 acceptance and performance targets.
+
+
+## Independent RF PreparedModel
+
+The existing public `msplatform.backends.simion.prepare_model` now has an independent RF branch.
+Its drive requires `clock_authority` and `clock.phase_reference_instrument_time_us`, and may supply
+explicit `groups`; it has no pulse input. The current RF kernel retains the established zero phase
+reference time, with the physical phase in each provider's `phase_rad`. Physics is explicitly
+`field_model=external_electrostatic_linear` and `boundary_policy=native_zero_neumann`.
+Canonical provider drive projection and validation retain scientific group IDs, RF waveform,
+frequency/phase/amplitude, DC/common mode and grounded enclosure behavior. Targets are per-instance
+(domain, native label) pairs, so equal native labels in different PAs do not alias scientific groups.
+The declared assembly frame and the original poses remain bound; no TOF frame or fake component is
+introduced.
+
+The one existing managed model action materializes guarded, independent raw `.pa#` inputs, their
+fractional companions and required surface-witness CSVs. The same structural seeds, zero-beam format
+control, matrix/point/physical-node checks and exact cold surface observations are used for saving and
+reopening the model. Its stored Lua drive consumer evaluates actual voltages at explicit instrument
+times without creating a Program hook, particle source, solved field, Refine or Fly. The unchanged
+TOF branch keeps its actual pulse and downstream behavior.
+
+Software validation covered 48 distinct parent tests across focused rounds: the nine new RF methods,
+13 original model/owner-transport methods and 26 existing RF/OA geometry/native-plan methods. This
+includes a real single-component design, per-instance native permutations, exact compiled-provider
+rejection, the actual capability validator, nonzero cosine phase/DC readback in plain Lua without
+initializing a pulse, explicit public dispatch and inert published-geometry/materializer protocols.
+Changed Python files passed focused Ruff. Ordinary wheel/sdist acceptance passed five tests in
+129.018 seconds, with 347 source/package members verified and both author trees blocked in the
+installed probe. The source-bound ordinary-wheel run
+`20261109_181829__build__simion__model-c4e370fd8742` then saved and cold reopened the independent
+RF model: all 15 group/time voltage readbacks and 48 unique manifest file records verified.
+The materializer and two SIMION processes exited zero and released their host leases; the
+capacity lease was absent after completion. Original raw geometry, fractional surface and witness
+records remained byte-identical. No Refine, Fly, source sampling or GUI was requested. This proves
+the declared unsolved-model operation, not RF field/tracking or scientific qualification.
+
+Independent RF fields/tracking remain OPEN. Existing RF runs use producer-owned fractional families;
+those are not the immutable published-cache protocol. Copying a published family or exposing private
+`.pa#` paths cannot replace the [closed isolation boundary](../../../docs/tools/SIMION_REFERENCE.md#长pa输入路径).
+This model-only slice neither changes that protocol nor retires the existing RF Program, field
+checkpoint, finite transport, interface or mass-filter workflows. No field/trajectory, GUI or
+scientific qualification is granted.

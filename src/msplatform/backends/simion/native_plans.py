@@ -193,7 +193,9 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
 
     compiled = model_geometry(model)
     root = _native_ascii(run_directory)
-    expected = {'flight_tube', 'reflectron', 'detector', *compiled.frontend_geometry['numerical_domains']}
+    independent_rf = compiled.frontend_geometry.get('role') == 'simion_independent_rf_geometry'
+    expected = (set(compiled.frontend_geometry['numerical_domains']) if independent_rf else
+                {'flight_tube', 'reflectron', 'detector', *compiled.frontend_geometry['numerical_domains']})
     if set(geometry_assets) != expected:
         raise ValueError('model geometry assets differ from complete selected scope')
     projection = plan_geometry_build(compiled, run_directory=root, seed_record=seed_record,
@@ -204,14 +206,14 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
             continue
         domain = operation['operation_id'].removeprefix('geometry_')
         rows = geometry_assets[domain]
-        if set(rows) != {'raw_record', 'surface_records'}:
+        if set(rows) != ({'raw_record', 'surface_records', 'witness_record'} if independent_rf else {'raw_record', 'surface_records'}):
             raise ValueError('model geometry requires explicit raw and surface records')
-        records = [rows['raw_record'], *rows['surface_records']]
+        records = [rows['raw_record'], *rows['surface_records'], *([rows['witness_record']] if independent_rf else [])]
         if len(records) != len(operation['outputs']):
             raise ValueError('model geometry fractional surface closure differs')
         for record, destination in zip(records, operation['outputs'], strict=True):
             source = _absolute(Path(record['path']))
-            suffix = '.pa#' if destination.endswith('.pa#') else '.pa-surf'
+            suffix = '.csv' if destination.endswith('.csv') else '.pa#' if destination.endswith('.pa#') else '.pa-surf'
             if not str(source).lower().endswith(suffix) or type(record.get('bytes')) is not int or record['bytes'] <= 0:
                 raise ValueError('model geometry must preserve positive raw/surface representation')
             _require_sha256(record.get('sha256'), 'model raw geometry')
@@ -233,7 +235,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     native_operations = tuple(_operation(mode, 'prepare', ['lua', str(native_resource_path('build_model_iob.lua')),
         str(spec_path), mode, str(_native_ascii(native_path_resource))],
         [str(root/'simion/geometry/geometry.iob'), str(root/'simion/geometry/geometry.fly2')] if mode == 'build_model' else [str(readback)],
-        'SINGLE_REFLECTION_MODEL_' + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
+        ('INDEPENDENT_RF_MODEL_' if independent_rf else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
         for mode in ('build_model', 'verify_model'))
     materialization = dict(operation_id='materialize_geometry', role='GATE', stage='prepare',
         action='explicit_geometry_payload_callback', outputs=[row['destination'] for row in copies])

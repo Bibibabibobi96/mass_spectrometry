@@ -47,6 +47,14 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 The compiler remains pure. `build_geometry` materializes the selected RF scope through the shared
 managed owner; no Refine or Fly is requested. See [implementation and native-validation status](docs/PROJECT.md#independent-rf-geometry-build);
 existing project workflows remain below.
+The same public `prepare_model` accepts a published independent RF geometry artifact, explicit
+clock authority/phase reference, optional scientific-group drive values, and the external linear
+field/zero-Neumann physics policy. It saves and separately reopens an unsolved model using the
+existing owner; RF has no pulse input or downstream placeholder. The current software evidence and
+remaining ordinary-install/native checks are recorded in [PROJECT](docs/PROJECT.md#independent-rf-prepared-model).
+This does not promote the independent RF field or tracking stages; the existing project workflows
+remain necessary until those actual operations and fractional-field representation are migrated.
+
 
 ## 机器权威
 

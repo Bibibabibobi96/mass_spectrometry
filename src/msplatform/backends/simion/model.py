@@ -23,6 +23,8 @@ from .source import lua_value
 from .tof_geometry import resolve_physical_geometry
 
 
+RF_PHYSICS = dict(field_model='external_electrostatic_linear', boundary_policy='native_zero_neumann')
+
 PHYSICS = dict(field_model='external_electrostatic_linear', boundary_policy='native_zero_neumann',
     pulse_voltage_policy_id='all_accelerator_electrodes_zero_before_pulse_v1')
 
@@ -43,6 +45,20 @@ def _authorities(compiled: CompiledSimionGeometry, components: Mapping[str, dict
         raise TypeError('prepared model requires compiled SIMION geometry')
     geometry = compiled.frontend_geometry
     plan = geometry['composition_plan']
+    if geometry.get('role') == 'simion_independent_rf_geometry':
+        from .rf_compiler import compile_independent_multipoles
+        selected = plan['scope']['instance_ids']
+        if not isinstance(components, Mapping) or set(components) != set(selected):
+            raise ValueError('model providers differ from selected independent RF scope')
+        snapshots = copy.deepcopy(compiled.components_resolved)
+        snapshots.update(copy.deepcopy(dict(components)))
+        actual = compile_independent_multipoles(dict(composition_plan=plan, components_resolved=snapshots),
+            numerics=dict(component_domains={name: dict(cell_mm_xyz=domain['cell_mm_xyz'])
+                for name, domain in geometry['numerical_domains'].items()},
+                electrode_group_native_ids=geometry['electrode_bindings']))
+        if asdict(actual) != asdict(compiled):
+            raise ValueError('independent RF geometry differs from its canonical providers')
+        return selected, None, None
     multipoles, tof = native_frontend_instances(plan)
     if not isinstance(components, Mapping) or set(components) != set(plan['scope']['instance_ids']):
         raise ValueError('model providers differ from selected geometry scope')
@@ -61,7 +77,7 @@ def _authorities(compiled: CompiledSimionGeometry, components: Mapping[str, dict
 
 
 def project_resolved_drive(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
-                           pulse: Mapping[str, Any], clock: Mapping[str, Any]) -> dict:
+                           clock: Mapping[str, Any], pulse: Mapping[str, Any] | None = None) -> dict:
     """Expand defaults from the same actual providers; timing/clock stay explicit.
 
     The returned author input is mutable. Changing it does not change geometry
@@ -71,6 +87,12 @@ def project_resolved_drive(compiled: CompiledSimionGeometry, components_resolved
     maps = compiled.frontend_geometry['electrode_bindings']
     groups = {instance: scientific_multipole_drive(components_resolved[instance], maps[instance])
               for instance in multipoles}
+    if tof is None:
+        if pulse is not None:
+            raise ValueError('independent RF drive has no pulse component')
+        return dict(groups=groups, clock=copy.deepcopy(dict(clock)))
+    if pulse is None:
+        raise ValueError('TOF model requires an explicit pulse')
     frontend = set(topology['frontend_electrode_group_ids'])
     groups[tof] = {}
     for row in topology['groups']:
@@ -82,7 +104,7 @@ def project_resolved_drive(compiled: CompiledSimionGeometry, components_resolved
     return dict(groups=groups, pulse=copy.deepcopy(dict(pulse)), clock=copy.deepcopy(dict(clock)))
 
 
-def _validate_timing(drive: Mapping[str, Any]) -> None:
+def _validate_timing(drive: Mapping[str, Any], *, requires_pulse: bool = True) -> None:
     clock = drive['clock']
     _exact(clock, {'clock_epoch_id', 'authority_sha256', 'phase_reference_instrument_time_us'}, 'model clock')
     ClockIdentity(clock['clock_epoch_id'], clock['authority_sha256'])
@@ -90,6 +112,8 @@ def _validate_timing(drive: Mapping[str, Any]) -> None:
     # Supporting another anchor requires an explicit physical projection change.
     if _finite(clock['phase_reference_instrument_time_us'], 'phase reference') != 0.:
         raise ValueError('this SIMION model adapter supports phase reference instrument time 0 only')
+    if not requires_pulse:
+        return
     pulse = drive['pulse']
     if not isinstance(pulse, Mapping) or pulse.get('mode') not in {'timed', 'held_off', 'held_on'}:
         raise ValueError('model pulse mode is unsupported')
@@ -175,6 +199,25 @@ def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
     multipoles, tof, topology = _authorities(compiled, components_resolved)
+    if tof is None:
+        if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
+            raise ValueError('independent RF physics/boundary policy is unsupported')
+        _exact(drive, {'groups', 'clock'}, 'independent RF model drive')
+        _validate_timing(drive, requires_pulse=False)
+        expected = project_resolved_drive(compiled, components_resolved, clock=drive['clock'])
+        _validate_groups(drive['groups'], expected['groups'])
+        mappings = compiled.frontend_geometry['electrode_bindings']
+        rows = [dict(instance_id=instance, electrode_group_id=group,
+                native_targets=[dict(domain=instance, electrode_id=mappings[instance][group])], **value)
+                for instance, groups in drive['groups'].items() for group, value in groups.items()]
+        document = dict(schema_version=1, role='compiled_prepared_simion_model',
+            field_status='not_solved', source_status='not_requested',
+            native_frame_id=compiled.frontend_geometry['composition_plan']['assembly_frame_id'],
+            geometry=asdict(compiled), components_resolved=copy.deepcopy(dict(components_resolved)),
+            drive=copy.deepcopy(dict(drive)), physics=copy.deepcopy(dict(physics)), native_drive_rows=rows)
+        document = json.loads(json.dumps(document, sort_keys=True, allow_nan=False))
+        document['model_identity_sha256'] = _content_sha256(document)
+        return CompiledPreparedModel(json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False))
     if not isinstance(physics, Mapping) or dict(physics) != PHYSICS:
         raise ValueError('model physics/boundary policy is unsupported')
     _exact(drive, {'groups', 'pulse', 'clock'}, 'model drive')
@@ -239,14 +282,21 @@ def require_prepared_model(model: CompiledPreparedModel) -> dict:
 def render_model_configuration(model: CompiledPreparedModel) -> str:
     """Save the actual Lua consumer input; it contains no particles or field paths."""
     document = require_prepared_model(model)
-    return 'return ' + lua_value(dict(schema_version=1, role='simion_model_drive',
+    configuration = dict(schema_version=1, role='simion_model_drive',
         model_identity_sha256=document['model_identity_sha256'], clock=document['drive']['clock'],
-        pulse=document['drive']['pulse'], groups=document['native_drive_rows'])) + '\n'
+        groups=document['native_drive_rows'])
+    if 'native_frame_id' in document:
+        configuration['native_frame_id'] = document['native_frame_id']
+    if 'pulse' in document['drive']:
+        configuration['pulse'] = document['drive']['pulse']
+    return 'return ' + lua_value(configuration) + '\n'
 
 
 def model_geometry(model: CompiledPreparedModel, *, downstream_drive: bool = False) -> CompiledSimionGeometry:
     """Restore the typed geometry view from the verified portable JSON snapshot."""
     document = require_prepared_model(model)
+    if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry':
+        raise ValueError('independent RF fields/tracking require a separately validated fractional field protocol')
     values = document['downstream_geometry' if downstream_drive else 'geometry']
     values['downstream_specs'] = tuple(values['downstream_specs'])
     return CompiledSimionGeometry(**values)

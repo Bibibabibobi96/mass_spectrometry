@@ -4,6 +4,7 @@ local directory=assert(source:match('^(.*)/'))
 local native_path=assert(loadfile(assert(arg[3],'native path resource required')))()
 local spec=dofile(native_path(assert(arg[1],'model IOB specification required')))
 local mode=assert(arg[2],'model operation required')
+local marker=spec.role=='independent_rf_geometry_iob_build' and 'INDEPENDENT_RF_MODEL_' or 'SINGLE_REFLECTION_MODEL_'
 assert(mode=='build_model' or mode=='verify_model','unsupported model operation')
 for _,key in ipairs({'seed_iob','output_iob'}) do spec[key]=native_path(spec[key]) end
 for index,path in ipairs(spec.bootstrap_paths) do spec.bootstrap_paths[index]=native_path(path) end
@@ -11,7 +12,7 @@ for _,row in ipairs(spec.instances) do row.path=native_path(row.path) end
 for key,path in pairs(spec.model) do spec.model[key]=native_path(path) end
 assert(loadfile(directory..'/iob_core.lua'))()(spec,mode,native_path)
 if mode=='build_model' then
-  print('SINGLE_REFLECTION_MODEL_BUILD=PASS FLY=False SOURCE=False REFINE=False')
+  print(marker..'BUILD=PASS FLY=False SOURCE=False REFINE=False')
   io.stdout:flush()
   return
 end
@@ -40,7 +41,7 @@ for _,row in ipairs(description.groups) do
   end
   if row.kind=='rf' then time(1e6/row.frequency_hz/4);time(1e6/row.frequency_hz/2) end
 end
-if config.pulse.mode=='timed' then
+if config.pulse and config.pulse.mode=='timed' then
   time(config.pulse.time_us);time(config.pulse.time_us+config.pulse.width_us)
 end
 table.sort(times)
@@ -48,6 +49,7 @@ local output=assert(io.open(spec.model.report,'wb'))
 local okay,message=pcall(function()
   output:write('SIMION_MODEL_DRIVE_READBACK schema=1 field_status=not_solved source_status=not_requested\n')
   output:write('model_identity_sha256='..config.model_identity_sha256..'\n')
+  if config.native_frame_id then output:write('native_frame_id='..config.native_frame_id..'\n') end
   output:write('clock_epoch_id='..config.clock.clock_epoch_id..' authority_sha256='..config.clock.authority_sha256..'\n')
   output:write('PA_ELECTRODE_LABELS_ARE_NOT_VOLTAGES=True\n')
   for _,t in ipairs(times) do
@@ -76,5 +78,5 @@ local okay,message=pcall(function()
 end)
 output:close()
 assert(okay,message)
-print('SINGLE_REFLECTION_MODEL_READBACK=PASS GROUPS='..#description.groups..' FIELD_STATUS=not_solved FLY=False SOURCE=False REFINE=False')
+print(marker..'READBACK=PASS GROUPS='..#description.groups..' FIELD_STATUS=not_solved FLY=False SOURCE=False REFINE=False')
 io.stdout:flush()

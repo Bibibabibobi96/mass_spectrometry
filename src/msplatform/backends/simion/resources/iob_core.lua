@@ -13,7 +13,8 @@ local source_free=geometry_only or fields_only
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local independent_rf=spec.role=='independent_rf_geometry_iob_build' or independent_oa
 local independent_marker=independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
-assert(not independent_rf or mode=='build_geometry' or mode=='verify_geometry','RF only supports raw geometry')
+assert(not independent_rf or mode=='build_geometry' or mode=='verify_geometry'
+  or (model_only and not independent_oa),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_rf),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances

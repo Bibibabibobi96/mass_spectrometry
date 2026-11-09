@@ -99,11 +99,8 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
 
-    if (not isinstance(drive, Mapping) or not {"pulse", "clock", "clock_authority"} <= drive.keys()
-            or set(drive) - {"pulse", "clock", "clock_authority", "groups"}
-            or not isinstance(drive["clock"], Mapping)
-            or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
-        raise ContractError("model drive requires pulse, explicit clock authority and phase reference; groups are optional")
+    if not isinstance(drive, Mapping):
+        raise ContractError("model drive must be an explicit mapping")
     if "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("prepare_model requires an explicit available SIMION executable")
     source = artifact_reader.open_artifact(geometry.reference if isinstance(geometry, OpenedArtifact) else geometry,
@@ -113,6 +110,15 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     if (set(runtime) - {"simion_allow_asynchronous_io"}
             or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION model runtime only accepts explicit boolean simion_allow_asynchronous_io")
+    values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
+    values["downstream_specs"] = tuple(values["downstream_specs"])
+    compiled = CompiledSimionGeometry(**values)
+    independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
+    required = {"clock", "clock_authority"} | (set() if independent_rf else {"pulse"})
+    if (not required <= drive.keys() or set(drive) - required - {"groups"}
+            or not isinstance(drive["clock"], Mapping)
+            or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
+        raise ContractError("model drive requires its actual clock/groups and pulse only for TOF")
     authority = drive["clock_authority"]
     if isinstance(authority, Mapping) and set(authority) == {"example_resource"}:
         from importlib.resources import files
@@ -133,18 +139,16 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
     epoch_record = file_record((data_root / contract["authority"]["path"]).resolve(), "required_evidence")
     clock_reference = dict(contract=contract_record, authority=epoch_record, data_root=str(data_root))
-    values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
-    values["downstream_specs"] = tuple(values["downstream_specs"])
-    compiled = CompiledSimionGeometry(**values)
     selected = compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]
     components = {name: compiled.components_resolved[name] for name in selected}
     clock = dict(clock_epoch_id=validation["clock_epoch_id"], authority_sha256=validation["authority_sha256"],
                  **dict(drive["clock"]))
-    expanded = project_resolved_drive(compiled, components, pulse=drive["pulse"], clock=clock)
+    expanded = project_resolved_drive(compiled, components, clock=clock,
+        **({} if independent_rf else dict(pulse=drive["pulse"])))
     if "groups" in drive:
         expanded["groups"] = copy.deepcopy(drive["groups"])
     model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
-    seed = file_record(structural_seed_path(4 + int(
+    seed = file_record(structural_seed_path(len(compiled.frontend_gems) if independent_rf else 4 + int(
         "entrance_refinement" in compiled.frontend_geometry["numerical_domains"])), "required_evidence")
     ids = ("materialize_geometry", "build_model", "verify_model")
     result = run_managed_stage(context,

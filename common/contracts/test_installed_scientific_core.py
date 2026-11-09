@@ -65,6 +65,7 @@ fixture = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
 assert not root.is_relative_to(pathlib.Path(fixture['repo_root']))
 blocked_source_roots = [pathlib.Path(fixture['repo_root']).resolve(),
                        (root/'source-offline').resolve(), (root/'sdist-offline').resolve()]
+blocked_source_roots.extend(pathlib.Path(value).resolve() for value in fixture.get('additional_blocked_source_roots', []))
 def reject_author_files(event, arguments):
     if event == 'open' and arguments and isinstance(arguments[0], (str, bytes)):
         candidate = pathlib.Path(os.fsdecode(arguments[0])).resolve()
@@ -404,7 +405,34 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
         'multipole':dict(cell_mm_xyz=dict(x=.2,y=.2,z=.1))}))
     assert rf_geometry.frontend_geometry['role'] == 'simion_independent_rf_geometry'
     assert set(rf_geometry.frontend_gems) == {'multipole'} and not rf_geometry.downstream_specs
-    from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
+    from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, RF_PHYSICS
+    rf_model_components = {name:rf_geometry.components_resolved[name] for name in rf_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']}
+    rf_model_drive = project_resolved_drive(rf_geometry, rf_model_components,
+        clock=dict(clock_epoch_id='installed-RF-model-fixture', authority_sha256='A'*64,
+                   phase_reference_instrument_time_us=0.))
+    rf_model = compile_prepared_model(rf_geometry, rf_model_components, drive=rf_model_drive, physics=RF_PHYSICS)
+    assert 'pulse' not in rf_model.document['drive'] and 'downstream_geometry' not in rf_model.document
+    assert rf_model.document['native_frame_id'] == rf_geometry.frontend_geometry['composition_plan']['assembly_frame_id']
+    assert rf_model.document['field_status'] == 'not_solved' and rf_model.document['source_status'] == 'not_requested'
+    from msplatform.capabilities import capabilities as query_capabilities
+    rf_query = query_capabilities(dict(schema_version=1, operation='prepare_model', arguments=dict(
+        compiled=rf_geometry, components_resolved=rf_model_components, drive=rf_model_drive, physics=RF_PHYSICS)))
+    assert rf_query['contract_status'] == 'accepted' and rf_query['native_qualification'] == 'not_granted'
+    assert rf_query['validator'] == 'msplatform.backends.simion.model.compile_prepared_model'
+    from msplatform.backends.simion.native_plans import plan_model_preparation
+    from msplatform.backends.simion.resources import structural_seed_path
+    from msplatform.execution.resources import resource_path
+    from msplatform.io.manifest_records import file_record
+    try:
+        plan_model_preparation(rf_model, geometry_assets={name:dict(raw_record={},surface_records=[])
+            for name in rf_geometry.frontend_gems}, run_directory=root/'RF-plan-only',
+            seed_record=file_record(structural_seed_path(1),'required_evidence'),
+            native_path_resource=resource_path('native_run_path.lua'))
+    except ValueError as error:
+        assert 'explicit raw and surface records' in str(error), str(error)
+    else:
+        raise AssertionError('installed RF model accepted a missing required surface witness')
+
     from msplatform.backends.simion.field_execution import plan_fields_execution
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
     model_components = {name:actual_geometry.components_resolved[name] for name in selected}
@@ -582,6 +610,7 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      installed_platform_components=sorted(actual_components), downstream_spec_count=3,
                      independent_oa_components=sorted(oa_components), independent_oa_member_count=len(oa_members),
                      independent_rf_instances=sorted(rf_geometry.frontend_gems), independent_rf_native_calls=0,
+                     independent_rf_prepared_model_compile_only=True, independent_rf_missing_witness_rejected=True,
                      geometry_only_native_calls=0, release_independent_geometry=True,
                      prepared_model_compile_only=True, field_plan_only=True, field_execution_performed=False,
                      author_tree_reads_blocked=True,
@@ -941,7 +970,8 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
-                                              comparison=self.comparison_probe_fixture())), encoding='utf-8')
+                                              comparison=self.comparison_probe_fixture(),
+                                              additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'
             probe_path.write_text(INSTALLED_PROBE, encoding='utf-8')
