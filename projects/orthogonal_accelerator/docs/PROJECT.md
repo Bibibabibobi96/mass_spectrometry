@@ -1,5 +1,13 @@
 # 正交脉冲加速器项目状态
 
+Current API2/API3 implementation declarations now name the installed
+`src/msplatform/backends/simion/accelerator_renderer.py` directly. The provider reader
+resolves that explicit package namespace from the source root while preserving
+project-relative declarations in historical frozen contracts. Scientific roles,
+variants, geometry requests and old frozen bytes are unchanged; no deleted
+forwarder is restored. Candidate and reflectron source freezing use the canonical
+renderer and its installed dependency closure.
+
 Component-focus flight preparation now selects its three-instance structural IOB from the installed
 SIMION resource owner. The template bytes, placeholder PA inputs and scientific flight configuration
 are unchanged; this path migration does not establish a new OA native-flight result.

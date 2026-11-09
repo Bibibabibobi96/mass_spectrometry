@@ -70,8 +70,10 @@ def _provider_path(api_version: int) -> str:
 def load_component_contract(repository_root: Path, *, api_version: int = 3) -> dict[str, Any]:
     """Read one explicit provider API for freezing; API3 is the current default.
 
-    API2 remains its unchanged old contract. Unknown versions fail, and this
-    reader never copies files or chooses a consumer's variant or qualification.
+    API2 preserves its historical scientific roles; current implementation
+    declarations follow the installed owner. Frozen project-relative declarations
+    retain their original interpretation. Unknown versions fail; this reader
+    never copies files or chooses a consumer's variant or qualification.
     """
     root = repository_root.resolve()
     provider_path = _source_path(root, _provider_path(api_version), "provider contract")
@@ -115,7 +117,10 @@ def load_component_contract(repository_root: Path, *, api_version: int = 3) -> d
     if len(set(modules)) != len(modules):
         raise ValueError("provider implementation_modules contain duplicates")
     provider_root = provider_path.parents[1]
-    sources = tuple(_source_path(provider_root, value, "provider implementation") for value in modules)
+    sources = tuple(_source_path(
+        root if Path(value).parts[:2] == ("src", "msplatform") else provider_root,
+        value, "provider implementation",
+    ) for value in modules)
     return {
         "provider": provider, "api_version": api_version,
         "provider_contract_path": provider_path,

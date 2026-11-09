@@ -22,7 +22,7 @@ class AcceleratorDependencyTest(unittest.TestCase):
             path.write_bytes((REPO / path.relative_to(root)).read_bytes())
         provider = json.loads(provider_path.read_text(encoding="utf-8"))
         for relative in provider["implementation_modules"]:
-            path = provider_path.parents[1] / relative
+            path = (root if Path(relative).parts[:2] == ("src", "msplatform") else provider_path.parents[1]) / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("# module fixture\n", encoding="utf-8")
         return dependency_path, provider_path

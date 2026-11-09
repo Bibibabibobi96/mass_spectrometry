@@ -34,7 +34,7 @@ class ComponentContractTest(unittest.TestCase):
             self.assertEqual(variants[variant]["field_region_count"], count)
             self.assertEqual(len(variants[variant]["primary_electrode_roles"]), count + 1)
         for relative in api["implementation_modules"]:
-            self.assertTrue((PROJECT / relative).is_file(), relative)
+            self.assertTrue(((REPO if Path(relative).parts[:2] == ("src", "msplatform") else PROJECT) / relative).is_file(), relative)
         self.assertEqual(api["request_api"]["two_zone"]["role"],
                          "orthogonal_accelerator_two_zone_requirements")
         self.assertEqual(api["request_api"]["two_zone"]["requirements_schema_versions"], {
@@ -123,6 +123,50 @@ class ComponentContractTest(unittest.TestCase):
             provider.write_text(json.dumps(document), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "topology"):
                 load_component_contract(root)
+
+    def test_both_provider_versions_require_the_canonical_renderer_without_fallback(self) -> None:
+        renderer = "src/msplatform/backends/simion/accelerator_renderer.py"
+        for version in (2,3):
+            with self.subTest(api_version=version), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                contract = load_component_contract(REPO, api_version=version)
+                self.assertIn(renderer, contract["provider"]["implementation_modules"])
+                self.assertIn(REPO / renderer, contract["implementation_sources"])
+                provider = root / contract["provider_contract_path"].relative_to(REPO)
+                provider.parent.mkdir(parents=True)
+                shutil.copyfile(contract["provider_contract_path"], provider)
+                for source in contract["implementation_sources"]:
+                    target = root / source.relative_to(REPO)
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    shutil.copyfile(source,target)
+                (root / renderer).unlink()
+                retired = root / "projects/orthogonal_accelerator/simion/sectioned_accelerator.py"
+                retired.parent.mkdir(parents=True,exist_ok=True)
+                retired.write_text("# Old alternate location must not satisfy the canonical declaration.\n")
+                with self.assertRaisesRegex(ValueError,"source is missing: src/msplatform/backends/simion/accelerator_renderer.py"):
+                    load_component_contract(root, api_version=version)
+
+    def test_explicit_historical_project_relative_declaration_is_not_rewritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            contract=load_component_contract(REPO, api_version=2)
+            document=json.loads(contract["provider_contract_path"].read_text(encoding="utf-8"))
+            canonical="src/msplatform/backends/simion/accelerator_renderer.py"
+            historical="simion/sectioned_accelerator.py"
+            document["implementation_modules"]=[historical if name==canonical else name for name in document["implementation_modules"]]
+            provider=root/contract["provider_contract_path"].relative_to(REPO)
+            provider.parent.mkdir(parents=True)
+            frozen_bytes=(json.dumps(document)+"\n").encode("utf-8")
+            provider.write_bytes(frozen_bytes)
+            for relative in document["implementation_modules"]:
+                target=provider.parents[1]/relative
+                target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_text("# Historical declared-source identity fixture; never executed.\n")
+            result=load_component_contract(root, api_version=2)
+            self.assertEqual(provider.read_bytes(),frozen_bytes)
+            self.assertIn(provider.parents[1]/historical,result["implementation_sources"])
+            self.assertEqual(result["provider"]["implementation_modules"],document["implementation_modules"])
+            self.assertNotIn(root/canonical,result["implementation_sources"])
 
     def test_provider_python_does_not_depend_on_instrument_implementations(self) -> None:
         for folder in ("analysis", "simion"):

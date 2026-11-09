@@ -110,7 +110,6 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m",
     "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
     "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
-    "src/msplatform/ion_release/dotnet_gaussian_box_ion11.py",
     "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_run_lifecycle.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_comsol_detector_events.py",

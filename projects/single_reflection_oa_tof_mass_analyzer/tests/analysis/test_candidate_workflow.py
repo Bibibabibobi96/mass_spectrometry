@@ -436,6 +436,8 @@ def execute_prepared_run(*args):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            renderer_source = "src/msplatform/backends/simion/accelerator_renderer.py"
+            self.assertEqual(Path(frozen_source_path(closure, renderer_source)).read_bytes(), (REPO_ROOT / renderer_source).read_bytes())
             report_source = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m"
             self.assertEqual(Path(frozen_source_path(closure, report_source)).read_bytes(), (REPO_ROOT / report_source).read_bytes())
             from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
@@ -444,6 +446,8 @@ def execute_prepared_run(*args):
                 "from projects.single_reflection_oa_tof_mass_analyzer.analysis import simion_component_pa_plan; "
                 "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger; from msplatform.execution import solver_review_retirement; "
                 "solver_review_retirement._assert_runtime_retirement_unprotected(Path.cwd()/'empty-artifacts', Path.cwd()/'empty-artifacts/run'); "
+                "from msplatform.backends.simion import accelerator_renderer; "
+                "assert Path(accelerator_renderer.__file__).resolve()==source_root/'src/msplatform/backends/simion/accelerator_renderer.py'; "
                 "from msplatform.analysis import peak_metrics; check_frozen_core(); "
                 "assert Path(peak_metrics.__file__).resolve().is_relative_to(source_root/'src'); "
                 "print('FROZEN_IMPORT_PASS')"
@@ -453,6 +457,19 @@ def execute_prepared_run(*args):
                 check=False, timeout=60, encoding="utf-8")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("FROZEN_IMPORT_PASS", result.stdout)
+            # A missing canonical provider cannot fall back to the author's
+            # installation even while every other frozen package file exists.
+            renderer_path = Path(closure["code_root"]) / renderer_source
+            renderer_bytes = renderer_path.read_bytes()
+            renderer_path.unlink()
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed:.*accelerator_renderer"):
+                verify_candidate_source_closure(closure)
+            missing_renderer = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                check=False, timeout=60, encoding="utf-8")
+            self.assertNotEqual(missing_renderer.returncode, 0)
+            self.assertNotIn("FROZEN_IMPORT_PASS", missing_renderer.stdout)
+            renderer_path.write_bytes(renderer_bytes)
+            verify_candidate_source_closure(closure)
             # Missing frozen core must not be filled by this interpreter's
             # editable installation, including when the entire src tree is gone.
             (Path(closure["code_root"])/"src").rename(root/"removed-src")
@@ -2464,7 +2481,7 @@ def postprocess_public_entry(root, artifact):
     dependency=load_json(PROJECT_ROOT/"config/accelerator_dependency.json")
     provider_contract=REPO_ROOT/dependency["provider_contract"]
     provider_root=provider_contract.parents[1].relative_to(REPO_ROOT)
-    selected.update((provider_root/name).as_posix()
+    selected.update((Path(name) if Path(name).parts[:2] == ("src", "msplatform") else provider_root/name).as_posix()
                     for name in load_json(provider_contract)["implementation_modules"])
     package_roots={"common"} | {Path(name).parent.as_posix() for name in selected
                                  if Path(name).suffix == ".py"}

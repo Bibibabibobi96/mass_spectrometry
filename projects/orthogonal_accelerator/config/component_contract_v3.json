@@ -96,7 +96,7 @@
     "simion/run_component_focus_fast_adjust.ps1",
     "analysis/component_focus_field_contrast.py",
     "simion/run_component_focus_field_contrast.ps1",
-    "simion/sectioned_accelerator.py",
+    "src/msplatform/backends/simion/accelerator_renderer.py",
     "analysis/sectioned_geometry.py"
   ]
 }
