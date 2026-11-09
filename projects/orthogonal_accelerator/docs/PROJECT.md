@@ -347,3 +347,27 @@ mapping through the existing protected materializer and run owner. It is `not_so
 free IOB build/reopen and saved drive readback are reused. Software/Lua and ordinary-install
 protocol evidence does not grant native model, field, particle or Formal qualification;
 independent OA field/Fly and COMSOL stage closure remain OPEN.
+
+### Independent fractional field-family closure
+
+The existing `solve_fields` operation now consumes actual independent OA PreparedModels
+and plans one linear fractional electrode-response family per selected OA domain. It
+uses the same refiner, auditor, protected materializer, original-producer reuse and run
+owner as RF; no private OA PA-family copy or second cache exists. OA products declare
+`producer_owned_oa_fractional_family`, their real OA groups/labels/grid/witnesses, and
+`independent_component_domains`; mechanical mating is not a claim of joint field coupling.
+Refinement uses explicit vendor-default or per-domain convergence, without source/Fly or
+fake downstream TOF roles. Space-charge/self-consistent physics is not supported here.
+The unchanged generic Lua utility retains its legacy RF-named report format; OA metadata
+records that provenance explicitly. It is not an RF geometry/physical identity. Existing
+RF operator identities remain reusable; an audit-label change alone does not force Refine.
+Software and inert ordinary-install checks are distinct from native fields or scientific
+qualification. OA native model/Refine/Fly acceptance remains OPEN pending authorization;
+source and trajectory migration is separate.
+
+This independent-domain slice does not implement or replace a parent-coupled/Dirichlet
+field problem. The actual PreparedModel physics must be external linear electrostatics
+with native-zero/Neumann boundaries; extraneous joint-coupling requests are rejected by
+the same planner before execution. Existing legacy two-zone field/Fly and parent-coupled
+capabilities remain a separate migration obligation where present. Multiple placed PA
+instances alone do not establish a common field solution.

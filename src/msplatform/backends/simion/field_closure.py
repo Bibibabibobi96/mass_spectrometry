@@ -45,22 +45,22 @@ def load_field_model(reference: Mapping | OpenedArtifact) -> FieldModelSource:
     clock['data_root'] = str(Path(clock['contract']['path']).parent)
     _clock_reference(document, clock)
     geometry = model_geometry(model).frontend_geometry
-    independent_rf = geometry.get('role') == 'simion_independent_rf_geometry'
-    expected = (set(geometry['numerical_domains']) if independent_rf else
+    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}
+    expected = (set(geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *geometry['numerical_domains']})
     bindings = metadata.get('native_assets')
     if not isinstance(bindings, Mapping) or set(bindings) != expected:
         raise ValueError('prepared model native domains differ from its actual geometry')
     assets, consumed = {}, set()
     for domain, keys in bindings.items():
-        fields = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_rf else
+        fields = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                   {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
         if set(keys) != fields or any(key in consumed for key in keys.values()):
             raise ValueError('prepared model native closure is incomplete or ambiguous')
         consumed.update(keys.values())
         assets[domain] = dict(raw_record=data_record(source, keys['raw_geometry']),
             surface_records=[data_record(source, keys['fractional_surface'])] if 'fractional_surface' in keys else [])
-        if independent_rf:
+        if independent_component:
             assets[domain]['witness_record'] = data_record(source, keys['surface_witnesses'])
     return FieldModelSource(source, model, assets, clock)
 

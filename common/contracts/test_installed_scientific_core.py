@@ -580,6 +580,10 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     assert oa_model.document['field_status']=='not_solved' and oa_model.document['source_status']=='not_requested'
     assert set(oa_model.document['drive']['groups'])=={'two','three'} and 'downstream_geometry' not in oa_model.document
     assert not oa_model.document['geometry']['downstream_specs']
+    from msplatform.backends.simion.field_execution import plan_fields_execution
+    oa_field_graph=plan_fields_execution(oa_model,numerics=dict(refine_policy='vendor_default'))
+    assert oa_field_graph['expected_operation_ids']==['materialize_geometry','refine_two','refine_three','audit_fields']
+    assert plan_fields_execution(oa_model,numerics=dict(refine_policy='vendor_default'),reuse_fields_reference={})['expected_operation_ids']==['audit_fields']
     oa_invalid=copy.deepcopy(oa_drive);oa_invalid['groups']['two'].pop('repeller')
     try: compile_prepared_model(oa_geometry,oa_assembly.components_resolved,drive=oa_invalid,physics=RF_PHYSICS)
     except ValueError: pass

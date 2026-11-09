@@ -1273,6 +1273,27 @@
               "common/contracts/test_platform_capabilities.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/simion/(?:rf_field_execution|field_closure|field_execution|operations|model)\\.py$",
+                "reason": "independent_oa_field_stage_changed"
+              },
+              {
+                "exact": "common/contracts/test_simion_rf_fields.py",
+                "reason": "shared_independent_field_fixture_changed"
+              },
+              {
+                "exact": "common/contracts/test_simion_model_execution.py",
+                "reason": "shared_independent_model_producer_fixture_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_oa_fields.py",
+              "common/contracts/test_simion_rf_fields.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"

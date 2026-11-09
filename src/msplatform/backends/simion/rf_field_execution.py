@@ -16,7 +16,7 @@ from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import file_record
 from msplatform.results.artifacts import open_artifact
 from .field_closure import data_record
-from .model import model_geometry, require_prepared_model
+from .model import model_geometry, require_prepared_model, RF_PHYSICS
 from .model_execution import _clock_reference, _protected_source, _require_materializer
 from .native_io import apply_native_io_mode
 from .resources import native_resource_path
@@ -25,11 +25,22 @@ from .source import lua_value
 REPRESENTATION = 'producer_owned_rf_fractional_family'
 
 
+def _field_contract(geometry):
+    """Select actual produced component semantics; utility Lua report names are legacy."""
+    role = geometry.get('role')
+    if role == 'simion_independent_rf_geometry':
+        return REPRESENTATION, 'simion_rf_fractional_spatial_identity'
+    if role == 'simion_independent_oa_geometry':
+        return 'producer_owned_oa_fractional_family', 'simion_oa_fractional_spatial_identity'
+    raise ValueError('independent field families require actual RF or OA PreparedModel geometry')
+
+
 def plan_rf_fields(model, *, numerics: Mapping, reuse_fields_reference=None) -> dict:
     """Select real domain Refine operations, retaining the explicit vendor default."""
     geometry = model_geometry(model).frontend_geometry
-    if geometry.get('role') != 'simion_independent_rf_geometry':
-        raise ValueError('RF fields require an independent RF PreparedModel')
+    _field_contract(geometry)
+    if require_prepared_model(model)['physics'] != RF_PHYSICS:
+        raise ValueError('independent field families require the existing linear external electrostatic physics')
     names = list(geometry['composition_plan']['scope']['instance_ids'])
     if not isinstance(numerics, Mapping):
         raise ValueError('RF fields require explicit refinement numerics')
@@ -58,7 +69,7 @@ def rf_spatial_identity(source, *, numerics, tool_identity, auditor_identity) ->
     """Bind the linear spatial operator, not RF phase, particle source or clock."""
     geometry = model_geometry(source.model).frontend_geometry
     records = lambda rows: [dict(bytes=r['bytes'], sha256=str(r['sha256']).upper()) for r in rows]
-    result = dict(schema_version=1, role='simion_rf_fractional_spatial_identity',
+    result = dict(schema_version=1, role=_field_contract(geometry)[1],
         raw_geometry={name: records([row['raw_record'], *row['surface_records']])
                       for name, row in source.native_assets.items()},
         numerical_domains=geometry['numerical_domains'], electrode_bindings=geometry['electrode_bindings'],
@@ -99,7 +110,7 @@ def require_rf_reuse(reference, *, identity, geometry):
     def validate(artifact):
         meta = artifact.metadata
         if (meta.get('backend') != 'simion' or meta.get('field_status') != 'available'
-                or meta.get('field_representation') != REPRESENTATION or meta.get('spatial_identity') != identity):
+                or meta.get('field_representation') != _field_contract(geometry)[0] or meta.get('spatial_identity') != identity):
             raise ValueError('RF reuse differs from the actual fractional spatial operator')
         return _family_assets(artifact, geometry)
     assets = validate(source)
@@ -259,11 +270,17 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
     if producer is not None:
         records['field_native_receipts'] = data_record(producer, 'field_native_receipts')
     metadata = dict(backend='simion', field_status='available', source_status='not_requested',
-        field_representation=REPRESENTATION, spatial_identity=identity, native_assets=native_assets,
+        field_representation=_field_contract(geometry)[0], spatial_identity=identity, native_assets=native_assets,
         model_identity_sha256=document['model_identity_sha256'], clock=document['drive']['clock'],
         fields_reused=producer is not None, refine_calls=0 if producer else len(assets),
         sampled_particles=0, fly_calls=0, gui_calls=0, scientific_qualification='not_granted',
         relocation_qualification='not_assessed', requested_allow_asynchronous_io=allow_asynchronous_io)
+    if geometry['role'] == 'simion_independent_oa_geometry':
+        # The immutable Lua utility predates OA support. Its RF-named report
+        # format describes generic fractional electrode-response checks only.
+        metadata.update(component_kind='orthogonal_accelerator',
+            field_domain_coupling='independent_component_domains',
+            native_audit_format='legacy_shared_simion_rf_fractional_field_audit')
     if producer is not None:
         metadata['family_producer_reference'] = producer.reference
     # External members remain owned by the original producer. Bind them as
