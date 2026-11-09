@@ -34,16 +34,10 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     CandidateContractError,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _te1_reference
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    histogram_half_height_bin_span,
-    peak_time_metrics,
-    collision_diagnostics,
-    read_scientific_events,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
-    _collision_geometry_projection,
-    _resolve_trial_geometry,
-)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import histogram_half_height_bin_span, peak_time_metrics
+from msplatform.backends.simion.mrtof_observations import collision_diagnostics, read_scientific_events
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _resolve_trial_geometry
+from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 
 
 _PROJECT = "parallel_mirror_dual_stripe_mr_tof"

@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 import unittest
-from common.simion import scientific_event_io as io
+from msplatform.io import scientific_csv as io
 ROOT=Path(__file__).resolve().parents[2]
 
 class ScientificEventIoTests(unittest.TestCase):

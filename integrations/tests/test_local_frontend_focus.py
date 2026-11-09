@@ -139,7 +139,7 @@ class LocalFocusTests(unittest.TestCase):
             original = output / "summary.json"
             original.write_text('{"phase":"extraction"}', encoding="utf-8")
             from integrations.workflows.local_frontend import focus as consumer
-            from common.analysis.figure_export import export_figures
+            from msplatform.io.figure_export import export_figures
             with patch.object(consumer,"export_figures",wraps=export_figures) as exported:
                 summary = export_local_focus(prepared, output)
             exported.assert_called_once()

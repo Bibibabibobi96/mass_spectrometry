@@ -8,7 +8,7 @@ import unittest
 
 from matplotlib import pyplot as plt
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.loss_acceptance_diagnostics import (
+from msplatform.workflows.prepared_joint.loss_acceptance import (
     STATE, _stages, build_loss_acceptance_figure, prepare_loss_rows, prepare_mirror_domain_rows, summarize_loss_acceptance,
 )
 

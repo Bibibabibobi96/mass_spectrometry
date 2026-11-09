@@ -212,7 +212,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/figure_export.py",
+          "exact": "src/msplatform/io/figure_export.py",
           "reason": "shared_figure_export_changed"
         },
         {
@@ -1677,6 +1677,14 @@
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/mrtof_observations.py",
+          "reason": "installed_mr_recorded_observations_changed"
+        },
+        {
+          "exact": "src/msplatform/io/scientific_csv.py",
+          "reason": "scientific_csv_reader_changed"
         }
       ],
       "command": {
@@ -1960,6 +1968,18 @@
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/prepared_joint/",
+          "reason": "installed_prepared_joint_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/mrtof_observations.py",
+          "reason": "installed_mr_recorded_observations_changed"
+        },
+        {
+          "exact": "src/msplatform/io/scientific_csv.py",
+          "reason": "scientific_csv_reader_changed"
         }
       ],
       "command": {
@@ -2951,7 +2971,7 @@
           "reason": "shared_beam_focus_diagnostics_changed"
         },
         {
-          "exact": "common/analysis/figure_export.py",
+          "exact": "src/msplatform/io/figure_export.py",
           "reason": "shared_figure_export_changed"
         },
         {

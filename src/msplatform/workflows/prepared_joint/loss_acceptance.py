@@ -16,8 +16,8 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Ellipse, Patch, Polygon, Rectangle
 
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import collision_diagnostics
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _collision_geometry_projection
+from msplatform.backends.simion.mrtof_observations import collision_diagnostics
+from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 
 STATE = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 GROUPS = {

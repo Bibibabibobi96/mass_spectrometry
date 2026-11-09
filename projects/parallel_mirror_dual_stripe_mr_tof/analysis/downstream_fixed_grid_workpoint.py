@@ -33,9 +33,8 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     CandidateContractError,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
-    _bunch_center_source_state, _source_release_record, _collision_geometry_projection,
-)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _bunch_center_source_state, _source_release_record
+from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 from msplatform.backends.comsol.static_field_binding import (
     load_binding, _record, _validate_native_surface_absence, native_refine_numerics,
     validate_native_consumer_view, load_native_response_basis, native_binding_problem, scalar_binding_problem,

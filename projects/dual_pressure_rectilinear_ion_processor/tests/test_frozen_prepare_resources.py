@@ -50,7 +50,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             "common.contracts.artifact_retention",
             "common.analysis.population_moments",
             "common.analysis.beam_focus_diagnostics",
-            "common.analysis.figure_export",
+            "msplatform.io.figure_export",
             "common.analysis.plane_crossings",
             "msplatform.analysis.particle_census",
         ):

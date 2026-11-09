@@ -16,8 +16,9 @@ from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     materialize_measured_source, materialize_measured_source_slice,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import main, merge_measured_event_logs
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics import (
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
+from msplatform.workflows.prepared_joint.diagnostics import main
+from msplatform.workflows.prepared_joint.diagnostics import (
     _design_reference, _prism_rows, _prism_statistics, _save_figure, _snapshot_rows, analyze_prepared_joint_flight,
     _trajectory_lifetimes, _validate_birth_clock_projection, build_prism_figure,
 )
@@ -77,7 +78,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                         _save_figure(figure, target, {})
                     self.assertEqual(list(directory.iterdir()), [])
                 else:
-                    with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics._write",
+                    with patch("msplatform.workflows.prepared_joint.diagnostics._write",
                                side_effect=OSError("metadata failure")), \
                          self.assertRaisesRegex(OSError, "metadata failure"):
                         _save_figure(figure, target, {})
@@ -130,7 +131,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                     "mirror_ground_shields", "mirror_e_closures", "stripe_electrodes", "stripe_slot",
                     "central_ground_electrodes", "central_ground_slots", "prism_electrodes", "prism_ground_shields")}
         geometry["frame_id"] = "mr_frame.v2"
-        binding_mock = patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.load_binding",
+        binding_mock = patch("msplatform.workflows.prepared_joint.diagnostics.load_binding",
                              return_value=dict(geometry=geometry, refinement_windows=[]))
         binding_mock.start()
         self.binding_mock = binding_mock
@@ -196,9 +197,8 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         for name in ("prism_phase_space.csv", "timed_spatial_clouds.csv"):
             self.assertEqual((output / name).read_bytes(), (retained / "results/diagnostics" / name).read_bytes())
 
-    def test_actual_sealed_native_metadata_analyzes_without_pa_and_native_use_refuses(self):
+    def _prepare_sealed_native_binding(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
-        from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
         from msplatform.backends.simion.standalone_pa_composition import PaHeader
         self.binding_mock.stop()
         fields = self.root / "tiny_fields"
@@ -241,6 +241,11 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         helper.seal(fields, owner)
         self.prepared["field_binding"] = file_record(binding_path)
         self.preparation.write_text(json.dumps(self.prepared))
+        return fields, binding_path
+
+    def test_actual_sealed_native_metadata_analyzes_without_pa_and_native_use_refuses(self):
+        from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
+        fields, binding_path = self._prepare_sealed_native_binding()
         metadata = load_binding(binding_path)
         verify_joint_asset_records(metadata)
         before = self.log.read_bytes()
@@ -315,7 +320,6 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
     def test_posthoc_contract_changes_only_peak_and_keeps_native_inputs(self) -> None:
         import copy
         from msplatform.analysis.peak_metrics import AnalysisSettings
-        from types import SimpleNamespace
         contract_path = self.root / "contract.json"
         original = json.loads(contract_path.read_text())
         original["simion"].update(default_trajectory_profile_id="fixture",
@@ -352,15 +356,22 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                 analyze_prepared_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
             self.assertFalse(self.output.exists())
         authored.write_text(json.dumps(replacement))
-        # Existing figure metadata records Git when allowed; this fixture needs
-        # no Git process and exercises only recorded scientific inputs.
-        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.subprocess.run",
-                   return_value=SimpleNamespace(returncode=0, stdout="fixture")):
+        # Offline analysis uses explicit producer/input records, with no process.
+        with patch("subprocess.run", side_effect=AssertionError("Offline analysis must not spawn processes")):
             result = analyze_prepared_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
         self.assertEqual(result["counts"]["mother_source"], 3)
         self.assertEqual(result["analysis_contract_provenance"]["contract"], file_record(authored))
         self.assertEqual(result["analysis_contract_provenance"]["original_trajectory_contract"], self.prepared["trajectory_contract"])
         self.assertEqual(result["detector_peak"]["common_time_reference"]["resolved_pulse_start_us"], 7500)
+        self.assertTrue(all(p.read_bytes() == content for p, content in before.items()))
+        # Relative timing records belong to the author's contract directory,
+        # independently of the process working directory.
+        replacement["peak_analysis"]["common_time_reference"]["timing"]["path"] = timing.name
+        authored.write_text(json.dumps(replacement))
+        relative = analyze_prepared_joint_flight(self.preparation, self.log,
+            self.root / "relative_timing_analysis", analysis_contract=authored)
+        self.assertEqual(relative["counts"], result["counts"])
+        self.assertEqual(relative["detector_peak"]["common_time_reference"]["resolved_pulse_start_us"], 7500)
         self.assertTrue(all(p.read_bytes() == content for p, content in before.items()))
 
     def test_cli_forwards_explicit_analysis_contract_to_same_analyzer(self) -> None:
@@ -368,7 +379,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         output = self.root / "output"
         with patch.object(sys, "argv", ["mrtof_batch_flight", "analyze-joint", "--preparation", str(self.preparation),
                  "--log", str(self.log), "--output", str(output), "--analysis-contract", str(override)]), \
-             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.analyze_prepared_joint_flight") as analyze:
+             patch("msplatform.workflows.prepared_joint.diagnostics.analyze_prepared_joint_flight") as analyze:
             self.assertEqual(main(), 0)
         analyze.assert_called_once_with(self.preparation, self.log, output,
             merge_receipt=self.preparation.parent / "batch_log_merge_receipt.json", analysis_contract=override)
@@ -393,7 +404,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.assertTrue((self.output / "population/detector_peak.png").is_file())
         self.assertTrue((self.output / "population/detector_peak_samples.csv").is_file())
 
-    def test_default_cli_transports_real_batches_without_mutating_preparation(self) -> None:
+    def _prepare_completed_source_batches(self, *, structured=False):
         epoch = self.prepared["solver_epoch_instrument_time_us"]
         pairs = []
         for ordinal, particle in enumerate((1, 7), 1):
@@ -407,7 +418,31 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                      if "phase=birth" in line else line
                      for line in self.original_lines if f"ion={particle} " in line]
             log.write_text("\n".join(lines)+"\nstatus,Fly completed. 1 splats\n")
+            if structured:
+                from msplatform.backends.simion.mrtof_observations import parse_events
+                events = parse_events(log.read_text())
+                event_path, trajectory_path = directory / "events.csv", directory / "trajectory.csv"
+                columns = list(dict.fromkeys(key for event in events for key in event))
+                with event_path.open("w", encoding="utf-8", newline="") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
+                    writer.writeheader()
+                    writer.writerows(events)
+                columns = ("ion", "phase", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
+                rows = [dict(part.split("=", 1) for part in line.split()[1:])
+                        for line in log.read_text().splitlines() if line.startswith("MRTOF_TRAJECTORY ")]
+                with trajectory_path.open("w", encoding="utf-8", newline="") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
+                    writer.writeheader()
+                    writer.writerows(rows)
+                log.write_text("status,Fly completed. 1 splats\n")
+                receipt["scientific_event_output"] = dict(events_path=str(event_path), events_record=file_record(event_path),
+                    trajectory_path=str(trajectory_path), trajectory_record=file_record(trajectory_path))
+                receipt_path.write_text(json.dumps(receipt))
             pairs.append((log, receipt_path))
+        return pairs
+
+    def test_default_cli_transports_real_batches_without_mutating_preparation(self) -> None:
+        pairs = self._prepare_completed_source_batches()
         before = self.preparation.read_bytes()
         merge_path = self.root / "batch_log_merge_receipt.json"
         merged = merge_measured_event_logs(batches=pairs, preparation_path=self.preparation,
@@ -583,6 +618,24 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         source["outputs"]["source"] = file_record(fly_path)
         with self.assertRaisesRegex(ValueError, "birth offset differs"):
             _validate_birth_clock_projection(source, states, self.source)
+
+
+    def test_structured_recorded_pipeline_keeps_complete_source_and_declared_trajectory(self):
+        pairs = self._prepare_completed_source_batches(structured=True)
+        merge_path = self.root / "batch_log_merge_receipt.json"
+        merged = merge_measured_event_logs(batches=pairs, preparation_path=self.preparation,
+            output_path=self.log, receipt_path=merge_path)
+        for record, (log, _) in zip(merged["batches"], pairs, strict=True):
+            self.assertEqual(record["log"]["bytes"], log.stat().st_size)
+            self.assertEqual(record["log"]["sha256"].upper(), file_record(log)["sha256"])
+        result = analyze_prepared_joint_flight(self.preparation, self.log, self.output, merge_receipt=merge_path)
+        self.assertEqual(result["counts"]["mother_source"], 3)
+        self.assertEqual(result["counts"]["detected"], 1)
+        self.assertEqual(result["counts"]["downstream_loss"], 1)
+        self.assertEqual(result["prism_statistics"]["p2_fixed_plane"]["outside_aperture_ids"], [7])
+        self.assertEqual(result["trajectory"]["trajectory_csv"], merged["scientific_event_output"]["trajectory_path"])
+        self.assertNotIn("MRTOF_EVENT", self.log.read_text())
+        self.assertNotIn("MRTOF_TRAJECTORY", self.log.read_text())
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from statistics import fmean
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.simion.scientific_event_io import iter_csv_rows
+from msplatform.io.scientific_csv import iter_csv_rows
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release, validate_release_spec
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s

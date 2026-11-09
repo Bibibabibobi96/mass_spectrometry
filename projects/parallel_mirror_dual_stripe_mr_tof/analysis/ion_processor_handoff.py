@@ -94,7 +94,7 @@ def _exit_distributions(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def _reference_exit(reference_mr_run: Path) -> tuple[float, dict[str, Any], dict[str, Any]]:
     # Reuse the existing exact manifest projection; no PA payload is consumed.
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+    from msplatform.backends.simion.mrtof_observations import parse_events
     provider_path = verified_reference(reference_mr_run, "simion/accelerator_provider_runtime_receipt.json")
     source_path = verified_reference(reference_mr_run, "simion/bunch_source_receipt.json")
     log_path = verified_reference(reference_mr_run, "logs/native_two_prism_flight.log")

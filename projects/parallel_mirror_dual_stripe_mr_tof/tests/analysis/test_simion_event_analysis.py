@@ -14,10 +14,8 @@ import unittest
 from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _particle_source_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log,
-    collision_diagnostics, histogram_half_height_bin_span, load_particle_source, parse_events, summarize_events, peak_time_metrics,
-)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log, histogram_half_height_bin_span, load_particle_source, summarize_events, peak_time_metrics
+from msplatform.backends.simion.mrtof_observations import collision_diagnostics, parse_events
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -310,7 +308,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
         )
 
     def test_single_particle_program_emits_the_required_topology_events(self):
-        from common.simion.scientific_event_io import iter_csv_rows
+        from msplatform.io.scientific_csv import iter_csv_rows
 
         lua = Path("C:/Program Files/SIMION-2020/lua.exe")
         if not lua.is_file():

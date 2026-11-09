@@ -7,11 +7,10 @@ accelerator gap 1 with the mirror/Stripe-selected near-5-eV slow kinetic energy
 in +project-y; the accelerator field supplies the fast -project-z energy.
 """
 from __future__ import annotations
+from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import argparse
 import copy
-from contextlib import nullcontext
-from common.simion.scientific_event_io import iter_csv_rows
 from common.contracts.write_run_manifest import file_record
 import csv
 import hashlib
@@ -27,88 +26,6 @@ from msplatform.contracts import trajectory_recording as _trajectory_recording
 
 
 
-def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_path: Path,
-                               recording_config: dict[str, Any] | None = None,
-                               scientific_event_output: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Stream solver callback states into CSV, rejecting incomplete per-ion lifecycles."""
-    recording = _trajectory_recording.resolve_trajectory_recording({"simion": {"trajectory_recording": recording_config}})
-    mode = recording["mode"] if recording else "every_step"
-    columns = ["ion", "phase", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"]
-    counts: dict[int, int] = {}
-    last: dict[int, tuple[float, str]] = {}
-    prior_time: dict[int, float] = {}
-    last_state: dict[int, tuple[float, ...]] = {}
-    terminal_clock_backsteps = []
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    trajectory_identity = {}
-    declared_path = None
-    def actual_rows():
-        nonlocal declared_path
-        if scientific_event_output is not None:
-            if not scientific_event_output.get("trajectory_path"):
-                raise ValueError("declared trajectory output missing")
-            declared_path = Path(scientific_event_output["trajectory_path"])
-            yield from iter_csv_rows(declared_path, columns, exact_header=columns, identity_result=trajectory_identity, expected_record=scientific_event_output.get("trajectory_record"))
-        else:
-            with log_path.open(encoding="utf-8-sig") as source:
-                for line in source:
-                    if line.startswith("MRTOF_TRAJECTORY "):
-                        yield dict(item.split("=", 1) for item in line.split()[1:])
-    with (output_path.open("w",encoding="utf-8",newline="") if scientific_event_output is None else nullcontext(None)) as target:
-        writer=csv.DictWriter(target,fieldnames=columns) if target is not None else None
-        if writer is not None: writer.writeheader()
-        for row in actual_rows():
-            if set(row) != set(columns):
-                raise ValueError("trajectory sample has missing or unknown fields")
-            ion, time = int(row["ion"]), float(row["t_us"])
-            if ion < 1 or not all(math.isfinite(float(row[key])) for key in columns[2:]):
-                raise ValueError("trajectory sample identity or state is invalid")
-            phase = row["phase"]
-            state = tuple(float(row[key]) for key in columns[3:])
-            if phase not in {"birth", "step", "terminal"}:
-                raise ValueError("unknown trajectory sample phase")
-            if ion not in last:
-                if phase != "birth":
-                    raise ValueError("trajectory does not start at birth")
-            else:
-                if phase == "birth" or last[ion][1] == "terminal":
-                    raise ValueError("trajectory lifecycle or time order is invalid")
-                if time < last[ion][0]:
-                    # Native electrode contact can restore the preceding callback
-                    # clock at terminate while retaining the last identical state.
-                    # Keep both raw records. Every-step recording requires the
-                    # exact prior callback clock; sparse recording bounds it by
-                    # adjacent observations and does not establish one-step size.
-                    clock_matches = time == prior_time.get(ion)
-                    if mode == "fixed_interval":
-                        clock_matches = prior_time.get(ion, last[ion][0]) <= time < last[ion][0]
-                    if phase != "terminal" or not clock_matches or state != last_state[ion]:
-                        raise ValueError("trajectory time order is invalid")
-                    terminal_clock_backsteps.append({"ion": ion, "backstep_us": last[ion][0] - time})
-                prior_time[ion] = last[ion][0]
-            last[ion] = (time, phase)
-            last_state[ion] = state
-            counts[ion] = counts.get(ion, 0) + 1
-            if writer is not None: writer.writerow(row)
-    if declared_path is not None: output_path=declared_path
-    minimum_samples = 2 if mode == "fixed_interval" else 3
-    if not counts or any(phase != "terminal" or counts[ion] < minimum_samples for ion, (_, phase) in last.items()):
-        raise ValueError("trajectory is empty or lacks steps/terminal state")
-    result = {"schema_version": 1, "role": "mrtof_solver_step_trajectory", "status": "success",
-              "sampling": ("initialize__first_other_actions_callback_per_absolute_clock_bucket__terminate"
-                           if mode == "fixed_interval" else "initialize__every_other_actions_callback__terminate"),
-              "sampling_mode": mode, "sampling_interval_us": recording["interval_us"] if mode == "fixed_interval" else None,
-              "sampling_grid_origin_us": 0 if mode == "fixed_interval" else None,
-              "recording_configuration": recording,
-              "interpolated": False, "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
-              "clock_basis": "instrument_time_us_from_frozen_source_authority",
-              "sample_count": sum(counts.values()), "samples_per_particle": counts,
-              "terminal_clock_backsteps": terminal_clock_backsteps,
-              "record_order": "solver_callback_order__raw_terminal_clock_retained",
-              "source_log": str(log_path.resolve()), "source_log_sha256": file_sha256(log_path).lower(),
-              "trajectory_csv": str(output_path.resolve()), "trajectory_csv_sha256": trajectory_identity["sha256"] if declared_path is not None else file_sha256(output_path).lower()}
-    receipt_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    return result
 
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_physics import (
@@ -182,20 +99,6 @@ def _load(path: Path) -> dict[str, Any]:
 _GLOBAL_PULSE_TIME_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
 
 
-def _collision_geometry_projection(resolved: dict[str, Any]) -> dict[str, Any]:
-    """Freeze only the resolved solids needed to name terminal collisions."""
-    keys = (
-        "mirror_electrodes", "mirror_slot", "mirror_inner_shield_slot",
-        "mirror_ground_shields", "mirror_e_closures", "stripe_electrodes",
-        "stripe_slot", "central_ground_electrodes", "central_ground_slots",
-        "prism_electrodes", "prism_ground_shields",
-    )
-    return {
-        "schema_version": 1,
-        "mesh_mm_per_gu": 0.25,
-        **{key: copy.deepcopy(resolved[key]) for key in keys},
-        **{key: copy.deepcopy(resolved[key]) for key in ("ion_processor_electrodes", "detector") if key in resolved},
-    }
 
 
 def _apply_trajectory_step_scale(
@@ -2289,7 +2192,7 @@ def materialize_trial(
         "nonaccelerator_mesh_mm_per_gu": list(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),
-        "collision_geometry": _collision_geometry_projection(resolved),
+        "collision_geometry": _mrtof_observations._collision_geometry_projection(resolved),
         "native_corridor_priority_contract": {
             "path": str(priority_path.resolve()), "bytes": priority_path.stat().st_size,
             "sha256": file_sha256(priority_path).lower(),
@@ -2387,7 +2290,7 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         raise CandidateContractError(
             "active MR-TOF Candidate observation forbids all P1/P2 voltage switching"
         )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+    from msplatform.backends.simion.mrtof_observations import read_scientific_events
     science = _load(scientific_event_receipt)["scientific_event_output"] if scientific_event_receipt is not None else trial.get("scientific_event_output")
     events, native_completions, _log_identity = read_scientific_events(log_path, scientific_event_output=science)
     if any(event["kind"] == "prism_voltage_switch" for event in events):
@@ -2906,11 +2809,6 @@ def main() -> int:
     analyze.add_argument("--trial-receipt", required=True, type=Path)
     analyze.add_argument("--output", required=True, type=Path)
     analyze.add_argument("--scientific-event-receipt", type=Path)
-    extract = sub.add_parser("extract-trajectory")
-    extract.add_argument("--log", required=True, type=Path)
-    extract.add_argument("--output", required=True, type=Path)
-    extract.add_argument("--receipt", required=True, type=Path)
-    extract.add_argument("--contract", type=Path)
     args = parser.parse_args()
     if args.command == "materialize":
         stripe_override = None
@@ -2966,11 +2864,6 @@ def main() -> int:
         )
         if short_exit_failed:
             return 1
-    elif args.command == "extract-trajectory":
-        recording = _trajectory_recording.resolve_trajectory_recording(json.loads(args.contract.read_text(encoding="utf-8-sig"))) if args.contract else None
-        result = extract_trajectory_samples(log_path=args.log, output_path=args.output, receipt_path=args.receipt,
-                                            recording_config=recording)
-        print(f"MRTOF_TRAJECTORY_EXTRACT=PASS SAMPLES={result['sample_count']}")
     return 0
 
 

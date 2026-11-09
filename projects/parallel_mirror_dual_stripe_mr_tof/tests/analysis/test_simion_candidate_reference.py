@@ -28,10 +28,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
     geometry_receipt,
     resolve_geometry,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    parse_events,
-    summarize_events,
-)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import summarize_events
+from msplatform.backends.simion.mrtof_observations import parse_events
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.cad_pose_contract import (
     load_cad_pose_contract,
     project_to_source,

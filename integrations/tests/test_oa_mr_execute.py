@@ -532,7 +532,7 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
                     self.assertEqual(manifest["inputs"]["reused_batch_001_log"]["path"],
                                      str(parent / "logs/native_two_prism_flight__batch01.log"))
                     self.assertFalse(any(Path(r["path"]).is_relative_to(parent) for r in manifest["outputs"]))
-                from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+                from msplatform.backends.simion.mrtof_observations import read_scientific_events
                 merged_path = current / "logs/native_two_prism_flight.log"
                 merged = merged_path.read_text(encoding="utf-8")
                 merged_receipt = json.loads((results / "batch_log_merge_receipt.json").read_text(encoding="utf-8"))

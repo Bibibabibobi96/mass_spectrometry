@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 import csv
-from common.simion.scientific_event_io import iter_csv_rows
+from msplatform.io.scientific_csv import iter_csv_rows
 from itertools import chain
 import json
 import math

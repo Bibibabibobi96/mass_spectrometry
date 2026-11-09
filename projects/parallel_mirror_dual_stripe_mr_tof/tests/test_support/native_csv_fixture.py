@@ -51,8 +51,8 @@ def prepare(repo: Path, root: Path) -> None:
 
 
 def verify(root: Path) -> None:
-    from common.simion.scientific_event_io import iter_csv_rows
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+    from msplatform.io.scientific_csv import iter_csv_rows
+    from msplatform.backends.simion.mrtof_observations import read_scientific_events
     import hashlib
     records = json.loads((root / "current_source_records.json").read_text(encoding="utf-8"))
     # These are tiny test-only code companions, never scientific PA payloads.

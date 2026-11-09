@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.analysis.figure_export import export_figures
+from msplatform.io.figure_export import export_figures
 from common.analysis.population_moments import population_moments
 from common.analysis.plane_crossings import (
     METHOD as CROSSING_METHOD,

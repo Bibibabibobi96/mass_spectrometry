@@ -285,7 +285,7 @@ def _complete_oa_batch(log: Path, count: int, scientific_event_output=None) -> b
                 if line.startswith("IOB_FLIGHT: PASS iob="):
                     sentinels += 1
     else:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+        from msplatform.backends.simion.mrtof_observations import read_scientific_events
         def observe(raw):
             nonlocal sentinels, last_line
             line = raw.rstrip("\r\n")
@@ -596,7 +596,7 @@ def _same_prepared_flight(parent: Path, current: Path) -> tuple[bool, dict[str, 
     if (not isinstance(old_peak, dict) or not isinstance(new_peak, dict)
             or old_peak.get("method_id") not in ("common_gaussian_kde_time_v1", "common_gaussian_kde_time_v2")):
         raise ContractError("prepared-joint peak analysis provenance is invalid")
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_analysis_contract
+    from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_analysis_contract
     try:
         validate_measured_peak_analysis_contract(new_peak, record_path(records[1]).parent)
     except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:

@@ -15,7 +15,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import (
     _mirror_lines, _mirror_ground_shield_lines,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import collision_diagnostics
+from msplatform.backends.simion.mrtof_observations import collision_diagnostics
 
 
 PROJECT = Path(__file__).resolve().parents[2]

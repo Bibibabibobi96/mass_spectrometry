@@ -291,7 +291,7 @@ Invoke-Expression $copies[0].Extent.Text | Out-Null
                          (repo / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').read_bytes())
 
     def test_public_stream_reader_retains_header_contract_and_rejects_bad_rows(self) -> None:
-        from common.simion.scientific_event_io import iter_csv_rows
+        from msplatform.io.scientific_csv import iter_csv_rows
         from projects.orthogonal_accelerator.analysis import component_focus_analysis as focus
         events = self.write_events()
         with patch.object(focus, "iter_csv_rows", wraps=iter_csv_rows) as reader:

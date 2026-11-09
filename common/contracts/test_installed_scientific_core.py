@@ -765,6 +765,61 @@ batched=subprocess.run([sys.executable,'-I','-m','msplatform.backends.simion.par
 assert batched.returncode == 0,batched.stdout+batched.stderr
 assert json.loads(batching_output.read_text(encoding='utf-8')) == particle_batching.plan_single_wave_batches(100,3)
 
+# Run the complete recorded MR analyzer through its installed CLI, with real
+# sealed test metadata and actual source/clock/batch records, without PA payloads.
+mr_child = """import sys,json,pathlib,runpy,importlib.util,sysconfig
+# Initialize third-party platform probing before the scientific no-process boundary.
+import platform
+platform.uname()
+blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv.pop(1))]
+def offline_only(event,args):
+    if event=='subprocess.Popen':raise AssertionError('offline analyzer spawned a process')
+    if event=='open' and isinstance(args[0],(str,bytes)):
+        target=pathlib.Path(args[0]).resolve()
+        if any(target.is_relative_to(path) for path in blocked):raise AssertionError('author source read: '+str(target))
+sys.addaudithook(offline_only)
+spec=importlib.util.find_spec('msplatform.workflows.prepared_joint.diagnostics')
+assert pathlib.Path(spec.origin).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+sys.argv=['diagnostics',*sys.argv[1:]]
+try:runpy.run_module('msplatform.workflows.prepared_joint.diagnostics',run_name='__main__')
+except SystemExit as error:
+    if error.code not in (0,None):raise
+assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+    for name,module in sys.modules.items() if name.startswith('msplatform.') and getattr(module,'__file__',None))
+print('INSTALLED_MR_ANALYSIS=PASS')
+"""
+for case in fixture['prepared_joint_diagnostics']:
+    output = root / ('installed-mr-' + case['kind'] + '-' + sys.argv[2])
+    arguments = [sys.executable,'-I','-c',mr_child,json.dumps([str(value) for value in blocked_source_roots]),
+        'analyze-joint','--preparation',case['preparation'],'--log',case['log'],'--output',str(output)]
+    completed = subprocess.run(arguments,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
+    assert completed.returncode==0 and 'INSTALLED_MR_ANALYSIS=PASS' in completed.stdout, completed.stdout+completed.stderr
+    result=json.loads((output/'diagnostics_receipt.json').read_text(encoding='utf-8'))
+    assert result['counts']['mother_source']==3 and result['counts']['detected']==1
+    assert result['counts']['downstream_loss']==1 and result['counts']['upstream_not_transferred']==1
+    assert result['prism_statistics']['p2_fixed_plane']['outside_aperture_ids']==[7]
+    assert result['prism_statistics']['p2_fixed_plane']['missing_mother_particle_ids']==[9]
+    assert result['birth_clock_projection']['projected_particle_ids']==[7]
+    assert result['qualification']=='descriptive_diagnostics_only_no_whole_beam_acceptance_or_performance_pass'
+    assert len(list(output.glob('*.png')))==4 and len(list(output.glob('*.svg')))==4
+    with (output/'loss_acceptance.csv').open(newline='') as stream: rows=list(csv.DictReader(stream))
+    assert {int(row['particle_id']) for row in rows}=={1,7,9}
+    assert next(row for row in rows if row['particle_id']=='9')['source_position_x_mm']==''
+    assert all(hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==digest for path,digest in case['input_sha256'].items())
+    binding=pathlib.Path(case['binding']); backup=binding.with_suffix('.absent')
+    binding.rename(backup)
+    try:
+        failed=subprocess.run(arguments[:-1]+[str(output)+'-missing-binding'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        assert failed.returncode!=0 and not pathlib.Path(str(output)+'-missing-binding').exists()
+    finally:backup.rename(binding)
+    if case['kind']=='declared_csv':
+        trajectory=pathlib.Path(case['trajectory']); backup=trajectory.with_suffix('.absent')
+        trajectory.rename(backup)
+        try:
+            failed=subprocess.run(arguments[:-1]+[str(output)+'-missing-trajectory'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            assert failed.returncode!=0 and not (pathlib.Path(str(output)+'-missing-trajectory')/'diagnostics_receipt.json').exists()
+        finally:backup.rename(trajectory)
+
 missing_rejected = []
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
@@ -1016,6 +1071,28 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             shutil.rmtree(generated)
             cases.append(dict(preparation=case.preparation,workbench=current,run=str(case.run),expected=expected))
         return cases
+
+    def prepared_joint_diagnostics_probe_fixture(self) -> list[dict]:
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
+        result = []
+        for structured in (False, True):
+            case = PreparedJointDiagnosticsTests()
+            case.setUp()
+            self.addCleanup(case.doCleanups)
+            fields, binding = case._prepare_sealed_native_binding()
+            pairs = case._prepare_completed_source_batches(structured=structured)
+            merge = merge_measured_event_logs(batches=pairs, preparation_path=case.preparation,
+                output_path=case.log, receipt_path=case.root/'batch_log_merge_receipt.json')
+            for path in fields.rglob('*'):
+                if path.is_file() and path.name.endswith(('.pa','.pa-surf')):
+                    path.rename(path.with_name(path.name+'.unavailable'))
+            result.append(dict(kind='declared_csv' if structured else 'legacy_log',
+                preparation=str(case.preparation), log=str(case.log), binding=str(binding),
+                trajectory=merge.get('scientific_event_output',{}).get('trajectory_path'),
+                input_sha256={str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in case.root.rglob('*') if path.is_file()}))
+        return result
 
     def single_reflection_collection_probe_fixture(self) -> dict:
         from integrations.tests.test_single_reflection_collection import SingleReflectionCollectionTests
@@ -1376,6 +1453,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               prepared_joint_admission=self.prepared_joint_admission_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
+                                              prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

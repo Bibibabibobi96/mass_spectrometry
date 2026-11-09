@@ -10,7 +10,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight imp
     materialize_batch_fly2,
     merge_rebased_event_logs,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+from msplatform.backends.simion.mrtof_observations import parse_events
 from msplatform.execution.simion_dispatch import plan_adaptive_followup, plan_simion_dispatch
 
 

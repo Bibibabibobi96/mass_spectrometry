@@ -7,13 +7,12 @@ states or qualifies old centre-point criteria as whole-cohort acceptance.
 from __future__ import annotations
 
 import csv
-from common.simion.scientific_event_io import iter_csv_rows
+from msplatform.io.scientific_csv import iter_csv_rows
 import json
 import math
 from pathlib import Path
 import re
 import statistics
-import subprocess
 from typing import Any
 
 import matplotlib
@@ -21,19 +20,23 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
-from common.analysis.figure_export import export_figures
+from msplatform.io.figure_export import export_figures
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import (
+from msplatform.io.manifest_records import record_path, verify_record as _verify_record
+from functools import partial
+from msplatform.execution.retention import classify_file
+verify_record = partial(_verify_record, retention_classifier=classify_file)
+from msplatform.io.manifest_records import file_record as _file_record
+file_record = partial(_file_record, retention_classifier=classify_file)
+from msplatform.workflows.prepared_joint.measured_population import (
     _load_source, _log_roundoff_us, analyze_measured_component, validate_measured_peak_source_reference,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.loss_acceptance_diagnostics import (
+from msplatform.workflows.prepared_joint.loss_acceptance import (
     build_loss_acceptance_figure, prepare_loss_rows, prepare_mirror_domain_rows, summarize_loss_acceptance,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import _prism_phase_space_diagnostic
+from msplatform.backends.simion.mrtof_observations import _prism_phase_space_diagnostic
 from msplatform.backends.comsol.static_field_binding import load_binding
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import extract_trajectory_samples
+from msplatform.backends.simion.mrtof_observations import extract_trajectory_samples
 
 COORDINATES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 COLORS = {"alive": "#0072B2", "detected": "#009E73", "loss": "#D55E00", "timeout": "#CC79A7"}
@@ -535,11 +538,8 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     analysis_provenance = None
     if analysis_contract is not None:
         replacement = _read(analysis_contract)
-        if ({key: value for key, value in replacement.items() if key != "peak_analysis"}
-                != {key: value for key, value in contract.items() if key != "peak_analysis"}):
-            raise ValueError("Post-hoc analysis contract may change only peak_analysis")
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import validate_execution_contract
-        execution = validate_execution_contract(contract, replacement)
+        from msplatform.workflows.prepared_joint.analysis_contract import validate_posthoc_analysis_contract
+        execution = validate_posthoc_analysis_contract(contract, replacement, contract_base=analysis_contract.parent)
         analysis_provenance = dict(contract=file_record(analysis_contract),
             original_trajectory_contract=prepared["trajectory_contract"],
             change=execution["analysis_change"], qualification="explicit_post_hoc_analysis_only__native_flight_unchanged")
@@ -638,17 +638,11 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     _write_rows(output_directory / "mirror_x_boundary_crossings.csv", crossing_rows, crossing_columns)
     acceptance = summarize_loss_acceptance(acceptance_rows, collisions, domain)
     acceptance["inputs"] = dict(field_binding=file_record(binding_path))
-    acceptance["producer"] = file_record(Path(__file__).with_name("loss_acceptance_diagnostics.py"))
+    acceptance["producer"] = file_record(Path(__file__).with_name("loss_acceptance.py"))
     acceptance["outputs"] = [file_record(output_directory / name) for name in (
         "loss_acceptance.csv", "mirror_domain_samples.csv", "mirror_x_boundary_crossings.csv")]
     _write(output_directory / "loss_acceptance_receipt.json", acceptance)
-    repo = Path(__file__).resolve().parents[3]
-    git = {}
-    for key, arguments in (("sha", ["rev-parse", "HEAD"]), ("worktree", ["status", "--porcelain"])):
-        process = subprocess.run(["git", "-C", str(repo), *arguments], cwd=repo, capture_output=True,
-                                 text=True, encoding="utf-8", errors="replace", timeout=10, check=False)
-        git[key] = process.stdout.strip() if process.returncode == 0 else "unavailable"
-    metadata = dict(schema_version=1, role="mrtof_prepared_joint_diagnostic_figure", counts=population["counts"], git=git,
+    metadata = dict(schema_version=1, role="mrtof_prepared_joint_diagnostic_figure", counts=population["counts"],
                     frame_id=source["frame_id"], clock_epoch_id=source["clock_epoch_id"],
                     units=dict(position="mm", velocity="mm/us", time="absolute instrument us", energy="eV/abs(q)", angle="deg"),
                     inputs=dict(preparation=file_record(preparation_receipt), merged_log=file_record(merged_log),
@@ -689,3 +683,23 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
                   outputs=[file_record(path) for path in sorted(output_directory.rglob("*")) if path.is_file()])
     _write(output_directory / "diagnostics_receipt.json", result)
     return result
+
+
+def main() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    analyze = commands.add_parser("analyze-joint")
+    analyze.add_argument("--preparation", required=True, type=Path)
+    analyze.add_argument("--log", required=True, type=Path)
+    analyze.add_argument("--output", required=True, type=Path)
+    analyze.add_argument("--analysis-contract", type=Path)
+    args = parser.parse_args()
+    analyze_prepared_joint_flight(args.preparation, args.log, args.output,
+        merge_receipt=args.preparation.parent / "batch_log_merge_receipt.json", analysis_contract=args.analysis_contract)
+    print("PREPARED_JOINT_DIAGNOSTICS=PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

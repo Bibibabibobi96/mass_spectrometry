@@ -12,9 +12,7 @@ from common.contracts.file_identity import file_sha256
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    parse_events,
-)
+from msplatform.backends.simion.mrtof_observations import parse_events
 
 _PROJECT = "parallel_mirror_dual_stripe_mr_tof"
 _MODE = "finite_3d_two_prism_voltage_trial"

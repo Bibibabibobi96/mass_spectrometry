@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from common.analysis.figure_export import export_figures
+from msplatform.io.figure_export import export_figures
 from common.analysis.population_moments import population_pair_moments
 
 from common.contracts.file_identity import file_sha256

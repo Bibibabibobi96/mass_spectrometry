@@ -7,9 +7,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
-    extract_trajectory_samples,
-)
+from msplatform.backends.simion.mrtof_observations import extract_trajectory_samples
 
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 

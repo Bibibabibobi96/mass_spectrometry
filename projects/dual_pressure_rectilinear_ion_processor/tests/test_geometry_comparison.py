@@ -385,7 +385,7 @@ class GeometryComparisonTests(unittest.TestCase):
         parent = self.root/"comparison"
         write_json(parent/"inputs/study_contract.json", study)
         write_json(parent/"run_config.json", dict(project=recorded.PROJECT, inputs=dict(study_contract="inputs/study_contract.json")))
-        from common.analysis.figure_export import export_figures
+        from msplatform.io.figure_export import export_figures
         with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None), patch.object(geometry,"export_figures",wraps=export_figures) as exported:
             result = geometry.analyze_geometry_study(parent)
         exported.assert_called_once()

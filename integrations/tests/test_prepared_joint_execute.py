@@ -199,7 +199,7 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 (repo / "common/host_execution_lease.ps1").write_text(host_fixture)
                 workflow_owner = repo / "common/contracts/run_artifact_workflow.ps1"
                 workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
-                (repo / "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_flight.py").write_text(analyzer_fixture)
+                (repo / "src/msplatform/workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)
                 (repo / "src/msplatform/execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
                     owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",

@@ -500,7 +500,7 @@ def _first_batch_fixture(root: Path) -> tuple[Path, Path]:
 
 class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
     def test_multiple_slow_energy_responses_reuse_triplets_without_legacy_changes(self) -> None:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+        from msplatform.backends.simion.mrtof_observations import parse_events
 
         with tempfile.TemporaryDirectory() as directory:
             run = _fixture(Path(directory), detector_hit_ids={1, 2, 3, 4})

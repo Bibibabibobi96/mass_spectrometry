@@ -31,8 +31,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout, render_measured_operating_point
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
-from common.simion.scientific_event_io import iter_csv_rows
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+from msplatform.io.scientific_csv import iter_csv_rows
+from msplatform.backends.simion.mrtof_observations import read_scientific_events
 
 
 verified_preparation_reference = partial(
@@ -260,7 +260,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         raise ValueError("Prepared measured source differs from the inherited assembly connection or frame")
     peak = contract.get("peak_analysis")
     if peak is not None:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_source_reference
+        from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_source_reference
         validate_measured_peak_source_reference(peak, contract_path.parent, source_receipt,
                                                 {int(row["particle_id"]): row for row in rows})
     binding_path = verified_preparation_reference(prepared_run, "results/joint_workbench/static_field_binding.json", manifest=prepared_manifest)
@@ -603,7 +603,7 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     import csv
     import math
     from msplatform.contracts.particle_physics import kinetic_energy_ev
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import read_scientific_events
+    from msplatform.backends.simion.mrtof_observations import read_scientific_events
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,
     )

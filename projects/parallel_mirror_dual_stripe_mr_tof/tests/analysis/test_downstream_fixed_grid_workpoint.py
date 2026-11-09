@@ -208,7 +208,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
 
     def test_sealed_native_history_validates_actual_multiwindow_ancestry(self):
         """Historical projection validates small identities, not retired PA bytes."""
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _collision_geometry_projection
+        from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint"
         cases = (([3, 3, 0], None), ([0], None), ([3, 3, 0], "unknown"),
                  ([3, 3, 0], "missing"), ([1, 3, 0], "self"), ([2, 1, 0], "cycle"),
@@ -1038,7 +1038,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
 
     def test_native_history_uses_bound_small_evidence_not_retired_payload(self):
         from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _collision_geometry_projection
+        from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 
         baseline, _, _ = self._fixture()
         with tempfile.TemporaryDirectory() as temp:

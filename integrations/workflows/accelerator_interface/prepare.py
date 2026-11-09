@@ -43,7 +43,7 @@ def preflight_joint_analysis(design_run: Path, source_run: Path, contract_path: 
     """Validate the selected analysis and measured source before a new field solve."""
     from msplatform.contracts.particle_state import load_component_particle_state_csv
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import validate_component_exit_binding
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_source_reference
+    from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_source_reference
 
     design_run, source_run, contract_path = map(Path, (design_run, source_run, contract_path))
     reference = verified_preparation_reference(design_run, "inputs/reference_trajectory.json")

@@ -2269,7 +2269,7 @@ def _derive_saved_slow_signature(trial: dict[str, Any], manifest_path: Path) -> 
     if len(logs) > 1:
         raise CandidateContractError("trial binds duplicate centre flight logs")
     if logs and record_path(logs[0], base_dir=manifest_path.parent).exists():
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+        from msplatform.backends.simion.mrtof_observations import parse_events
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _first_slow_turn_signature
         verify_record("first slow-turn source log", logs[0], base_dir=manifest_path.parent)
         events = parse_events(record_path(logs[0], base_dir=manifest_path.parent).read_text(encoding="utf-8"))

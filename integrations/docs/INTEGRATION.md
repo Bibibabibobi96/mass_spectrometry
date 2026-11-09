@@ -352,7 +352,7 @@ composer读取，不代表物理磁盘流量或运行倍速。
 束宽、真角度发射度、时间相关与零场预测现直接调用[公共beam方法](../../common/analysis/beam_focus_diagnostics.py)，
 不再从IP导入实现。局部源按现有生成合同显式全1权重；这不声明支持外来canonical非等权注入。
 固定出口群、各面缺测与全部原始ID保持；场内实际观测和出口后零场反事实继续分开，图只读prepared结果。
-图形保存复用[公共导出](../../common/analysis/figure_export.py)，保持原PNG／SVG、190 DPI、白底和文件名，
+图形保存复用[公共导出](../../src/msplatform/io/figure_export.py)，保持原PNG／SVG、190 DPI、白底和文件名，
 实际导出记录写入focus summary；不改写其他phase summary，路径冲突或失败不覆盖既有文件。
 
 ## OA／IP接口准备与绑定
@@ -810,8 +810,8 @@ The post-hoc source-admission CLI is
 It consumes explicit sealed source evidence and does not run an owner, Fly or the
 full analyzer. The existing prepared-joint PowerShell owner invokes this installed
 stage and the sole `msplatform.contracts.trajectory_recording --contract <path>`
-query. Source data is never relocated or rewritten. Full diagnostics/extraction
-migration remains open; successful admission does not confer scientific qualification.
+query. Source data is never relocated or rewritten. Full diagnostics/extraction now use the installed workflow and SIMION adapters;
+native-controller migration remains open. Admission does not confer scientific qualification.
 
 The integrated implementation passed two main-checkout admission tests in 0.432 s.
 Independent byte review matched all production and protected process-fixture code
@@ -848,3 +848,25 @@ the prepared-joint inventory at that checkpoint is 495 derived records. The old
 or full-Repository/performance acceptance follows from these measurements.
 Official CLOC 2.10, 715a6483 to this slice: total +71, production +2, tests +69,
 zero unclassified; full language counts/filter remain in task evidence.
+
+### Installed prepared-joint diagnostics
+
+`msplatform.workflows.prepared_joint.diagnostics` owns the existing recorded
+analysis, using canonical measured-population/loss policy and
+`backends.simion.mrtof_observations` event/trajectory adapters. Neutral scientific
+CSV and figure export each have one installed owner. All five replaced root
+implementations and their active CLI/freezer references are retired together.
+Native preparation/controller and remaining MR workflow migration stay open.
+The structured merge producer now records the already-closed log's existence and
+byte count alongside its original SHA; strict readers remain unchanged.
+
+The reproduced structured producer-to-analysis test passed in the main checkout
+in 6.776 s. Independent byte review matched all seven production modules and the
+protected process fixture to the accepted integrated checkpoint: 78 successful
+parents and one explicit retained-native opt-in skip, 23 byte-identical scientific
+tables across two representations, plus real ordinary-wheel/sdist-rebuilt consumers.
+The six scenarios, original 45-second deadlines, full mother and unknown-not-loss
+semantics remain intact. These are software/recorded-analysis results, not new
+Fly/Refine, accuracy, image-byte equality or scientific qualification.
+Official CLOC 2.10, 982300b7 to this slice: total +136, production +54, tests +82,
+zero unclassified; full per-language counts and filter remain in task evidence.

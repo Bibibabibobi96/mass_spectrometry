@@ -1,4 +1,5 @@
 """Structured scientific output and explicit legacy adapters; no solver required."""
+from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 import csv
 import hashlib
 import json
@@ -7,9 +8,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from common.simion import scientific_event_io as io
+from msplatform.io import scientific_csv as io
 from common.paths import workspace_paths
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import simion_event_analysis as mr
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mrtof_batch_flight as merger
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mrtof_batch_continuation as continuation
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import prepared_joint_trial as prepared
@@ -172,7 +172,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                     result = merger.merge_rebased_event_logs(batches=[(legacy, 0, 1), (native, 1, 2)],
                         particle_count=3, output_path=child/"merged.log", receipt_path=child/"merge.json",
                         scientific_event_outputs=[first, dict(events_path=str(files[1]))])
-                    events, completions, _ = mr.read_scientific_events(child/"merged.log", scientific_event_output=result["scientific_event_output"])
+                    events, completions, _ = _mrtof_observations.read_scientific_events(child/"merged.log", scientific_event_output=result["scientific_event_output"])
                     self.assertEqual([int(row["ion"]) for row in events], [1, 2, 3])
                     self.assertEqual([row["t_us"] for row in events], [2.125]*3)
                     self.assertEqual([row["vx_mm_us"] for row in events], [.125]*3)
@@ -203,7 +203,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                 batches.append((log, 0, 1))
                 declarations.append(dict(events_path=str(events)))
             result = merger._merge_structured_batches(batches=batches, declarations=declarations, particle_count=2, particle_id_min=1, output_path=root / 'merged.log', receipt_path=root / 'merge.json', batch_original_ids=[[11], [45]])
-            events, finished, _ = mr.read_scientific_events(root / 'merged.log', scientific_event_output=result['scientific_event_output'])
+            events, finished, _ = _mrtof_observations.read_scientific_events(root / 'merged.log', scientific_event_output=result['scientific_event_output'])
             self.assertEqual([int(row['ion']) for row in events], [11, 45])
             self.assertEqual(finished[0].splats, 2)
             self.assertNotIn('MRTOF_EVENT', (root / 'merged.log').read_text())
@@ -217,7 +217,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
             trial_path = arguments['pilot_trial_receipt_path']
             trial = json.loads(trial_path.read_text())
             log = arguments['pilot_log_path']
-            rows = mr.parse_events(log.read_text())
+            rows = _mrtof_observations.parse_events(log.read_text())
             events = log.with_suffix('.csv')
             with events.open('w', newline='') as stream:
                 writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
@@ -253,7 +253,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
             text = 'MRTOF_EVENT terminal ion=1 splat=0 instance=1 volts=0 t_us=7 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=1 turns=0 central_crossings=0\nMRTOF_TRAJECTORY ion=1 phase=terminal t_us=7 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=1\nstatus,Fly completed. 1 splats\n'
             legacy.write_text(text)
             log.write_text('status,Fly completed. 1 splats\n')
-            rows = mr.parse_events(text)
+            rows = _mrtof_observations.parse_events(text)
             with events.open('w', newline='') as stream:
                 writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
                 writer.writeheader()
@@ -290,7 +290,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                 log = folder / 'native.log'
                 log.write_text('status,Fly completed. 1 splats\n')
                 events = folder / 'events.csv'
-                row = mr.parse_events(f'MRTOF_EVENT terminal ion={ion} splat=0 instance=1 volts=0 t_us=7 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=1 turns=0 central_crossings=0\n')[0]
+                row = _mrtof_observations.parse_events(f'MRTOF_EVENT terminal ion={ion} splat=0 instance=1 volts=0 t_us=7 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=1 turns=0 central_crossings=0\n')[0]
                 with events.open('w', newline='') as stream:
                     writer = csv.DictWriter(stream, fieldnames=list(row))
                     writer.writeheader()
@@ -301,7 +301,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                 receipt = folder / 'batch_receipt.json'
                 receipt.write_text(json.dumps(batch))
                 batches.append((log, receipt))
-            with patch.object(merger, 'read_scientific_events', wraps=mr.read_scientific_events) as read:
+            with patch.object(merger, 'read_scientific_events', wraps=_mrtof_observations.read_scientific_events) as read:
                 result = merger.merge_measured_event_logs(batches=batches, preparation_path=prep, output_path=root / 'merged.log', receipt_path=root / 'merge.json')
                 self.assertEqual(read.call_count, 2)
             self.assertEqual(result['original_particle_ids'], [11, 45])
@@ -396,23 +396,23 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / 'native.log'
             log.write_text(text)
-            original = mr.parse_events(text)
+            original = _mrtof_observations.parse_events(text)
             eventfile = Path(directory) / 'events.csv'
             with eventfile.open('w', newline='') as handle:
                 writer = csv.DictWriter(handle, fieldnames=list(original[0]))
                 writer.writeheader()
                 writer.writerows(original)
-            events, complete, digest = mr.read_scientific_events(log, scientific_event_output=dict(events_path=str(eventfile)))
+            events, complete, digest = _mrtof_observations.read_scientific_events(log, scientific_event_output=dict(events_path=str(eventfile)))
             self.assertEqual(events, original)
             self.assertEqual(complete[0].splats, 1)
             self.assertEqual(digest, hashlib.sha256(log.read_bytes()).hexdigest())
-            self.assertEqual(mr.read_scientific_events(log)[0], original)
+            self.assertEqual(_mrtof_observations.read_scientific_events(log)[0], original)
             eventfile.unlink()
             with self.assertRaises(FileNotFoundError):
-                mr.read_scientific_events(log, scientific_event_output=dict(events_path=str(eventfile)))
+                _mrtof_observations.read_scientific_events(log, scientific_event_output=dict(events_path=str(eventfile)))
             eventfile.write_text('kind,ion\nterminal,11\n')
             with self.assertRaises(ValueError):
-                mr.read_scientific_events(log, scientific_event_output=dict(events_path=str(eventfile)))
+                _mrtof_observations.read_scientific_events(log, scientific_event_output=dict(events_path=str(eventfile)))
 
     def test_actual_typed_emitter_keeps_integer_ids_and_mixed_precision(self):
         import subprocess
@@ -468,9 +468,9 @@ scientific_events:close();scientific_trajectory:close()
                     cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 snapshot = output / 'runtime_snapshot'
-                for relative in ('src/msplatform/backends/simion/resources/scientific_event_csv.lua', 'common/simion/scientific_event_io.py'):
+                for relative in ('src/msplatform/backends/simion/resources/scientific_event_csv.lua', 'src/msplatform/io/scientific_csv.py'):
                     self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
-                check = "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from common.simion import scientific_event_io;assert Path(scientific_event_io.__file__).is_relative_to(Path(sys.argv[1]));print('FROZEN_EVENT_READER=PASS')"
+                check = "import sys;from pathlib import Path;sys.path.insert(0,str(Path(sys.argv[1])/'src'));from msplatform.io import scientific_csv;assert Path(scientific_csv.__file__).is_relative_to(Path(sys.argv[1]));print('FROZEN_EVENT_READER=PASS')"
                 imported = subprocess.run([sys.executable, '-I', '-B', '-c', check, str(snapshot)],
                     cwd=output, capture_output=True, text=True, encoding='utf-8', timeout=30)
                 self.assertEqual(imported.returncode, 0, imported.stdout+imported.stderr)

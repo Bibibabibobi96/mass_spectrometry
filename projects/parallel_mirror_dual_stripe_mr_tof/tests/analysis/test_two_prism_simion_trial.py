@@ -1,4 +1,5 @@
 from __future__ import annotations
+from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import hashlib
 import json
@@ -24,7 +25,7 @@ def mock_recorded_scientific_events(events):
                      if (value := parse_fly_completed_line(line)) is not None]
         return events, completed, hashlib.sha256(data).hexdigest()
     return patch(
-        "projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis.read_scientific_events",
+        "msplatform.backends.simion.mrtof_observations.read_scientific_events",
         side_effect=read,
     )
 
@@ -33,7 +34,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simio
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     materialize_bunch_source,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+from msplatform.backends.simion.mrtof_observations import parse_events
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _accelerator_energy_binding,
     _accelerator_geometric_exit_reference,
@@ -77,12 +78,12 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 "mirror_e_closures", "stripe_electrodes", "stripe_slot", "central_ground_electrodes",
                 "central_ground_slots", "prism_electrodes", "prism_ground_shields")
         geometry = {key: [] for key in keys}
-        legacy = two_prism_simion_trial._collision_geometry_projection(geometry)
+        legacy = _mrtof_observations._collision_geometry_projection(geometry)
         self.assertNotIn("ion_processor_electrodes", legacy)
         self.assertNotIn("detector", legacy)
         geometry.update(ion_processor_electrodes=[dict(name="lp_pull", electrode_id=5, solids=[], cutouts=[])],
                         detector=dict(id=25, box=[-25, -87, 95, 25, -37, 97]))
-        projected = two_prism_simion_trial._collision_geometry_projection(geometry)
+        projected = _mrtof_observations._collision_geometry_projection(geometry)
         self.assertEqual(projected["detector"], geometry["detector"])
         self.assertEqual(projected["ion_processor_electrodes"], geometry["ion_processor_electrodes"])
         projected["detector"]["box"][0] = -99

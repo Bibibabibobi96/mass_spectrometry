@@ -28,9 +28,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     derive_two_zone_placement,
     load_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    parse_events,
-)
+from msplatform.backends.simion.mrtof_observations import parse_events
 
 
 def _states(count: int, mother: int = 1000):

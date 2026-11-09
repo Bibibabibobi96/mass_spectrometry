@@ -13,12 +13,12 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
-from common.simion.scientific_event_io import iter_csv_rows
+from msplatform.io.scientific_csv import iter_csv_rows
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     resolve_bunch_source_interval,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events, read_scientific_events
+from msplatform.backends.simion.mrtof_observations import parse_events, read_scientific_events
 
 _ION_FIELD = re.compile(r"(?<![A-Za-z_])(ion=)(\d+)(?=\s|$)")
 
@@ -142,7 +142,7 @@ def _merge_structured_batches(*, batches, declarations, particle_count, particle
                     trajectory_writer.writerow(dict(sample,ion=local if batch_original_ids is not None else local+offset))
             trajectory_created=True
         covered.extend(actual_ids if batch_original_ids is not None else range(offset+1,offset+count+1))
-        records.append(dict(path=str(log.resolve()),sha256=log_identity,scientific_event_output=declaration,offset=offset,count=count))
+        records.append(dict(path=str(log.resolve()),bytes=log.stat().st_size,sha256=log_identity,scientific_event_output=declaration,offset=offset,count=count))
     expected=[particle for group in batch_original_ids for particle in group] if batch_original_ids is not None else list(range(particle_id_min,particle_id_min+particle_count))
     if covered != expected:
         raise ValueError("structured batches do not cover frozen cohort exactly once")
@@ -241,7 +241,7 @@ def merge_measured_event_logs(*, batches: list[tuple[Path, Path]], preparation_p
         result.update(role="mrtof_measured_batch_log_merge",preparation=file_record(preparation_path),
             mother_particle_count=preparation["mother_particle_count"],original_particle_ids=expected,
             solver_epoch_instrument_time_us=preparation["solver_epoch_instrument_time_us"],id_rebasing_applied=False)
-        result["batches"]=[dict(log=dict(path=merged["path"], sha256=merged["sha256"]),batch_receipt=file_record(receipt),fly2=file_record(fly),
+        result["batches"]=[dict(log=dict(path=merged["path"], exists=True, bytes=merged["bytes"], sha256=merged["sha256"]),batch_receipt=file_record(receipt),fly2=file_record(fly),
             scientific_event_output=batch["scientific_event_output"]) for (log,receipt),(_,batch,fly),merged in zip(batches,validated,result["batches"],strict=True)]
         receipt_path.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
         return result
@@ -303,11 +303,6 @@ def main() -> int:
     merge_joint.add_argument("--batch-log", action="append", nargs=2, required=True)
     merge_joint.add_argument("--output", required=True, type=Path)
     merge_joint.add_argument("--receipt", required=True, type=Path)
-    analyze_joint = sub.add_parser("analyze-joint")
-    analyze_joint.add_argument("--preparation", required=True, type=Path)
-    analyze_joint.add_argument("--log", required=True, type=Path)
-    analyze_joint.add_argument("--output", required=True, type=Path)
-    analyze_joint.add_argument("--analysis-contract", type=Path)
     compare_joint = sub.add_parser("compare-joint")
     compare_joint.add_argument("--preparation", required=True, type=Path)
     compare_joint.add_argument("--log", required=True, type=Path)
@@ -327,12 +322,6 @@ def main() -> int:
                                   preparation_path=args.preparation, output_path=args.output,
                                   receipt_path=args.receipt)
         print("PREPARED_JOINT_MERGE=PASS")
-    elif args.command == "analyze-joint":
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics import analyze_prepared_joint_flight
-        analyze_prepared_joint_flight(args.preparation, args.log, args.output,
-                                     merge_receipt=args.preparation.parent / "batch_log_merge_receipt.json",
-                                     analysis_contract=args.analysis_contract)
-        print("PREPARED_JOINT_DIAGNOSTICS=PASS")
     elif args.command == "compare-joint":
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import compare_trajectory_representation
         compare_trajectory_representation(args.preparation, args.log, args.output,scientific_event_receipt=args.scientific_event_receipt)

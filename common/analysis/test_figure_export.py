@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from PIL import Image
 
-from common.analysis.figure_export import export_figures
+from msplatform.io.figure_export import export_figures
 
 
 class FigureExportTests(unittest.TestCase):

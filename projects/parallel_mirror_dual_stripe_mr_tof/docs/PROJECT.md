@@ -266,7 +266,7 @@ IP后续方向是实际横向相空间与慢轴返回匹配，不能只调平均
 D保持较高原生到达计数，但未同时优于两轴角宽和最小时宽；各路线必须使用各自冻结出口。
 厂家未知尺寸、连续孔口碰撞及局部离散限制仍有效，不由新增透镜覆盖。
 
-prepared-joint与IP局部诊断的PNG／SVG保存复用[公共图形导出](../../../common/analysis/figure_export.py)，
+prepared-joint与IP局部诊断的PNG／SVG保存复用[公共图形导出](../../../src/msplatform/io/figure_export.py)，
 分别保留180／200 DPI、白底、文件名及原文件记录／科学metadata。SVG沿公共字节流写LF，记录实际SHA，
 不改写旧产物。图形仍由项目创建和关闭；
 目标已存在时拒绝覆盖，格式保存失败只清理该次导出创建的文件，成功或失败均关闭图形。
@@ -538,6 +538,27 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 
 `native_condition`指向原条件runner，显式消费ConditionPath、ContextPath与CompositionPlanPath，不猜latest资产。`analysis/execution_binding.py`从本次release/context小合同核对实际质量／电荷，物种不匹配不能READY；无结构变体时返回null。Candidate／Formal请求须符合真实支持域，不能静默降级。现公开profile的100／524 Da、+1条件仅表示输入适用范围，不代表科学资格。
 编译结果绑定小定义并持续保护，原owner从同一定义准备／冻结／执行；能力查询不生成GEM、不读大PA。OA几何与IOB pose消费纯几何提供者，新机械exit-origin与合法旧PA frame显式转换；未知frame拒绝，旧plan只读，世界布局不变。查询与执行入口见[公共合同](../../../common/contracts/README.md#执行dry-run)，READY不代表科学资格。
+
+## Installed prepared-joint recorded analysis
+
+`msplatform.workflows.prepared_joint.diagnostics analyze-joint` owns the complete recorded-data
+analysis CLI. `measured_population` closes the original source census and `loss_acceptance` supplies
+the existing diagnostics; the sole SIMION recorded-event/trajectory adapter is
+`msplatform.backends.simion.mrtof_observations`. CSV iteration and PNG/SVG export are installed neutral
+I/O. Their former project/common implementations and moved CLI operations are retired; the remaining
+native materializer, controller and research operations retain their current owners.
+
+The operation consumes explicit preparation, merge, source, timing, field-binding metadata and declared
+observations. It does not discover Git or invoke a supplier, need PA payloads, or create a run owner.
+Posthoc peak-method changes preserve the native/nonpeak contract; relative timing records are resolved
+against the explicitly supplied analysis contract directory. Original mother IDs, birth/absolute clocks,
+repeated/reverse events, unknown loss and declared trajectory choices remain authoritative. Missing or
+changed declared data fails; completed raw data can be analyzed independently after a native or analysis
+failure. Structured merge records now include the actual closed-log byte count required by the existing
+strict bound reader, alongside the unchanged SHA; historical records are not rewritten.
+
+Software validation and installed legacy/CSV reanalysis are recorded separately from native execution.
+This ownership migration does not grant field convergence, Fly, GUI or Formal qualification.
 
 ## 结构化科学记录
 
