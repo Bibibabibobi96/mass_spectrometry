@@ -124,8 +124,6 @@
           "id": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
           "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend",
             "oa_mr",
             "accelerator_interface",
             "single_reflection_flight",
@@ -1001,7 +999,9 @@
           "id": "msplatform_backends_simion_resources_iob_core_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/iob_core.lua",
           "consumers": [
-            "single_reflection_flight"
+            "single_reflection_flight",
+            "local_frontend",
+            "cooled_frontend"
           ]
         },
         {
@@ -1203,7 +1203,7 @@
           ]
         },
         {
-          "id": "local_frontend_common_simion_assets_iob_instance_seeds_1_instance_seed_iob",
+          "id": "msplatform_simion_structural_seed_1_iob",
           "source_repo_path": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
           "consumers": [
             "local_frontend",
@@ -1255,6 +1255,14 @@
           "consumers": [
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "msplatform_simion_build_tracking_iob_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/build_tracking_iob.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
           ]
         }
       ],

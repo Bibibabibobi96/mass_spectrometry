@@ -11,7 +11,7 @@ from unittest.mock import patch
 from integrations.tests.test_local_frontend_workflow import fixture as local_fixture
 from integrations.tests.test_cooled_frontend import cooled_request_fixture
 from integrations.tests.test_single_reflection_preparation import fixture as single_fixture
-from integrations.workflows.local_frontend.prepare import prepare_local_frontend
+from msplatform.workflows.local_frontend.prepare import prepare_local_frontend
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 

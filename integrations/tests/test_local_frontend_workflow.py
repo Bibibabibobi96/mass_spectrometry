@@ -23,7 +23,7 @@ from msplatform.ion_release.release import generate_release_states
 from msplatform.backends.simion.source import SOURCE_COLUMNS
 from integrations.tests.frontend_fixtures import canonical_frontend_fixture
 from integrations.tests import test_local_frontend_field_support as field_support_tests
-from integrations.workflows.local_frontend.prepare import (
+from msplatform.workflows.local_frontend.prepare import (
     AUTOMATIC_PULSE_POLICY, RF_DELAY_PULSE_POLICY, _nominal_extraction_duration,
     extraction_shared_times, prepare_local_frontend, resolve_pulse_decision,
 )
@@ -512,7 +512,7 @@ class LocalFrontendTests(unittest.TestCase):
 
     def test_parent_consumption_reads_and_verifies_only_the_frozen_copy(self):
         from msplatform.io import manifest_records as records
-        from integrations.workflows.local_frontend import prepare as compiler
+        from msplatform.workflows.local_frontend import prepare as compiler
         output = self.workspace / "frozen_parent_only"
         original = Path(self.request["composition_plan"]["path"]).resolve()
         frozen = output / "inputs/parent_composition_plan.json"

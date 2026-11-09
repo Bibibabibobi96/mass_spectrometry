@@ -20,7 +20,7 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION, _resolve_standalone_dynamic_field_bank,
 )
-from integrations.workflows.local_frontend import runtime as shared
+from msplatform.workflows.local_frontend import runtime as shared
 from integrations.workflows.single_reflection_flight.field_plan import laplace_member_identity
 
 
@@ -704,6 +704,7 @@ def fields(run: Path) -> dict:
         raise ValueError('field bank role/member projection differs from its verified records')
     _resolve_standalone_dynamic_field_bank(bank,{'coarse_frontend':1})
     return dict(records=records,bank=bank,receipt=receipt,
+        bank_record=dict(stage['field_bank_record'], path=str(_record_path(stage['field_bank_record'],run.parents[4]))),
         identity_validation='per_member_public_generation__exact_operator_and_scaling__runtime_stat_recheck')
 
 

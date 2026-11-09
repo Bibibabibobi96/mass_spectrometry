@@ -1889,6 +1889,10 @@
         {
           "regex": "^src/msplatform/(?:analysis/paired_accelerator_pulse|backends/comsol/prepulse_replay)\\.py$",
           "reason": "installed_paired_pulse_analysis_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/local_frontend/",
+          "reason": "canonical_local_frontend_workflow_changed"
         }
       ],
       "command": {

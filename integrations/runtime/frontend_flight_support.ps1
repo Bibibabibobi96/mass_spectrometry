@@ -56,9 +56,15 @@ function Invoke-FrontendRuntimePython {
 function New-FrontendFlightSpecification {
   [CmdletBinding()]
   param([Parameter(Mandatory)]$Case,[Parameter(Mandatory)][string]$SimionExe,
-    [Parameter(Mandatory)]$Package)
+    [Parameter(Mandatory)]$Package,[string]$RepoRoot='')
   if([int]$Case.count-lt1-or[int]$Case.simion_particle_id_offset-ne0-or[int]$Case.merge_offset-ne0){
     throw 'Frontend case must retain original particle IDs without rebasing.'
+  }
+  if(($Case-is[Collections.IDictionary]-and$Case.Contains('iob_validation_module'))-or$Case.PSObject.Properties.Name-contains'iob_validation_module'){
+    $null=Invoke-FrontendRuntimePython -Python $Package.python -RepoRoot $RepoRoot -RunDirectory $Package.artifact_run_dir `
+      -Name ([string]$Case.case_id+'.preflight') -Arguments @('-m',[string]$Case.iob_validation_module,'verify-case',
+        '--run',$Package.artifact_run_dir,'--case',(Join-Path ([string]$Case.working_directory) 'case_metadata.json'),
+        '--validation-stage','preflight') -Json
   }
   $range=if(($Case-is[Collections.IDictionary]-and$Case.Contains('source_row_range'))-or
       $Case.PSObject.Properties.Name-contains'source_row_range'){@($Case.source_row_range)}
@@ -144,7 +150,19 @@ function Invoke-FrontendIobBuild {
   $execution=Get-RunNativeExecutionContext -Package $Package -Paths $paths -Tool SIMION
   $arguments=Project-RunPath -Paths ([string[]]$Case.iob_builder_arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
   $nativeReturned=$false
+  $nativeAttempted=$false
+  $hasReopen=(($Case-is[Collections.IDictionary]-and$Case.Contains('iob_reopen_arguments'))-or$Case.PSObject.Properties.Name-contains'iob_reopen_arguments')
+  $validateCase={
+    param([string]$ValidationStage)
+    if(-not$hasReopen){return}
+    $null=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory `
+      -Name ($Phase+'.'+$name+'.'+$ValidationStage) -Arguments @('-m',[string]$Case.iob_validation_module,'verify-case',
+        '--run',$RunDirectory,'--case',(Join-Path ([string]$Case.working_directory) 'case_metadata.json'),
+        '--validation-stage',$ValidationStage) -Json
+  }
   try {
+  & $validateCase 'prebuild'
+  $nativeAttempted=$true
   $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
     -ArgumentList ([string[]]$arguments) -WorkingDirectory ([string]$execution.projected_paths[0]) -Environment $execution.environment `
     -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.assembly.resource_usage.json") `
@@ -154,6 +172,23 @@ function Invoke-FrontendIobBuild {
   if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob.'+$name) -ProcessRecord $result}
   if($result.resource_budget_exceeded-or[int]$result.exit_code-ne0-or-not(Test-Path -LiteralPath ([string]$Case.iob_path))){
     throw "Frontend IOB assembly failed: $Phase/$name"
+  }
+  if($hasReopen){
+    & $validateCase 'postbuild'
+    $reopenArgs=Project-RunPath -Paths ([string[]]$Case.iob_reopen_arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
+    $nativeReturned=$false
+    $reopen=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
+      -ArgumentList ([string[]]$reopenArgs) -WorkingDirectory ([string]$execution.projected_paths[0]) -Environment $execution.environment `
+      -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.reopen.resource_usage.json") `
+      -RedirectStandardOutput ([string]$Case.iob_reopen_record.path) `
+      -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.reopen.stderr.log")
+    $nativeReturned=$true
+    if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob-reopen.'+$name) -ProcessRecord $reopen}
+    if($reopen.resource_budget_exceeded-or[int]$reopen.exit_code-ne0){throw "Frontend IOB reopen failed: $Phase/$name"}
+    $marker=Get-Content -LiteralPath ([string]$Case.iob_reopen_record.path) -Raw
+    if($marker-notmatch'(?m)^LOCAL_FRONTEND_IOB_REOPEN=PASS INSTANCES=1
+?$'){throw 'Local frontend IOB lacks its actual canonical cold-reopen completion marker.'}
+    & $validateCase 'postreopen'
   }
   if($IobVerification){
     Invoke-RunToolRootContext -RepoRoot $RepoRoot -Environment $execution.environment -Operation {
@@ -165,7 +200,7 @@ function Invoke-FrontendIobBuild {
     if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob.'+$name) -ExceptionData $_.Exception.Data}
     # This helper also builds the first IOB before a batch wave exists. Carry
     # an unknown native builder/inspector to the same owner release boundary.
-    if((-not$nativeReturned-and(-not$_.Exception.Data.Contains('observed_process_exit_confirmed')-or
+    if(($nativeAttempted-and-not$nativeReturned-and(-not$_.Exception.Data.Contains('observed_process_exit_confirmed')-or
          $_.Exception.Data['observed_process_exit_confirmed']-isnot[bool]-or-not[bool]$_.Exception.Data['observed_process_exit_confirmed']))-or
        ($_.Exception.Data.Contains('observed_process_exit_confirmed')-and-not[bool]$_.Exception.Data['observed_process_exit_confirmed'])){
       $_.Exception.Data['simion_wave_writer_completion_confirmed']=$false
@@ -254,7 +289,7 @@ function Invoke-FrontendFlightPhase {
       if($firstBatchCompleted){$adaptive+='--first-batch-completed'}
       Invoke-FrontendRuntimePython @context -Name "$Phase.dispatch-followup" -Arguments $adaptive
     }
-    $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe
+    $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe -RepoRoot $RepoRoot
   }
   if($recovery-and$plan.PSObject.Properties['estimation']-and$plan.estimation.PSObject.Properties['recovered_missing_observation']-and
       [bool]$plan.estimation.recovered_missing_observation){
@@ -266,7 +301,7 @@ function Invoke-FrontendFlightPhase {
       $first=$missing[0];$formalIndex=[int]$first.index
       $null=Invoke-FrontendIobBuild @native -Case $first
       if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $initial -Depth 100}
-      $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe
+      $firstSpecification=New-FrontendFlightSpecification -Package $Package -Case $first -SimionExe $SimionExe -RepoRoot $RepoRoot
       $replan={param($formal)
         $arguments=@('-m','msplatform.execution.simion_dispatch','--recovered-missing-plan',$dispatch,'--output',$dispatch,
           '--observed-formal-peak-bytes',[string]$formal.observed_peak_process_tree_working_set_bytes,
@@ -311,7 +346,7 @@ function Invoke-FrontendFlightPhase {
       if($WorkbenchReceiptPath){Write-RunJson -Path $WorkbenchReceiptPath -Value $materialized -Depth 100}
     }
     if((-not$recovery)-and$null-ne$materialized.gui_case){$null=Invoke-FrontendIobBuild @native -Case $materialized.gui_case}
-    $specifications=@($pending|ForEach-Object{New-FrontendFlightSpecification -Package $Package -Case $_ -SimionExe $SimionExe})
+    $specifications=@($pending|ForEach-Object{New-FrontendFlightSpecification -Package $Package -Case $_ -SimionExe $SimionExe -RepoRoot $RepoRoot})
     [pscustomobject]@{pending=$specifications;materialized=$materialized}
   }
   # Capture the caller's callback and function implementation before the public

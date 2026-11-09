@@ -4,11 +4,12 @@ from __future__ import annotations
 from copy import deepcopy
 import csv
 import json
-import importlib.util
 import os
 from pathlib import Path
 import shutil
 import stat
+import sys
+import sysconfig
 import subprocess
 import tempfile
 import unittest
@@ -23,8 +24,8 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
 from integrations.tests.test_local_frontend_workflow import fixture, REPO
-from integrations.workflows.local_frontend.prepare import prepare_local_frontend
-from integrations.workflows.local_frontend.runtime import (
+from msplatform.workflows.local_frontend.prepare import prepare_local_frontend
+from msplatform.workflows.local_frontend.runtime import (
     _phase, prepare_dispatch_request, materialize_batches,
 )
 
@@ -94,7 +95,9 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
             self.assertEqual(case["fly_arguments"][case["fly_arguments"].index("--programs")+1], "1")
             self.assertEqual(Path(case["program_path"]).stem, Path(case["iob_path"]).stem)
             self.assertTrue(Path(case["carrier_reference"]).is_absolute())
-            self.assertEqual(Path(case["iob_builder_arguments"][5]), Path(case["iob_path"]))
+            self.assertEqual(Path(case["iob_builder_arguments"][4]), Path(case["working_directory"])/"build_iob_spec.lua")
+            self.assertEqual(case["iob_builder_arguments"][5], "build")
+            self.assertEqual(case["iob_reopen_arguments"][5], "verify")
             program = Path(case["program_path"]).read_text(encoding="utf-8")
             self.assertIn("sim_trajectory_quality=8", program)
             self.assertNotRegex(program, r"(?m)^\s*sim_trajectory_image_control\s*=")
@@ -106,18 +109,91 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         self.assertEqual((self.run/"inputs/release_global.csv").read_bytes(), original)
         self.assertEqual({p.name: p.read_bytes() for p in self.fields.glob("*.pa")}, before_fields)
         self.assertEqual(len(list((self.run/"simion").rglob("*.pa"))), 3)
-        seed_root = self.run/"simion/iob_seed"
-        self.assertEqual({p.name for p in seed_root.iterdir()}, {"1_instance_seed.iob", "iob_seed_placeholder_01.pa0"})
-        source_root = REPO/"common/simion/assets/iob_instance_seeds"
-        for target in seed_root.iterdir():
-            source = (REPO/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
-                      if target.name == "1_instance_seed.iob" else source_root/target.name)
-            self.assertEqual(target.read_bytes(), source.read_bytes())
-            self.assertLess(len(str(target).encode("utf-16-le"))//2, 260)
+        seed_roots = set()
         for case in [*result["batches"], result["gui_case"]]:
-            self.assertEqual(Path(case["seed_record"]["path"]).parent, seed_root)
-            self.assertEqual(Path(case["seed_placeholder_record"]["path"]).parent, seed_root)
-            self.assertEqual(case["iob_builder_arguments"][4], str(seed_root/"1_instance_seed.iob"))
+            seed = Path(case["seed_record"]["path"])
+            seed_roots.add(seed.parent)
+            self.assertEqual(seed.read_bytes(),
+                (REPO/"src/msplatform/backends/simion/resources/1_instance_seed.iob").read_bytes())
+            self.assertEqual(seed.stat().st_size, 20856)
+            self.assertEqual({p.name for p in seed.parent.iterdir()}, {"1_instance_seed.iob"})
+            self.assertEqual(case["generated_paths"][1], str(seed.parent/"iob_seed_placeholder_01.pa0"))
+            self.assertEqual(len(case["iob_pa_guard_records"]), 3)
+            self.assertNotIn("seed_placeholder_record", case)
+        self.assertEqual(len(seed_roots), len(result["batches"])+1)
+
+    def test_case_boundaries_reject_changed_controls_bank_and_closed_iob(self):
+        from msplatform.workflows.local_frontend.runtime import verify_case
+
+        result = materialize_batches(self.run, "extraction", plan_single_wave_batches(100, 1), 40., self.times)
+        case = result["gui_case"]
+        metadata = Path(case["working_directory"])/"case_metadata.json"
+        self.assertEqual(verify_case(self.run, metadata, stage="prebuild")["fields"], 3)
+        targets = [Path(case["source_record"]["path"]), Path(case["program_record"]["path"]),
+                   Path(self.field_stage["field_bank_path"])]
+        for target in targets:
+            with self.subTest(target=target.name):
+                original = target.read_bytes()
+                target.write_bytes(original+b"changed")
+                try:
+                    with self.assertRaises(AssertionError):
+                        verify_case(self.run, metadata, stage="prebuild")
+                finally:
+                    target.write_bytes(original)
+        # This controlled file tests the closed-creation contract only; no vendor built it.
+        iob = Path(case["iob_path"])
+        iob.write_bytes(b"PURE_TEST_ONLY_NOT_NATIVE_IOB")
+        verify_case(self.run, metadata, stage="postbuild")
+        self.assertEqual(verify_case(self.run, metadata, stage="postreopen")["status"], "validated")
+        iob.write_bytes(b"CHANGED_AFTER_CLOSED_CREATION")
+        with self.assertRaises(AssertionError):
+            verify_case(self.run, metadata, stage="preflight")
+
+    def test_closed_iob_records_keep_classified_policy_without_a_size_cap(self):
+        from types import SimpleNamespace
+        from msplatform.io import manifest_records
+        from msplatform.execution import retention
+        from msplatform.workflows.local_frontend import runtime
+
+        result = materialize_batches(self.run, "extraction", plan_single_wave_batches(100, 1), 40., self.times)
+        case = result["gui_case"]
+        metadata = Path(case["working_directory"]) / "case_metadata.json"
+        iob = Path(case["iob_path"])
+        iob.write_bytes(b"PURE_TEST_ONLY_NOT_NATIVE_IOB")
+        # The original classified facade does not add a role to small records.
+        self.assertEqual(runtime.file_record(iob), retention.file_record(iob))
+        self.assertEqual(runtime.file_record(iob), manifest_records.file_record(iob))
+        self.assertNotIn("retention_role", runtime.file_record(iob))
+        actual_stat = Path.stat
+        actual_hash = manifest_records.file_sha256
+        size = 8 * 1024 * 1024
+        readers = []
+
+        def metadata_at_reader_boundary(path, *args, **kwargs):
+            value = actual_stat(path, *args, **kwargs)
+            if path == iob:
+                return SimpleNamespace(st_size=size, st_mode=value.st_mode, st_mtime_ns=value.st_mtime_ns)
+            return value
+
+        def buffered(path):
+            if path == iob:
+                readers.append(path)
+                return "A" * 64
+            return actual_hash(path)
+
+        # Only stat/hash are synthetic; execute the real generated case checks.
+        # No large payload or native IOB is created. IOBs are policy-classified
+        # lightweight_optional and retain the buffered reader, unlike native PAs.
+        with patch.object(Path, "stat", metadata_at_reader_boundary), \
+             patch.object(manifest_records, "file_sha256", buffered), \
+             patch.object(manifest_records, "file_sha256_unbuffered", side_effect=AssertionError("IOB is not a native PA")):
+            self.assertEqual(runtime.verify_case(self.run, metadata, stage="postbuild")["fields"], 3)
+            self.assertEqual(runtime.verify_case(self.run, metadata, stage="postreopen")["status"], "validated")
+            recorded = json.loads(metadata.with_name("iob_identity.json").read_text())
+            self.assertEqual(recorded, retention.file_record(iob))
+            self.assertEqual(recorded["bytes"], size)
+        self.assertEqual(len(readers), 3)
+        self.assertEqual(iob.read_bytes(), b"PURE_TEST_ONLY_NOT_NATIVE_IOB")
 
     def test_public_formal_observation_and_followup_keep_bootstrap_and_all_pending(self):
         request = dict(solver="SIMION", field_kind="rf", particle_count=100, independent_particles=True, rf_steps_per_period=64)
@@ -147,22 +223,7 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows junction fixture requires PowerShell 7")
     def test_frozen_module_loaded_through_junction_prepares_real_dispatch(self):
         snapshot = self.workspace / "runtime_snapshot"
-        relative = Path("integrations/workflows/local_frontend/runtime.py")
-        resources = [relative, Path("integrations/runtime/build_single_flight_program.py"),
-                     Path("src/msplatform/backends/simion/resources/rf_drive.lua"),
-                     Path("src/msplatform/backends/simion/resources/voltage_waveforms.lua"),
-                     Path("src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua"),
-                     Path("src/msplatform/backends/simion/resources/single_flight_frontend_hook.lua")]
-        for name in resources:
-            target = snapshot / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO / name, target)
-        seeds = snapshot / "common/simion/assets/iob_instance_seeds"
-        seeds.mkdir(parents=True)
-        # These bytes exercise freezing only; no vendor parses them or flies.
-        canonical_seed = snapshot / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
-        canonical_seed.write_bytes(b"PURE_TEST_IOB_SEED")
-        (seeds / "iob_seed_placeholder_01.pa0").write_bytes(b"PURE_TEST_PLACEHOLDER")
+        shutil.copytree(REPO/"src/msplatform", snapshot/"src/msplatform")
         alias = self.workspace / "execution_alias"
         script = self.workspace / "junction.ps1"
         script.write_text("param($Alias,$Target)\nNew-Item -ItemType Junction -Path $Alias -Target $Target -ErrorAction Stop|Out-Null\n",
@@ -172,32 +233,41 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.addCleanup(alias.rmdir)
         self.assertEqual(alias.resolve(), snapshot.resolve())
-        imported = alias / relative
-        spec = importlib.util.spec_from_file_location("frozen_local_frontend_runtime", imported)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        self.assertEqual(Path(module.__file__), imported)
-        self.assertNotEqual(imported, imported.resolve())
-        with self.assertRaises(ValueError):
-            imported.relative_to(snapshot.resolve())
-        module._phase(self.run, "extraction", 40., self.times)
-        context = module._context(self.run)
-        prepared = module.prepare_dispatch_request(self.run, "extraction", context=context)
-        self.assertEqual(prepared["particle_count"], 100)
-        self.assertTrue(Path(prepared["dispatch_request_path"]).is_file())
-        materializer = context["code_records"]["materializer"]
-        self.assertEqual(Path(materializer["path"]), (snapshot/relative).resolve())
-        self.assertEqual(materializer, file_record(snapshot/relative))
-        for key, relative_source in module._PROGRAM_SOURCES.items():
-            self.assertEqual(context["sources"][key],(snapshot/relative_source).read_text(encoding="utf-8-sig"))
-            self.assertEqual(context["code_records"][key],file_record(snapshot/relative_source))
-        self.assertFalse((self.run/"inputs/local_program_sources").exists())
-        self.assertEqual(prepared["request"]["frontend_cell_mm_xyz"],
-                         json.loads((self.run / "inputs/numerics.json").read_text())["cell_mm_xyz"])
+        code = """import sys,json,importlib.abc
+from pathlib import Path
+root,run=map(Path,sys.argv[1:3]);sys.path[:0]=[str(root/'src'),*json.loads(sys.argv[3])]
+class NoRoot(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('root fallback: '+fullname)
+sys.meta_path.insert(0,NoRoot())
+from msplatform.workflows.local_frontend import runtime as module
+assert Path(module.__file__).is_relative_to(root)
+assert Path(module.__file__)!=Path(module.__file__).resolve()
+module._phase(run,'extraction',40.,[0.,20.,40.,60.,100.])
+context=module._context(run);prepared=module.prepare_dispatch_request(run,'extraction',context=context)
+assert prepared['particle_count']==100
+assert prepared['request']['frontend_cell_mm_xyz']==json.loads((run/'inputs/numerics.json').read_text())['cell_mm_xyz']
+materializer=context['code_records']['materializer']
+assert Path(materializer['path'])==(root/'src/msplatform/workflows/local_frontend/runtime.py').resolve()
+for key,name in module._PROGRAM_SOURCES.items():
+ source=root/'src/msplatform/backends/simion/resources'/name
+ assert context['sources'][key]==source.read_text(encoding='utf-8-sig')
+ assert context['code_records'][key]==module.file_record(source)
+for name,loaded in tuple(sys.modules.items()):
+ if name.startswith('msplatform') and getattr(loaded,'__file__',None):
+  assert Path(loaded.__file__).resolve().is_relative_to((root/'src').resolve()),loaded.__file__
+assert not (run/'inputs/local_program_sources').exists()
+print('COLD_CANONICAL_LOCAL_RUNTIME=PASS')
+"""
+        roots = list(dict.fromkeys(sysconfig.get_path(key) for key in ("purelib", "platlib")))
+        result = subprocess.run([sys.executable,"-I","-S","-c",code,str(alias),str(self.run),json.dumps(roots)],
+                                cwd=self.workspace,capture_output=True,text=True,encoding="utf-8",timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn("COLD_CANONICAL_LOCAL_RUNTIME=PASS",result.stdout)
 
     def test_dispatch_binds_phase_source_code_fields_and_uses_public_scheduler(self):
         _phase(self.run, "extraction", 40., self.times)
-        with patch("integrations.workflows.local_frontend.runtime.file_sha256", wraps=file_sha256) as hashed:
+        with patch("msplatform.workflows.local_frontend.runtime.file_sha256", wraps=file_sha256) as hashed:
             result = prepare_dispatch_request(self.run, "extraction")
         self.assertTrue(all(Path(call.args[0]).suffix != ".pa" for call in hashed.call_args_list))
         request = result["request"]
@@ -218,7 +288,7 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         self.assertFalse((self.run/"simion/discovery").exists())
 
     def test_field_bank_binds_current_ordered_per_volt_response(self):
-        from integrations.workflows.local_frontend.runtime import _fields
+        from msplatform.workflows.local_frontend.runtime import _fields
         path = Path(self.field_stage["field_bank_path"])
         original = json.loads(path.read_text())
         self.assertEqual(_fields(self.run)["bank"], original)
@@ -262,37 +332,105 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         self.assertFalse((self.run/"simion/discovery").exists())
 
     @unittest.skipUnless(Path(shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
+    def test_tracking_wrapper_projects_bootstrap_and_keeps_rf_dualcone_aliases(self):
+        from msplatform.backends.simion.source import lua_value
+
+        canonical = self.workspace/"canonical"
+        execution = self.workspace/"execution"
+        helper = REPO/"src/msplatform/execution/resources/native_run_path.lua"
+        wrapper = REPO/"src/msplatform/backends/simion/resources/build_tracking_iob.lua"
+        harness = self.workspace/"projection.lua"
+        harness.write_text(r"""local wrapper,specfile,helper,expected=arg[1],arg[2],arg[3],arg[4]
+expected=expected:gsub('\\','/')
+local original=loadfile;local checked=false
+loadfile=function(path)
+ if path:gsub('\\','/'):match('/iob_core%.lua$') then return function() return function(spec,mode,project)
+  assert(spec.seed_iob:gsub('\\','/')==expected..'/seed/one.iob')
+  assert(spec.output_iob:gsub('\\','/')==expected..'/output.iob')
+  assert(spec.bootstrap_paths[1]:gsub('\\','/')==expected..'/seed/iob_seed_placeholder_01.pa0')
+  assert(spec.instances[1].path:gsub('\\','/')==expected..'/fields/carrier.pa0')
+  assert(project(spec.seed_iob)==spec.seed_iob,'execution alias was projected twice')
+  checked=true
+ end end end
+ return original(path)
+end
+arg={specfile,'build',helper};dofile(wrapper);assert(checked,'actual wrapper did not call canonical core')
+""", encoding="utf-8")
+        for role in ("independent_rf_tracking_iob", "dual_cone_tracking_iob"):
+            for already_projected in (False, True):
+                with self.subTest(role=role, already_projected=already_projected):
+                    base = execution if already_projected else canonical
+                    spec = dict(schema_version=1, role=role, seed_iob=(base/"seed/one.iob").as_posix(),
+                        output_iob=(base/"output.iob").as_posix(),
+                        bootstrap_paths=[(base/"seed/iob_seed_placeholder_01.pa0").as_posix()],
+                        instances=[dict(path=(base/"fields/carrier.pa0").as_posix())], response_fields=[])
+                    request = self.workspace/"projection_spec.lua"
+                    request.write_text("return "+lua_value(spec)+"\n", encoding="utf-8")
+                    env = dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(canonical),
+                               MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(execution))
+                    result = subprocess.run([shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe",
+                        str(harness),str(wrapper),str(request),str(helper),execution.as_posix()],
+                        env=env,cwd=self.workspace,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    @unittest.skipUnless(Path(shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
     def test_plain_lua_iob_builder_keeps_exact_companions_and_shared_absolute_carrier(self):
         result = materialize_batches(self.run, "extraction", plan_single_wave_batches(100, 1), 40., self.times)
         case = result["gui_case"]
         paths = [Path(case[key]) for key in ("program_path", "particle_input")]
         before = [path.read_bytes() for path in paths]
-        builder = Path(case["working_directory"])/"build_iob.lua"
+        builder = Path(case["working_directory"])/"build_tracking_iob.lua"
         harness = self.workspace/"builder_harness.lua"
-        harness.write_text("""local builder,seed,output,field=arg[1],arg[2],arg[3],arg[4]
-local item={pa={nz=2}}
-function item.pa:load() assert(self.filename==field) end
-function item:_debug_update_size() end
-simion={wb={instances={item}}}
-function simion.command(command) assert(command=='"'..seed..'"') end
-function simion.wb:load_particles(path) assert(path==output:gsub('%.iob$','.fly2')) end
-function simion.wb:save(path)
-  assert(path==output and item.x==1 and item.y==2 and item.z==3)
-  assert(item.az==0 and item.el==0 and item.rt==0 and item.scale==1)
-  for _,ext in ipairs({'.lua','.fly2'}) do
-    local f=assert(io.open(path:gsub('%.iob$',ext),'wb'));f:write('seed association');f:close()
-  end
-  local f=assert(io.open(path,'wb'));f:write('PURE_STUB_NOT_NATIVE_IOB');f:close()
+        harness.write_text(r"""local builder,specpath,pathhelper,wrong=arg[1],arg[2],arg[3],arg[4]
+local spec=dofile(specpath)
+local row=spec.instances[1];local grid=row.grid;local saved
+local function pa(path)
+ local value={path=path,nx=grid.nx,ny=grid.ny,nz=grid.nz,dx_mm=grid.dx_mm,dy_mm=grid.dy_mm,dz_mm=grid.dz_mm}
+ function value:size(x,y,z) self.nx,self.ny,self.nz=x,y,z end
+ function value:save(output) self.path=output;local f=assert(io.open(output,'wb'));f:write('PURE_NEUTRAL_BOOTSTRAP');f:close() end
+ function value:load() self.path=self.filename;for key,v in pairs(grid) do self[key]=v end end
+ function value:close() end
+ return value
 end
-arg={seed,output,field,'1','2','3'}
-dofile(builder)
+local function instance(array)
+ local item={pa=array,ox=0,oy=0,oz=0}
+ function item:_debug_update_size() end
+ function item:pa_to_wb_orient(x,y,z) return x,y,z end
+ function item:pa_to_wb_coords(x,y,z) return self.x+x*self.pa.dx_mm,self.y+y*self.pa.dy_mm,self.z+z*self.pa.dz_mm end
+ return item
+end
+simion={pas={},wb={instances={}}}
+function simion.pas:open(path) return pa(path) end
+function simion.pas:close() end
+function simion.command(command)
+ if command=='"'..spec.seed_iob..'"' then
+  local array=pa(spec.bootstrap_paths[1]);array.nx,array.ny,array.nz=3,3,3
+  simion.wb.instances={instance(array)}
+ elseif command=='"'..spec.output_iob..'"' then
+  simion.wb.instances={saved}
+  if wrong=='wrong_carrier' then saved.pa.path=spec.output_iob..'.not_the_carrier.pa' end
+ else error('unexpected actual workbench command '..command) end
+end
+function simion.wb:load_particles(path) assert(path==spec.output_iob:gsub('%.iob$','.fly2')) end
+function simion.wb:save(path)
+ assert(path==spec.output_iob);saved=self.instances[1]
+ for _,ext in ipairs({'.lua','.fly2'}) do local f=assert(io.open(path:gsub('%.iob$',ext),'wb'));f:write('seed association');f:close() end
+ local f=assert(io.open(path,'wb'));f:write('PURE_STUB_NOT_NATIVE_IOB');f:close()
+end
+arg={specpath,'build',pathhelper};dofile(builder)
+assert(io.open(spec.bootstrap_paths[1],'rb')==nil,'owned bootstrap must be removed')
+arg={specpath,'verify',pathhelper};dofile(builder)
 """, encoding="utf-8")
         command = [shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe", str(harness), str(builder),
-                   case["seed_record"]["path"], case["iob_path"], case["carrier_reference"]]
+                   case["iob_builder_arguments"][4],case["iob_builder_arguments"][6]]
         completed = subprocess.run(command, cwd=self.workspace, capture_output=True, text=True, check=False, timeout=30)
         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
         self.assertEqual([path.read_bytes() for path in paths], before)
-        self.assertIn("INSTANCES=1", completed.stdout)
+        self.assertIn("LOCAL_FRONTEND_IOB=PASS INSTANCES=1", completed.stdout)
+        self.assertIn("LOCAL_FRONTEND_IOB_REOPEN=PASS INSTANCES=1", completed.stdout)
+        rejected = subprocess.run([*command,"wrong_carrier"],cwd=self.workspace,capture_output=True,text=True,timeout=30)
+        self.assertNotEqual(rejected.returncode,0)
+        self.assertIn("saved PA path differs",rejected.stdout+rejected.stderr)
 
 
 if __name__ == "__main__":

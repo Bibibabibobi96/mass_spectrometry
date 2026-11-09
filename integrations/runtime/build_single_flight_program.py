@@ -1,9 +1,6 @@
 """Project file boundary around the sole installed tracking Program renderer."""
 
 from __future__ import annotations
-import csv
-import math
-from pathlib import Path
 from msplatform.execution.resources import resource_path
 from typing import Any, Mapping
 from msplatform.backends.simion.tracking_program import (
@@ -37,28 +34,6 @@ from msplatform.backends.simion.tracking_program import (
 )
 
 
-def load_initial_state(path: Path) -> tuple[list[float], list[int], list[list[float]]]:
-    """Load canonical clocks, retained row IDs and velocities in mm/us.
-
-    A restart can reindex its SIMION rows while preserving the mother-cohort
-    identity in the separate row map.  The state-file ID is therefore only
-    validated locally; the row map is the authority for source IDs.
-    """
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        raise ValueError("single-flight initial state is empty")
-    id_column = "particle_id" if "particle_id" in rows[0] else "simulation_particle_id"
-    actual_ids = [int(row[id_column]) for row in rows]
-    if any(value <= 0 for value in actual_ids) or len(set(actual_ids)) != len(actual_ids):
-        raise ValueError("single-flight initial-state particle IDs must be unique and positive")
-    values = [float(row["instrument_time_us"]) for row in rows]
-    if any(not math.isfinite(value) or value < 0 for value in values):
-        raise ValueError("single-flight birth times must be non-negative")
-    velocities = [[float(row[f"velocity_{axis}_m_s"]) / 1000.0 for axis in "xyz"] for row in rows]
-    if any(not math.isfinite(value) for velocity in velocities for value in velocity):
-        raise ValueError("single-flight initial velocities must be finite")
-    return values, actual_ids, velocities
 
 
 def _standalone_dynamic_field_lua(

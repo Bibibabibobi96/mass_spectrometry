@@ -850,8 +850,8 @@ Write-Output 'FROZEN_DEPENDENCIES=PASS'
             self.assertEqual(detached.returncode, 0, detached.stdout + detached.stderr)
             env = dict(os.environ)
             env["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
-            statement = ("from integrations.workflows.local_frontend "
-                         "import prepare,runtime,analyze; from integrations.runtime "
+            statement = ("from msplatform.workflows.local_frontend import prepare,runtime; "
+                         "from integrations.workflows.local_frontend import analyze; from integrations.runtime "
                          "import standalone_pa_family; from msplatform.execution import run_capacity_lifecycle;"
                          "assert prepare.ROLE=='instrument_assembly_local_frontend_request'; print('LOCAL_SNAPSHOT_IMPORT=PASS')")
             completed = subprocess.run([sys.executable, "-s", "-c", statement], cwd=snapshot, env=env,
@@ -917,7 +917,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             snapshot = workspace / "frozen/runtime_snapshot"
             environment = dict(os.environ)
             environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
-            module = "integrations.workflows.local_frontend.prepare"
+            module = "msplatform.workflows.local_frontend.prepare"
             command = [sys.executable, "-B", "-s", "-m", module, "--request", str(request_path),
                        "--workspace-root", str(fixture_root), "--validate-only"]
 
@@ -979,7 +979,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                              "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",
                              "src/msplatform/contracts/schemas/composition_plan.schema.json",
                              "src/msplatform/assembly/resolve_assembly.py",
-                             "projects/orthogonal_accelerator/analysis/assembly_interface.py",
+                             "src/msplatform/components/orthogonal_accelerator/assembly_interface.py",
                              "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py"):
                 with self.subTest(missing=relative):
                     resource = snapshot / relative

@@ -15,6 +15,38 @@ SUPPORT = REPO / "integrations/runtime/frontend_flight_support.ps1"
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")
 class FrontendFlightContinuationTests(unittest.TestCase):
+    def test_optional_local_reopen_preserves_unknown_native_writer(self) -> None:
+        script = r'''param($Support,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Support
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
+function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
+$script:checks=@();$script:calls=0
+function Invoke-FrontendRuntimePython {param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json) $script:checks+=@($Arguments[-1])}
+function Invoke-ResourceBudgetedProcess {param($Limits,$RunDir,$FilePath,$ArgumentList,$WorkingDirectory,$Environment,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
+ $script:calls++
+ if($script:calls-eq1){Set-Content (Join-Path $Root local.iob) 'PURE_INERT_NOT_NATIVE';return @{resource_budget_exceeded=$false;exit_code=0}}
+ try{throw 'explicit inert reopen writer observation unknown'}catch{$_.Exception.Data['observed_process_exit_confirmed']=$false;throw}
+}
+$case=[pscustomobject]@{case_id='case';working_directory=$Root;iob_path=(Join-Path $Root local.iob);iob_builder_arguments=@('build');iob_reopen_arguments=@('verify');iob_validation_module='msplatform.workflows.local_frontend.runtime';iob_reopen_record=@{path=(Join-Path $Root reopen.log)}}
+try{
+ Invoke-FrontendIobBuild -Package ([pscustomobject]@{artifact_run_dir=$Root;python='unused'}) -Case $case -Phase extraction -RunDirectory $Root -SimionExe unused -Limits @{} -Python unused -RepoRoot $Root
+ throw 'unknown reopen unexpectedly succeeded'
+}catch{
+ if($_.Exception.Message-notlike'*reopen writer observation unknown*'){throw}
+ if(-not$_.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-or$_.Exception.Data['simion_wave_writer_completion_confirmed']-ne$false){throw 'unknown reopen writer fact was lost'}
+}
+if($script:calls-ne2-or($script:checks-join',')-ne'prebuild,postbuild'){throw 'reopen failure reached a later completion boundary'}
+'OPTIONAL_LOCAL_REOPEN_UNKNOWN=PASS'
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"unknown_reopen.ps1"
+            path.write_text(script, encoding="utf-8")
+            result = subprocess.run(["pwsh","-NoProfile","-File",str(path),str(SUPPORT),directory],
+                cwd=REPO,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn("OPTIONAL_LOCAL_REOPEN_UNKNOWN=PASS",result.stdout)
+
     def test_unknown_iob_writer_survives_successful_first_fly_drain(self) -> None:
         """Run the real preparation callback and public drain, not a wave stub."""
         script = r'''param($Support,$Root)

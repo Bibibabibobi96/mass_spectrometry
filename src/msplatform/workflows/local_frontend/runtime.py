@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from msplatform.backends.simion.tracking_program import validate_program_trajectory_quality
 
-from common.simion.workbench_seed import freeze_workbench_seed
 
 import argparse
 import csv
@@ -20,24 +19,51 @@ from pathlib import Path
 import stat
 from typing import Any
 
-from common.contracts.file_identity import canonical_json_sha256, file_sha256
-from msplatform.execution.retention import file_record
+from msplatform.io.file_identity import canonical_json_sha256, file_sha256
+from msplatform.execution.retention import file_record, verify_record
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
-from integrations.runtime.build_single_flight_program import (
-    build_local_frontend_program, load_initial_state, _resolve_standalone_dynamic_field_bank,
+from msplatform.backends.simion.tracking_program import (
+    build_local_frontend_program, _resolve_standalone_dynamic_field_bank,
 )
-from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2
-from integrations.workflows.local_frontend.prepare import SOURCE_CLOCK
+from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2, lua_value
+from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
+from msplatform.execution.resources import resource_path
+from msplatform.backends.simion import tracking_program
+from msplatform.workflows.local_frontend.prepare import SOURCE_CLOCK
 
 
 PHASES = ("discovery", "extraction")
-_INTEGRATION = "integrations"
 _PROGRAM_SOURCES = {
-    "rf_drive_kernel_source": "src/msplatform/backends/simion/resources/rf_drive.lua",
-    "voltage_waveforms_source": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-    "pulse_hook_source": "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua",
-    "frontend_hook_source": "src/msplatform/backends/simion/resources/single_flight_frontend_hook.lua",
+    "rf_drive_kernel_source": "rf_drive.lua",
+    "voltage_waveforms_source": "voltage_waveforms.lua",
+    "pulse_hook_source": "single_flight_pulse_hook.lua",
+    "frontend_hook_source": "single_flight_frontend_hook.lua",
 }
+
+
+def _load_initial_state(path: Path) -> tuple[list[float], list[int], list[list[float]]]:
+    """Load canonical clocks, retained row IDs and velocities in mm/us.
+
+    A restart can reindex its SIMION rows while preserving the mother-cohort
+    identity in the separate row map.  The state-file ID is therefore only
+    validated locally; the row map is the authority for source IDs.
+    """
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValueError("single-flight initial state is empty")
+    id_column = "particle_id" if "particle_id" in rows[0] else "simulation_particle_id"
+    actual_ids = [int(row[id_column]) for row in rows]
+    if any(value <= 0 for value in actual_ids) or len(set(actual_ids)) != len(actual_ids):
+        raise ValueError("single-flight initial-state particle IDs must be unique and positive")
+    values = [float(row["instrument_time_us"]) for row in rows]
+    if any(not math.isfinite(value) or value < 0 for value in values):
+        raise ValueError("single-flight birth times must be non-negative")
+    velocities = [[float(row[f"velocity_{axis}_m_s"]) / 1000.0 for axis in "xyz"] for row in rows]
+    if any(not math.isfinite(value) for velocity in velocities for value in velocity):
+        raise ValueError("single-flight initial velocities must be finite")
+    return values, actual_ids, velocities
+
 
 
 def _load(path: Path) -> dict:
@@ -130,6 +156,7 @@ def _fields(run: Path) -> dict:
             or role["rf_reference_voltage_v"] != 1.0):
         raise ValueError("local RF response must bind the verified per-volt field")
     return dict(records=by_kind, bank=bank, receipt=file_record(stage_path),
+                bank_record=dict(bank_record),
                 identity_validation="reuse_successful_same_owner_field_stage_SHA__stat_and_read_only_rechecked")
 
 
@@ -164,17 +191,14 @@ def _context(run: Path, *, field_provider=None) -> dict:
     validate_program_trajectory_quality(numerics["trajectory_quality"])
     fields = (field_provider or _fields)(run)
     materializer = Path(__file__).resolve()
-    repo = materializer.parents[3]
-    code_records, sources = {}, {}
-    paths = {**_PROGRAM_SOURCES, "program_assembler": _INTEGRATION+"/runtime/build_single_flight_program.py", "materializer": str(materializer.relative_to(repo))}
-    for key, relative in paths.items():
-        original = repo/relative
-        code_records[key] = file_record(original)
-        if key in _PROGRAM_SOURCES:
-            sources[key] = original.read_text(encoding="utf-8-sig")
+    paths = {key: native_resource_path(name) for key, name in _PROGRAM_SOURCES.items()}
+    paths.update(program_assembler=Path(tracking_program.__file__).resolve(), materializer=materializer,
+                 native_path_source=resource_path("native_run_path.lua"))
+    code_records = {key: file_record(path) for key, path in paths.items()}
+    sources = {key: paths[key].read_text(encoding="utf-8-sig") for key in _PROGRAM_SOURCES}
+    sources["native_path_source"] = paths["native_path_source"].read_text(encoding="utf-8")
     horizon = max(float(row["instrument_time_us"]) for row in rows) + numerics["maximum_flight_us"]
-    seed = freeze_workbench_seed(run, repo)
-    _json_once(run/"inputs/local_iob_seed.json", seed)
+    seed = file_record(structural_seed_path(1))
     return dict(rows=rows, verify_saved_workbench_replay=replay_requested, flight_horizon_us=horizon, iob_seed=seed,
                 guide=_load(inputs/"guide_contract.json"), frontend=_load(inputs/"frontend_contract.json"),
                 numerics=numerics, fields=fields, sources=sources, code_records=code_records,
@@ -203,37 +227,6 @@ def prepare_dispatch_request(run: Path, phase: str, *, context: dict | None = No
     return dict(dispatch_request_path=str(path), particle_count=request["particle_count"], request=request)
 
 
-def _iob_builder() -> str:
-    # Same documented SIMION instance replacement/save sequence as the existing
-    # integration builders, applied to the official one-slot source fixture.
-    return """local seed=assert(arg[1],'one-instance seed required')
-local output=assert(arg[2],'output IOB required')
-local field=assert(arg[3],'ordinary carrier PA required')
-local x,y,z=assert(tonumber(arg[4])),assert(tonumber(arg[5])),assert(tonumber(arg[6]))
-local stem=assert(output:match('^(.*)%.iob$'),'output must end in .iob')
-local companions={}
-for _,ext in ipairs({'.lua','.fly2'}) do
-  local f=assert(io.open(stem..ext,'rb'));companions[ext]=f:read('*a');f:close()
-end
-simion.command('"'..seed..'"')
-assert(#simion.wb.instances==1,'exactly one actual carrier slot required')
-local item=simion.wb.instances[1]
-item.pa.filename=field;item.pa:load();item:_debug_update_size()
-item.x,item.y,item.z=x,y,z
-item.az,item.el,item.rt,item.scale=0,0,0,1
-if item.pa.nz==1 then item.nz_use=0 end
-simion.wb:load_particles(stem..'.fly2')
-simion.wb:save(output)
--- wb:save also writes associated files. Retain the exact frozen Program/source,
--- rather than any particle/program definition loaded with the seed.
-for _,ext in ipairs({'.lua','.fly2'}) do
-  local f=assert(io.open(stem..ext,'wb'));assert(f:write(companions[ext]));f:close()
-end
-assert(#simion.wb.instances==1,'carrier instance count changed')
-print('LOCAL_FRONTEND_IOB=PASS INSTANCES=1')
-"""
-
-
 def _case(run: Path, phase: str, name: str, rows: list[dict], context: dict, phase_input: dict, *, program_builder=None) -> dict:
     directory = run/"simion"/phase/name
     source_path = directory/"source_global.csv"
@@ -242,7 +235,7 @@ def _case(run: Path, phase: str, name: str, rows: list[dict], context: dict, pha
     writer.writeheader()
     writer.writerows(rows)
     _write_once(source_path, stream.getvalue())
-    births, ids, velocities = load_initial_state(source_path)
+    births, ids, velocities = _load_initial_state(source_path)
     numerical = context["numerics"]
     # A positive explicit pulse covers the complete declared birth+age horizon.
     width = context["flight_horizon_us"]
@@ -254,30 +247,59 @@ def _case(run: Path, phase: str, name: str, rows: list[dict], context: dict, pha
         standalone_dynamic_field_paths=response_field_paths(context["fields"]["records"]),
         trajectory_quality=numerical["trajectory_quality"],
         **context["sources"])
-    for filename, text in (("local.lua", program), ("local.fly2", render_restart_fly2(rows)), ("build_iob.lua", _iob_builder())):
+    for filename, text in (("local.lua", program), ("local.fly2", render_restart_fly2(rows))):
         _write_once(directory/filename, text)
     origin = context["frontend"]["instance_origin_mm"]
     carrier = Path(context["fields"]["records"]["carrier_off"]["path"])
-    # Loading the seed changes SIMION's working directory. Absolute published
-    # paths keep carrier sidecars and the output in their declared owner.
     carrier_reference = carrier.as_posix()
-    seed = Path(context["iob_seed"]["seed"]["frozen"]["path"])
+    seed = directory / "seed/1_instance_seed.iob"
+    verify_record("installed structural seed", context["iob_seed"])
+    _write_bytes_once(seed, Path(context["iob_seed"]["path"]).read_bytes())
+    controls = []
+    for name in ("build_tracking_iob.lua", "iob_core.lua"):
+        target = directory / name
+        _write_bytes_once(target, native_resource_path(name).read_bytes())
+        controls.append(file_record(target))
+    path_helper = directory / "native_run_path.lua"
+    _write_bytes_once(path_helper, resource_path("native_run_path.lua").read_bytes())
+    controls.append(file_record(path_helper))
+    grid = {**context["frontend"]["dimensions"],
+            **{f"d{axis}_mm": numerical["cell_mm_xyz"][axis] for axis in "xyz"}}
+    spec = dict(schema_version=1, role="local_frontend_tracking_iob", seed_iob=str(seed),
+                output_iob=str(directory/"local.iob"),
+                bootstrap_paths=[str(seed.parent/"iob_seed_placeholder_01.pa0")],
+                instances=[dict(role="local_frontend_carrier", instance_index=1, priority_number=1,
+                    path=carrier_reference, grid=grid, rotation=[[1,0,0],[0,1,0],[0,0,1]],
+                    placement=dict(**{f"{axis}_mm": origin[axis] for axis in "xyz"},
+                                   az_deg=0,el_deg=0,rt_deg=0,scale=1))],
+                response_fields=[dict(domain="coarse_frontend",kind=kind,path=record["path"],grid=grid)
+                    for kind,record in sorted(context["fields"]["records"].items()) if kind!="carrier_off"])
+    spec_path = directory / "build_iob_spec.lua"
+    _write_once(spec_path, "return " + lua_value(spec) + "\n")
+    if "bank_record" in context["fields"]:
+        controls.append(context["fields"]["bank_record"])
+    controls += [file_record(spec_path), *context["code_records"].values(),
+                 context["source_record"], context["source_identity_record"], context["fields"]["receipt"]]
     logs = run/"logs"/phase
     logs.mkdir(parents=True, exist_ok=True)
-    # Match run_single_flight's SIMION ion-list preallocation minimum. The
-    # external FLY2 still contains only this batch's exact physical population.
+    builder = ["--nogui", "--noprompt", "lua", str(directory/"build_tracking_iob.lua"), str(spec_path)]
     result = dict(case_id=name, frame_id=context["frontend"]["frame_id"], count=len(rows), expected_particle_ids=ids,
                   simion_particle_id_offset=0, merge_offset=0, working_directory=str(directory),
                   environment={"OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET": "0"},
                   iob_path=str(directory/"local.iob"), program_path=str(directory/"local.lua"), particle_input=str(directory/"local.fly2"),
                   stdout=str(logs/(name+".stdout.log")), stderr=str(logs/(name+".stderr.log")),
-                  iob_builder_arguments=["--nogui", "--noprompt", "lua", "build_iob.lua", str(seed), str(directory/"local.iob"), carrier_reference,
-                                         *[format(float(origin[a]), ".17g") for a in "xyz"]],
+                  iob_builder_arguments=[*builder, "build", str(path_helper)],
+                  iob_reopen_arguments=[*builder, "verify", str(path_helper)],
+                  iob_validation_module="msplatform.workflows.local_frontend.runtime",
+                  generated_paths=[str(directory/"local.iob"), *spec["bootstrap_paths"]],
+                  iob_pa_guard_records=list(context["fields"]["records"].values()),
                   fly_arguments=["--default-num-particles", str(max(100, len(rows))), "--nogui", "--noprompt", "fly", "--retain-trajectories", "0", "--particles", "local.fly2", "--programs", "1", "local.iob"],
                   pulse_width_us=width, pulse_width_derivation="max_complete_source_birth_us_plus_maximum_particle_age_us",
-                  carrier_reference=carrier_reference, seed_record=context["iob_seed"]["seed"]["frozen"],
-                  seed_placeholder_record=context["iob_seed"]["placeholder"]["frozen"],
+                  carrier_reference=carrier_reference, seed_record=file_record(seed), seed_records=[file_record(seed)],
                   source_record=file_record(source_path), fly2_record=file_record(directory/"local.fly2"), program_record=file_record(directory/"local.lua"))
+    result["control_records"] = [*controls,result["seed_record"],result["source_record"],result["fly2_record"],result["program_record"]]
+    # This is an explicitly declared evidence path, not a completed reopen fact.
+    result["iob_reopen_record"] = {"path": str(logs/(name+".reopen.stdout.log"))}
     _json_once(directory/"case_metadata.json", result)
     return result
 
@@ -341,16 +363,49 @@ def materialize_batches(run: Path, phase: str, batch_plan: dict[str, Any], pulse
     return receipt
 
 
+def verify_case(run: Path, case_path: Path, *, stage: str) -> dict:
+    """Check the declared actual controls at existing native stage boundaries."""
+    run = Path(run).resolve(strict=True)
+    case_path = Path(case_path).resolve(strict=True)
+    if not case_path.is_relative_to(run):
+        raise ValueError("local case must belong to its original managed owner")
+    case = _load(case_path)
+    for record in case["control_records"]:
+        verify_record("local frontend native input", record)
+    for record in case["iob_pa_guard_records"]:
+        path = Path(record["path"]).resolve(strict=True)
+        if (path.stat().st_size != record["bytes"] or path.stat().st_mode & stat.S_IWRITE
+                or record.get("read_only") is not True):
+            raise ValueError("local frontend verified PA guard identity/stat/read-only differs")
+    identity = case_path.with_name("iob_identity.json")
+    if stage == "postbuild":
+        # Only called after the existing process owner confirms the build exited.
+        _json_once(identity, file_record(Path(case["iob_path"])))
+    elif stage != "prebuild":
+        verify_record("closed local frontend IOB", _load(identity))
+    return dict(status="validated", stage=stage, controls=len(case["control_records"]),
+                fields=len(case["iob_pa_guard_records"]))
+
+
 def main() -> int:
     """Internal public-workflow actions; lifecycle/process execution stays in execute.ps1."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare-dispatch", "materialize-batches"))
+    parser.add_argument("action", choices=("prepare-dispatch", "materialize-batches", "verify-case"))
     parser.add_argument("--run", type=Path, required=True)
-    parser.add_argument("--phase", choices=PHASES, required=True)
-    parser.add_argument("--pulse-time-us", type=float, required=True)
-    parser.add_argument("--shared-times-json", type=Path, required=True)
+    parser.add_argument("--phase", choices=PHASES)
+    parser.add_argument("--pulse-time-us", type=float)
+    parser.add_argument("--shared-times-json", type=Path)
+    parser.add_argument("--case", type=Path)
+    parser.add_argument("--validation-stage", choices=("prebuild", "postbuild", "postreopen", "preflight"))
     parser.add_argument("--batch-plan", type=Path)
     args = parser.parse_args()
+    if args.action == "verify-case":
+        if args.case is None or args.validation_stage is None:
+            parser.error("verify-case requires --case and --validation-stage")
+        print(json.dumps(verify_case(args.run, args.case, stage=args.validation_stage)))
+        return 0
+    if args.phase is None or args.pulse_time_us is None or args.shared_times_json is None:
+        parser.error("runtime materialization requires phase, pulse time and shared times")
     run = _owner(args.run, args.phase)
     times = json.loads(args.shared_times_json.read_text(encoding="utf-8-sig"))
     _phase(run, args.phase, args.pulse_time_us, times)

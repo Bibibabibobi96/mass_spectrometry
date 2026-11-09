@@ -905,6 +905,12 @@ $result|ConvertTo-Json -Compress
                 self.assertEqual(set(self.routed_stages(path)),
                                  {"common_contracts", "instrument_assembly_integration"})
 
+    def test_installed_local_frontend_routes_its_actual_consumers(self) -> None:
+        for name in ("prepare.py", "runtime.py"):
+            with self.subTest(name=name):
+                stages = set(self.routed_stages("src/msplatform/workflows/local_frontend/" + name))
+                self.assertTrue({"common_contracts", "instrument_assembly_integration"} <= stages)
+
     def test_installed_bare_frontend_routes_all_actual_owners(self) -> None:
         self.assertEqual(set(self.routed_stages("src/msplatform/backends/simion/bare_frontend_geometry.py")),
                          {"instrument_assembly_integration", "common_contracts", "single_reflection_oa_tof_mass_analyzer_static"})

@@ -12,11 +12,13 @@ local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_o
 local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
 local component_tracking=spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
+local local_frontend=spec.role=='local_frontend_tracking_iob'
+local tracking_role=component_tracking or local_frontend
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
-local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or component_tracking or dual_cone
+local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone
 local independent_marker=dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
-  or model_only or (component_tracking and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
+  or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances
@@ -106,7 +108,7 @@ for _,extension in ipairs(source_free and {'.lua','.ion','.con','.rec'} or {'.lu
     companions[path]=input:read('*a');input:close()
   end
 end
-if independent_component and not component_tracking then
+if independent_component and not tracking_role then
   for _,base in ipairs({stem,assert(spec.seed_iob):gsub('%.iob$','')}) do
     for _,extension in ipairs({'.wgem','.lua','.ion','.con','.rec'}) do
       local file=io.open(base..extension,'rb')
@@ -140,6 +142,24 @@ for index,row in ipairs(spec.instances) do
   end
 end
 
+if local_frontend then
+  assert(count==1 and spec.instances[1].role=='local_frontend_carrier',
+    'local frontend requires exactly its ordinary Cartesian carrier')
+  local row=spec.instances[1]
+  assert(row.path:lower():match('%.pa$'),'local frontend carrier must be the actual ordinary PA')
+  assert(row.placement.az_deg==0 and row.placement.el_deg==0 and row.placement.rt_deg==0
+    and row.placement.scale==1,'local frontend requires its explicit Cartesian placement')
+  assert(type(spec.response_fields)=='table' and #spec.response_fields>0,
+    'local frontend requires the actual verified response bank')
+  local names,paths={},{}
+  for _,response in ipairs(spec.response_fields) do
+    assert(response.domain=='coarse_frontend' and type(response.kind)=='string'
+      and not names[response.kind] and not paths[response.path] and response.path~=row.path
+      and response.path:lower():match('%.pa$'),'local frontend response identities differ')
+    names[response.kind]=true;paths[response.path]=true
+  end
+end
+
 local function verify_fractional_component(item,row)
   if not independent_component then return end
   assert(item.ox==0 and item.oy==0 and item.oz==0,'RF PA working origin must remain zero')
@@ -158,6 +178,7 @@ local function verify_fractional_component(item,row)
       assert(near(value,expected),'RF point differs from original rigid transform')
     end
   end
+  if local_frontend then return end
   if component_tracking then
     assert(row.path:match('%.pa0$'),'RF tracking requires the original solved carrier')
     local actual={}
@@ -188,7 +209,7 @@ end
 
 if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='verify_fields' then
   local interfaces
-  if not geometry_only and not component_tracking then
+  if not geometry_only and not tracking_role then
   assert(type(spec.response_fields)=='table','prepared response field paths are required')
   interfaces=assert(spec.interface_field_probes,'resolved interface field probes are required')
   assert(#interfaces==2,'OA exit and reflectron entry interface probes are required')
@@ -347,6 +368,10 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     print((independent_component and independent_marker..'_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
     return
   end
+  if local_frontend then
+    print('LOCAL_FRONTEND_TRACKING_COLD=PASS INSTANCES=1 FLY=False REFINE=False')
+    return
+  end
   if component_tracking then
     -- The complete RF slot path/grid/pose, electrode map, metal/vacuum and
     -- fractional witnesses were checked above. TOF interface/priority probe
@@ -473,7 +498,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   return
 end
 local bootstrap={}
-if source_free or component_tracking then
+if source_free or tracking_role then
   assert(type(spec.bootstrap_paths)=='table' and #spec.bootstrap_paths==count,'explicit private bootstrap PA paths required')
   local parent=assert(spec.seed_iob):gsub('\\','/'):match('^(.*)/')
   for _,extension in ipairs({'.lua','.fly2','.ion','.con','.rec','.wgem'}) do
@@ -498,7 +523,7 @@ if source_free or component_tracking then
 end
 simion.command('"'..assert(spec.seed_iob)..'"')
 assert(#simion.wb.instances==count, 'public container must contain the declared slots')
-if source_free or component_tracking then
+if source_free or tracking_role then
   -- Inspect all loaded paths before changing any slot: no author PA may be
   -- silently read and then replaced to conceal a failed relative seed.
   local reference=assert(simion.pas:open())
@@ -540,7 +565,7 @@ for path,data in pairs(companions) do
   local output=assert(io.open(path,'wb'));output:write(data);output:close()
 end
 assert(okay,message)
-if source_free or component_tracking then
+if source_free or tracking_role then
   -- The independently reopened output is the final path/pose proof; this
   -- process must still verify all real slots before dropping intermediates.
   local reference=assert(simion.pas:open())

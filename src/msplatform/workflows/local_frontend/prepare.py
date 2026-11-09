@@ -33,7 +33,7 @@ from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS, transform_source_rows
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract, export_guide_assembly_interface
 from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
-from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
+from msplatform.components.orthogonal_accelerator.accelerator_time_focus import time_to_fixed_plane_s
 from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource, OuterGeometry, derive_three_zone_state, exact_accelerator_normalized_time,
 )
@@ -462,7 +462,7 @@ def prepare_local_frontend(request_path: Path, output_directory: Path | None, wo
     components = {
         upstream_id: export_guide_assembly_interface(guide),
         downstream_id: resolve_assembly_interface(component["requirements"], geometry_profile_id=component["geometry_profile_id"], schema_version=1,
-        geometry_profile=component.get("geometry_profile")),
+                                                     geometry_profile=component.get("geometry_profile")),
     }
     for instance_id, interface in components.items():
         if plan["components"][instance_id] != interface:

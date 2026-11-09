@@ -78,7 +78,7 @@ function Invoke-LocalWorkflowPython {
 function Invoke-LocalFlightPhase {
  param([ValidateSet('discovery','extraction')][string]$Phase,[double]$PulseTime,[string]$SharedTimesPath)
  return Invoke-FrontendFlightPhase -Package $package -RunDirectory $script:run -ProjectRunsRoot (Join-Path $projectArtifacts 'runs') `
-  -RepoRoot $script:pythonRoot -Python $Python -RuntimeModule ($workflowModule+'.runtime') `
+  -RepoRoot $script:pythonRoot -Python $Python -RuntimeModule 'msplatform.workflows.local_frontend.runtime' `
   -SimionExe $simion -Limits $budget.limits -Phase $Phase -PulseTimeUs $PulseTime -SharedTimesPath $SharedTimesPath `
   -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token)
 }
@@ -123,7 +123,7 @@ function Set-LocalStage([string]$Name){
  $script:stage=$Name;$stageClock.Restart()
 }
 
-$compilerArgs=@('-m',($workflowModule+'.prepare'),'--request',$Request,'--workspace-root',$workspace)
+$compilerArgs=@('-m','msplatform.workflows.local_frontend.prepare','--request',$Request,'--workspace-root',$workspace)
 if($ValidateOnly){Invoke-LocalWorkflowPython -Arguments ($compilerArgs+@('--validate-only'));return}
 if($PrepareOnly){
  if(-not(Test-Path -LiteralPath (Join-Path $OutputDirectory 'run_config.json'))){throw 'PrepareOnly output must already be owned by a managed run.'}
@@ -254,7 +254,7 @@ print(json.dumps({'held_off_pulse_time_us':math.nextafter(max(pulse['source_birt
 import json,sys
 from pathlib import Path
 from msplatform.execution.retention import file_record
-from integrations.workflows.local_frontend.prepare import resolve_pulse_decision
+from msplatform.workflows.local_frontend.prepare import resolve_pulse_decision
 run=Path(sys.argv[1]);read=lambda path:json.loads(path.read_text(encoding='utf-8-sig'))
 recommendation=run/'results/local_frontend/discovery/pulse_selection.json'
 plan=run/'inputs/pulse_plan.json';numerics=run/'inputs/numerics.json'
@@ -270,7 +270,7 @@ print(json.dumps(decision,allow_nan=False))
  $extractionSchedule=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.local_frontend.prepare import extraction_shared_times
+from msplatform.workflows.local_frontend.prepare import extraction_shared_times
 run=Path(sys.argv[1]);read=lambda name:json.loads((run/'inputs'/name).read_text())
 prepared={'frontend_contract':read('frontend_contract.json'),'numerics':read('numerics.json'),'pulse_plan':read('pulse_plan.json'),'guide_contract':read('guide_contract.json')}
 times=extraction_shared_times(prepared,float(sys.argv[2]));(run/'inputs/extraction_shared_times.json').write_text(json.dumps(times)+'\n',newline='\n')

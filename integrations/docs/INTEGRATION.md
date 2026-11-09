@@ -313,6 +313,21 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 
 ## 局部前端执行与复核
 
+Local frontend scientific preparation and scheduler-owned phase materialization now live in
+`msplatform.workflows.local_frontend.prepare` and `.runtime`. The existing PowerShell workflow
+still owns admission, execution, protected fields, cleanup and publication; this slice introduces
+no second owner. Analysis/focus/replay and the remaining root orchestration are separate P4 work.
+
+Each source-bearing local/cooled case explicitly references its verified ordinary carrier and
+actual response bank (three local or seven cooled field members). The sole canonical IOB writer
+uses a case-local installed 20,856-byte structural container and creates/removes its owned neutral
+3x3x3 bootstrap; no published field or large historical placeholder is copied. Build and independent
+reopen are separate declared native operations, with original field/control identities rechecked.
+These new software contracts do not relabel previous saves as cold-reopen or native-flight evidence.
+The shared legacy seed helper, its remaining IP/MR/other workflow consumers and the tracked large
+placeholder remain open retirement work; neither that asset nor commercial software enters the wheel.
+
+
 The bare-guide/OA geometry compiler is installed as `msplatform.backends.simion.bare_frontend_geometry`.
 Two-zone callers explicitly provide `geometry_profile` content with its identity; the backend never loads
 a project profile or checkout. The stored cooled `two_zone_field_seed.json` is an independent,

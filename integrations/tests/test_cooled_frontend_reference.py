@@ -21,7 +21,7 @@ from integrations.tests.test_local_frontend_workflow import REPO
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from integrations.workflows.cooled_frontend.runtime import _verified_small_record, fields
 from integrations.workflows.cooled_frontend import reference, runtime
-from integrations.workflows.local_frontend import runtime as shared
+from msplatform.workflows.local_frontend import runtime as shared
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from msplatform.backends.simion import pa_family_cache

@@ -20,9 +20,9 @@ from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C, k
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from integrations.workflows.cooled_frontend import runtime
-from integrations.workflows.local_frontend import runtime as shared
+from msplatform.workflows.local_frontend import runtime as shared
 from integrations.workflows.local_frontend.analyze import _capture_bounds, _validate_lifetimes, parse_local_logs
-from integrations.workflows.local_frontend.prepare import _csv_text, _nominal_extraction_duration
+from msplatform.workflows.local_frontend.prepare import _csv_text, _nominal_extraction_duration
 
 
 TOPOLOGY="cooled_frontend_one_carrier_six_readonly_responses_v1"

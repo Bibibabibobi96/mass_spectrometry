@@ -23,7 +23,7 @@ from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, transform_source_rows
-from integrations.workflows.local_frontend.prepare import (
+from msplatform.workflows.local_frontend.prepare import (
     SOURCE_CLOCK, SOURCE_NAMES, _csv_text, _keys, _load, _number, _registration, _source_inputs, _producer_clock,
 )
 from integrations.workflows.cooled_frontend.geometry import (

@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from integrations.runtime.build_single_flight_program import build_local_frontend_program
+from msplatform.backends.simion.tracking_program import build_local_frontend_program
 from msplatform.backends.simion.source import lua_value as _lua_value
-from integrations.workflows.local_frontend.runtime import _write_once, response_field_paths
+from msplatform.workflows.local_frontend.runtime import _write_once, response_field_paths
 
 
 def build_program(context: dict, phase: dict, births: list, ids: list, velocities: list, directory: Path) -> str:

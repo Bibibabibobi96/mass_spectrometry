@@ -18,7 +18,7 @@ from integrations.workflows.cooled_frontend import prepare as cooled_prepare
 from integrations.workflows.cooled_frontend import runtime as cooled_runtime
 from integrations.workflows.cooled_frontend.runtime import fields
 from integrations.workflows.cooled_frontend.program import build_program
-from integrations.workflows.local_frontend import runtime as shared_runtime
+from msplatform.workflows.local_frontend import runtime as shared_runtime
 from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 from integrations.runtime.build_single_flight_program import _standalone_dynamic_field_lua
 from integrations.tests.frontend_fixtures import canonical_frontend_fixture, canonical_three_zone_frontend_fixture
@@ -704,17 +704,24 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             # Exercise new static imports and dynamic seed resources from this same frozen tree.
             smoke_code = ("from pathlib import Path; import sys,json; sys.path[:0]=json.loads(sys.argv[1]); "
                 "import msplatform.backends.simion.tracking_program as tracking; "
-                "import common.simion.workbench_seed as seed; "
-                "import integrations.workflows.local_frontend.runtime as local; "
+                "from msplatform.backends.simion import resources as seed; "
+                "from msplatform.execution.inputs import freeze_file; "
+                "from msplatform.io.manifest_records import file_record,verify_record; "
+                "import msplatform.workflows.local_frontend.runtime as local; "
                 "import integrations.workflows.cooled_frontend.runtime as cooled; "
                 "import integrations.workflows.single_reflection_flight.field_plan as fields; "
                 "root=Path.cwd().resolve(); "
                 "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in (seed,local,cooled,fields,tracking)); "
-                "first=seed.freeze_workbench_seed(Path(sys.argv[2]),root); "
+                "source=seed.structural_seed_path(1); destination=Path(sys.argv[2])/'seed/1_instance_seed.iob'; "
+                "destination.parent.mkdir(parents=True,exist_ok=True); "
+                "first={'seed':{'frozen':freeze_file(source,destination)}}; "
                 "before={k:Path(v['frozen']['path']).stat().st_mtime_ns for k,v in first.items()}; "
-                "second=seed.freeze_workbench_seed(Path(sys.argv[2]),root); "
+                "assert seed.structural_seed_path(1)==source; "
+                "verify_record('frozen structural seed',first['seed']['frozen']); "
+                "second={'seed':{'frozen':file_record(destination)}}; "
                 "assert before=={k:Path(v['frozen']['path']).stat().st_mtime_ns for k,v in second.items()}; "
-                "assert set(second)=={'seed','placeholder'}; print('FROZEN_MEMBER_AND_SEED=PASS')")
+                "assert set(second)=={'seed'} and destination.read_bytes()==source.read_bytes(); "
+                "assert destination.stat().st_size==20856; print('FROZEN_MEMBER_AND_SEED=PASS')")
             smoke = subprocess.run([sys.executable, "-I", "-c", smoke_code, json.dumps(python_import_roots(snapshot)), str(output)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(smoke.returncode,0,smoke.stdout+smoke.stderr)
