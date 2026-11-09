@@ -463,9 +463,9 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         environment.pop("PYTHONPATH", None)
         statement = (
             "import sys; from pathlib import Path; snapshot=Path.cwd().resolve(); "
-            "sys.path.insert(0,str(snapshot)); "
+            "sys.path[:0]=[str(snapshot/'src'),str(snapshot)]; "
             "from msplatform.execution.inputs import python_import_roots; "
-            "sys.path.pop(0); sys.path[:0]=python_import_roots(snapshot); "
+            "sys.path[:0]=python_import_roots(snapshot); "
             "from integrations.workflows.multipole_ip import prepare; "
             "from msplatform.backends.simion.ip_handoff import load_injected_source; "
             "assert Path(prepare.__file__).is_relative_to(Path.cwd()); "

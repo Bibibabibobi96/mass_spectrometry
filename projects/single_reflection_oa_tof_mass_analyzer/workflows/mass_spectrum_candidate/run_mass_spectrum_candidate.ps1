@@ -116,7 +116,7 @@ if($ReanalyzeOnly-or$ResumeFinalization){
       -Paths @($selectionPath,$analysisPackage.result_dir,$analysisStdout,$analysisStderr,$analysisPackage.artifact_run_dir)
     $analysisEnvironment=@{};foreach($name in $analysisNative.environment.Keys){$analysisEnvironment[$name]=$analysisNative.environment[$name]}
     $analysisEnvironment.PYTHONDONTWRITEBYTECODE='1'
-    $analysisLaunch='import runpy,sys;from pathlib import Path;root=Path(sys.argv.pop(1));sys.path.insert(0,str(root));from msplatform.execution.inputs import python_import_roots;sys.path[:0]=python_import_roots(root);runpy.run_module("'+$analysisModule+'",run_name="__main__")'
+    $analysisLaunch='import runpy,sys;from pathlib import Path;root=Path(sys.argv.pop(1));sys.path[:0]=[str(root/"src"),str(root)];from msplatform.execution.inputs import python_import_roots;sys.path[:0]=python_import_roots(root);runpy.run_module("'+$analysisModule+'",run_name="__main__")'
     $analysisArgs=@('-I','-B','-c',$analysisLaunch,$analysisCode,'analyze','--selection',$analysisNative.projected_paths[0],'--code-root',$analysisCode,'--output',$analysisNative.projected_paths[1])
     $analysisArgs=@($analysisArgs|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
     $analysisStopped=$false
@@ -247,7 +247,7 @@ $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = [string]$pathContext.host_reso
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare -StatePath $pathContext.host_resource_state_path
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 if ($resumeExisting) {
   $inputDir = Join-Path $runDir 'inputs'

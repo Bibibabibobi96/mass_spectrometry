@@ -182,14 +182,31 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             selection = root / 'inputs/source_selection.json'
             selection.write_text(json.dumps(selected), encoding='utf-8')
             output = root / 'analysis'
-            launch = ('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
-                      'from msplatform.execution.inputs import python_import_roots;'
-                      'sys.path[:0]=python_import_roots(Path(sys.argv[1]));'
-                      'from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import run_analysis;'
-                      'import msplatform.analysis.peak_metrics as core;'
-                      'run_analysis(Path(sys.argv[2]),Path(sys.argv[1]),Path(sys.argv[3]));'
-                      'assert Path(core.__file__).resolve().is_relative_to(Path(sys.argv[1])/"src")')
-            command = [sys.executable, '-I', '-B', '-c', launch, str(code), str(selection), str(output)]
+            # Execute the actual public launch expression, not a second bootstrap
+            # that could stay green while the production frozen import drifts.
+            runner = PROJECT / 'workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1'
+            extract = r'''
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('RUNNER',[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$nodes=@($ast.FindAll({param($node)
+ $node-is[Management.Automation.Language.AssignmentStatementAst]-and
+ $node.Left.Extent.Text-ceq'$analysisLaunch'
+},$true))
+if($nodes.Count-ne1){throw 'Expected one actual mass-spectrum analysis launcher'}
+$analysisModule='projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis'
+Invoke-Expression $nodes[0].Extent.Text
+ConvertTo-Json -InputObject $analysisLaunch -Compress
+'''.replace('RUNNER', str(runner).replace("'", "''"))
+            extracted = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', extract],
+                cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(extracted.returncode, 0, extracted.stdout + extracted.stderr)
+            launch = json.loads(extracted.stdout)
+            launch += (';import msplatform.analysis.peak_metrics as core;'
+                       'assert Path(core.__file__).resolve().is_relative_to(root/"src")')
+            command = [sys.executable, '-I', '-B', '-c', launch, str(code), 'analyze',
+                       '--selection', str(selection), '--code-root', str(code), '--output', str(output)]
             result = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             with (output/'mass_spectrum_particles.csv').open(encoding='utf-8', newline='') as stream:

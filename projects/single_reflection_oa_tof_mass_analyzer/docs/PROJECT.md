@@ -219,6 +219,14 @@ modules passed 26 of 27 parent tests (16.965 seconds); one existing optional T5 
 because `OATOF_THREE_ZONE_T5_RECEIPT` is unconfigured. Both executed subtests passed. The public
 refresh and validate commands passed, the refresh is idempotent, and non-authority fields are unchanged.
 
+The Candidate and mass-spectrum cold launchers add the frozen `src` and root before importing
+the relocated source selector. Adding `src` after that import could leave an installed package cached;
+the existing module-origin assertions correctly rejected this P4 omission. The mass-spectrum regression
+now extracts the actual PowerShell launch assignment and runs its analyze CLI, retaining invalid-ID
+and missing-core rejection. All four previously failing Candidate methods and all nine mass-spectrum
+parents passed in focused reruns; the complete cold-input scope covered 31 distinct parent methods
+with no skips. This is software/frozen-source acceptance, not a new solver or scientific qualification.
+
 ION 生成入口支持显式 `-PythonExe`，其次使用 `SIMULATION_PYTHON_EXE`，否则使用仓库 Python 3.11 环境；所选文件缺失即拒绝。Candidate 冻结源码时仍将该选择绑定为本次唯一解释器，不在后续运行重新选择。受管进程按真实 worker PID、创建身份、握手、退出和输出排空确认归属；系统 Python 的 worker 与 launcher 同 PID 合法，venv 也可能不同，不能用 PID 不等代替归属证据。
 
 COMSOL普通构建的绘图现只取原始完整解中的最多50列，不修改释放N或为大母群重跑`sol2`；科学事件和统计仍消费原完整母群。相同主题另移除“末点未靠近探测面就按8倍因子从头重解”的隐式策略：末点接近性不是合法检测事件，也不是时域截断或增量继续的充分证据。既有检测接受和事件窗口门保持；未发生检测事件不自动成为物理损失，未获得新的增量延长许可，不同观察时域须显式冻结新请求。

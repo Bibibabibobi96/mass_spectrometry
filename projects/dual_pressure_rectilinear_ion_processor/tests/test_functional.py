@@ -443,7 +443,7 @@ print(json.dumps(dict(version=prepared['schema_version'], effective=row['effecti
         census_program = """
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
-sys.path.insert(0, str(root))
+sys.path[:0] = [str(root / 'src'), str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from msplatform.analysis import particle_census as c
@@ -466,7 +466,7 @@ print(json.dumps(dict(unknown=counts["unknown"], alive=counts["alive"],
         crossing_program = """
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
-sys.path.insert(0, str(root))
+sys.path[:0] = [str(root / 'src'), str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from common.analysis import plane_crossings as c
@@ -682,7 +682,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
                 "from pathlib import Path; "
                 "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
                 "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "
-                "from common.simion import resource_scheduler, resource_profile, particle_batching; "
+                "from common.simion import resource_profile, particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;"
                 "assert resource_profile.PROFILE_ROLE == 'simion_resource_profile'; "
                 "from projects.dual_pressure_rectilinear_ion_processor.analysis import batching; "
                 "completion = batching.require_one_fly_completion(['status,Fly completed. 10 splats, 2.19 seconds']); "

@@ -75,8 +75,10 @@ class FrozenInputTests(unittest.TestCase):
 class PythonPackageSelectionTests(unittest.TestCase):
     def test_import_root_bootstrap_does_not_import_scientific_or_lifecycle_packages(self):
         root = Path(__file__).resolve().parents[2]
-        code = ('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
+        code = ('import sys;from pathlib import Path;root=Path(sys.argv[1]);sys.path[:0]=[str(root/"src"),str(root)];'
                 'from msplatform.execution.inputs import python_import_roots;'
+                'import msplatform.execution.inputs as selector;'
+                'assert Path(selector.__file__).resolve().is_relative_to(root/"src");'
                 'assert "msplatform.execution.owner" not in sys.modules;'
                 'assert "common.contracts.write_run_manifest" not in sys.modules;'
                 'assert python_import_roots(Path(sys.argv[1]))[0]==str(Path(sys.argv[1])/"src")')

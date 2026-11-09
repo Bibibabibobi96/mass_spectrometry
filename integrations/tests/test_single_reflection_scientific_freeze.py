@@ -14,17 +14,16 @@ from integrations.tests.test_single_reflection_preparation import fixture, scien
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = "integrations.workflows.single_reflection_flight.prepare"
 
-# Only the snapshot root bootstraps the stdlib-only public root resolver. All
-# scientific imports and the actual -m entry then use its declared root order.
+# Bootstrap the installed selector from this snapshot's src layout before any
+# package import; scientific imports then use its validated root order.
 _ISOLATED_MODULE = r"""
 import json,runpy,sys
 from pathlib import Path
 snapshot,argvfile=map(lambda p:Path(p).resolve(),sys.argv[1:])
-sys.path.insert(0,str(snapshot))
+sys.path[:0]=[str(snapshot/'src'),str(snapshot)]
 from msplatform.execution.inputs import python_import_roots
 import msplatform.execution.inputs as roots_module
 assert Path(roots_module.__file__).resolve().is_relative_to(snapshot)
-sys.path.pop(0)
 sys.path[:0]=python_import_roots(snapshot)
 arguments=json.loads(argvfile.read_text(encoding='utf-8'))
 assert arguments[:2]==['-m','integrations.workflows.single_reflection_flight.prepare']

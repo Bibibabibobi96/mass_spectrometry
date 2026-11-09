@@ -245,7 +245,7 @@ class GasPreparationTests(unittest.TestCase):
 
             code = r"""
 from pathlib import Path
-from common.contracts import frozen_inputs
+from msplatform.execution import inputs as frozen_inputs
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion import prepare as p
 from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
 assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
@@ -273,8 +273,8 @@ for name, module in tuple(sys.modules.items()):
 print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
 """
             # -I ignores inherited author/PYTHONPATH entries; only this selected
-            # frozen root is added for project and shared-runtime sources.
-            code = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+            # frozen src/root pair is added before importing its selector.
+            code = ("import sys; from pathlib import Path; root=Path(sys.argv[1]); sys.path[:0]=[str(root/'src'),str(root)]; "
                     "from msplatform.execution.inputs import python_import_roots; "
                     "sys.path[:0] = python_import_roots(Path(sys.argv[1]));\n") + code
             command = [sys.executable, "-I", "-B", "-c", code, str(snapshot), str(snapshot / "positive")]

@@ -42,7 +42,7 @@ class FrozenStudySourceTests(unittest.TestCase):
             probe = r'''
 import pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
-sys.path.insert(0, str(root))
+sys.path[:0] = [str(root / 'src'), str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_distance_study as study
