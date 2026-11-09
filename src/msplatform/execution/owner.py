@@ -191,6 +191,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
     The action returns status, summary, output_paths, required_output_paths,
     retention_preserve_paths, and manifest_extra_fields. A failure is re-raised
     after safe finalization; its secondary errors never replace that first error.
+    An action exception may carry explicit failure_output_paths. Only actual,
+    declared files inside this run are published after writer closure is proven.
     """
     validate_run_id(run_id)
     environment = context.environment
@@ -306,6 +308,11 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
                 or any(code != 0 for code in session._completed.values())):
             raise ValueError("Successful action did not complete all declared operations")
         _writer_completion(session)
+        if primary is not None:
+            failure_outputs = getattr(primary, "failure_output_paths", ())
+            if not isinstance(failure_outputs, (list, tuple)):
+                raise ValueError("Action failure_output_paths must be explicit file paths")
+            result["output_paths"] = list(failure_outputs)
         for value in [*result["output_paths"], *result["required_output_paths"], *result["retention_preserve_paths"]]:
             path = session.canonical_path(value)
             if not path.is_relative_to(run_root) or not path.is_file():
