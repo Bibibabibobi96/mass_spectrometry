@@ -307,7 +307,7 @@ class FunctionalContractTests(unittest.TestCase):
         project = repo / "projects" / functional.PROJECT
         (project / "config").mkdir(parents=True)
         (project / "simion").mkdir()
-        policy = repo / "common/contracts" / POLICY_PATH.name
+        policy = repo / "src/msplatform/contracts" / POLICY_PATH.name
         policy.parent.mkdir(parents=True)
         shutil.copyfile(POLICY_PATH, policy)
         repository = PROJECT.parents[1]
@@ -675,13 +675,14 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
         _, vendor = self.make_prepare_fixture()
         functional.prepare(self.run, PROJECT, vendor)
         closure = self.run / "inputs/code"
-        frozen_policy = closure / "common/contracts" / POLICY_PATH.name
+        frozen_policy = closure / "src/msplatform/contracts" / POLICY_PATH.name
         self.assertEqual(frozen_policy.read_bytes(), POLICY_PATH.read_bytes())
-        code = ("from common.contracts import particle_count_policy as p; "
+        code = ("from msplatform.contracts import particle_count_policy as p; "
                 "print(p.POLICY_PATH.resolve()); "
                 "assert p.validate_standard_particle_count(100) == 100; "
                 "from msplatform.execution.inputs import freeze_file; "
                 "from pathlib import Path; "
+                "assert Path(p.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve()); "
                 "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
                 "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "
                 "from common.simion import resource_profile; from msplatform.backends.simion import particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;assert Path(particle_batching.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve());"

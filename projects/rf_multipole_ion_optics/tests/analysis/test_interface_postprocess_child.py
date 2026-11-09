@@ -198,6 +198,9 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
             from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
             copy_scientific_core(repo, facade)
+            particle_policy = "src/msplatform/contracts/particle_count_policy.json"
+            shutil.copyfile(repo / particle_policy, facade / particle_policy)
+            self.assertEqual((facade / particle_policy).read_bytes(), (repo / particle_policy).read_bytes())
             from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
             install_controlled_cpu_snapshot(repo, facade)

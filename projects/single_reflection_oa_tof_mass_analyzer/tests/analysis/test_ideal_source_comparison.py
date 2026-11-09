@@ -69,8 +69,8 @@ class IdealSourceComparisonTests(unittest.TestCase):
                         ignore=shutil.ignore_patterns("assets", "__pycache__", "*.pyc"))
         shutil.copytree(repository / "config", fixture_repo / "config")
         # The existing input enumerator also resolves public OA model sources from REPO_ROOT.
-        for source in run_comparison._inputs(root / "experiment.json").values():
-            if source.is_relative_to(repository / "projects"):
+        for name, source in run_comparison._inputs(root / "experiment.json").items():
+            if source.is_relative_to(repository / "projects") or name == "particle_policy":
                 destination = fixture_repo / source.relative_to(repository)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
