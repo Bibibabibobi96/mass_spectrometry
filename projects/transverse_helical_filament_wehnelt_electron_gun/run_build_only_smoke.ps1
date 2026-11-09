@@ -22,7 +22,7 @@ $bootstrapFiles = [ordered]@{
   manifest_writer = 'common\contracts\write_run_manifest.py'
   recorded_file_removal = 'src\msplatform\execution\recorded_file_removal.py'
   manifest_verifier = 'common\contracts\verify_run_manifest.py'
-  artifact_naming = 'common\contracts\artifact_naming.py'
+  artifact_naming = 'src\msplatform\execution\artifact_naming.py'
   file_identity = 'common\contracts\file_identity.py'
 }
 . (Join-Path $repoRoot $bootstrapFiles.artifact_support)
@@ -315,11 +315,9 @@ try {
     manifest_writer = 'common\contracts\write_run_manifest.py'
     capacity_protection = 'common\contracts\capacity_protection.py'
     manifest_verifier = 'common\contracts\verify_run_manifest.py'
-    artifact_naming = 'common\contracts\artifact_naming.py'
     file_identity = 'common\contracts\file_identity.py'
     artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
-    frozen_input_selector = 'common\contracts\frozen_inputs.py'
     comsol_runner = 'common\comsol\run_comsol_r2025b.ps1'
     comsol_launcher_resolver = 'common\comsol\resolve_comsol_64.ps1'
     comsol_failure_classifier = 'common\comsol\livelink_failure_classification.ps1'
@@ -360,7 +358,7 @@ print(json.dumps(sorted(selected)))
   }
 
 foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
-    if ((Get-RunFileSha256 -Path $frozenInputs[$entry.Key]) -cne $entry.Value.sha256) {
+    if ((Get-RunFileSha256 -Path (Join-Path $snapshotRoot $entry.Value.source_repo_path)) -cne $entry.Value.sha256) {
       throw "Bootstrap dependency changed before it was frozen: $($entry.Key)"
     }
   }

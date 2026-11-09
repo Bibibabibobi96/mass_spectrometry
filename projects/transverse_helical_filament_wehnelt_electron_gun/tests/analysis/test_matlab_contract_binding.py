@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -347,7 +348,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "artifact_support = 'common\\contracts\\run_artifact_support.ps1'",
             "manifest_writer = 'common\\contracts\\write_run_manifest.py'",
             "manifest_verifier = 'common\\contracts\\verify_run_manifest.py'",
-            "artifact_naming = 'common\\contracts\\artifact_naming.py'",
+            "artifact_naming = 'src\\msplatform\\execution\\artifact_naming.py'",
             "file_identity = 'common\\contracts\\file_identity.py'",
         )
         for token in required:
@@ -357,10 +358,34 @@ class MatlabContractBindingTests(unittest.TestCase):
             "foreach ($entry in $bootstrapIdentity.GetEnumerator())",
             self.build_runner,
         )
-        self.assertIn(
-            "Get-RunFileSha256 -Path $frozenInputs[$entry.Key]",
-            self.build_runner,
-        )
+        check_start = self.build_runner.index("foreach ($entry in $bootstrapIdentity.GetEnumerator())")
+        check_end = self.build_runner.index("$runConfig.inputs = $frozenInputs", check_start)
+        check = self.build_runner[check_start:check_end]
+        with tempfile.TemporaryDirectory(prefix="wehnelt_bootstrap_") as directory:
+            snapshot = Path(directory)
+            frozen = snapshot / "src/msplatform/execution/artifact_naming.py"
+            frozen.parent.mkdir(parents=True)
+            frozen.write_text("original bootstrap bytes\n", encoding="utf-8")
+            script = r'''
+$ErrorActionPreference='Stop'
+$snapshotRoot=$env:BOOTSTRAP_SNAPSHOT
+$bootstrapIdentity=@{artifact_naming=@{source_repo_path='src/msplatform/execution/artifact_naming.py';sha256=$env:BOOTSTRAP_DIGEST}}
+function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash}
+''' + check
+            digest = hashlib.sha256(frozen.read_bytes()).hexdigest().upper()
+            for changed in (False, True):
+                if changed:
+                    frozen.write_text("changed bootstrap bytes\n", encoding="utf-8")
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=snapshot, env=dict(os.environ, BOOTSTRAP_SNAPSHOT=str(snapshot), BOOTSTRAP_DIGEST=digest),
+                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                )
+                if changed:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("Bootstrap dependency changed", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_external_termination_has_a_verified_interrupted_prestate(self) -> None:
         initial_summary = self.build_runner.index(

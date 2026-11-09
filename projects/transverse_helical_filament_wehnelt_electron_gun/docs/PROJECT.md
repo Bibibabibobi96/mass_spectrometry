@@ -25,6 +25,9 @@ build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭�
 不再把旧公共桥的文件位置当作函数正文位置。显式公共表不再重复登记已由整包选择覆盖的host policy、
 machine contracts和recorded removal；回归按实际目的路径拒绝任何重复，同时保持严格校验。该定向软件验证通过，
 生产选择器与物理输入未改变，未启动MATLAB或COMSOL。
+The retired naming/input adapters now come only from the canonical package selector. Bootstrap
+identity checks use their exact frozen relative paths, without duplicate manifest entries; the
+existing real-selector test and changed-bootstrap negative test retain these guarantees.
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 
