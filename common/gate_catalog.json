@@ -1248,6 +1248,7 @@
               "common/contracts/test_dual_cone_transport.py",
               "common/contracts/test_dual_cone_stages.py",
               "common/contracts/test_dual_cone_iob.py",
+              "common/contracts/test_dual_cone_placement.py",
               "common/contracts/test_dual_cone_native_guards.py",
               "common/contracts/test_dual_cone_managed_stages.py"
             ],

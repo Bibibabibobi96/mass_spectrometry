@@ -14,7 +14,7 @@ from msplatform.contracts.particle_count import validate_positive_particle_count
 from .dual_cone_geometry import render_gem
 
 
-from .dual_cone_stages import ELECTRODE_IDS, transport_refinement
+from .dual_cone_stages import ELECTRODE_IDS, transport_refinement, device_placement, native_instance_pose
 
 NATIVE_OPERATION_IDS = (
     "build_geometry",
@@ -26,7 +26,7 @@ NATIVE_OPERATION_IDS = (
 )
 
 
-def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: Mapping, source_spec: Mapping) -> dict:
+def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: Mapping, source_spec: Mapping, placement=None, source_to_device=None) -> dict:
     """Validate scientific selections and return the actual serial native graph.
 
     Preparation and analysis are pure in-process responsibilities, not fabricated
@@ -48,6 +48,15 @@ def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: 
         groups.extend(science["electric_field"][name]["electrode_group_ids"].values())
     if sorted(groups) != list(ELECTRODE_IDS[3:]):
         raise ValueError("drive does not bind the actual seven-electrode geometry")
+    selected_pose = {}
+    if placement is not None or source_to_device is not None:
+        from .dual_cone_transport import source_placement
+        pose = device_placement(resolved, numerics, placement)
+        _, registration = source_placement(resolved, numerics, source_spec,
+            placement=pose.to_contract(), source_to_device=source_to_device)
+        selected_pose["placement"] = pose.to_contract()
+        if source_to_device is not None:
+            selected_pose["source_to_device"] = registration.to_contract()
     count = validate_positive_particle_count(source_spec["particle_count"])
     if validate_positive_particle_count(source_spec["mother_particle_count"]) != count:
         raise ValueError("fresh transport requires its complete declared mother source")
@@ -59,6 +68,7 @@ def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: 
     return dict(
         schema_version=1,
         role="dual_cone_fresh_transport_plan",
+        **selected_pose,
         expected_operation_ids=list(NATIVE_OPERATION_IDS),
         operation_dependencies={
             name: [NATIVE_OPERATION_IDS[index - 1]] for index, name in enumerate(NATIVE_OPERATION_IDS) if index
@@ -197,12 +207,14 @@ def track_transport(
     final_state,
     immutable_input_records,
     allow_asynchronous_io=None,
+    placement=None,
 ):
     """Fly verified run-owned fields; this function cannot build or Refine."""
     from pathlib import Path
     from .native_completion import require_one_fly_completion
     from .native_io import apply_native_io_mode
     from msplatform.analysis.terminal_plane import analyze_terminal_plane
+    from msplatform.contracts.rigid_transform import RigidTransform
 
     workbench = Path(workbench)
     if not session.canonical_path(workbench).is_relative_to(session.artifact_run_dir):
@@ -256,8 +268,9 @@ def track_transport(
         Path(final_state),
         source_count=source_count,
         pass_code=1,
-        axis_center_x_mm=offsets["x"],
-        axis_center_y_mm=offsets["y"],
+        axis_center_x_mm=offsets["x"] if placement is None else 0.,
+        axis_center_y_mm=offsets["y"] if placement is None else 0.,
+        **({"position_transform": RigidTransform.from_contract(placement).inverse()} if placement is not None else {}),
     )
 
 
@@ -278,6 +291,9 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         name: json.loads(Path(request[name + "_path"]).read_text(encoding="utf-8-sig"))
         for name in ("resolved", "numerics", "science", "source_spec")
     }
+    for key in ("placement", "source_to_device"):
+        if key in request:
+            values[key] = request[key]
     plan = plan_transport_operations(**values) if selected_plan is None else selected_plan
     if tuple(plan["expected_operation_ids"]) != session.expected_operation_ids or plan[
         "operation_dependencies"
@@ -307,6 +323,7 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         "cylindrical_ion_source.json",
         "cylindrical_ion_source.csv",
         "cylindrical_ion_source_receipt.json",
+        "placement.json", "source_to_device.json",
     )
     solver_names = (
         "dual_cone_tandem.gem",
@@ -472,6 +489,7 @@ def build_transport_tracking_model(
     path_helper,
     limits,
     allow_asynchronous_io=None,
+    resolved=None, numerics=None, placement=None,
 ):
     """Save/reopen only a source-bearing model over already audited owned fields."""
     from pathlib import Path
@@ -508,6 +526,10 @@ def build_transport_tracking_model(
     # wb.save may legitimately rewrite/restore the companions during build.
     # Their expected copy identities were fixed before that operation.
     final_guards = None
+    if placement is None:
+        native_pose, native_placement = {"rotation": [[1,0,0],[0,1,0],[0,0,1]]}, dict(x_mm=0,y_mm=0,z_mm=0,az_deg=0,el_deg=0,rt_deg=0,scale=1)
+    else:
+        native_pose, native_placement = native_instance_pose(resolved, numerics, placement)
     iob_spec = _write_spec(
         session,
         "tracking_model",
@@ -523,10 +545,10 @@ def build_transport_tracking_model(
                     role="dual_cone",
                     instance_index=1,
                     priority_number=1,
-                    rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                    rotation=native_pose["rotation"],
                     path=str(raw.with_suffix(".pa0")),
                     grid=grid,
-                    placement=dict(x_mm=0, y_mm=0, z_mm=0, az_deg=0, el_deg=0, rt_deg=0, scale=1),
+                    placement=native_placement,
                     fractional_surface=str(raw.with_suffix(".pa-surf")),
                     surface_witnesses=str(witnesses),
                     response_ids=list(ELECTRODE_IDS),
@@ -588,6 +610,7 @@ def _fly_and_collect_transport(
         allow_asynchronous_io=allow_asynchronous_io,
         final_state=final_state,
         immutable_input_records=native_guards,
+        placement=plan.get("placement"),
     )
     metrics_path = session.declare_file(session.result_dir / "terminal_plane_metrics.json", "required_evidence")
     with metrics_path.open("x", encoding="utf-8", newline="\n") as stream:
@@ -601,7 +624,12 @@ def _fly_and_collect_transport(
             session.canonical_path(prepared / "input/cylindrical_ion_source.csv"), "required_evidence"
         ),
     )
+    if "placement" in plan:
+        data["placement"] = records["prepared_placement"]
+    if "source_to_device" in plan:
+        data["source_to_device"] = records["prepared_source_to_device"]
     metadata = dict(
+        **({"placement": plan["placement"], "frame_id": plan["placement"]["to_frame_id"]} if "placement" in plan else {}),
         backend="simion",
         model="dual_cone_sds_gas_assisted_transport",
         execution_count=plan["source_count"],
@@ -657,6 +685,7 @@ def execute_transport(session, *, request, limits, allow_asynchronous_io=None):
         path_helper=path_helper,
         limits=limits,
         allow_asynchronous_io=allow_asynchronous_io,
+        resolved=values["resolved"], numerics=values["numerics"], placement=plan.get("placement"),
     )
     return _fly_and_collect_transport(
         session,

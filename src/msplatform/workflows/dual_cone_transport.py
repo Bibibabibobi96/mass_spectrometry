@@ -34,6 +34,8 @@ def run_gas_assisted_transport(
     gas_field_reference,
     collision_sds_dir,
     context,
+    placement=None,
+    source_to_device=None,
 ):
     """Explicit fresh build/Refine/Fly; never infer an input or reopen a cache."""
     from msplatform.backends.simion import native_completion
@@ -52,7 +54,8 @@ def run_gas_assisted_transport(
         name: json.loads(request[name + "_path"].read_text(encoding="utf-8-sig"))
         for name in ("resolved", "numerics", "science", "source_spec")
     }
-    graph = plan_transport_operations(**values)
+    graph = plan_transport_operations(**values, placement=placement, source_to_device=source_to_device)
+    request.update({key: graph[key] for key in ("placement", "source_to_device") if key in graph})
     gas = read_gas_field(request["gas_field_reference"])
     if "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ValueError("fresh dual-cone transport requires an explicit available SIMION executable")

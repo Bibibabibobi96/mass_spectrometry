@@ -46,10 +46,30 @@ prior unused-knob behavior and vendor API evidence.
 `-300 sin(omega t)` V；因此每组对地峰值为 `300 V`，对置组之间为 `1200 Vpp`。`570 kHz` 是用户
 给定 `550–590 kHz` 范围的标称中点，不代表频率扫描已经完成。
 
+## Explicit spatial placement
+
+The independent workflow operations accept `placement`, a canonical proper
+`RigidTransform` from the resolved device frame to the selected workbench frame.
+Tracking additionally accepts `source_to_device` when the source frame differs;
+this is a tracking/source input, never a geometry-only requirement. The pure
+preparation CLI uses explicit `--placement <JSON>` and `--source-to-device <JSON>`.
+Omitting both selects the historical translation-only input shape. Fixed C0
+smoke accepts device placement but rejects a supplied source registration, since
+it does not consume a sampled release. Existing gas-assisted source files can be reused with a declared registration, without rewriting or
+resampling them. Actual transformed particles must remain inside the local
+upstream plenum and PA extent. One PA, unit scale, seven native electrode IDs and
+all frozen-family safeguards remain in force.
+
+For stored trajectory plots, pass the frozen placement JSON with `--placement`,
+or explicitly select `--historical-translation-only` for original offset-only
+data. The plot and terminal distribution use device-local positions; raw stored
+workbench coordinates and time are retained. Current software/native evidence
+and the separate CAD/provider gap are recorded only in [PROJECT](PROJECT.md#device-placement-and-source-frame-binding-p11).
+
 ## 几何范围
 
 单体 PA 使用电极 `1/2` 表示两锥，`3` 表示末端孔板，`11/12` 表示椭圆杆两相，`21/22` 表示圆杆两相。设备坐标到
-Workbench 的平移记录在 `simion_solver_numerics.json`。单体 GEM 由
+PA 数组的嵌入平移记录在 `simion_solver_numerics.json`；新的显式工作台位姿与它组合一次。单体 GEM 由
 `msplatform.backends.simion.dual_cone_geometry` 编译，杆几何直接复用
 `msplatform.backends.simion.rf_geometry.render_grouped_rod_array_gem`，项目不复制圆杆或椭圆杆公式。
 

@@ -16,6 +16,12 @@ from common.contracts.test_dual_cone_stages import CLOCK
 
 class ManagedIndependentStagesTests(unittest.TestCase):
     def test_geometry_model_and_fields_are_actual_sourcefree_managed_publications(self):
+        self._exercise_independent_stages()
+
+    def test_proper_placement_reuses_local_basis_and_preserves_source_frame_binding(self):
+        self._exercise_independent_stages(placed=True)
+
+    def _exercise_independent_stages(self, *, placed=False):
         from common.contracts.test_execution_runtime import NormalOwnerTests
         from msplatform.workflows.dual_cone_stages import build_geometry, prepare_model, solve_fields, track_fields
         from msplatform.execution.capacity_ledger import initialize_capacity_ledger
@@ -149,6 +155,9 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 )
 
             values = request()
+            from common.contracts.test_dual_cone_placement import pose, registration
+            placement = pose(values).to_contract() if placed else None
+            source_registration = registration(values).to_contract() if placed else None
             numerics = {key: value for key, value in values["numerics"].items() if key != "trajectory"}
             clockroot = root / "clock"
             clockroot.mkdir()
@@ -162,7 +171,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 clockrows[key] = file_record(path, "required_evidence")
             clockrows["data_root"] = str(clockroot)
             with patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
-                geometry = build_geometry(resolved=values["resolved"], numerics=numerics, context=context)
+                geometry = build_geometry(resolved=values["resolved"], numerics=numerics, context=context, placement=placement)
                 self.assertEqual(geometry.metadata["sampled_particles"], 0)
                 self.assertEqual(
                     geometry.data_path("zero_particle_format_control").read_text(), "particles{coordinates=0,}\n"
@@ -195,10 +204,14 @@ class ManagedIndependentStagesTests(unittest.TestCase):
 
             changed_drive = copy.deepcopy(values["science"]["electric_field"])
             changed_drive["stage_1"]["rf_amplitude_v_zero_to_peak_per_group"] = 123
+            tracking_placement = copy.deepcopy(placement)
+            if placed:
+                tracking_placement["translation_mm"][0] += 10
             with patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
                 changed_model = prepare_model(
                     geometry,
                     electric_field=changed_drive,
+                    placement=tracking_placement,
                     clock=CLOCK,
                     physics=RF_PHYSICS,
                     clock_authority_reference=clockrows,
@@ -239,12 +252,18 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     / "projects/dual_cone_tandem_quadrupole_ion_interface/config/gas_field_interface.json",
                     collision_science=values["science"]["gas"],
                     collision_sds_dir=sds,
+                    source_to_device=source_registration,
                     context=context,
                 )
             self.assertEqual(len(calls), 16)
             self.assertEqual(sum("refine_rf_field_family.lua" in " ".join(args) for args in calls), 1)
             self.assertEqual(trajectory.metadata["refine_calls"], 0)
             self.assertEqual(trajectory.metadata["execution_count"], 100)
+            if placed:
+                self.assertEqual(geometry.metadata["placement"], placement)
+                self.assertEqual(trajectory.metadata["frame_id"], tracking_placement["to_frame_id"])
+                self.assertEqual(json.loads(trajectory.data_path("placement").read_text()), tracking_placement)
+                self.assertEqual(json.loads(trajectory.data_path("source_to_device").read_text()), source_registration)
             for name in (
                 "family_raw",
                 "family_surface",
@@ -275,6 +294,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     / "projects/dual_cone_tandem_quadrupole_ion_interface/config/gas_field_interface.json",
                     collision_science=values["science"]["gas"],
                     collision_sds_dir=sds,
+                    source_to_device=source_registration,
                     context=context,
                 )
             self.assertEqual(len(calls), 19)

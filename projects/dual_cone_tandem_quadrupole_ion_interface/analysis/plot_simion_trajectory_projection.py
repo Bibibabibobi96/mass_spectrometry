@@ -43,11 +43,30 @@ def axial_reach_profile(
     return edges, values
 
 
+def trajectory_tracks(path: Path, placement) -> dict[int, tuple[list[float], list[float]]]:
+    """Read raw workbench positions using the explicitly frozen device pose."""
+    from msplatform.contracts.rigid_transform import FramedPosition
+
+    inverse = placement.inverse()
+    tracks: dict[int, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
+    with path.open(encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            point = FramedPosition(inverse.from_frame_id, tuple(float(row[axis+"_mm"]) for axis in "xyz"))
+            x, y, z = inverse.transform_position(point).coordinates_mm
+            tracks[int(row["ion_number"])][0].append(z)
+            tracks[int(row["ion_number"])][1].append(math.hypot(x, y))
+    return tracks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trajectory", required=True, type=Path)
     parser.add_argument("--final-state", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--placement", type=Path, help="Frozen device-to-workbench rigid-transform JSON")
+    scope.add_argument("--historical-translation-only", action="store_true",
+                       help="Explicitly read historical offset-only workbench data")
     parser.add_argument("--geometry", type=Path, default=DEFAULT_GEOMETRY)
     parser.add_argument("--numerics", type=Path, default=DEFAULT_NUMERICS)
     args = parser.parse_args()
@@ -58,7 +77,9 @@ def main() -> int:
 
     resolved = json.loads(args.geometry.read_text(encoding="utf-8"))
     numerics = json.loads(args.numerics.read_text(encoding="utf-8"))
-    offsets = numerics["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
+    from msplatform.backends.simion.dual_cone_stages import device_placement
+    placement = device_placement(resolved, numerics,
+        None if args.placement is None else json.loads(args.placement.read_text(encoding="utf-8-sig")))
     geometry = resolved["geometry_mm"]
     stage_2_end = float(geometry["stage_2_round_quadrupole"]["downstream_flat_end_z_mm"])
     plate = geometry["downstream_aperture_plate"]
@@ -72,15 +93,7 @@ def main() -> int:
             if int(row["splat"]) == 1:
                 passed.add(int(row["ion_number"]))
 
-    tracks: dict[int, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
-    with args.trajectory.open(encoding="utf-8", newline="") as stream:
-        for row in csv.DictReader(stream):
-            ion = int(row["ion_number"])
-            x = float(row["x_mm"]) - float(offsets["x"])
-            y = float(row["y_mm"]) - float(offsets["y"])
-            z = float(row["z_mm"]) - float(offsets["z"])
-            tracks[ion][0].append(z)
-            tracks[ion][1].append(math.hypot(x, y))
+    tracks = trajectory_tracks(args.trajectory, placement)
 
     full_limits = (-2.0, endpoint)
     figure, axes = plt.subplots(3, 1, figsize=(11, 9.5), constrained_layout=True)

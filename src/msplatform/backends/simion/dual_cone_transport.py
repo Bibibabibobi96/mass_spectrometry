@@ -14,7 +14,7 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.ion_release.release import materialize_release_from_file
-from msplatform.backends.simion.source import render_standard_beams, render_source_states
+from msplatform.backends.simion.source import render_standard_beams, render_source_states, lua_value, transform_source_rows
 from msplatform.backends.simion import dual_cone_geometry
 from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
@@ -110,6 +110,7 @@ def _render_run_config(
     resolved: dict[str, Any],
     solver: Path,
     model_projection=None,
+    placement=None,
 ) -> str:
     def stage_record(name: str) -> str:
         stage = science["electric_field"][name]
@@ -147,6 +148,12 @@ def _render_run_config(
                     f"  waveforms={_lua_string(solver / 'voltage_waveforms.lua')},",
                 ]
             ),
+            *([] if placement is None else [
+                "  device_placement=" + lua_value(placement) + ",",
+                "  native_instance_index=1,",
+                f"  pa_dx_mm={numerics['pa']['cell_mm_xyz']['x']:.17g},pa_dy_mm={numerics['pa']['cell_mm_xyz']['y']:.17g},pa_dz_mm={numerics['pa']['cell_mm_xyz']['z']:.17g},",
+                f"  downstream_device_z_mm={terminal_device_z:.17g},",
+            ]),
             f"  mode={_lua_string(mode)},",
             f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
             f"  collision_sds_lua={_lua_string(collision_lua)},",
@@ -176,6 +183,32 @@ def _render_run_config(
     )
 
 
+def source_placement(resolved, numerics, source_spec, *, placement=None, source_to_device=None):
+    """Bind source and device frames with the existing canonical composition.
+
+    Omission of both transforms explicitly retains the historical translation-
+    only interpretation. New posed sources either already name the device
+    frame or provide their actual source-to-device registration.
+    """
+    from msplatform.contracts.rigid_transform import RigidTransform
+    from .dual_cone_stages import device_placement
+
+    world = device_placement(resolved, numerics, placement)
+    if placement is None and source_to_device is None:
+        return world, None
+    if source_to_device is None:
+        if source_spec["frame_id"] != world.from_frame_id:
+            raise ValueError("source frame requires an explicit source-to-device rigid transform")
+        registration = RigidTransform.identity(world.from_frame_id)
+    else:
+        registration = (source_to_device if isinstance(source_to_device, RigidTransform)
+                        else RigidTransform.from_contract(source_to_device))
+        if (registration.from_frame_id != source_spec["frame_id"]
+                or registration.to_frame_id != world.from_frame_id):
+            raise ValueError("source-to-device rigid transform frame binding differs")
+    return registration.then(world), registration
+
+
 def _materialize_gas_source(
     *,
     frozen: Path,
@@ -184,6 +217,8 @@ def _materialize_gas_source(
     gas_science: dict[str, Any],
     numerics: dict[str, Any],
     source_spec_path: Path,
+    placement=None,
+    source_to_device=None,
 ) -> tuple[Path, Path, dict[str, Any]]:
     spec = _load(source_spec_path, "repository_ion_release")
     geometry = spec["geometry"]
@@ -192,10 +227,15 @@ def _materialize_gas_source(
     z_max = float(geometry["center_mm"][2]) + 0.5 * float(geometry["height_mm"])
     first_cone = resolved["geometry_mm"]["first_cone"]
     plenum_radius = float(gas_science["geometry_proxy"]["upstream_plenum_radius_mm"])
-    if radius > plenum_radius:
-        raise ValueError("cylindrical source radius exceeds the upstream plenum")
-    if z_min < -2.0 or z_max >= float(first_cone["aperture_reference_z_mm"]):
-        raise ValueError("cylindrical source must remain upstream of the first cone inside the PA")
+    world, registration = source_placement(resolved, numerics, spec,
+        placement=placement, source_to_device=source_to_device)
+    # Keep the historical author-cylinder constraints in their original frame.
+    if registration is None or (registration.rotation == ((1.,0.,0.),(0.,1.,0.),(0.,0.,1.))
+                                and registration.translation_mm == (0.,0.,0.)):
+        if radius > plenum_radius:
+            raise ValueError("cylindrical source radius exceeds the upstream plenum")
+        if z_min < -2.0 or z_max >= float(first_cone["aperture_reference_z_mm"]):
+            raise ValueError("cylindrical source must remain upstream of the first cone inside the PA")
 
     source_csv = frozen / "cylindrical_ion_source.csv"
     source_receipt = frozen / "cylindrical_ion_source_receipt.json"
@@ -205,7 +245,18 @@ def _materialize_gas_source(
     states: list[dict[str, Any]] = []
     with source_csv.open(encoding="utf-8", newline="") as stream:
         source_rows = list(csv.DictReader(stream))
-    for row in source_rows:
+    projected = transform_source_rows(source_rows, world) if registration is not None else None
+    local_rows = transform_source_rows(source_rows, registration) if registration is not None else None
+    from .dual_cone_geometry import geometry_grid
+    grid = geometry_grid(resolved, numerics)
+    for index, row in enumerate(source_rows):
+        local = [float(local_rows[index]["position_"+axis+"_mm"]) if local_rows is not None else float(row[axis+"_mm"]) for axis in "xyz"]
+        if (math.hypot(local[0], local[1]) > plenum_radius or local[2] < -2.
+                or local[2] >= float(first_cone["aperture_reference_z_mm"])):
+            raise ValueError("projected source is outside the device-local upstream plenum")
+        for axis, value, offset in zip("xyz", local, (offset_x, offset_y, offset_z), strict=True):
+            if not 0. <= value + offset <= (grid["n"+axis]-1)*grid["d"+axis+"_mm"]:
+                raise ValueError("projected source lies outside the PA-local grid")
         vx, vy, vz = (float(row[name]) for name in ("vx_m_s", "vy_m_s", "vz_m_s"))
         mass = float(row["mass_amu"])
         energy = kinetic_energy_ev(mass, vx, vy, vz)
@@ -213,6 +264,12 @@ def _materialize_gas_source(
         y = offset_y + float(row["y_mm"])
         z = offset_z + float(row["z_mm"])
         tob = float(row["birth_time_s"]) * 1e6
+        if projected is not None:
+            target = projected[index]
+            x, y, z = (float(target["position_"+axis+"_mm"]) for axis in "xyz")
+            vx, vy, vz = (float(target["velocity_"+axis+"_m_s"]) for axis in "xyz")
+            tob = float(target["instrument_time_us"])
+            energy = float(target["kinetic_energy_eV"])
         beams.append(
             {
                 "tob": format(tob, ".15g"),
@@ -263,6 +320,8 @@ def prepare_transport(
     simion_exe: Path | None = None,
     materialize_geometry: bool = True,
     model_projection=None,
+    placement=None,
+    source_to_device=None,
 ) -> dict[str, Any]:
     if type(materialize_geometry) is not bool:
         raise TypeError("materialize_geometry must be boolean")
@@ -276,6 +335,8 @@ def prepare_transport(
         require_model_projection(model_projection)
     if mode not in {"c0_gem_smoke", "gas_assisted_transport"}:
         raise ValueError("unsupported SIMION preparation mode")
+    if mode == "c0_gem_smoke" and source_to_device is not None:
+        raise ValueError("source_to_device does not apply to the fixed device-local C0 smoke source")
     resolved = _load(resolved_path, "dual_cone_tandem_quadrupole_resolved_geometry")
     numerics = _load(numerics_path, "dual_cone_simion_solver_numerics")
     science = _load(science_path, "dual_cone_simion_ion_transport_science")
@@ -288,6 +349,13 @@ def prepare_transport(
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             raise ValueError("SIMION trajectory " + name + " must be explicit, positive and finite")
 
+    from .dual_cone_stages import device_placement
+    placement = (model_projection or {}).get("placement") if placement is None else placement
+    if placement is not None or source_to_device is not None:
+        placement = device_placement(resolved, numerics, placement).to_contract()
+        if mode == "gas_assisted_transport":
+            source_placement(resolved, numerics, _load(source_spec_path, "repository_ion_release"),
+                             placement=placement, source_to_device=source_to_device)
     from msplatform.backends.simion.resources import native_resource_path
 
     program = native_resource_path("dual_cone_gas_assisted_transport.lua")
@@ -342,6 +410,12 @@ def prepare_transport(
         "simion_program": freeze_file(program, solver / "gas_assisted_transport.lua"),
     }
 
+    for name, value in (("placement", placement), ("source_to_device", source_to_device)):
+        if value is not None:
+            value = value.to_contract() if hasattr(value, "to_contract") else value
+            path = frozen / (name + ".json")
+            path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+            inputs[name] = {"path": str(path), "sha256": file_sha256(path)}
     if materialize_geometry:
         inputs["gem"] = {"path": str(gem), "sha256": file_sha256(gem)}
     if model_projection is not None:
@@ -356,6 +430,12 @@ def prepare_transport(
         source = science["ion"]
         offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
         center_x, center_y, z_source = offset_x, offset_y, offset_z - 1.0
+        smoke_direction = None
+        if placement is not None:
+            from msplatform.contracts.rigid_transform import FramedPosition, FramedVector
+            transform = device_placement(resolved, numerics, placement)
+            center_x, center_y, z_source = transform.transform_position(FramedPosition(transform.from_frame_id, (0,0,-1))).coordinates_mm
+            smoke_direction = transform.transform_vector(FramedVector(transform.from_frame_id, (1,0,0))).components
         fly2 = solver / "c0_smoke.fly2"
         fly2.write_text(
             render_standard_beams(
@@ -368,8 +448,7 @@ def prepare_transport(
                         "y": center_y,
                         "z": z_source,
                         "ke": source["source_kinetic_energy_ev"],
-                        "az": 0.0,
-                        "el": 0.0,
+                        **({"az": 0.0, "el": 0.0} if smoke_direction is None else {"direction": smoke_direction}),
                         "cwf": 1.0,
                         "color": 1,
                     }
@@ -443,6 +522,7 @@ def prepare_transport(
             gas_science=gas_science,
             numerics=numerics,
             source_spec_path=source_spec_path,
+            placement=placement, source_to_device=source_to_device,
         )
         inputs["gas_flow_science"] = freeze_file(gas_science_path, frozen / "gas_flow_science.json")
         inputs["cylindrical_ion_source_spec"] = freeze_file(source_spec_path, frozen / "cylindrical_ion_source.json")
@@ -467,6 +547,7 @@ def prepare_transport(
             resolved=resolved,
             solver=solver,
             model_projection=model_projection,
+            placement=placement,
         ),
         encoding="utf-8",
     )
@@ -515,6 +596,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--mode", required=True, choices=("c0_gem_smoke", "gas_assisted_transport"))
+    parser.add_argument("--placement", type=Path)
+    parser.add_argument("--source-to-device", type=Path)
     for name in ("resolved", "numerics", "science", "interface", "gas-science", "source-spec"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--collision-sds-dir", type=Path)
@@ -536,6 +619,8 @@ def main() -> int:
         interface_path=args.interface,
         gas_science_path=args.gas_science,
         source_spec_path=args.source_spec,
+        placement=None if args.placement is None else json.loads(args.placement.read_text(encoding="utf-8-sig")),
+        source_to_device=None if args.source_to_device is None else json.loads(args.source_to_device.read_text(encoding="utf-8-sig")),
         gas_field_reference=reference,
         collision_sds_dir=args.collision_sds_dir,
         gas_field_manifest=args.gas_field_manifest,

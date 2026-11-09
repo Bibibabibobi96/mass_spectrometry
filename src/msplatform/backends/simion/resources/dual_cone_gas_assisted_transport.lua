@@ -7,6 +7,23 @@ local config_path = assert(os.getenv('DUAL_CONE_SIMION_RUN_CONFIG_LUA'),
 local config = assert(loadfile(config_path))()
 local rf = assert(loadfile(assert(config.rf_drive_kernel)))()
 
+-- Official instance transforms own the inverse/forward orientation. A PA grid
+-- already embeds the device offset; pitch converts point GU to local mm only.
+local function pose_instance()
+  assert(#simion.wb.instances==1,'dual-cone pose requires its one bound PA instance')
+  return assert(simion.wb.instances[config.native_instance_index])
+end
+local function device_position(x,y,z)
+  if config.device_placement then
+    local gx,gy,gz=pose_instance():wb_to_pa_coords(x,y,z)
+    return gx*config.pa_dx_mm-config.device_x_offset_mm,
+           gy*config.pa_dy_mm-config.device_y_offset_mm,
+           gz*config.pa_dz_mm-config.device_z_offset_mm
+  end
+  -- Explicit translation-only reader for the original configuration shape.
+  return x-config.device_x_offset_mm,y-config.device_y_offset_mm,z-config.device_z_offset_mm
+end
+
 local function drive(stage)
   return rf.new{
     waveform=stage.waveform,
@@ -101,9 +118,13 @@ function segment.other_actions()
     emit_sample()
     next_sample_us[ion_number] = ion_time_of_flight + config.trajectory_sample_interval_us
   end
-  if ion_time_of_flight >= config.maximum_time_us or
-     ion_pz_mm >= config.downstream_workbench_z_mm then
-    terminal_code[ion_number] = ion_pz_mm >= config.downstream_workbench_z_mm and 1 or 2
+  local axial,terminal=ion_pz_mm,config.downstream_workbench_z_mm
+  if config.device_placement then
+    local _,_,local_z=device_position(ion_px_mm,ion_py_mm,ion_pz_mm)
+    axial,terminal=local_z,config.downstream_device_z_mm
+  end
+  if ion_time_of_flight >= config.maximum_time_us or axial >= terminal then
+    terminal_code[ion_number] = axial >= terminal and 1 or 2
     ion_splat = 1
   end
 end
@@ -151,8 +172,7 @@ if config.mode == 'gas_assisted_transport' then
   end
   local function query_or_boundary_loss(query, fallback, x, y, z)
     if gas_support_lost[ion_number] then return unpack(fallback) end
-    local result = {pcall(query, x-config.device_x_offset_mm,
-      y-config.device_y_offset_mm,z-config.device_z_offset_mm)}
+    local result = {pcall(query, device_position(x,y,z))}
     if result[1] then return unpack(result, 2) end
     if tostring(result[2]):find('gas-field query has no fluid support', 1, true) then
       gas_support_lost[ion_number] = true
@@ -170,7 +190,11 @@ if config.mode == 'gas_assisted_transport' then
     return query_or_boundary_loss(field.temperature_k, {300}, x, y, z)
   end
   SDS.velocity = function(x,y,z)
-    return query_or_boundary_loss(field.velocity_m_s, {0,0,0}, x, y, z)
+    local vx,vy,vz=query_or_boundary_loss(field.velocity_m_s, {0,0,0}, x, y, z)
+    -- SDS function velocities are m/s in workbench orientation. Orientation
+    -- preserves magnitude; do not multiply velocity by PA pitch or translate it.
+    if config.device_placement then return pose_instance():pa_to_wb_orient(vx,vy,vz) end
+    return vx,vy,vz
   end
   SDS.install()
 elseif config.mode ~= 'c0_gem_smoke' then

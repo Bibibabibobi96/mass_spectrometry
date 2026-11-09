@@ -34,6 +34,7 @@ def analyze_terminal_plane(
     pass_code: int,
     axis_center_x_mm: float,
     axis_center_y_mm: float,
+    position_transform=None,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     if source_count < 1:
         raise ValueError("source_count must be positive")
@@ -55,8 +56,12 @@ def analyze_terminal_plane(
     transmitted = [row for row in rows if int(row["splat"]) == pass_code]
     spatial: dict[str, Any] | None = None
     if transmitted:
-        xs = [float(row["x_mm"]) for row in transmitted]
-        ys = [float(row["y_mm"]) for row in transmitted]
+        positions = [(float(row["x_mm"]), float(row["y_mm"]), float(row["z_mm"])) for row in transmitted]
+        if position_transform is not None:
+            from msplatform.contracts.rigid_transform import FramedPosition
+            positions = [position_transform.transform_position(FramedPosition(position_transform.from_frame_id, point)).coordinates_mm for point in positions]
+        xs = [point[0] for point in positions]
+        ys = [point[1] for point in positions]
         radii = [
             math.hypot(x - axis_center_x_mm, y - axis_center_y_mm)
             for x, y in zip(xs, ys, strict=True)
@@ -78,6 +83,7 @@ def analyze_terminal_plane(
     return ({
         "schema_version": 1,
         "role": "simion_terminal_plane_transport_metrics",
+        **({"spatial_distribution_frame_id": position_transform.to_frame_id} if position_transform is not None else {}),
         "source_count": source_count,
         "transmitted_count": len(transmitted),
         "transmission_fraction": len(transmitted) / source_count,

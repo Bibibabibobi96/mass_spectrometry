@@ -95,21 +95,63 @@ The optional scan reports visited nodes and CPU seconds; native scan cost remain
 unmeasured pending the separately reviewed execution budget. Native mesh accuracy,
 GUI, collision qualification and Formal status remain ungranted.
 
-### Declared frame scope of the native adapter
+### Device placement and source-frame binding (P11)
 
-The current monolithic PA uses one identity-rotation, unit-scale workbench instance.
-The device-to-workbench translation remains the explicit numerical contract (the
-current case is 25.5, 25.5, 2 mm). Source positions add that translation; source
-velocities convert m/s to mm/us and birth seconds to microseconds. Gas queries
-subtract the same translation, while gas velocity axes remain unchanged in m/s.
-Actual Program/source projection tests retain the complete 100-particle mother
-and check these transformations and gas Pa/Torr/K units.
+The one-PA, unit-scale adapter accepts an explicit canonical `RigidTransform`
+from the resolved device frame to a named workbench frame. Geometry-only and
+model-only stages do not require a source frame or gas input. The existing
+numerical offset embeds device coordinates in the PA array; it is not an extra
+world translation. IOB placement composes its inverse with the device pose, so
+positions use Rr+t once and free vectors use Rv. The existing RF stable Euler
+conversion is now the sole IOB representation helper for both adapters.
 
-The canonical IOB role rejects a nonidentity instance pose or scale before native
-workbench loading. Arbitrary translated/rotated placements require an explicit
-inverse gas-frame transform and velocity rotation, plus source/birth projection
-validation; they remain OPEN P11 work. RF near-gimbal evidence does not qualify
-the gas/SDS adapter. No science, grid or current source request was changed.
+Tracking accepts an optional `source_to_device` canonical rigid transform. It is
+required when a newly posed request uses a differently named source frame; when
+frame IDs already match, identity registration is sufficient. Source CSV bytes,
+IDs, species and birth times remain unchanged. The registered cohort is checked
+in device/PA-local coordinates before transport. Placement and registration do
+not enter local geometry, gas or spatial field-basis identities. A differently
+placed/driven model can explicitly reuse the original compatible guarded basis.
+
+Omission of both spatial inputs retains the historical translation-only input
+shape and its original source-label interpretation. It does not rename the
+historical `multipole_cartesian_z_axis_v1` source frame. New posed requests must
+bind that frame explicitly rather than silently relabeling it. Historical frozen
+records and hashes are unchanged.
+
+The Program uses official `instance:wb_to_pa_coords` for inverse point queries
+(GU converted by actual pitch, then subtracting PA embedding) and
+`instance:pa_to_wb_orient` for device gas velocity in m/s. It retains the existing
+Pa/Torr conversion and SDS physics. The terminal plane and transverse metrics
+are evaluated in device-local coordinates; raw world CSV remains unchanged.
+The active projection tool requires either `--placement` with the frozen pose or
+`--historical-translation-only`, so it never guesses an offset for posed data.
+
+Official evidence: SIMION2020 installed `docs/simion.chm`, `lua_simion.wb` methods;
+[official instance API](https://simion.com/info/lua_simion.wb.html). Installed
+`examples/collision_sds/collision_sds.lua` version `8.1.2.7.20140407` documents
+workbench-mm callback inputs and workbench-oriented m/s velocity function output
+(lines238,278,1004 and1164). Scalar pressure/temperature do not rotate; velocity
+does. The removed `velocity_coordinates` option is not used.
+
+The bounded software set passed 71 parents / 163 outcomes in 88.520 s with no skips,
+including the original RF near-gimbal tests and actual shared IOB Lua guards.
+The original and posed public-owner inert publications retain original-family
+protection and reuse; source tests retain all 100 rows, signed charge and birth.
+A subsequent precise C0 registration guard passed six pose/source tests. C0
+smoke has a fixed device-local source, so it rejects `source_to_device` before
+creating output; explicit device placement itself remains supported.
+
+Ordinary wheel and sdist-rebuilt-wheel acceptance passed five parents / 16 outcomes
+in 139.046 s before that two-line guard. All 382 package payload members matched
+both wheels and their actual frozen build source. After the guard, a fresh
+ordinary wheel's targeted installed consumer passed unchanged C0 default, posed
+C0, no-output C0 registration rejection and registered gas-source preparation,
+with author trees denied; all 382 final payload members match that build/source.
+The complete five-method suite was not rerun for the guard. Native IOB/Refine/Fly,
+pose-qualified transport, stochastic trajectory equality, mesh precision,
+GUI and Formal evidence remain unperformed in this slice. Same-source dual-cone CAD/provider delivery
+remains separately OPEN; an IOB pose does not implement a CAD provider.
 
 ### Independent managed stages and saved-field consumption
 

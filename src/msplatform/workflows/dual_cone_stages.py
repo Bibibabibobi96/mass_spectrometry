@@ -72,9 +72,9 @@ def _run(context, action, ids, implementation, arguments, sources, kind):
     )
 
 
-def build_geometry(*, resolved, numerics, context):
+def build_geometry(*, resolved, numerics, context, placement=None):
     """Build/save/reopen zero-source unsolved geometry; no gas/source/Refine."""
-    plan = plan_geometry_stage(resolved=resolved, numerics=numerics)
+    plan = plan_geometry_stage(resolved=resolved, numerics=numerics, placement=placement)
     result = _run(
         context,
         "dual_cone_geometry",
@@ -87,11 +87,12 @@ def build_geometry(*, resolved, numerics, context):
     return require_geometry_product(result)
 
 
-def prepare_model(geometry_reference, *, electric_field, clock, physics, clock_authority_reference, context):
+def prepare_model(geometry_reference, *, electric_field, clock, physics, clock_authority_reference, context, placement=None):
     """Bind drive to an independently materialized raw geometry; no particles."""
     source = require_geometry_product(geometry_reference)
     geometry = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
-    plan = plan_model_stage(geometry, electric_field=electric_field, clock=clock, physics=physics)
+    placement = source.metadata.get("placement") if placement is None else placement
+    plan = plan_model_stage(geometry, electric_field=electric_field, clock=clock, physics=physics, placement=placement)
     from msplatform.backends.simion.model_execution import _clock_reference
 
     _clock_reference(dict(drive=dict(clock=plan["projection"]["clock"])), clock_authority_reference)
@@ -146,6 +147,8 @@ def track_fields(
     interface_path,
     collision_sds_dir,
     context,
+    placement=None,
+    source_to_device=None,
 ):
     """Prepare the selected source/gas and Fly original published fields directly."""
     from msplatform.backends.simion.dual_cone_stages import plan_saved_field_fly
@@ -169,6 +172,7 @@ def track_fields(
         numerics=numerics,
         collision_science=collision_science,
         collision_sds_records=sds,
+        placement=placement, source_to_device=source_to_device,
     )
     gas = read_gas_field(gas_field_reference)
     request = dict(
@@ -178,6 +182,8 @@ def track_fields(
         collision_science=collision_science,
         interface_path=Path(interface_path),
         collision_sds_dir=Path(collision_sds_dir),
+        **({"placement": plan["placement"]} if "placement" in plan else {}),
+        **({"source_to_device": plan["source_to_device"]} if "source_to_device" in plan else {}),
     )
     return _run(
         context,

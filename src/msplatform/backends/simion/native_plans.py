@@ -15,6 +15,28 @@ from .resources import native_resource_path, STRUCTURAL_SEEDS
 from .source import lua_value, render_restart_fly2
 
 
+def rigid_iob_placement(transform, *, origin_mm=(0., 0., 0.)):
+    """Project the existing proper-rotation convention to official IOB controls.
+
+    This is the single representation conversion used by RF and dual-cone;
+    scientific position/vector transforms remain owned by RigidTransform.
+    """
+    from msplatform.contracts.rigid_transform import RigidTransform
+
+    RigidTransform.from_contract(transform)
+    rotation, translation = transform['rotation'], transform['translation_mm']
+    cos_el = math.hypot(rotation[0][0], rotation[2][0])
+    el = math.atan2(rotation[1][0], cos_el)
+    if cos_el > 0.:
+        az, rt = math.atan2(-rotation[2][0], rotation[0][0]), math.atan2(-rotation[1][2], rotation[1][1])
+    else:
+        az, rt = math.atan2(rotation[0][2], rotation[2][2]), 0.
+    world_origin = [sum(rotation[a][k] * origin_mm[k] for k in range(3)) + translation[a] for a in range(3)]
+    return dict(zip(('x_mm', 'y_mm', 'z_mm'), world_origin, strict=True),
+                az_deg=math.degrees(az), el_deg=math.degrees(el), rt_deg=math.degrees(rt),
+                scale=1., ox=0., oy=0., oz=0.)
+
+
 def _operation(name: str, stage: str, arguments: list[str], outputs: list[str], marker: str) -> dict:
     return dict(operation_id=name, role="SIMION", stage=stage,
         arguments=["--nogui", "--noprompt", *arguments], outputs=outputs, success_marker=marker)
@@ -151,20 +173,12 @@ def _plan_rf_geometry_build(compiled, root, seed_record, path_resource):
             ['lua',str(native_resource_path('build_frontend_geometry.lua')),str(audit)],
             [str(raw),str(surface),str(witnesses)],'BUILD_GEOMETRY=PASS ROLE='+name))
         transform = poses[name]
-        rotation, translation = transform['rotation'], transform['translation_mm']
-        cos_el = math.hypot(rotation[0][0], rotation[2][0])
-        el = math.atan2(rotation[1][0], cos_el)
-        if cos_el > 0.:
-            az, rt = math.atan2(-rotation[2][0],rotation[0][0]), math.atan2(-rotation[1][2],rotation[1][1])
-        else:
-            az, rt = math.atan2(rotation[0][2],rotation[2][2]), 0.
-        origin = [domain['instance_origin_mm'][axis] for axis in 'xyz']
-        world_origin = [sum(rotation[a][k]*origin[k] for k in range(3))+translation[a] for a in range(3)]
+        rotation = transform['rotation']
+        placement = rigid_iob_placement(transform, origin_mm=[domain['instance_origin_mm'][axis] for axis in 'xyz'])
         instances.append(dict(role=name, instance_index=index, priority_number=index, path=str(raw),
             fractional_surface=str(surface), surface_witnesses=str(witnesses),grid=grid,
             physical_samples=samples, rotation=rotation,
-            placement=dict(zip(('x_mm','y_mm','z_mm'),world_origin,strict=True),
-                           az_deg=math.degrees(az),el_deg=math.degrees(el),rt_deg=math.degrees(rt),scale=1.,ox=0.,oy=0.,oz=0.)))
+            placement=placement))
     control = root/'inputs/no_particles.fly2'
     materializations[str(control)] = render_restart_fly2([])
     seed = root/'simion/geometry/iob_seed'/(str(count)+'_instance_seed.iob')

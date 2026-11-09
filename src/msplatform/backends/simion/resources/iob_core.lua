@@ -128,16 +128,7 @@ for index,row in ipairs(spec.instances) do
     local ids={1,2,3,11,12,21,22}
     assert(type(row.response_ids)=='table' and #row.response_ids==#ids,'dual-cone requires all seven native electrodes')
     for i,eid in ipairs(ids) do assert(row.response_ids[i]==eid,'dual-cone native electrode mapping differs') end
-    -- Current source/gas projection is the declared workbench translation in
-    -- the GEM/config. Rotated/translated instances need an explicit inverse
-    -- gas-frame and vector projection; RF qualification does not provide it.
-    for _,key in ipairs({'x_mm','y_mm','z_mm','az_deg','el_deg','rt_deg'}) do
-      assert(row.placement[key]==0,'dual-cone nonidentity instance pose is not implemented')
-    end
     assert(row.placement.scale==1,'dual-cone instance scaling is not implemented')
-    for i=1,3 do for j=1,3 do
-      assert(row.rotation[i][j]==(i==j and 1 or 0),'dual-cone rotation matrix differs from declared native frame')
-    end end
   end
   assert(row.role==roles[index] and row.instance_index==index and row.priority_number==index,
     'IOB role/order differs at slot '..index)

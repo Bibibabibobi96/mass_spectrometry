@@ -54,6 +54,22 @@ function simion.command(command)
  function item:_debug_update_size()end
  function item:pa_to_wb_coords(x,y,z)return x,y,z end
  function item:pa_to_wb_orient(x,y,z)return x,y,z end
+ if failure=='placed'then
+  local p=row.placement
+  item.x,item.y,item.z,item.az,item.el,item.rt=p.x_mm,p.y_mm,p.z_mm,p.az_deg,p.el_deg,p.rt_deg
+  function item:pa_to_wb_orient(x,y,z)
+   local a,e,r=self.az*math.pi/180,self.el*math.pi/180,self.rt*math.pi/180
+   local ca,sa,ce,se,cr,sr=math.cos(a),math.sin(a),math.cos(e),math.sin(e),math.cos(r),math.sin(r)
+   -- Independent official Ry(az)Rz(el)Rx(rt) oracle, not production rotation rows.
+   return ca*ce*x+(-ca*se*cr+sa*sr)*y+(ca*se*sr+sa*cr)*z,
+          se*x+ce*cr*y-ce*sr*z,
+          -sa*ce*x+(sa*se*cr+ca*sr)*y+(-sa*se*sr+ca*cr)*z
+  end
+  function item:pa_to_wb_coords(x,y,z)
+   local dx,dy,dz=self:pa_to_wb_orient(x*row.grid.dx_mm,y*row.grid.dy_mm,z*row.grid.dz_mm)
+   return dx+self.x,dy+self.y,dz+self.z
+  end
+ end
  slots[1]=item
 end
 arg={arg[1],mode,arg[5]}
@@ -192,13 +208,27 @@ class DualConeIobTests(unittest.TestCase):
                     for failure, reason in (
                         ("mapping", "mapping differs"),
                         ("missing_id", "all seven"),
-                        ("pose", "nonidentity"),
-                        ("rotation", "rotation matrix"),
+                        ("pose", "saved provider placement differs"),
+                        ("rotation", "basis differs from original matrix"),
                         ("surface", "surface readback differs"),
                     ):
                         result = call("verify", failure)
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn(reason, result.stderr)
+                if role.startswith("dual_cone"):
+                    from common.contracts.test_dual_cone_placement import pose
+                    from common.contracts.test_dual_cone_transport_execution import request as actual_request
+                    from msplatform.backends.simion.dual_cone_stages import native_instance_pose
+
+                    values = actual_request()
+                    transform, native = native_instance_pose(values["resolved"], values["numerics"], pose(values))
+                    spec["instances"][0]["rotation"] = transform["rotation"]
+                    spec["instances"][0]["placement"] = native
+                    if role in {"dual_cone_geometry_iob", "dual_cone_model"}:
+                        spec["output_iob"] = str(root / "placed.iob")
+                    for mode in modes:
+                        placed = call(mode, "placed")
+                        self.assertEqual(placed.returncode, 0, placed.stdout + placed.stderr)
                 for path, before in source.items():
                     self.assertEqual(path.read_bytes(), before)
 

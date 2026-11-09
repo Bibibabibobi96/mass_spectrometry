@@ -15,11 +15,44 @@ from pathlib import Path
 
 from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.results.artifacts import OpenedArtifact, open_artifact
-from .dual_cone_geometry import geometry_grid, render_gem
+from .dual_cone_geometry import device_to_workbench_offsets, geometry_grid, render_gem
 from .model import RF_PHYSICS, _validate_timing
 
 
 ELECTRODE_IDS = (1, 2, 3, 11, 12, 21, 22)
+
+
+def device_placement(resolved, numerics, placement=None):
+    """Resolve one proper device-to-world pose; omission reads legacy translation.
+
+    The numerical offset embeds the local device in its PA grid. It remains
+    independent of an explicitly requested world placement.
+    """
+    from msplatform.contracts.rigid_transform import RigidTransform
+
+    local = resolved["coordinate_frame"]["frame_id"]
+    if placement is None:
+        return RigidTransform(local, "dual_cone_workbench",
+                              ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+                              device_to_workbench_offsets(numerics))
+    value = placement if isinstance(placement, RigidTransform) else RigidTransform.from_contract(placement)
+    if value.from_frame_id != local:
+        raise ValueError("dual-cone placement source frame differs from the resolved device")
+    return value
+
+
+def native_instance_pose(resolved, numerics, placement=None):
+    """Compose the already embedded array frame into the requested world frame."""
+    from msplatform.contracts.rigid_transform import RigidTransform
+    from .native_plans import rigid_iob_placement
+
+    world = device_placement(resolved, numerics, placement)
+    embedded = RigidTransform(world.from_frame_id, world.from_frame_id + ".simion_array",
+                              ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+                              device_to_workbench_offsets(numerics))
+    array_to_world = embedded.inverse().then(world)
+    native = rigid_iob_placement(array_to_world.to_contract())
+    return array_to_world.to_contract(), {key: value for key, value in native.items() if key not in {"ox", "oy", "oz"}}
 
 
 def transport_refinement(numerics: Mapping) -> dict:
@@ -56,7 +89,7 @@ def _graph(ids):
     )
 
 
-def plan_geometry_stage(*, resolved: Mapping, numerics: Mapping) -> dict:
+def plan_geometry_stage(*, resolved: Mapping, numerics: Mapping, placement=None) -> dict:
     """Geometry has no gas/SDS/source/trajectory dependency or sampled particle."""
     grid = geometry_grid(dict(resolved), dict(numerics))
     # Retain only the actual geometry authority; unrelated trajectory or Refine
@@ -83,6 +116,7 @@ def plan_geometry_stage(*, resolved: Mapping, numerics: Mapping) -> dict:
         )
     )
     return dict(
+        **({"placement": device_placement(resolved, numerics, placement).to_contract()} if placement is not None else {}),
         projection=projection,
         **_graph(["build_geometry", "build_geometry_model", "verify_geometry_model"]),
         sampled_particles=0,
@@ -106,7 +140,7 @@ def _finite(value, name):
     return value
 
 
-def plan_model_stage(geometry: Mapping, *, electric_field: Mapping, clock: Mapping, physics: Mapping) -> dict:
+def plan_model_stage(geometry: Mapping, *, electric_field: Mapping, clock: Mapping, physics: Mapping, placement=None) -> dict:
     """Project a driven, source-free model, never a gas/particle run config."""
     geometry = require_geometry_projection(geometry)
     if dict(physics) != RF_PHYSICS:
@@ -179,6 +213,7 @@ def plan_model_stage(geometry: Mapping, *, electric_field: Mapping, clock: Mappi
         dict(
             schema_version=1,
             role="dual_cone_prepared_model_projection",
+            **({"placement": device_placement(geometry["resolved"], geometry["numerics"], placement).to_contract()} if placement is not None else {}),
             geometry=geometry,
             electric_field=selected,
             native_drive_rows=rows,
@@ -206,7 +241,8 @@ def require_model_projection(value: Mapping) -> dict:
     ):
         raise ValueError("dual-cone prepared model is not a source-free unsolved model")
     expected = plan_model_stage(
-        value["geometry"], electric_field=value["electric_field"], clock=value["clock"], physics=value["physics"]
+        value["geometry"], electric_field=value["electric_field"], clock=value["clock"], physics=value["physics"],
+        placement=value.get("placement")
     )["projection"]
     if dict(value) != expected:
         raise ValueError("dual-cone prepared model identity differs")
@@ -341,6 +377,10 @@ def _closed_receipts(product, key, expected):
 def require_geometry_product(reference):
     product, projection = _product(reference, "geometry_artifact", "compiled_geometry")
     require_geometry_projection(projection)
+    if "placement" in product.metadata:
+        pose = device_placement(projection["resolved"], projection["numerics"], product.metadata["placement"]).to_contract()
+        if json.loads(product.data_path("placement").read_text(encoding="utf-8-sig")) != pose:
+            raise ValueError("geometry placement differs from its frozen authority")
     _raw_closure(product)
     _closed_receipts(
         product, "native_stage_receipts", ("build_geometry", "build_geometry_model", "verify_geometry_model")
@@ -461,6 +501,8 @@ def plan_saved_field_fly(
     numerics: Mapping,
     collision_science: Mapping,
     collision_sds_records: Mapping,
+    placement=None,
+    source_to_device=None,
 ) -> dict:
     """Saved-field tracking graph has no materialize/build-geometry/Refine path."""
     from msplatform.ion_release.release import validate_release_spec
@@ -485,6 +527,13 @@ def plan_saved_field_fly(
         raise ValueError("collision diffusion_enabled must be boolean")
     collision["diffusion_enabled"] = collision_science["diffusion_enabled"]
     validate_release_spec(source_spec)
+    placement = model.get("placement") if placement is None else placement
+    if placement is not None or source_to_device is not None:
+        from .dual_cone_transport import source_placement
+        pose = device_placement(model["geometry"]["resolved"], model["geometry"]["numerics"], placement)
+        _, registration = source_placement(model["geometry"]["resolved"], model["geometry"]["numerics"],
+            source_spec, placement=pose.to_contract(), source_to_device=source_to_device)
+        placement = pose.to_contract()
     if set(collision_sds_records) != set(SDS_FILES):
         raise ValueError("tracking requires the exact official five-file SDS closure")
     for record in collision_sds_records.values():
@@ -494,6 +543,8 @@ def plan_saved_field_fly(
             raise ValueError("tracking trajectory limits must be positive")
     return dict(
         **_graph(["build_tracking_model", "verify_tracking_model", "fly"]),
+        **({"placement": placement} if placement is not None else {}),
+        **({"source_to_device": registration.to_contract()} if source_to_device is not None else {}),
         fields_reference=fields.reference,
         family_producer_reference=producer.reference,
         gas_field_reference=gas.reference,

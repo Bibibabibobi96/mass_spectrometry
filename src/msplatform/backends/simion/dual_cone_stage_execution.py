@@ -8,7 +8,7 @@ from msplatform.execution.payload_inputs import materialize_payloads
 from msplatform.execution.resources import resource_path
 from msplatform.io.manifest_records import file_record, verify_record
 from .dual_cone_geometry import native_geometry_specification
-from .dual_cone_stages import ELECTRODE_IDS, render_model_stage_configuration
+from .dual_cone_stages import ELECTRODE_IDS, native_instance_pose, render_model_stage_configuration
 from .dual_cone_transport_execution import (
     build_transport_geometry,
     refine_transport_fields,
@@ -93,7 +93,7 @@ def _publish(session, *, kind, metadata, data, output_paths):
     )
 
 
-def _sourcefree_model(session, *, geometry, raw_records, sources, model, limits, allow_asynchronous_io):
+def _sourcefree_model(session, *, geometry, raw_records, sources, model, limits, allow_asynchronous_io, placement=None):
     """Use the existing zero-source canonical IOB writer, no dummy particle."""
 
     solver = Path(raw_records["raw_geometry"]["path"]).parent
@@ -106,6 +106,7 @@ def _sourcefree_model(session, *, geometry, raw_records, sources, model, limits,
     empty = _write(session, solver / "no_particles.fly2", "particles{coordinates=0,}\n")
     session.declare_file(iob.with_suffix(".fly2"), "required_evidence")
     spec = native_geometry_specification(geometry["resolved"], geometry["numerics"], solver)
+    pose, native_placement = native_instance_pose(geometry["resolved"], geometry["numerics"], placement)
     row = dict(
         role="dual_cone",
         instance_index=1,
@@ -116,8 +117,8 @@ def _sourcefree_model(session, *, geometry, raw_records, sources, model, limits,
         response_ids=list(ELECTRODE_IDS),
         grid=geometry["grid"],
         physical_samples=spec["physical_samples"],
-        rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-        placement=dict(x_mm=0, y_mm=0, z_mm=0, az_deg=0, el_deg=0, rt_deg=0, scale=1),
+        rotation=pose["rotation"],
+        placement=native_placement,
     )
     request = dict(
         schema_version=1,
@@ -245,6 +246,7 @@ def execute_geometry(session, *, plan, limits, allow_asynchronous_io):
         raw_records=records,
         sources=sources,
         model=None,
+        placement=plan.get("placement"),
         limits=limits,
         allow_asynchronous_io=allow_asynchronous_io,
     )
@@ -254,7 +256,9 @@ def execute_geometry(session, *, plan, limits, allow_asynchronous_io):
         session.result_dir / "native_stage_receipts.json",
         json.dumps(_closed_rows(session, plan["expected_operation_ids"])) + "\n",
     )
+    placement_data = ({"placement": _document(session, "placement", plan["placement"])} if "placement" in plan else {})
     paths = dict(
+        **placement_data,
         compiled_geometry=projection,
         native_stage_receipts=receipts,
         **{k: Path(v["path"]) for k, v in records.items()},
@@ -275,6 +279,7 @@ def execute_geometry(session, *, plan, limits, allow_asynchronous_io):
             backend="simion",
             domain_id="dual_cone",
             geometry_materialized=True,
+            **({"placement": plan["placement"]} if "placement" in plan else {}),
             sampled_particles=0,
             source_status="not_requested",
             field_status="not_solved",
@@ -296,6 +301,7 @@ def execute_model(session, *, source, model, clock_reference, limits, allow_asyn
         raw_records=records,
         sources=sources,
         model=model,
+        placement=model.get("placement"),
         limits=limits,
         allow_asynchronous_io=allow_asynchronous_io,
     )
@@ -530,6 +536,9 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
 
     gas = read_gas_field(request["gas_field_reference"])
     request = dict(request)
+    for key in ("placement", "source_to_device"):
+        if key in plan:
+            request[key] = plan[key]
     request["resolved_path"] = _document(session, "saved_field_geometry", model["geometry"]["resolved"])
     science = dict(
         schema_version=1,
@@ -571,6 +580,8 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
         path_helper=path_helper,
         limits=limits,
         allow_asynchronous_io=allow_asynchronous_io,
+        resolved=model["geometry"]["resolved"], numerics=model["geometry"]["numerics"],
+        placement=plan.get("placement"),
     )
     # Copy only the small audit evidence, never a published native PA member.
     audit = session.declare_file(session.input_dir / "selected_field_audit.json", "required_evidence")

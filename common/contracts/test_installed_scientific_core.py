@@ -189,6 +189,45 @@ assert dual_stage_model['sampled_particles']==0 and dual_stage_model['refine_cal
 assert len(dual_stage_model['projection']['native_drive_rows'])==7
 assert dual_stage_model['projection']['source_status']=='not_requested'
 assert 'simion_model_drive' in dual_stage_api.render_model_stage_configuration(dual_stage_model['projection'])
+# P11 uses the same installed proper transform authority, without author inputs.
+from msplatform.contracts.rigid_transform import RigidTransform as DualPose, FramedPosition as DualPoint
+local_frame=cone['resolved']['coordinate_frame']['frame_id']
+placed_transform=DualPose(local_frame,'installed_lab',((0,1,0),(0,0,-1),(-1,0,0)),(12,-7,31))
+placed_geometry=dual_stage_api.plan_geometry_stage(resolved=cone['resolved'],numerics=dual_stage_numbers,placement=placed_transform)
+assert placed_geometry['projection']==dual_stage_geometry['projection']
+placed_model=dual_stage_api.plan_model_stage(dual_stage_geometry['projection'],electric_field=cone['ion_transport_science']['electric_field'],clock=dual_stage_clock,physics=dual_stage_physics,placement=placed_transform)['projection']
+assert placed_model['geometry']==dual_stage_model['projection']['geometry']
+assert placed_model['identity_sha256']!=dual_stage_model['projection']['identity_sha256']
+array_pose,native_pose=dual_stage_api.native_instance_pose(cone['resolved'],cone['numerics'],placed_transform)
+array_transform=DualPose.from_contract(array_pose)
+assert array_transform.transform_position(DualPoint(array_transform.from_frame_id,(26.5,27.5,5))).coordinates_mm==(14,-10,30)
+registration=DualPose(cone['source_spec']['frame_id'],local_frame,((1,0,0),(0,1,0),(0,0,1)),(0,0,0))
+try:
+    dual_cone_transport.source_placement(cone['resolved'],cone['numerics'],cone['source_spec'],placement=placed_transform)
+except ValueError as error:
+    assert 'source frame' in str(error)
+else:raise AssertionError('posed source accepted an unbound frame')
+source_world,_=dual_cone_transport.source_placement(cone['resolved'],cone['numerics'],cone['source_spec'],placement=placed_transform,source_to_device=registration)
+assert source_world.from_frame_id==cone['source_spec']['frame_id'] and source_world.to_frame_id=='installed_lab'
+rejected_c0=root/('cone-rejected-registration-'+sys.argv[2])
+try:
+    dual_cone_transport.prepare_transport(rejected_c0,mode='c0_gem_smoke',
+        resolved_path=cone_input/'resolved.json',numerics_path=cone_input/'numerics.json',
+        science_path=cone_input/'ion_transport_science.json',interface_path=cone_input/'gas_field_interface.json',
+        gas_science_path=cone_input/'gas_flow_science.json',source_spec_path=cone_input/'source_spec.json',
+        placement=placed_transform,source_to_device=registration)
+except ValueError as error:
+    assert 'fixed device-local C0 smoke source' in str(error)
+else:raise AssertionError('fixed C0 source silently accepted an unused registration')
+assert not rejected_c0.exists()
+placed_c0=root/('cone-placed-c0-'+sys.argv[2])
+dual_cone_transport.prepare_transport(placed_c0,mode='c0_gem_smoke',
+    resolved_path=cone_input/'resolved.json',numerics_path=cone_input/'numerics.json',
+    science_path=cone_input/'ion_transport_science.json',interface_path=cone_input/'gas_field_interface.json',
+    gas_science_path=cone_input/'gas_flow_science.json',source_spec_path=cone_input/'source_spec.json',placement=placed_transform)
+assert json.loads((placed_c0/'input/placement.json').read_text())==placed_transform.to_contract()
+assert 'device_placement=' in (placed_c0/'solver/simion/run_config.lua').read_text()
+
 assert callable(dual_stage_workflow.run_gas_assisted_transport)
 from msplatform.workflows import dual_cone_stages as dual_managed_api
 from msplatform.backends.simion import dual_cone_stage_execution as dual_managed_execution
@@ -220,6 +259,19 @@ for name in ('model_drive.lua','single_flight_pulse_hook.lua','voltage_waveforms
     assert pathlib.Path(record['frozen_path']).read_bytes()==pathlib.Path(record['source_path']).read_bytes()
 assert (dual_source_only/'solver/simion/model_drive_configuration.lua').is_file()
 assert 'model_configuration=' in (dual_source_only/'solver/simion/run_config.lua').read_text()
+placed_source_only=root/('cone-placed-source-only-'+sys.argv[2])
+placed_receipt=dual_cone_transport.prepare_transport(placed_source_only,mode='gas_assisted_transport',
+    resolved_path=cone_input/'resolved.json',numerics_path=cone_input/'numerics.json',
+    science_path=cone_input/'ion_transport_science.json',interface_path=cone_input/'gas_field_interface.json',
+    gas_science_path=cone_input/'gas_flow_science.json',source_spec_path=cone_input/'source_spec.json',
+    gas_field_manifest=root/'uniform-manifest.json',collision_sds_dir=dual_sds,
+    materialize_geometry=False,model_projection=placed_model,source_to_device=registration.to_contract())
+assert (placed_source_only/'input/cylindrical_ion_source.csv').read_bytes()==(dual_source_only/'input/cylindrical_ion_source.csv').read_bytes()
+assert json.loads((placed_source_only/'input/placement.json').read_text())==placed_transform.to_contract()
+assert json.loads((placed_source_only/'input/source_to_device.json').read_text())==registration.to_contract()
+assert 'device_placement=' in (placed_source_only/'solver/simion/run_config.lua').read_text()
+assert not list(placed_source_only.rglob('*.gem')) and not list(placed_source_only.rglob('*.pa*'))
+
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field

@@ -93,6 +93,7 @@ class SimionGeometryTests(unittest.TestCase):
                 )
             argv = [
                 "plot_simion_trajectory_projection.py",
+                "--historical-translation-only",
                 "--trajectory",
                 str(trajectory),
                 "--final-state",
