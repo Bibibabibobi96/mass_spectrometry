@@ -333,3 +333,17 @@ joined all 347 installed package files back to the same wheel after the native r
 read-only evidence is `oa-native-fresh-readonly-proof.json` in the existing P4 takeover evidence
 directory; its first attempted read used the wrong manifest filename and is preserved separately.
 No native operation was repeated for the reader verification.
+
+### Independent SIMION driven unsolved model
+
+The existing `prepare_model` operation now accepts a published independent two/three-zone
+OA geometry product. Supply the complete scientific-group `drive.groups` table, explicit
+clock authority and the external-electrostatic boundary physics; no TOF, source or voltage
+is invented. OA groups use the existing static/pulse representations, with explicit timing
+only when pulse groups exist. The grounded shield remains static zero. The saved model
+preserves each domain's raw PA, fractional surface, witnesses, pose and canonical group
+mapping through the existing protected materializer and run owner. It is `not_solved` and
+`not_requested` for fields and source; Refine/Fly/sample calls remain zero. Existing source-
+free IOB build/reopen and saved drive readback are reused. Software/Lua and ordinary-install
+protocol evidence does not grant native model, field, particle or Formal qualification;
+independent OA field/Fly and COMSOL stage closure remain OPEN.

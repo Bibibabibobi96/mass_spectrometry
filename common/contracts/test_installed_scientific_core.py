@@ -562,6 +562,28 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
                                                components_source=oa_assembly.components_source))
     assert len(oa_members) == 30
     assert sum(member['representation_role']=='physical_solid' for member in oa_members) == 25
+    from msplatform.backends.simion.oa_compiler import _extent
+    from msplatform.backends.simion.model import compile_prepared_model, RF_PHYSICS
+    oa_domains = {}
+    for instance, design in oa_assembly.components_resolved.items():
+        from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members
+        extents = [_extent(member['shape']) for member in iter_geometry_members(design)]
+        bounds = {axis+suffix:fn(b[i][j] for b in extents)+margin for i,axis in enumerate('xyz')
+                  for suffix,j,fn,margin in [('_min',0,min,-1.),('_max',1,max,1.)]}
+        oa_domains[instance] = dict(cell_mm_xyz=dict(x=.25,y=.25,z=.1),pa_bounds_mm=bounds)
+    oa_geometry = simion_api.compile_geometry(oa_assembly, numerics=dict(component_domains=oa_domains))
+    oa_drive = dict(clock=dict(clock_epoch_id='installed-OA-model',authority_sha256='A'*64,
+        phase_reference_instrument_time_us=0.),groups={instance:{group:dict(kind='static',
+        voltage_v=0. if group=='grounded_shield' else 1234.+index) for index,group in enumerate(mapping)}
+        for instance,mapping in oa_geometry.frontend_geometry['electrode_bindings'].items()})
+    oa_model = compile_prepared_model(oa_geometry, oa_assembly.components_resolved, drive=oa_drive, physics=RF_PHYSICS)
+    assert oa_model.document['field_status']=='not_solved' and oa_model.document['source_status']=='not_requested'
+    assert set(oa_model.document['drive']['groups'])=={'two','three'} and 'downstream_geometry' not in oa_model.document
+    assert not oa_model.document['geometry']['downstream_specs']
+    oa_invalid=copy.deepcopy(oa_drive);oa_invalid['groups']['two'].pop('repeller')
+    try: compile_prepared_model(oa_geometry,oa_assembly.components_resolved,drive=oa_invalid,physics=RF_PHYSICS)
+    except ValueError: pass
+    else: raise AssertionError('installed OA model accepted a missing actual group')
     rf_only = assembly_api.assemble(actual_assembly.composition_plan['recipe'], actual_components,
         local_scope=dict(instance_ids=['multipole'], research_scope='installed independent RF only',
                          boundary_assumptions='explicit local scope; retain complete parent'))

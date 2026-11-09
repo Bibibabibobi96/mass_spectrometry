@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -9,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from common.contracts.test_simion_prepared_model import model_inputs, LUA
+from common.contracts.test_simion_prepared_model import model_inputs, oa_model_inputs, LUA
 from msplatform.backends.simion.model import compile_prepared_model, PHYSICS
 from msplatform.backends.simion.model_execution import execute_model, _protected_source, _clock_reference
 from msplatform.backends.simion.native_plans import plan_model_preparation
@@ -56,11 +57,11 @@ class _InertModelSession:
             path = self.run_dir/'simion/geometry/geometry.iob'
             path.write_bytes(b'INERT_SOFTWARE_NOT_NATIVE_IOB')
             path.with_suffix('.fly2').write_text('particles { coordinates = 0 }', encoding='utf-8')
-            marker = 'SINGLE_REFLECTION_MODEL_BUILD=PASS'
+            marker = ('INDEPENDENT_OA_MODEL_' if 'independent_oa_geometry_iob_build' in (self.input_dir/'geometry_iob.lua').read_text(encoding='utf-8') else 'INDEPENDENT_RF_MODEL_' if 'independent_rf_geometry_iob_build' in (self.input_dir/'geometry_iob.lua').read_text(encoding='utf-8') else 'SINGLE_REFLECTION_MODEL_')+'BUILD=PASS'
         elif operation_id == 'verify_model':
             path = self.result_dir/'model_drive_readback.txt'
             path.write_text('INERT_SOFTWARE_NOT_NATIVE_READBACK', encoding='utf-8')
-            marker = 'SINGLE_REFLECTION_MODEL_READBACK=PASS'
+            marker = ('INDEPENDENT_OA_MODEL_' if 'independent_oa_geometry_iob_build' in (self.input_dir/'geometry_iob.lua').read_text(encoding='utf-8') else 'INDEPENDENT_RF_MODEL_' if 'independent_rf_geometry_iob_build' in (self.input_dir/'geometry_iob.lua').read_text(encoding='utf-8') else 'SINGLE_REFLECTION_MODEL_')+'READBACK=PASS'
         else:
             marker = 'INERT_SOFTWARE_COPY'
         (self.log_dir/f'operation_{ordinal:04d}.stdout.log').write_text(marker, encoding='utf-8')
@@ -88,8 +89,19 @@ def _clock_authority_reference(root):
                 data_root=str(directory))
 
 
-def model_plan(root):
-    assembly, _, compiled, drive = model_inputs(root/'author')
+def model_plan(root, *, independent_oa=False, independent_rf=False):
+    if independent_rf:
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform.backends.simion import compile_geometry
+        from msplatform.backends.simion.model import project_resolved_drive
+        assembly, numerics = independent_rf_inputs()
+        compiled = compile_geometry(assembly, numerics=numerics)
+        drive = project_resolved_drive(compiled, assembly.components_resolved,
+            clock=dict(clock_epoch_id='model_fixture_epoch', authority_sha256='A'*64,
+                       phase_reference_instrument_time_us=0.))
+    else:
+        assembly, _, compiled, drive = oa_model_inputs() if independent_oa else model_inputs(root/'author')
+    independent_component = independent_oa or independent_rf
     directory = root/'clock-source'
     (directory/'inputs').mkdir(parents=True)
     (directory/'inputs/instrument_epoch.json').write_text(json.dumps(dict(instrument_time_us=0.), indent=2)+'\n',
@@ -103,20 +115,26 @@ def model_plan(root):
         handoff_policy='preserve_instrument_time_us_and_clock_epoch_id', legacy_new_campaign_allowed=False)
     (directory/'clock_authority.json').write_text(json.dumps(contract, indent=2)+'\n', encoding='utf-8', newline='\n')
     drive['clock']['authority_sha256'] = epoch['sha256']
-    model = compile_prepared_model(compiled, assembly['components_resolved'], drive=drive, physics=PHYSICS)
+    from msplatform.backends.simion.model import RF_PHYSICS
+    components = assembly.components_resolved if independent_component else assembly['components_resolved']
+    model = compile_prepared_model(compiled, components, drive=drive, physics=RF_PHYSICS if independent_component else PHYSICS)
     assets = {}
     source = root/'source'
     source.mkdir()
-    for domain in ('parent', 'flight_tube', 'reflectron', 'detector'):
+    for domain in (compiled.frontend_geometry['numerical_domains'] if independent_component else ('parent', 'flight_tube', 'reflectron', 'detector')):
         path = source/(domain+'.pa#')
         path.write_bytes(b'INERT_SOFTWARE_RAW_NOT_NATIVE_PA')
         surfaces = []
-        if domain in {'flight_tube', 'detector'}:
+        if independent_component or domain in {'flight_tube', 'detector'}:
             surface = path.with_suffix('.pa-surf')
             surface.write_bytes(b'INERT_SOFTWARE_SURFACE_NOT_NATIVE')
             surfaces.append(file_record(surface, 'solver_native_binary'))
         assets[domain] = dict(raw_record=file_record(path, 'solver_native_binary'), surface_records=surfaces)
-    seed = file_record(structural_seed_path(4), 'required_evidence')
+        if independent_component:
+            witnesses = source/(domain+'_surface.csv')
+            witnesses.write_bytes(b'0,0,0,nil,nil,nil\n')
+            assets[domain]['witness_record'] = file_record(witnesses, 'required_evidence')
+    seed = file_record(structural_seed_path(len(assets) if independent_component else 4), 'required_evidence')
     plan = plan_model_preparation(model, geometry_assets=assets, run_directory=root/'run', seed_record=seed,
         native_path_resource=resource_path('native_run_path.lua'))
     return model, assets, seed, plan
@@ -255,6 +273,73 @@ class ModelExecutionTests(unittest.TestCase):
                                          Path(_clock_authority_reference(case)['authority']['path']).read_bytes())
                         self.assertEqual(len(session.inputs), 16)
 
+    def test_independent_oa_materialization_preserves_both_domains_and_rejects_missing_surface_closure(self):
+        self._check_independent_materialization()
+
+    def test_canonical_independent_rf_keeps_model_domain_seed_and_materialization_closure(self):
+        self._check_independent_materialization(independent_rf=True)
+
+    def _check_independent_materialization(self, *, independent_rf=False):
+        for invalid in ('none', 'surface', 'witness', 'geometry', 'noop'):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                model, assets, seed, plan = model_plan(root, independent_oa=not independent_rf, independent_rf=independent_rf)
+                self.assertEqual(Path(seed['path']), structural_seed_path(2))
+                self.assertEqual(model.document['geometry']['frontend_geometry']['role'],
+                    'simion_independent_rf_geometry' if independent_rf else 'simion_independent_oa_geometry')
+                producer = root/'producer'
+                producer.mkdir()
+                records, names = {}, {}
+                compiled = producer/'compiled_geometry.json'
+                snapshot = model.document['geometry']
+                if invalid == 'geometry': snapshot['frontend_gems'][next(iter(assets))] += '#changed'
+                compiled.write_text(json.dumps(snapshot), encoding='utf-8')
+                records['compiled_geometry'] = file_record(compiled, 'required_evidence')
+                for domain, row in assets.items():
+                    names[domain] = {}
+                    for label, record in (('raw_geometry', row['raw_record']), ('fractional_surface', row['surface_records'][0]),
+                                          ('surface_witnesses', row['witness_record'])):
+                        key = domain+'_'+label
+                        records[key] = record
+                        names[domain][label] = key
+                if invalid in {'surface', 'witness'}:
+                    names[next(iter(names))].pop('fractional_surface' if invalid == 'surface' else 'surface_witnesses')
+                manifest = dict(schema_version=2, role='simulation_run_manifest', run_id='inert-oa-source',
+                    project='software_fixture', mode='inert_geometry_contract', status='success', inputs={},
+                    outputs=list(records.values()), products={'geometry': dict(schema_version=1,
+                        kind='geometry_artifact', status='complete', metadata=dict(native_assets=names, backend='simion',
+                            geometry_materialized=True, field_status='not_solved', source_status='not_requested'), data=records)})
+                publish_terminal_state(producer, {'status':'success'}, manifest)
+                reference = dict(manifest=file_record(producer/'run_manifest.json'), product_id='geometry')
+                session = _InertModelSession(root/'owned', producer)
+                # Explicit tiny inert records; no native PA format is claimed.
+                session.capacity_session['protected_paths'].append(str(root/'source'))
+                callback = _inert_noop_materialization if invalid == 'noop' else _inert_small_materialization
+                with patch('msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner',
+                        return_value=dict(run_directory=str(producer))), patch('subprocess.Popen', side_effect=AssertionError('no native')):
+                    arguments = dict(model=model, geometry_reference=reference, seed_record=seed,
+                        clock_authority_reference=_clock_authority_reference(root), limits={},
+                        materialize_geometry=callback, materializer_record=file_record(Path(__file__)))
+                    if invalid != 'none':
+                        with self.assertRaises(ValueError): execute_model(session, **arguments)
+                        self.assertEqual(session.operations, [])
+                    else:
+                        result = execute_model(session, **arguments)
+                        product = result['manifest_extra_fields']['products']['model']
+                        self.assertEqual(set(product['metadata']['native_assets']), set(assets))
+                        self.assertEqual(product['metadata']['field_status'], 'not_solved')
+                        self.assertEqual(product['metadata']['source_status'], 'not_requested')
+                        self.assertEqual([row['operation_id'] for row in session.operations], ['materialize_geometry','build_model','verify_model'])
+                        self.assertEqual([row['operation_id'] for row in plan.operations], ['materialize_geometry','build_model','verify_model'])
+                        for label in ('refine_calls','fly_calls','gui_calls','sampled_particles'):
+                            self.assertEqual(product['metadata'][label], 0)
+                        for domain, labels in names.items():
+                            self.assertEqual(set(product['metadata']['native_assets'][domain]), set(labels))
+                            for label, key in labels.items():
+                                owned = product['data'][product['metadata']['native_assets'][domain][label]]
+                                self.assertEqual((owned['bytes'],owned['sha256']), (records[key]['bytes'],records[key]['sha256']))
+                                self.assertTrue(Path(owned['path']).is_relative_to(session.artifact_run_dir))
+
     def test_model_plan_requires_owned_complete_raw_family_and_only_explicit_operations(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -305,10 +390,10 @@ class ModelExecutionTests(unittest.TestCase):
     def test_real_model_wrapper_consumer_and_preload_guards_with_indexed_userdata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for failure in ('none', 'missing', 'wgem', 'hook', 'beam', 'missing_control', 'ambient_fly2'):
-                case = root/failure
+            for independent_oa, failure in ((oa, fail) for oa in (False, True) for fail in ('none', 'missing', 'wgem', 'hook', 'beam', 'missing_control', 'ambient_fly2')):
+                case = root/(str(independent_oa)+'-'+failure)
                 case.mkdir()
-                _, _, _, plan = model_plan(case)
+                model, _, _, plan = model_plan(case, independent_oa=independent_oa)
                 for path, text in plan.materializations.items():
                     Path(path).parent.mkdir(parents=True, exist_ok=True)
                     Path(path).write_text(text, encoding='utf-8')
@@ -320,10 +405,10 @@ class ModelExecutionTests(unittest.TestCase):
                 frozen.mkdir()
                 for name in ('model_drive.lua', 'rf_drive.lua', 'single_flight_pulse_hook.lua', 'voltage_waveforms.lua'):
                     (frozen/name).write_bytes(native_resource_path(name).read_bytes())
-                (case/'run/results').mkdir()
+                (case/'run/results').mkdir(exist_ok=True)
                 spec = case/'run/inputs/geometry_iob.lua'
                 script = case/'check.lua'
-                program = 'local spec=dofile('+json.dumps(spec.as_posix())+')\n' + 'local failure='+lua_value(failure)+'\n'+r'''
+                program = 'local independent_oa='+lua_value(independent_oa)+'\n'+'local spec=dofile('+json.dumps(spec.as_posix())+')\n' + 'local failure='+lua_value(failure)+'\n'+r'''
 local commands,changes=0,0
 local zero_loaded=false
 local function norm(s) return s:gsub('\\','/') end
@@ -332,6 +417,17 @@ local function pa()
  function p:size(x,y,z) assert(x==3 and y==3 and z==3);self.nx,self.ny,self.nz=x,y,z end
  function p:save(path) local file=assert(io.open(path,'wb'));file:write('INERT_NOT_PA');file:close() end
  function p:close() end
+ function p:surface_info() return nil,nil,nil end
+ function p:point(x,y,z)
+  for _,row in ipairs(spec.instances) do if norm(row.path)==self.path then
+   for _,sample in ipairs(row.physical_samples) do
+    if sample.gu[1]==x and sample.gu[2]==y and sample.gu[3]==z then
+     return sample.electrode_id or 0,sample.metal~=false
+    end
+   end
+  end end
+  error('unbound inert physical sample')
+ end
  function p:load()
   changes=changes+1;self.path=norm(self.filename)
   for _,row in ipairs(spec.instances) do if norm(row.path)==self.path then for k,v in pairs(row.grid) do self[k]=v end end end
@@ -360,7 +456,16 @@ function simion.command(command)
  assert(not command:find('refine') and not command:find('fly') and not command:find('fastadj'))
  for index,path in ipairs(spec.bootstrap_paths) do
   local p=pa();p.path=path
-  local item={pa=p,_debug_update_size=function() end}
+  local item={pa=p,ox=0,oy=0,oz=0,_debug_update_size=function() end}
+  function item:pa_to_wb_orient(x,y,z)
+   local out={};for k=1,3 do out[k]=0;for j,v in ipairs({x,y,z}) do out[k]=out[k]+spec.instances[index].rotation[k][j]*v end end
+   return unpack(out)
+  end
+  function item:pa_to_wb_coords(x,y,z)
+   local a,b,c=self:pa_to_wb_orient(x*p.dx_mm,y*p.dy_mm,z*p.dz_mm)
+   local placement=spec.instances[index].placement
+   return a+placement.x_mm,b+placement.y_mm,c+placement.z_mm
+  end
   if command:find('geometry.iob',1,true) then
    local row=spec.instances[index];p.path=row.path
    for k,v in pairs(row.grid) do p[k]=v end
@@ -380,11 +485,16 @@ end
 arg={SPEC,'build_model',NATIVE_PATH}
 local okay,message=pcall(function() dofile(WRAPPER) end)
 if failure=='none' then
- assert(okay,message);assert(changes==4)
+ assert(okay,message);assert(changes==(independent_oa and 2 or 4))
  arg[2]='verify_model';dofile(WRAPPER)
  local file=assert(io.open(spec.model.report,'rb'));local text=file:read('*a');file:close()
  assert(text:find('PA_ELECTRODE_LABELS_ARE_NOT_VOLTAGES=True',1,true))
- assert(text:find('reflectron_midgrid',1,true) and text:find('frequency_hz=',1,true))
+ if independent_oa then
+  assert(text:find('grounded_shield',1,true) and text:find('intermediate_grid_2',1,true))
+  assert(not text:find('frequency_hz=',1,true) and not text:find('reflectron_midgrid',1,true))
+ else
+  assert(text:find('reflectron_midgrid',1,true) and text:find('frequency_hz=',1,true))
+ end
  assert(text:find('not_solved',1,true) and text:find('pulse_mode=',1,true))
 else
  assert(not okay,'dangerous profile was accepted');assert(commands==0 and changes==0)
@@ -403,6 +513,24 @@ print('INERT_MODEL_PROFILE=PASS CASE='..failure)
                 with self.subTest(failure=failure):
                     self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                     self.assertIn('INERT_MODEL_PROFILE=PASS', result.stdout)
+                    if independent_oa and failure == 'none':
+                        readback = (case/'run/results/model_drive_readback.txt').read_text(encoding='utf-8')
+                        observed = {}
+                        for line in readback.splitlines():
+                            match = re.match(r'group="([^"]+)" instance="([^"]+)" domain="([^"]+)" native_label=(\d+) time_us=([^ ]+) voltage_v=([^ ]+) kind="([^"]+)"', line)
+                            if match:
+                                group, instance, domain, label, time_us, voltage, kind = match.groups()
+                                key = instance, group, float(time_us)
+                                self.assertNotIn(key, observed)
+                                observed[key] = (domain, int(label), float(voltage), kind)
+                        rows = model.document['native_drive_rows']
+                        self.assertEqual(len(observed), 3*len(rows))
+                        for row in rows:
+                            target = row['native_targets'][0]
+                            for time_us in (0., 10., 12.):
+                                expected = row['voltage_v'] if row['kind']=='static' else row['on_voltage_v'] if time_us==10. else row['off_voltage_v']
+                                self.assertEqual(observed[row['instance_id'],row['electrode_group_id'],time_us],
+                                    (target['domain'],target['electrode_id'],expected,row['kind']))
 
 
 if __name__ == '__main__':

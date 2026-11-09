@@ -16,7 +16,7 @@ local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or component_tracking or dual_cone
 local independent_marker=dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
-  or (model_only and not independent_oa) or (component_tracking and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
+  or model_only or (component_tracking and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances

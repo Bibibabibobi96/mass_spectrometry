@@ -31,7 +31,70 @@ def model_inputs(root):
     return assembly, numerics, compiled, drive
 
 
+def oa_model_inputs():
+    from common.contracts.test_oa_geometry_compiler import oa_inputs
+    from msplatform.backends.simion import compile_geometry as compile_independent_geometry
+    assembly, numerics = oa_inputs()
+    compiled = compile_independent_geometry(assembly, numerics=numerics)
+    groups = {instance: {group: dict(kind='static', voltage_v=0. if group == 'grounded_shield' else 100.+index)
+        for index, group in enumerate(mapping)}
+        for instance, mapping in compiled.frontend_geometry['electrode_bindings'].items()}
+    for index, instance in enumerate(groups):
+        groups[instance]['repeller'] = dict(kind='pulse', off_voltage_v=-5.-index, on_voltage_v=2000.+index)
+    drive = dict(groups=groups, pulse=dict(mode='timed', time_us=10., width_us=2.),
+        clock=dict(clock_epoch_id='model_fixture_epoch', authority_sha256='A'*64,
+                   phase_reference_instrument_time_us=0.))
+    return assembly, numerics, compiled, drive
+
+
 class PreparedModelTests(unittest.TestCase):
+    def test_independent_oa_both_variants_bind_explicit_drive_without_tof_or_source(self):
+        from msplatform.backends.simion.model import RF_PHYSICS
+        assembly, _, compiled, drive = oa_model_inputs()
+        before = copy.deepcopy(compiled)
+        model = compile_prepared_model(compiled, assembly.components_resolved, drive=drive, physics=RF_PHYSICS)
+        document = require_prepared_model(model)
+        self.assertEqual(compiled, before)
+        self.assertEqual(document['field_status'], 'not_solved')
+        self.assertEqual(document['source_status'], 'not_requested')
+        self.assertEqual(set(document['drive']['groups']), set(assembly.components_resolved))
+        self.assertEqual({row['variant_id'] for row in compiled.frontend_geometry['composition_plan']['components'].values()},
+                         {'two_zone', 'three_zone'})
+        self.assertNotIn('downstream_geometry', document)
+        self.assertEqual(document['geometry']['downstream_specs'], [])
+        for row in document['native_drive_rows']:
+            self.assertEqual(row['native_targets'], [dict(domain=row['instance_id'],
+                electrode_id=compiled.frontend_geometry['electrode_bindings'][row['instance_id']][row['electrode_group_id']])])
+        with self.assertRaisesRegex(ValueError, 'explicit caller-authored'):
+            project_resolved_drive(compiled, assembly.components_resolved, clock=drive['clock'])
+        with self.assertRaises(ValueError):
+            plan_solve_fields(model, numerics={})
+
+    def test_independent_oa_rejects_missing_group_bad_drive_and_changed_geometry(self):
+        from msplatform.backends.simion.model import RF_PHYSICS
+        assembly, _, compiled, drive = oa_model_inputs()
+        instance = next(iter(drive['groups']))
+        for mode in ('missing', 'extra', 'nonfinite', 'ground', 'waveform', 'clock', 'timing'):
+            invalid = copy.deepcopy(drive)
+            if mode == 'missing': del invalid['groups'][instance]['repeller']
+            elif mode == 'extra': invalid['groups'][instance]['invented'] = dict(kind='static', voltage_v=1.)
+            elif mode == 'nonfinite': invalid['groups'][instance]['repeller']['on_voltage_v'] = float('nan')
+            elif mode == 'ground': invalid['groups'][instance]['grounded_shield']['voltage_v'] = 1.
+            elif mode == 'waveform': invalid['groups'][instance]['repeller']['kind'] = 'rf'
+            elif mode == 'clock': invalid['clock']['authority_sha256'] = 'missing'
+            else: del invalid['pulse']
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                compile_prepared_model(compiled, assembly.components_resolved, drive=invalid, physics=RF_PHYSICS)
+        changed = copy.deepcopy(compiled)
+        changed.frontend_gems[instance] += '\n# stale geometry'
+        with self.assertRaisesRegex(ValueError, 'canonical providers'):
+            compile_prepared_model(changed, assembly.components_resolved, drive=drive, physics=RF_PHYSICS)
+        static = copy.deepcopy(drive)
+        del static['pulse']
+        for rows in static['groups'].values(): rows['repeller'] = dict(kind='static', voltage_v=1234.)
+        self.assertNotIn('pulse', compile_prepared_model(compiled, assembly.components_resolved,
+            drive=static, physics=RF_PHYSICS).document['drive'])
+
     def test_real_public_example_keeps_backend_numerics_out_of_provider_model_inputs(self):
         from msplatform import assembly as assembly_api, components as component_api, examples as example_api
         from msplatform.backends import simion as simion_api

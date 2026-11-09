@@ -114,11 +114,13 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     values["downstream_specs"] = tuple(values["downstream_specs"])
     compiled = CompiledSimionGeometry(**values)
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
-    required = {"clock", "clock_authority"} | (set() if independent_rf else {"pulse"})
-    if (not required <= drive.keys() or set(drive) - required - {"groups"}
+    independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
+    independent_component = independent_rf or independent_oa
+    required = {"clock", "clock_authority"} | ({"groups"} if independent_oa else set()) | (set() if independent_component else {"pulse"})
+    if (not required <= drive.keys() or set(drive) - required - {"groups"} - ({"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
-        raise ContractError("model drive requires its actual clock/groups and pulse only for TOF")
+        raise ContractError("model drive requires its actual clock/groups and declared pulse contract")
     authority = drive["clock_authority"]
     if isinstance(authority, Mapping) and set(authority) == {"example_resource"}:
         from importlib.resources import files
@@ -143,12 +145,14 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     components = {name: compiled.components_resolved[name] for name in selected}
     clock = dict(clock_epoch_id=validation["clock_epoch_id"], authority_sha256=validation["authority_sha256"],
                  **dict(drive["clock"]))
-    expanded = project_resolved_drive(compiled, components, clock=clock,
-        **({} if independent_rf else dict(pulse=drive["pulse"])))
+    expanded = (dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
+        **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {})) if independent_oa else
+        project_resolved_drive(compiled, components, clock=clock,
+            **({} if independent_rf else dict(pulse=drive["pulse"]))))
     if "groups" in drive:
         expanded["groups"] = copy.deepcopy(drive["groups"])
     model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
-    seed = file_record(structural_seed_path(len(compiled.frontend_gems) if independent_rf else 4 + int(
+    seed = file_record(structural_seed_path(len(compiled.frontend_gems) if independent_component else 4 + int(
         "entrance_refinement" in compiled.frontend_geometry["numerical_domains"])), "required_evidence")
     ids = ("materialize_geometry", "build_model", "verify_model")
     result = run_managed_stage(context,

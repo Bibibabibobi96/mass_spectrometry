@@ -13,6 +13,25 @@ from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, PHYSICS
 
 
+class OaPreparedModelCapabilitiesTests(unittest.TestCase):
+    def test_query_uses_actual_independent_oa_model_validator(self):
+        from common.contracts.test_simion_prepared_model import oa_model_inputs
+        from msplatform.backends.simion.model import RF_PHYSICS
+        assembly, _, compiled, drive = oa_model_inputs()
+        arguments = dict(compiled=compiled, components_resolved=assembly.components_resolved,
+                         drive=drive, physics=RF_PHYSICS)
+        with patch('subprocess.Popen', side_effect=AssertionError('no native')), \
+             patch.object(Path, 'mkdir', side_effect=AssertionError('no workspace')):
+            accepted = capability_api.capabilities(dict(schema_version=1, operation='prepare_model', arguments=arguments))
+        self.assertEqual(accepted['contract_status'], 'accepted', accepted)
+        self.assertEqual(accepted['validator'], 'msplatform.backends.simion.model.compile_prepared_model')
+        invalid = copy.deepcopy(arguments)
+        invalid['drive']['groups'][next(iter(drive['groups']))].pop('repeller')
+        rejected = capability_api.capabilities(dict(schema_version=1, operation='prepare_model', arguments=invalid))
+        self.assertEqual(rejected['contract_status'], 'rejected', rejected)
+        with self.assertRaises(ValueError): compile_prepared_model(**invalid)
+
+
 class EIBuildCapabilitiesTests(unittest.TestCase):
     def setUp(self):
         root = Path(__file__).resolve().parents[2] / "projects/apertured_tube_electron_impact_ion_source/config"

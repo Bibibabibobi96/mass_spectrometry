@@ -45,6 +45,19 @@ def _authorities(compiled: CompiledSimionGeometry, components: Mapping[str, dict
         raise TypeError('prepared model requires compiled SIMION geometry')
     geometry = compiled.frontend_geometry
     plan = geometry['composition_plan']
+    if geometry.get('role') == 'simion_independent_oa_geometry':
+        from .oa_compiler import compile_independent_accelerators
+        selected = plan['scope']['instance_ids']
+        if not isinstance(components, Mapping) or set(components) != set(selected):
+            raise ValueError('model providers differ from selected independent OA scope')
+        actual = compile_independent_accelerators(dict(composition_plan=plan,
+            components_resolved=copy.deepcopy(dict(components))), numerics=dict(
+                component_domains={name: dict(cell_mm_xyz=domain['cell_mm_xyz'], pa_bounds_mm=domain['bounds_mm'])
+                    for name, domain in geometry['numerical_domains'].items()},
+                electrode_group_native_ids=geometry['electrode_bindings']))
+        if asdict(actual) != asdict(compiled):
+            raise ValueError('independent OA geometry differs from its canonical providers')
+        return selected, None, None
     if geometry.get('role') == 'simion_independent_rf_geometry':
         from .rf_compiler import compile_independent_multipoles
         selected = plan['scope']['instance_ids']
@@ -84,6 +97,8 @@ def project_resolved_drive(compiled: CompiledSimionGeometry, components_resolved
     or any existing model. Compilation validates it and makes a fresh snapshot.
     """
     multipoles, tof, topology = _authorities(compiled, components_resolved)
+    if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry':
+        raise ValueError('independent OA requires explicit caller-authored group drives; no voltage defaults exist')
     maps = compiled.frontend_geometry['electrode_bindings']
     groups = {instance: scientific_multipole_drive(components_resolved[instance], maps[instance])
               for instance in multipoles}
@@ -195,17 +210,48 @@ def _native_targets(compiled: CompiledSimionGeometry, components: Mapping, tof: 
     return targets
 
 
+def _validate_oa_drive(drive: Mapping[str, Any], mappings: Mapping) -> None:
+    """Bind explicit existing static/pulse representations to actual OA groups."""
+    if not isinstance(drive, Mapping):
+        raise ValueError('independent OA drive requires explicit clock and groups')
+    _exact(drive, {'groups', 'clock'} | ({'pulse'} if 'pulse' in drive else set()), 'independent OA model drive')
+    _exact(drive['groups'], set(mappings), 'independent OA drive instances')
+    pulsed = False
+    for instance, groups in mappings.items():
+        _exact(drive['groups'][instance], set(groups), f'{instance} scientific groups')
+        for group in groups:
+            row = drive['groups'][instance][group]
+            if not isinstance(row, Mapping) or row.get('kind') not in {'static', 'pulse'}:
+                raise ValueError('independent OA groups require static or pulse drives')
+            pulse = row['kind'] == 'pulse'
+            _exact(row, {'kind', 'off_voltage_v', 'on_voltage_v'} if pulse else {'kind', 'voltage_v'},
+                f'{instance}.{group} drive')
+            for key, value in row.items():
+                if key != 'kind':
+                    _finite(value, f'{instance}.{group}.{key}')
+            if group == 'grounded_shield' and (pulse or row['voltage_v'] != 0.):
+                raise ValueError('declared grounded shield must remain static zero')
+            pulsed |= pulse
+    if pulsed != ('pulse' in drive):
+        raise ValueError('independent OA pulse timing must match its actual pulse groups')
+    _validate_timing(drive, requires_pulse=pulsed)
+
+
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
     multipoles, tof, topology = _authorities(compiled, components_resolved)
     if tof is None:
+        independent_oa = compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry'
         if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
-            raise ValueError('independent RF physics/boundary policy is unsupported')
-        _exact(drive, {'groups', 'clock'}, 'independent RF model drive')
-        _validate_timing(drive, requires_pulse=False)
-        expected = project_resolved_drive(compiled, components_resolved, clock=drive['clock'])
-        _validate_groups(drive['groups'], expected['groups'])
+            raise ValueError('independent component physics/boundary policy is unsupported')
+        if independent_oa:
+            _validate_oa_drive(drive, compiled.frontend_geometry['electrode_bindings'])
+        else:
+            _exact(drive, {'groups', 'clock'}, 'independent RF model drive')
+            _validate_timing(drive, requires_pulse=False)
+            expected = project_resolved_drive(compiled, components_resolved, clock=drive['clock'])
+            _validate_groups(drive['groups'], expected['groups'])
         mappings = compiled.frontend_geometry['electrode_bindings']
         rows = [dict(instance_id=instance, electrode_group_id=group,
                 native_targets=[dict(domain=instance, electrode_id=mappings[instance][group])], **value)
@@ -297,6 +343,8 @@ def model_geometry(model: CompiledPreparedModel, *, downstream_drive: bool = Fal
     document = require_prepared_model(model)
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry':
         raise ValueError('independent RF fields/tracking require a separately validated fractional field protocol')
+    if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_oa_geometry':
+        raise ValueError('independent OA fields/tracking require a separately validated field protocol')
     values = document['downstream_geometry' if downstream_drive else 'geometry']
     values['downstream_specs'] = tuple(values['downstream_specs'])
     return CompiledSimionGeometry(**values)

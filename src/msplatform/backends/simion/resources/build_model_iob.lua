@@ -5,6 +5,7 @@ local native_path=assert(loadfile(assert(arg[3],'native path resource required')
 local spec=dofile(native_path(assert(arg[1],'model IOB specification required')))
 local mode=assert(arg[2],'model operation required')
 local marker=spec.role=='dual_cone_geometry_iob' and 'DUAL_CONE_MODEL_' or
+  spec.role=='independent_oa_geometry_iob_build' and 'INDEPENDENT_OA_MODEL_' or
   spec.role=='independent_rf_geometry_iob_build' and 'INDEPENDENT_RF_MODEL_' or 'SINGLE_REFLECTION_MODEL_'
 assert(mode=='build_model' or mode=='verify_model','unsupported model operation')
 for _,key in ipairs({'seed_iob','output_iob'}) do spec[key]=native_path(spec[key]) end

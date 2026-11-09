@@ -1254,6 +1254,25 @@
               "common/contracts/test_dual_cone_managed_stages.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/test_oa_geometry_compiler.py",
+                "reason": "independent_oa_model_fixture_changed"
+              },
+              {
+                "exact": "common/contracts/test_simion_prepared_model.py",
+                "reason": "prepared_model_fixture_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_oa_geometry_compiler.py",
+              "common/contracts/test_simion_prepared_model.py",
+              "common/contracts/test_simion_model_execution.py",
+              "common/contracts/test_platform_capabilities.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"

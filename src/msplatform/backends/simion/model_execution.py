@@ -115,9 +115,9 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
     native_sources = geometry.metadata.get('native_assets')
     if not isinstance(native_sources, Mapping):
         raise ValueError('published geometry lacks explicit native asset bindings')
-    independent_rf = document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry'
+    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}
     for domain, names in native_sources.items():
-        expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_rf else
+        expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
         if set(names) != expected:
             raise ValueError('published model geometry surface closure differs')
@@ -127,7 +127,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
         surfaces = [dict(geometry.data_records[names['fractional_surface']],
             path=str(geometry.data_path(names['fractional_surface'])))] if 'fractional_surface' in names else []
         assets[domain] = dict(raw_record=raw, surface_records=surfaces)
-        if independent_rf:
+        if independent_component:
             assets[domain]['witness_record'] = dict(geometry.data_records[names['surface_witnesses']],
                 path=str(geometry.data_path(names['surface_witnesses'])))
     _protected_source(session, manifest_record, required_paths=[compiled_path,
@@ -234,7 +234,7 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
     freeze_file(Path(seed['source_record']['path']), Path(seed['destination']))
     records['structural_seed'] = bind('model_structural_seed', Path(seed['destination']))
     seed_parent = Path(seed['destination']).parent
-    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry'
+    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}
              else 4 + int('entrance_refinement' in assets))
     for index in range(1, count+1):
         owned(seed_parent/f'iob_seed_placeholder_{index:02d}.pa0', 'solver_native_binary')

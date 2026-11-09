@@ -493,6 +493,54 @@ class PlatformApiTests(unittest.TestCase):
                 simion_api.prepare_model(reference, drive=invalid, physics=case.physics, context=context)
             refused.assert_not_called()
 
+    def test_independent_oa_prepare_model_uses_explicit_groups_clock_and_actual_domain_seed(self):
+        from dataclasses import asdict
+        from types import SimpleNamespace
+        from common.contracts.test_simion_prepared_model import oa_model_inputs
+        from msplatform.backends.simion.model import RF_PHYSICS
+        from msplatform.backends.simion.resources import structural_seed_path
+        _, _, compiled, drive = oa_model_inputs()
+        drive['clock_authority'] = {'example_resource':'instrument_clock_authority_v1.json'}
+        drive['clock'] = {'phase_reference_instrument_time_us':0.}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compiled_path = root/'compiled.json'
+            compiled_path.write_text(json.dumps(asdict(compiled)), encoding='utf-8')
+            stage = dict(limits=dict(wall_clock_seconds=600, transient_run_directory_bytes=104857600,
+                process_tree_working_set_bytes=2147483648, minimum_system_available_memory_bytes=1048576,
+                compact_final_retained_bytes=104857600, automatic_retry_count=0),
+                artifact_retention=dict(policy_version=1, **{'class':'solver_review'}, reason='Explicit inert OA wiring'))
+            policy = root/'stages.json'
+            policy.write_text(json.dumps(dict(schema_version=1, role='execution_stage_policy', stages={'prepare_model':stage})), encoding='utf-8')
+            context = expert_context(workspace=root/'study', tools=dict(python=Path(sys.executable),
+                powershell=Path(sys.executable), simion=Path(sys.executable)),
+                policy=dict(host_state_path=root/'state.sqlite3', stage_policy_path=policy))
+            reference = {'manifest':{'fixture':True},'product_id':'geometry'}
+            source = SimpleNamespace(reference=reference,data_path=lambda name:compiled_path)
+            sentinel = object()
+            with patch('msplatform.results.artifacts.open_artifact',side_effect=[source,sentinel]), \
+                 patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'new':True}}) as owner, \
+                 patch('subprocess.Popen',side_effect=AssertionError('no native in dispatch fixture')):
+                self.assertIs(simion_api.prepare_model(reference,drive=drive,physics=RF_PHYSICS,context=context),sentinel)
+            call = owner.call_args.kwargs
+            document = call['action'].keywords['model'].document
+            self.assertEqual(document['drive']['groups'],drive['groups'])
+            self.assertEqual(document['drive']['pulse'],drive['pulse'])
+            self.assertEqual(document['drive']['clock']['clock_epoch_id'],'instrument_clock_epoch_v1')
+            self.assertEqual(Path(call['action'].keywords['seed_record']['path']),structural_seed_path(2))
+            self.assertEqual(call['expected_operation_ids'],('materialize_geometry','build_model','verify_model'))
+            self.assertEqual(call['source_references'],[{'manifest_record':reference['manifest']}])
+            self.assertEqual(document['field_status'],'not_solved')
+            self.assertEqual(document['source_status'],'not_requested')
+            self.assertFalse(context.workspace.exists())
+            for missing in ('groups','clock_authority'):
+                invalid=copy.deepcopy(drive);invalid.pop(missing)
+                with self.subTest(missing=missing), patch('msplatform.results.artifacts.open_artifact',return_value=source), \
+                     patch('msplatform.execution.owner.run_managed_stage') as refused:
+                    with self.assertRaises(ContractError):
+                        simion_api.prepare_model(reference,drive=invalid,physics=RF_PHYSICS,context=context)
+                    refused.assert_not_called()
+
     def test_cad_export_dispatch_is_independent_of_fields_and_optional_engine_import(self):
         from msplatform.exporters.execution import execute_cad_export
         case, _, assembly, _ = compile_example()
