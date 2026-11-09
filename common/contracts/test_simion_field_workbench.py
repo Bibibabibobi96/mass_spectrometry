@@ -79,7 +79,7 @@ class FieldWorkbenchTests(unittest.TestCase):
                 self.assertEqual(repr(changed),repr(before))
 
     def test_original_probe_algorithms_are_single_canonical_implementations(self):
-        from integrations.workflows.single_reflection_flight import runtime
+        from msplatform.workflows.single_reflection_flight import runtime
         from msplatform.backends.simion import field_validation
         for name in ('interface_field_probes','native_priority_occupancy_probes'):
             self.assertIs(getattr(runtime,name),getattr(field_validation,name))

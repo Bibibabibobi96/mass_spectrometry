@@ -25,11 +25,11 @@ from integrations.tests.test_single_reflection_program import field_observation_
 from integrations.tests.test_single_reflection_geometry import reframe_parent
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.workflows.single_reflection_flight import field_evidence
-from integrations.workflows.single_reflection_flight import runtime
+from msplatform.workflows.single_reflection_flight import runtime
 from msplatform.backends.simion.field_identity import frontend_field_identity
-from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
+from msplatform.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
-from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
+from msplatform.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
@@ -303,7 +303,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             self.run,snapshot_root=self.snapshot,flight=self.flight)
         source_bytes = Path(context["records"]["projected_source"]["path"]).read_bytes()
         plan = plan_single_wave_batches(len(expected_ids), 2)
-        with patch("integrations.workflows.single_reflection_flight.runtime._frontend_fields",
+        with patch("msplatform.workflows.single_reflection_flight.runtime._frontend_fields",
                    side_effect=AssertionError("field verification repeated per batch")):
             result = materialize_batches(self.run,"full_instrument",plan,context=context)
             repeated = materialize_batches(self.run,"full_instrument",plan,context=context)
@@ -491,6 +491,28 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         self.assertEqual(sum(call.args[1].get("path") == design_path for call in verified.call_args_list), 1)
         self.assertEqual(result["particle_count"], self.preparation["particle_count"])
         self.assertTrue(Path(result["outputs"]["particles"]["path"]).is_file())
+
+    def test_large_closed_iob_controls_use_existing_classified_record_policy(self):
+        workbench = self.materialize()
+        iob = Path(workbench["iob_path"])
+        # Controlled bytes exercise the Windows large-file read tier, not SIMION.
+        iob.write_bytes(b"INERT_NOT_NATIVE_IOB\n" + b"x" * (8 * 1024 * 1024))
+        before = iob.read_bytes()
+        receipt = self.root / "large_workbench.json"
+        write_json(receipt, workbench)
+        result = self.invoke_runtime("--verify-controls", receipt)
+        record = result["iob_record"]
+        self.assertEqual(set(record), {"path", "exists", "bytes", "sha256"})
+        self.assertTrue(record["exists"])
+        self.assertEqual(record["bytes"], len(before))
+        self.assertEqual(record["sha256"], file_record(iob)["sha256"])
+        self.assertEqual(iob.read_bytes(), before)
+        workbench["outputs"]["iob"] = record
+        write_json(receipt, workbench)
+        self.assertEqual(self.invoke_runtime("--verify-controls", receipt)["iob_record"], record)
+        iob.write_bytes(before + b"changed")
+        with self.assertRaises(AssertionError):
+            self.invoke_runtime("--verify-controls", receipt)
 
     def test_controls_bind_iob_once_and_reject_wrong_path_or_changed_bytes(self):
         workbench = self.materialize()
@@ -699,6 +721,102 @@ class WorkbenchMaterializationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.materialize()
                 self.assertFalse((self.run / "simion/full_instrument").exists())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_cold_runtime_uses_actual_frozen_consumer_and_rejects_missing_inputs(self):
+        from msplatform.execution.inputs import python_import_roots
+
+        inputs = self.root / "cold_inputs"
+        script = self.root / "freeze_runtime.ps1"
+        script.write_text("""param($Repo,$Inputs,$Python)
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Inputs -OwnerId instrument_assembly -ConsumerId single_reflection_flight
+""", encoding="utf-8")
+        frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
+            str(ROOT), str(inputs), sys.executable], cwd=self.root, capture_output=True,
+            text=True, encoding="utf-8", timeout=120)
+        self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+        snapshot = inputs / "runtime_snapshot"
+        module = "src/msplatform/workflows/single_reflection_flight/runtime.py"
+        helper = "src/msplatform/execution/resources/native_run_path.lua"
+        inventory = json.loads((inputs / "code_inventory.json").read_text())["dependencies"]
+        for relative in (module, helper):
+            self.assertEqual(sum(row["source_repo_path"] == relative for row in inventory), 1)
+            self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
+        self.assertFalse((snapshot / "integrations/workflows/single_reflection_flight/runtime.py").exists())
+        context = _prepare_context(self.preparation, self.field_receipt, file_record(self.downstream_path),
+                                  self.run, snapshot_root=snapshot, flight=self.flight)
+        expected, metadata, _ = runtime.compile_case_controls(context, context["source"])
+        source_before = (self.run / "inputs/projected_source.csv").read_bytes()
+        request = self.root / "cold_runtime.json"
+        write_json(request, dict(preparation=self.preparation, fields=str(self.field_receipt),
+            downstream=file_record(self.downstream_path), run=str(self.run), flight=self.flight,
+            expected_program=expected, expected_metadata=metadata))
+        code = """import sys,json
+from pathlib import Path
+sys.path[:0]=json.loads(sys.argv[1])
+from msplatform.workflows.single_reflection_flight import runtime
+assert Path(runtime.__file__).resolve().is_relative_to(Path.cwd().resolve())
+v=json.loads(Path(sys.argv[2]).read_text());run=Path(v['run'])
+context=runtime._prepare_context(v['preparation'],Path(v['fields']),v['downstream'],run,
+    snapshot_root=Path.cwd(),flight=v['flight'])
+program,metadata,_=runtime.compile_case_controls(context,context['source'])
+assert program==v['expected_program'] and metadata==v['expected_metadata']
+if sys.argv[3]=='materialize':
+ result=runtime.materialize_workbench(v['preparation'],Path(v['fields']),v['downstream'],run,
+     snapshot_root=Path.cwd(),flight=v['flight'])
+ assert result['particle_count']==100 and not result['native_execution_performed'] and not result['fly_ready']
+ assert Path(result['outputs']['program']['path']).read_text(encoding='utf-8')==program
+ assert Path(result['program_path_projection_record']['path'])==Path.cwd()/runtime._NATIVE_PATH_RESOURCE
+print('FROZEN_RUNTIME=PASS')
+"""
+        command = [sys.executable, "-I", "-B", "-c", code,
+                   json.dumps(python_import_roots(snapshot)), str(request)]
+        result = subprocess.run(command + ["materialize"], cwd=snapshot, capture_output=True,
+                                text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("FROZEN_RUNTIME=PASS", result.stdout)
+        self.assertEqual((self.run / "inputs/projected_source.csv").read_bytes(), source_before)
+        for relative in (module, helper):
+            with self.subTest(missing=relative):
+                target = snapshot / relative
+                original = target.read_bytes()
+                target.unlink()
+                try:
+                    missing = subprocess.run(command + ["compile"], cwd=snapshot, capture_output=True,
+                                             text=True, encoding="utf-8", timeout=60)
+                    self.assertNotEqual(missing.returncode, 0, missing.stdout)
+                    self.assertIn(target.stem, missing.stderr)
+                finally:
+                    target.write_bytes(original)
+
+    def test_program_and_transport_record_bind_the_selected_frozen_helper_bytes(self):
+        active = resource_path("native_run_path.lua")
+        active_bytes = active.read_bytes()
+        frozen = self.snapshot / runtime._NATIVE_PATH_RESOURCE
+        marker = "-- FROZEN_PATH_HELPER_IDENTITY_WITNESS"
+        frozen.write_bytes(frozen.read_bytes() + ("\n" + marker + "\n").encode("utf-8"))
+        self.assertNotEqual(frozen.resolve(), active.resolve())
+        workbench = self.materialize()
+        program = Path(workbench["outputs"]["program"]["path"]).read_text(encoding="utf-8")
+        numerical = Path(workbench["outputs"]["numerical_program"]["path"]).read_text(encoding="utf-8")
+        self.assertIn(marker, program)
+        self.assertNotIn(marker, numerical)
+        self.assertEqual(workbench["program_path_projection_record"], file_record(frozen))
+        self.assertEqual(active.read_bytes(), active_bytes)
+
+    def test_missing_frozen_path_helper_cannot_use_active_installed_helper(self):
+        active = resource_path("native_run_path.lua")
+        self.assertTrue(active.is_file())
+        frozen = self.snapshot / "src/msplatform/execution/resources/native_run_path.lua"
+        original = frozen.read_bytes()
+        frozen.unlink()
+        try:
+            with self.assertRaises(FileNotFoundError):
+                self.materialize()
+            self.assertFalse((self.run / "simion/full_instrument").exists())
+        finally:
+            frozen.write_bytes(original)
 
     def test_frozen_source_drift_and_missing_snapshot_module_have_no_repo_fallback(self):
         frozen = self.run / "inputs/projected_source.csv"

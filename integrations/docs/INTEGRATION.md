@@ -214,7 +214,7 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 
 可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
 规格校验见[`validate_native_field_observation`](../runtime/build_single_flight_program.py)，
-实际冻结与批次选择见[`runtime._field_observation`](../workflows/single_reflection_flight/runtime.py)。
+实际冻结与批次选择见[`field_evidence._field_observation`](../../src/msplatform/workflows/single_reflection_flight/field_evidence.py)。
 省略时不插入观测；请求时只记录实际查询，不改变源、场控制或积分步。软件测试不代替真实Fly读数与GUI验收。
 
 普通源和`recorded_pre_pulse_state`共用同一装配；未声明`pulse_decision`时消费全部实际timed pre-state，
@@ -955,5 +955,23 @@ starts a solver. Parent/optional entrance-refinement ordering, parent Dirichlet
 binding, schema2/3 source evidence, durable retired-alias audit resolution and cache
 identities are unchanged. Backend identity, bank and audit kernels retain their
 existing owners. The old root planning module is retired with its actual consumers.
-SFI runtime and PowerShell stage orchestration remain
+PowerShell stage orchestration remains
 separate migration work; installed metadata planning is not native qualification.
+
+### Installed single-reflection runtime materialization
+
+`msplatform.workflows.single_reflection_flight.runtime` now owns the existing
+workbench/batch/control/dispatch/continuation materialization and internal CLI.
+The same public PowerShell owner invokes it; no solver, cache, recovery owner or
+scientific default is added. It uses the canonical Program renderer directly and
+preserves classified record I/O, original source/clock/mother, decisions and PA
+metadata/guard records. Native execution remains explicitly pending.
+
+The supplied `snapshot_root` is an authoritative frozen resource/data closure,
+not a checkout search path. Program Lua, IOB code and the path helper are consumed
+from that same closure; a missing helper cannot be supplemented from the active
+installation. The selected helper's exact identity is recorded. Legacy external
+IOB placeholder inputs and their original copying protocol remain explicit P4
+seed-migration work; they are neither packaged as new defaults nor retired here.
+Downstream-field publication is installed separately. The existing PowerShell
+field/execute/run orchestration remains separate migration work.

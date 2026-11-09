@@ -497,14 +497,6 @@
           "consumers": [
             "paired_accelerator_static_field"
           ]
-        },
-        {
-          "source_repo_path": "integrations/workflows/single_reflection_flight",
-          "consumers": [
-            "cooled_frontend",
-            "paired_accelerator_static_field",
-            "single_reflection_flight"
-          ]
         }
       ],
       "python_modules": []

@@ -16,7 +16,7 @@ from msplatform.execution.inputs import python_import_roots
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
-from integrations.workflows.single_reflection_flight import runtime
+from msplatform.workflows.single_reflection_flight import runtime
 from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case, render_legacy_iob_builder
 from msplatform.workflows.single_reflection_flight.collect import collect_log
 
@@ -51,7 +51,7 @@ function Invoke-FrontendIobBuild {
  param($Case,$Phase,$RunDirectory,$SimionExe,$Limits,$Python,$RepoRoot)
  $script:builds++
  [IO.File]::WriteAllText([string]$Case.iob_path,'INERT_NOT_NATIVE_IOB')
- $value=& $Python -B -m integrations.workflows.single_reflection_flight.runtime --run $RunDirectory --verify-controls ([string]$Case.receipt_path)
+ $value=& $Python -B -m msplatform.workflows.single_reflection_flight.runtime --run $RunDirectory --verify-controls ([string]$Case.receipt_path)
  if($LASTEXITCODE-ne0){throw 'inert build binding failed'}
  $bound=$value|ConvertFrom-Json -Depth 100
  $Case.outputs|Add-Member -NotePropertyName iob -NotePropertyValue $bound.iob_record -Force
@@ -74,7 +74,7 @@ $RepoRoot=$Repo;$configPath=Join-Path $OutputDirectory 'run_config.json';$capaci
 $RunPackage=[pscustomobject]@{python=$Python;artifact_run_dir=$OutputDirectory;run_dir=$OutputDirectory;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
 $field=@{cache_receipt=$FieldReceipt};$decisionRecord=$null;$Fly=$true;$batchContinuation=$true
 $phaseArguments=@('--phase',$workbenchPhase)
-$runtimeArguments=@('-B','-m','integrations.workflows.single_reflection_flight.runtime','--preparation',
+$runtimeArguments=@('-B','-m','msplatform.workflows.single_reflection_flight.runtime','--preparation',
  (Join-Path $resultDirectory 'preparation_receipt.json'),'--run',$OutputDirectory,'--snapshot-root',$frozenExecutionRoot)
 $flightLimits=@{instrument_flight=@{};instrument_default_replay=@{};instrument_pulse_discovery=@{}};$lease=@{token='inert-host-lease'};$simion='INERT_NOT_EXECUTABLE'
 $NativeOperations=$null;$PhaseTimings=@{};$currentStage='prepared';$phaseClock=[Diagnostics.Stopwatch]::StartNew()

@@ -17,7 +17,6 @@ import argparse
 import json
 import math
 from pathlib import Path
-from msplatform.execution.resources import resource_path
 from msplatform.backends.simion.source import execution_particle_ids, validate_consumed_plane_events
 import shutil
 from typing import Any, Mapping
@@ -26,7 +25,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.pa_family_cache import canonical_json_sha256
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
-from integrations.runtime.build_single_flight_program import (
+from msplatform.backends.simion.tracking_program import (
     build_successor_program, validate_native_flight,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
@@ -38,6 +37,8 @@ from msplatform.backends.simion.field_identity import working_point_member_id
 from msplatform.workflows.single_reflection_flight.field_evidence import _SLOTS, load_downstream_fields
 from msplatform.workflows.single_reflection_flight.field_evidence import _small_record
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
+
+_NATIVE_PATH_RESOURCE = "src/msplatform/execution/resources/native_run_path.lua"
 
 _SOURCES = {
     "analyzer_component_source": "src/msplatform/backends/simion/resources/oatof_analyzer_component.lua",
@@ -257,7 +258,7 @@ def compile_case_controls(context: dict, source: list[dict], *, native_path_proj
         **({'field_observation':observation} if observation is not None else {}),
         **({'plane_observations':context['plane_observations']} if context.get('plane_observations') is not None else {}),
         propagation_stop=context.get("propagation_stop"),
-        native_path_source=resource_path("native_run_path.lua").read_text(encoding="utf-8-sig") if native_path_projection else None,
+        native_path_source=(snapshot_root / _NATIVE_PATH_RESOURCE).read_text(encoding="utf-8-sig") if native_path_projection else None,
         **{key: (snapshot_root / name).read_text(encoding="utf-8-sig") for key, name in _SOURCES.items()})
     return program, metadata, _instance_rows(context["geometry"], metadata, context["carriers"])
 
@@ -314,7 +315,7 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
         builder_path=str(Path(context["snapshot_root"]) / "src/msplatform/backends/simion/resources/build_iob.lua"),
         builder_core_path=str(Path(context["snapshot_root"])/"src/msplatform/backends/simion/resources/iob_core.lua"),
         program_path_projection_record=context.setdefault("_program_path_projection_record",
-            file_record(resource_path("native_run_path.lua"))),
+            file_record(Path(context["snapshot_root"]) / _NATIVE_PATH_RESOURCE)),
         seed_paths=[str(path) for path in seed_paths], seed_records=seed_records)
 
 

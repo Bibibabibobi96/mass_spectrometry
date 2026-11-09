@@ -155,7 +155,7 @@ function Confirm-InstrumentIobVerification {
   $name=[string]$Case.case_id
   if($Operation-eq'after_first_fly'){
     $null=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory `
-      -Name "$Phase.first-batch.controls-after" -Arguments @('-m','integrations.workflows.single_reflection_flight.runtime',
+      -Name "$Phase.first-batch.controls-after" -Arguments @('-m','msplatform.workflows.single_reflection_flight.runtime',
       '--run',$RunDirectory,'--verify-controls',([string]$Case.receipt_path)) -Json
     return
   }
@@ -193,7 +193,7 @@ function Confirm-InstrumentIobVerification {
     $Case.native_workbench_execution[-1].native_priority_occupancy_validation=Get-InstrumentNativePriorityOccupancyEvidence `
       -OutputText $verifyOutput -ExpectedCounts $Case.native_priority_occupancy_expected_counts
     $bound=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory `
-      -Name "$Phase.$name.bind-controls" -Arguments @('-m','integrations.workflows.single_reflection_flight.runtime',
+      -Name "$Phase.$name.bind-controls" -Arguments @('-m','msplatform.workflows.single_reflection_flight.runtime',
         '--run',$RunDirectory,'--verify-controls',([string]$Case.receipt_path)) -Json
     $Case.outputs|Add-Member -NotePropertyName iob -NotePropertyValue $bound.iob_record -Force
     Write-RunJson -Path ([string]$Case.receipt_path) -Value $Case -Depth 100
@@ -387,7 +387,7 @@ try {
     -StageId instrument_field_design -Solver simion -ExpectedRetentionClass solver_review
   $budgetDocument=Get-Content -LiteralPath $budget.frozen_budget -Raw|ConvertFrom-Json
   if([int]$budgetDocument.particle_count-ne[int]$receipt.particle_count){throw 'Field budget population differs from the frozen active source cohort.'}
-  $runtimeArguments=@('-B','-m','integrations.workflows.single_reflection_flight.runtime',
+  $runtimeArguments=@('-B','-m','msplatform.workflows.single_reflection_flight.runtime',
     '--preparation',(Join-Path $resultDirectory 'preparation_receipt.json'),'--run',$OutputDirectory,'--snapshot-root',$frozenExecutionRoot)
   if($WorkbenchOnly-or$Fly){
     $workbenchLimits=Get-IntegrationStageBudget -Document $budgetDocument -ExpectedIntegrationId instrument_assembly `
@@ -595,7 +595,7 @@ try {
       if($batchContinuation){
         $recoveryPhase=if($workbenchPhase-eq'discovery'){'discovery'}else{'baseline'}
         $recovered=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozen.execution_root -RunDirectory $OutputDirectory `
-          -Name "$workbenchPhase.continuation" -Arguments (@('-m','integrations.workflows.single_reflection_flight.runtime',
+          -Name "$workbenchPhase.continuation" -Arguments (@('-m','msplatform.workflows.single_reflection_flight.runtime',
           'materialize-continuation','--run',$OutputDirectory,'--phase',$workbenchPhase,'--continuation-phase',$recoveryPhase)+$fullRuntimeInputs) -Json
         if($null-ne$recovered){
           $recoveredMap=$recovered|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100
@@ -617,7 +617,7 @@ try {
         $lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
       }
       $materialized=Invoke-FrontendFlightPhase -Package $RunPackage -RunDirectory $OutputDirectory -ProjectRunsRoot (Split-Path -Parent $OutputDirectory) `
-        -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.single_reflection_flight.runtime `
+        -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule msplatform.workflows.single_reflection_flight.runtime `
         -SimionExe $simion -Limits $limits -Phase $workbenchPhase -RuntimeInputArguments $fullRuntimeInputs -Prepared $prepared `
         -WorkbenchReceiptPath $workbenchReceiptPath -IobVerification ${function:Confirm-InstrumentIobVerification} `
         -NativeOperations $NativeOperations -NativeResourceReleaseId ([string]$lease.token) `
@@ -637,7 +637,7 @@ try {
         if($phase-eq'default_replay'){
           if($batchContinuation){
             $recoveredReplay=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozen.execution_root -RunDirectory $OutputDirectory `
-              -Name 'default_replay.continuation' -Arguments (@('-m','integrations.workflows.single_reflection_flight.runtime',
+              -Name 'default_replay.continuation' -Arguments (@('-m','msplatform.workflows.single_reflection_flight.runtime',
               'materialize-continuation','--run',$OutputDirectory,'--phase',$workbenchPhase,'--continuation-phase','default_replay')+$fullRuntimeInputs) -Json
             if($null-ne$recoveredReplay){
               $workbench=$recoveredReplay|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100

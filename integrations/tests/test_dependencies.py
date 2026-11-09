@@ -367,7 +367,7 @@ with tempfile.TemporaryDirectory() as request_directory:
             parent = fixture._parent(current)
             parent_before = {path.relative_to(parent): path.read_bytes()
                              for path in parent.rglob("*") if path.is_file()}
-            report = author / "integrations/workflows/single_reflection_flight/package_report_only.py"
+            report = author / "src/msplatform/workflows/single_reflection_flight/package_report_only.py"
             report.write_text("TITLE = 'shipment provenance only'\n", encoding="utf-8")
             fixture.snapshot = freeze("report")
             inventory = load(root / "report/code_inventory.json")["dependencies"]
@@ -442,9 +442,8 @@ with tempfile.TemporaryDirectory() as request_directory:
 
     def test_single_reflection_workflow_imports_form_a_dag(self) -> None:
         """Include deferred imports; they must not hide a reverse ownership edge."""
-        prefix = "integrations.workflows.single_reflection_flight."
-        paths = {prefix+name:INTEGRATION_ROOT/"workflows/single_reflection_flight"/f"{name}.py"
-                 for name in ("runtime",)}
+        paths = {"msplatform.workflows.single_reflection_flight.runtime":
+                 REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/runtime.py"}
         paths["msplatform.workflows.single_reflection_flight.downstream_fields"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/downstream_fields.py"
         paths["msplatform.workflows.single_reflection_flight.pulse"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/pulse.py"
         paths["msplatform.workflows.single_reflection_flight.prepare"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/prepare.py"
@@ -752,6 +751,7 @@ from pathlib import Path
 class NoOrchestrationImport:
     def find_spec(self, fullname, path=None, target=None):
         if fullname in ('integrations.workflows.single_reflection_flight.runtime',
+                        'msplatform.workflows.single_reflection_flight.runtime',
                         'msplatform.workflows.single_reflection_flight.collect'):
             raise ImportError('pure evidence/continuation cannot import orchestration: '+fullname)
 guard=NoOrchestrationImport()
@@ -762,7 +762,7 @@ from msplatform.backends.simion import tracking_collection as census
 from msplatform.workflows.single_reflection_flight import pulse
 sys.meta_path.remove(guard)
 from msplatform.workflows.single_reflection_flight import prepare
-from integrations.workflows.single_reflection_flight import runtime
+from msplatform.workflows.single_reflection_flight import runtime
 from msplatform.workflows.single_reflection_flight import collect
 assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census,continuation,pulse))
 assert not any('rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' in name for name in sys.modules)

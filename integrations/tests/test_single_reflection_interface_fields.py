@@ -5,7 +5,7 @@ import copy
 import unittest
 
 from integrations.tests import test_single_reflection_runtime as support
-from integrations.workflows.single_reflection_flight.runtime import interface_field_probes
+from msplatform.backends.simion.field_validation import interface_field_probes
 
 
 @unittest.skipUnless(support.LUA.is_file(), 'plain Lua interpreter unavailable')

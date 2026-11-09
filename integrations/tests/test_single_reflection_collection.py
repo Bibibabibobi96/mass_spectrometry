@@ -29,7 +29,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         from integrations.tests.test_single_reflection_runtime import WorkbenchMaterializationTests
         from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
         from integrations.tests.test_single_reflection_program import field_observation_spec
-        from integrations.workflows.single_reflection_flight.runtime import _prepare_context,materialize_batches
+        from msplatform.workflows.single_reflection_flight.runtime import _prepare_context,materialize_batches
         from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 
         owner = WorkbenchMaterializationTests()

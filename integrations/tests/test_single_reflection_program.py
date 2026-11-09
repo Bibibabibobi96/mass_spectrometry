@@ -880,7 +880,7 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
     @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
     def test_two_and_three_independent_rf_programs_weight_real_ordered_responses(self):
         """Fake PA vectors test actual generated callbacks, not fields or Fly."""
-        from integrations.workflows.single_reflection_flight.runtime import _instance_rows
+        from msplatform.workflows.single_reflection_flight.runtime import _instance_rows
 
         for count in (2, 3):
             with self.subTest(multipoles=count):
@@ -1010,7 +1010,7 @@ print('MULTIPLE_INDEPENDENT_RF_PROGRAM=PASS COUNT='..#drives)
 
     @unittest.skipUnless(LUA.is_file(),"plain Lua interpreter unavailable")
     def test_local_oatof_uses_real_two_field_callbacks_without_any_rod_drive(self):
-        from integrations.workflows.single_reflection_flight.runtime import _instance_rows
+        from msplatform.workflows.single_reflection_flight.runtime import _instance_rows
         folder=self.root/"local_oatof"
         folder.mkdir()
         request,run,author,_=release_fixture(folder,local=True)
