@@ -292,7 +292,7 @@ try{
         if($published.status-cne$status){throw 'Native provider manifest status differs.'}
         if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity;$capacity=$null}
         Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-            & $python -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $pkg.run_config --owner $plan.project --confirm-writing-stopped --retention-reason $reason
+            & $python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $pkg.run_config --owner $plan.project --confirm-writing-stopped --retention-reason $reason
             if($LASTEXITCODE-ne0){throw 'Native provider heavy payload sealing failed.'}
         }
     }catch{

@@ -196,7 +196,7 @@ def source_capacity_projection(*, artifact_root: Path, request_path: Path | None
     This only establishes read protection. Preparation and the continuation
     planner retain their scientific applicability and actual completion checks.
     """
-    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+    from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 
     target = artifact_root.resolve(strict=True)
     queue: list[tuple[dict, dict | None]] = []

@@ -24,7 +24,7 @@ from integrations.workflows.cooled_frontend import reference, runtime
 from integrations.workflows.local_frontend import runtime as shared
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.simion.particle_batching import plan_single_wave_batches
-from common.simion import pa_family_cache
+from msplatform.backends.simion import pa_family_cache
 
 
 def write(path,value):

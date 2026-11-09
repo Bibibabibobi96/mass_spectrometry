@@ -29,7 +29,7 @@ def read_json(path: Path) -> dict:
 def select_source(source: Path, consumer_artifact_root: Path, stopped: Path | None = None) -> dict:
     """Verify only the consumed small-record projection, under the caller's guard."""
     from common.contracts.capacity_ledger import load_capacity_ledger
-    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+    from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
     from common.contracts.verify_run_manifest import record_path, verify_record
     from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 

@@ -1007,7 +1007,7 @@ print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
         from common.contracts.artifact_retention import apply_retention
         from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
         from common.contracts.file_identity import file_sha256
-        from common.contracts.run_capacity_lifecycle import finalize_ready, register_writing, seal_checkpoint
+        from msplatform.execution.run_capacity_lifecycle import finalize_ready, register_writing, seal_checkpoint
         from common.contracts.write_run_manifest import build_run_manifest
         for status in ("success", "failed"):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:

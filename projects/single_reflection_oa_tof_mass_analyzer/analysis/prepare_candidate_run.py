@@ -791,7 +791,7 @@ def _manifest_alias_record(records: list[dict], path: Path, *, base_dir: Path) -
 def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dict:
     """Admit only sealed Candidate inputs/exports, never a guessed old model."""
     from common.contracts.capacity_ledger import load_capacity_ledger
-    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+    from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
     from common.contracts.verify_run_manifest import record_path, verify_record
     from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
     parent = parent.resolve(strict=True)
@@ -925,7 +925,7 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
         if context.get("saved_model_bytes") != model_record["bytes"]:
             raise ValueError("Saved model final save is not confirmed by its context")
         # Use the existing sealed identity. Do not rehash the protected MPH.
-        from common.contracts.run_capacity_lifecycle import recorded_heavy_identity
+        from msplatform.execution.run_capacity_lifecycle import recorded_heavy_identity
         if recorded_heavy_identity(parent, model, model_record["bytes"]) != model_record["sha256"]:
             raise ValueError("Saved model lacks its original retained heavy identity")
         scientific_inputs = {}
@@ -1045,7 +1045,7 @@ def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manif
                                        config: dict, completion: dict, bound) -> dict:
     """Admit only sealed exports with one explicit, flat original science binding."""
     from common.contracts.verify_run_manifest import record_path, verify_record
-    from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+    from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
     if completion.get("summary", {}).get("source_identity_verified") is not True:
         raise ValueError("POSTPROCESS_SOURCE_UNVERIFIED: use the explicit original verified source owner")
     source_path = Path(config.get("inputs", {}).get("postprocess_source_selection", ""))

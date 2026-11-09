@@ -19,7 +19,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
 try {
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   $OutputDir = Join-Path $artifactRoot "runs\$RunId\simion"

@@ -61,7 +61,7 @@ if (-not $OutputDir) {
 } else {
   $runId = Split-Path -Leaf ([IO.Path]::GetFullPath($OutputDir))
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $runId
+& $python -m msplatform.execution.artifact_naming run $runId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $runId" }
 $expectedOutputDir = [IO.Path]::GetFullPath((Join-Path $artifactRoot "runs\$runId"))
 if ($OutputDir -and [IO.Path]::GetFullPath($OutputDir) -cne $expectedOutputDir) {

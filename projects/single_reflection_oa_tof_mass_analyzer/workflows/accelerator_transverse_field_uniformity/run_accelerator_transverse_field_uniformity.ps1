@@ -10,7 +10,7 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__comsol__accelerator-transverse-field__grid'
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
 if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }

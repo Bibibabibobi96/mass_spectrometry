@@ -350,7 +350,7 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
     freeze_file(Path(plan["source_manifest"]["path"]), run / "inputs/source_manifest.json")
     closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable),
         extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
-            "common/simion/batch_continuation.py", "common/simion/particle_batching.py", "common/simion/resource_scheduler.py",
+            "src/msplatform/execution/recovery.py", "common/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
             "common/simion/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
             f"projects/{PROJECT}/analysis/optimize_reflectron_ring_voltages.py",
             f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"))

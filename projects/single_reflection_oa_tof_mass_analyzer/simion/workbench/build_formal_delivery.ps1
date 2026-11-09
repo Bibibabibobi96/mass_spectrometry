@@ -625,7 +625,7 @@ Copy-Item -LiteralPath $contractPath -Destination (Join-Path $outputFull 'resolv
 $resolvedLua = Join-Path $textDir 'oatof_resolved.lua'
 Copy-Item -LiteralPath $resolvedLua -Destination (Join-Path $outputFull 'oatof_resolved.lua')
 
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 
 $template = $TemplateIob

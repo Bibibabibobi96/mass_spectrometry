@@ -49,7 +49,7 @@ function Assert-NonFormalSource([string]$Path, [string]$Label) {
 # Validate before creating the target run directory.
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { $python = 'python' }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid template-build RunId: $RunId" }
 
 $sourceIob = Assert-NonFormalSource $SourceIobPath 'SourceIobPath'

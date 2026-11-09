@@ -94,9 +94,9 @@ EXTRA_SOURCE_IDS = (
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
-    "common/simion/batch_continuation.py",
+    "src/msplatform/execution/recovery.py",
     "common/simion/resource_profile.py",
-    "common/simion/resource_scheduler.py",
+    "src/msplatform/execution/simion_dispatch.py",
 )
 # These sources are consumed only after native Fly in this workflow. All other
 # closure members, the driver, frozen inputs and solver/runtime remain bound.

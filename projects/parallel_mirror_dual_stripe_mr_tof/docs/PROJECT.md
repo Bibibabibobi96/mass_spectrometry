@@ -6,6 +6,10 @@
 
 项目门禁由[verify_project.ps1](../verify_project.ps1)进入，逐测试输出耗时并保留失败传播；
 不同门禁等级和实际选择范围仍以该入口为准，不把软件门禁通过当作求解或科学资格。
+The remaining P4 study/provider callers and their frozen tests use the canonical installed lifecycle
+and dispatch owners. The affected RF/MR software modules ran 134 tests successfully with three skips;
+the original IP/prism-distance module separately passed all 30 tests. These checks do not rerun native
+fields, Fly or historical assets, and do not establish a complete MR/Repository acceptance result.
 
 局域 S 模型恢复的软件夹具将八个隔离场景合并到一次 PowerShell／生产 AST 读取；40 次真实 Python controller 请求保持。
 每个场景以 JSONL 即时返回并断言，stderr 独立保存；已启动子进程自然排空。真实非零退出、缺／重复行及首错即时传播有行为验证。

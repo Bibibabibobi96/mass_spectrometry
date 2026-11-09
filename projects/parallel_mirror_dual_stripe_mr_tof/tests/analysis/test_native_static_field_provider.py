@@ -1848,7 +1848,7 @@ if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable aft
             self.assertEqual(load_capacity_ledger(artifact_root)["objects"][0]["status"], "writing")
             config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
             before = {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()}
-            command = [sys.executable, "-B", "-m", "common.contracts.run_capacity_lifecycle",
+            command = [sys.executable, "-B", "-m", "msplatform.execution.run_capacity_lifecycle",
                        "--action", "seal-stopped-payload", "--artifact-root", str(artifact_root),
                        "--run-config", str(run / "run_config.json"), "--owner", config["project"],
                        "--confirm-writing-stopped", "--retention-reason", config["artifact_retention"]["reason"]]

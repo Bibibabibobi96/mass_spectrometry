@@ -28,9 +28,9 @@ class ManagedCandidatePaTests(unittest.TestCase):
         """Real PS/cache/lease; inert native bytes never claim a solved field."""
         from unittest.mock import patch
         from common.contracts.capacity_ledger import record_capacity_object
-        from common.contracts.run_capacity_lifecycle import seal_checkpoint
+        from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
         from common.contracts.write_run_manifest import build_run_manifest
-        from common.simion import pa_family_cache
+        from msplatform.backends.simion import pa_family_cache
         from common.simion.test_pa_family_cache import PAFamilyCacheTest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,

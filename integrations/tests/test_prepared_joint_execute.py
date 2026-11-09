@@ -156,7 +156,7 @@ function Complete-RunArtifactPowerShellOwner {
  $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $Context.package.run_config
  $null=Update-ArtifactWorkflowCapacitySession -Session $Context.capacity_session -ProtectedPaths @($Context.capacity_session.run_directory) -SourceReferences $Context.capacity_session.source_references -RemainingCommittedNewBytes 0
  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $Context.package.run_config -Status $Status -Software @('Python fixture') -Outputs @($OutputPaths) -DeferCapacityFinalization|Out-Host
- Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--run-config',$Context.package.run_config)|Out-Host
+ Invoke-ProjectPython -Arguments @('-m','msplatform.execution.run_capacity_lifecycle','--action','seal-stopped-payload','--run-config',$Context.package.run_config)|Out-Host
  @{status=$Status;stage='complete'}
 }
 '''
@@ -200,7 +200,7 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 workflow_owner = repo / "common/contracts/run_artifact_workflow.ps1"
                 workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
                 (repo / "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_flight.py").write_text(analyzer_fixture)
-                (repo / "common/contracts/run_capacity_lifecycle.py").write_text(seal_fixture)
+                (repo / "src/msplatform/execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
                     owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",
                     complete=scenario != "incomplete_native")
@@ -542,7 +542,7 @@ function Complete-RunArtifactPowerShellOwner {
  Write-RunJson -Path $Context.package.summary -Depth 60 -Value $Summary
  $null=Apply-RunArtifactRetention
  Write-VerifiedRunManifest -RunConfig $Context.package.run_config -Status $Status -DeferCapacityFinalization|Out-Host
- Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload')
+ Invoke-ProjectPython -Arguments @('-m','msplatform.execution.run_capacity_lifecycle','--action','seal-stopped-payload')
  return @{status=$Status;terminal_published=$true;lease_released=$true}
 }
 
@@ -608,7 +608,7 @@ function Invoke-ProjectPython {
   '{}'|Set-Content (Join-Path $d 'batch_receipt.json');'local'|Set-Content (Join-Path $d 'joint.fly2')
  }elseif($command-eq'merge-joint'){
   if(@($Arguments|Where-Object{$_-eq'--batch-log'}).Count-ne2){throw 'Replanned second batch was not merged'}
- }elseif($Arguments[1]-eq'common.contracts.run_capacity_lifecycle'){
+ }elseif($Arguments[1]-eq'msplatform.execution.run_capacity_lifecycle'){
   if($Arguments-notcontains'seal-stopped-payload'){throw 'Wrong finalizer'}
   $script:sealed=$true
   if($Scenario-eq'seal_failure'){throw 'Synthetic stopped payload seal failure'}

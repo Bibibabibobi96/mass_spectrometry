@@ -62,7 +62,7 @@ try {
  if($LASTEXITCODE-ne0){throw 'Final GUI replay manifest verification failed'}
  Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null
  $capacity=$null
- & $PythonExe -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root (Join-Path $workspaceRoot 'artifacts') --run-config $configPath --owner dual_pressure_rectilinear_ion_processor --confirm-writing-stopped --retention-reason 'Retain independent GUI replay field references, workbench and measured comparison'
+ & $PythonExe -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root (Join-Path $workspaceRoot 'artifacts') --run-config $configPath --owner dual_pressure_rectilinear_ion_processor --confirm-writing-stopped --retention-reason 'Retain independent GUI replay field references, workbench and measured comparison'
  if($LASTEXITCODE-ne0){throw 'Final GUI replay payload sealing failed'}
  $published=$true
  Write-Output "GUI_REPLAY_FINALIZED STATUS=$(if($accepted){'success'}else{'failed'}) MANUAL_GUI_CONFIRMED=$([bool]$ManualGuiConfirmed) RUN=$run"

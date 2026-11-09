@@ -101,7 +101,7 @@ try {
   }
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null;$capacity=$null}
   if($null-ne$package){
-   & $PythonExe -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner dual_pressure_rectilinear_ion_processor --confirm-writing-stopped --retention-reason 'New private fractional field and IOB prepared for user Load/Fly'
+   & $PythonExe -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner dual_pressure_rectilinear_ion_processor --confirm-writing-stopped --retention-reason 'New private fractional field and IOB prepared for user Load/Fly'
    if($LASTEXITCODE-ne0){throw 'Private GUI payload sealing failed'}
   }
  } finally {

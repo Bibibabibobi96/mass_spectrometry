@@ -263,7 +263,7 @@ IP完整五层普通场、已物化场及纯响应的历史证明可以递归经
 ```powershell
 $configPath=(Resolve-Path '<既有run>/run_config.json').Path
 $config=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-python -B -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload `
+python -B -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload `
   --artifact-root $config.capacity_ledger_lifecycle.artifact_root --run-config $configPath `
   --owner $config.project --confirm-writing-stopped --retention-reason $config.artifact_retention.reason
 if($LASTEXITCODE-ne0){throw 'Provider capacity sealing remains incomplete.'}

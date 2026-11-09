@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts import run_capacity_lifecycle as lifecycle
+from msplatform.execution import run_capacity_lifecycle as lifecycle
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.write_run_manifest import build_run_manifest, file_record
@@ -41,7 +41,7 @@ def source(root, *, legacy=False, status="success"):
 
 def owner_overlay(destination):
     """Only the public capacity owner's executable Python dependency closure."""
-    pending = ["common/contracts/run_capacity_lifecycle.py", "common/contracts/reconcile_artifact_capacity.py",
+    pending = ["src/msplatform/execution/run_capacity_lifecycle.py", "common/contracts/reconcile_artifact_capacity.py",
                "common/paths/workspace_paths.py"]
     selected = set()
     while pending:

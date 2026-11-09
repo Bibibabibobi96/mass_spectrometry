@@ -599,7 +599,7 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def _producer_handoff_fixture(self, *, complete=False, sealed=False, prepared=False, retention_class="solver_review"):
         from msplatform.execution.inputs import freeze_file
-        from common.contracts.run_capacity_lifecycle import seal_checkpoint
+        from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
         from common.contracts.write_run_manifest import build_run_manifest
 
         artifacts, cache = self._artifact_cache()

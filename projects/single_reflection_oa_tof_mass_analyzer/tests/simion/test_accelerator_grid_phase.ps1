@@ -15,7 +15,7 @@ $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_o
 $formalDir = Join-Path $artifactRoot 'formal\simion'
 $pythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-grid-phase' }
-& $pythonExe (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $pythonExe -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
 $modelScratch = Join-Path $runDir 'runtime'

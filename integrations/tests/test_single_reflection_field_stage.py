@@ -20,7 +20,7 @@ from integrations.workflows.single_reflection_flight.field_plan import (
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
 from common.contracts.write_run_manifest import file_record
-from common.simion import pa_family_cache
+from msplatform.backends.simion import pa_family_cache
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key, publish_pa_family_cache
 
 ROOT = Path(__file__).resolve().parents[2]

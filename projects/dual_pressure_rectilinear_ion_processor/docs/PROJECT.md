@@ -7,6 +7,9 @@
 ## 当前状态与封存边界
 
 本项目拥有HP／LP拓扑、RF驱动、气体与碰撞、捕获／转运／聚集／抬升／正交引出时序及独立验收。
+The P4 replay wrappers now call the canonical installed run-capacity lifecycle, and batching no longer
+imports an unused recovery alias. The original functional module passed all 38 tests after migration;
+this does not rerun GUI replay, Refine, Fly or qualify a new source/field model.
 公共收尾故障矩阵归common owner；`tests/test_owner_finalization_recovery.py`仅保留原CLI恢复与未知writer接线，避免重复执行完整公共矩阵。
 工作台运行资源冻结显式传递现有保留分类器，覆盖原大 PA 占位种子；未分类大输入仍拒绝，
 种子不当作已求解场。IP交接所有record读取及producer记录也复用同一分类器；真实8 MiB无显式role记录及等长篡改
