@@ -26,6 +26,12 @@ local function drive(stage)
   }
 end
 
+local selected_model
+if config.model_configuration then
+  selected_model=assert(loadfile(assert(config.model_consumer)))().new(
+    assert(loadfile(config.model_configuration))(),rf,
+    assert(loadfile(assert(config.pulse_hook)))(),assert(loadfile(assert(config.waveforms)))())
+end
 local stage_1 = drive(config.stage_1)
 local stage_2 = drive(config.stage_2)
 local trajectory_stream
@@ -48,6 +54,15 @@ local function emit_sample()
 end
 
 function segment.fast_adjust()
+  if selected_model then
+    for _,row in ipairs(selected_model.evaluate_at(ion_time_of_flight)) do
+      for _,target in ipairs(row.native_targets) do
+        assert(target.domain=='dual_cone','saved drive target domain differs')
+        set_electrode_voltage(target.electrode_id,row.voltage_v)
+      end
+    end
+    return
+  end
   adj_elect[1] = config.first_cone_v
   adj_elect[2] = config.second_cone_v
   adj_elect[3] = config.downstream_aperture_plate_v

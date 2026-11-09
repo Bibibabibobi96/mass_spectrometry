@@ -1227,6 +1227,14 @@
                 "reason": "dual_cone_native_operation_dependency_changed"
               },
               {
+                "exact": "src/msplatform/backends/simion/dual_cone_stage_execution.py",
+                "reason": "dual_cone_managed_independent_stages_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/dual_cone_stages.py",
+                "reason": "dual_cone_managed_independent_stages_changed"
+              },
+              {
                 "exact": "src/msplatform/backends/simion/dual_cone_stages.py",
                 "reason": "dual_cone_independent_stage_projection_changed"
               },
@@ -1240,7 +1248,8 @@
               "common/contracts/test_dual_cone_transport.py",
               "common/contracts/test_dual_cone_stages.py",
               "common/contracts/test_dual_cone_iob.py",
-              "common/contracts/test_dual_cone_native_guards.py"
+              "common/contracts/test_dual_cone_native_guards.py",
+              "common/contracts/test_dual_cone_managed_stages.py"
             ],
             "dependency_profile": "locked"
           }

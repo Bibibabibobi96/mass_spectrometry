@@ -232,8 +232,7 @@ class GasPreparationTests(unittest.TestCase):
         repo = PROJECT.parents[1]
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "snapshot"
-            for relative in ("common/contracts", "common/simion",
-                             "projects/" + PROJECT.name + "/config"):
+            for relative in ("projects/" + PROJECT.name + "/config",):
                 shutil.copytree(repo / relative, snapshot / relative,
                     ignore=lambda folder, names: [name for name in names
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
@@ -283,6 +282,7 @@ assert not list(Path.cwd().rglob('*.pa*'))
 for name, module in tuple(sys.modules.items()):
     if name.startswith('msplatform') and getattr(module, '__file__', None):
         assert Path(module.__file__).resolve().is_relative_to(Path.cwd() / 'src'), (name, module.__file__)
+assert not any(name.split('.')[0] in {'common','projects','integrations'} for name in sys.modules)
 print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
 """
             # -I ignores inherited author/PYTHONPATH entries; only this selected

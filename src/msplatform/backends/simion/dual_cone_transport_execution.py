@@ -261,7 +261,7 @@ def track_transport(
     )
 
 
-def _prepare_execution_inputs(session, *, request):
+def _prepare_execution_inputs(session, *, request, selected_plan=None, model_projection=None):
     """Freeze the pure preparation and exact implementation resource closure."""
     import inspect
     import json
@@ -278,7 +278,7 @@ def _prepare_execution_inputs(session, *, request):
         name: json.loads(Path(request[name + "_path"]).read_text(encoding="utf-8-sig"))
         for name in ("resolved", "numerics", "science", "source_spec")
     }
-    plan = plan_transport_operations(**values)
+    plan = plan_transport_operations(**values) if selected_plan is None else selected_plan
     if tuple(plan["expected_operation_ids"]) != session.expected_operation_ids or plan[
         "operation_dependencies"
     ] != dict(session.operation_dependencies):
@@ -325,7 +325,21 @@ def _prepare_execution_inputs(session, *, request):
     for name in SDS_FILES:
         session.declare_file(prepared / "solver/simion/collision_sds" / name, "required_evidence")
     session.declare_file(prepared / "preparation_receipt.json", "required_evidence")
-    receipt = prepare_transport(prepared, mode="gas_assisted_transport", **request)
+    if selected_plan is not None:
+        for name in (
+            "model_drive_configuration.lua",
+            "model_drive.lua",
+            "single_flight_pulse_hook.lua",
+            "voltage_waveforms.lua",
+        ):
+            session.declare_file(prepared / "solver/simion" / name, "required_evidence")
+    receipt = prepare_transport(
+        prepared,
+        mode="gas_assisted_transport",
+        **request,
+        materialize_geometry=selected_plan is None,
+        model_projection=model_projection,
+    )
     # These are known outputs of the installed pure preparer. No native process
     # has started and no unknown writer/output is adopted by this registration.
     records = {}
@@ -359,6 +373,8 @@ def _prepare_execution_inputs(session, *, request):
         "build_tracking_iob.lua",
         "iob_core.lua",
     )
+    if selected_plan is not None:
+        names = ("build_tracking_iob.lua", "iob_core.lua")
     for name in names:
         target = session.declare_file(frozen / name, "required_evidence")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -378,35 +394,15 @@ def _build_and_audit_fields(session, *, prepared, values, plan, sources, limits,
     """Compose explicit fresh geometry, Refine and read-only field verification."""
     import json
     from msplatform.io.manifest_records import file_record
-    from .dual_cone_geometry import geometry_grid
+    from .dual_cone_geometry import native_geometry_specification
+    from pathlib import Path
 
     solver = prepared / "solver/simion"
-    raw = solver / "dual_cone_tandem.pa#"
-    grid = geometry_grid(values["resolved"], values["numerics"])
-    witnesses = solver / "dual_cone_surface.csv"
-    # The axis is vacuum in the declared monolithic cone/rod representation.
-    # Namespace witnesses come from actual integer electrode nodes, not guessed
-    # thin-cone sample points or a second implementation of GEM geometry.
-    offsets = values["numerics"]["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
-    samples = [
-        dict(
-            gu=[round(offsets["x"] / grid["dx_mm"]), round(offsets["y"] / grid["dy_mm"]), 1],
-            metal=False,
-            label="upstream_axis_vacuum",
-        )
-    ]
-    geometry_spec = dict(
-        schema_version=1,
-        role="simion_frontend_raw_geometry",
-        domain_id="dual_cone",
-        gem=str(solver / "dual_cone_tandem.gem"),
-        output=str(raw),
-        grid=grid,
-        physical_samples=samples,
-        electrode_witness_ids=list(ELECTRODE_IDS),
-        fractional_surface=str(raw.with_suffix(".pa-surf")),
-        surface_witnesses=str(witnesses),
-    )
+    geometry_spec = native_geometry_specification(values["resolved"], values["numerics"], solver)
+    raw = Path(geometry_spec["output"])
+    grid = geometry_spec["grid"]
+    samples = geometry_spec["physical_samples"]
+    witnesses = Path(geometry_spec["surface_witnesses"])
     for suffix in (".source.gem", ".source.processed.gem"):
         session.declare_file(raw.with_suffix(suffix), "required_evidence")
     build_transport_geometry(

@@ -4,8 +4,10 @@
 导引器。它是三重四极杆质量分析器 Q1 之前的独立离子传输组件；当前公开尺寸与 SCIEX QJet/Q0 类
 前端相似，但尚无足够证据绑定厂商或型号。
 
-Installed SIMION pure preparation is `msplatform.backends.simion.dual_cone_transport`;
-see [`docs/SIMION.md`](docs/SIMION.md) for explicit inputs and the separate native transport restriction.
+Installed SIMION preparation is `msplatform.backends.simion.dual_cone_transport`.
+Managed fresh transport and independent geometry/model/field/tracking software
+operations are described in [`docs/SIMION.md`](docs/SIMION.md); their actual native
+acceptance and remaining limits are recorded in [`PROJECT`](docs/PROJECT.md).
 
 Installed gas-flow operations and explicit deployment/profile usage are described in
 [`docs/COMSOL.md`](docs/COMSOL.md); project parameters remain explicit research inputs.
@@ -43,10 +45,12 @@ Installed gas-flow operations and explicit deployment/profile usage are describe
 |---|---|
 | 几何新鲜度 | `verify_project.ps1 -Level Static`（项目脚本向规范组件显式传 baseline/resolved 路径） |
 | 计算气流、导出和校验 | [COMSOL 实施说明](docs/COMSOL.md#运行) |
-| SIMION 输运当前阻断及纯准备 | [SIMION 实施说明](docs/SIMION.md#当前执行阻断) |
+| SIMION 阶段能力与准备 | [SIMION 实施说明](docs/SIMION.md#当前能力与验证边界) |
 | 规定均匀场对照／GEM smoke | [SIMION 实施说明](docs/SIMION.md) |
 
-SIMION 科学准备、GEM、源和 Fly Lua 保留；fractional PA 公共隔离尚不支持新执行，因此四个旧原生运行入口及 SIMION 执行 profile 已退役。历史原型证据与当前执行边界见
+SIMION 的正式准备与运行实现归安装包；fresh 和独立阶段的软件入口使用现有公共 owner，
+保留 fractional 表面与原始场族保护。四个旧原生 wrapper 和旧执行 profile 已退役，不恢复旧名或阻断 stub。
+成功原生 Fly 及独立阶段的原生验收仍未完成；失败事实和历史资格见
 [PROJECT](docs/PROJECT.md#当前资格)。已退役 Python 压力—阻尼积分器只从历史索引追溯。
 
 ## 目录职责
@@ -55,11 +59,14 @@ SIMION 科学准备、GEM、源和 Fly Lua 保留；fractional PA 公共隔离�
 dual_cone_tandem_quadrupole_ion_interface/
 ├─ config/       # 几何、气流、数值、mode和执行合同
 ├─ analysis/     # 轨迹投影等求解器无关诊断
-├─ simion/       # Workbench Program、纯准备与气体辅助轨迹实现
-├─ workflows/    # 按科学问题隔离的原型与准备入口
+├─ simion/       # 薄研究输入准备入口；正式 Program 与执行在安装包
+├─ workflows/    # 研究配置与气流入口接线；不拥有另一套运行实现
 ├─ tests/        # 静态、合同和求解器适配边界回归
 └─ docs/         # 当前PROJECT、软件说明与只读history
 ```
+
+正式 SIMION 实现与资源位于 `src/msplatform/backends/simion/`，具名阶段工作流位于
+`src/msplatform/workflows/dual_cone_stages.py`；上面的项目目录不复制这些生产职责。
 
 不存在的实现目录不为空占位。大型模型、场、PA/IOB、轨迹、结果和日志只进入工作区
 `artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`，不进入 Git。

@@ -103,7 +103,13 @@ def _lua_string(value: str | Path) -> str:
 
 
 def _render_run_config(
-    *, mode: str, science: dict[str, Any], numerics: dict[str, Any], resolved: dict[str, Any], solver: Path
+    *,
+    mode: str,
+    science: dict[str, Any],
+    numerics: dict[str, Any],
+    resolved: dict[str, Any],
+    solver: Path,
+    model_projection=None,
 ) -> str:
     def stage_record(name: str) -> str:
         stage = science["electric_field"][name]
@@ -131,6 +137,16 @@ def _render_run_config(
     return "\n".join(
         [
             "return {",
+            *(
+                []
+                if model_projection is None
+                else [
+                    f"  model_configuration={_lua_string(solver / 'model_drive_configuration.lua')},",
+                    f"  model_consumer={_lua_string(solver / 'model_drive.lua')},",
+                    f"  pulse_hook={_lua_string(solver / 'single_flight_pulse_hook.lua')},",
+                    f"  waveforms={_lua_string(solver / 'voltage_waveforms.lua')},",
+                ]
+            ),
             f"  mode={_lua_string(mode)},",
             f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
             f"  collision_sds_lua={_lua_string(collision_lua)},",
@@ -245,7 +261,19 @@ def prepare_transport(
     collision_sds_dir: Path | None = None,
     gas_field_manifest: Path | None = None,
     simion_exe: Path | None = None,
+    materialize_geometry: bool = True,
+    model_projection=None,
 ) -> dict[str, Any]:
+    if type(materialize_geometry) is not bool:
+        raise TypeError("materialize_geometry must be boolean")
+    if not materialize_geometry and (
+        mode != "gas_assisted_transport" or model_projection is None or simion_exe is not None
+    ):
+        raise ValueError("source-only preparation requires its explicit saved model and no cache builder")
+    if model_projection is not None:
+        from .dual_cone_stages import require_model_projection
+
+        require_model_projection(model_projection)
     if mode not in {"c0_gem_smoke", "gas_assisted_transport"}:
         raise ValueError("unsupported SIMION preparation mode")
     resolved = _load(resolved_path, "dual_cone_tandem_quadrupole_resolved_geometry")
@@ -257,12 +285,7 @@ def prepare_transport(
         raise ValueError("SIMION must remain the trajectory authority")
     for name in ("sample_interval_us", "maximum_step_us"):
         value = numerics["trajectory"].get(name)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value <= 0
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             raise ValueError("SIMION trajectory " + name + " must be explicit, positive and finite")
 
     from msplatform.backends.simion.resources import native_resource_path
@@ -308,7 +331,8 @@ def prepare_transport(
     solver.mkdir(parents=True, exist_ok=True)
     (output_dir / "results").mkdir(parents=True, exist_ok=True)
     gem = solver / "dual_cone_tandem.gem"
-    gem.write_text(render_gem(resolved, numerics), encoding="utf-8")
+    if materialize_geometry:
+        gem.write_text(render_gem(resolved, numerics), encoding="utf-8")
     inputs: dict[str, Any] = {
         "resolved_geometry": freeze_file(resolved_path, frozen / "resolved_geometry.json"),
         "simion_solver_numerics": freeze_file(numerics_path, frozen / "simion_solver_numerics.json"),
@@ -316,9 +340,18 @@ def prepare_transport(
         "gas_field_interface": freeze_file(interface_path, frozen / "gas_field_interface.json"),
         "rf_drive_kernel": freeze_file(rf_kernel, solver / "simion_rf_drive.lua"),
         "simion_program": freeze_file(program, solver / "gas_assisted_transport.lua"),
-        "gem": {"path": str(gem), "sha256": file_sha256(gem)},
     }
 
+    if materialize_geometry:
+        inputs["gem"] = {"path": str(gem), "sha256": file_sha256(gem)}
+    if model_projection is not None:
+        from .dual_cone_stages import render_model_stage_configuration
+
+        configuration = solver / "model_drive_configuration.lua"
+        configuration.write_text(render_model_stage_configuration(model_projection), encoding="utf-8")
+        inputs["model_drive_configuration"] = {"path": str(configuration), "sha256": file_sha256(configuration)}
+        for name in ("model_drive.lua", "single_flight_pulse_hook.lua", "voltage_waveforms.lua"):
+            inputs["model_resource_" + name] = freeze_file(native_resource_path(name), solver / name)
     if mode == "c0_gem_smoke":
         source = science["ion"]
         offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
@@ -427,7 +460,14 @@ def prepare_transport(
 
     run_config = solver / "run_config.lua"
     run_config.write_text(
-        _render_run_config(mode=mode, science=science, numerics=numerics, resolved=resolved, solver=solver),
+        _render_run_config(
+            mode=mode,
+            science=science,
+            numerics=numerics,
+            resolved=resolved,
+            solver=solver,
+            model_projection=model_projection,
+        ),
         encoding="utf-8",
     )
     inputs["simion_run_config"] = {"path": str(run_config), "sha256": file_sha256(run_config)}

@@ -190,6 +190,37 @@ assert len(dual_stage_model['projection']['native_drive_rows'])==7
 assert dual_stage_model['projection']['source_status']=='not_requested'
 assert 'simion_model_drive' in dual_stage_api.render_model_stage_configuration(dual_stage_model['projection'])
 assert callable(dual_stage_workflow.run_gas_assisted_transport)
+from msplatform.workflows import dual_cone_stages as dual_managed_api
+from msplatform.backends.simion import dual_cone_stage_execution as dual_managed_execution
+for module in (dual_managed_api,dual_managed_execution):
+    assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+for name in ('build_geometry','prepare_model','solve_fields','track_fields'):
+    assert callable(getattr(dual_managed_api,name))
+# Ordinary installed source-only preparation: explicit uniform control and inert
+# external SDS files, never a vendor Fly or a claimed CFD/ion result.
+dual_sds=root/('inert-sds-'+sys.argv[2]);dual_sds.mkdir()
+for name in dual_cone_transport.SDS_FILES:
+    (dual_sds/name).write_text('INERT_SDS_NOT_VENDOR')
+dual_source_only=root/('cone-source-only-'+sys.argv[2])
+dual_source_receipt=dual_cone_transport.prepare_transport(dual_source_only,mode='gas_assisted_transport',
+    resolved_path=cone_input/'resolved.json',numerics_path=cone_input/'numerics.json',
+    science_path=cone_input/'ion_transport_science.json',interface_path=cone_input/'gas_field_interface.json',
+    gas_science_path=cone_input/'gas_flow_science.json',source_spec_path=cone_input/'source_spec.json',
+    gas_field_manifest=root/'uniform-manifest.json',collision_sds_dir=dual_sds,
+    materialize_geometry=False,model_projection=dual_stage_model['projection'])
+assert 'gem' not in dual_source_receipt['inputs']
+assert not list(dual_source_only.rglob('*.gem')) and not list(dual_source_only.rglob('*.pa*'))
+import csv as dual_source_csv_reader
+with (dual_source_only/'input/cylindrical_ion_source.csv').open(newline='') as stream:
+    dual_source_rows=list(dual_source_csv_reader.DictReader(stream))
+assert len(dual_source_rows)==100 and [int(row['particle_id']) for row in dual_source_rows]==list(range(1,101))
+for name in ('model_drive.lua','single_flight_pulse_hook.lua','voltage_waveforms.lua'):
+    record=dual_source_receipt['inputs']['model_resource_'+name]
+    assert pathlib.Path(record['source_path']).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+    assert pathlib.Path(record['frozen_path']).read_bytes()==pathlib.Path(record['source_path']).read_bytes()
+assert (dual_source_only/'solver/simion/model_drive_configuration.lua').is_file()
+assert 'model_configuration=' in (dual_source_only/'solver/simion/run_config.lua').read_text()
+
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field
 assert callable(corridor_field.compile_request)

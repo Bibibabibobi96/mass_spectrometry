@@ -237,6 +237,17 @@ def _record_identity(record):
     return dict(bytes=value["bytes"], sha256=value["sha256"].upper())
 
 
+def require_field_numerics(model: Mapping, numerics: Mapping) -> dict:
+    """Refine controls cannot silently redefine an already published raw domain."""
+    geometry = model["geometry"]["numerics"]
+    for name in ("cell_mm_xyz", "surface_enhancement", "symmetry"):
+        if name in numerics["pa"] and numerics["pa"][name] != geometry["pa"][name]:
+            raise ValueError("field numerics cannot redefine selected geometry " + name)
+    if "workbench" in numerics and numerics["workbench"] != geometry["workbench"]:
+        raise ValueError("field numerics cannot redefine selected geometry workbench")
+    return transport_refinement(numerics)
+
+
 def plan_fields_stage(
     model: Mapping, *, numerics: Mapping, raw_records: Mapping, implementation_records: Mapping, reuse_reference=None
 ) -> dict:
@@ -255,7 +266,7 @@ def plan_fields_stage(
             grid=model["geometry"]["grid"],
             physics=model["physics"],
             raw_geometry={name: _record_identity(row) for name, row in raw_records.items()},
-            refinement=transport_refinement(dict(numerics)),
+            refinement=require_field_numerics(model, numerics),
             implementation={name: _record_identity(row) for name, row in implementation_records.items()},
         )
     )

@@ -55,12 +55,14 @@ def _aperture_plate_electrode(plate: dict[str, Any], electrode_id: int) -> str:
     thickness = float(plate["thickness_mm"])
     radius = float(plate["outer_radius_mm"])
     aperture = float(plate["aperture_radius_mm"])
-    return "\n".join([
-        f"  e({electrode_id}) {{ fill {{",
-        f"    within {{ cylinder(0,0,{_number(z0)},{_number(radius)},{_number(radius)},{_number(thickness)}) }}",
-        f"    notin_inside {{ cylinder(0,0,{_number(z0)},{_number(aperture)},{_number(aperture)},{_number(thickness)}) }}",
-        "  } }",
-    ])
+    return "\n".join(
+        [
+            f"  e({electrode_id}) {{ fill {{",
+            f"    within {{ cylinder(0,0,{_number(z0)},{_number(radius)},{_number(radius)},{_number(thickness)}) }}",
+            f"    notin_inside {{ cylinder(0,0,{_number(z0)},{_number(aperture)},{_number(aperture)},{_number(thickness)}) }}",
+            "  } }",
+        ]
+    )
 
 
 def geometry_grid(resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[str, Any]:
@@ -76,15 +78,11 @@ def geometry_grid(resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[st
         raise ValueError("SIMION cell size must be positive and finite")
     geometry = resolved["geometry_mm"]
     radius = float(geometry["low_pressure_enclosure"]["radius_mm"])
-    observation_end = float(
-        geometry["downstream_aperture_plate"]["downstream_observation_end_z_mm"]
-    )
+    observation_end = float(geometry["downstream_aperture_plate"]["downstream_observation_end_z_mm"])
     transverse_span = 2.0 * (radius + 2.0)
     z_min = -2.0
     offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
-    if not math.isclose(offset_x, 0.5 * transverse_span) or not math.isclose(
-        offset_y, 0.5 * transverse_span
-    ):
+    if not math.isclose(offset_x, 0.5 * transverse_span) or not math.isclose(offset_y, 0.5 * transverse_span):
         raise ValueError("SIMION transverse offsets must center the governed PA span")
     if not math.isclose(offset_z, -z_min):
         raise ValueError("SIMION axial offset must place the governed upstream plane at zero")
@@ -92,8 +90,7 @@ def geometry_grid(resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[st
     sizes = [extent / mmgu + 1 for extent in extents]
     if any(not math.isfinite(value) or value < 3 or not value.is_integer() for value in sizes):
         raise ValueError("SIMION domain extents must define an integer grid of at least three nodes")
-    return {"nx": int(sizes[0]), "ny": int(sizes[1]), "nz": int(sizes[2]),
-            "dx_mm": mmgu, "dy_mm": mmgu, "dz_mm": mmgu}
+    return {"nx": int(sizes[0]), "ny": int(sizes[1]), "nz": int(sizes[2]), "dx_mm": mmgu, "dy_mm": mmgu, "dz_mm": mmgu}
 
 
 def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
@@ -147,3 +144,32 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def native_geometry_specification(resolved, numerics, solver):
+    """One actual raw-geometry/witness request for fresh and saved stages."""
+    from pathlib import Path
+    from .dual_cone_stages import ELECTRODE_IDS
+
+    solver = Path(solver)
+    raw = solver / "dual_cone_tandem.pa#"
+    grid = geometry_grid(resolved, numerics)
+    offsets = numerics["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
+    return dict(
+        schema_version=1,
+        role="simion_frontend_raw_geometry",
+        domain_id="dual_cone",
+        gem=str(solver / "dual_cone_tandem.gem"),
+        output=str(raw),
+        grid=grid,
+        physical_samples=[
+            dict(
+                gu=[round(offsets["x"] / grid["dx_mm"]), round(offsets["y"] / grid["dy_mm"]), 1],
+                metal=False,
+                label="upstream_axis_vacuum",
+            )
+        ],
+        electrode_witness_ids=list(ELECTRODE_IDS),
+        fractional_surface=str(raw.with_suffix(".pa-surf")),
+        surface_witnesses=str(solver / "dual_cone_surface.csv"),
+    )

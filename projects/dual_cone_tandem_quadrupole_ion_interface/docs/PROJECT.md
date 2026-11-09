@@ -68,9 +68,10 @@ The new fresh workflow composes explicit geometry build, Refine, fractional
 family readback, source-bearing IOB build/reopen and Fly through one existing
 RunSession. Its native family remains unpublished in that producer run until all
 writers close. It neither consumes a copied published family nor introduces a
-second cache/owner. Independent PreparedModel/fields/source operations and saved
-field reuse remain REQUIRED OPEN P4 work. No new native execution or qualification
-has yet been performed for this implementation.
+second cache/owner. The independent operations below now have managed software
+implementations; their separate native validation remains OPEN. The first fresh
+native attempt stopped at raw validation and the corrected attempt at IOB creation,
+as recorded below. No successful current Fly or scientific qualification is claimed.
 
 Pure regression reproduced two existing parameter defects: GEM emitted a fixed
 51 mm transverse span despite a legal changed enclosure radius, and the Program
@@ -110,36 +111,44 @@ inverse gas-frame transform and velocity rotation, plus source/birth projection
 validation; they remain OPEN P11 work. RF near-gimbal evidence does not qualify
 the gas/SDS adapter. No science, grid or current source request was changed.
 
-### Independent stage projections: implementation versus availability
+### Independent managed stages and saved-field consumption
 
-`dual_cone_stages` now validates stage-specific scientific projections. Geometry
-requires only resolved geometry and PA/workbench numerics; the driven unsolved
-model adds explicit electric drive, clock and existing external-linear physics.
-Neither stage requires gas, SDS, source, trajectory settings or a one-particle
-smoke fallback. The seven native drive rows use the existing source-free
-`model_drive.lua`/`rf_drive.lua` consumer. Pure Lua readback is not native IOB proof.
+`msplatform.workflows.dual_cone_stages` exposes `build_geometry`, `prepare_model`,
+`solve_fields` and `track_fields`. Each calls the existing managed owner and
+RunSession with its actual operation graph; no second result/lease/cache owner is
+introduced. Geometry and model require zero gas, SDS or sampled-source inputs.
+They save/reopen the canonical source-free IOB with an empty native particle-format
+control, not a one-particle fallback. Models bind all seven drive groups, the
+actual clock authority/epoch and the existing external-linear field physics.
+The canonical timing adapter currently permits phase anchor instrument time zero;
+other anchors and general instance poses are not silently accepted.
 
-The field identity binds actual geometry/raw/surface/witness records, all seven
-IDs, boundary physics, refinement and tool/refiner/auditor identities. Gas, source,
-observation and RF drive values do not contaminate this spatial basis. Changing
-drive creates a new model while an explicitly selected compatible basis can be
-reused. Saved-field tracking plans contain only IOB build/reopen and Fly; collision
-mass, diameter, diffusion, source and official SDS identities remain explicit.
+Field generation materializes only the unsolved raw PA#/fractional surface/witness
+closure through the existing guarded payload transport, then Refines and audits
+an independent producer family. Field identity excludes source, gas, observation
+cadence and RF drive values, while binding geometry, seven IDs, boundary physics,
+refinement and actual tool/refiner/auditor records. A changed drive creates a new
+PreparedModel; `solve_fields(..., reuse_fields_reference=...)` explicitly validates
+and audits a compatible original basis without copying its PA family or Refine.
+The new published field reference keeps the new model and the original producer.
 
-| Boundary | Current evidence | Still required for availability |
-|---|---|---|
-| Geometry/model alone | Gas/source-free projections; existing seven-group Lua consumer | Native zero-source IOB roles and independently managed save/reopen publication |
-| Fields alone | Pure solve/reuse graph, operator identity and exact product-closure validation | Guarded unsolved-geometry transport, native Refine/readback and independent field publication |
-| Saved-field Fly | Graph excludes build-geometry/Refine; original producer/closed writer checks | Protected original-family native qualification, explicit gas/source preparation and clock projection, managed Fly-only publication |
+Saved-field `track_fields` protects both selected and original producer manifests
+and consumes all eleven original family/witness records directly. Its graph is
+only IOB build, closed reopen and Fly. Gas/SDS/source preparation has no GEM output,
+geometry build or Refine dependency. The Program consumes the selected model's
+canonical seven-group drive configuration; source/cadence changes do not rebuild
+fields. Actual clock/data records and native control bytes remain guarded.
 
-The current fresh full workflow is not these independent public stages. Projection
-plans report `not_executed`. Canonical dual-cone IOB roles are implemented and
-inertly checked, but their native validation and managed independent-stage publication
-remain pending; no native receipt is
-manufactured. P10/P12 remain OPEN P4 requirements. Product readers use existing
-manifest-bound kinds and require the relevant native files, clock records and
-known successful writer receipts; no second result manager, owner or registry was
-added. Inert owner-graph fixtures validate dependency enforcement only.
+Actual-owner inert tests exercise all four public operations, changed-drive basis
+reuse, changed source/observation consumption, complete N100 identity and original
+family hashes. Public missing/unknown-writer/tampered-source checks stop before
+owner launch. Actual plain-Lua tests cover selected model-drive wiring and the
+existing frame/unit/source guarantees. These software fixtures are not vendor
+execution, native family qualification, GUI or scientific qualification.
+Ordinary installation evidence is tied to each separately recorded frozen epoch.
+Independent native build/save/reopen/Refine/Fly and P11 pose adaptation remain
+required OPEN P4 work until their actual scoped acceptance; this source migration
+does not move them to P5.
 
 ## Installed gas-flow ownership migration
 

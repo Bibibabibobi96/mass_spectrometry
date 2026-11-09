@@ -1,14 +1,24 @@
 # SIMION 最小实现与边界
 
 本文维护 SIMION 的活动入口、表示与验收；当前资格见 [PROJECT](PROJECT.md)。
-所有命令从仓库根执行，尖括号内容须替换为显式冻结输入或符合命名合同的新 run ID。
+研究 wrapper 的命令从仓库根执行；安装包入口使用显式路径和部署 context。尖括号内容须替换为
+显式冻结输入或符合命名合同的新 run ID。
 
 本项目的离子轨迹推进权威是 SIMION。Python 只编译 GEM、校验输入、序列化粒子源和整理证据，不能
 积分离子运动。
 
-## 当前执行阻断
+## 当前能力与验证边界
 
-当前数值合同和 GEM 固定使用 fractional 表面增强。公共 standalone PA 导出暂不支持保留 `.pa-surf`；不能改为无表面增强，也不能把已发布原生 `.paN` 交给 SIMION。因此原生 C0、共享 Fly 及两种气体来源的运行 wrapper 已整体退役，SIMION transport 执行 profile 已撤下，不保留旧名或阻断 stub。COMSOL 气流、canonical 场校验和纯输入准备继续可用。公共能力验证完成后，再沿统一 PA 事务和资源调度机制建立运行入口。恢复条件及历史资格见 [PROJECT](PROJECT.md#当前资格)。
+当前数值合同和 GEM 使用 fractional 表面增强，`.pa-surf` 与原始场族保护继续保持。
+`msplatform.workflows.dual_cone_transport.run_gas_assisted_transport` 已实现 fresh 管理链；
+`msplatform.workflows.dual_cone_stages` 提供 `build_geometry`、`prepare_model`、`solve_fields` 和
+`track_fields` 的软件实现。它们组合现有公共 owner，不复制已发布场族、不隐藏重求场，也不通过
+无表面增强或假粒子绕过约束。已退役的四个旧 wrapper 和旧执行 profile 不恢复。
+
+软件实现与成功原生验收分开：当前 fresh 的首次原生尝试停在 raw checker，修正后的一次停在 IOB
+创建；两次失败及其修复事实保留于 [PROJECT](PROJECT.md)。尚无本轮成功 Fly 或独立阶段原生
+验收，不授予碰撞、精度、GUI 或 Formal 资格。COMSOL 气流与离线场读取有各自证据，不能转授
+离子输运资格。下面的纯准备接口仍可独立使用。
 
 ## Installed pure preparation
 
@@ -26,7 +36,7 @@ The Program and RF kernel come from canonical installed resources. Particle seri
 `msplatform.backends.simion.source`; release sampling by `msplatform.ion_release.release`. The Program
 uses official `SDS.init` to bind the explicitly requested collision gas mass, diameter and diffusion switch
 before official initialization. Source/code migration and inert initialization do not authorize native
-Fly or lift the seven-electrode fractional integration restriction above. See PROJECT for the reproduced
+Fly or qualify the seven-electrode fractional native chain. See PROJECT for the reproduced
 prior unused-knob behavior and vendor API evidence.
 
 当前源圆柱半径为 `1.5 mm`，位于半径 `5 mm` 的上游储气腔内。源可以宽于第一锥 `1 mm` 孔半径；

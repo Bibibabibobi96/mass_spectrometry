@@ -739,7 +739,9 @@ foreach($scope in @('Owner','Repository')){
             return selected
 
     def test_dual_cone_operation_and_terminal_analysis_select_actual_consumers(self) -> None:
-        paths = ["src/msplatform/backends/simion/dual_cone_stages.py",
+        paths = ["src/msplatform/backends/simion/dual_cone_stage_execution.py",
+                 "src/msplatform/workflows/dual_cone_stages.py",
+                 "src/msplatform/backends/simion/dual_cone_stages.py",
                  "src/msplatform/workflows/dual_cone_transport.py",
                  "src/msplatform/backends/simion/dual_cone_transport_execution.py",
                  "src/msplatform/backends/simion/dual_cone_geometry.py",
@@ -751,6 +753,7 @@ foreach($scope in @('Owner','Repository')){
             self.assertIn("common/contracts/test_dual_cone_transport_execution.py", result["Modules"])
             self.assertIn("common/contracts/test_dual_cone_transport.py", result["Modules"])
             self.assertIn("common/contracts/test_dual_cone_stages.py", result["Modules"])
+            self.assertIn("common/contracts/test_dual_cone_managed_stages.py", result["Modules"])
         self.assertEqual(selected[-1]["Modules"], ["common/simion/test_analyze_terminal_plane.py"])
 
     def test_unmapped_simion_source_preserves_native_exclusions(self) -> None:
