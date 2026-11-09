@@ -82,7 +82,7 @@ class ExecutionCompilerTests(unittest.TestCase):
 
     def test_oa_and_variantless_mr_bind_the_actual_release_species_and_small_authorities(self):
         import contextlib
-        from projects.orthogonal_accelerator.simion import two_zone_candidate
+        from msplatform.backends.simion import two_zone_candidate
         source = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/config"
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as guards:
             root = Path(directory)
