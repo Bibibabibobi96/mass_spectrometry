@@ -173,6 +173,13 @@ run 配置和 manifest 绑定该本地副本的相对路径、字节数与 SHA�
 径向紧凑化与反射器补偿两个完整软件模块联合复验 78／78 通过（77.455 秒），包含真实冻结 Python worker、
 公共 owner 恢复和软件原生边界夹具。此前同范围 27 项 ERROR 的失败事实保留；修复共享 schema 定位及
 canonical 源码冻结后重新执行，未将夹具日志中的 Fly／PA PASS 当作商业 SIMION 运行或新物理资格。
+The later canonical-dispatch migration exposed a fixture closure omission: its inert dispatcher lacked
+regular package initializers and an explicit `src` import root, so the subprocess reached the ambient
+real dispatcher and correctly rejected the minimal fixture plan. The fixture now restores its previous
+environment and verifies the actual dispatcher origin for all three replans in both recovery modes.
+All 19 original test-method bodies remain unchanged; the complete adapter module passed in 79.429 seconds.
+The original 231-parent consumer batch remains recorded as FAIL (230 passed, one parent with two failed
+subcases); this focused correction does not retroactively make that run pass or confer native qualification.
 
 正常 COMSOL core 的计时与显示移入实际调用的 `oatof_report_model_timing`，该函数不接收模型；
 原 native builder、后处理、同路径 GUI 保存及 context 更新次序保留，不增加求解或保存。

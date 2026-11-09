@@ -96,6 +96,8 @@ function Write-RunJson {param($Path,$Value,$Depth=100,[switch]$Atomic);[IO.Direc
 function Invoke-RunToolRootContext {
  param($RepoRoot,$Operation)
  Push-Location $RepoRoot;Trace-Fixture 'python_boundary.begin'
+ $previousPythonPath=$env:PYTHONPATH
+ $env:PYTHONPATH=(Join-Path $RepoRoot 'src')+[IO.Path]::PathSeparator+$RepoRoot
  if($env:FIXTURE_DELAY_ACTION){
   # Negative-case witness at the observed root boundary. Native Python action
   # stdout is buffered by PowerShell's $output assignment until that action ends.
@@ -104,7 +106,7 @@ function Invoke-RunToolRootContext {
   [byte[]]$raw=[Text.Encoding]::UTF8.GetBytes('R0_STDERR_RAW')+[byte[]]@(254)+[Text.Encoding]::UTF8.GetBytes('诊断')
   $stream=[Console]::OpenStandardError();$stream.Write($raw,0,$raw.Length);$stream.Flush()
  }
- try{& $Operation}finally{Trace-Fixture 'python_boundary.end';Pop-Location}
+ try{& $Operation}finally{$env:PYTHONPATH=$previousPythonPath;Trace-Fixture 'python_boundary.end';Pop-Location}
 }
 function Enter-RunTerminalConsumptionGuard {param($RunDirectory);Event reader;return [IO.MemoryStream]::new()}
 function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$ProtectedCacheKeys,$Owner);Event capacity;return @{}}
@@ -408,8 +410,12 @@ Invoke-Expression $release.Extent.Text
 ''', encoding="utf-8")
             (root / "source.pa").write_bytes(b"inert byte transport fixture, no native PA")
             (root / "common/simion/resource_profile.py").write_text("", encoding="utf-8")
+            (root / "src/msplatform/execution").mkdir(parents=True)
+            for package in ("src/msplatform", "src/msplatform/execution"):
+                (root / package / "__init__.py").write_text("", encoding="utf-8")
             (root / "src/msplatform/execution/simion_dispatch.py").write_text(
                 "import os,sys\nfrom pathlib import Path\n"
+                "with (Path(os.environ['FIXTURE_ROOT'])/'dispatch_origins.jsonl').open('a',encoding='utf-8') as f: f.write(str(Path(__file__).resolve())+'\\n')\n"
                 "with (Path(os.environ['FIXTURE_ROOT'])/'events').open('a', encoding='utf-8') as f: f.write('replan:'+sys.argv[1]+'\\n')\n",
                 encoding="utf-8",
             )
@@ -450,6 +456,9 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
                                                          timeout=timeout, diagnostics_root=evidence)
             print(f"FIXTURE_EVIDENCE mode={mode} path={result.fixture_diagnostics}", flush=True)
             events = (root / "events").read_text(encoding="utf-8").splitlines() if (root / "events").exists() else []
+            if mode in ("formal", "recovered"):
+                origins = (root / "dispatch_origins.jsonl").read_text(encoding="utf-8").splitlines()
+                self.assertEqual(origins, [str((root / "src/msplatform/execution/simion_dispatch.py").resolve())] * 3)
             completion = json.loads((root / "completion.json").read_text(encoding="utf-8-sig")) if (root / "completion.json").exists() else {}
             if (root / "result.json").exists():
                 completion["retained_result"] = json.loads((root / "result.json").read_text(encoding="utf-8-sig"))
