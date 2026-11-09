@@ -435,6 +435,8 @@ function Set-GateStageResult {
             cases = [dict(name="heavy", weights=weights),
                      dict(name="short", weights={k: v / 100 for k, v in weights.items()}),
                      dict(name="unknown", weights={k: v for k, v in weights.items() if k != "test_e"}),
+                     dict(name="estimated", weights={}, default_seconds=120),
+                     dict(name="estimated_short", weights={}, default_seconds=1),
                      dict(name="serial", weights=weights, concurrency=1),
                      dict(name="inherited", weights=weights, token="inherited_fixture_grant"),
                      dict(name="no_benefit", weights={"test_a": 341}, modules=modules[:1]),
@@ -452,6 +454,7 @@ try {
   $current=$catalog|ConvertTo-Json -Depth 32|ConvertFrom-Json -AsHashtable
   $route=$current.routes|Where-Object stage -eq common_contracts
   $route.repository_integration_partition.measured_seconds=$case.weights
+  if($case.ContainsKey('default_seconds')){$route.repository_integration_partition.default_seconds=$case.default_seconds}
   if($case.ContainsKey('modules')){$route.test_selection.dependencies[0].modules=$case.modules}
   $current|ConvertTo-Json -Depth 32|Set-Content common/gate_catalog.json -Encoding UTF8
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=if($case.ContainsKey('token')){$case.token}else{$null}
@@ -475,7 +478,7 @@ try {
                     plan = json.loads((root / (case["name"] + ".json")).read_text(encoding="utf-8-sig"))
                     parts = [s for s in plan["stages"] if s["name"].startswith("common_contracts__tests_")]
                     is_complete = case["name"] in {"owner", "repository"}
-                    partitioned = case["name"] in {"heavy", "only_tests"} or is_complete
+                    partitioned = case["name"] in {"heavy", "unknown", "estimated", "only_tests"} or is_complete
                     self.assertEqual(len(parts), 3 if partitioned else 0)
                     stages = {s["name"]: s for s in plan["stages"] + plan["skipped_stages"]}
                     if partitioned:
@@ -496,6 +499,26 @@ try {
                         self.assertEqual(selected["dependency_profile"], "stdlib")
                         self.assertEqual(selected["requires_stages"], ["partition_prerequisite"])
 
+
+    def test_partial_partition_rejects_invalid_declared_default_before_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="partial_invalid_cost_") as directory:
+            root = Path(directory)
+            leaf, _ = self.partial_python_partition_fixture(root)
+            catalog_path = root / "common/gate_catalog.json"
+            original = json.loads(catalog_path.read_text(encoding="utf-8"))
+            for invalid in (0, -1):
+                with self.subTest(default_seconds=invalid):
+                    catalog = json.loads(json.dumps(original))
+                    route = next(row for row in catalog["routes"] if row["stage"] == "common_contracts")
+                    route["repository_integration_partition"]["default_seconds"] = invalid
+                    route["repository_integration_partition"]["measured_seconds"] = {}
+                    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+                    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
+                        "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency", "2", "-PlanOnly"],
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("Invalid repository integration test partition", result.stdout + result.stderr)
+                    self.assertFalse((root / "events").exists())
 
     def selected_powershell_fixture(self, root: Path) -> tuple[str, list[str]]:
         """Reuse the small Python fixture with the real integration replacement CLI."""
@@ -592,7 +615,7 @@ function Set-GateStageResult {
             environment = dict(os.environ, PARTIAL_EVENTS=str(events))
             for key in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "PARTIAL_PARALLEL", "PARTIAL_FAIL", "PARTIAL_LATE_FAILURE", "PARTIAL_DISPATCH_DEADLINE"):
                 environment.pop(key, None)
-            parallel = mode in {"heavy", "failed", "late_failure"}
+            parallel = mode in {"heavy", "unknown", "failed", "late_failure"}
             if parallel:
                 environment["PARTIAL_PARALLEL"] = "1"
             if mode in {"failed", "late_failure"}:

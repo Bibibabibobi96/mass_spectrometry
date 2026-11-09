@@ -397,8 +397,11 @@ function Get-SelectedPartialTestPartitions {
     foreach ($module in $expected) {
         $name = ($module -split '\.')[-1]
         $property = $weights.PSObject.Properties[$name]
-        if ($null -eq $property) { return @() }
-        $seconds = [double]$property.Value
+        # Unknown runtime is a scheduling estimate, not missing test coverage.
+        # Use the same declared fallback as the existing repository partitioner.
+        $seconds = if ($null -eq $property) {
+            [double]$Route.repository_integration_partition.default_seconds
+        } else { [double]$property.Value }
         if ($seconds -le 0 -or [double]::IsNaN($seconds) -or [double]::IsInfinity($seconds)) { return @() }
         $serialSeconds += $seconds
     }

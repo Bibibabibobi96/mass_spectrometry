@@ -618,6 +618,13 @@ FullScope均失败关闭为`locked`。本机与CI的普通软件门禁并发默�
 压力和声明核数只作观测，不以95%阈值或累计核数阻挡；SIMION、COMSOL和重型GATE保持原CPU限制。并行阶段即时报告进程启动与完成，启动行的`LOG_PATH`
 指向执行中逐行刷新、可直接读取的阶段日志；完成后仍按稳定顺序回放完整日志，不在内存缓存整个阶段。
 unittest 测试完成时报告耗时，首个异常发生时增量回显 traceback；其他已启动阶段自然收尾。
+For a selected test subset, the existing owner partitioner keeps known `measured_seconds`
+and uses its declared `default_seconds` for modules without a measurement. The fallback
+is a scheduling estimate, not measured runtime; one unknown cost does not disable all
+partitions. The existing cost/benefit threshold, exact module coverage, prerequisites,
+resource limits and inherited-worker cap remain in force. This does not establish the
+full-suite performance target.
+
 `common.gate_unittest`按实际结果回调输出逐实体outcome与独立invocation起止收据；
 源码相对路径及类/方法组成`test_key`，stage、随机invocation和源码SHA分别作为执行与版本元数据，
 不以短模块ID去重。fixture/loader、subtest、skip原因和未完成分别保留；record_count含子实体，
