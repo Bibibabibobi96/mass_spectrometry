@@ -273,6 +273,35 @@ class HostResourceSchedulerTests(unittest.TestCase):
                                  dict(pid=pid, parent_pid=0, started="0000000000000000001", memory_bytes=GIB//16)
                                  for pid in range(1, 21)])
 
+    def test_real_package_scheduler_runs_without_schema_dependencies(self) -> None:
+        """Cold package initialization must support the CI stdlib environment."""
+        bootstrap = (
+            "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
+            "import msplatform.execution; "
+            "assert 'jsonschema' not in sys.modules and 'referencing' not in sys.modules; "
+            "runpy.run_module('msplatform.execution.host_resource_scheduler', run_name='__main__')"
+        )
+        command = [sys.executable, "-I", "-S", "-c", bootstrap, str(ROOT / "src")]
+        help_result = subprocess.run(
+            [*command, "--help"], cwd=self.temporary.name, capture_output=True,
+            text=True, encoding="utf-8", timeout=15,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--state", help_result.stdout)
+        policy = Path(self.temporary.name) / "policy.json"
+        policy.write_text(json.dumps(self.policy), encoding="utf-8")
+        payload = dict(request=dict(operation="status", owner=dict(
+            pid=1, started="0000000000000000001")),
+            snapshot={**self.snapshot, "observed_at_ticks": time.time_ns()})
+        result = subprocess.run(
+            [*command, "--state", str(self.path), "--policy", str(policy)],
+            cwd=self.temporary.name, input=json.dumps(payload), capture_output=True,
+            text=True, encoding="utf-8", timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["records"], [])
+        self.assertTrue(self.path.is_file())
+
     def call(self, operation: str, pid: int = 1, **values: object) -> dict:
         request = dict(operation=operation, owner=dict(pid=pid, started="0000000000000000001"), **values)
         for _ in range(50):

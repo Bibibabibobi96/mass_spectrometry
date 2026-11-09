@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
+if TYPE_CHECKING:
+    from jsonschema import Draft202012Validator
+    from referencing import Registry
 
 from msplatform.io.file_identity import file_sha256
 
@@ -28,6 +29,9 @@ def load_json(path: Path) -> Any:
 @lru_cache(maxsize=1)
 def schema_registry() -> Registry:
     """Build the immutable repository schema registry once per Python process."""
+    from jsonschema import Draft202012Validator
+    from referencing import Registry, Resource
+
     registry = Registry()
     for path in sorted(SCHEMA_DIR.glob("*.schema.json")):
         schema = load_json(path)
@@ -45,6 +49,11 @@ def _schema_path(schema_name: str | Path) -> Path:
 
 @lru_cache(maxsize=None)
 def _schema_validator(schema_path: str) -> Draft202012Validator:
+    # Basic JSON/error/hash users (including the stdlib scheduler) do not need
+    # schema engines. Actual validation still requires the declared packages.
+    from jsonschema import Draft202012Validator
+    from referencing import Resource
+
     path = Path(schema_path)
     schema = load_json(path)
     Draft202012Validator.check_schema(schema)
