@@ -106,17 +106,6 @@
           ]
         },
         {
-          "id": "local_frontend_common_contracts_particle_count_policy_json",
-          "source_repo_path": "src/msplatform/contracts/particle_count_policy.json",
-          "consumers": [
-            "local_frontend",
-            "prepared_joint",
-            "accelerator_interface",
-            "cooled_frontend",
-            "oa_mr"
-          ]
-        },
-        {
           "id": "local_frontend_common_host_execution_lease_ps1",
           "source_repo_path": "common/host_execution_lease.ps1",
           "consumers": [
@@ -770,6 +759,17 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "msplatform_contracts_particle_count_policy_json",
+          "source_repo_path": "src/msplatform/contracts/particle_count_policy.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
         {
           "id": "msplatform_simion_export_paired_accelerator_field_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua",

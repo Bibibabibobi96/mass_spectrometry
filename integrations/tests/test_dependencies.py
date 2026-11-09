@@ -168,6 +168,15 @@ $f.import_roots|ConvertTo-Json -Compress
             roots = json.loads(result.stdout)
             self.assertEqual(roots, python_import_roots(snapshot))
             entries = load(output / 'code_inventory.json')['dependencies']
+            policy_relative = "src/msplatform/contracts/particle_count_policy.json"
+            policy_entries = [row for row in entries if row["source_repo_path"] == policy_relative]
+            self.assertEqual(len(policy_entries), 1)
+            self.assertEqual(policy_entries[0]["provider_scope"], "repository_core")
+            self.assertEqual(policy_entries[0]["provider_project"], "msplatform")
+            self.assertEqual(policy_entries[0]["id"], "msplatform_contracts_particle_count_policy_json")
+            self.assertEqual(policy_entries[0]["consumers"],
+                ["local_frontend", "prepared_joint", "accelerator_interface", "cooled_frontend", "oa_mr"])
+            self.assertEqual((snapshot/policy_relative).read_bytes(), (REPO_ROOT/policy_relative).read_bytes())
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
             expected = sorted(path.name for path in (REPO_ROOT/'src/msplatform').rglob('*.schema.json'))
@@ -177,10 +186,12 @@ $f.import_roots|ConvertTo-Json -Compress
 from pathlib import Path
 sys.path[:0]=json.loads(sys.argv[1])
 from msplatform.assembly import resolve_assembly
-from msplatform.contracts import machine_contracts
+from msplatform.contracts import machine_contracts, particle_count_policy
 root=Path(sys.argv[2]).resolve()
 assert Path(resolve_assembly.__file__).resolve().is_relative_to(root/'src')
 assert Path(machine_contracts.__file__).resolve().is_relative_to(root/'src')
+assert particle_count_policy.POLICY_PATH.resolve()==root/'src/msplatform/contracts/particle_count_policy.json'
+assert particle_count_policy.load_particle_count_policy()['standard_particle_counts']==[100,1000,5000]
 try: machine_contracts.validate_schema({}, 'assembly_recipe.schema.json')
 except machine_contracts.ContractError: pass
 else: raise AssertionError('invalid recipe accepted')
@@ -190,7 +201,8 @@ print('FROZEN_SRC_CORE=PASS')
             complete = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(complete.returncode, 0, complete.stdout + complete.stderr)
             for relative in ('src/msplatform/assembly/resolve_assembly.py',
-                             'src/msplatform/contracts/schemas/assembly_recipe.schema.json'):
+                             'src/msplatform/contracts/schemas/assembly_recipe.schema.json',
+                             'src/msplatform/contracts/particle_count_policy.json'):
                 target = snapshot / relative
                 payload = target.read_bytes()
                 target.unlink()
