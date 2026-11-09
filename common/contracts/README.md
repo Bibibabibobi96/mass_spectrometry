@@ -49,6 +49,21 @@ These tests do not constitute native solver qualification.
 抖动，不会把持续变化的源或坏副本降级为成功。
 复制身份校验失败的异常`Data`保留`source_path`、`destination_path`、`source_sha256`和`frozen_sha256`，
 适配器可复用这些实测身份生成诊断，无需额外哈希。
+
+The existing PowerShell copy owner now uses .NET file/directory existence checks
+for its already normalized source, destination and parent paths. Read-only
+replacement, the three SHA-256 checks, retry streams and returned failure/identity
+records retain their previous behavior. Focused behavior tests and the original
+six-scenario prepared-analysis parent passed with its unchanged 45-second Job
+budget. One public freezer case retained all 523 selected inputs and 493 derived
+records; its only changed source member is this reviewed helper implementation.
+The observed 5.355-second candidate versus a retained 7.851-second control is a
+single warm-cache, shared-machine observation, not an end-to-end speedup claim.
+This narrow change does not complete the remaining P4 copy-owner migration.
+Main-tree focused behavior and retry tests passed two parents in 1.272 seconds;
+PowerShell parsing and focused Ruff passed. All original retention test methods
+and the protected six-scenario parent are preserved.
+
 新run由公共`common/paths`解析并冻结源码、产物、执行根和主机库，说明见
 [运行根与执行表示](../paths/README.md#公共运行根与原生执行表示)。现有`New-RunPackage`
 在声明路径需要时自动创建既有短junction；`-UseShortExecutionPath`仍供已有显式调用兼容。

@@ -1265,12 +1265,12 @@ function Copy-VerifiedRunInput {
     [ref]$VerifiedIdentity
   )
   $sourcePath=[IO.Path]::GetFullPath($Source);$destinationPath=[IO.Path]::GetFullPath($Destination)
-  if(-not(Test-Path -LiteralPath $sourcePath -PathType Leaf)){throw "Run input is missing: $sourcePath"}
+  if(-not[IO.File]::Exists($sourcePath)){throw "Run input is missing: $sourcePath"}
   $parent=Split-Path -Parent $destinationPath
-  if(-not(Test-Path -LiteralPath $parent -PathType Container)){New-Item -ItemType Directory -Path $parent -Force|Out-Null}
+  if(-not[IO.Directory]::Exists($parent)){New-Item -ItemType Directory -Path $parent -Force|Out-Null}
   foreach($attempt in 1..$VerificationAttempts){
     $sourceHashBefore=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
-    if(Test-Path -LiteralPath $destinationPath -PathType Leaf){(Get-Item -LiteralPath $destinationPath).IsReadOnly=$false}
+    if([IO.File]::Exists($destinationPath)){(Get-Item -LiteralPath $destinationPath).IsReadOnly=$false}
     if($attempt-eq1){
       Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
     }else{

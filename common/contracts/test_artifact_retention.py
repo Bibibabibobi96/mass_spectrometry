@@ -619,6 +619,72 @@ class ArtifactRetentionTests(unittest.TestCase):
         )
         self.assertIn("'--execution-mode',$ExecutionMode", support)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_verified_input_copy_preserves_path_kinds_readonly_identity_and_retry(self) -> None:
+        support = REPO_ROOT / "common/contracts/run_artifact_support.ps1"
+        script = r'''param([string]$Support,[string]$Root)
+$ErrorActionPreference='Stop'
+. $Support
+$source=Join-Path $Root 'source file.txt'
+[IO.File]::WriteAllText($source,'original source')
+foreach($invalid in @((Join-Path $Root 'missing.txt'),$Root)){
+ $destination=Join-Path $Root 'not-created/output.txt';$failure=$null
+ try{$null=Copy-VerifiedRunInput -Source $invalid -Destination $destination}catch{$failure=$_}
+ if($null-eq$failure-or$failure.Exception.Message-cne("Run input is missing: "+[IO.Path]::GetFullPath($invalid))){throw 'Missing/nonfile source was not rejected'}
+ if(Test-Path (Split-Path -Parent $destination)){throw 'Rejected source created an output parent'}
+}
+$parentFile=Join-Path $Root 'parent-file';[IO.File]::WriteAllText($parentFile,'keep')
+$failure=$null
+try{$null=Copy-VerifiedRunInput -Source $source -Destination (Join-Path $parentFile 'output.txt')}catch{$failure=$_}
+if($null-eq$failure-or[IO.File]::ReadAllText($parentFile)-cne'keep'){throw 'File parent changed or was accepted as directory'}
+$directory=Join-Path $Root 'destination-directory';$null=New-Item -ItemType Directory -Path $directory
+$failure=$null
+try{$null=Copy-VerifiedRunInput -Source $source -Destination $directory}catch{$failure=$_}
+if($null-eq$failure-or-not[IO.Directory]::Exists($directory)){throw 'Directory destination was not rejected'}
+$destination=Join-Path $Root 'nested path/readonly output.txt'
+$null=New-Item -ItemType Directory -Path (Split-Path -Parent $destination)
+[IO.File]::WriteAllText($destination,'old');(Get-Item $destination).IsReadOnly=$true
+$identity=$null
+$actual=Copy-VerifiedRunInput -Source $source -Destination $destination -VerifiedIdentity ([ref]$identity)
+if($actual-cne[IO.Path]::GetFullPath($destination)-or[IO.File]::ReadAllText($destination)-cne'original source'-or(Get-Item $destination).IsReadOnly){throw 'Readonly replacement/Unicode path copy differs'}
+if($identity.path-cne$actual-or$identity.bytes-ne(Get-Item $source).Length-or$identity.sha256-cne(Get-FileHash $source -Algorithm SHA256).Hash){throw 'Verified output identity differs'}
+$script:changingSource=$source
+function Copy-Item {
+ param([string]$LiteralPath,[string]$Destination,[switch]$Force)
+ Microsoft.PowerShell.Management\Copy-Item @PSBoundParameters
+ [IO.File]::AppendAllText($script:changingSource,'changed')
+}
+$destination=Join-Path $Root 'changed-default.txt';$failure=$null;$identity=$null
+try{$null=Copy-VerifiedRunInput -Source $source -Destination $destination -VerifiedIdentity ([ref]$identity)}catch{$failure=$_}
+if($null-eq$failure-or$null-ne$identity){throw 'Default copy accepted changed source'}
+foreach($key in @('source_path','destination_path','source_sha256','frozen_sha256')){if(-not$failure.Exception.Data.Contains($key)){throw "Missing failed identity $key"}}
+if($failure.Exception.Data['source_sha256']-cne(Get-FileHash $source -Algorithm SHA256).Hash-or$failure.Exception.Data['frozen_sha256']-cne(Get-FileHash $destination -Algorithm SHA256).Hash){throw 'Failure did not retain actual measured hashes'}
+[IO.File]::WriteAllText($source,'retry source')
+$destination=Join-Path $Root 'source-change-retry.txt';$identity=$null
+$null=Copy-VerifiedRunInput -Source $source -Destination $destination -VerificationAttempts 2 -VerifiedIdentity ([ref]$identity)
+if([IO.File]::ReadAllText($source)-cne'retry sourcechanged'-or[IO.File]::ReadAllText($destination)-cne'retry sourcechanged'-or$identity.sha256-cne(Get-FileHash $source -Algorithm SHA256).Hash){throw 'Source-change retry did not copy actual stable source'}
+Remove-Item Function:Copy-Item
+function Copy-Item {
+ param([string]$LiteralPath,[string]$Destination,[switch]$Force)
+ Microsoft.PowerShell.Management\Copy-Item @PSBoundParameters
+ [IO.File]::AppendAllText($Destination,'bad destination')
+}
+$destination=Join-Path $Root 'destination-mismatch-retry.txt';$identity=$null
+$null=Copy-VerifiedRunInput -Source $source -Destination $destination -VerificationAttempts 2 -VerifiedIdentity ([ref]$identity)
+if([IO.File]::ReadAllText($source)-cne[IO.File]::ReadAllText($destination)-or$identity.sha256-cne(Get-FileHash $source -Algorithm SHA256).Hash){throw 'Destination-mismatch retry did not restore verified bytes'}
+Remove-Item Function:Copy-Item
+Write-Output 'VERIFIED_COPY_BEHAVIOR=PASS'
+'''
+        with tempfile.TemporaryDirectory(prefix="verified copy \u4e2d\u6587 ") as directory:
+            root = Path(directory)
+            command = root / "exercise.ps1"
+            command.write_text(script, encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(command),
+                "-Support", str(support), "-Root", str(root)], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("VERIFIED_COPY_BEHAVIOR=PASS", result.stdout)
+
     def test_verified_input_copy_can_retry_but_requires_three_way_hash_identity(self) -> None:
         support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
             encoding="utf-8-sig"
