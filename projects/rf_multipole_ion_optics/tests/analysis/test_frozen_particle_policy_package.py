@@ -34,7 +34,6 @@ RELATIVE_PATHS = (
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\generate_particle_table.py",
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\particle_source_policy.py",
     r"projects\rf_multipole_ion_optics\analysis\paired_particle_source_bundle.py",
-    r"src\msplatform\contracts\particle_count_policy.py",
     r"src\msplatform\contracts\particle_count_policy.json",
     r"common\contracts\file_identity.py",
     r"projects\rf_multipole_ion_optics\core\__init__.py",

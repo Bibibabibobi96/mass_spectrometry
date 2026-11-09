@@ -96,7 +96,6 @@ RELATIVE_PATHS = (
     "common/paths/resolve_path_identity.m",
     "common/contracts/file_identity.py",
     "src/msplatform/contracts/particle_count_policy.json",
-    "src/msplatform/contracts/particle_count_policy.py",
     "common/require_powershell7.ps1",
     "common/solidworks/import_step_to_solidworks.m",
     "common/solidworks/import_step_to_solidworks.py",

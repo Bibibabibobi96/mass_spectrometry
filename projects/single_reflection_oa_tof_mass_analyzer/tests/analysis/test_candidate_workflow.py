@@ -432,6 +432,29 @@ def execute_prepared_run(*args):
                     self.assertIn("deliberate software stage failure", completion["exception"]["message"])
 
 
+    def test_candidate_policy_has_one_canonical_source_and_resource_without_weakening_duplicate_guard(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
+        policy_source = "src/msplatform/contracts/particle_count_policy.py"
+        policy_resource = "src/msplatform/contracts/particle_count_policy.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            ids = [row["source_id"] for row in closure["sources"]]
+            self.assertEqual(len(ids), len(set(ids)))
+            for source_id in (policy_source, policy_resource):
+                with self.subTest(source=source_id):
+                    self.assertEqual(ids.count(source_id), 1)
+                    record = next(row for row in closure["sources"] if row["source_id"] == source_id)
+                    original = REPO_ROOT / source_id
+                    copied = Path(frozen_source_path(closure, source_id))
+                    self.assertEqual(copied.read_bytes(), original.read_bytes())
+                    self.assertEqual(record["source_sha256"], sha256(original))
+                    self.assertEqual(record["sha256"], sha256(copied))
+                    self.assertEqual(record["bytes"], original.stat().st_size)
+            with mock.patch.object(module, "RELATIVE_PATHS", (*module.RELATIVE_PATHS, policy_source)):
+                with self.assertRaisesRegex(ValueError, "duplicate candidate source id: " + policy_source):
+                    freeze_candidate_source_closure(root / "duplicate", root / "artifacts")
+
     def test_frozen_sources_import_managed_build_and_lifecycle_without_live_repo(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

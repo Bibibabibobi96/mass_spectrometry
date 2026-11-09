@@ -244,6 +244,11 @@ modules passed 26 of 27 parent tests (16.965 seconds); one existing optional T5 
 because `OATOF_THREE_ZONE_T5_RECEIPT` is unconfigured. Both executed subtests passed. The public
 refresh and validate commands passed, the refresh is idempotent, and non-authority fields are unchanged.
 
+Candidate source freezing selects the canonical particle-count module through the existing complete
+`src/msplatform` enumeration and its JSON resource exactly once. Redundant explicit module rows are
+removed without changing the selected unique files or their bytes. Duplicate-source rejection remains
+strict, including a regression that reinserts the redundant declaration and requires rejection.
+
 The Candidate and mass-spectrum cold launchers add the frozen `src` and root before importing
 the relocated source selector. Adding `src` after that import could leave an installed package cached;
 the existing module-origin assertions correctly rejected this P4 omission. The mass-spectrum regression

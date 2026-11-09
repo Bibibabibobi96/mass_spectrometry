@@ -145,7 +145,7 @@ class ParticleSourcePolicyTests(unittest.TestCase):
                 frozen_resolved,
             )
             shutil.copyfile(
-                REPO_ROOT / "common" / "contracts" / "particle_count_policy.json",
+                REPO_ROOT / "src" / "msplatform" / "contracts" / "particle_count_policy.json",
                 frozen_policy,
             )
             parent = run_dir / "parent.ion"
