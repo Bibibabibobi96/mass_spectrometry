@@ -327,11 +327,15 @@ for group in request["providers"]:
     packages, modules = group["python_packages"], group["python_modules"]
     if not packages and not modules:
         continue
+    # A sole package can include its declared resources in the same traversal.
+    # Mixed package selections retain their individual resource boundaries.
+    single_package = len(packages) == 1
     paths = set(enumerate_python_sources(pathlib.Path(request["source_root"]),
         package_roots=[row["source_repo_path"] for row in packages],
         module_paths=[row["source_repo_path"] for row in modules],
-        provider_root=group["provider_repo_path"]))
-    for row in packages:
+        provider_root=group["provider_repo_path"],
+        resource_suffixes=packages[0].get("resource_suffixes", ()) if single_package else ()))
+    for row in (() if single_package else packages):
         if "resource_suffixes" in row:
             paths.update(enumerate_python_sources(pathlib.Path(request["source_root"]),
                 package_roots=[row["source_repo_path"]], provider_root=group["provider_repo_path"],

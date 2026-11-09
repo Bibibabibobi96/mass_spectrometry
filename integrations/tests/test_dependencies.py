@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import hashlib
 import json
 import os
@@ -10,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from msplatform.execution.inputs import python_import_roots
 
@@ -28,6 +31,75 @@ def load(path: Path) -> dict:
 
 
 class DependencyTests(unittest.TestCase):
+    def test_dependency_enumerator_single_package_resources_preserve_exact_inventory(self) -> None:
+        from msplatform.execution.inputs import enumerate_python_sources
+
+        body = DEPENDENCIES.read_text(encoding="utf-8").split("  $enumerator = @'\n", 1)[1].split("\n'@", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("__init__.py", "a/__init__.py", "a/code.py", "a/model.schema.json",
+                         "a/not_selected.txt", "b/__init__.py", "b/code.py", "b/not_selected.schema.json",
+                         "b/selected.txt"):
+                target = root / "src/pkg" / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("{}", encoding="utf-8")
+            selections = [dict(source_repo_path="src/pkg/a", consumers=["first"], resource_suffixes=[".schema.json"]),
+                          dict(source_repo_path="src/pkg/b", consumers=["second"], resource_suffixes=[".txt"])]
+            for packages, expected_calls in ((selections[:1], 1), (selections, 3)):
+                with self.subTest(package_count=len(packages)):
+                    group = dict(provider_scope="repository_core", provider_project="pkg", provider_repo_path="src/pkg",
+                                 python_packages=packages, python_modules=[])
+                    request = dict(source_root=str(root), providers=[group])
+                    expected_paths = set(enumerate_python_sources(root,
+                        package_roots=[row["source_repo_path"] for row in packages], provider_root="src/pkg"))
+                    for row in packages:
+                        expected_paths.update(enumerate_python_sources(root, package_roots=[row["source_repo_path"]],
+                            provider_root="src/pkg", resource_suffixes=row["resource_suffixes"]))
+                    expected = []
+                    for path in sorted(expected_paths):
+                        source = Path(path)
+                        consumers = set()
+                        for row in packages:
+                            selected = Path(row["source_repo_path"])
+                            if (source == selected or selected in source.parents
+                                    or (source.name == "__init__.py" and source.parent in (selected, *selected.parents))):
+                                consumers.update(row["consumers"])
+                        expected.append({key: group[key] for key in ("provider_scope", "provider_project", "provider_repo_path")}
+                            | dict(id=("python:" if path.endswith(".py") else "resource:") + path,
+                                   source_repo_path=path, consumers=sorted(consumers)))
+                    output = io.StringIO()
+                    with mock.patch.object(sys, "argv", ["enumerator", str(REPO_ROOT)]), \
+                         mock.patch.object(sys, "stdin", io.StringIO(json.dumps(request))), \
+                         contextlib.redirect_stdout(output), \
+                         mock.patch("msplatform.execution.inputs.enumerate_python_sources", wraps=enumerate_python_sources) as enumerate_sources:
+                        exec(compile(body, "dependency-enumerator", "exec"), {})
+                    self.assertEqual(json.loads(output.getvalue()), expected)
+                    self.assertEqual(enumerate_sources.call_count, expected_calls)
+                    self.assertNotIn("src/pkg/a/not_selected.txt", expected_paths)
+                    self.assertNotIn("src/pkg/b/not_selected.schema.json", expected_paths)
+
+    def test_dependency_enumerator_optimized_route_keeps_missing_overlap_and_containment_errors(self) -> None:
+        body = DEPENDENCIES.read_text(encoding="utf-8").split("  $enumerator = @'\n", 1)[1].split("\n'@", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src/pkg/a").mkdir(parents=True)
+            (root / "src/pkg/a/code.py").write_text("VALUE = 1\n", encoding="utf-8")
+            cases = [(["src/pkg/missing"], [], FileNotFoundError),
+                     (["src/pkg/a"], ["src/pkg/missing.py"], FileNotFoundError),
+                     (["src/pkg/a"], ["src/pkg/a/code.py"], ValueError),
+                     (["src/pkg"], [], ValueError)]
+            for package_paths, module_paths, error in cases:
+                with self.subTest(packages=package_paths, modules=module_paths):
+                    group = dict(provider_scope="repository_core", provider_project="pkg", provider_repo_path="src/pkg/a",
+                        python_packages=[dict(source_repo_path=value, consumers=["first"], resource_suffixes=[".schema.json"])
+                                         for value in package_paths],
+                        python_modules=[dict(source_repo_path=value, consumers=["first"]) for value in module_paths])
+                    request = dict(source_root=str(root), providers=[group])
+                    with mock.patch.object(sys, "argv", ["enumerator", str(REPO_ROOT)]), \
+                         mock.patch.object(sys, "stdin", io.StringIO(json.dumps(request))), \
+                         contextlib.redirect_stdout(io.StringIO()), self.assertRaises(error):
+                        exec(compile(body, "dependency-enumerator", "exec"), {})
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_frozen_legacy_process_loader_requires_its_canonical_dispatch_body(self) -> None:
         with tempfile.TemporaryDirectory(prefix="frozen PS dispatch 工作 ") as directory:

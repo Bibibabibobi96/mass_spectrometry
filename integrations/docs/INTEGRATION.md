@@ -822,3 +822,29 @@ acceptance with the subsequent analyzer and beam slices; those later slices are
 recorded separately. No repeated full gate or native execution is claimed here.
 Official CLOC 2.10, e0ae4690 to this slice: total +26, production +11, tests +15,
 zero unclassified; full language counts and filtering are retained in task evidence.
+
+### Dependency source enumeration
+
+A provider selecting one Python package now includes that package's explicitly
+declared resource suffixes in its first existing source-enumerator call. Mixed
+package selections retain their separate resource boundaries. The selected source
+inventory, consumer identities and verified-copy source-before/source-after/destination
+hashes are unchanged. The original isolated comparison retained 491 ordered records. On the admitted
+continuation54 snapshot, all nine consumers retain exactly the same ordered derived
+records; prepared-joint has 495 and requires seven enumeration calls instead of eight.
+
+The original isolated validation passed its two equivalence/error tests; its unchanged
+public prepared-analysis parent passed all six scenarios in 143.368 seconds with its original 45-second
+per-scenario deadline and owned-Job cleanup assertions. This removes a duplicated
+walk; it does not establish a measured end-to-end speedup or close the whole-gate
+performance target. No native solver was executed.
+
+Root's two equivalence/error methods passed in 0.066 s. The integrated immutable
+checkpoint also retained all 19 previous dependency-test bodies and passed the
+unchanged six-scenario public fixture in 136.079 s, with its original 45-second
+deadlines and owned-Job cleanup. All nine active consumer inventories matched;
+the prepared-joint inventory at that checkpoint is 495 derived records. The old
+491-record figure above describes the earlier baseline. No new end-to-end speedup
+or full-Repository/performance acceptance follows from these measurements.
+Official CLOC 2.10, 715a6483 to this slice: total +71, production +2, tests +69,
+zero unclassified; full language counts/filter remain in task evidence.
