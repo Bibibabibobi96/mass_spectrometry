@@ -25,7 +25,7 @@ from msplatform.execution.run_capacity_lifecycle import (
     seal_checkpoint,
     reseal_retired_payload,
 )
-from common.contracts.solver_review_retirement import (
+from msplatform.execution.solver_review_retirement import (
     RECEIPT_NAME, apply_retirement, plan_retirement,
 )
 
@@ -173,7 +173,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         register_writing(root, config)
         seal_checkpoint(root, config, owner="p", writing_stopped=True, retain_payload=True,
                         retention_reason="retain failed preparation evidence")
-        with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+        with patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
             plan = plan_retirement(root, root, run, owner="p",
                                    owner_abandonment_reason="abandoned duplicate; original remains",
                                    selected_heavy_paths=["field.pa"] if additional_payload else None)
@@ -298,7 +298,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             before_ledger = load_capacity_ledger(root)
             before = {name: (run / name).read_bytes() for name in (
                 RECEIPT_NAME, "run_config.json", "summary.json", "run_manifest.json")}
-            with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+            with patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
                 plan = plan_retirement(root, root, run, owner="p",
                     owner_abandonment_reason="second field no longer needed", selected_heavy_paths=["second.pa"])
                 with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
@@ -393,7 +393,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                       retention_reason="retain user workbench")
         seal_checkpoint(root, config, **kwargs)
         original_entry = dict(load_capacity_ledger(root)["objects"][0])
-        with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+        with patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
             plan = (fixture._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
                     if owner_exit else fixture._gui_plan())
             with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
@@ -511,7 +511,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         register_writing(root, config)
         seal_checkpoint(root, config, owner="p", writing_stopped=True, retain_payload=True,
                         retention_reason="private runtime retained for owner handoff")
-        with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+        with patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
             plan = plan_retirement(root, root, run, owner="p",
                                    owner_abandonment_reason="old runtime experiment explicitly closed",
                                    runtime_checkpoint_path=checkpoint, writing_stopped=True)

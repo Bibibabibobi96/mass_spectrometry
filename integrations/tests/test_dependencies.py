@@ -335,9 +335,9 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             code = '''
 import sys
 from pathlib import Path
-from common.contracts import capacity_ledger, solver_review_retirement, verify_artifact_layout
+from common.contracts import capacity_ledger, verify_artifact_layout
 from common.contracts import gui_source_protection
-from msplatform.execution import artifact_cache_contract
+from msplatform.execution import artifact_cache_contract, solver_review_retirement
 root=Path(sys.argv[1]).resolve()
 for module in (capacity_ledger,solver_review_retirement,verify_artifact_layout,artifact_cache_contract,gui_source_protection):
     Path(module.__file__).resolve().relative_to(root)
@@ -750,7 +750,7 @@ Write-Output 'FROZEN_DEPENDENCIES=PASS'
             env["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             statement = ("from integrations.workflows.local_frontend "
                          "import prepare,runtime,analyze; from integrations.runtime "
-                         "import standalone_pa_family; from common.contracts import run_capacity_lifecycle; "
+                         "import standalone_pa_family; from msplatform.execution import run_capacity_lifecycle;"
                          "assert prepare.ROLE=='instrument_assembly_local_frontend_request'; print('LOCAL_SNAPSHOT_IMPORT=PASS')")
             completed = subprocess.run([sys.executable, "-s", "-c", statement], cwd=snapshot, env=env,
                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)

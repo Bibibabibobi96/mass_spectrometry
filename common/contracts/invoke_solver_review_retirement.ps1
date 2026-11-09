@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\host_execution_lease.ps1')
 $python = Join-Path $RepositoryRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { $python = 'python' }
-$arguments = @('-m','common.contracts.solver_review_retirement','--artifact-root',$ArtifactRoot,
+$arguments = @('-m','msplatform.execution.solver_review_retirement','--artifact-root',$ArtifactRoot,
   '--repository-root',$RepositoryRoot,'--target-run',$TargetRun)
 if($RepairPreservedFile){
   if(-not$Owner.Trim()-or-not$ConfirmWritingStopped-or-not$RepairEvidenceRun-or

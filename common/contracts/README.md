@@ -366,7 +366,7 @@ MR原生场provider、IP私有GUI准备和oaTOF跨求解器诊断在同次完整
 
 ### 精确恢复与旧载荷处置
 
-普通owner通过`solver_review_retirement.py`精确选择重型文件后，可在后续需求结束时继续退役另一个不相交子集。
+普通owner通过`msplatform.execution.solver_review_retirement`精确选择重型文件后，可在后续需求结束时继续退役另一个不相交子集。
 首份`solver_review_retirement_receipt.json`保持原字节；后续使用`solver_review_retirement_receipt_0002.json`等
 顺序收据，绑定上一份收据身份、同一原manifest及owner。上一批须完成并通过`seal-stopped-payload`精确收尾后
 才允许新批次；pending只能恢复原选择，不创建下一批。planner、apply、verifier和容量reseal共用同一收据选择器。
@@ -681,7 +681,7 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 
 ### solver_review 被取代后的重型载荷退休
 
-`solver_review_retirement.py`是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
+[`msplatform.execution.solver_review_retirement`](../../src/msplatform/execution/solver_review_retirement.py)是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
 求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
 `invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
 和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的同名输入角色；历史角色改名则用
@@ -732,7 +732,7 @@ owner须确认其writer及子进程均已停止，plan/receipt冻结各自小证
 后续实际inventory、轻证据预算及无重载荷检查不变，不补造普通receipt，不改原科学终态或manifest。
 
 已明确停止写入、被更新 GUI 准备包取代的未飞行 `solver_review` checkpoint 可在同一
-`solver_review_retirement.py` plan/apply 入口显式提供 `--prepared-gui-checkpoint
+`msplatform.execution.solver_review_retirement` plan/apply 入口显式提供 `--prepared-gui-checkpoint
 --confirm-writing-stopped`。默认为 supersession：两端必须是 `checkpoint` manifest、
 `gui_replay_prepared` summary，以及具名 `native_gui_replay`、私有 Refine/IOB 未飞行合同；
 GUI Fly 和轨迹一致性标记必须为 false。两端须保留绑定的 GEM、IOB、连续编号 PA family 和

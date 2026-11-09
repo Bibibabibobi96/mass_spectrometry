@@ -985,9 +985,9 @@ function Invoke-StagedComposeRetirement {
     }
   }
   $finalized=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m common.contracts.solver_review_retirement --verify $Owner.provider_run | Out-Host
+    & $python -m msplatform.execution.solver_review_retirement --verify $Owner.provider_run | Out-Host
     if($LASTEXITCODE-ne0){throw 'Staged compose public retirement verification failed.'}
-    $result=@(& $python -m common.contracts.run_capacity_lifecycle --action finalize-ready --artifact-root $artifactWorkspaceRoot --run-config (Join-Path $Owner.provider_run 'run_config.json'))
+    $result=@(& $python -m msplatform.execution.run_capacity_lifecycle --action finalize-ready --artifact-root $artifactWorkspaceRoot --run-config (Join-Path $Owner.provider_run 'run_config.json'))
     if($LASTEXITCODE-ne0){throw 'Staged compose public retirement finalize failed.'}
     return (($result-join"`n")|ConvertFrom-Json -AsHashtable)
   }

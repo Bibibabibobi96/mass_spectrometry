@@ -392,13 +392,13 @@ class GuiReplayPlanTests(unittest.TestCase):
         for path in (self.baseline / "simion").glob("processor.pa*"):
             path.unlink()
         (self.baseline / "solver_review_retirement_receipt.json").write_text("{}", encoding="utf-8")
-        with patch("common.contracts.solver_review_retirement.verify_retirement", return_value={"status": "PASS"}) as verify:
+        with patch("msplatform.execution.solver_review_retirement.verify_retirement", return_value={"status": "PASS"}) as verify:
             plan = self.prepare_native()
             verify.assert_called_once_with(self.baseline)
         self.assertTrue(plan["baseline_retirement_verified"])
         self.assertFalse(plan["source_PA_bytes_consumed"])
         self.assertEqual(len(plan["expected_native_members"]), 18)
-        with patch("common.contracts.solver_review_retirement.verify_retirement", side_effect=ValueError("receipt invalid")):
+        with patch("msplatform.execution.solver_review_retirement.verify_retirement", side_effect=ValueError("receipt invalid")):
             with self.assertRaisesRegex(ValueError, "receipt invalid"):
                 validate_baseline_for_private_gui(self.baseline)
 
@@ -568,7 +568,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.publish_manifest()
         for path in (self.baseline / "simion").glob("processor.pa*"):
             path.unlink()  # Inert test bytes only, not solver payload.
-        with patch("common.contracts.solver_review_retirement.verify_retirement", return_value={"status": "PASS"}):
+        with patch("msplatform.execution.solver_review_retirement.verify_retirement", return_value={"status": "PASS"}):
             plan = self.prepare_native()
         self.assertTrue(plan["baseline_retirement_verified"])
         report = json.loads((self.run / "results/native_field_preparation_comparison.json").read_text())

@@ -441,7 +441,7 @@ def execute_prepared_run(*args):
             imports = (
                 "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "
                 "from projects.single_reflection_oa_tof_mass_analyzer.analysis import simion_component_pa_plan; "
-                "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger, solver_review_retirement; "
+                "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger; from msplatform.execution import solver_review_retirement; "
                 "solver_review_retirement._assert_runtime_retirement_unprotected(Path.cwd()/'empty-artifacts', Path.cwd()/'empty-artifacts/run'); "
                 "from msplatform.analysis import peak_metrics; check_frozen_core(); "
                 "assert Path(peak_metrics.__file__).resolve().is_relative_to(source_root/'src'); "

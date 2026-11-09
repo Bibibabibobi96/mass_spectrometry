@@ -623,6 +623,7 @@ for name in (
     'common.contracts.legacy_capacity_backfill',
     'common.contracts.reconcile_interrupted_compact_runs',
     'common.contracts.solver_review_retirement',
+    'msplatform.execution.solver_review_retirement',
     'common.contracts.artifact_retention',
     'common.contracts.verify_run_manifest',
 ):

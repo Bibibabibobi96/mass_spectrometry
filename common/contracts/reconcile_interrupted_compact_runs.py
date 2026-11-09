@@ -24,7 +24,7 @@ from common.contracts.artifact_retention import (
     load_run_retention,
 )
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.solver_review_retirement import _downstream_references
+from msplatform.execution.solver_review_retirement import _downstream_references
 
 
 TERMINAL_RECONCILABLE_STATUSES = frozenset({"failed", "interrupted"})

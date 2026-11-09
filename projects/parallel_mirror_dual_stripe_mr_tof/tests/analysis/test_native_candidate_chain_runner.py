@@ -143,7 +143,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         materialization = json.loads(materialization_path.read_text())
         historical_field = runs / "20261014_064108__sim__simion__converging-joint-ps-workpoint__r02-stage-020-field"
         if (historical_field / "solver_review_retirement_receipt.json").exists():
-            from common.contracts.solver_review_retirement import verify_retirement
+            from msplatform.execution.solver_review_retirement import verify_retirement
             # Only this known optional historical asset may be absent after its
             # owner-approved retirement; malformed evidence must still fail.
             self.assertEqual(Path(materialization["field_binding"]["manifest"]).resolve().parent,

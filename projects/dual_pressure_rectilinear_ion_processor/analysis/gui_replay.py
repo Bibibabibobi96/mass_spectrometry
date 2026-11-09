@@ -37,7 +37,7 @@ def validate_baseline_for_private_gui(baseline_run: Path) -> dict:
     receipt_path = baseline_run / "solver_review_retirement_receipt.json"
     retired = receipt_path.is_file()
     if retired:
-        from common.contracts.solver_review_retirement import verify_retirement
+        from msplatform.execution.solver_review_retirement import verify_retirement
         if verify_retirement(baseline_run).get("status") != "PASS":
             raise ValueError("baseline retirement verification failed")
     records = list(manifest.get("inputs", {}).values()) + list(manifest.get("outputs", []))

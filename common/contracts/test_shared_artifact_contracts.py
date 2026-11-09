@@ -25,7 +25,7 @@ from pathlib import Path
 sys.modules['common.contracts.verify_artifact_layout']=None
 sys.modules['common.contracts.reconcile_artifact_capacity']=None
 from common.contracts import capacity_ledger, legacy_capacity_calibration
-from common.contracts.solver_review_retirement import _assert_runtime_retirement_unprotected
+from msplatform.execution.solver_review_retirement import _assert_runtime_retirement_unprotected
 with tempfile.TemporaryDirectory() as temporary:
     root=Path(temporary)
     _assert_runtime_retirement_unprotected(root,root/'projects/p/runs/source')

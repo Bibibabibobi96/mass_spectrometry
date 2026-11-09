@@ -206,6 +206,11 @@ run/archive/task ID、时间格式与manifest身份不变。
 writer、容量、容量lease与manifest保护不变。锁内退休核验复用同一lease快照，owner保留原分类器回调。
 Repository-specific misplaced-run recovery remains with `common.contracts.legacy_owner_disposition`,
 where its full repository manifest verifier is available; installed lifecycle code does not import that owner.
+The duplicate repository solver-review retirement implementation is retired. The existing PowerShell
+resource wrapper and repository reconciliation call the canonical execution owner; receipts, leases,
+writer proofs and retirement identities remain unchanged. Its original common and IP/MR regression
+scope passed 283 of 284 parent methods, with one existing retired-historical-PA skip. Actual cold
+retirement imports and the nine-path Changed routing check passed separately after consumer migration.
 PA cache、continuation、dispatch、frozen-input与artifact-naming的包级导入、冻结source、CLI及fixture残留同步迁移；
 OA acceptance snapshots bind the actual package initializers and neutral identity implementation;
 cold-reader checks reject missing frozen code even with a competing installed package.

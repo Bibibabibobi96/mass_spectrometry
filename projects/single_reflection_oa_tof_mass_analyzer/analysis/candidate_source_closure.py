@@ -46,8 +46,6 @@ RELATIVE_PATHS = (
     "common/contracts/historical_source_scratch_retirement.py",
     "common/contracts/legacy_owner_disposition.py",
     "common/contracts/reconcile_artifact_capacity.py",
-    "common/contracts/run_capacity_lifecycle.py",
-    "common/contracts/solver_review_retirement.py",
     "common/contracts/stage_reuse.py",
     "common/contracts/validate_design_request.py",
     "common/contracts/verify_artifact_layout.py",
