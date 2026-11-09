@@ -76,27 +76,50 @@ def geometry_grid(resolved: dict[str, Any], numerics: dict[str, Any]) -> dict[st
     mmgu = float(cell["x"])
     if not math.isfinite(mmgu) or mmgu <= 0:
         raise ValueError("SIMION cell size must be positive and finite")
+    counts = numerics["pa"]["grid_points_xyz"]
+    if not isinstance(counts, dict) or set(counts) != set("xyz") or any(
+        type(counts[axis]) is not int or counts[axis] < 3 for axis in "xyz"
+    ):
+        raise ValueError("PA grid_points_xyz must contain integer counts of at least three")
+    offsets = device_to_workbench_offsets(numerics)
+    spans = tuple((counts[axis] - 1) * mmgu for axis in "xyz")
     geometry = resolved["geometry_mm"]
     radius = float(geometry["low_pressure_enclosure"]["radius_mm"])
-    observation_end = float(geometry["downstream_aperture_plate"]["downstream_observation_end_z_mm"])
-    transverse_span = 2.0 * (radius + 2.0)
-    z_min = -2.0
-    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
-    if not math.isclose(offset_x, 0.5 * transverse_span) or not math.isclose(offset_y, 0.5 * transverse_span):
-        raise ValueError("SIMION transverse offsets must center the governed PA span")
-    if not math.isclose(offset_z, -z_min):
-        raise ValueError("SIMION axial offset must place the governed upstream plane at zero")
-    extents = (transverse_span, transverse_span, observation_end - z_min)
-    sizes = [extent / mmgu + 1 for extent in extents]
-    if any(not math.isfinite(value) or value < 3 or not value.is_integer() for value in sizes):
-        raise ValueError("SIMION domain extents must define an integer grid of at least three nodes")
-    return {"nx": int(sizes[0]), "ny": int(sizes[1]), "nz": int(sizes[2]), "dx_mm": mmgu, "dy_mm": mmgu, "dz_mm": mmgu}
+    bounds = []
+    for name in ("first_cone", "second_cone"):
+        cone = geometry[name]
+        bounds.append(((-radius, radius), (-radius, radius),
+                       (float(cone["aperture_reference_z_mm"]),
+                        float(cone["theoretical_base_z_at_enclosure_radius_mm"]))))
+    plate = geometry["downstream_aperture_plate"]
+    pr = float(plate["outer_radius_mm"])
+    bounds.append(((-pr, pr), (-pr, pr),
+                   (float(plate["upstream_face_z_mm"]), float(plate["downstream_face_z_mm"]))))
+    for name in ("stage_1_elliptical_quadrupole", "stage_2_round_quadrupole"):
+        for rod in geometry[name]["rod_array"]["rods"]:
+            if "radius_mm" in rod:
+                ex = ey = float(rod["radius_mm"])
+            else:
+                a, b, angle = (float(rod[key]) for key in
+                               ("semi_major_axis_mm", "semi_minor_axis_mm", "major_axis_angle_rad"))
+                ex = math.hypot(a * math.cos(angle), b * math.sin(angle))
+                ey = math.hypot(a * math.sin(angle), b * math.cos(angle))
+            x, y = float(rod["center_x_mm"]), float(rod["center_y_mm"])
+            bounds.append(((x-ex, x+ex), (y-ey, y+ey),
+                           (float(rod["z_min_mm"]), float(rod["z_max_mm"]))))
+    for body in bounds:
+        for (lo, hi), offset, span in zip(body, offsets, spans, strict=True):
+            if not all(math.isfinite(v) for v in (lo, hi, span)) or lo > hi or lo+offset < 0 or hi+offset > span:
+                raise ValueError("declared metal geometry lies outside the explicit PA grid")
+    return {"nx": counts["x"], "ny": counts["y"], "nz": counts["z"],
+            "dx_mm": mmgu, "dy_mm": mmgu, "dz_mm": mmgu}
 
 
 def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
     grid = geometry_grid(resolved, numerics)
     mmgu = grid["dx_mm"]
     transverse_span = (grid["nx"] - 1) * mmgu
+    transverse_y_span = (grid["ny"] - 1) * mmgu
     axial_span = (grid["nz"] - 1) * mmgu
     geometry = resolved["geometry_mm"]
     radius = float(geometry["low_pressure_enclosure"]["radius_mm"])
@@ -107,7 +130,7 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
         "; C0 limitation: stage-1 upstream faces are flat at the minimum resolved z.",
         "; The cone-following cut remains blocked pending a governed project CSG mask.",
         f"# local mmgu = {_number(mmgu)}",
-        f"pa_define($({_number(transverse_span)}/mmgu+1),$({_number(transverse_span)}/mmgu+1),$({_number(axial_span)}/mmgu+1),"
+        f"pa_define($({_number(transverse_span)}/mmgu+1),$({_number(transverse_y_span)}/mmgu+1),$({_number(axial_span)}/mmgu+1),"
         "planar,non-mirror,electric,,$(mmgu),surface=fractional)",
         "",
         f"locate({_number(offset_x)},{_number(offset_y)},{_number(offset_z)}) {{",

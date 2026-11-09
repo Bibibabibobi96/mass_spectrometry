@@ -95,7 +95,7 @@ def plan_geometry_stage(*, resolved: Mapping, numerics: Mapping, placement=None)
     # Retain only the actual geometry authority; unrelated trajectory or Refine
     # choices are not part of the geometry identity or a required input section.
     selected = dict(
-        pa={name: copy.deepcopy(numerics["pa"][name]) for name in ("cell_mm_xyz", "surface_enhancement", "symmetry")},
+        pa={name: copy.deepcopy(numerics["pa"][name]) for name in ("cell_mm_xyz", "grid_points_xyz", "surface_enhancement", "symmetry")},
         workbench=copy.deepcopy(numerics["workbench"]),
         role=numerics["role"],
         schema_version=numerics["schema_version"],
@@ -276,7 +276,7 @@ def _record_identity(record):
 def require_field_numerics(model: Mapping, numerics: Mapping) -> dict:
     """Refine controls cannot silently redefine an already published raw domain."""
     geometry = model["geometry"]["numerics"]
-    for name in ("cell_mm_xyz", "surface_enhancement", "symmetry"):
+    for name in ("cell_mm_xyz", "grid_points_xyz", "surface_enhancement", "symmetry"):
         if name in numerics["pa"] and numerics["pa"][name] != geometry["pa"][name]:
             raise ValueError("field numerics cannot redefine selected geometry " + name)
     if "workbench" in numerics and numerics["workbench"] != geometry["workbench"]:

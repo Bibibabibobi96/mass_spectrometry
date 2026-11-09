@@ -4,6 +4,7 @@
   "project_id": "dual_cone_tandem_quadrupole_ion_interface",
   "solver": "SIMION 8.1 or newer",
   "pa": {
+    "grid_points_xyz": {"x": 103, "y": 103, "z": 245},
     "cell_mm_xyz": {"x": 0.5, "y": 0.5, "z": 0.5},
     "surface_enhancement": "fractional",
     "symmetry": "planar_no_mirror",

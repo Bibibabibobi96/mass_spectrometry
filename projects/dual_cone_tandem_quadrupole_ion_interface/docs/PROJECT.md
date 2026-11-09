@@ -461,3 +461,7 @@ rejected before native writes. This is software proof; no subsequent native Fly
 or transport qualification is implied by the correction.
 
 Callback completeness: the installed Program now explicitly enables official SIMION global callbacks, retaining outside-PA terminal states as unknown code 0 and existing SDS support-loss code 3 with per-particle deduplication. The actual-Lua dispatcher regression reproduces missing coverage before the fix and complete terminal census after it. SDS8.1.2.7 excludes instance 0 from collision acceleration/diffusion; no external electric/magnetic field is supplied. This software proof is not native Fly qualification; the two earlier native failures remain unchanged.
+
+### Explicit PA grid authority
+
+Current numerical inputs explicitly select pa.grid_points_xyz and cell_mm_xyz. Actual spans are (N-1)*cell; numerical array embedding is independent of world placement. Symmetric margins and exact span/cell tiling are not required. Default103/103/245 preserves default GEM bytes. Full metal containment is checked; source/observation coverage belongs to consumption stages. Counts/cell/embedding bind geometry/model/basis identities, while source/cadence remain independent. Missing counts reject without supplementation. Historical inputs/results remain unchanged; no native qualification is inferred.

@@ -133,7 +133,11 @@ def _render_run_config(
     plate = resolved["geometry_mm"]["downstream_aperture_plate"]
     pa_cell_z = float(numerics["pa"]["cell_mm_xyz"]["z"])
     terminal_device_z = float(plate["downstream_observation_end_z_mm"]) - 0.5 * pa_cell_z
+    from .dual_cone_geometry import geometry_grid
+    grid = geometry_grid(resolved, numerics)
     offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
+    if not 0 <= terminal_device_z + offset_z <= (grid["nz"] - 1) * grid["dz_mm"]:
+        raise ValueError("observation plane lies outside the explicit PA grid")
     terminal_workbench_z = terminal_device_z + offset_z
     return "\n".join(
         [
@@ -223,7 +227,6 @@ def _materialize_gas_source(
     spec = _load(source_spec_path, "repository_ion_release")
     geometry = spec["geometry"]
     radius = float(geometry["radius_mm"])
-    z_min = float(geometry["center_mm"][2]) - 0.5 * float(geometry["height_mm"])
     z_max = float(geometry["center_mm"][2]) + 0.5 * float(geometry["height_mm"])
     first_cone = resolved["geometry_mm"]["first_cone"]
     plenum_radius = float(gas_science["geometry_proxy"]["upstream_plenum_radius_mm"])
@@ -234,7 +237,7 @@ def _materialize_gas_source(
                                 and registration.translation_mm == (0.,0.,0.)):
         if radius > plenum_radius:
             raise ValueError("cylindrical source radius exceeds the upstream plenum")
-        if z_min < -2.0 or z_max >= float(first_cone["aperture_reference_z_mm"]):
+        if z_max >= float(first_cone["aperture_reference_z_mm"]):
             raise ValueError("cylindrical source must remain upstream of the first cone inside the PA")
 
     source_csv = frozen / "cylindrical_ion_source.csv"
@@ -251,7 +254,7 @@ def _materialize_gas_source(
     grid = geometry_grid(resolved, numerics)
     for index, row in enumerate(source_rows):
         local = [float(local_rows[index]["position_"+axis+"_mm"]) if local_rows is not None else float(row[axis+"_mm"]) for axis in "xyz"]
-        if (math.hypot(local[0], local[1]) > plenum_radius or local[2] < -2.
+        if (math.hypot(local[0], local[1]) > plenum_radius
                 or local[2] >= float(first_cone["aperture_reference_z_mm"])):
             raise ValueError("projected source is outside the device-local upstream plenum")
         for axis, value, offset in zip("xyz", local, (offset_x, offset_y, offset_z), strict=True):
@@ -356,6 +359,13 @@ def prepare_transport(
         if mode == "gas_assisted_transport":
             source_placement(resolved, numerics, _load(source_spec_path, "repository_ion_release"),
                              placement=placement, source_to_device=source_to_device)
+    if mode == "c0_gem_smoke":
+        from .dual_cone_geometry import geometry_grid
+        grid = geometry_grid(resolved, numerics)
+        offsets = device_to_workbench_offsets(numerics)
+        for axis, local, offset in zip("xyz", (0., 0., -1.), offsets, strict=True):
+            if not 0 <= local + offset <= (grid["n"+axis] - 1) * grid["d"+axis+"_mm"]:
+                raise ValueError("C0 source lies outside the explicit PA grid")
     from msplatform.backends.simion.resources import native_resource_path
 
     program = native_resource_path("dual_cone_gas_assisted_transport.lua")

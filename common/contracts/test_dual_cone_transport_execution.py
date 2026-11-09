@@ -37,21 +37,93 @@ class TransportPlanTests(unittest.TestCase):
         cell.update(x=0.25, y=0.25, z=0.25)
         offsets = values["numerics"]["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
         offsets.update(x=26.5, y=26.5)
+        values["numerics"]["pa"]["grid_points_xyz"] = dict(x=213, y=213, z=489)
         gem = render_gem(values["resolved"], values["numerics"])
         self.assertIn("pa_define($(53/mmgu+1),$(53/mmgu+1)", gem)
 
     def test_geometry_grid_rejects_invalid_cells_and_mismatched_offset(self):
         from msplatform.backends.simion.dual_cone_geometry import geometry_grid
 
-        for patch in ({"x": 0}, {"x": 0.5, "y": 1}, {"x": 0.7, "y": 0.7, "z": 0.7}):
+        for patch in ({"x": 0}, {"x": 0.5, "y": 1}):
             values = request()
             values["numerics"]["pa"]["cell_mm_xyz"].update(patch)
             with self.subTest(patch=patch), self.assertRaises(ValueError):
                 geometry_grid(values["resolved"], values["numerics"])
         values = request()
         values["resolved"]["geometry_mm"]["low_pressure_enclosure"]["radius_mm"] = 24.5
-        with self.assertRaisesRegex(ValueError, "offsets"):
+        values["numerics"]["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]["x"] = 23
+        with self.assertRaisesRegex(ValueError, "metal geometry"):
             geometry_grid(values["resolved"], values["numerics"])
+
+    def test_explicit_grid_freedom_and_default_bytes(self):
+        from msplatform.backends.simion.dual_cone_geometry import geometry_grid, render_gem
+        from msplatform.backends.simion.dual_cone_stages import plan_geometry_stage
+
+        values = request()
+        baseline = render_gem(values["resolved"], values["numerics"])
+        self.assertIn("pa_define($(51/mmgu+1),$(51/mmgu+1),$(122/mmgu+1)", baseline)
+        identity = plan_geometry_stage(resolved=values["resolved"], numerics=values["numerics"])["projection"]["identity_sha256"]
+        values["numerics"]["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]["x"] = 26.5
+        self.assertEqual(geometry_grid(values["resolved"], values["numerics"])["nx"], 103)
+        self.assertNotEqual(plan_geometry_stage(resolved=values["resolved"], numerics=values["numerics"])["projection"]["identity_sha256"], identity)
+        values["numerics"]["pa"]["cell_mm_xyz"] = dict(x=.7, y=.7, z=.7)
+        values["numerics"]["pa"]["grid_points_xyz"] = dict(x=74, y=74, z=176)
+        grid = geometry_grid(values["resolved"], values["numerics"])
+        self.assertAlmostEqual((grid["nx"]-1)*grid["dx_mm"], 51.1)
+        before = plan_geometry_stage(resolved=values["resolved"], numerics=values["numerics"])["projection"]
+        values["numerics"]["trajectory"]["sample_interval_us"] = 2
+        self.assertEqual(plan_geometry_stage(resolved=values["resolved"], numerics=values["numerics"])["projection"], before)
+        values["numerics"]["pa"]["grid_points_xyz"]["x"] = 75
+        self.assertNotEqual(plan_geometry_stage(resolved=values["resolved"], numerics=values["numerics"])["projection"]["identity_sha256"], before["identity_sha256"])
+        for counts in (dict(x=True,y=103,z=245),dict(x=2,y=103,z=245),dict(x=103.0,y=103,z=245),dict(x=10,y=103,z=245)):
+            broken = request();broken["numerics"]["pa"]["grid_points_xyz"] = counts
+            with self.subTest(counts=counts), self.assertRaises(ValueError):
+                geometry_grid(broken["resolved"], broken["numerics"])
+        missing = request();del missing["numerics"]["pa"]["grid_points_xyz"]
+        with self.assertRaises(KeyError):
+            geometry_grid(missing["resolved"], missing["numerics"])
+
+    def test_source_and_observation_use_actual_grid_not_fixed_margin(self):
+        from msplatform.backends.simion.dual_cone_transport import _render_run_config, prepare_transport
+
+        values = request()
+        values["numerics"]["pa"]["grid_points_xyz"]["z"] = 227
+        with self.assertRaisesRegex(ValueError, "observation plane"):
+            _render_run_config(mode="c0_gem_smoke", science=values["science"],
+                numerics=values["numerics"], resolved=values["resolved"], solver=Path("a/b/c"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = request()
+            values["numerics"]["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]["z"] = 0
+            numerics = root / "numerics.json";numerics.write_text(json.dumps(values["numerics"]))
+            output = root / "prepared"
+            with self.assertRaisesRegex(ValueError, "C0 source"):
+                prepare_transport(output,mode="c0_gem_smoke",resolved_path=CONFIG/"resolved_geometry.json",
+                    numerics_path=numerics,science_path=CONFIG/"ion_transport_science.json",
+                    interface_path=CONFIG/"gas_field_interface.json",gas_science_path=CONFIG/"gas_flow_science.json",
+                    source_spec_path=CONFIG/"cylindrical_ion_source.json")
+            self.assertFalse(output.exists())
+
+    def test_grid_changes_invalidate_actual_spatial_basis_but_source_does_not(self):
+        from msplatform.backends.simion import dual_cone_stages as stages
+        from msplatform.backends.simion.model import RF_PHYSICS
+        from common.contracts.test_dual_cone_stages import CLOCK, record
+
+        values = request()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = {name: record(root,name) for name in ("raw_geometry","fractional_surface","surface_witnesses")}
+            impl = {name: record(root,name) for name in ("simion","refiner","auditor")}
+            def basis():
+                geometry = stages.plan_geometry_stage(resolved=values["resolved"],numerics=values["numerics"])["projection"]
+                model = stages.plan_model_stage(geometry,electric_field=values["science"]["electric_field"],clock=CLOCK,physics=RF_PHYSICS)["projection"]
+                return stages.plan_fields_stage(model,numerics=values["numerics"],raw_records=raw,implementation_records=impl)["spatial_identity"]
+            before = basis()
+            values["source_spec"]["sampling"]["seed"] = 999
+            values["numerics"]["trajectory"]["sample_interval_us"] = 2
+            self.assertEqual(basis(),before)
+            values["numerics"]["pa"]["grid_points_xyz"]["x"] += 1
+            self.assertNotEqual(basis()["identity_sha256"],before["identity_sha256"])
 
     def test_actual_scientific_input_and_explicit_native_dependency_graph(self):
         values = request()
