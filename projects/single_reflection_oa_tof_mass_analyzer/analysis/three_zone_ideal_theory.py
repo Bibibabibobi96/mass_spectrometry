@@ -17,7 +17,7 @@ from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     ATOMIC_MASS_CONSTANT_KG as ATOMIC_MASS_CONSTANT_KG,
     ELEMENTARY_CHARGE_C as ELEMENTARY_CHARGE_C,
 )
-from projects.orthogonal_accelerator.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     TheoryDomainError as TheoryDomainError,
     AffineSource as AffineSource,
     OuterGeometry as OuterGeometry,

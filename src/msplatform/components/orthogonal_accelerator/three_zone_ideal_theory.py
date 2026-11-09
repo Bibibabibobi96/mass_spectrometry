@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
+from msplatform.components.orthogonal_accelerator.accelerator_time_focus import (
     ATOMIC_MASS_CONSTANT_KG,
     ELEMENTARY_CHARGE_C,
 )

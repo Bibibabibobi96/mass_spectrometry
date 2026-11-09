@@ -12,7 +12,7 @@
 内容从单次反射 oa-TOF 的三区理论中按物理边界拆出；并不迁移其旧 Formal、历史证据或集成运行。
 
 参考实现为
-[`analysis/three_zone_ideal_theory.py`](../../analysis/three_zone_ideal_theory.py)。
+[`installed three-zone theory`](../../../../src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py)。
 二区静止释放见[`oaaccelerator_time_focus.md`](oaaccelerator_time_focus.md)，
 有符号初始速度见[`affine_phase_space_time_focus.md`](affine_phase_space_time_focus.md)。
 精确值、结构变体与项目成熟度分别由 `config/` 和 [PROJECT](../PROJECT.md)维护。

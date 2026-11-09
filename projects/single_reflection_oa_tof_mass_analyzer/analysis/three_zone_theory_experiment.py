@@ -47,7 +47,7 @@ RECEIPT_SCHEMA = "oatof_three_zone_stage_receipt.schema.json"
 STAGE_ORDER = ("T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5")
 ACCELERATOR_AUTHORITY_PATHS = {
     "accelerator_two_zone_theory": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-    "accelerator_three_zone_theory": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+    "accelerator_three_zone_theory": "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
     "accelerator_geometry": "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
 }
 

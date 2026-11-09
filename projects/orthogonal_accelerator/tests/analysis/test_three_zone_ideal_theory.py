@@ -10,7 +10,7 @@ from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     accelerator_state,
     time_to_fixed_plane_s,
 )
-from projects.orthogonal_accelerator.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
     OuterGeometry,
     TheoryDomainError,

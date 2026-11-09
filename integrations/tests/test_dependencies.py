@@ -970,7 +970,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                              "src/msplatform/contracts/schemas/composition_plan.schema.json",
                              "src/msplatform/assembly/resolve_assembly.py",
                              "projects/orthogonal_accelerator/analysis/assembly_interface.py",
-                             "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py"):
+                             "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py"):
                 with self.subTest(missing=relative):
                     resource = snapshot / relative
                     original = resource.read_bytes()

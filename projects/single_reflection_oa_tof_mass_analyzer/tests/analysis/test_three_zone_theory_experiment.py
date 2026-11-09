@@ -281,7 +281,7 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
         historical = json.loads(before)
         self.assertEqual(historical["campaign_id"], "three_zone_solver_free_funnel_v1")
         recorded_cli = copy.deepcopy(historical["authorities"]["three_zone_cli"])
-        with self.assertRaisesRegex(ValueError, r"authority (byte count|SHA-256) differs"):
+        with self.assertRaisesRegex(ValueError, r"missing or invalid accelerator provider authority: accelerator_three_zone_theory"):
             load_campaign(path)
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(json.loads(path.read_bytes())["authorities"]["three_zone_cli"], recorded_cli)

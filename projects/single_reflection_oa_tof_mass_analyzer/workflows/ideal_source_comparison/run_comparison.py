@@ -89,7 +89,7 @@ def _inputs(config_path: Path) -> dict[str, Path]:
             "particle_policy": REPO_ROOT / "src/msplatform/contracts/particle_count_policy.json",
             "peak_metrics": REPO_ROOT / "src/msplatform/analysis/peak_metrics.py",
             "accelerator_time_focus": accelerator / "accelerator_time_focus.py",
-            "accelerator_three_zone_theory": accelerator / "three_zone_ideal_theory.py",
+            "accelerator_three_zone_theory": REPO_ROOT / "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
             "accelerator_two_zone_geometry": accelerator / "two_zone_geometry.py",
             **{Path(name).stem: PROJECT_ROOT / "analysis" / name for name in local}}
 

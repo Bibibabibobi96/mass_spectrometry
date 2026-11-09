@@ -33,7 +33,7 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 | 职责 | 实现 | 理论来源 |
 |---|---|---|
 | 两区加速器时间聚焦与相空间匹配 | [`独立加速器实现`](../../orthogonal_accelerator/analysis/accelerator_time_focus.py) | [`独立加速器理论`](../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md) |
-| 三区加速器局部状态、精确时间与导数 | [`独立三区实现`](../../orthogonal_accelerator/analysis/three_zone_ideal_theory.py) | [`独立三区理论`](../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md) |
+| 三区加速器局部状态、精确时间与导数 | [`独立三区实现`](../../../src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py) | [`独立三区理论`](../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md) |
 | 双级反射器闭式解 | `reflectron_dual_stage_solver.py` | `../docs/theory/dual_stage_reflectron.md` |
 | 加速器—反射器纵向耦合 | `oatof_oaaccelerator_coupling.py` | `../docs/theory/oatof_oaaccelerator_coupling.md` |
 | finite-interval整机设计原子编译 | `finite_interval_design_compiler.py` | 复用上述三层理论，原子发布几何/电压/反射器耦合/rebuild plan |

@@ -33,7 +33,7 @@ from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS, tr
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract, export_guide_assembly_interface
 from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
-from projects.orthogonal_accelerator.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource, OuterGeometry, derive_three_zone_state, exact_accelerator_normalized_time,
 )
 

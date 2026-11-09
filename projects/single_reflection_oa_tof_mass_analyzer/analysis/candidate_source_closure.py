@@ -102,7 +102,6 @@ RELATIVE_PATHS = (
     "common/solidworks/installation.py",
     "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
     "projects/orthogonal_accelerator/analysis/component_contract.py",
-    "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
     "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
     "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
     "projects/orthogonal_accelerator/config/component_contract.json",

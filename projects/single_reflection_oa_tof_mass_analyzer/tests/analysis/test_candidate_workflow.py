@@ -765,7 +765,7 @@ def execute_prepared_run(*args):
                 "projects/orthogonal_accelerator/analysis/component_contract.py",
                 "projects/orthogonal_accelerator/config/component_contract.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
-                "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+                "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
                 "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
                 "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
                 "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m",

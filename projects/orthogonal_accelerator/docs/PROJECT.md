@@ -15,6 +15,13 @@ are unchanged; this path migration does not establish a new OA native-flight res
 本页维护独立器件的能力、资格和开放动作。理论、源码和操作从[项目入口](../README.md)进入；
 完整迁移、组件实验及实现修复记录见[文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)。
 
+The accelerator-only three-zone ideal theory has its sole implementation in
+`msplatform.components.orthogonal_accelerator.three_zone_ideal_theory`; the old project
+implementation is retired. Signed affine source, local extraction coordinates, exact transit
+and derivative formulas are unchanged. Instrument reflectron/total-time theory remains
+with its instrument. Only the current v2 author campaign source-authority records are refreshed;
+the retained historical v1 file keeps its exact pre-migration bytes and is rejected for current execution. This migration grants no new native or scientific qualification.
+
 ## 部件职责与输入权威
 
 本项目提供二区／三区正交脉冲加速器的局部理论、参数化几何、电极身份和独立验证。
