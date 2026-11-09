@@ -75,7 +75,7 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
             allowed_preparation = {
                 "field_closure", "model", "model_view_preparation", "resources",
             }
-            if source_module == "msplatform.applications.operations" and (len(parts) <= 3 or parts[3] in allowed_preparation):
+            if source_module == "msplatform.applications.operations" and len(parts) > 3 and parts[3] in allowed_preparation:
                 return None
             return f"applications import exceeds named SIMION model preparation: {target}"
         if (source_domain == "assembly" and len(parts) > 2 and parts[:2] == ["msplatform", "components"]
@@ -113,6 +113,8 @@ def _import_errors(tree: ast.AST, package: str, dependencies: set[str],
                 errors.append(f"{node.lineno}: relative import escapes the scientific namespace")
                 continue
             targets = [base, *(f"{base}.{item.name}" for item in node.names)]
+            if source_module == "msplatform.applications.operations" and base == "msplatform.backends.simion":
+                targets = targets[1:]
             aliases.update({item.asname or item.name: f"{base}.{item.name}" for item in node.names})
         else:
             continue
@@ -357,6 +359,11 @@ lib.import_module('.helper', __package__)
             ("msplatform.applications.solidworks_worker", "from msplatform.backends.simion.field_execution import execute_fields"),
             ("msplatform.applications.operations", "from msplatform.backends.simion.operations import track"),
             ("msplatform.applications.operations", "import importlib; importlib.import_module('msplatform.backends.simion.operations')"),
+            ("msplatform.applications.operations", "import msplatform.backends.simion as simion; simion.track()"),
+            ("msplatform.applications.operations", "import msplatform.backends.simion as simion; simion.solve_fields()"),
+            ("msplatform.applications.operations", "from msplatform.backends.simion import track"),
+            ("msplatform.applications.operations", "import importlib; importlib.import_module('msplatform.backends.simion')"),
+            ("msplatform.applications.operations", "__import__('msplatform.backends.simion', fromlist=['model'])"),
         )
         for module, source in rejected:
             with self.subTest(module=module, source=source):
