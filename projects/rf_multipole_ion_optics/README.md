@@ -50,8 +50,8 @@ existing project workflows remain below.
 The same public `prepare_model` accepts a published independent RF geometry artifact, explicit
 clock authority/phase reference, optional scientific-group drive values, and the external linear
 field/zero-Neumann physics policy. It saves and separately reopens an unsolved model using the
-existing owner; RF has no pulse input or downstream placeholder. The current software evidence and
-remaining ordinary-install/native checks are recorded in [PROJECT](docs/PROJECT.md#independent-rf-prepared-model).
+existing owner; RF has no pulse input or downstream placeholder. The software, ordinary-install
+and native evidence is recorded in [PROJECT](docs/PROJECT.md#independent-rf-preparedmodel).
 This does not promote the independent RF field or tracking stages; the existing project workflows
 remain necessary until those actual operations and fractional-field representation are migrated.
 
