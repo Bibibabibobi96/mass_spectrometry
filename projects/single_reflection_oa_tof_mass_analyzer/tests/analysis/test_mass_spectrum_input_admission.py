@@ -183,7 +183,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             selection.write_text(json.dumps(selected), encoding='utf-8')
             output = root / 'analysis'
             launch = ('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
-                      'from common.contracts.frozen_inputs import python_import_roots;'
+                      'from msplatform.execution.inputs import python_import_roots;'
                       'sys.path[:0]=python_import_roots(Path(sys.argv[1]));'
                       'from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import run_analysis;'
                       'import msplatform.analysis.peak_metrics as core;'

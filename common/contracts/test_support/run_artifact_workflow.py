@@ -10,7 +10,7 @@ import sys
 import tomllib
 import unittest
 from common.contracts.capacity_ledger import initialize_capacity_ledger
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 from common.contracts.write_run_manifest import file_record
 
 

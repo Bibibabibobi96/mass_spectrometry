@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import (
     HS1_SOURCE_FIXTURE,
@@ -26,7 +26,7 @@ import json, sys
 from pathlib import Path
 root, run, vendor = map(Path, sys.argv[1:4])
 sys.path[:0] = [str(root / "src"), str(root)]
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 assert sys.path[:2] == python_import_roots(root)
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import prepare
 run.mkdir(); (run/'inputs').mkdir()

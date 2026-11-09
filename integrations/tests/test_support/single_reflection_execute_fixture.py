@@ -23,7 +23,7 @@ EXECUTE = REPO / 'integrations/workflows/single_reflection_flight/execute.ps1'
 
 def declared_dependency_paths(repo, contract, consumer):
     """Expand the actual test author's explicit source and resource declarations."""
-    from common.contracts.frozen_inputs import enumerate_python_sources
+    from msplatform.execution.inputs import enumerate_python_sources
     paths = {row['source_repo_path'] for group in contract['providers'] for row in group['files']
              if consumer in row['consumers']}
     for group in contract['providers']:

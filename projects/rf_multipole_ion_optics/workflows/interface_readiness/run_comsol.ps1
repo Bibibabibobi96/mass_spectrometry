@@ -344,7 +344,7 @@ function Invoke-InterfacePostprocessChild {
 import importlib,json,pathlib,runpy,sys
 root=pathlib.Path(sys.argv[1]).resolve()
 sys.path.insert(0,str(root))
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 sys.path[:0]=python_import_roots(root)
 metadata,state,summary,particles,contract,frequency,phase,report,origins=sys.argv[2:]
 modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','projects.rf_multipole_ion_optics.analysis.rf_event_table_validation','projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics']

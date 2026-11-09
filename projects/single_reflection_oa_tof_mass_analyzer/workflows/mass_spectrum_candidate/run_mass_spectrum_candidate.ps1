@@ -116,7 +116,7 @@ if($ReanalyzeOnly-or$ResumeFinalization){
       -Paths @($selectionPath,$analysisPackage.result_dir,$analysisStdout,$analysisStderr,$analysisPackage.artifact_run_dir)
     $analysisEnvironment=@{};foreach($name in $analysisNative.environment.Keys){$analysisEnvironment[$name]=$analysisNative.environment[$name]}
     $analysisEnvironment.PYTHONDONTWRITEBYTECODE='1'
-    $analysisLaunch='import runpy,sys;from pathlib import Path;root=Path(sys.argv.pop(1));sys.path.insert(0,str(root));from common.contracts.frozen_inputs import python_import_roots;sys.path[:0]=python_import_roots(root);runpy.run_module("'+$analysisModule+'",run_name="__main__")'
+    $analysisLaunch='import runpy,sys;from pathlib import Path;root=Path(sys.argv.pop(1));sys.path.insert(0,str(root));from msplatform.execution.inputs import python_import_roots;sys.path[:0]=python_import_roots(root);runpy.run_module("'+$analysisModule+'",run_name="__main__")'
     $analysisArgs=@('-I','-B','-c',$analysisLaunch,$analysisCode,'analyze','--selection',$analysisNative.projected_paths[0],'--code-root',$analysisCode,'--output',$analysisNative.projected_paths[1])
     $analysisArgs=@($analysisArgs|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
     $analysisStopped=$false

@@ -20,7 +20,7 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.artifact_retention import classify_file
-from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
+from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
 from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path

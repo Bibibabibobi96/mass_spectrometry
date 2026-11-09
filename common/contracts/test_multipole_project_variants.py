@@ -63,7 +63,7 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
         self.profiles = load(PROJECT_ROOT / "config/design_profiles.json")["profiles"]
 
     def test_isolated_frozen_resolver_includes_public_and_project_schema_resources(self) -> None:
-        from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
+        from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from common.contracts.artifact_retention import classify_file
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
 

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
+from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle,

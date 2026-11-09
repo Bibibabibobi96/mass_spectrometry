@@ -21,8 +21,8 @@ import json,runpy,sys
 from pathlib import Path
 snapshot,argvfile=map(lambda p:Path(p).resolve(),sys.argv[1:])
 sys.path.insert(0,str(snapshot))
-from common.contracts.frozen_inputs import python_import_roots
-import common.contracts.frozen_inputs as roots_module
+from msplatform.execution.inputs import python_import_roots
+import msplatform.execution.inputs as roots_module
 assert Path(roots_module.__file__).resolve().is_relative_to(snapshot)
 sys.path.pop(0)
 sys.path[:0]=python_import_roots(snapshot)

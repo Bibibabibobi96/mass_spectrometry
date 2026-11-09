@@ -234,7 +234,7 @@ def export_response_figure(
 
 def _prepare_analysis_request(inputs: Path, results: Path) -> tuple[Path, dict[str, str]]:
     """Bind this workflow's analysis closure to the existing frozen-package runner."""
-    from common.contracts.frozen_inputs import freeze_file
+    from msplatform.execution.inputs import freeze_file
 
     prefix = "projects/rf_multipole_ion_optics/"
     support_files = [
@@ -405,7 +405,7 @@ def run(
     artifact_project_root: Path,
 ) -> Path:
     """Execute one immutable L1 run and write its complete provenance triplet."""
-    from common.contracts.frozen_inputs import freeze_file
+    from msplatform.execution.inputs import freeze_file
 
     baseline = load_json(baseline_path)
     resolved = load_json(resolved_path)

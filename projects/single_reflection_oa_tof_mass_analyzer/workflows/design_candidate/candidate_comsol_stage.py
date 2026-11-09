@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.machine_contracts import load_json
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 
 _FROZEN_PYTHON_BOOTSTRAP = """
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 source_root = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(source_root))
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(source_root)
 def check_frozen_core():
     for name, loaded in tuple(sys.modules.items()):

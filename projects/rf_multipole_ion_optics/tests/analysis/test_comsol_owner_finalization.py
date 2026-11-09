@@ -110,7 +110,7 @@ ConvertTo-Json -InputObject $records -Compress
     def test_normal_public_prepare_and_optional_family_reach_only_inert_native_boundary(self):
         # The entire normal scripts execute; only the actual native process boundary is inert.
         from common.contracts.capacity_ledger import initialize_capacity_ledger
-        from common.contracts.frozen_inputs import enumerate_python_sources
+        from msplatform.execution.inputs import enumerate_python_sources
         from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
         import hashlib
 

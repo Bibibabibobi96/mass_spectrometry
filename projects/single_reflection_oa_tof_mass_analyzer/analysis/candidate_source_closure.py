@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.machine_contracts import sha256
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
@@ -43,7 +43,6 @@ RELATIVE_PATHS = (
     "common/contracts/capacity_protection.py",
     "common/contracts/execution_aliases.py",
     "common/contracts/expected_values.py",
-    "common/contracts/frozen_inputs.py",
     "common/contracts/historical_source_scratch_retirement.py",
     "common/contracts/legacy_owner_disposition.py",
     "common/contracts/reconcile_artifact_capacity.py",

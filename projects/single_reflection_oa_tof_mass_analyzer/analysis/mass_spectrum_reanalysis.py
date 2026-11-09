@@ -19,7 +19,7 @@ CODE_PATHS = (
     f"{PREFIX}/analysis/solver_diagnostics.py",
     "src/msplatform/analysis/peak_metrics.py",
     "common/contracts/file_identity.py",
-    "common/contracts/frozen_inputs.py",
+    "src/msplatform/execution/inputs.py",
 )
 
 def read_json(path: Path) -> dict:
@@ -120,7 +120,7 @@ def select_source(source: Path, consumer_artifact_root: Path, stopped: Path | No
 
 def freeze_analysis(repo: Path, destination: Path, selection: dict) -> dict:
     """Freeze just the imported analysis files and the parent's physical resource."""
-    from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
+    from msplatform.execution.inputs import enumerate_python_sources, freeze_file
     from common.contracts.verify_run_manifest import verify_record
 
     for name, record in selection["inputs"].items():

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference

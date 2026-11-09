@@ -269,7 +269,7 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertEqual(owner["command"]["arguments"][2:], ["common/paths/test_workspace_paths.py"])
 
     def test_common_contract_dependencies_select_modules_without_retired_routes(self):
-        cases = (("common/contracts/frozen_inputs.py", "common.contracts.test_frozen_inputs"),
+        cases = (("src/msplatform/execution/inputs.py", "common.contracts.test_frozen_inputs"),
                  ("common/contracts/expected_values.py", "common.contracts.test_expected_values"),
                  ("common/report_cloc_delta.ps1", "common.contracts.test_report_cloc_delta"),
                  ("common/verify.ps1", "common.contracts.test_verify_changed"),
@@ -295,7 +295,7 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertEqual(len(modules), len(set(modules)))
 
     def test_frozen_input_dependency_keeps_its_real_seed_consumer_unique(self):
-        request, _ = self.plan("-ChangedPath", "common/contracts/frozen_inputs.py")
+        request, _ = self.plan("-ChangedPath", "src/msplatform/execution/inputs.py")
         rows = {row["name"]: row for row in request["stages"]}
         self.assertEqual(rows["common_contracts"]["command"]["arguments"],
                          ["-m", "common.gate_unittest", "common/contracts/test_frozen_inputs.py"])
@@ -323,14 +323,14 @@ ConvertTo-Json -Compress -InputObject $paths
             inputs.mkdir(parents=True)
             expected = {"common/contracts/" + name for name in
                         ("test_frozen_inputs.py", "test_other_contract.py", "test_another_contract.py")}
-            for relative in expected | {"common/contracts/frozen_inputs.py"}:
+            for relative in expected | {"src/msplatform/execution/inputs.py"}:
                 (root / relative).write_text("# selector metadata fixture; never imported\n", encoding="utf-8")
             literal = lambda value: "'" + str(value).replace("'", "''") + "'"
             script = f"""
 $ErrorActionPreference='Stop'
 . {literal(REPO_ROOT / 'common/gate_catalog_support.ps1')}
 $route=(Get-Content -LiteralPath {literal(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq common_contracts
-$root={literal(root)};$source='common/contracts/frozen_inputs.py'
+$root={literal(root)};$source='src/msplatform/execution/inputs.py'
 $parameters=@{{Route=$route;KnownTestRoots=@('common/contracts/');RepoRoot=$root}}
 $results=[ordered]@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
 $results.unknown=@((Get-GateChangedTests @parameters -ChangedPaths @('common/contracts/future_unknown.py')).Modules)

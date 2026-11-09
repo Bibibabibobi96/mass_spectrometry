@@ -598,7 +598,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         return artifacts, artifacts / "common" / "simion" / "pa_family_cache"
 
     def _producer_handoff_fixture(self, *, complete=False, sealed=False, prepared=False, retention_class="solver_review"):
-        from common.contracts.frozen_inputs import freeze_file
+        from msplatform.execution.inputs import freeze_file
         from common.contracts.run_capacity_lifecycle import seal_checkpoint
         from common.contracts.write_run_manifest import build_run_manifest
 
@@ -754,7 +754,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(final["producer"]["run_config_path"], str(successor.resolve()))
 
     def test_producer_handoff_accepts_frozen_manifest_larger_than_one_mib(self):
-        from common.contracts.frozen_inputs import freeze_file
+        from msplatform.execution.inputs import freeze_file
 
         _, cache, first, successor, request = self._producer_handoff_fixture()
         manifest = Path(request["predecessor_manifest"]["path"])
@@ -857,7 +857,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(transaction.read_bytes(), before)
 
     def test_producer_handoff_conflicting_concurrent_successors_commit_only_one_owner(self):
-        from common.contracts.frozen_inputs import freeze_file
+        from msplatform.execution.inputs import freeze_file
         artifacts, cache, first, successor, request = self._producer_handoff_fixture()
         other = successor.parent.with_name("20260923_140000__test__simion__pa-other-successor__n1")
         (other / "inputs").mkdir(parents=True)

@@ -409,7 +409,7 @@ foreach($completed in @($true,$false)){
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             snapshot=run/'inputs/runtime_snapshot'
             shutil.rmtree(author)
-            from common.contracts.frozen_inputs import python_import_roots
+            from msplatform.execution.inputs import python_import_roots
 
             environment=dict(os.environ)
             environment['PYTHONPATH']=os.pathsep.join(python_import_roots(snapshot))

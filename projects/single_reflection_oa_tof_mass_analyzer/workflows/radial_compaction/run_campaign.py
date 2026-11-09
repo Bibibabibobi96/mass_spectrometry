@@ -36,7 +36,7 @@ PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import canonical_json_sha256
-from common.contracts.frozen_inputs import freeze_file, python_import_roots
+from msplatform.execution.inputs import freeze_file, python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.execution.recorded_file_removal import write_json_atomic
@@ -93,7 +93,6 @@ EXTRA_SOURCE_IDS = (
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/run_campaign.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
-    "common/contracts/frozen_inputs.py",
     "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
     "common/simion/batch_continuation.py",
     "common/simion/resource_profile.py",

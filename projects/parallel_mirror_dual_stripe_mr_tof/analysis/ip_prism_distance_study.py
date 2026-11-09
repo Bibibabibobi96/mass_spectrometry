@@ -15,7 +15,7 @@ import shutil
 import sys
 
 from common.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 from common.contracts.write_run_manifest import file_record, publish_run_manifest
 from common.contracts import artifact_retention, run_capacity_lifecycle
 from common.simion import resource_profile, resource_scheduler, particle_batching

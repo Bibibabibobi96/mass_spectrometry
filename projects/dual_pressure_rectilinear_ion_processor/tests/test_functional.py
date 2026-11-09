@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from common.contracts.particle_count_policy import POLICY_PATH
-from common.contracts.frozen_inputs import enumerate_python_sources, python_import_roots
+from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 from common.ion_release.release import generate_release_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
@@ -444,7 +444,7 @@ print(json.dumps(dict(version=prepared['schema_version'], effective=row['effecti
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(root))
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from msplatform.analysis import particle_census as c
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import census
@@ -467,7 +467,7 @@ print(json.dumps(dict(unknown=counts["unknown"], alive=counts["alive"],
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(root))
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from common.analysis import plane_crossings as c
 from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
@@ -630,7 +630,7 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         detached = Path(self.temporary.name)/"detached"
         for name in ("inputs","simion","results"):(detached/name).mkdir(parents=True)
         functional.write_json(detached/"run_config.json", {"schema_version":1})
-        from common.contracts.frozen_inputs import freeze_file
+        from msplatform.execution.inputs import freeze_file
         freeze_file(PROJECT/"config/runtime_profiles.json",detached/"inputs/runtime_profiles.json")
         code = """from pathlib import Path
 import sys
@@ -678,7 +678,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
         code = ("from common.contracts import particle_count_policy as p; "
                 "print(p.POLICY_PATH.resolve()); "
                 "assert p.validate_standard_particle_count(100) == 100; "
-                "from common.contracts.frozen_inputs import freeze_file; "
+                "from msplatform.execution.inputs import freeze_file; "
                 "from pathlib import Path; "
                 "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
                 "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "

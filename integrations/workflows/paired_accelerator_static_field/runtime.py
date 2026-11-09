@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from msplatform.backends.comsol.resources import native_resource_directory

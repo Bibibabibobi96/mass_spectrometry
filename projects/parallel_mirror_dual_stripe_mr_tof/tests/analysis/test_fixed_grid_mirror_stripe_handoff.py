@@ -75,7 +75,7 @@ class FixedHardwareMirrorPointContractTests(unittest.TestCase):
                 target = detached / source.relative_to(REPOSITORY)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
-            from common.contracts.frozen_inputs import enumerate_python_sources
+            from msplatform.execution.inputs import enumerate_python_sources
 
             for relative in enumerate_python_sources(
                 REPOSITORY, package_roots=("src/msplatform",), provider_root="src/msplatform",

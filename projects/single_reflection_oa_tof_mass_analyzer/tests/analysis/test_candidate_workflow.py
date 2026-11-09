@@ -15,7 +15,7 @@ from common.contracts.capacity_ledger import initialize_capacity_ledger, load_ca
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import PYTHON_BOUND_SOURCES, RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import _registered_candidate_template, prepare_candidate_run, validate_artifact_capacity, validate_workflow
@@ -2440,7 +2440,7 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
 
 
 def postprocess_public_entry(root, artifact):
-    from common.contracts.frozen_inputs import enumerate_python_sources
+    from msplatform.execution.inputs import enumerate_python_sources
 
     author=root/"author"
     # The real CLI must perform its own runtime binding. Copy original authors,

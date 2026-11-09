@@ -400,7 +400,7 @@ write_json_atomic(run/'run_config.json',config)
 
     def test_handoff_freeze_rejects_source_change_between_precheck_and_copy(self):
         from unittest import mock
-        from common.contracts.frozen_inputs import freeze_file
+        from msplatform.execution.inputs import freeze_file
         from common.simion.test_pa_family_cache import PAFamilyCacheTest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
             freeze_pa_producer_handoffs, plan_pa_producer_handoffs,
@@ -425,7 +425,7 @@ write_json_atomic(run/'run_config.json',config)
             if source == owner_result:
                 source.write_bytes(original + b"\n")
             return freeze_file(source, destination)
-        with mock.patch("common.contracts.frozen_inputs.freeze_file", side_effect=copy_after_source_changed):
+        with mock.patch("msplatform.execution.inputs.freeze_file", side_effect=copy_after_source_changed):
             with self.assertRaisesRegex(ValueError, "differs from its planned byte identity"):
                 freeze_pa_producer_handoffs(successor.parent, plan,
                     expected_cache_keys={first.cache_key}, capacity_session=session)
@@ -623,7 +623,7 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(REPO / relative, target)
                 from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
-                from common.contracts.frozen_inputs import python_import_roots
+                from msplatform.execution.inputs import python_import_roots
                 copy_scientific_core(REPO, repo)
                 host = repo / "common/host_execution_lease.ps1"
                 host.write_text(host.read_text(encoding="utf-8") + r'''

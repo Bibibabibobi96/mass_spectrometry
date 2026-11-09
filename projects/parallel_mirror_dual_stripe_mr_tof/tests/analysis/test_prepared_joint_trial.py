@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import (

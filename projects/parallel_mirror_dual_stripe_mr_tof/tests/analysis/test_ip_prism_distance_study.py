@@ -43,7 +43,7 @@ class FrozenStudySourceTests(unittest.TestCase):
 import pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(root))
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_distance_study as study
 from msplatform.contracts.particle_physics import kinetic_energy_ev as legacy_energy

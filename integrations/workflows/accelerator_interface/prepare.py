@@ -12,7 +12,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from common.contracts.verify_run_manifest import verify_record, verified_successful_run_reference
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import derive_assembly_scope

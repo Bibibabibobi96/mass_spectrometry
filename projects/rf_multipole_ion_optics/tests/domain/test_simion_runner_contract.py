@@ -353,7 +353,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
     def test_transport_snapshots_include_host_runtime_dependency_closure(self) -> None:
-        from common.contracts.frozen_inputs import python_import_roots
+        from msplatform.execution.inputs import python_import_roots
 
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from integrations.tests.test_single_reflection_preparation import fixture
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 
 REPO = Path(__file__).resolve().parents[2]
 EXECUTE = REPO / 'integrations/workflows/single_reflection_flight/execute.ps1'

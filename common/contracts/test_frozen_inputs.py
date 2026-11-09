@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file, python_import_roots
+from msplatform.execution.inputs import enumerate_python_sources, freeze_file, python_import_roots
 from common.contracts.write_run_manifest import file_record
 
 
@@ -76,8 +76,8 @@ class PythonPackageSelectionTests(unittest.TestCase):
     def test_import_root_bootstrap_does_not_import_scientific_or_lifecycle_packages(self):
         root = Path(__file__).resolve().parents[2]
         code = ('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
-                'from common.contracts.frozen_inputs import python_import_roots;'
-                'assert not any(n=="msplatform" or n.startswith("msplatform.") for n in sys.modules);'
+                'from msplatform.execution.inputs import python_import_roots;'
+                'assert "msplatform.execution.owner" not in sys.modules;'
                 'assert "common.contracts.write_run_manifest" not in sys.modules;'
                 'assert python_import_roots(Path(sys.argv[1]))[0]==str(Path(sys.argv[1])/"src")')
         result = subprocess.run([sys.executable, '-I', '-B', '-c', code, str(root)], cwd=root,

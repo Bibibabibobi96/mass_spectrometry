@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 import copy
 
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from msplatform.backends.comsol import static_field_binding as field_binding_module
 from common.contracts.write_run_manifest import file_record
 from integrations.workflows.accelerator_interface.prepare import (

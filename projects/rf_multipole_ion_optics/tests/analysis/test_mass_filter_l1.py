@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from common.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
 from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
     run_finite_length as MODULE,
@@ -69,7 +69,7 @@ class MassFilterL1Tests(unittest.TestCase):
                         raise error
                     return invoke(request, prepare_only=prepare_only)
 
-                with patch("common.contracts.frozen_inputs.freeze_file", side_effect=freeze), \
+                with patch("msplatform.execution.inputs.freeze_file", side_effect=freeze), \
                      patch.object(MODULE, "_invoke_analysis_stage", side_effect=analysis), \
                      patch.object(MODULE, "simulate_mass", side_effect=(
                          error if stage == "simulation" else self._synthetic_response)):

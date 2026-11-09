@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.frozen_inputs import python_import_roots
+from msplatform.execution.inputs import python_import_roots
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION_ROOT = REPO_ROOT / "integrations"
@@ -181,7 +181,7 @@ with tempfile.TemporaryDirectory() as request_directory:
             author = root / "author"
             # The isolated author is the actual provider closure, not a stub
             # enumerator or an import fallback to the checkout.
-            from common.contracts.frozen_inputs import enumerate_python_sources
+            from msplatform.execution.inputs import enumerate_python_sources
             contract = load(INVENTORY)
             paths = {row["source_repo_path"] for group in contract["providers"] for row in group["files"]}
             for group in contract["providers"]:
@@ -255,7 +255,7 @@ with tempfile.TemporaryDirectory() as request_directory:
         with tempfile.TemporaryDirectory() as directory:
             author = fixture._prepare_source_template(Path(directory), load(INVENTORY), lightweight_seeds=True)
             self.assertTrue((author / "integrations/workflows/single_reflection_flight/prepare.py").is_file())
-            self.assertTrue((author / "common/contracts/frozen_inputs.py").is_file())
+            self.assertTrue((author / "src/msplatform/execution/inputs.py").is_file())
             self.assertTrue((author / "projects/orthogonal_accelerator/analysis/sectioned_geometry.py").is_file())
             resources = Path('src/msplatform/contracts/schemas')
             originals = sorted((REPO_ROOT / resources).glob('*.schema.json'))

@@ -333,7 +333,7 @@ try {
   }
   $selectCoreSources = @'
 import json, pathlib, sys, tomllib
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 root = pathlib.Path(sys.argv[1]).resolve()
 selected = set(enumerate_python_sources(
     root, package_roots=("src/msplatform",), provider_root="src/msplatform",

@@ -233,7 +233,7 @@ class GasPreparationTests(unittest.TestCase):
                     ignore=lambda folder, names: [name for name in names
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
                             and Path(name).suffix not in {".py", ".json", ".lua"})])
-            from common.contracts.frozen_inputs import freeze_file
+            from msplatform.execution.inputs import freeze_file
             from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
             copy_scientific_core(repo, snapshot)
@@ -275,7 +275,7 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             # -I ignores inherited author/PYTHONPATH entries; only this selected
             # frozen root is added for project and shared-runtime sources.
             code = ("import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
-                    "from common.contracts.frozen_inputs import python_import_roots; "
+                    "from msplatform.execution.inputs import python_import_roots; "
                     "sys.path[:0] = python_import_roots(Path(sys.argv[1]));\n") + code
             command = [sys.executable, "-I", "-B", "-c", code, str(snapshot), str(snapshot / "positive")]
             result = subprocess.run(command, cwd=snapshot,

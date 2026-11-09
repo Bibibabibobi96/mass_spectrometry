@@ -62,7 +62,7 @@ import json,sys
 from pathlib import Path
 root=Path(sys.argv[1]).resolve()
 sys.path[:0]=[str(root/'src'),str(root)] if (root/'src').is_dir() else [str(root)]
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 request=json.load(sys.stdin)
 paths=enumerate_python_sources(Path(request["source_root"]),package_roots=request["package_roots"])
 paths=sorted(set(paths)|set(enumerate_python_sources(root,package_roots=['src/msplatform'],

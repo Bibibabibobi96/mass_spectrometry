@@ -22,7 +22,7 @@ from typing import Any, Mapping, Sequence
 
 from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import SCHEMA_DIR, load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
     AffineSource,

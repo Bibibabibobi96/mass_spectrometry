@@ -203,7 +203,7 @@ def load_pa_producer_handoffs(path: Path, run_root: Path, *, expected_cache_keys
 
 def freeze_pa_producer_handoffs(run_root: Path, handoff_plan: dict, *, expected_cache_keys: set[str], capacity_session: dict) -> dict:
     """Freeze explicit transaction/result pairs; retain raw Result provenance."""
-    from common.contracts.frozen_inputs import freeze_file
+    from msplatform.execution.inputs import freeze_file
     from msplatform.execution.recorded_file_removal import write_json_atomic
     from common.contracts.verify_run_manifest import verify_record
     from common.contracts.write_run_manifest import file_record

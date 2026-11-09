@@ -136,7 +136,7 @@ exit 0
             (worker / 'inputs').mkdir(parents=True)
             (worker / 'results').mkdir()
             environment = dict(os.environ)
-            from common.contracts.frozen_inputs import python_import_roots
+            from msplatform.execution.inputs import python_import_roots
 
             environment['PYTHONPATH'] = os.pathsep.join(python_import_roots(frozen))
             extractor = root / 'inline_python_imports.ps1'

@@ -766,7 +766,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         shutil.copyfile(waveform, runtime / "joint.voltage_waveforms.lua")
         (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
         preparation = fixture.root / "preparation.json"
-        from common.contracts.frozen_inputs import freeze_file
+        from msplatform.execution.inputs import freeze_file
         writer = freeze_file(snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", runtime / "joint.scientific_event_csv.lua")
         preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
             frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval", interval_us=.1),

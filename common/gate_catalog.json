@@ -959,7 +959,7 @@
           {
             "matches": [
               {
-                "exact": "common/contracts/frozen_inputs.py",
+                "exact": "src/msplatform/execution/inputs.py",
                 "reason": "frozen_input_mechanism_changed"
               },
               {
@@ -1221,7 +1221,7 @@
           "reason": "common_simion_changed"
         },
         {
-          "exact": "common/contracts/frozen_inputs.py",
+          "exact": "src/msplatform/execution/inputs.py",
           "reason": "frozen_workbench_seed_dependency_changed"
         },
         {
@@ -1285,7 +1285,7 @@
           {
             "matches": [
               {
-                "exact": "common/contracts/frozen_inputs.py",
+                "exact": "src/msplatform/execution/inputs.py",
                 "reason": "frozen_workbench_seed_dependency_changed"
               },
               {

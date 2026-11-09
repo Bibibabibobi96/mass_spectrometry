@@ -56,7 +56,7 @@ try{
   }
   $schedulerFiles=[ordered]@{
     python_project_config='pyproject.toml'
-    frozen_input_selector='common/contracts/frozen_inputs.py'
+    frozen_input_selector='src/msplatform/execution/inputs.py'
     powershell_preflight='common\require_powershell7.ps1'
     host_resource_support='common\host_execution_lease.ps1'
     host_resource_scheduler='common\host_resource_scheduler.py'
@@ -70,7 +70,7 @@ try{
   }
   $selectCoreSources = @'
 import json, pathlib, sys, tomllib
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 root = pathlib.Path(sys.argv[1]).resolve()
 selected = set(enumerate_python_sources(
     root, package_roots=("src/msplatform",), provider_root="src/msplatform",

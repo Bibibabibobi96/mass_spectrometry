@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.execution.clock_authority import validate_clock_authority
-from common.contracts.frozen_inputs import freeze_file
+from msplatform.execution.inputs import freeze_file
 from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from msplatform.contracts.particle_physics import AMU_KG

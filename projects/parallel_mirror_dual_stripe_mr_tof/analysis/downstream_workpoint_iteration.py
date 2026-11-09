@@ -2571,7 +2571,7 @@ def prepare_measured_centroid_acquisition(*, prepared_run: Path, contract_path: 
                                          field_run_id: str, output_directory: Path) -> dict[str, Any]:
     """Freeze the topology-only request for the existing public provider and runner."""
     from common.contracts.write_run_manifest import file_record
-    from common.contracts.frozen_inputs import freeze_file
+    from msplatform.execution.inputs import freeze_file
     from common.contracts.verify_run_manifest import verified_successful_run_reference
     from msplatform.backends.comsol.static_field_binding import load_binding, load_native_response_basis
     proposal=load_measured_centroid_initial_proposal(proposal_path)

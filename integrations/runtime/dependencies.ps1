@@ -320,7 +320,7 @@ function Freeze-ConsumerDependencies {
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]).resolve()
 sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 request = json.load(sys.stdin)
 records = []
 for group in request["providers"]:

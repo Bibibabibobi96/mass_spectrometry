@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.frozen_inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
@@ -640,7 +640,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/contracts/file_identity.py",
             "common/contracts/artifact_identity_archive.py",
             "common/contracts/build_project_registry.py",
-            "common/contracts/frozen_inputs.py",
+            "src/msplatform/execution/inputs.py",
             "common/comsol/run_comsol_r2025b.ps1",
             "common/comsol/resolve_comsol_64.ps1",
             "common/comsol/livelink_failure_classification.ps1",
