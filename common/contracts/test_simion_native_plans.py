@@ -460,13 +460,15 @@ class IndependentRFPlanTests(unittest.TestCase):
 
 
     def test_public_rf_build_dispatches_same_managed_owner_and_exact_two_slot_seed(self):
+        import sys
         from types import SimpleNamespace
         from unittest.mock import patch
         from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
         from msplatform.backends import simion
         instrument,numerics=independent_rf_inputs()
         compiled=simion.compile_geometry(instrument,numerics=numerics)
-        context=SimpleNamespace(tools=dict(simion=LUA),execution_root=Path('C:/explicit-execution'))
+        # The owner is inert; its tool-presence preflight needs no optional Lua.
+        context=SimpleNamespace(tools=dict(simion=Path(sys.executable)),execution_root=Path('C:/explicit-execution'))
         stage=dict(limits=dict(transient_run_directory_bytes=123456),artifact_retention=dict(policy_version=1,**{'class':'solver_review'},reason='test'))
         with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
              patch('msplatform.execution.owner.run_managed_stage',return_value=dict(manifest={'identity':'managed-owner'})) as owner, \
