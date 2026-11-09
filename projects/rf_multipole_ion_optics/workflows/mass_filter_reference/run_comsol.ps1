@@ -211,7 +211,9 @@ try {
   try {
     $env:RFQUAD_SCAN_CONFIG=$scanConfig;$env:COMSOL_BOOTSTRAP_REPORT=$report
     $massScanTask=Join-Path $frozenAnalysisPackage.code_root 'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
-    & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+    . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
       -TaskScript $massScanTask -ReportPath $report `
       -StartupAttempts 1 -StartupReportTimeoutSeconds 1200
     if($LASTEXITCODE-ne 0){throw 'COMSOL RF+DC mass-filter scan failed.'}

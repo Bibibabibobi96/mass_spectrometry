@@ -167,10 +167,13 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 本机 MATLAB R2025b 与 COMSOL 6.4 的长期入口是：
 
 ```powershell
-.\common\comsol\run_comsol_r2025b.ps1 -TaskScript <任务脚本.m> -ReportPath <报告.txt>
+. .\common\host_execution_lease.ps1
+. .\src\msplatform\backends\comsol\launcher\resolve_comsol_64.ps1
+$launch = Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory (Get-Location).Path
+& .\src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1 @launch -TaskScript <任务脚本.m> -ReportPath <报告.txt>
 ```
 
-入口通过 `common/comsol/livelink_r2025b/comsolstartup.m` 连接官方 LiveLink/Java API。首次使用
+入口通过 `src/msplatform/backends/comsol/matlab/comsolstartup.m` 连接官方 LiveLink/Java API。首次使用
 新的直连脚本先做最小测试。临时连接工具不能替代正式项目脚本和项目专属后处理判据。
 连接生命周期只由该入口管理：任务脚本不得再次调用`mphstart`。一次相关任务在同一连接内完成
 加载、Compute、保存和轻量节点检查；容易触发大内存传输的粒子结果读取可放入第二个干净任务。

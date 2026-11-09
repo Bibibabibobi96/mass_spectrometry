@@ -281,7 +281,9 @@ try {
     Exit-HostExecutionLease -Lease $hostExecutionLease
     $hostExecutionLease = $null
   }
-  & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+  . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+  $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+  & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
     -TaskScript (Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m') `
     -ReportPath $comsolReport
   if ($null -eq $hostExecutionLease) {

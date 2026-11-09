@@ -14,8 +14,7 @@
 
 ## 合同与执行入口
 
-当前实现入口是[`comsol/ms_stage1_ei_source.m`](comsol/ms_stage1_ei_source.m)，路径解析器为
-[`ei_source_paths.m`](ei_source_paths.m)。新模型与结果写入
+The canonical builder is [`ms_stage1_ei_source.m`](../../src/msplatform/backends/comsol/matlab/ms_stage1_ei_source.m), with the adjacent resolved-contract loader. It requires `resolvedContractPath` and an explicit owner-provided `runDirectory`; an optional label is the third argument. There is no project-root or environment fallback in the builder. New models and results remain under
 `artifacts/projects/apertured_tube_electron_impact_ion_source/`，不进入Git。重命名前的旧运行和归档
 已按原manifest身份迁入该根的具名migration archive；不得在新身份下改写或晋升。当前正式/候选资格、
 已知限制和下一步只以PROJECT为准，本入口不复制具体参数或运行结论。
@@ -26,8 +25,17 @@
 物理输入只在[`config/baseline.json`](config/baseline.json)维护，数值/证据模式只在
 [`config/numerical_modes.json`](config/numerical_modes.json)维护；安装包解析器
 [`msplatform.components.apertured_tube_electron_impact_ion_source.resolve_contract`](../../src/msplatform/components/apertured_tube_electron_impact_ion_source/resolve_contract.py)
-生成MATLAB唯一允许读取的[`config/resolved_model.json`](config/resolved_model.json)。
+生成MATLAB唯一允许读取的[`config/resolved_model.json`](config/resolved_model.json)（项目验证fixture；公共运行消费owner冻结的显式resolved路径）。
 resolved 对应的证据范围见 PROJECT。项目静态门禁为
 `.\verify_project.ps1`；仓库统一执行入口只在
 [`config/execution_profiles.json`](config/execution_profiles.json)注册，不把内部数值模式表
 冒充执行profile合同。
+
+The installed Python entry is `msplatform.backends.comsol.build_ei_model(baseline,
+modes, mode_id='build_only_smoke', context=environment)`. Pass the two editable
+documents above and an environment loaded with `execution.load_environment`.
+Its engineering profile must declare `build_ei_model`; tools must explicitly name
+`comsol_launcher` and `matlab_root`. The operation uses the canonical LiveLink
+launcher to save an unsolved model and verify it in a fresh process. Capability
+queries validate the same request without starting COMSOL. Current validation
+and qualification limits remain in PROJECT.

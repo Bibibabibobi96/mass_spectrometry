@@ -10,6 +10,8 @@ foreach($field in @('workspace','python_executable','host_state_path','policy_pa
 }
 $script:HostResourcePolicyPath=[string]$HostContext.policy_path
 $script:HostResourceStatePath=[string]$HostContext.host_state_path
+# Child adapters consume this same explicit context instead of rediscovering it.
+$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON=($HostContext|ConvertTo-Json -Depth 8 -Compress)
 
 function Resolve-HostResourceStatePath {
   <# Admission and status must select the same absolute scheduler database. #>

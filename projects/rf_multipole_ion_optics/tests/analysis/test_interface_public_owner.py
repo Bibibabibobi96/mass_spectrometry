@@ -29,13 +29,17 @@ class InterfacePublicOwnerTests(unittest.TestCase):
     def test_limits_reader_and_actual_launcher_forwarding(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            launcher = root / "common/comsol/run_comsol_r2025b.ps1"
+            launcher = root / "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"
             launcher.parent.mkdir(parents=True)
-            launcher.write_text("param($TaskScript,$ReportPath,$StartupAttempts,$Limits,$ResourceBudgets,$RunId,$RunDir,$UsagePath,$CompletionPath)\n"
+            launcher.write_text("param($HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath,$TaskScript,$ReportPath,$StartupAttempts,$Limits,$ResourceBudgets,$RunId,$RunDir,$UsagePath,$CompletionPath)\n"
                                 "if($Limits.wall_clock_seconds-ne17-or$ResourceBudgets.solver.memory_bytes-ne4096-or$StartupAttempts-ne1){throw 'budget transport differs'}\n"
                                 "if(-not$UsagePath-or-not$CompletionPath){throw 'completion/usage not forwarded'}\n"
                                 "if($TaskScript-like'*gui*'){foreach($name in @('RFQUAD_COMSOL_MODEL_PATH','RFQUAD_SOLVER_RAW_METADATA_PATH','RFQUAD_GUI_RUN_ROOT','RFQUAD_GUI_OBSERVATION_ROOT')){if([Environment]::GetEnvironmentVariable($name,'Process')-notlike'*execution*'){throw 'GUI execution projection missing'}};if($env:RFQUAD_RUN_CONFIG-cne'frozen/config.json'){throw 'GUI config not reset'}}\n"
                                 "$global:LASTEXITCODE=0\n", encoding="utf-8")
+            resolver = PROJECT.parents[1] / "src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1"
+            (launcher.parent / "resolve_comsol_64.ps1").write_text(resolver.read_text(encoding="utf-8") +
+                "\nfunction Get-Comsol64Launcher { Join-Path $PSScriptRoot 'inert.exe' }\n"
+                "function Get-MatlabR2025bRoot { $PSScriptRoot }\n", encoding="utf-8")
             (root / "raw.json").write_text('{"release_files":[{"relative_path":"runtime/particle_001.txt"}]}', encoding="utf-8")
             limits = root / "limits.json"
             limits.write_text(json.dumps(dict(wall_clock_seconds=17, transient_run_directory_bytes=8192,
@@ -52,6 +56,7 @@ $Limits=Read-InterfaceExecutionLimits LIMITS
 try{$null=Read-InterfaceExecutionLimits MISSING;throw 'missing accepted'}catch{if($_.Exception.Message-cne'Interface execution LimitsPath is missing.'){throw}}
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool); $script:requestedPaths=$Paths; @{environment=@{};projected_paths=@($Paths|ForEach-Object{([string]$_).Replace($repoRoot,(Join-Path $repoRoot 'execution'))})}}
 $repoRoot=ROOT;$logDir=ROOT;$RunId='fixture';$StartupAttempts=1
+$script:HostResourceExecutionContext=@{workspace=ROOT;python_executable=PYTHON;host_state_path=(Join-Path ROOT 'state.sqlite3');policy_path=(Join-Path ROOT 'host-policy.json')}
 $package=@{artifact_run_dir=ROOT;run_config='frozen/config.json'};$ResourceBudgets=@{solver=@{memory_bytes=4096}}
 $state=@{calls=[Collections.Generic.List[object]]::new();timer=[Diagnostics.Stopwatch]::StartNew()};$global:LASTEXITCODE=0
 Invoke-InterfaceComsolTask -Task 'frozen/task.m' -Report 'report.txt' -Stage native -State $state
@@ -67,7 +72,7 @@ if($script:requestedPaths.Count-ne8-or$script:requestedPaths[-1]-cne(Join-Path R
 if(@($script:requestedPaths|Select-Object -Unique).Count-ne$script:requestedPaths.Count){throw 'GUI native input/output path plan contains a duplicate'}
 if($script:requestedPaths[6]-cne(Join-Path ROOT 'results')-or[Environment]::GetEnvironmentVariable($observationName,'Process')-cne(Join-Path (Join-Path ROOT 'execution') 'results')){throw 'owned observation root was not projected by the actual native context'}
 if($state.calls.Count-ne2-or@($state.calls|Where-Object{-not$_.wrapper_returned}).Count){throw 'actual wrapper return facts missing'}
-""".replace('CLI', literal(CLI)).replace('LIMITS', literal(limits)).replace('MISSING', literal(root/'absent.json')).replace('ROOT', literal(root))
+""".replace('CLI', literal(CLI)).replace('LIMITS', literal(limits)).replace('MISSING', literal(root/'absent.json')).replace('ROOT', literal(root)).replace('PYTHON', literal(sys.executable))
             self.run_ps(command)
 
     def test_original_resume_cli_needs_no_scientific_arguments(self):

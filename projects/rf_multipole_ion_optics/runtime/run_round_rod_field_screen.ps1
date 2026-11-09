@@ -120,7 +120,9 @@ try {
     $env:MULTIPOLE_RESOLVED_DESIGN = $resolved
     $env:MULTIPOLE_ROUND_ROD_SCREEN = $contract
     $env:MULTIPOLE_ROUND_ROD_SAMPLES = $samples
-    & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') -TaskScript $task -ReportPath $report
+    . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL round-rod field screen failed.' }
     & $python $analysis --samples $samples --contract $contract --output $metrics
     if ($LASTEXITCODE -ne 0) { throw 'Round-rod harmonic analysis failed.' }

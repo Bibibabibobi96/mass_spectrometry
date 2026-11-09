@@ -232,7 +232,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "comsol\\build_only_smoke.m",
             "config\\resolved_model.json",
             "WEHNELT_ARTIFACT_ROOT",
-            "common\\comsol\\run_comsol_r2025b.ps1",
+            "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
             "-CapacityLedgerLifecycleEnabled",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
@@ -246,7 +246,7 @@ class MatlabContractBindingTests(unittest.TestCase):
         self.assertIn("[string]$PythonExe", self.build_runner)
         self.assertIn("New-RunPackage -Python $python", self.build_runner)
         self.assertEqual(
-            self.build_runner.count("common\\comsol\\run_comsol_r2025b.ps1"),
+            self.build_runner.count("src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
             1,
         )
         self.assertIn("Copy-VerifiedRunInput", self.build_runner)
@@ -572,9 +572,9 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
             "common\\contracts\\verify_run_manifest.py",
             "common\\host_execution_lease.ps1",
             "common\\host_resource_scheduler.py",
-            "common\\comsol\\run_comsol_r2025b.ps1",
-            "common\\comsol\\resolve_comsol_64.ps1",
-            "common\\comsol\\livelink_r2025b\\comsolstartup.m",
+            "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
+            "src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1",
+            "src/msplatform/backends/comsol/matlab/comsolstartup.m",
             ". $frozenInputs.artifact_support",
             "& $frozenInputs.comsol_runner",
             "$env:SIMULATION_PYTHON_EXE = $python",
@@ -666,11 +666,6 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/contracts/artifact_identity_archive.py",
             "common/contracts/build_project_registry.py",
             "src/msplatform/execution/inputs.py",
-            "common/comsol/run_comsol_r2025b.ps1",
-            "common/comsol/resolve_comsol_64.ps1",
-            "common/comsol/livelink_failure_classification.ps1",
-            "common/comsol/livelink_environment.ps1",
-            "common/comsol/livelink_r2025b/comsolstartup.m",
         )
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "repository"

@@ -117,7 +117,9 @@ function Invoke-InterfaceComsolTask {
     if($State.calls.Count-eq0){$State.prepare_seconds=$State.timer.Elapsed.TotalSeconds}
     $State.calls.Add($call);$callTimer=[Diagnostics.Stopwatch]::StartNew()
     try{
-        & (Join-Path $repoRoot 'common/comsol/run_comsol_r2025b.ps1') -TaskScript $Task -ReportPath $Report `
+        . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+        $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+        & (Join-Path $repoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $Task -ReportPath $Report `
           -StartupAttempts $StartupAttempts -Limits $Limits -ResourceBudgets $ResourceBudgets `
           -RunId $RunId -RunDir $package.artifact_run_dir -UsagePath $usage -CompletionPath $receipt
         $call.wrapper_returned=$true

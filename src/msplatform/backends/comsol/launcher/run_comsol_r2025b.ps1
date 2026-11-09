@@ -1,4 +1,8 @@
 param(
+    [Parameter(Mandatory = $true)][string]$HostContextJson,
+    [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+    [string]$ComsolLauncherPath = '',
+    [string]$MatlabRootPath = '',
     [Parameter(Mandatory = $true)]
     [string]$TaskScript,
 
@@ -37,10 +41,24 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\require_powershell7.ps1')
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
+if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -ne 7) {
+    throw "This launcher requires PowerShell Core 7."
+}
+$hostContext = ConvertFrom-Json -InputObject $HostContextJson -AsHashtable
+if ($hostContext -isnot [hashtable] -or
+    @(Compare-Object @('workspace','python_executable','host_state_path','policy_path') @($hostContext.Keys)).Count) {
+    throw 'HostContextJson must contain exactly the existing four execution host fields.'
+}
+foreach ($path in @($WorkingDirectory) + @(@($ComsolLauncherPath,$MatlabRootPath) | Where-Object { $_ })) {
+    if (-not [IO.Path]::IsPathFullyQualified($path)) { throw 'COMSOL launch paths must be absolute.' }
+}
+$WorkingDirectory = [IO.Path]::GetFullPath($WorkingDirectory)
+if (-not (Test-Path -LiteralPath $WorkingDirectory -PathType Container)) {
+    throw 'COMSOL working directory is unavailable.'
+}
+$executionResources = Join-Path $PSScriptRoot '../../../execution/resources'
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
 foreach ($stageName in $ResourceBudgets.Keys) {
     if ($stageName -notin @('prepare', 'solver', 'postprocess')) {
         throw "Unknown COMSOL resource stage: $stageName"
@@ -72,16 +90,13 @@ $runtimeStorage = @{owned=$false;run_directory=$null;temporary_directory=$null;r
 $resourceLease = Enter-HostResourceStage -Role COMSOL -Stage prepare `
     -Budget $stageBudgets.prepare -RunId $RunId
 try {
-$bootstrapDir = Join-Path $PSScriptRoot 'livelink_r2025b'
+$bootstrapDir = Join-Path $PSScriptRoot '../matlab'
 $failureClassifier = Join-Path $PSScriptRoot 'livelink_failure_classification.ps1'
 $environmentPreflight = Join-Path $PSScriptRoot 'livelink_environment.ps1'
 . (Join-Path $PSScriptRoot 'resolve_comsol_64.ps1')
-$launcher = Get-Comsol64Launcher
-$matlabRoot = if ($env:MATLAB_R2025B_ROOT) {
-    [IO.Path]::GetFullPath($env:MATLAB_R2025B_ROOT)
-} else {
-    Join-Path $env:ProgramFiles 'MATLAB\R2025b\MatlabR2025b'
-}
+$launcher = if ($ComsolLauncherPath) { [IO.Path]::GetFullPath($ComsolLauncherPath) } else { Get-Comsol64Launcher }
+$matlabRoot = if ($MatlabRootPath) { [IO.Path]::GetFullPath($MatlabRootPath) } else { Get-MatlabR2025bRoot }
+Write-Output ('COMSOL_DEPLOYMENT=' + (@{comsol_launcher=$launcher;matlab_root=$matlabRoot;working_directory=$WorkingDirectory} | ConvertTo-Json -Compress))
 
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw "COMSOL MATLAB launcher not found: $launcher"
@@ -146,7 +161,7 @@ function Start-ComsolLauncherProcess {
     param([string]$FilePath, [string[]]$Arguments)
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $FilePath
-    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.WorkingDirectory = $WorkingDirectory
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
@@ -193,7 +208,7 @@ try {
             '-mlroot', $matlabRoot,
             '-nodesktop',
             '-mlnosplash',
-            '-mlstartdir', $repoRoot
+            '-mlstartdir', $WorkingDirectory
         )
         Update-HostResourceStage -Lease $resourceLease -Stage solver `
             -Budget $stageBudgets.solver -RetainedMemoryBytes 0 | Out-Null
@@ -359,7 +374,7 @@ try {
             # when the exact PID file was created during this process lifetime.
             # Keep its raw bytes in the scientific owner's normal log inventory.
             try {
-                $crashPath = Join-Path $repoRoot "hs_err_pid$($launcherProcess.Id).log"
+                $crashPath = Join-Path $WorkingDirectory "hs_err_pid$($launcherProcess.Id).log"
                 if ($launcherProcess.HasExited -and (Test-Path -LiteralPath $crashPath -PathType Leaf)) {
                     $crashFile = Get-Item -LiteralPath $crashPath
                     if ($crashFile.CreationTimeUtc -ge $launcherStartedUtc) {

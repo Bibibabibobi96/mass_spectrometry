@@ -38,7 +38,7 @@ trap {
 }
 
 $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
-$launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
+$launcher = Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'
 $task = Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m'
 $formalMph = Join-Path $artifactRoot 'formal\comsol\single_reflection_oa_tof_mass_analyzer__model.mph'
 $geometryPath = Join-Path $projectRoot 'config\resolved_geometry.json'
@@ -95,7 +95,9 @@ try {
     $old[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
     [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')
   }
-  & $launcher -TaskScript $task -ReportPath $reportPath
+  . (Join-Path (Split-Path -Parent ($launcher)) 'resolve_comsol_64.ps1')
+  $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+  & $launcher @comsolLauncherParameters -TaskScript $task -ReportPath $reportPath
 } catch {
   $failure = $_.Exception.Message
 } finally {

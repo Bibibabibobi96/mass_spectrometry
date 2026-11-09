@@ -94,7 +94,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "Enter-HostResourceStage -Role COMSOL -Stage postprocess",
             "run_comsol_r2025b.ps1",
             "& $frozen.comsol_launcher",
-            "livelink_r2025b\\comsolstartup.m",
+            "matlab\\comsolstartup.m",
             "livelink_failure_classification.ps1",
             "livelink_environment.ps1",
             "resolve_comsol_64.ps1",

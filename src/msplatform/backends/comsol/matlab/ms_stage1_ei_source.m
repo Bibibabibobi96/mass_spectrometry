@@ -1,4 +1,4 @@
-function result = ms_stage1_ei_source(resolvedContractPath, label)
+function result = ms_stage1_ei_source(resolvedContractPath, runDirectory, label)
 % Mass spectrometer Stage 1: Electron Impact (EI) ionization source.
 % All physical and numerical values come from a resolver-validated contract.
 % The build_only_smoke mode builds geometry, mesh, physics, studies and
@@ -31,12 +31,17 @@ function result = ms_stage1_ei_source(resolvedContractPath, label)
 % Cross section, gas density, voltages, release state, and numerical mode
 % are resolved outside MATLAB and are never defaulted in this builder.
 
-componentRoot = fileparts(fileparts(mfilename('fullpath')));
-addpath(componentRoot);
-paths = ei_source_paths();
 if nargin < 1 || isempty(resolvedContractPath)
-    error('A resolved EI-source contract path is required; no defaults exist.');
+    error('EISource:MissingContract', ...
+        'A resolved EI-source contract path is required; no defaults exist.');
 end
+if nargin < 2 || isempty(runDirectory)
+    error('EISource:MissingRunDirectory', ...
+        'An explicit owner-provided EI-source run directory is required.');
+end
+runDirectory = char(runDirectory);
+assert(isfolder(runDirectory), 'EISource:RunDirectoryMissing', ...
+    'The owner-provided EI-source run directory does not exist: %s', runDirectory);
 contract = load_ei_source_contract(char(resolvedContractPath));
 physical = contract.physical;
 geometry = physical.geometry_mm;
@@ -46,7 +51,7 @@ ionization = physical.ionization;
 electronSource = physical.electron_source;
 numerical = contract.numerical;
 executionMode = numerical.execution_mode;
-if nargin < 2 || isempty(label)
+if nargin < 3 || isempty(label)
     label = contract.selected_mode_id;
 end
 import com.comsol.model.*
@@ -64,47 +69,47 @@ geom1.label('EI ionization source geometry');
 geom1.lengthUnit('mm');
 
 p = model.param;
-p.set('R_tube', with_unit(geometry.tube_bore_radius, 'mm'), ...
+p.set('R_tube', ei_source_unit_text(geometry.tube_bore_radius, 'mm'), ...
     'Ionization tube bore radius');
-p.set('L_cell', with_unit(geometry.cathode_anode_path_length, 'mm'), ...
+p.set('L_cell', ei_source_unit_text(geometry.cathode_anode_path_length, 'mm'), ...
     'Cathode-anode path length');
-p.set('t_disk', with_unit(geometry.electrode_disk_thickness, 'mm'), ...
+p.set('t_disk', ei_source_unit_text(geometry.electrode_disk_thickness, 'mm'), ...
     'Electrode disk thickness');
-p.set('r_hole', with_unit(geometry.electrode_aperture_radius, 'mm'), ...
+p.set('r_hole', ei_source_unit_text(geometry.electrode_aperture_radius, 'mm'), ...
     'Electrode aperture radius');
 p.set('hole_margin', ...
-    with_unit(geometry.boolean_hole_overshoot_each_side, 'mm'), ...
+    ei_source_unit_text(geometry.boolean_hole_overshoot_each_side, 'mm'), ...
     'Boolean subtraction overshoot on each disk side');
-p.set('release_r', with_unit(geometry.release_volume_radius, 'mm'), ...
+p.set('release_r', ei_source_unit_text(geometry.release_volume_radius, 'mm'), ...
     'Release volume radius');
-p.set('release_l', with_unit(geometry.release_volume_length, 'mm'), ...
+p.set('release_l', ei_source_unit_text(geometry.release_volume_length, 'mm'), ...
     'Release volume axial length');
-p.set('release_z0', with_unit(geometry.release_volume_start_z, 'mm'), ...
+p.set('release_z0', ei_source_unit_text(geometry.release_volume_start_z, 'mm'), ...
     'Release volume start position');
 p.set('collector_backoff', ...
-    with_unit(geometry.collector_capture_backoff, 'mm'), ...
+    ei_source_unit_text(geometry.collector_capture_backoff, 'mm'), ...
     'Collector capture threshold backoff');
-p.set('V_cathode', with_unit(electrodes.cathode, 'V'), ...
+p.set('V_cathode', ei_source_unit_text(electrodes.cathode, 'V'), ...
     'Cathode potential');
-p.set('V_anode', with_unit(electrodes.anode, 'V'), ...
+p.set('V_anode', ei_source_unit_text(electrodes.anode, 'V'), ...
     'Anode potential');
 p.set('epsr_gas', scalar_text(gas.relative_permittivity), ...
     'Ionization-gas relative permittivity');
-p.set('Nd', with_unit(gas.neutral_number_density_per_m3, '1/m^3'), ...
+p.set('Nd', ei_source_unit_text(gas.neutral_number_density_per_m3, '1/m^3'), ...
     'Neutral number density');
-p.set('sigma_ion', with_unit(ionization.cross_section_m2, 'm^2'), ...
+p.set('sigma_ion', ei_source_unit_text(ionization.cross_section_m2, 'm^2'), ...
     'Electron-impact ionization cross section');
-p.set('dE_ion', with_unit(ionization.primary_energy_loss_eV, 'eV'), ...
+p.set('dE_ion', ei_source_unit_text(ionization.primary_energy_loss_eV, 'eV'), ...
     'Primary-electron energy loss per ionization');
-p.set('v_release_x', with_unit(electronSource.release_velocity_m_per_s(1), ...
+p.set('v_release_x', ei_source_unit_text(electronSource.release_velocity_m_per_s(1), ...
     'm/s'), 'Release velocity x component');
-p.set('v_release_y', with_unit(electronSource.release_velocity_m_per_s(2), ...
+p.set('v_release_y', ei_source_unit_text(electronSource.release_velocity_m_per_s(2), ...
     'm/s'), 'Release velocity y component');
-p.set('v_release_z', with_unit(electronSource.release_velocity_m_per_s(3), ...
+p.set('v_release_z', ei_source_unit_text(electronSource.release_velocity_m_per_s(3), ...
     'm/s'), 'Release velocity z component');
-p.set('Tsim', with_unit(numerical.time_ns.end, 'ns'), ...
+p.set('Tsim', ei_source_unit_text(numerical.time_ns.end, 'ns'), ...
     'Particle-tracing end time');
-p.set('dtstep', with_unit(numerical.time_ns.step, 'ns'), ...
+p.set('dtstep', ei_source_unit_text(numerical.time_ns.step, 'ns'), ...
     'Particle-tracing output step');
 
 geom1.feature.create('cathO', 'Cylinder');
@@ -296,9 +301,9 @@ model.sol('sol2').feature('v1').set('notsol', es_sol_tag);
 if numerical.solver.strict_time_steps
     model.sol('sol2').feature('t1').set('tstepsbdf', 'strict');
 end
-parameterBindingsVerified = verify_parameter_bindings(model, contract);
+parameterBindingsVerified = verify_ei_source_parameter_bindings(model, contract);
 if strcmp(executionMode, 'build_only')
-    modelsDir = paths.modelsDir;
+    modelsDir = fullfile(runDirectory, 'comsol');
     if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
     modelPath = fullfile(modelsDir, sprintf('MS_Stage1_EISource_%s__build_only.mph', ...
         strrep(label, ' ', '_')));
@@ -357,7 +362,7 @@ result = struct('label', label, ...
     'selected_mode_id', contract.selected_mode_id, ...
     'parameter_bindings_verified', parameterBindingsVerified);
 
-resultsDir = paths.resultsDir;
+resultsDir = fullfile(runDirectory, 'results');
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
 fh = figure('Visible','off');
 subplot(1,2,1);
@@ -390,40 +395,13 @@ trj1 = pg1.create('trj1', 'ParticleTrajectories');
 trj1.label('Electron trajectories');
 pg1.run;
 
-modelsDir = paths.modelsDir;
+modelsDir = fullfile(runDirectory, 'comsol');
 if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
 model.save(fullfile(modelsDir, sprintf('MS_Stage1_EISource_%s.mph', strrep(label,' ','_'))));
 fprintf('[%s] SUCCESS: native trajectory plot created and model saved.\n', label);
 end
 
-function text = with_unit(value, unit)
-%WITH_UNIT Convert one validated scalar to an explicit COMSOL expression.
-    text = sprintf('%.17g[%s]', value, unit);
-end
-
 function text = scalar_text(value)
 %SCALAR_TEXT Convert one validated dimensionless scalar to text.
     text = sprintf('%.17g', value);
-end
-
-function verified = verify_parameter_bindings(model, contract)
-%VERIFY_PARAMETER_BINDINGS Confirm GUI-visible parameters consume the contract.
-    geometry = contract.physical.geometry_mm;
-    gas = contract.physical.gas;
-    ionization = contract.physical.ionization;
-    checks = {
-        'R_tube', with_unit(geometry.tube_bore_radius, 'mm');
-        'L_cell', with_unit(geometry.cathode_anode_path_length, 'mm');
-        'r_hole', with_unit(geometry.electrode_aperture_radius, 'mm');
-        'Nd', with_unit(gas.neutral_number_density_per_m3, '1/m^3');
-        'sigma_ion', with_unit(ionization.cross_section_m2, 'm^2');
-        'dE_ion', with_unit(ionization.primary_energy_loss_eV, 'eV')
-    };
-    for index = 1:size(checks, 1)
-        actual = char(model.param.get(checks{index, 1}));
-        assert(strcmp(actual, checks{index, 2}), ...
-            'COMSOL parameter %s is not bound to the resolved contract.', ...
-            checks{index, 1});
-    end
-    verified = true;
 end

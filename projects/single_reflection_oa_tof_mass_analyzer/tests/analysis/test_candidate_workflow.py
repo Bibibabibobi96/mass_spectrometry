@@ -2494,7 +2494,7 @@ def postprocess_public_entry(root, artifact):
     document["minimum_free_gib"]=0
     policy.write_text(json.dumps(document),encoding="utf-8")
     # Real public lifecycle remains intact; this vendor boundary must never execute.
-    (author/"common/comsol/run_comsol_r2025b.ps1").write_text("throw 'COMSOL_MUST_NOT_START'",encoding="utf-8")
+    (author/"src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1").write_text("throw 'COMSOL_MUST_NOT_START'",encoding="utf-8")
     env=os.environ.copy()
     env.update(SIMULATION_PYTHON_EXE=sys.executable,MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifact),
                MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"native"))

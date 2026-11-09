@@ -75,6 +75,11 @@ class RunSession:
             MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(self.context.host_state_path),
             MASS_SPECTROMETRY_RUN_DIRECTORY=str(self.artifact_run_dir),
             MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(self.run_dir),
+            MASS_SPECTROMETRY_HOST_CONTEXT_JSON=json.dumps(dict(
+                workspace=str(self.context.workspace),
+                python_executable=str(self.context.python_executable),
+                host_state_path=str(self.context.host_state_path),
+                policy_path=str(self.context.policy_path))),
             SIMULATION_PYTHON_EXE=str(self.context.python_executable))
 
     def renew_capacity(self, *, remaining_committed_new_bytes: int | None = None,

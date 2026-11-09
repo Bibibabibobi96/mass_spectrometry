@@ -11,7 +11,7 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-$launcher = Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1'
+$launcher = Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'
 $task = Join-Path $projectRoot 'workflows\design_candidate\run_candidate_contract_build.m'
 $contract = Join-Path $projectRoot 'config\resolved_geometry.json'
 $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.ion'
@@ -83,7 +83,9 @@ try {
   $env:OATOF_CANDIDATE_ION_PATH = $frozen.particle_table
   $env:OATOF_RESULTS_DIR = $package.result_dir
   $env:OATOF_RUNTIME_DIR = Join-Path $package.run_dir 'comsol'
-  & $launcher -TaskScript $task -ReportPath $report -StartupAttempts 1
+  . (Join-Path (Split-Path -Parent ($launcher)) 'resolve_comsol_64.ps1')
+  $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+  & $launcher @comsolLauncherParameters -TaskScript $task -ReportPath $report -StartupAttempts 1
   if ($LASTEXITCODE -ne 0) { throw 'COMSOL candidate task failed.' }
   $text = Get-Content -LiteralPath $report -Raw -Encoding UTF8
   if ($text -notmatch 'STATUS=PASS' -or

@@ -180,45 +180,6 @@
           ]
         },
         {
-          "id": "common_comsol_livelink_environment_ps1",
-          "source_repo_path": "common/comsol/livelink_environment.ps1",
-          "consumers": [
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_comsol_livelink_failure_classification_ps1",
-          "source_repo_path": "common/comsol/livelink_failure_classification.ps1",
-          "consumers": [
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_comsol_livelink_r2025b_comsolstartup_m",
-          "source_repo_path": "common/comsol/livelink_r2025b/comsolstartup.m",
-          "consumers": [
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_comsol_resolve_comsol_64_ps1",
-          "source_repo_path": "common/comsol/resolve_comsol_64.ps1",
-          "consumers": [
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_comsol_run_comsol_r2025b_ps1",
-          "source_repo_path": "common/comsol/run_comsol_r2025b.ps1",
-          "consumers": [
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
           "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_02_pa0",
           "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_02.pa0",
           "consumers": [
@@ -928,37 +889,51 @@
         {
           "id": "msplatform_comsol_run_paired_accelerator_pulse_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/run_paired_accelerator_pulse.m",
-          "consumers": ["paired_accelerator_pulse"]
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
         },
         {
           "id": "msplatform_comsol_oatof_read_cartesian_release_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
-          "consumers": ["paired_accelerator_pulse"]
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
         },
         {
           "id": "msplatform_comsol_oatof_cpt_solver_policy_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
-          "consumers": ["paired_accelerator_pulse"]
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
         },
         {
           "id": "msplatform_comsol_build_and_export_paired_accelerator_field_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m",
-          "consumers": ["paired_accelerator_static_field"]
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
         },
         {
           "id": "msplatform_comsol_oatof_build_accelerator_geometry_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
-          "consumers": ["paired_accelerator_static_field"]
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
         },
         {
           "id": "msplatform_comsol_build_accelerator_grids_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m",
-          "consumers": ["paired_accelerator_static_field"]
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
         },
         {
           "id": "msplatform_comsol_build_sectioned_geometry_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
-          "consumers": ["paired_accelerator_static_field"]
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
         },
         {
           "id": "msplatform_mr_scalar_field_adapter_lua",
@@ -1320,6 +1295,45 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/3_instance_seed.iob",
           "consumers": [
             "accelerator_interface"
+          ]
+        },
+        {
+          "id": "common_comsol_livelink_environment_ps1",
+          "source_repo_path": "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_livelink_failure_classification_ps1",
+          "source_repo_path": "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_livelink_r2025b_comsolstartup_m",
+          "source_repo_path": "src/msplatform/backends/comsol/matlab/comsolstartup.m",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_resolve_comsol_64_ps1",
+          "source_repo_path": "src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_run_comsol_r2025b_ps1",
+          "source_repo_path": "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
           ]
         }
       ],

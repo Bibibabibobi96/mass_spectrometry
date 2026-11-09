@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'livelink_environment.ps1')
+. (Join-Path $PSScriptRoot '../../src/msplatform/backends/comsol/launcher/livelink_environment.ps1')
 
 $paths = @(Get-ComsolRuntimeWritePaths -UserProfile 'C:\Users\example' -TempPath 'C:\Temp')
 $expected = @(

@@ -35,3 +35,26 @@ function Get-Comsol64Launcher {
     }
     return [IO.Path]::GetFullPath($launcher)
 }
+
+function Get-ComsolLauncherParameters {
+    <# Project the existing host owner and deployment into explicit launcher argv. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][hashtable]$HostContext,
+          [Parameter(Mandatory)][string]$WorkingDirectory)
+    $matlabRoot = Get-MatlabR2025bRoot
+    return @{
+        HostContextJson=($HostContext | ConvertTo-Json -Depth 8 -Compress)
+        WorkingDirectory=[IO.Path]::GetFullPath($WorkingDirectory)
+        ComsolLauncherPath=(Get-Comsol64Launcher)
+        MatlabRootPath=$matlabRoot
+    }
+}
+
+function Get-MatlabR2025bRoot {
+    [CmdletBinding()]
+    param()
+    if ($env:MATLAB_R2025B_ROOT) {
+        return [IO.Path]::GetFullPath($env:MATLAB_R2025B_ROOT)
+    }
+    return Join-Path $env:ProgramFiles 'MATLAB\R2025b\MatlabR2025b'
+}

@@ -62,11 +62,11 @@ try{
     host_resource_scheduler='common\host_resource_scheduler.py'
     host_resource_policy='src\msplatform\execution\resources\host_resource_policy.json'
     resource_budget_support='common\resource_budget_support.ps1'
-    comsol_launcher='common\comsol\run_comsol_r2025b.ps1'
-    comsol_bootstrap='common\comsol\livelink_r2025b\comsolstartup.m'
-    comsol_failure_classifier='common\comsol\livelink_failure_classification.ps1'
-    comsol_environment_preflight='common\comsol\livelink_environment.ps1'
-    comsol_launcher_resolver='common\comsol\resolve_comsol_64.ps1'
+    comsol_launcher='src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'
+    comsol_bootstrap='src\msplatform\backends\comsol\matlab\comsolstartup.m'
+    comsol_failure_classifier='src\msplatform\backends\comsol\launcher\livelink_failure_classification.ps1'
+    comsol_environment_preflight='src\msplatform\backends\comsol\launcher\livelink_environment.ps1'
+    comsol_launcher_resolver='src\msplatform\backends\comsol\launcher\resolve_comsol_64.ps1'
   }
   $selectCoreSources = @'
 import json, pathlib, sys, tomllib
@@ -196,7 +196,9 @@ print('DUAL_GEOMETRY_ENVIRONMENT=' + json.dumps(dict(
   $env:DUAL_CONE_PROJECT_ROOT=Join-Path $package.input_dir 'project_snapshot'
   Exit-HostResourceStage -Lease $resourceLease
   $resourceLease=$null
-  & $frozen.comsol_launcher `
+  . (Join-Path (Split-Path -Parent ($frozen.comsol_launcher)) 'resolve_comsol_64.ps1')
+  $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+  & $frozen.comsol_launcher @comsolLauncherParameters `
     -TaskScript $frozen.matlab_task -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap_report.txt') `
     -RunId $RunId
   if($LASTEXITCODE-ne 0){throw 'COMSOL gas-flow launcher failed.'}

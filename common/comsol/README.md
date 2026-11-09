@@ -23,10 +23,10 @@
 
 ## 正式启动入口
 
-`run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根
+`../../src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根
 [操作指南](../../docs/OPERATIONS.md)为权威。项目脚本不得再次调用`mphstart`，
 也不得绕过入口维护另一套长期服务连接。
-入口默认从Windows卸载注册表发现COMSOL 6.4，并从`ProgramFiles`派生MATLAB R2025b根目录；非标准
+Repository callers use the same moved `resolve_comsol_64.ps1` deployment helper: it discovers COMSOL 6.4 from the Windows uninstall registry and derives MATLAB R2025b from `ProgramFiles`. The installed launcher receives absolute tool paths, an explicit working directory and the actual four-field host context serialized as `HostContextJson`; it does not infer a checkout. Nonstandard
 安装分别使用`COMSOL_64_ROOT`和`MATLAB_R2025B_ROOT`覆盖。环境变量只描述软件部署位置，不承载模型参数。
 
 尚未创建任务报告的启动失败由入口有限重试；已经创建报告时，只有命中窄白名单的首次模型打开
@@ -225,3 +225,11 @@ Einzel 和 LIT 的构建、CPT阶段同样共享上下文，以读取该次生�
 
 
 显式选区网格最小尺寸：`configure_comsol_mesh(..., minimumElementSizeMm)` 与 `add_comsol_size_feature(..., hmin)` 的末尾参数可省略，缺省不改变原控制。显式值必须为正有限数且不大于已给定的数值 hmax；同一值作用于 default 与工作区 Size。`read_comsol_mesh_size_controls` 按官方 `getValueType` 读取 typed raw 的 hauto/custom/hmin/hmax/hcurve/hgrad/hnarrow，不推测数值单位；设置 hmin 前后如其他控制改变则拒绝。真实消费者为 RF finite；OA 既有省略参数调用保持原行为。
+
+The installed launcher is the original implementation, including startup classification,
+server-session exclusivity, exact launcher/descendant identities, runtime storage and
+completion receipts. Its bootstrap is `msplatform/backends/comsol/matlab/comsolstartup.m`.
+COMSOL 6.4's installed *COMSOL Commands on Windows* documents `comsolmphserver matlab`,
+`-login auto`, `-mlroot`, `-mlstartdir`, `-nodesktop` and `-mlnosplash` (reviewed 2026-11-09;
+`doc/help/wtpwebapps/ROOT/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html`).
+Repository-owned process identity and drain policy is retained; it is not a vendor API claim.

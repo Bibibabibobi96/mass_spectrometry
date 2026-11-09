@@ -46,7 +46,7 @@ $selected=@([pscustomobject]@{{relative='projects/rf_multipole_ion_optics/config
 $active=Get-ExecutionProfileEntrypoints -Root '{REPO_ROOT.as_posix()}' -SelectedFiles $selected
 $paths=@('{fixture}','project/test/other_fixtures.py','project/src/other_fixtures.py',
   'project/tests/helper.py','project/tests/support/helper.py',
-  'common/comsol/run_comsol_r2025b.ps1','projects/orthogonal_accelerator/verify_project.ps1',
+  'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1','projects/orthogonal_accelerator/verify_project.ps1',
   'projects/rf_multipole_ion_optics/runtime/run_simion_transport_campaign.ps1')
 $results=@($paths|ForEach-Object{{Get-PathClassification -RelativePath $_ -ActiveEntrypoints $active}})
 # A registered entrypoint overrides even an otherwise explicit fixture name.

@@ -596,7 +596,7 @@ exit 0
         for path, expected in (
             ("common/host_resource_scheduler.py", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
             ("src/msplatform/execution/resources/host_resource_policy.json", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
-            ("common/comsol/run_comsol_r2025b.ps1", {"livelink_resource_stages_tests"}),
+            ("src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1", {"livelink_resource_stages_tests"}),
         ):
             with self.subTest(path=path):
                 self.assertTrue(expected <= self.routed_stages(path).keys())
@@ -1494,7 +1494,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             {"livelink_resource_stages_tests": "livelink_resource_tests_changed"},
         )
         for path in (
-            "common/comsol/run_comsol_r2025b.ps1",
+            "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
             "common/comsol/test_unclassified_support.py",
         ):
             with self.subTest(path=path):
@@ -1527,7 +1527,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "rf_multipole_hexapole_static", "rf_multipole_octupole_static",
             "transverse_helical_filament_wehnelt_electron_gun_static",
         }
-        for path in ("common/comsol/run_comsol_r2025b.ps1", "common/comsol/livelink_environment.ps1"):
+        for path in ("src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1", "src/msplatform/backends/comsol/launcher/livelink_environment.ps1"):
             self.assertTrue(consumers <= self.routed_stages(path).keys(), path)
         pwsh = shutil.which("pwsh")
         if pwsh is None:

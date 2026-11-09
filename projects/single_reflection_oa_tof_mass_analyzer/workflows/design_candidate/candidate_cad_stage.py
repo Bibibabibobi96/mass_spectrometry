@@ -30,8 +30,10 @@ def execute_cad_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: s
         ),
     }
     command = _powershell(
-        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+        frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
         [
+            "-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"],
+            "-WorkingDirectory", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
             "-TaskScript",
             frozen_source_path(
                 closure,

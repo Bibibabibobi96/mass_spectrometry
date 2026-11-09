@@ -137,7 +137,9 @@ try {
       @($comsolAxisTask,$comsolAxisReport),
       @($comsolTrajectoryTask,$comsolTrajectoryReport)
     )) {
-    & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+    . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
       -TaskScript $task[0] -ReportPath $task[1]
     if ($LASTEXITCODE -ne 0) { throw "COMSOL diagnostic export failed: $($task[0])" }
   }
@@ -228,7 +230,9 @@ try {
     $oldComsolVectorEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
     [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')
   }
-  & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+  . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+  $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+  & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
     -TaskScript $comsolVectorTask -ReportPath $comsolVectorReport
   if ($LASTEXITCODE -ne 0) { throw 'COMSOL vector-field export failed.' }
 } finally {

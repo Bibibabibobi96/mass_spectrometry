@@ -318,11 +318,6 @@ try {
     file_identity = 'common\contracts\file_identity.py'
     artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
-    comsol_runner = 'common\comsol\run_comsol_r2025b.ps1'
-    comsol_launcher_resolver = 'common\comsol\resolve_comsol_64.ps1'
-    comsol_failure_classifier = 'common\comsol\livelink_failure_classification.ps1'
-    comsol_environment = 'common\comsol\livelink_environment.ps1'
-    comsol_startup = 'common\comsol\livelink_r2025b\comsolstartup.m'
   }
   foreach ($entry in $commonFrozenFiles.GetEnumerator()) {
     $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
@@ -350,8 +345,15 @@ print(json.dumps(sorted(selected)))
     & $package.python -B -c $selectCoreSources $repoRoot
     if ($LASTEXITCODE -ne 0) { throw 'Scientific core source selection failed.' }
   }
+  $comsolCoreRoles = @{
+    'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1' = 'comsol_runner'
+    'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1' = 'comsol_launcher_resolver'
+    'src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1' = 'comsol_failure_classifier'
+    'src/msplatform/backends/comsol/launcher/livelink_environment.ps1' = 'comsol_environment'
+    'src/msplatform/backends/comsol/matlab/comsolstartup.m' = 'comsol_startup'
+  }
   foreach ($relative in @($coreSelection | ConvertFrom-Json)) {
-    $key = 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_')
+    $key = if ($comsolCoreRoles.ContainsKey([string]$relative)) { $comsolCoreRoles[[string]$relative] } else { 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_') }
     $frozenInputs[$key] = Copy-VerifiedRunInput `
       -Source (Join-Path $repoRoot $relative) `
       -Destination (Join-Path $snapshotRoot $relative)
@@ -425,7 +427,9 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
   $env:WEHNELT_ARTIFACT_ROOT = $artifactRoot
   try {
     $commercialWrapperInvocationAttempted = $true
-    & $frozenInputs.comsol_runner -TaskScript $frozenInputs.task_script `
+    . (Join-Path (Split-Path -Parent ($frozenInputs.comsol_runner)) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & $frozenInputs.comsol_runner @comsolLauncherParameters -TaskScript $frozenInputs.task_script `
       -ReportPath $report -RunId $RunId *>&1 |
       Tee-Object -FilePath $wrapperLog -Append
     $wrapperExitCode = $LASTEXITCODE

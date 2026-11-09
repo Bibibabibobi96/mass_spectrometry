@@ -87,8 +87,10 @@ def execute_comsol_native_build(stage: dict[str, Any], plan: dict[str, Any], *, 
     task_source_id, environment = comsol_native_inputs(stage, closure)
     build_report = Path(stage["report_path"])
     build_command = _powershell(
-        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+        frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
         [
+            "-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"],
+            "-WorkingDirectory", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
             "-TaskScript",
             frozen_source_path(closure, task_source_id),
             "-ReportPath",
@@ -122,8 +124,10 @@ def execute_comsol_model_sync(stage: dict[str, Any], plan: dict[str, Any], *, ru
     sync_report = logs / "comsol_sync.txt"
     task_source_id, sync_environment = comsol_sync_inputs(stage, closure)
     sync_command = _powershell(
-        frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
+        frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
         [
+            "-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"],
+            "-WorkingDirectory", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
             "-TaskScript",
             frozen_source_path(closure, task_source_id),
             "-ReportPath",
@@ -268,8 +272,9 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
                         "fid=fopen(getenv('COMSOL_BOOTSTRAP_REPORT'),'a');assert(fid>=0);fprintf(fid,'STATUS=PASS\\n');fclose(fid);\n", encoding="utf-8", newline="\n")
         report = root / "logs/cold_postprocess.txt"
         receipt_path = root / "logs/cold_postprocess_completion.json"
-        command = _powershell(execution_path(Path(frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"))),
-            ["-TaskScript", execution_path(task), "-ReportPath", execution_path(report), "-RunId", root.name,
+        command = _powershell(execution_path(Path(frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"))),
+            ["-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"], "-WorkingDirectory", str(execution),
+             "-TaskScript", execution_path(task), "-ReportPath", execution_path(report), "-RunId", root.name,
              "-RunDir", str(execution),
              "-StartupAttempts", "1", "-CompletionPath", execution_path(receipt_path)])
         try:

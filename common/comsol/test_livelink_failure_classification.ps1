@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'livelink_failure_classification.ps1')
+. (Join-Path $PSScriptRoot '../../src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1')
 
 $startupDisconnect = @'
 STATUS=FAIL

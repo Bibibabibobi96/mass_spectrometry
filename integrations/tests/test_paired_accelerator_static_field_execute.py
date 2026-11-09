@@ -329,7 +329,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
 
     def test_actual_owner_completed_exports_skip_comsol_and_report_native_scope(self):
         """Execute the actual branch/task/summary AST with an inert launcher."""
-        script=r"""param($Source,$Directory)
+        script=r"""param($Source,$Directory,$Public,$Python)
 $ErrorActionPreference='Stop'
 $errors=$null;$tokens=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
@@ -339,17 +339,25 @@ $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]
 $summaryNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and
  $n.Left.Extent.Text-eq'$summary'-and$n.Extent.Text-like"*role='paired_accelerator_static_field_summary'*"},$true)
 if($null-eq$branch-or$null-eq$summaryNode){throw 'Actual owner boundaries missing'}
-$RepoRoot=$Directory;$Python='unused';$RunId='inert';$stage='inert';$DryRun=$false
+$RepoRoot=$Directory;$RunId='inert';$stage='inert';$DryRun=$false
 $package=@{run_dir=$Directory;artifact_run_dir=$Directory;input_dir=$Directory;log_dir=$Directory;summary='unused'}
 $null=New-Item -ItemType Directory -Path (Join-Path $Directory logs) -Force
 $nativeOperations=[Collections.Generic.List[object]]::new();$nativeOperations.Add(@{TEST_ONLY='inert SIMION boundary'})
 $failure=$null;$hostReleaseUnknown=$false;$writerUnknown=$false;$ResultPath='TEST_ONLY';$phaseTimings=@{};$runClock=[Diagnostics.Stopwatch]::StartNew();$completedSimionExports=$null
 $frozen=@{execution_root=$Directory};$pa='unused';$budget=@{host_budgets=@{comsol=@{}};limits=@{}}
 $plan=@{sample_points=@{count=115}};$reusedComsol=$true;$comsolSourceStage='solved_saved'
-$launcher=Join-Path $Directory 'common/comsol/run_comsol_r2025b.ps1'
+$launcher=Join-Path $Directory 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 $null=New-Item -ItemType Directory -Path (Split-Path $launcher) -Force
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Directory 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Directory 'TEST_ONLY_MATLAB'
+$null=New-Item -ItemType Directory -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64') -Force
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Directory;python_executable=$Python;host_state_path=(Join-Path $Directory host.sqlite3);policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
 @'
-param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath)
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)
+$context=ConvertFrom-Json -InputObject $HostContextJson -AsHashtable
+if(@(Compare-Object @('workspace','python_executable','host_state_path','policy_path') @($context.Keys)).Count-or@($context.Values|Where-Object{[string]::IsNullOrWhiteSpace([string]$_)}).Count){throw 'Host carrier requires four explicit nonempty fields'}
+if(-not(Test-Path -LiteralPath $context.python_executable -PathType Leaf)-or$context.workspace-ne$WorkingDirectory){throw 'Host carrier lacks its explicit Python or workspace'}
 [IO.File]::WriteAllText($CompletionPath,'{"operations":[],"host_release":{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{"status":"released","token":"TEST_ONLY_NO_NATIVE"},"error":null}}')
 $global:nativeCalls++;$global:LASTEXITCODE=0
 '@ | Set-Content -LiteralPath $launcher
@@ -384,7 +392,7 @@ foreach($completed in @($true,$false)){
             root=Path(directory);wrapper=root/'owner_export_reuse.ps1'
             wrapper.write_text(script,encoding='utf-8',newline='\n')
             result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),
-                str(WORKFLOW/'execute.ps1'),str(root)],cwd=ROOT,capture_output=True,
+                str(WORKFLOW/'execute.ps1'),str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,
                 text=True,encoding='utf-8',errors='replace',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('OWNER_EXPORT_REUSE=PASS',result.stdout)
@@ -955,12 +963,22 @@ function Invoke-PairedPython {param($Code,$Arguments)
 $statements=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$taskArguments','$taskCode','$tasks','$simionTasks')},$true))
 $native=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-PairedNative'},$true))
 $comsol=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and@($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.CommandParameterAst]-and$_.ParameterName-eq'TaskScript'}).Count-eq1},$true)
-$steps=@($statements)+@($native[0],$native[-1],$comsol)
+$resolver=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.InvocationOperator-eq'Dot'-and$n.Extent.Text.Contains("'resolve_comsol_64.ps1'")},$true)
+$parameters=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolLauncherParameters'},$true)
+if($null-eq$resolver-or$null-eq$parameters){throw 'Actual COMSOL deployment boundary missing'}
+$steps=@($statements)+@($native[0],$native[-1],$resolver,$parameters,$comsol)
 $RepoRoot=Join-Path $Run consumer
-$launcher=Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1'
+$launcher=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Run 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Run 'TEST_ONLY_MATLAB'
+New-Item -ItemType Directory -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64') -Force|Out-Null
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Run;python_executable=$Python;host_state_path=(Join-Path $Run host.sqlite3);policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
 @'
-param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath)
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)
+$context=ConvertFrom-Json -InputObject $HostContextJson -AsHashtable
+if($context.workspace-ne$WorkingDirectory-or$ComsolLauncherPath-ne(Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe')-or$MatlabRootPath-ne$env:MATLAB_R2025B_ROOT){throw 'Actual COMSOL deployment argv was not transported'}
 [IO.File]::WriteAllText((Join-Path $RunDir 'results/task_consumed.txt'),$TaskScript)
 '@|Set-Content $launcher -Encoding utf8
 $frozen=@{execution_root=$Public};$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$RunId='TEST_ONLY_TASK_TRANSPORT';$completedComsolExports=$null

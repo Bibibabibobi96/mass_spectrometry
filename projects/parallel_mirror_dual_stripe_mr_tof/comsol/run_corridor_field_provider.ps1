@@ -24,7 +24,9 @@ if($Child){
         $launcherOptions.Allocator=[string]$plan.comsol_allocator
     }
     # Observation warnings do not override the repository solver admission budget.
-    & (Join-Path $repo 'common/comsol/run_comsol_r2025b.ps1') `
+    . (Join-Path (Split-Path -Parent ((Join-Path $repo 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & (Join-Path $repo 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters `
         -TaskScript (Join-Path $PSScriptRoot 'candidate_field.m') `
         -ReportPath (Join-Path $PSScriptRoot 'bootstrap_report.txt') `
         -StartupAttempts 1 -StartupReportTimeoutAction warn `

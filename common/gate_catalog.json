@@ -101,7 +101,7 @@
       "repository_integration_group": "fast",
       "matches": [
         {
-          "exact": "common/comsol/run_comsol_r2025b.ps1",
+          "exact": "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
           "reason": "livelink_launcher_changed"
         },
         {
@@ -443,7 +443,7 @@
       "repository_integration_group": "fast",
       "matches": [
         {
-          "exact": "common/comsol/livelink_failure_classification.ps1",
+          "exact": "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1",
           "reason": "livelink_failure_classifier_changed"
         },
         {
@@ -463,7 +463,7 @@
       "repository_integration_group": "fast",
       "matches": [
         {
-          "exact": "common/comsol/livelink_environment.ps1",
+          "exact": "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
           "reason": "livelink_environment_helper_changed"
         },
         {
@@ -491,7 +491,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -1393,7 +1393,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_dependency_changed"
         },
         {
@@ -2093,7 +2093,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -2319,7 +2319,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -2603,7 +2603,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -2716,7 +2716,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -2979,7 +2979,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {

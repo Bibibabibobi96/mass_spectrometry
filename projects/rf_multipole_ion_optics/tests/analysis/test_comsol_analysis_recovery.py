@@ -624,12 +624,16 @@ function Write-ColdFixtureEvent {
             fixture = dict(frozen=frozen, source=dict(inputs=dict(particle_source=dict(path=str(source))),
                            exports=dict(model=dict(path=str(model)), mapping=dict(path=str(mapping)))))
             write(root/'fixture.json', fixture)
-            launcher = code/'common/comsol/run_comsol_r2025b.ps1'
+            launcher = code/'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
             launcher.parent.mkdir(parents=True)
+            resolver = REPO/'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1'
+            (launcher.parent/'resolve_comsol_64.ps1').write_text(resolver.read_text(encoding='utf-8') +
+                "\nfunction Get-Comsol64Launcher { Join-Path $PSScriptRoot 'inert.exe' }\n"
+                "function Get-MatlabR2025bRoot { $PSScriptRoot }\n", encoding='utf-8')
             launcher.write_text(r"""
-param($TaskScript,$ReportPath,$StartupAttempts,$RunId,$RunDir,$CompletionPath,$ResourceBudgets)
+param($HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath,$TaskScript,$ReportPath,$StartupAttempts,$RunId,$RunDir,$CompletionPath,$ResourceBudgets)
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot '../host_execution_lease.ps1')
+. (Join-Path $PSScriptRoot '../../../../../common/host_execution_lease.resource.ps1') -HostContext (ConvertFrom-Json -InputObject $HostContextJson -AsHashtable)
 $request=Get-Content -LiteralPath $env:RF_FINITE_REEXTRACTION_REQUEST -Raw|ConvertFrom-Json
 if($ResourceBudgets.solver.memory_bytes-ne2147483648){throw 'EXPLICIT_HOST_BUDGET_LOST'}
 if($request.context.acceptance.exit_interface.cross_section.shape-cne'open_rod_envelope'){throw 'OPEN_PORT_CHANGED'}

@@ -169,6 +169,6 @@ function require_comsol_livelink()
     if exist('mphload', 'file') == 0
         error('oatofCadExport:LiveLinkUnavailable', ...
             ['COMSOL LiveLink is unavailable. Run this task through ', ...
-             'common/comsol/run_comsol_r2025b.ps1.']);
+             'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1.']);
     end
 end

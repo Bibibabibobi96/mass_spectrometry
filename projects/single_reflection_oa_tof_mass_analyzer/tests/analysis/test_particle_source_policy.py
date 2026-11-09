@@ -74,7 +74,7 @@ class ParticleSourcePolicyTests(unittest.TestCase):
         self.assertIn("Select-Object -First $particleCount", source)
         self.assertLess(
             source.index("--prefix-n100 $ionPath"),
-            source.index("common\\comsol\\run_comsol_r2025b.ps1"),
+            source.index("src\\msplatform\\backends\\comsol\\launcher\\run_comsol_r2025b.ps1"),
         )
         rebuild = source.index("-ValidateExisting")
         resume_branch = source.index("if ($resumeExisting)")

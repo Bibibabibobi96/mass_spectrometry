@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -10,6 +11,41 @@ from msplatform import assembly as assembly_api, capabilities as capability_api,
 from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, PHYSICS
+
+
+class EIBuildCapabilitiesTests(unittest.TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parents[2] / "projects/apertured_tube_electron_impact_ion_source/config"
+        self.arguments = dict(baseline=json.loads((root / "baseline.json").read_text(encoding="utf-8")),
+            modes=json.loads((root / "numerical_modes.json").read_text(encoding="utf-8")),
+            mode_id="build_only_smoke")
+
+    def query(self, arguments):
+        return capability_api.capabilities(dict(schema_version=1, operation="build_ei_model", arguments=arguments))
+
+    def test_ei_query_uses_actual_operation_validator_without_native_or_writes(self):
+        before = copy.deepcopy(self.arguments)
+        with patch("subprocess.Popen", side_effect=AssertionError("native process")), \
+             patch("shutil.which", side_effect=AssertionError("tool discovery")), \
+             patch.object(Path, "mkdir", side_effect=AssertionError("workspace")), \
+             patch.object(Path, "write_text", side_effect=AssertionError("write")):
+            result = self.query(self.arguments)
+        self.assertEqual(result["contract_status"], "accepted", result)
+        self.assertEqual(result["validator"], "msplatform.backends.comsol.ei_model.resolve_ei_build_request")
+        self.assertEqual(result["execution_readiness"], "not_assessed")
+        self.assertEqual(result["native_qualification"], "not_granted")
+        self.assertIn("native_save_and_fresh_reopen", result["execution_prerequisites"])
+        self.assertEqual(self.arguments, before)
+
+    def test_ei_query_rejects_invalid_and_unimplemented_operation_modes(self):
+        invalid = copy.deepcopy(self.arguments)
+        invalid["baseline"]["unexpected_scientific_input"] = True
+        self.assertEqual(self.query(invalid)["contract_status"], "rejected")
+        full = dict(self.arguments, mode_id="functional_reference", evidence_particle_count=100)
+        self.assertEqual(self.query(full)["contract_status"], "rejected")
+        missing = dict(self.arguments)
+        del missing["mode_id"]
+        self.assertEqual(self.query(missing)["missing_arguments"], ["mode_id"])
 
 
 class PlatformCapabilitiesTests(unittest.TestCase):

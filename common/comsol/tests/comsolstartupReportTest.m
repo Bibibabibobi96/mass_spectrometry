@@ -44,8 +44,8 @@ writeText(fullfile(folder, 'exit.m'), ...
 testCase.applyFixture(matlab.unittest.fixtures.PathFixture(folder));
 fixture.task = fullfile(folder, 'task.m');
 fixture.report = fullfile(folder, 'report.txt');
-fixture.startup = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
-    'livelink_r2025b', 'comsolstartup.m');
+fixture.startup = fullfile(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))), ...
+    'src', 'msplatform', 'backends', 'comsol', 'matlab', 'comsolstartup.m');
 setenv('COMSOL_MATLAB_TASK', fixture.task);
 setenv('COMSOL_BOOTSTRAP_REPORT', fixture.report);
 end

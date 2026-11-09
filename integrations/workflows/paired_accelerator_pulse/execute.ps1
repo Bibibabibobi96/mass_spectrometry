@@ -378,7 +378,9 @@ try{
       Set-PairedStage 'comsol_particles';$nativeExecuted=$true
       $comsolCompletion=Join-Path $package.artifact_run_dir 'logs/comsol_completion.json';$writersStopped=$false;$comsolFailure=$null
       try{
-      & (Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1') -TaskScript $tasks.matlab `
+      . (Join-Path (Split-Path -Parent ((Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+      $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+      & (Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $tasks.matlab `
         -ReportPath (Join-Path $package.artifact_run_dir 'logs/comsol_bootstrap.txt') -ResourceBudgets $budget.host_budgets.comsol -RunId $RunId `
         -Limits ([pscustomobject]$budget.limits) -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.artifact_run_dir 'logs/comsol.resource_usage.json') -CompletionPath $comsolCompletion
       }catch{$comsolFailure=$_}finally{

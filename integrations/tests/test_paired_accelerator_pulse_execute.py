@@ -213,9 +213,14 @@ $execute=[scriptblock]::Create(($native.Clauses[0].Item2.Statements.Extent.Text-
 $RepoRoot=Join-Path $Root repo
 $run=Join-Path $Root run
 foreach($name in @('inputs','logs','results','comsol','simion')){$null=New-Item -ItemType Directory -Path (Join-Path $run $name) -Force}
-$comsolStub=Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1'
+$comsolStub=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 $null=New-Item -ItemType Directory -Path (Split-Path -Parent $comsolStub) -Force
-[IO.File]::WriteAllText($comsolStub,('param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$Limits,$RunDir,$UsagePath,$CompletionPath);[IO.File]::WriteAllText($CompletionPath,''{{"operations":[],"host_release":{{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{{"status":"released","token":"TEST_ONLY_NO_NATIVE"}},"error":null}}}}'');if($null-eq$Limits-or$UsagePath-ne(Join-Path $RunDir ''logs/comsol.resource_usage.json'')-or$ReportPath-ne(Join-Path $RunDir ''logs/comsol_bootstrap.txt'')){{throw ''Owner omitted canonical budget observation''}};[IO.File]::WriteAllText(''{0}'',''TEST_ONLY_NATIVE_MODEL_BOUNDARY'');$global:LASTEXITCODE=0' -f (Join-Path $Root 'native_model_called').Replace("'","''")))
+Copy-Item (Join-Path $PublicRepo 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $comsolStub) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Root 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Root 'TEST_ONLY_MATLAB'
+$null=New-Item -ItemType Directory -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64') -Force
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Root;python_executable=$Python;host_state_path=(Join-Path $Root host.sqlite3);policy_path=(Join-Path $PublicRepo 'src/msplatform/execution/resources/host_resource_policy.json')}
+[IO.File]::WriteAllText($comsolStub,('param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$Limits,$RunDir,$UsagePath,$CompletionPath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath);[IO.File]::WriteAllText($CompletionPath,''{{"operations":[],"host_release":{{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{{"status":"released","token":"TEST_ONLY_NO_NATIVE"}},"error":null}}}}'');if($null-eq$Limits-or$UsagePath-ne(Join-Path $RunDir ''logs/comsol.resource_usage.json'')-or$ReportPath-ne(Join-Path $RunDir ''logs/comsol_bootstrap.txt'')){{throw ''Owner omitted canonical budget observation''}};[IO.File]::WriteAllText(''{0}'',''TEST_ONLY_NATIVE_MODEL_BOUNDARY'');$global:LASTEXITCODE=0' -f (Join-Path $Root 'native_model_called').Replace("'","''")))
 $generation=Join-Path $Root 'generation';$null=New-Item -ItemType Directory $generation
 $publication=Join-Path $run 'inputs/publication.json'
 Write-RunJson -Path $publication -Value @{generation_directory=$generation;cache_key='TEST_ONLY_CACHE_IDENTITY'}
@@ -379,12 +384,22 @@ $comsol=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and
 if($null-eq$task-or$null-eq$flight-or$null-eq$comsol){throw 'Actual task/consumer boundaries missing'}
 $allTasks=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Right.Extent.Text.StartsWith('Invoke-PulsePython')-and$n.Right.Extent.Text.Contains('materialize_comsol_task')},$true))
 if($allTasks.Count-ne1){throw 'Particle task has more than one generation call'}
-$steps=@($task,$flight,$comsol)
+$resolver=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.InvocationOperator-eq'Dot'-and$n.Extent.Text.Contains("'resolve_comsol_64.ps1'")},$true)
+$parameters=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolLauncherParameters'},$true)
+if($null-eq$resolver-or$null-eq$parameters){throw 'Actual COMSOL deployment boundary missing'}
+$steps=@($task,$flight,$resolver,$parameters,$comsol)
 $RepoRoot=Join-Path $Root consumer
-$launcher=Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1'
+$launcher=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Root 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Root 'TEST_ONLY_MATLAB'
+New-Item -ItemType Directory -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64') -Force|Out-Null
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Root;python_executable=$Python;host_state_path=(Join-Path $Root host.sqlite3);policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
 @'
-param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath)
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)
+$context=ConvertFrom-Json -InputObject $HostContextJson -AsHashtable
+if($context.workspace-ne$WorkingDirectory-or$ComsolLauncherPath-ne(Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe')-or$MatlabRootPath-ne$env:MATLAB_R2025B_ROOT){throw 'Actual COMSOL deployment argv was not transported'}
 [IO.File]::WriteAllText((Join-Path $RunDir 'results/task_consumed.txt'),$TaskScript)
 '@|Set-Content $launcher -Encoding utf8
 $frozen=@{execution_root=$Public};$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$RunId='TEST_ONLY_TASK_TRANSPORT'

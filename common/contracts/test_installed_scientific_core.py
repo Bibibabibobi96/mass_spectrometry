@@ -144,6 +144,18 @@ import msplatform.backends.comsol as comsol_backend
 matlab_directory = native_resource_directory().resolve()
 assert matlab_directory == pathlib.Path(comsol_backend.__file__).resolve().parent / "matlab"
 assert matlab_directory.is_relative_to(pathlib.Path(sysconfig.get_path("purelib")).resolve())
+from msplatform.backends.comsol.resources import LAUNCHER_RESOURCES, NATIVE_RESOURCES
+from msplatform.backends.comsol.resources import native_resource_path as comsol_resource_path
+assert {'ms_stage1_ei_source.m', 'load_ei_source_contract.m', 'comsolstartup.m'} <= NATIVE_RESOURCES
+assert LAUNCHER_RESOURCES == frozenset({'run_comsol_r2025b.ps1', 'resolve_comsol_64.ps1',
+    'livelink_environment.ps1', 'livelink_failure_classification.ps1'})
+for name in NATIVE_RESOURCES | LAUNCHER_RESOURCES:
+    resource = native_resource_path(name).resolve()
+    directory = 'launcher' if name in LAUNCHER_RESOURCES else 'matlab'
+    assert resource == pathlib.Path(comsol_backend.__file__).resolve().parent / directory / name
+    assert resource.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+    assert resource.read_bytes() == native_resource_text(name).encode('utf-8')
+    assert resource.stat().st_size > 0
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 assert callable(load_contract)
 candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict(s1=1., s2=2., p1=3., p2=4.))
@@ -519,6 +531,8 @@ import msplatform.examples
 example_path = pathlib.Path(msplatform.examples.__file__).with_name('rf_oatof_functional_v1.json')
 missing_rejected = []
 for label, missing_path, action in (
+    ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
+    ('ei_builder', comsol_resource_path('ms_stage1_ei_source.m'), lambda:comsol_resource_path('ms_stage1_ei_source.m')),
     ('example', example_path, lambda:example_api.load_example('rf_oatof_functional_v1')),
     ('gem', gem_template_path('reflectron'), lambda:simion_api.compile_geometry(actual_assembly,numerics=study.geometry_numerics)),
     ('powershell', resource_path('process_owner.ps1'), lambda:resource_path('process_owner.ps1')),

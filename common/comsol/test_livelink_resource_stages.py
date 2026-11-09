@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -138,11 +139,11 @@ class LiveLinkResourceStageTests(unittest.TestCase):
             from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
             copy_scientific_core(ROOT, root)
-            comsol = root / "common" / "comsol"
+            comsol = root / "src/msplatform/backends/comsol/launcher"
             comsol.mkdir(parents=True)
-            (root / "common" / "require_powershell7.ps1").write_text("", encoding="utf-8")
-            (root / "common" / "host_execution_lease.ps1").write_text(
-                (ROOT / "common/host_execution_lease.ps1").read_text(encoding="utf-8") + SCHEDULER,
+            (root / "common").mkdir(exist_ok=True)
+            (root / "src/msplatform/execution/resources/host_execution_lease.ps1").write_text(
+                (ROOT / "src/msplatform/execution/resources/host_execution_lease.ps1").read_text(encoding="utf-8") + SCHEDULER,
                 encoding="utf-8")
             shutil.copy2(ROOT / "src/msplatform/execution/resources/host_resource_policy.json", root / "common")
             shutil.copy2(ROOT / "common/resource_budget_support.ps1", root / "common")
@@ -154,7 +155,7 @@ class LiveLinkResourceStageTests(unittest.TestCase):
                 "function Assert-ComsolRuntimeWriteAccess { param($Paths) }", encoding="utf-8"
             )
             if storage:
-                environment_source = (ROOT / "common/comsol/livelink_environment.ps1").read_text(encoding="utf-8")
+                environment_source = (ROOT / "src/msplatform/backends/comsol/launcher/livelink_environment.ps1").read_text(encoding="utf-8")
                 (comsol / "livelink_environment.ps1").write_text(
                     environment_source + "\nfunction Get-ComsolRuntimeWritePaths { param($UserProfile,$TempPath) return @() }\n",
                     encoding="utf-8")
@@ -169,8 +170,8 @@ function Test-ComsolDirectoryWriteAccess {
  return & $script:originalWriteProbe -Path $Path
 }
 """)
-            shutil.copy2(ROOT / "common/comsol/livelink_failure_classification.ps1", comsol)
-            shutil.copy2(ROOT / "common/comsol/run_comsol_r2025b.ps1", comsol)
+            shutil.copy2(ROOT / "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1", comsol)
+            shutil.copy2(ROOT / "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1", comsol)
             (root / "launcher.exe").write_bytes(b"test double; never executed")
             (root / "task.m").write_text("% not executed", encoding="utf-8")
             (root / "launcher_double.ps1").write_text(LAUNCHER, encoding="utf-8")
@@ -217,7 +218,7 @@ $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding
 Write-Output 'ENCODING_PROBE=中文'
 [Console]::Error.WriteLine('ENCODING_PROBE=中文')
-$path=Join-Path $PSScriptRoot 'common/comsol/run_comsol_r2025b.ps1'
+$path=Join-Path $PSScriptRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 $text=[IO.File]::ReadAllText($path)
 $tokens=$null; $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$errors)
@@ -234,7 +235,7 @@ function Start-ComsolLauncherProcess {
     Write-Event 'launch'
     if($env:STAGE_STORAGE){Write-Event ('launcher_arguments:'+(ConvertTo-Json -InputObject @($Arguments) -Compress))}
     $global:FakeServerLive=$true
-    $global:FakeLauncherProcess=Start-ControlledChildProcess -FilePath $FilePath -Arguments @('-NoProfile','-File',(Join-Path $repoRoot 'controlled_child.ps1'))
+    $global:FakeLauncherProcess=Start-ControlledChildProcess -FilePath $FilePath -Arguments @('-NoProfile','-File',(Join-Path $WorkingDirectory 'controlled_child.ps1'))
     Write-Event ("launcher_identity:{0}:{1}" -f $global:FakeLauncherProcess.Id,$global:FakeLauncherProcess.StartTime.ToUniversalTime().Ticks)
     return $global:FakeLauncherProcess
 }
@@ -274,14 +275,15 @@ function Update-RepositoryProcessObservation {
  return $result
 }
 '@
-    $anchor=". (Join-Path `$repoRoot 'common\resource_budget_support.ps1')"
+    $anchor=". (Join-Path `$executionResources 'resource_process_support.ps1')"
     if(-not$text.Contains($anchor)){throw 'Observation import anchor missing'}
     $text=$text.Replace($anchor,$anchor+"`n"+$observeFixture)
 }
 [IO.File]::WriteAllText($path,$text)
 $global:FakeLaunchCount=0
 $global:FakeServerLive=$false
-$arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'logs/report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
+$hostFields=@{workspace=$PSScriptRoot;python_executable=$env:TEST_PYTHON;host_state_path=(Join-Path $PSScriptRoot 'state.sqlite3');policy_path=(Join-Path $PSScriptRoot 'src/msplatform/execution/resources/host_resource_policy.json')}
+$arguments=@{HostContextJson=($hostFields|ConvertTo-Json -Compress);WorkingDirectory=$PSScriptRoot;ComsolLauncherPath=$env:FAKE_LAUNCHER;MatlabRootPath=$env:MATLAB_R2025B_ROOT;TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'logs/report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
 if($env:STAGE_COMPLETION -eq '1'){$arguments.CompletionPath=Join-Path $PSScriptRoot 'completion.json'}
 if($env:STAGE_STORAGE){
  $arguments.RunDir=Join-Path $PSScriptRoot 'owned run with spaces'
@@ -318,7 +320,7 @@ try { & $path @arguments } finally {
  }
 }
 ''', encoding="utf-8")
-            environment = dict(os.environ, STAGE_SCENARIO=scenario, STAGE_EVENTS=str(events),
+            environment = dict(os.environ, TEST_PYTHON=sys.executable, STAGE_SCENARIO=scenario, STAGE_EVENTS=str(events),
                                FAKE_LAUNCHER=str(root / "launcher.exe"), MATLAB_R2025B_ROOT=str(root),
                                STAGE_SUPPLIED_BUDGET=str(int(supplied_budget)),
                                STAGE_ASSEMBLY_MODE=assembly_mode or '',
@@ -501,7 +503,7 @@ $ErrorActionPreference='Stop'
 . '{ROOT / 'common/resource_budget_support.ps1'}'
 function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial'}}
 $tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile('{ROOT / 'common/comsol/run_comsol_r2025b.ps1'}',[ref]$tokens,[ref]$errors)
+$ast=[Management.Automation.Language.Parser]::ParseFile('{ROOT / 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'}',[ref]$tokens,[ref]$errors)
 $definition=$ast.Find({{param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Stop-ComsolAttemptServers'}},$true)
 . ([scriptblock]::Create($definition.Extent.Text))
 $exe=(Get-Process -Id $PID).Path
@@ -722,7 +724,7 @@ class LiveLinkBootstrapContractTests(unittest.TestCase):
     """The bootstrap report separates startup readiness from task completion."""
 
     def test_running_precedes_task_and_pass_follows_it(self) -> None:
-        source = (ROOT / "common/comsol/livelink_r2025b/comsolstartup.m").read_text(encoding="utf-8")
+        source = (ROOT / "src/msplatform/backends/comsol/matlab/comsolstartup.m").read_text(encoding="utf-8")
         running = source.index('writeBootstrapReport(bootstrapReportPath, "RUNNING", "")')
         task = source.index("executeComsolTask(bootstrapTaskPath)")
         passed = source.index('writeBootstrapReport(bootstrapReportPath, "PASS", "")')

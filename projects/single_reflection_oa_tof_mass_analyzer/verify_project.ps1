@@ -137,7 +137,9 @@ if ($Level -eq 'Candidate') {
         Exit-HostExecutionLease -Lease $hostExecutionLease
         $hostExecutionLease = $null
       }
-      & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+      . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+      $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+      & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
         -TaskScript (Join-Path $projectRoot 'comsol\verify_oatof_comsol_sync.m') `
         -ReportPath $report
       if ($LASTEXITCODE -ne 0) { throw 'Candidate COMSOL MPH gate failed.' }
@@ -206,7 +208,9 @@ elseif ($Level -eq 'Formal') {
       Exit-HostExecutionLease -Lease $hostExecutionLease
       $hostExecutionLease = $null
     }
-    & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
+    . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
       -TaskScript (Join-Path $projectRoot 'comsol\verify_oatof_comsol_sync.m') `
       -ReportPath $comsolReport
     if ($LASTEXITCODE -ne 0) { throw 'Formal COMSOL GUI-equivalent MPH gate failed.' }

@@ -2,11 +2,14 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 
 projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
-addpath(projectRoot);
-addpath(fullfile(projectRoot, 'comsol'));
+repoRoot = fileparts(fileparts(projectRoot));
+helperDirectory = fullfile(repoRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab');
+addpath(helperDirectory);
+runDirectory = getenv('MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY');
+assert(~isempty(runDirectory), 'The public owner must provide its run execution directory.');
 contractPath = fullfile(projectRoot, 'config', 'resolved_model.json');
 assert(isfile(contractPath), 'Resolved EI-source build contract is missing.');
-result = ms_stage1_ei_source(contractPath, 'build_smoke');
+result = ms_stage1_ei_source(contractPath, runDirectory, 'build_smoke');
 assert(strcmp(result.status, 'PASS'), 'EI source build-only result did not pass.');
 assert(isfile(result.model_path), 'EI source build-only model was not saved.');
 assert(result.contract_loaded, 'Resolved EI-source contract was not loaded.');

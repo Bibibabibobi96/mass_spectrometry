@@ -564,10 +564,10 @@ function Invoke-FiniteComsolSavedExtraction {
     source_metadata_path=$Frozen.particle_source_metadata;resolved_path=$Frozen.multipole_resolved_design;numerics_path=$Frozen.solver_numerics} -Depth 20
   $task=Join-Path $inputDir 'reextract_saved_finite_solution.m'
   $State.launcher_receipt=Join-Path $Context.run_directory 'logs/comsol_launcher_completion.json'
-  $launcher=Join-Path $CodeRoot 'common/comsol/run_comsol_r2025b.ps1'
+  $launcher=Join-Path $CodeRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
   $budgetsPath=Join-Path $inputDir 'saved_extraction_host_budgets.json'
   $nativeRequest=Join-Path $inputDir 'saved_extraction_native_request.json'
-  $bootstrap=Join-Path $CodeRoot 'common/comsol/livelink_r2025b/comsolstartup.m'
+  $bootstrap=Join-Path $CodeRoot 'src/msplatform/backends/comsol/matlab/comsolstartup.m'
   $stdout=Join-Path $Context.run_directory 'logs/saved_extraction.stdout.log'
   $stderr=Join-Path $Context.run_directory 'logs/saved_extraction.stderr.log'
   $nativePaths=@($launcher,$bootstrap,$task,$request,$nativeRequest,$binding,$report,$State.launcher_receipt,$budgetsPath,$CodeRoot,$stdout,$stderr,$usage,
@@ -626,7 +626,7 @@ end
   $config.provenance.referenced_model=$Source.exports.model;$config.provenance.release_mapping=$Source.exports.mapping
   $State.phase='saved_extraction';$start=$State.timer.Elapsed.TotalSeconds
   $State.usage_path=$usage;$State.launcher_receipt=Join-Path $Context.run_directory 'logs/comsol_launcher_completion.json'
-  $launcher=Join-Path $CodeRoot 'common/comsol/run_comsol_r2025b.ps1'
+  $launcher=Join-Path $CodeRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
   $budgets=@{};foreach($stage in @('prepare','solver','postprocess')){
     $budget=Get-HostResourceBudget -Role COMSOL -Stage $stage
     $budget.memory_bytes=[long]$Limits.process_tree_working_set_bytes;$budgets[$stage]=$budget
@@ -646,7 +646,9 @@ end
   $nativeEnvironment.SIMULATION_PYTHON_EXE=$Python
   $nativeStopped=$false
   $quote={param($value) "'"+([string]$value).Replace("'","''")+"'"}
-  $command="& $(& $quote $nativeMap[$launcher]) -TaskScript $(& $quote $nativeMap[$task]) -ReportPath $(& $quote $nativeMap[$report]) -StartupAttempts 1 -RunId $(& $quote $RunId) -RunDir $(& $quote $Context.execution_run_directory) -CompletionPath $(& $quote $nativeMap[$State.launcher_receipt]) -ResourceBudgets (Get-Content -LiteralPath $(& $quote $nativeMap[$budgetsPath]) -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable)"
+  . (Join-Path (Split-Path -Parent $launcher) 'resolve_comsol_64.ps1')
+  $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $nativeMap[$CodeRoot]
+  $command="& $(& $quote $nativeMap[$launcher]) -HostContextJson $(& $quote $comsolLauncherParameters.HostContextJson) -WorkingDirectory $(& $quote $comsolLauncherParameters.WorkingDirectory) -ComsolLauncherPath $(& $quote $comsolLauncherParameters.ComsolLauncherPath) -MatlabRootPath $(& $quote $comsolLauncherParameters.MatlabRootPath) -TaskScript $(& $quote $nativeMap[$task]) -ReportPath $(& $quote $nativeMap[$report]) -StartupAttempts 1 -RunId $(& $quote $RunId) -RunDir $(& $quote $Context.execution_run_directory) -CompletionPath $(& $quote $nativeMap[$State.launcher_receipt]) -ResourceBudgets (Get-Content -LiteralPath $(& $quote $nativeMap[$budgetsPath]) -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable)"
   $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
   try{
     try{
@@ -1235,9 +1237,13 @@ $comsolRunFailure=$null
     }
     try{
       $ownerState.native_attempted=$true
+      . (Join-Path $codeRoot 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1')
+      $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $codeRoot
       $solverProcess=Invoke-ResourceBudgetedProcess -Limits $resolvedBudget.limits `
         -RunDir $runDir -UsagePath $resourceUsage -FilePath $pwsh -ArgumentList @(
-          '-NoProfile','-NonInteractive','-File',(Join-Path $codeRoot 'common\comsol\run_comsol_r2025b.ps1'),
+          '-NoProfile','-NonInteractive','-File',(Join-Path $codeRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'),
+          '-HostContextJson',$comsolLauncherParameters.HostContextJson,'-WorkingDirectory',$comsolLauncherParameters.WorkingDirectory,
+          '-ComsolLauncherPath',$comsolLauncherParameters.ComsolLauncherPath,'-MatlabRootPath',$comsolLauncherParameters.MatlabRootPath,
           '-TaskScript',$task,'-ReportPath',$report,'-StartupAttempts','1','-RunId',$RunId,'-CompletionPath',$ownerState.launcher_receipt)
       $ownerState.wrapper_observation=@{exit_confirmed=$true;returncode=[int]$solverProcess.exit_code;
         process_id=[int]$solverProcess.root_process_id;process_started_at_utc_ticks=[long]$solverProcess.root_process_started_at_utc_ticks}

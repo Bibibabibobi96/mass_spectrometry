@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BUILDER = PROJECT_ROOT / "comsol" / "ms_stage1_ei_source.m"
+BUILDER = PROJECT_ROOT.parents[1] / "src/msplatform/backends/comsol/matlab/ms_stage1_ei_source.m"
 BUILD_TEST = PROJECT_ROOT / "tests" / "comsol" / "test_build_only.m"
 
 
@@ -22,6 +22,18 @@ class MatlabContractBindingTests(unittest.TestCase):
         self.assertIn("load_ei_source_contract", self.builder)
         self.assertIn("resolvedContractPath", self.builder)
         self.assertIn("no defaults exist", self.builder)
+
+    def test_builder_requires_owner_path_without_repository_or_environment_discovery(self) -> None:
+        self.assertIn('ms_stage1_ei_source(resolvedContractPath, runDirectory, label)', self.builder)
+        self.assertIn('if nargin < 2 || isempty(runDirectory)', self.builder)
+        self.assertIn('if nargin < 3 || isempty(label)', self.builder)
+        self.assertIn("fullfile(runDirectory, 'comsol')", self.builder)
+        self.assertIn("fullfile(runDirectory, 'results')", self.builder)
+        for forbidden in ('mfilename', 'addpath', 'getenv', 'ei_source_paths'):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, self.builder)
+        self.assertIn('MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY', self.build_test)
+        self.assertIn("ms_stage1_ei_source(contractPath, runDirectory, 'build_smoke')", self.build_test)
 
     def test_critical_comsol_nodes_use_named_parameters(self) -> None:
         required_bindings = (
