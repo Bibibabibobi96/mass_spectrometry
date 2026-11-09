@@ -739,14 +739,28 @@ foreach($scope in @('Owner','Repository')){
             return selected
 
     def test_unmapped_simion_source_preserves_native_exclusions(self) -> None:
-        result = self.selections(REPO_ROOT, [dict(
-            stage="simion_common", paths=["src/msplatform/backends/simion/operations.py"],
-        )])[0]
-        self.assertEqual(result["Reason"], "explicit_discovery_preserves_native_exclusions")
-        self.assertTrue(result["OnlyTestModules"])
-        self.assertFalse(result["CompleteOwner"])
-        self.assertIn("common/simion/test_native_completion.py", result["Modules"])
-        self.assertNotIn("common/simion/test_dirichlet_patch_basis.py", result["Modules"])
+        paths = ["src/msplatform/execution/recovery.py",
+                 "src/msplatform/backends/simion/gem_primitives.py",
+                 "src/msplatform/backends/simion/aperture.py"]
+        cases = [dict(stage="simion_common", paths=[path]) for path in paths]
+        excluded = "common/simion/test_dirichlet_patch_basis.py"
+        expected = {path.relative_to(REPO_ROOT).as_posix()
+                    for path in (REPO_ROOT / "common/simion").rglob("test_*.py")} - {excluded}
+        for path, result in zip(paths, self.selections(REPO_ROOT, cases, owner_filter=True)):
+            with self.subTest(path=path):
+                self.assertEqual(result["Reason"], "explicit_discovery_preserves_native_exclusions")
+                self.assertTrue(result["OnlyTestModules"])
+                self.assertFalse(result["CompleteOwner"])
+                self.assertCountEqual(result["Modules"], expected)
+        # Exercise the public command planner as well as its actual owner filter.
+        with tempfile.TemporaryDirectory(prefix="native_exclusion_plan_") as directory:
+            request = Path(directory) / "plan.json"
+            write_planned_request(REPO_ROOT, request, [paths[0]])
+            plan = json.loads(request.read_text(encoding="utf-8"))
+        stage = next(stage for stage in plan["stages"] if stage["name"] == "simion_common")
+        self.assertEqual(stage["command"]["arguments"][:2], ["-m", "common.gate_unittest"])
+        self.assertCountEqual(stage["command"]["arguments"][2:], expected)
+        self.assertEqual(stage["resource_role"], "GATE")
 
     def test_existing_modules_and_support_have_explicit_selection(self) -> None:
         cases = []

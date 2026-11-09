@@ -20,6 +20,15 @@ CHANGED_GATE = REPO_ROOT / "common" / "verify.ps1"
 ROUTE_TABLE = REPO_ROOT / "common" / "gate_catalog.json"
 PARALLEL_GATE_SUPPORT = REPO_ROOT / "common" / "parallel_gate_support.ps1"
 LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
+FROZEN_INPUT_CONTRACT_TESTS = {
+    "common/contracts/" + name for name in (
+        "test_batch_processes.py", "test_execution_accounting_hold.py",
+        "test_execution_runtime.py", "test_frozen_inputs.py",
+        "test_immutable_input_process.py", "test_installed_scientific_core.py",
+        "test_process_family_identity.py", "test_python_dependency_contract.py",
+        "test_scientific_core_boundaries.py",
+    )
+}
 
 
 class ChangedGateContractTests(unittest.TestCase):
@@ -297,10 +306,15 @@ ConvertTo-Json -Compress -InputObject $paths
     def test_frozen_input_dependency_keeps_its_real_seed_consumer_unique(self):
         request, _ = self.plan("-ChangedPath", "src/msplatform/execution/inputs.py")
         rows = {row["name"]: row for row in request["stages"]}
-        self.assertEqual(rows["common_contracts"]["command"]["arguments"],
-                         ["-m", "common.gate_unittest", "common/contracts/test_frozen_inputs.py"])
+        arguments = rows["common_contracts"]["command"]["arguments"]
+        self.assertEqual(arguments[:2], ["-m", "common.gate_unittest"])
+        self.assertCountEqual(arguments[2:], FROZEN_INPUT_CONTRACT_TESTS)
         self.assertEqual(rows["simion_common"]["command"]["arguments"],
                          ["-m", "common.gate_unittest", "common/simion/test_workbench_seed.py"])
+        all_modules = [module for row in request["stages"]
+                       for module in row["command"].get("arguments", [])[2:]]
+        self.assertEqual(all_modules.count("common/contracts/test_frozen_inputs.py"), 1)
+        self.assertEqual(all_modules.count("common/simion/test_workbench_seed.py"), 1)
 
     def test_resource_sampler_dependencies_keep_completion_and_drain_in_public_scope(self):
         request, _ = self.plan("-ChangedPath", "common/resource_budget_support.ps1")
@@ -321,9 +335,11 @@ ConvertTo-Json -Compress -InputObject $paths
             root = Path(directory)
             inputs = root / "common/contracts"
             inputs.mkdir(parents=True)
-            expected = {"common/contracts/" + name for name in
-                        ("test_frozen_inputs.py", "test_other_contract.py", "test_another_contract.py")}
+            expected = FROZEN_INPUT_CONTRACT_TESTS | {
+                "common/contracts/test_other_contract.py", "common/contracts/test_another_contract.py",
+            }
             for relative in expected | {"src/msplatform/execution/inputs.py"}:
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
                 (root / relative).write_text("# selector metadata fixture; never imported\n", encoding="utf-8")
             literal = lambda value: "'" + str(value).replace("'", "''") + "'"
             script = f"""
@@ -335,9 +351,9 @@ $parameters=@{{Route=$route;KnownTestRoots=@('common/contracts/');RepoRoot=$root
 $results=[ordered]@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
 $results.unknown=@((Get-GateChangedTests @parameters -ChangedPaths @('common/contracts/future_unknown.py')).Modules)
 Remove-Item -LiteralPath (Join-Path $root $source)
-$results.deleted=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)
+$results.deleted=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source))
 Set-Content -LiteralPath (Join-Path $root 'common/contracts/renamed_frozen_inputs.py') -Value '# not executed'
-$results.renamed=@((Get-GateChangedTests @parameters -ChangedPaths @($source,'common/contracts/renamed_frozen_inputs.py')).Modules)
+$results.renamed=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source,'common/contracts/renamed_frozen_inputs.py'))
 $results.full=@((Get-GateChangedTests @parameters -ChangedPaths @($source) -FullScope).Modules)
 $results|ConvertTo-Json -Compress
 """
@@ -345,8 +361,14 @@ $results|ConvertTo-Json -Compress
                                     cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             records = json.loads(result.stdout)
-            self.assertEqual(records["known"], ["common/contracts/test_frozen_inputs.py"])
-            for case in ("unknown", "deleted", "renamed", "full"):
+            self.assertCountEqual(records["known"], FROZEN_INPUT_CONTRACT_TESTS)
+            # Canonical inputs.py is outside the contract test owner's scope.
+            # A deleted/renamed authority returns no narrow selection, retaining
+            # the original full-owner command instead of stale leaf mappings.
+            for case in ("deleted", "renamed"):
+                with self.subTest(case=case):
+                    self.assertTrue(records[case])
+            for case in ("unknown", "full"):
                 with self.subTest(case=case):
                     self.assertEqual(set(records[case]), expected)
                     self.assertEqual(len(records[case]), len(expected))
