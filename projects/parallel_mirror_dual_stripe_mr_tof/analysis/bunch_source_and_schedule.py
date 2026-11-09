@@ -17,7 +17,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from common.contracts.particle_count_policy import (
+from msplatform.contracts.particle_count_policy import (
     validate_standard_particle_count,
 )
 from msplatform.ion_release.cylinder import (

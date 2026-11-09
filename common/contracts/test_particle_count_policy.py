@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from common.contracts.particle_count_policy import (
+from msplatform.contracts.particle_count_policy import (
     load_particle_count_policy,
     validate_prefix_particle_sources,
     validate_standard_particle_count,

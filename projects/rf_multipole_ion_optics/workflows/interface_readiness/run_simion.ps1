@@ -62,7 +62,7 @@ $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $r
     ) `
     -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
-        'common\contracts\particle_count_policy.json'
+        'src\msplatform\contracts\particle_count_policy.json'
     )
 $executionCapacityPaths = @('inputs/frozen_python_package.ps1') +
     (Get-FrozenPythonPackageExecutionPaths -RelativePaths $frozenPythonRelativePaths)
@@ -209,7 +209,7 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy',
         'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
         'msplatform.contracts.particle_physics',
-        'common.contracts.particle_count_policy',
+        'msplatform.contracts.particle_count_policy',
         'common.contracts.file_identity',
         'msplatform.ion_release',
         'msplatform.ion_release.numpy_ion11_box',
@@ -492,7 +492,7 @@ Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -CaseName 'interface_r
         'src/msplatform/components/rf_multipole/source_validation.py',
         'projects/rf_multipole_ion_optics/core/interface_geometry.py',
         'src/msplatform/backends/simion/source.py','src/msplatform/contracts/particle_physics.py',
-        'common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')
+        'src/msplatform/contracts/particle_count_policy.py','src/msplatform/contracts/particle_count_policy.json')
 $lifecycle=Get-Content -LiteralPath $runConfigPath -Raw|ConvertFrom-Json -AsHashtable
 foreach($key in @('artifact_retention','capacity_ledger_lifecycle')){if($lifecycle.ContainsKey($key)){$runConfig[$key]=$lifecycle[$key]}}
 $runConfig.schema_version=$lifecycle.schema_version

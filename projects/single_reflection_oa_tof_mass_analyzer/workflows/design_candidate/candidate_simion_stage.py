@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.machine_contracts import load_json, sha256
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 
 def _nonformal_template(stage: dict[str, Any], plan: dict[str, Any]) -> Path:

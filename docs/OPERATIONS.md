@@ -19,9 +19,15 @@
 
 独立粒子轨迹项目的正式证据统一使用三档粒子数：N=100是功能检查、日常回归和Candidate功能证据的最低标准档；
 N=1000是峰形、尾部、束斑/发散分布、损失分布与标准分辨率统计档；N=5000是高统计档。机器权威为
-[`common/contracts/particle_count_policy.json`](../common/contracts/particle_count_policy.json)，实现必须在昂贵
+[`src/msplatform/contracts/particle_count_policy.json`](../src/msplatform/contracts/particle_count_policy.json)，实现必须在昂贵
 求解前调用其校验器。探索运行可使用任意正整数粒子数，并必须在输入与结果中记录实际数目；较小标准样本必须是同一种子较大母样本的前缀，不能分别抽样。低于100的粒子数不得成为新项目或新模式的功能、Candidate或Formal基线；专项收敛或集体效应研究可以通过版本化项目合同
 增加具名粒子数，但不能改写这些档位的含义。历史小N运行只保留为历史证据，不构成当前入口。
+
+Historical paired-particle bundle metadata may retain the exact former policy
+provenance label `common/contracts/particle_count_policy.json`. Its declared
+bundle version, remaining policy fields and original policy SHA must still match
+exactly. The reader never rewrites that metadata or supplements missing fields;
+new bundles name only `src/msplatform/contracts/particle_count_policy.json`.
 
 质量分辨率统一为 `R=m/FWHM_m`；窄峰时间域等价式是 `R=T/(2*FWHM_t)`。`2.3548×sigma`
 只有在峰形近似高斯时才可作为 FWHM 代理。比较 COMSOL 与 SIMION 时至少统一几何、粒子表、

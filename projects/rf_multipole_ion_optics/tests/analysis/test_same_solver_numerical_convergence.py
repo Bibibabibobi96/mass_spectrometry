@@ -29,7 +29,7 @@ ANALYZER = (
 )
 CONTRACT = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "same_solver_numerical_convergence.json"
 PARTICLE_COUNT_POLICY = (
-    REPO_ROOT / "common" / "contracts" / "particle_count_policy.json"
+    REPO_ROOT / "src" / "msplatform" / "contracts" / "particle_count_policy.json"
 )
 PORTABLE_INPUT_ROLES = [
     "particle_table",

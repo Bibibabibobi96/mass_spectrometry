@@ -38,7 +38,7 @@ from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import canonical_json_sha256
 from msplatform.execution.inputs import freeze_file, python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME, require_completed_terminal_publication

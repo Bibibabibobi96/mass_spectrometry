@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 import sys
 
-from common.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
+from msplatform.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources
 from common.contracts.write_run_manifest import file_record, publish_run_manifest
 from common.contracts import artifact_retention

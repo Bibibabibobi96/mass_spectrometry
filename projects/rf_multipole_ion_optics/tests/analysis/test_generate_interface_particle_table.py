@@ -44,6 +44,29 @@ RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_desig
 
 
 class InterfaceParticleTableTests(unittest.TestCase):
+    def test_known_historical_policy_label_reads_without_rewriting_or_weakening_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generate_bundle(SOURCE_FAMILY,DISTRIBUTION,RESOLVED,root)
+            path = root / "paired_particle_bundle.json"
+            data = json.loads(path.read_text())
+            self.assertEqual(data["policy"]["source"],"src/msplatform/contracts/particle_count_policy.json")
+            data["policy"]["source"] = "common/contracts/particle_count_policy.json"
+            path.write_text(json.dumps(data))
+            before = path.read_bytes()
+            validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED)
+            self.assertEqual(path.read_bytes(),before)
+            for key,value in (("source","arbitrary/policy.json"),("sha256","0"*64),("functional_count",99)):
+                changed = json.loads(before)
+                changed["policy"][key] = value
+                path.write_text(json.dumps(changed))
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError,"policy identity differs"):
+                    validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED)
+            missing = json.loads(before);del missing["policy"]["sha256"]
+            path.write_text(json.dumps(missing))
+            with self.assertRaisesRegex(ValueError,"policy identity differs"):
+                validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED)
+
     def test_fixed_and_uniform_energy_points_preserve_paired_phase_space(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text)
@@ -311,47 +334,12 @@ class InterfaceParticleTableTests(unittest.TestCase):
                 ),
                 (
                     REPOSITORY_ROOT
-                    / "common"
-                    / "contracts"
-                    / "particle_count_policy.py",
-                    code_root / "common" / "contracts" / "particle_count_policy.py",
-                ),
-                (
-                    REPOSITORY_ROOT
-                    / "common"
-                    / "contracts"
-                    / "particle_count_policy.json",
-                    code_root / "common" / "contracts" / "particle_count_policy.json",
+                    / "src" / "msplatform" / "contracts" / "particle_count_policy.json",
+                    code_root / "src" / "msplatform" / "contracts" / "particle_count_policy.json",
                 ),
                 (
                     REPOSITORY_ROOT / "common" / "contracts" / "file_identity.py",
                     code_root / "common" / "contracts" / "file_identity.py",
-                ),
-                (
-                    REPOSITORY_ROOT / "common" / "ion_release" / "__init__.py",
-                    code_root / "common" / "ion_release" / "__init__.py",
-                ),
-                (
-                    REPOSITORY_ROOT / "common" / "ion_release" / "cylinder.py",
-                    code_root / "common" / "ion_release" / "cylinder.py",
-                ),
-                (
-                    REPOSITORY_ROOT
-                    / "common"
-                    / "ion_release"
-                    / "mt19937_disk_cone_rf_phase.py",
-                    code_root
-                    / "common"
-                    / "ion_release"
-                    / "mt19937_disk_cone_rf_phase.py",
-                ),
-                (
-                    REPOSITORY_ROOT / "common" / "ion_release" / "numpy_box_cone.py",
-                    code_root / "common" / "ion_release" / "numpy_box_cone.py",
-                ),
-                (
-                    REPOSITORY_ROOT / "common" / "ion_release" / "numpy_ion11_box.py",
-                    code_root / "common" / "ion_release" / "numpy_ion11_box.py",
                 ),
                 (
                     REPOSITORY_ROOT / "projects/rf_multipole_ion_optics/core/__init__.py",

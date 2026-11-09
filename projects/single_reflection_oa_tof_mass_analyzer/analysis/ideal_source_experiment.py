@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from common.contracts.particle_count_policy import (
+from msplatform.contracts.particle_count_policy import (
     load_particle_count_policy,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (

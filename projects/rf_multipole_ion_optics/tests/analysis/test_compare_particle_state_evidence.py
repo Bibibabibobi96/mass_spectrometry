@@ -13,7 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 PARTICLE_COUNT_POLICY = (
-    REPO_ROOT / "common" / "contracts" / "particle_count_policy.json"
+    REPO_ROOT / "src" / "msplatform" / "contracts" / "particle_count_policy.json"
 )
 ANALYSIS = PROJECT_ROOT / "analysis"
 EVALUATOR = PROJECT_ROOT / "workflows" / "cross_solver" / "evaluate.py"

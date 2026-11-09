@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.file_identity import FileIdentityGuard, guarded_file_identity
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record

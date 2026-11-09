@@ -21,7 +21,7 @@ import unittest
 from unittest.mock import patch
 
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
-from common.contracts.particle_count_policy import POLICY_PATH
+from msplatform.contracts.particle_count_policy import POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 from msplatform.ion_release.release import generate_release_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.particle_count_policy import validate_prefix_particle_sources
+from msplatform.contracts.particle_count_policy import validate_prefix_particle_sources
 from projects.rf_multipole_ion_optics.analysis.generate_rf_multipole_family_mother_sample import (
     generate_rows,
     sha256,

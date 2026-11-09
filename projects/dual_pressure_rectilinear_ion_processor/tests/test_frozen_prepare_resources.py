@@ -95,7 +95,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             Path("src/msplatform/backends/simion/resources/1_instance_seed.iob"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
             Path("src/msplatform/execution/resources/artifact_retention.json"),
-            Path("common/contracts/particle_count_policy.json"),
+            Path("src/msplatform/contracts/particle_count_policy.json"),
             Path("src/msplatform/execution/resources/host_resource_policy.json"),
         ]
         resources.extend(Path(relative) for relative in enumerate_python_sources(

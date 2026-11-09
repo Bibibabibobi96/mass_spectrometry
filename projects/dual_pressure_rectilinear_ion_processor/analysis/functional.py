@@ -25,7 +25,7 @@ from common.simion.workbench_seed import freeze_workbench_seed
 from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from common.contracts.particle_count_policy import (
+from msplatform.contracts.particle_count_policy import (
     validate_standard_particle_count,
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev
@@ -308,7 +308,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")]
     runtime_resources.extend(repo / relative for relative in (
         "src/msplatform/execution/resources/artifact_retention.json",
-        "common/contracts/particle_count_policy.json", "src/msplatform/execution/resources/host_resource_policy.json",
+        "src/msplatform/contracts/particle_count_policy.json", "src/msplatform/execution/resources/host_resource_policy.json",
         "src/msplatform/backends/simion/resources/rf_drive.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "src/msplatform/backends/simion/resources/native_drive.lua",
         "src/msplatform/backends/simion/resources/scientific_event_csv.lua",

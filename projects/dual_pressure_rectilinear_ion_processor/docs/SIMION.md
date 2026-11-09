@@ -250,7 +250,7 @@ FLY2与工作台姿态使用同一合同；runtime将SIMION世界状态逆转到
 ## 冻结代码资源与下游数值离域记录
 
 准备阶段除Python源码外，同时冻结公共`particle_count_policy.py`通过`POLICY_PATH`读取的相邻JSON至
-`inputs/code/common/contracts/particle_count_policy.json`，并绑定为run输入。回归测试使用独立Python进程在run目录、
+`inputs/code/src/msplatform/contracts/particle_count_policy.json`，并绑定为run输入。回归测试使用独立Python进程在run目录、
 仅以冻结closure为PYTHONPATH校验N=100，避免当前进程的import缓存掩盖缺资源问题。
 
 下游数值观察面由冻结native projection派生：末端透镜最后实体x上界与PA最大x的中点。

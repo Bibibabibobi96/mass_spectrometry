@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.particle_count_policy import (
+from msplatform.contracts.particle_count_policy import (
     validate_prefix_particle_sources,
     validate_standard_particle_count,
 )
@@ -69,7 +69,7 @@ class ParticleSourcePolicyTests(unittest.TestCase):
         self.assertNotIn("ParticleCountOverride", source)
         self.assertNotIn("effective_mode.json", source)
         self.assertIn("__n1000_parent.ion", source)
-        self.assertIn("-m common.contracts.particle_count_policy", source)
+        self.assertIn("-m msplatform.contracts.particle_count_policy", source)
         self.assertIn("--prefix-n100 $ionPath --prefix-n1000 $parentIonPath", source)
         self.assertIn("Select-Object -First $particleCount", source)
         self.assertLess(

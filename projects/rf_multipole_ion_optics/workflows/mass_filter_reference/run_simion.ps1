@@ -139,7 +139,7 @@ try {
         -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
             'projects\rf_multipole_ion_optics\config\contracts\family_contract.json',
-            'common\contracts\particle_count_policy.json'
+            'src\msplatform\contracts\particle_count_policy.json'
         )
     $frozenAnalysisPackage = New-FrozenPythonPackage `
         -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
@@ -384,7 +384,7 @@ $runConfig.inputs.simion_fly_physics=Join-Path $inputDir 'simion_fly_physics.jso
             'projects/rf_multipole_ion_optics/runtime/simion_particle_source.py',
             'src/msplatform/components/rf_multipole/source_validation.py',
             'projects/rf_multipole_ion_optics/core/interface_geometry.py','src/msplatform/backends/simion/source.py',
-            'src/msplatform/contracts/particle_physics.py','common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')
+            'src/msplatform/contracts/particle_physics.py','src/msplatform/contracts/particle_count_policy.py','src/msplatform/contracts/particle_count_policy.json')
     $lifecycle=Get-Content -LiteralPath $runConfigPath -Raw|ConvertFrom-Json -AsHashtable
     foreach($key in @('artifact_retention','capacity_ledger_lifecycle')){if($lifecycle.ContainsKey($key)){$runConfig[$key]=$lifecycle[$key]}}
     $runConfig.schema_version=$lifecycle.schema_version

@@ -107,7 +107,7 @@
         },
         {
           "id": "local_frontend_common_contracts_particle_count_policy_json",
-          "source_repo_path": "common/contracts/particle_count_policy.json",
+          "source_repo_path": "src/msplatform/contracts/particle_count_policy.json",
           "consumers": [
             "local_frontend",
             "prepared_joint",

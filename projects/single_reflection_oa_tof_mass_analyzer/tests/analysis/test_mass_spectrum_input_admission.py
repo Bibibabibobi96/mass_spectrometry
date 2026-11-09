@@ -544,7 +544,7 @@ $inputDir=Join-Path $Root 'inputs';New-Item -ItemType Directory $inputDir|Out-Nu
 $modePath=Join-Path $inputDir 'mass_spectrum.json';$particleCountPolicyPath=Join-Path $inputDir 'particle_count_policy.json'
 $resolvedPath=Join-Path $inputDir 'resolved_geometry.json';$recordedResolved=Join-Path $inputDir 'original_recorded_resolved.json'
 $liveModePath=Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/config/modes/mass_spectrum.json'
-$liveParticleCountPolicyPath=Join-Path $Repo 'common/contracts/particle_count_policy.json'
+$liveParticleCountPolicyPath=Join-Path $Repo 'src/msplatform/contracts/particle_count_policy.json'
 $geometryFrozenInputs=[ordered]@{}
 $resumeExisting=$Scenario-in@('resume','reanalyze','foreign_resume')
 $existingLifecycle=[pscustomobject]@{inputs=[pscustomobject]@{resolved_geometry=$recordedResolved;geometry_freshness_baseline=(Join-Path $inputDir 'original_baseline.json')}}

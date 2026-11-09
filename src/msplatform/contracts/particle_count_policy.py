@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 POLICY_PATH = Path(__file__).with_name("particle_count_policy.json")

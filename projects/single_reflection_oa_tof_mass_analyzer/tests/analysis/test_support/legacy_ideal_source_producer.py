@@ -79,7 +79,7 @@ def _inputs(config_path: Path) -> dict[str, Path]:
     accelerator = REPO_ROOT / "projects/orthogonal_accelerator/analysis"
     return {"experiment": config_path, "entrypoint": Path(__file__),
             "analysis_contract": PROJECT_ROOT / "config/analysis_contract.json",
-            "particle_policy": REPO_ROOT / "common/contracts/particle_count_policy.json",
+            "particle_policy": REPO_ROOT / "src/msplatform/contracts/particle_count_policy.json",
             "peak_metrics": REPO_ROOT / "common/analysis/peak_metrics.py",
             "accelerator_time_focus": accelerator / "accelerator_time_focus.py",
             "accelerator_three_zone_theory": accelerator / "three_zone_ideal_theory.py",

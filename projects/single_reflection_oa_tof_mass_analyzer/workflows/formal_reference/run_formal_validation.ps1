@@ -228,7 +228,7 @@ $simionStderr = Join-Path $logDir 'simion_stderr.log'
 $simionCsv = Join-Path $resultDir 'simion_particles.csv'
 $simionSummary = Join-Path $resultDir 'simion_summary.json'
 $ionCount = @(Get-Content -LiteralPath $ion | Where-Object { $_.Trim() }).Count
-& $python (Join-Path $repoRoot 'common\contracts\particle_count_policy.py') --count $ionCount
+& $python (Join-Path $repoRoot 'src\msplatform\contracts\particle_count_policy.py') --count $ionCount
 if ($LASTEXITCODE -ne 0 -or $ionCount -ne 1000) {
   throw "Shared particle table is not exact N=1000: $ionCount"
 }

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
-from common.contracts.particle_count_policy import validate_prefix_particle_sources
+from msplatform.contracts.particle_count_policy import validate_prefix_particle_sources
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

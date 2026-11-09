@@ -57,7 +57,7 @@ try {
         ) `
         -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
-            'common\contracts\particle_count_policy.json'
+            'src\msplatform\contracts\particle_count_policy.json'
         )
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
@@ -96,7 +96,7 @@ try {
             $frozenComsolNumerics
         ),
         @(
-            (Join-Path $repoRoot 'common\contracts\particle_count_policy.json'),
+            (Join-Path $repoRoot 'src\msplatform\contracts\particle_count_policy.json'),
             $frozenParticleCountPolicy
         ),
         @(
@@ -230,7 +230,7 @@ try {
             'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
             'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
             'msplatform.contracts.particle_physics',
-            'common.contracts.particle_count_policy',
+            'msplatform.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
             'msplatform.components.rf_multipole.source_validation'
         ) -ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly
@@ -278,7 +278,7 @@ try {
             'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
             'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
             'msplatform.contracts.particle_physics',
-            'common.contracts.particle_count_policy',
+            'msplatform.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
             'msplatform.components.rf_multipole.source_validation'
         ) -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null

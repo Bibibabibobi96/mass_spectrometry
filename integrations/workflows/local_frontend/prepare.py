@@ -21,7 +21,7 @@ from typing import Any
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from common.contracts.verify_run_manifest import record_path, verify_record

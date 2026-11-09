@@ -17,7 +17,7 @@ import numpy as np
 from msplatform.contracts import particle_physics
 from common.contracts.file_identity import file_sha256 as sha256
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from common.contracts.particle_count_policy import (
+from msplatform.contracts.particle_count_policy import (
     POLICY_PATH,
     load_particle_count_policy,
 )
@@ -373,7 +373,7 @@ def generate_bundle(
         "algorithm_version": bundle_version,
         "seed": selected_seed,
         "policy": {
-            "source": "common/contracts/particle_count_policy.json",
+            "source": "src/msplatform/contracts/particle_count_policy.json",
             "sha256": family_identity["policy_sha256"],
             "functional_count": functional_count,
             "statistical_count": statistical_count,
@@ -441,8 +441,15 @@ def validate_bundle(
     selected_counts = _bundle_particle_counts(metadata.get("particle_counts"))
     if metadata.get("algorithm_version") != bundle_version:
         raise ValueError("paired particle bundle algorithm version differs")
+    # Known bundle data keeps its original provenance label. All other policy
+    # fields and the unchanged policy bytes/SHA remain exact; new writes above
+    # always name the current canonical owner.
+    declared_policy = metadata.get("policy")
+    old_policy_label = (isinstance(declared_policy, dict) and
+                        declared_policy.get("source") == "common/contracts/particle_count_policy.json")
     expected_policy = {
-        "source": "common/contracts/particle_count_policy.json",
+        "source": ("common/contracts/particle_count_policy.json" if old_policy_label else
+                   "src/msplatform/contracts/particle_count_policy.json"),
         "sha256": sha256(POLICY_PATH),
         "functional_count": functional_count,
         "statistical_count": statistical_count,

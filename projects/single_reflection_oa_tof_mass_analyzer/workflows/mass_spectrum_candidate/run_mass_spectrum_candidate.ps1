@@ -313,7 +313,7 @@ trap {
 }
 
 $liveModePath = Join-Path $projectRoot 'config\modes\mass_spectrum.json'
-$liveParticleCountPolicyPath = Join-Path $repoRoot 'common\contracts\particle_count_policy.json'
+$liveParticleCountPolicyPath = Join-Path $repoRoot 'src\msplatform\contracts\particle_count_policy.json'
 $modePath = Join-Path $inputDir 'mass_spectrum.json'
 $resolvedPath = Join-Path $inputDir 'resolved_geometry.json'
 $particleCountPolicyPath = Join-Path $inputDir 'particle_count_policy.json'
@@ -402,10 +402,10 @@ Write-TerminalRunRecord -RunDir $runDir -Status interrupted `
   -Reason 'Frozen mode, resolved geometry, and particle-count policy are bound.' `
   -RepoRoot $repoRoot -Python $python -SummaryRole 'oa_tof_terminal_run_summary'
 $statisticalParticleCount = [int]$particleCountPolicy.statistical_count
-& $python -m common.contracts.particle_count_policy --count $statisticalParticleCount
+& $python -m msplatform.contracts.particle_count_policy --count $statisticalParticleCount
 if ($LASTEXITCODE -ne 0) { throw 'Repository statistical particle-count policy is invalid.' }
 foreach ($species in $mode.species) {
-  & $python -m common.contracts.particle_count_policy --count ([int]$species.particle_count)
+  & $python -m msplatform.contracts.particle_count_policy --count ([int]$species.particle_count)
   if ($LASTEXITCODE -ne 0) {
     throw "Mass-spectrum species $($species.species_id) has no named standard particle-count contract."
   }
@@ -501,7 +501,7 @@ foreach ($species in $mode.species) {
     throw "Deterministic N=1000 parent validation failed: $parentIonPath"
   }
   if ($particleCount -eq [int]$particleCountPolicy.functional_check_count) {
-    & $python -m common.contracts.particle_count_policy `
+    & $python -m msplatform.contracts.particle_count_policy `
       --prefix-n100 $ionPath --prefix-n1000 $parentIonPath
     if ($LASTEXITCODE -ne 0) {
       throw "N=100 source is not the validated prefix of its N=1000 parent: $ionPath"

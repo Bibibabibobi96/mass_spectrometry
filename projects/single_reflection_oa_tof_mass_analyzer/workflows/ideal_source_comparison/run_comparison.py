@@ -86,7 +86,7 @@ def _inputs(config_path: Path) -> dict[str, Path]:
     return {"experiment": config_path, "entrypoint": Path(__file__),
             "numerical_case": Path(__file__).with_name("numerical_case.py"),
             "analysis_contract": PROJECT_ROOT / "config/analysis_contract.json",
-            "particle_policy": REPO_ROOT / "common/contracts/particle_count_policy.json",
+            "particle_policy": REPO_ROOT / "src/msplatform/contracts/particle_count_policy.json",
             "peak_metrics": REPO_ROOT / "src/msplatform/analysis/peak_metrics.py",
             "accelerator_time_focus": accelerator / "accelerator_time_focus.py",
             "accelerator_three_zone_theory": accelerator / "three_zone_ideal_theory.py",
