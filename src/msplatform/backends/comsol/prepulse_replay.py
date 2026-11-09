@@ -9,7 +9,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.results.single_reflection_source import select_timed_pre_pulse_states
 

@@ -398,7 +398,7 @@ try{
       if($LASTEXITCODE-ne0){throw 'COMSOL particle execution/export failed; raw saved particle model and native facts are retained.'}
     }
     Set-PairedStage 'diagnostic_comparison'
-    $null=Invoke-PulsePython 'from integrations.analysis.compare_paired_accelerator_pulse import compare_paired_accelerator_pulse;print(json.dumps(compare_paired_accelerator_pulse(*map(Path,sys.argv[1:]))))' `
+    $null=Invoke-PulsePython 'from msplatform.analysis.paired_accelerator_pulse import compare_paired_accelerator_pulse;print(json.dumps(compare_paired_accelerator_pulse(*map(Path,sys.argv[1:]))))' `
       @($planPath,(Join-Path $package.artifact_run_dir 'comsol/paired_pulse_particles.csv'),(Join-Path $package.result_dir 'simion_pulse_baseline.csv'),(Join-Path $package.result_dir 'comparison'))
   }
   Set-PairedStage 'terminal_publication'

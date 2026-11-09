@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 from msplatform.contracts.particle_state import binary64_serialization_close
 
 

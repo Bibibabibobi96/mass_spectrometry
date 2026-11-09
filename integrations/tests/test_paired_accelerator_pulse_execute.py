@@ -196,7 +196,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
             self.assertEqual(prepared['batches'][0]['expected_particle_ids'][0], 100)
             self.assertFalse(Path(prepared['batches'][0]['iob_path']).exists())
             analysis_import = subprocess.run([sys.executable, '-B', '-s', '-c',
-                'from integrations.analysis.compare_paired_accelerator_pulse import compare_paired_accelerator_pulse;from integrations.workflows.paired_accelerator_pulse.runtime import load_completed_pulse_stages,materialize_simion_continuation;print("FROZEN_ANALYSIS_AND_RECOVERY_IMPORT=PASS")'],
+                'from msplatform.analysis.paired_accelerator_pulse import compare_paired_accelerator_pulse;from integrations.workflows.paired_accelerator_pulse.runtime import load_completed_pulse_stages,materialize_simion_continuation;print("FROZEN_ANALYSIS_AND_RECOVERY_IMPORT=PASS")'],
                 cwd=frozen, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)
             self.assertEqual(analysis_import.returncode, 0, analysis_import.stdout + analysis_import.stderr)
 

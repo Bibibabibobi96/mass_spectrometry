@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.analysis.compare_paired_accelerator_pulse import (
+from msplatform.analysis.paired_accelerator_pulse import (
     COMSOL_COLUMNS, FIELDS, SIMION_COLUMNS, SOURCE_COLUMNS, compare_paired_accelerator_pulse,
 )
 from integrations.workflows.paired_accelerator_pulse.runtime import COLUMNS

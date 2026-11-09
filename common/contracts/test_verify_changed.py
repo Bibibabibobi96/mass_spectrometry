@@ -893,6 +893,13 @@ $result|ConvertTo-Json -Compress
                 self.assertEqual(set(self.routed_stages(path)), {"instrument_assembly_integration"})
 
 
+    def test_installed_paired_pulse_analysis_routes_real_consumers(self) -> None:
+        for path in ("src/msplatform/analysis/paired_accelerator_pulse.py",
+                     "src/msplatform/backends/comsol/prepulse_replay.py"):
+            with self.subTest(path=path):
+                self.assertEqual(set(self.routed_stages(path)),
+                                 {"common_contracts", "instrument_assembly_integration"})
+
     def test_direct_integration_gate_routes_its_declared_frozen_dependencies(self) -> None:
         inventory = json.loads((REPO_ROOT / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
         for group in inventory["providers"]:

@@ -272,6 +272,22 @@ N3薄片局部探针与carrier发布不构成完整场、工作台或Fly验收�
 [有限脉冲owner](../workflows/paired_accelerator_pulse/execute.ps1)只接受显式static producer、实录源、绝对观察时刻与numerics；
 脉冲、物种、原母群和OFF电压从原权威派生。`-PredecessorManifest`按完成事实复用阶段和完整批，
 已发布CSV直接分析，保存模型只补缺失导出。完整输出按原ID与时刻外配对，只发布`diagnostic_only`差异。
+Current paired-pulse comparison is owned by installed
+`msplatform.analysis.paired_accelerator_pulse`; Cartesian pre-pulse replay export and its
+`python -m msplatform.backends.comsol.prepulse_replay` CLI are owned by the COMSOL backend.
+The export uses the existing recorded-state selector in `results.single_reflection_source`;
+it preserves original IDs, mother, births, absolute clock, velocity conversion and original
+energy/serialization checks. Comparison retains its explicit time-grid outer pairing,
+missing/nonfinite/missed-time diagnostics and diagnostic-only status. These pure operations
+read declared records and write CSV/JSON; neither starts a solver or establishes equivalence.
+Old root implementations are retired; current frozen consumers select the canonical package.
+Software regression retains the original comparison, replay, pulse preparation/execution/recovery
+and freezing assertions; a missing canonical frozen replay module fails without author fallback.
+All six ordinary wheel/sdist installation tests passed, including actual installed comparison,
+Cartesian export and CLI calls on explicit inert records with checkout reads/imports denied.
+This migration did not launch a solver, change scientific thresholds or requalify historical results.
+
+
 有限脉冲`prepare.py`已复用公共`strict_json`读取与数值表示检查，删除私有`_read`／`_number`；
 重复键、NaN／Infinity和浮点溢出失败关闭，BOM、有限有符号电压与时间、既有正值数值控制保持原合同。
 相同惰性身份fixture下，迁移前后完整plan和17个生成文件逐字节相等；真实prepare入口回归覆盖

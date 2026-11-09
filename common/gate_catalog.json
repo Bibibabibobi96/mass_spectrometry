@@ -1685,6 +1685,10 @@
         {
           "exact": "src/msplatform/io/scientific_csv.py",
           "reason": "scientific_csv_reader_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:analysis/paired_accelerator_pulse|backends/comsol/prepulse_replay)\\.py$",
+          "reason": "installed_paired_pulse_analysis_changed"
         }
       ],
       "command": {

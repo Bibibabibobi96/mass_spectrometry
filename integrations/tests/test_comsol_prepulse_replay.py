@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from msplatform.execution.inputs import python_import_roots
 
-from integrations.analysis.build_comsol_prepulse_replay import build_comsol_prepulse_replay
+from msplatform.backends.comsol.prepulse_replay import build_comsol_prepulse_replay
 from msplatform.results.single_reflection_source import select_timed_pre_pulse_states
 
 
@@ -60,7 +60,7 @@ class ComsolPrePulseReplayTests(unittest.TestCase):
         self.assertEqual((species['mass_amu'],species['charge_state']),(100.,1))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);release=root/'release.csv';metadata=root/'metadata.json'
-            result=subprocess.run([sys.executable,'-B','-m','integrations.analysis.build_comsol_prepulse_replay',
+            result=subprocess.run([sys.executable,'-B','-m','msplatform.backends.comsol.prepulse_replay',
                 '--collection',str(collection),'--geometry',str(geometry),'--release-output',str(release),
                 '--metadata-output',str(metadata),'--mass-amu',str(species['mass_amu']),
                 '--charge-state',str(species['charge_state'])],cwd=REPO,capture_output=True,text=True,
@@ -256,7 +256,7 @@ class ComsolPrePulseReplayTests(unittest.TestCase):
             completed = subprocess.run(
                 [
                     sys.executable,
-                    str(INTEGRATION_ROOT / "analysis" / "build_comsol_prepulse_replay.py"),
+                    "-m", "msplatform.backends.comsol.prepulse_replay",
                     "--collection", str(collection), "--geometry", str(geometry),
                     "--release-output", str(release), "--metadata-output", str(metadata),
                     "--mass-amu", "100", "--charge-state", "1",
@@ -295,7 +295,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             )
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
             snapshot = frozen_inputs / "runtime_snapshot"
-            self.assertTrue((snapshot / "integrations/analysis/build_comsol_prepulse_replay.py").is_file())
+            self.assertTrue((snapshot / "src/msplatform/backends/comsol/prepulse_replay.py").is_file())
             replay = subprocess.run(
                 [
                     sys.executable, "-I", "-B", "-c",
@@ -304,7 +304,9 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                     "from msplatform.execution.inputs import python_import_roots;sys.path[:0]=python_import_roots(root);"
                     "import msplatform.results.single_reflection_source as source;"
                     "assert Path(source.__file__).resolve().is_relative_to(root);"
-                    "sys.argv=['integrations.analysis.build_comsol_prepulse_replay',*sys.argv[2:]];"
+                    "import msplatform.backends.comsol.prepulse_replay as replay_module;"
+                    "assert Path(replay_module.__file__).resolve().is_relative_to(root/'src');"
+                    "sys.argv=['msplatform.backends.comsol.prepulse_replay',*sys.argv[2:]];"
                     "runpy.run_module(sys.argv[0],run_name='__main__')", str(snapshot),
                     "--collection", str(collection), "--geometry", str(geometry),
                     "--release-output", str(root / "snapshot.release.csv"),
@@ -321,6 +323,17 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             )
             self.assertEqual(replay.returncode, 0, replay.stdout + replay.stderr)
             self.assertIn("COMSOL_PREPULSE_REPLAY_INPUT=PASS PARTICLES=1", replay.stdout)
+            module = snapshot / "src/msplatform/backends/comsol/prepulse_replay.py"
+            absent = module.with_suffix(".missing")
+            module.rename(absent)
+            try:
+                missing = subprocess.run(replay.args, cwd=snapshot,
+                    env={**os.environ, "PYTHONPATH": "", "PYTHONNOUSERSITE": "1"},
+                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertNotEqual(missing.returncode, 0, missing.stdout)
+                self.assertIn("msplatform.backends.comsol.prepulse_replay", missing.stderr)
+            finally:
+                absent.rename(module)
 
     def test_collection_retains_clock_identity_and_rejects_clock_drift(self) -> None:
         for mutation in ("missing_epoch", "native_time_drift"):

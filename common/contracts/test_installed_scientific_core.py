@@ -545,6 +545,55 @@ from msplatform.backends.simion.resources import gem_template_path, native_resou
 from msplatform.execution.resources import resource_path
 from msplatform.io.manifest_records import file_record
 from msplatform.execution.terminal_publication import publish_terminal_state
+
+# Explicit inert records exercise actual installed paired analysis and Cartesian CLI.
+from msplatform.analysis.paired_accelerator_pulse import compare_paired_accelerator_pulse
+from msplatform.backends.comsol.prepulse_replay import build_comsol_prepulse_replay
+paired_fixture = fixture['paired_pulse_analysis']
+paired_output = root/('paired-analysis-'+sys.argv[2])
+paired_output.mkdir()
+replay_metadata = build_comsol_prepulse_replay(pathlib.Path(paired_fixture['collection']),
+    pathlib.Path(paired_fixture['geometry']), paired_output/'release.csv', paired_output/'metadata.json',
+    mass_amu=100, charge_state=1, pulse_decision_path=pathlib.Path(paired_fixture['decision']))
+assert (paired_output/'release.csv').read_text(encoding='utf-8') == paired_fixture['expected_release']
+serialized_replay_metadata = json.loads((paired_output/'metadata.json').read_text(encoding='utf-8'))
+for key in ('selection','clock_epoch_id','species','selection_basis','coordinate_frame',
+            'maximum_energy_round_trip_error_eV','maximum_velocity_serialization_error_m_per_s'):
+    assert serialized_replay_metadata[key] == paired_fixture['expected_metadata'][key], key
+comparison_report = compare_paired_accelerator_pulse(pathlib.Path(paired_fixture['plan']),
+    pathlib.Path(paired_fixture['comsol']), pathlib.Path(paired_fixture['simion']), paired_output/'comparison')
+assert (paired_output/'comparison/paired_pulse_differences.csv').read_text(encoding='utf-8') == paired_fixture['expected_differences']
+assert {k:v for k,v in comparison_report.items() if k!='differences_csv'} == {k:v for k,v in paired_fixture['expected_comparison'].items() if k!='differences_csv'}
+assert comparison_report['qualification'] == 'diagnostic_only'
+for module_name in ('msplatform.analysis.paired_accelerator_pulse','msplatform.backends.comsol.prepulse_replay'):
+    assert pathlib.Path(sys.modules[module_name].__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+import subprocess
+cli_bootstrap = """
+import importlib.abc,json,pathlib,os,sys,runpy,sysconfig
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv.pop(1))]
+def deny_author(event,args):
+    if event=='open' and args and isinstance(args[0],(str,bytes)):
+        candidate=pathlib.Path(os.fsdecode(args[0])).resolve()
+        assert not any(candidate.is_relative_to(p) for p in blocked),'author source read: '+str(candidate)
+sys.addaudithook(deny_author)
+class RejectRepository(importlib.abc.MetaPathFinder):
+    def find_spec(self,name,path=None,target=None):
+        assert name.split('.')[0] not in {'common','projects','integrations'},name
+sys.meta_path.insert(0,RejectRepository())
+import msplatform.backends.comsol.prepulse_replay as replay
+assert pathlib.Path(replay.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+sys.argv=['msplatform.backends.comsol.prepulse_replay',*sys.argv[1:]]
+runpy.run_module(sys.argv[0],run_name='__main__')
+"""
+cli_result = subprocess.run([sys.executable,'-I','-c',cli_bootstrap,json.dumps([str(p) for p in blocked_source_roots]),
+    '--collection',paired_fixture['collection'],'--geometry',paired_fixture['geometry'],
+    '--release-output',str(paired_output/'cli-release.csv'),'--metadata-output',str(paired_output/'cli-metadata.json'),
+    '--mass-amu','100','--charge-state','1','--pulse-decision',paired_fixture['decision']],
+    cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+assert cli_result.returncode == 0,cli_result.stdout+cli_result.stderr
+assert 'COMSOL_PREPULSE_REPLAY_INPUT=PASS PARTICLES=1' in cli_result.stdout
+assert (paired_output/'cli-release.csv').read_bytes() == (paired_output/'release.csv').read_bytes()
+
 # A declared software data fixture checks installed reading, not native science.
 read_root = root/('published_contract_fixture_' + sys.argv[2])
 read_root.mkdir()
@@ -1358,6 +1407,23 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     self.assertEqual(original.read(name), reconstructed.read(name), name)
         return rebuilt_wheel
 
+    @staticmethod
+    def paired_pulse_analysis_probe_fixture(root: Path) -> dict:
+        from integrations.tests.test_comsol_prepulse_replay import ComsolPrePulseReplayTests
+        from integrations.tests.test_paired_accelerator_pulse_comparison import PairedPulseComparisonTests
+        source = root / 'paired-pulse-fixture'
+        source.mkdir()
+        collection, geometry, release, metadata, decision = ComsolPrePulseReplayTests()._write_source(source)
+        comparison = PairedPulseComparisonTests()
+        plan, _, comsol, simion = comparison.fixture(source)
+        comparison.compare(source, plan, comsol, simion)
+        return dict(collection=str(collection), geometry=str(geometry), decision=str(decision),
+            expected_release=release.read_text(encoding='utf-8'),
+            expected_metadata=json.loads(metadata.read_text(encoding='utf-8')),
+            plan=str(plan), comsol=str(source/'comsol.csv'), simion=str(source/'simion.csv'),
+            expected_differences=(source/'out/paired_pulse_differences.csv').read_text(encoding='utf-8'),
+            expected_comparison=json.loads((source/'out/paired_pulse_comparison.json').read_text(encoding='utf-8')))
+
     def test_wheel_and_sdist_install_and_compute_outside_worktree(self) -> None:
         self.assertEqual(sys.version_info[:2], (3, 11), 'Python 3.11 is required')
         config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
@@ -1535,6 +1601,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
+                                              paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
