@@ -567,7 +567,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
     prism_voltage = authority["analyzer_electrode_voltages_v"][15]
     seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed, inputs/"workbench_seed.iob")
-    shutil.copyfile(seed.parent/"iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")
+    shutil.copyfile(repo/"common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")
     source_cache, fields, field_paths, pending = {}, {}, {}, []
     reused, reuse_cache, reuse_paths = {}, {}, {}
     policy = load_particle_count_policy()
@@ -753,7 +753,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
     prism_voltage=authority["analyzer_electrode_voltages_v"][15]
     seed=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed,inputs/"workbench_seed.iob")
-    shutil.copyfile(seed.parent/"iob_seed_placeholder_01.pa0",inputs/"iob_seed_placeholder_01.pa0")
+    shutil.copyfile(repo/"common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",inputs/"iob_seed_placeholder_01.pa0")
     cases=[]
     for index,distance in enumerate(contract["distances_mm"],1):
         prepared=prepare_geometry(geometry,ip_voltage,prism_voltage,distance,contract["numerics"]["box_mm"],contract["numerics"]["pitch_mm"],contract["numerics"]["convergence_v"])
@@ -922,7 +922,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
                              payload_source=str(field.parent), payload_inventory=inventory))
         pending.append((case, resolved, directory, field, inventory, states))
     seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
-    for original, target in ((seed, inputs/"workbench_seed.iob"), (seed.parent/"iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")):
+    for original, target in ((seed, inputs/"workbench_seed.iob"), (repo/"common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")):
         shutil.copyfile(original, target)
     cases = []
     for index, (case, resolved, directory, field, inventory, states) in enumerate(pending, 1):

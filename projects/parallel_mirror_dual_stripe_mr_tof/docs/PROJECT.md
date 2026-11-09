@@ -601,3 +601,18 @@ terminal仍记录供应商最终状态；ion_splat、步长、电压和接受条
 CI 41181531874 的失败记录仍保留，本修正不是完整软件性能或原生求解资格验收。
 
 MR analytical and native-geometry callers now import the installed OA two-zone renderer. Existing source inventories also retain its three canonical backend files; geometry/voltage semantics and historical runs remain unchanged. This migration does not establish new MR native or frozen-execution qualification.
+
+### IP/prism placeholder source ownership
+
+IP/prism preparation keeps the structural IOB under the canonical installed
+SIMION resource owner and copies its required PA placeholder from the explicit
+repository fixture at `common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0`.
+It no longer assumes that this PA is adjacent to the relocated IOB. The original
+`inputs/workbench_seed.iob` and `inputs/iob_seed_placeholder_01.pa0` locations and
+input records remain unchanged; no PA fixture is added to the package or cache.
+The eight original preparation/replay error cases and one missing-original-source
+regression passed (9 tests, 2.830 seconds). The copied placeholder's size and SHA
+match its original authority and its existing run-input record is retained.
+The integrated complete distance-study module then passed 31 tests in 14.660 seconds.
+Other modules were not rerun for this path repair. It performs no native load,
+Refine or Fly and does not add geometry or scientific qualification.

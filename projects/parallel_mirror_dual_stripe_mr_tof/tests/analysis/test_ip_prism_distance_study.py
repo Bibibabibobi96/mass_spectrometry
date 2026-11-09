@@ -19,6 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_stud
     prepare, prepare_recorded_analysis, validate_fields, main, freeze_code, FROZEN_SCIENTIFIC_BRIDGE_MODULES, _contour_source_tables, _contour_geometry_and_voltage, _freeze_recorded_contour_source, _freeze_completed_field_source,
 )
 from common.contracts.write_run_manifest import file_record
+from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ip_prism_local_geometry import fixture
 
 MODULE = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study"
@@ -252,6 +253,21 @@ class ContourPreparationTests(unittest.TestCase):
             self.assertEqual(census[1]["raw_line_number"], 5)
             self.assertEqual(len(census[1]["raw_line_sha256"]), 64)
 
+    def test_missing_original_placeholder_fails_without_adjacent_seed_fallback(self):
+        original_copy=shutil.copyfile
+        repo=Path(__file__).resolve().parents[4]
+        placeholder=repo/'common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0'
+        attempted=[]
+        def missing_original(source,destination,*args,**kwargs):
+            if Path(source).resolve()==placeholder.resolve():
+                attempted.append(Path(source).resolve())
+                raise FileNotFoundError(str(placeholder))
+            return original_copy(source,destination,*args,**kwargs)
+        with patch(MODULE+'.shutil.copyfile',side_effect=missing_original):
+            with self.assertRaisesRegex(FileNotFoundError,'iob_seed_placeholder_01'):
+                self.test_prepare_materializes_case_specific_sources_and_shared_field_identity()
+        self.assertEqual(attempted,[placeholder.resolve()])
+
     def test_prepare_materializes_case_specific_sources_and_shared_field_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -276,6 +292,11 @@ class ContourPreparationTests(unittest.TestCase):
                  patch(MODULE+".load_particle_count_policy", return_value=dict(functional_check_count=2)), \
                  patch(MODULE+".freeze_code"):
                 result = prepare(run, cp)
+                placeholder=Path(__file__).resolve().parents[4]/'common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0'
+                copied=run/'inputs/iob_seed_placeholder_01.pa0'
+                self.assertEqual(copied.stat().st_size,placeholder.stat().st_size)
+                self.assertEqual(file_sha256(copied),file_sha256(placeholder))
+                self.assertIn(str(copied),json.loads((run/'run_config.json').read_text(encoding='utf-8'))['inputs'].values())
                 self.assertEqual(loader.call_count, 1)
                 physical = copy.deepcopy(contract)
                 plate = dict(frame_id="test_frame", shape="circle", center_mm=[0, -55, -45],
