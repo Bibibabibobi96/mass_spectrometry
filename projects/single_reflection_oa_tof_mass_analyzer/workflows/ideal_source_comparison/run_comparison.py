@@ -31,7 +31,7 @@ import numpy as np
 import scipy
 
 from common.paths.workspace_paths import resolve_workspace_paths
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import load_json

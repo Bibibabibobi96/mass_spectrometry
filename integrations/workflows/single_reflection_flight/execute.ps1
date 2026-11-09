@@ -45,7 +45,7 @@ $pathContext=if($null-ne$RunPackage){$RunPackage.path_context}else{$config.paths
 if($config.project-cne'instrument_assembly'){
   throw 'Single-reflection managed run owner must be instrument_assembly.'
 }
-$validation=& $Python (Join-Path $RepoRoot 'common/contracts/artifact_naming.py') run ([string]$config.run_id)
+$validation=& $Python (Join-Path $RepoRoot 'src/msplatform/execution/artifact_naming.py') run ([string]$config.run_id)
 if($LASTEXITCODE-ne0-or-not($validation-match'^ARTIFACT_ID=PASS ')){
   throw 'Managed run has an invalid run identity.'
 }

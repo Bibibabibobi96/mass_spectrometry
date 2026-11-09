@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator, Mapping
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.artifact_project import ensure_artifact_project
 from common.contracts.write_run_manifest import build_run_manifest, publish_run_manifest, publish_terminal_state
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile

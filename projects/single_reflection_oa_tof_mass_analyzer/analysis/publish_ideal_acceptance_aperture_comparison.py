@@ -20,7 +20,7 @@ import sys
 import tempfile
 from typing import Any, Callable
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.analysis import longitudinal_fit
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import (

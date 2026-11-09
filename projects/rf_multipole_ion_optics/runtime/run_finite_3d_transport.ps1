@@ -39,7 +39,7 @@ if($ResumeFinalization){
   if($ArtifactRootPath){$pathArguments.ArtifactRoot=$ArtifactRootPath}
   if($RunId){
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & $python -B -m common.contracts.artifact_naming run $RunId|Out-Null
+      & $python -B -m msplatform.execution.artifact_naming run $RunId|Out-Null
       if($LASTEXITCODE-ne0){throw 'Recovery requires a valid existing RunId.'}
     }
   }
@@ -60,7 +60,7 @@ if($ResumeFinalization){
   if($RunId-and$RunId-cne$originalRunId){throw 'Recovery RunId differs from the original Result.'}
   if(-not$RunId){
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -B -m common.contracts.artifact_naming run $originalRunId|Out-Null
+    & $python -B -m msplatform.execution.artifact_naming run $originalRunId|Out-Null
     if($LASTEXITCODE-ne0){throw 'Recovery requires a valid existing RunId.'}
   }
   }

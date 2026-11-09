@@ -31,7 +31,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 if ($ResumeFinalization) {
   $python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} else {Join-Path $repoRoot '.venv\Scripts\python.exe'}
   Push-Location $repoRoot
-  try {& $python -m common.contracts.artifact_naming run $RunId | Out-Null
+  try {& $python -m msplatform.execution.artifact_naming run $RunId | Out-Null
     if ($LASTEXITCODE -ne 0) {throw 'Recovery requires a valid existing RunId.'}}
   finally {Pop-Location}
   $projectArtifacts=Join-Path (Split-Path -Parent $repoRoot) 'artifacts\projects\rf_multipole_ion_optics'

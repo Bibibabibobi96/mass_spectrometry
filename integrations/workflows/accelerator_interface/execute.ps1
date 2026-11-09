@@ -146,7 +146,7 @@ print(json.dumps(summary))
 function Assert-JointFieldRunId {
   param([string]$Id)
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
-    & $python -B -m common.contracts.artifact_naming run $Id|Out-Null
+    & $python -B -m msplatform.execution.artifact_naming run $Id|Out-Null
     if($LASTEXITCODE-ne0){throw "Run ID '$Id' does not satisfy the repository run naming contract."}
   }
 }

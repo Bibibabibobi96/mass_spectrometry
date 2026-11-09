@@ -9,7 +9,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.verify_run_manifest import record_path, verified_successful_run_reference, verify_record
 from projects.rf_multipole_ion_optics.analysis.analyze_round_rod_screen import analyze
 from projects.rf_multipole_ion_optics.runtime._transport_run_artifacts import ARTIFACT_PROJECTS_ROOT, transport_run

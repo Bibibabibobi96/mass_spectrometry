@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from common.contracts.artifact_naming import validate_run_id, validate_task_id
+from msplatform.execution.artifact_naming import validate_run_id, validate_task_id
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_proposal,

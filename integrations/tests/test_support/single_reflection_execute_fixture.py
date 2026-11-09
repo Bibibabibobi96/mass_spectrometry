@@ -98,7 +98,7 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
         repo=directory/'repo'
         paths=declared_dependency_paths(REPO, contract, 'single_reflection_flight')
         paths.update({'integrations/config/runtime_dependencies.json','integrations/registry.json',
-                      'integrations/runtime/dependencies.ps1','common/contracts/artifact_naming.py'})
+                      'integrations/runtime/dependencies.ps1','src/msplatform/execution/artifact_naming.py'})
         seed_names = {f'iob_seed_placeholder_{number:02d}.pa0' for number in range(1, 6)}
         seed_paths = {f'common/simion/assets/iob_instance_seeds/{name}' for name in seed_names}
         if lightweight_seeds:

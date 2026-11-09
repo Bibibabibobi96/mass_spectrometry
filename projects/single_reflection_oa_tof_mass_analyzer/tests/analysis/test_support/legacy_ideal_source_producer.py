@@ -28,7 +28,7 @@ import numpy as np
 import scipy
 
 from common.analysis.peak_metrics import AnalysisSettings
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
 from common.contracts.verify_run_manifest import verify_record

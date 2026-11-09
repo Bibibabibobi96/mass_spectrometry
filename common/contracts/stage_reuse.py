@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, TypeAlias
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.artifact_retention import validate_retention
 from common.contracts.file_identity import FileIdentityGuard, file_sha256
 from common.contracts.write_run_manifest import require_completed_terminal_publication, retention_api

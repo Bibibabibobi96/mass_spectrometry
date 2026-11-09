@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.validate_design_request import validate_request

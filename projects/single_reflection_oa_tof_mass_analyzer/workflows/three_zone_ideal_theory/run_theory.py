@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_experiment import (
     REPOSITORY_ROOT,
     execute_stage,

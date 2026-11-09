@@ -11,7 +11,7 @@ import shutil
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import validate_schema
 from common.integration.resolve_assembly import derive_assembly_scope
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface

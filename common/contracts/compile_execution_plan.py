@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.build_project_registry import query_capabilities, validate_runtime_binding
 from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema

@@ -11,7 +11,7 @@ from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
-from common.contracts.artifact_naming import validate_archive_id
+from msplatform.execution.artifact_naming import validate_archive_id
 from common.contracts.file_identity import file_sha256 as sha256
 from common.contracts.write_formal_asset_manifest import (
     record as file_record,

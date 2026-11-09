@@ -573,7 +573,7 @@ try{
     Push-Location $codeRoot
     try{
       $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      $referenceIdValidation=& $python -m common.contracts.artifact_naming run $ReferenceComsolRunId
+      $referenceIdValidation=& $python -m msplatform.execution.artifact_naming run $ReferenceComsolRunId
       if($LASTEXITCODE-ne 0 -or -not($referenceIdValidation-match '^ARTIFACT_ID=PASS ')){
         throw "Invalid ReferenceComsolRunId: $ReferenceComsolRunId"
       }

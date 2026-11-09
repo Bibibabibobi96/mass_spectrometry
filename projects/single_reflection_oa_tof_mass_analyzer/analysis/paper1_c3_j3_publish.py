@@ -20,7 +20,7 @@ import sys
 import tempfile
 from typing import Any, Mapping, Sequence
 
-from common.contracts.artifact_naming import validate_run_id
+from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.frozen_inputs import freeze_file
 from msplatform.contracts.machine_contracts import load_json

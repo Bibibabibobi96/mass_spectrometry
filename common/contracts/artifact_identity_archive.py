@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterator
 
 try:
-    from common.contracts.artifact_naming import validate_archive_id
+    from msplatform.execution.artifact_naming import validate_archive_id
     from common.contracts.file_identity import file_sha256
 except ModuleNotFoundError:
     from artifact_naming import validate_archive_id

@@ -198,6 +198,8 @@ STEP导出编排与独立冷读检查已迁入`msplatform.exporters`，旧`api.e
 唯一调度器、失败停新、资源准入、drain与恢复语义不变。
 `common/contracts/canonical_clock_authority.py`旧桥已删除；各准备／上游入口及测试直接使用安装时钟权威，
 epoch、authority SHA、单位与basis失败关闭语义不变。
+`common/contracts/artifact_naming.py`旧适配器已删除；各发布、运行器、CLI与测试直接使用安装命名合同，
+run/archive/task ID、时间格式与manifest身份不变。
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

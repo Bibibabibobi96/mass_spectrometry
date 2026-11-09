@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from artifact_naming import (
+from msplatform.execution.artifact_naming import (
     validate_archive_id,
     validate_formal_asset_name,
     validate_run_id,

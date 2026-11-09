@@ -17,7 +17,7 @@ from msplatform.execution.artifact_cache_contract import (
     INTEGRATION_CACHE_ROLES, INTEGRATION_CACHE_ROOT_BY_ROLE,
 )
 
-from common.contracts.artifact_naming import (
+from msplatform.execution.artifact_naming import (
     validate_archive_id,
     validate_formal_asset_name,
     validate_run_id,
