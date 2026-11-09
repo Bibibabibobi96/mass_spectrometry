@@ -315,8 +315,11 @@ class GasFlowOwnerTests(unittest.TestCase):
                     target.write_bytes(original.read_bytes())
                     paths.append(target)
                 helper = runtime.NormalOwnerTests()
+                capacity_policy = root / "fixture-capacity-policy.json"
+                capacity_policy.write_text(json.dumps(helper._policy()), encoding="utf-8")
                 context = replace(
-                    helper._context(root), tools=dict(comsol_launcher=Path(sys.executable), matlab_root=root)
+                    helper._context(root), capacity_policy_path=capacity_policy,
+                    tools=dict(comsol_launcher=Path(sys.executable), matlab_root=root)
                 )
                 policy = root / "stages.json"
                 policy.write_text(

@@ -1,6 +1,7 @@
 """Explicit failed-action outputs over the real owner; no native subprocesses."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,7 +17,9 @@ class FailureOutputTests(unittest.TestCase):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 helper = runtime.NormalOwnerTests()
-                context = helper._context(root)
+                capacity_policy = root / "fixture-capacity-policy.json"
+                capacity_policy.write_text(json.dumps(helper._policy()), encoding="utf-8")
+                context = replace(helper._context(root), capacity_policy_path=capacity_policy)
                 primary = RuntimeError("original action failure")
                 selected = []
 
