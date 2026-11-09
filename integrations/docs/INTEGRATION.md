@@ -7,6 +7,12 @@
 
 ## 当前边界
 
+P4 SIMION dispatch checks bind IOB seed bytes to the canonical packaged resource;
+the PA placeholder remains a repository fixture. Cold junction tests freeze their
+explicit dummy seed at the canonical snapshot path, and legacy continuation
+rejection mutates a verified unique builder clause. These are software checks,
+not native SIMION or scientific qualification.
+
 The selected P3 delivery is accepted under the user scope below. Code is fixed at
 `f283b752a736dcfe703ffb2a6b56bef291c889b1`; the
 [milestone](../../docs/history/20261105__phase03-installed-pipeline.md) binds all

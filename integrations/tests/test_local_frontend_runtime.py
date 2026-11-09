@@ -108,7 +108,9 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         self.assertEqual({p.name for p in seed_root.iterdir()}, {"1_instance_seed.iob", "iob_seed_placeholder_01.pa0"})
         source_root = REPO/"common/simion/assets/iob_instance_seeds"
         for target in seed_root.iterdir():
-            self.assertEqual(target.read_bytes(), (source_root/target.name).read_bytes())
+            source = (REPO/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
+                      if target.name == "1_instance_seed.iob" else source_root/target.name)
+            self.assertEqual(target.read_bytes(), source.read_bytes())
             self.assertLess(len(str(target).encode("utf-16-le"))//2, 260)
         for case in [*result["batches"], result["gui_case"]]:
             self.assertEqual(Path(case["seed_record"]["path"]).parent, seed_root)
@@ -156,7 +158,8 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         seeds = snapshot / "common/simion/assets/iob_instance_seeds"
         seeds.mkdir(parents=True)
         # These bytes exercise freezing only; no vendor parses them or flies.
-        (seeds / "1_instance_seed.iob").write_bytes(b"PURE_TEST_IOB_SEED")
+        canonical_seed = snapshot / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
+        canonical_seed.write_bytes(b"PURE_TEST_IOB_SEED")
         (seeds / "iob_seed_placeholder_01.pa0").write_bytes(b"PURE_TEST_PLACEHOLDER")
         alias = self.workspace / "execution_alias"
         script = self.workspace / "junction.ps1"

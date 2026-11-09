@@ -277,7 +277,10 @@ class SingleReflectionContinuationTests(unittest.TestCase):
             shutil.rmtree(self.run/'inputs/continuation')
         self.assertEqual(manifest_path.read_bytes(),parent_bytes)
         changed_core = self.run/'inputs/changed_iob_core.lua'
-        changed_core.write_text(core.replace('assert(count==4 or count==5', 'assert(count==4 or count==6'),encoding='utf-8',newline='\n')
+        self.assertEqual(core.count('count==4 or count==5'), 1)
+        changed_core_text = core.replace('count==4 or count==5', 'count==4 or count==6')
+        self.assertNotEqual(changed_core_text, core)
+        changed_core.write_text(changed_core_text,encoding='utf-8',newline='\n')
         original_core = preview['batches'][0]['preview']['builder_core_path']
         preview['batches'][0]['preview']['builder_core_path'] = str(changed_core)
         with self.assertRaisesRegex(ValueError,'IOB builder differs'):
