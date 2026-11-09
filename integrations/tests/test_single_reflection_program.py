@@ -27,7 +27,7 @@ from integrations.tests.test_single_reflection_preparation import scientific_pre
 from integrations.tests.test_single_reflection_fields import multipole_source
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
-from integrations.runtime.single_flight_frontend import native_frontend_instances
+from msplatform.backends.simion.frontend import native_frontend_instances
 
 ROOT = Path(__file__).resolve().parents[2]
 LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
@@ -88,7 +88,7 @@ class SingleReflectionProgramTests(unittest.TestCase):
     @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
     def test_plane_wire_keeps_directions_occurrences_nonmonotonic_guard_and_cap(self):
         from msplatform.backends.simion.tracking_program import _instrument_plane_observations
-        from integrations.workflows.single_reflection_flight.census import read_plane_observations
+        from msplatform.backends.simion.tracking_collection import read_plane_observations
         geometry = dict(native_frame_id="world", composition_plan=dict(scope=dict(instance_ids=["rf"]),
             components=dict(rf=dict(local_frame_id="world", ports=dict(exit=dict(center_mm=[0,0,0], outward_normal=[1,0,0])))),
             recipe=dict(instances=[dict(instance_id="rf", transform=dict(schema_version=1, role="rigid_transform", from_frame_id="world", to_frame_id="world", rotation=[[1,0,0],[0,1,0],[0,0,1]], translation_mm=[0,0,0]))])))
@@ -242,7 +242,7 @@ print('absolute_deadline_oracle_ok')
     @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
     def test_consumed_boundary_never_hides_reverse_or_relabels_initial_state_as_crossing(self):
         from msplatform.backends.simion.tracking_program import _instrument_plane_observations
-        from integrations.workflows.single_reflection_flight.census import read_plane_observations
+        from msplatform.backends.simion.tracking_collection import read_plane_observations
         geometry = dict(native_frame_id="world",composition_plan=dict(scope=dict(instance_ids=["rf"]),
             components=dict(rf=dict(local_frame_id="world",ports=dict(exit=dict(center_mm=[10,0,0],outward_normal=[1,0,0])))),
             recipe=dict(instances=[dict(instance_id="rf",transform=dict(schema_version=1,role="rigid_transform",from_frame_id="world",to_frame_id="world",rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0]))])))
@@ -381,7 +381,7 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
         rows = [json.loads(line.split(' ',2)[2]) for line in text.splitlines()
                 if line.startswith('TRACE: applied_field_observation ')]
         self.assertEqual(len(rows),16)
-        from integrations.workflows.single_reflection_flight.collect import _validate_field_observation_row
+        from msplatform.workflows.single_reflection_flight.collect import _validate_field_observation_row
         parser_context = dict(eligible_batch_particle_ids=[11,77],instance_index=3,world_frame_id='oatof_global',
             rf_sources=[{'instance_id':'multipole'}],field_records={'parent':{
                 'carrier_off':{'path':'C:/inert/front.pa'},'rf_reference':{'path':'C:/inert/rf.pa'},

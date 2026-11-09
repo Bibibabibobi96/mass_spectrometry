@@ -15,10 +15,13 @@ import json
 import math
 from pathlib import Path
 
-from common.analysis.particle_events import group_particle_events
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
-from integrations.runtime.build_single_flight_program import validate_native_flight, validate_native_field_observation
+from msplatform.analysis.particle_events import group_particle_events
+from functools import partial
+from msplatform.io.manifest_records import record_path,verify_record as _verify_record,file_record as _file_record
+from msplatform.execution.retention import classify_file
+verify_record=partial(_verify_record,retention_classifier=classify_file)
+file_record=partial(_file_record,retention_classifier=classify_file)
+from msplatform.backends.simion.tracking_program import validate_native_flight, validate_native_field_observation
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight, select_discovery_pulse
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
 from msplatform.contracts.particle_state import binary64_serialization_close as _close
@@ -49,7 +52,7 @@ def _field_observation_definition(preparation: dict, source: dict, provenance: d
     if type(request.get('schema_version')) is not int or request['schema_version'] != 10:
         raise ValueError('applied-field evidence requires an explicit request10 declaration')
     geometry = _read(_verified(preparation['outputs']['frontend_geometry'],'observation geometry',run))
-    from integrations.runtime.single_flight_frontend import native_frontend_instances
+    from msplatform.backends.simion.frontend import native_frontend_instances
     instances,_ = native_frontend_instances(geometry['composition_plan'])
     spec = validate_native_field_observation(document['native_field_observation'],particle_ids=list(source),
         source_instances=instances,domain_ids=list(geometry['numerical_domains']),
@@ -152,8 +155,9 @@ def _collect_field_observations(preparation: dict, workbench: dict, run: Path, s
                             or type(value['schema_version']) is not int
                             or value['role'] != 'single_reflection_applied_field_observation_header' or value['specification'] != spec):
                         raise ValueError('applied-field header declaration differs')
-                    from integrations.workflows.single_reflection_flight.runtime import _field_observation, _frontend_fields
-                    from integrations.runtime.single_flight_frontend import native_frontend_instances, instance_design_record
+                    from msplatform.workflows.single_reflection_flight.field_evidence import _field_observation, _frontend_fields
+                    from msplatform.backends.simion.frontend import native_frontend_instances
+                    from msplatform.results.single_reflection_source import instance_design_record
                     receipt = _verified(case['field_receipt_record'],'observation field receipt',run)
                     design = _read(_verified(preparation['outputs']['frontend_field_design'],'observation design',run))
                     fields,_ = _frontend_fields(receipt,design)
@@ -255,8 +259,8 @@ def _inputs(preparation: dict, workbench: dict, run: Path) -> tuple[dict, dict, 
         raise ValueError('nonfinite projected source')
     controls = {}
     for index, case in enumerate(workbench.get('batches', [workbench]), 1):
-        from integrations.workflows.single_reflection_flight.continuation import parent_case_records
-        allowed = parent_case_records(preparation, workbench, case)
+        from msplatform.results.single_reflection_continuation import parent_case_records
+        allowed = parent_case_records(preparation, workbench, case, retention_classifier=classify_file)
         if case.get('flight') != workbench.get('flight'):
             raise ValueError('batch flight differs from the phase flight')
         records = case['outputs']
@@ -289,8 +293,8 @@ def collect_log(preparation: dict, workbench: dict, run: Path, log: Path | None 
     logs = []
     for case in cases:
         path = Path(case['replay_stdout'] if replay else case['stdout']).resolve(strict=True)
-        from integrations.workflows.single_reflection_flight.continuation import parent_case_records
-        allowed = parent_case_records(preparation, workbench, case, replay=replay)
+        from msplatform.results.single_reflection_continuation import parent_case_records
+        allowed = parent_case_records(preparation, workbench, case, replay=replay, retention_classifier=classify_file)
         if not path.is_relative_to(run) and path not in allowed:
             raise ValueError('native log must belong to this run')
         logs.append(path)

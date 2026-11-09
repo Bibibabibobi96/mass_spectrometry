@@ -77,7 +77,7 @@ model、完整母群（含谱系）与原始钟；合法run-local路径不同不
 | 已选择束团的束宽、真角度发射度与零场预测 | [beam_focus_diagnostics.py](beam_focus_diagnostics.py)：`prepare_focus_diagnostics`、`prepare_time_focus_diagnostics`及prepared结果绘图 | 显式全母群ID→正相对权重；观察面及出口群由适配器确定；mm／μs、ddof=0；实际穿面与无场反事实分开 |
 | 有界定向穿面证据 | [plane_crossings.py](plane_crossings.py)：`iter_bounded_plane_crossings` | 复用已有`PhaseSpaceState/PlaneSurface`；位置mm、速度m/s、共同仪器时间μs；返回原anchor、夹持区间、alpha及观察到的穿越次数，不生成第二份状态表 |
 | 纵向多项式拟合与残差 | [longitudinal_fit.py](../../src/msplatform/analysis/longitudinal_fit.py)：`fit_longitudinal_polynomial` | z用mm、vz用mm/μs；调用方确认有限配对和可辨识阶数；残差sigma为ddof=1，不代表冷却或独立噪声 |
-| 按原粒子ID配对事件字段 | [particle_events.py](particle_events.py)：`group_particle_events`、`iter_particle_event_fields` | 保留母群、事件顺序及数量差异；不生成ID、丢弃未知粒子或选择相等容差 |
+| 按原粒子ID配对事件字段 | [particle_events.py](../../src/msplatform/analysis/particle_events.py)：`group_particle_events`、`iter_particle_event_fields` | 保留母群、事件顺序及数量差异；不生成ID、丢弃未知粒子或选择相等容差 |
 | 批量导出已准备图形 | [figure_export.py](figure_export.py)：`export_figures` | 调用者给定完整stem→figure、formats、dpi与facecolor；整批目的路径预检、独占新建，返回实际导出记录；不计算指标或创建图形 |
 | 完整母群与寿命边界事实 | [particle_census.py](../../src/msplatform/analysis/particle_census.py)：`lifetime_position`、`partition_cohort`、`subset_efficiency` | caller显式声明生效／终止时间、容差、分类标签和完整母群权重；保留原ID、分类数和明确分子分母；未知不推断存活，非出口终止不等于撞壁 |
 | 从分辨率要求估算时间误差预算 | [tof_error_budget.py](tof_error_budget.py)：`calculate_tof_error_budget`及同名模块CLI | Python API时间用秒；CLI的`--flight-time-us`用μs；只做规划，高斯预算不能代替直接FWHM，见[方法与命令](../../docs/science/TOF_ERROR_BUDGET.md) |

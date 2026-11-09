@@ -13,10 +13,8 @@ from unittest.mock import patch
 
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_author_instances
 from integrations.tests.test_single_reflection_fields import multipole_source
-from integrations.workflows.single_reflection_flight.field_plan import (
-    KINDS, bind_parent_fields, build_field_plan, field_bank, frontend_field_identity, audit_input_identity,
-    validate_frozen_generation_metadata, write_audit_spec, reusable_audit, _bound_source_audit,
-)
+from integrations.workflows.single_reflection_flight.field_plan import KINDS, bind_parent_fields, build_field_plan, field_bank, frontend_field_identity, audit_input_identity, write_audit_spec, reusable_audit, _bound_source_audit
+from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
 from common.contracts.write_run_manifest import file_record
@@ -1184,7 +1182,7 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                         if point['source_schema_version']==3:
                             self.assertEqual(len(identity['working_points']), 1)
                             self.assertNotIn('physical_samples', identity['geometry'])
-                from integrations.workflows.single_reflection_flight.runtime import _frontend_fields
+                from msplatform.workflows.single_reflection_flight.field_evidence import _frontend_fields
                 actual_design = json.loads((root/('hit' if fine_change or legacy_partial or audit_refresh else 'run')/'inputs/frontend_field_design.json').read_text())
                 if case == 'first':
                     actual_design = json.loads((run/'inputs/frontend_field_design.json').read_text())

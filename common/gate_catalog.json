@@ -337,7 +337,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/particle_events.py",
+          "exact": "src/msplatform/analysis/particle_events.py",
           "reason": "particle_events_changed"
         },
         {
@@ -1623,7 +1623,7 @@
           "reason": "installed_single_reflection_workflow_changed"
         },
         {
-          "regex": "^src/msplatform/results/(?:field_sources|single_reflection_source)\\.py$",
+          "regex": "^src/msplatform/results/(?:field_sources|single_reflection_source|single_reflection_continuation)\\.py$",
           "reason": "single_reflection_result_adapter_changed"
         }
       ],

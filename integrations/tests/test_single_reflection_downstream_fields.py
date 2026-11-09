@@ -263,7 +263,7 @@ class DownstreamFieldsTests(unittest.TestCase):
         provider.write_text(json.dumps(resolved), encoding="utf-8")
         geometry = run/'inputs/frontend_geometry.json'
         geometry.write_bytes(Path(self.preparation['outputs']['frontend_geometry']['path']).read_bytes())
-        from integrations.runtime.single_flight_frontend import native_frontend_instances
+        from msplatform.backends.simion.frontend import native_frontend_instances
         instance_id = native_frontend_instances(json.loads(geometry.read_text())['composition_plan'])[1]
         return run, dict(role="single_reflection_geometry_preparation",
             input_records={'instance_design__'+instance_id: file_record(provider)},

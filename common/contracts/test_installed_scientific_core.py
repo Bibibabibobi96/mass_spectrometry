@@ -592,6 +592,34 @@ for case in fixture['single_reflection_workflow']:
     workflow_modes.append(case['kind'])
 assert workflow_modes == ['recorded_birth','release_spec','recorded_pre_pulse_state']
 
+# Consume an explicit external native-log fixture through the actual installed CLI.
+import subprocess
+collection_case = fixture['single_reflection_collection']
+collection_output = pathlib.Path(collection_case['run'])/('installed-collection-'+sys.argv[2])
+collection_child = """import json,sys,pathlib,runpy,importlib.util,sysconfig
+blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv.pop(1))]
+def reject_author_files(event,args):
+    if event=='open' and isinstance(args[0],(str,bytes)):
+        target=pathlib.Path(args[0]).resolve()
+        if any(target.is_relative_to(path) for path in blocked):raise AssertionError('author source read: '+str(target))
+sys.addaudithook(reject_author_files)
+spec=importlib.util.find_spec('msplatform.workflows.single_reflection_flight.collect')
+assert pathlib.Path(spec.origin).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+sys.argv=['collect',*sys.argv[1:]]
+runpy.run_module('msplatform.workflows.single_reflection_flight.collect',run_name='__main__')
+"""
+collected = subprocess.run([sys.executable,'-I','-c',collection_child,json.dumps([str(value) for value in blocked_source_roots]),
+    '--preparation',collection_case['preparation'],'--workbench',collection_case['workbench'],
+    '--run',collection_case['run'],'--log',collection_case['log'],'--output',str(collection_output)],
+    cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
+assert collected.returncode == 0,collected.stdout+collected.stderr
+collection_receipt=json.loads(collected.stdout)
+actual_collection=json.loads((collection_output/'collection.json').read_text(encoding='utf-8'))
+assert actual_collection == collection_case['expected']
+assert collection_receipt['output_records']['collection.json']['sha256'].upper() == hashlib.sha256((collection_output/'collection.json').read_bytes()).hexdigest().upper()
+assert actual_collection['native_complete'] is True and len(actual_collection['native_terminals']) == 100
+assert actual_collection['claim'] == 'canonical census only; no peak/bootstrap or physical qualification'
+
 missing_rejected = []
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
@@ -659,6 +687,7 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      prepared_model_compile_only=True, field_plan_only=True, field_execution_performed=False,
                      author_tree_reads_blocked=True,
                      single_reflection_preparation_modes=workflow_modes,
+                     installed_single_reflection_collection=True,
                      missing_resources_rejected=missing_rejected)))
 '''
 
@@ -758,6 +787,19 @@ class InstalledScientificCoreTests(unittest.TestCase):
         for records in invalid:
             with self.subTest(records=records),self.assertRaisesRegex(ValueError,'canonical decimal key'):
                 decode(records)
+
+    def single_reflection_collection_probe_fixture(self) -> dict:
+        from integrations.tests.test_single_reflection_collection import SingleReflectionCollectionTests
+        case = SingleReflectionCollectionTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        from msplatform.workflows.single_reflection_flight.collect import collect_log
+        preparation = case.run/'collection-preparation.json'
+        workbench = case.run/'collection-workbench.json'
+        preparation.write_text(json.dumps(case.preparation),encoding='utf-8')
+        workbench.write_text(json.dumps(case.workbench),encoding='utf-8')
+        return dict(preparation=str(preparation),workbench=str(workbench),run=str(case.run),log=str(case.log),
+                    expected=collect_log(case.preparation,case.workbench,case.run,case.log))
 
     def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
         from msplatform.io.manifest_records import file_record
@@ -1055,6 +1097,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
+                                              single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

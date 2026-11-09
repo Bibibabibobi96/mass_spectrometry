@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from msplatform.execution.resources import resource_path
 
-from common.analysis.particle_events import group_particle_events, iter_particle_event_fields
+from msplatform.analysis.particle_events import group_particle_events, iter_particle_event_fields
 from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record

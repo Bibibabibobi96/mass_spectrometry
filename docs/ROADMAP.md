@@ -107,8 +107,8 @@ V8.2 is the active P4 scope. Formal reusable implementations and workflows belon
 production tree. Existing completed slices are retained. Independent RF raw geometry/model,
 independent two-/three-zone OA geometry and Wehnelt build-only operations have source-bound
 ordinary-install/native evidence in their project status pages; these are not field/Fly or
-scientific qualifications. SFI preparation/pulse and source/result adapters are installed,
-while collection, execution and continuation still require migration. Explicit deployment
+scientific qualifications. SFI preparation/pulse, collection and their source/result adapters are installed;
+execution and continuation planning still require migration. Explicit deployment
 capacity policy and selected failed-output preservation use the existing owner and ledger.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
@@ -125,7 +125,7 @@ software target and owner budgets remain OPEN; pending/cancelled CI is not accep
 | 既有COMSOL操作 | `backends.comsol`具名入口；真实项目工作流与原生证据 | 只迁移实际能力，不以脚本或假模型冒充完成 |
 | STEP导出／冷读 | `exporters`；CAD和独立几何检查 | 与后端并列消费完整Assembly，无默认GUI |
 | 结果读取／分析／比较 | `results`组合中立I/O与纯`analysis`；离线消费者 | 无隐藏重算／owner，缺失和篡改失败关闭 |
-| Named SFI preparation/pulse | `workflows.single_reflection_flight`; canonical source/results/backend consumers | Installed slice delivered; remaining collection/execution/continuation and affected final acceptance stay OPEN |
+| Named SFI preparation/pulse/collection | `workflows.single_reflection_flight`; canonical source/results/backend consumers | Installed slices delivered; remaining execution/continuation and affected final acceptance stay OPEN |
 | 环境、恢复与原生查看 | `execution`／`applications`；运行owner与故障矩阵 | 一次部署、单一owner；历史action仅作数据语义读取 |
 | 能力查询 | 各规范操作的校验与显式声明；调用和查询共用分派 | 不再以私有planner签名建立第二套合同 |
 

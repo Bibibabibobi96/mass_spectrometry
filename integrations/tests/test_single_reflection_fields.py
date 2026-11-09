@@ -12,7 +12,7 @@ from integrations.tests.test_single_reflection_preparation import fixture, relea
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.backends.simion.fields import prepare_field_design, POLICY
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
-from integrations.runtime.single_flight_frontend import native_frontend_instances
+from msplatform.backends.simion.frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
 from integrations.tests.test_single_reflection_geometry import scientific_inputs, source_fixture
 from common.contracts.verify_run_manifest import record_path

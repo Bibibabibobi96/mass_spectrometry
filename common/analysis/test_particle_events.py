@@ -1,7 +1,7 @@
 """Mechanical pairing contracts; scientific validity belongs to consumers."""
 import unittest
 
-from common.analysis.particle_events import group_particle_events, iter_particle_event_fields
+from msplatform.analysis.particle_events import group_particle_events, iter_particle_event_fields
 
 
 class ParticleEventTests(unittest.TestCase):

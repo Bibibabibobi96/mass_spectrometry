@@ -13,12 +13,12 @@ import sys
 import tempfile
 import unittest
 
-from integrations.workflows.single_reflection_flight.census import canonical_census, read_native_events
+from msplatform.backends.simion.tracking_collection import canonical_census, read_native_events
 from msplatform.execution.inputs import python_import_roots
 from common.contracts.write_run_manifest import file_record
 from integrations.tests.test_single_reflection_preparation import fixture, write_json
 from msplatform.workflows.single_reflection_flight.prepare import prepare
-from integrations.workflows.single_reflection_flight.collect import collect_log, compare_collections, select_pulse
+from msplatform.workflows.single_reflection_flight.collect import collect_log, compare_collections, select_pulse
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,7 +124,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         prep,bench = owner.run/'prep.json',owner.run/'bench.json'
         write_json(prep,owner.preparation);write_json(bench,workbench)
         output = owner.run/'results/observed'
-        command = [sys.executable,'-m','integrations.workflows.single_reflection_flight.collect',
+        command = [sys.executable,'-m','msplatform.workflows.single_reflection_flight.collect',
                    '--preparation',str(prep),'--workbench',str(bench),'--run',str(owner.run),'--output',str(output)]
         completed = subprocess.run(command,cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"},capture_output=True,text=True,timeout=60,check=False)
         self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
@@ -638,7 +638,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         write_json(preparation, self.preparation)
         write_json(workbench, self.workbench)
         output = self.run/'results/discovery'
-        command = [sys.executable, '-m', 'integrations.workflows.single_reflection_flight.collect',
+        command = [sys.executable, '-m', 'msplatform.workflows.single_reflection_flight.collect',
                    '--preparation', str(preparation), '--workbench', str(workbench), '--run', str(self.run),
                    '--output', str(output), '--select-pulse', '--collection-record', json.dumps(record)]
         result = subprocess.run(command, cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"}, capture_output=True, text=True, timeout=60, check=False)
@@ -760,7 +760,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         output.mkdir(parents=True)
         existing = output / 'native.stderr.log'
         existing.write_text('original evidence', encoding='utf-8')
-        command = [sys.executable, '-m', 'integrations.workflows.single_reflection_flight.collect',
+        command = [sys.executable, '-m', 'msplatform.workflows.single_reflection_flight.collect',
             '--preparation', str(preparation), '--workbench', str(workbench), '--run', str(self.run),
             '--log', str(self.log), '--output', str(output)]
         result = subprocess.run(command, cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"}, capture_output=True, text=True, timeout=60, check=False)

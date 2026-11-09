@@ -299,9 +299,13 @@ with tempfile.TemporaryDirectory() as request_directory:
         """Include deferred imports; they must not hide a reverse ownership edge."""
         prefix = "integrations.workflows.single_reflection_flight."
         paths = {prefix+name:INTEGRATION_ROOT/"workflows/single_reflection_flight"/f"{name}.py"
-                 for name in ("runtime", "continuation", "collect", "census", "downstream_fields")}
+                 for name in ("runtime", "continuation", "downstream_fields")}
         paths["msplatform.workflows.single_reflection_flight.pulse"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/pulse.py"
         paths["msplatform.workflows.single_reflection_flight.prepare"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/prepare.py"
+        paths["msplatform.workflows.single_reflection_flight.collect"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/collect.py"
+        paths["msplatform.workflows.single_reflection_flight.field_evidence"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/field_evidence.py"
+        paths["msplatform.backends.simion.tracking_collection"] = REPO_ROOT/"src/msplatform/backends/simion/tracking_collection.py"
+        paths["msplatform.results.single_reflection_continuation"] = REPO_ROOT/"src/msplatform/results/single_reflection_continuation.py"
         graph = {}
         for name, source in paths.items():
             graph[name] = {
@@ -591,15 +595,17 @@ from pathlib import Path
 class NoOrchestrationImport:
     def find_spec(self, fullname, path=None, target=None):
         if fullname in ('integrations.workflows.single_reflection_flight.runtime',
-                        'integrations.workflows.single_reflection_flight.collect'):
+                        'msplatform.workflows.single_reflection_flight.collect'):
             raise ImportError('pure evidence/continuation cannot import orchestration: '+fullname)
 guard=NoOrchestrationImport()
 sys.meta_path.insert(0,guard)
-from integrations.workflows.single_reflection_flight import continuation,census,downstream_fields
+from integrations.workflows.single_reflection_flight import continuation,downstream_fields
+from msplatform.backends.simion import tracking_collection as census
 from msplatform.workflows.single_reflection_flight import pulse
 sys.meta_path.remove(guard)
 from msplatform.workflows.single_reflection_flight import prepare
-from integrations.workflows.single_reflection_flight import runtime,collect
+from integrations.workflows.single_reflection_flight import runtime
+from msplatform.workflows.single_reflection_flight import collect
 assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census,continuation,pulse))
 assert not any('rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' in name for name in sys.modules)
 assert not (Path.cwd()/'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer').exists()

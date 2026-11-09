@@ -1,5 +1,6 @@
 """Resolve direct working-field cache inputs; never read particle sources or PA data."""
 from __future__ import annotations
+from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
 from msplatform.backends.simion.field_bank import field_bank as field_bank
 
 from msplatform.backends.simion.field_audit import (
@@ -16,7 +17,6 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path
 from msplatform.backends.simion.pa_family_cache import (
     canonical_pa_family_cache_key,
-    validate_pa_family_cache_generation,
 )
 
 from integrations.runtime.single_flight_frontend import frontend_electrode_maps
@@ -59,20 +59,6 @@ def bind_parent_fields(domain_plan: dict, parent_fields: dict) -> dict:
     return result
 
 
-def validate_frozen_generation_metadata(plan: dict, generation: Path) -> dict:
-    """Use common metadata validation; never hash a published PA here."""
-    manifest = validate_pa_family_cache_generation(generation, expected_cache_key=plan['cache_key'],
-        expected_filenames=plan['filenames'], verify_payload=False)
-    if (generation.resolve().name != manifest['generation_sha256'] or generation.parent.name != 'generations'
-            or generation.parent.parent.name != plan['cache_key'] or manifest['identity'] != plan['identity']):
-        raise ValueError('frozen frontend field source generation identity differs')
-    inventory = {row['name']: row for row in manifest['files']}
-    for expected in plan['frozen_field_source']['working_points']:
-        actual = inventory.get(Path(expected['path']).name)
-        if (actual is None or actual['bytes'] != expected['bytes']
-                or actual['sha256'].upper() != expected['sha256'].upper()):
-            raise ValueError('frozen frontend field source member differs')
-    return manifest
 
 
 def _check_source_physics(member: dict) -> None:

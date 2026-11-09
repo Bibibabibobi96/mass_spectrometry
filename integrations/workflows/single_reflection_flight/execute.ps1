@@ -705,7 +705,7 @@ try {
           throw
         }
         if($phase-eq'default_replay'-and$replayFailed){throw 'Instrument saved-batch replay failed.'}
-        $collectArguments=@('-B','-m','integrations.workflows.single_reflection_flight.collect',
+        $collectArguments=@('-B','-m','msplatform.workflows.single_reflection_flight.collect',
           '--preparation',(Join-Path $resultDirectory 'preparation_receipt.json'),'--workbench',$workbenchReceiptPath,
           '--run',$OutputDirectory,'--output',$phaseDirectory)
         if($phase-eq'default_replay'){$collectArguments+=@('--replay','--baseline-record',(ConvertTo-Json -InputObject $baselineRecord -Compress))}
@@ -721,7 +721,7 @@ try {
     }
     if($Fly-and$workbenchPhase-eq'discovery'){
       Write-InstrumentWallClockWarning -Limits $flightLimits.instrument_pulse_discovery -Elapsed $flightElapsed -Stage 'Instrument discovery selection'
-      $selectionArguments=@('-B','-m','integrations.workflows.single_reflection_flight.collect',
+      $selectionArguments=@('-B','-m','msplatform.workflows.single_reflection_flight.collect',
         '--preparation',(Join-Path $resultDirectory 'preparation_receipt.json'),'--workbench',$workbenchReceiptPath,
         '--run',$OutputDirectory,'--output',(Join-Path $resultDirectory 'discovery'),
         '--select-pulse','--collection-record',(ConvertTo-Json -InputObject $phaseCollection[0].output_records.'collection.json' -Compress))

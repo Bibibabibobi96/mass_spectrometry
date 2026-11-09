@@ -72,8 +72,11 @@ class TrackingCollectionTests(unittest.TestCase):
                 self.collect()
 
     def test_legacy_census_is_same_canonical_module(self):
-        from integrations.workflows.single_reflection_flight import census
+        from msplatform.backends.simion import tracking_collection as census
         self.assertIs(census, collection)
+        import importlib
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module('integrations.workflows.single_reflection_flight.census')
         import sys
         from types import ModuleType
         from unittest.mock import patch

@@ -205,3 +205,12 @@ def require_producer_manifest_binding(
         raise ValueError("pulse decision path and record must be declared together")
     if pulse_decision_path is not None and not any(matches(record, pulse_decision_path, pulse_decision_record) for record in outputs):
         raise ValueError("SIMION producer manifest does not publish the frozen pulse decision")
+
+
+def instance_design_record(preparation: dict, instance_id: str) -> dict:
+    """Return the selected instance's sole frozen resolved-design record."""
+    key = 'instance_design__' + instance_id
+    try:
+        return preparation['input_records'][key]
+    except KeyError as error:
+        raise ValueError(f'{instance_id}: frozen resolved-design record is missing') from error

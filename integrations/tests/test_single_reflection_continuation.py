@@ -18,7 +18,7 @@ from common.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
 from integrations.workflows.single_reflection_flight import runtime
 from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case, render_legacy_iob_builder
-from integrations.workflows.single_reflection_flight.collect import collect_log
+from msplatform.workflows.single_reflection_flight.collect import collect_log
 
 
 _PUBLIC_FLY = r'''param($Repo,$Python,$OutputDirectory,$frozenExecutionRoot,$FieldReceipt,$workbenchPhase='full_instrument')
@@ -121,6 +121,28 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         frozen=self.run/'inputs/continuation_parent_manifest.json'
         shutil.copyfile(manifest_path,frozen)
         self.preparation['input_records']['continuation_parent_manifest']={**file_record(frozen),'source_path':str(manifest_path)}
+
+    def test_readonly_parent_reader_keeps_large_json_policy_and_original_identity(self):
+        from msplatform.results import single_reflection_continuation as reader
+        from msplatform.execution.retention import classify_file
+        current = self._current_workbench()
+        parent = self._parent(current)
+        manifest = parent/'run_manifest.json'
+        manifest.write_bytes(manifest.read_bytes()+b' '*(8*1024*1024))
+        frozen = self.run/'inputs/continuation_parent_manifest.json'
+        shutil.copyfile(manifest,frozen)
+        record = {**file_record(frozen),'source_path':str(manifest)}
+        record.pop('retention_role',None)
+        self.preparation['input_records']['continuation_parent_manifest'] = record
+        with self.assertRaisesRegex(ValueError,'large unclassified record'):
+            reader._parent(self.preparation)
+        actual,document,records,_ = reader._parent(self.preparation,retention_classifier=classify_file)
+        self.assertEqual(actual,parent)
+        self.assertEqual(document,json.loads(manifest.read_text(encoding='utf-8')))
+        self.assertTrue(records)
+        manifest.write_bytes(manifest.read_bytes()+b' ')
+        with self.assertRaisesRegex(ValueError,'differs from its frozen input'):
+            reader._parent(self.preparation,retention_classifier=classify_file)
 
     def test_bound_parent_wrapper_cannot_change_controls_behind_unchanged_core(self):
         current=self._current_workbench()

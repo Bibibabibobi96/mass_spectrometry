@@ -253,13 +253,6 @@ def render_bare_frontend_body(upstream: dict, registration: dict, accelerator_bo
 
 
 
-def instance_design_record(preparation: dict, instance_id: str) -> dict:
-    """Return the selected instance's sole frozen resolved-design record."""
-    key = 'instance_design__' + instance_id
-    try:
-        return preparation['input_records'][key]
-    except KeyError as error:
-        raise ValueError(f'{instance_id}: frozen resolved-design record is missing') from error
 
 
 

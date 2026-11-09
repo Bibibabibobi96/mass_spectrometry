@@ -315,7 +315,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
 
     def compile(self):
         from common.integration.resolve_assembly import compile_assembly_layout
-        from integrations.runtime.single_flight_frontend import native_frontend_instances
+        from msplatform.backends.simion.frontend import native_frontend_instances
         plan = self.kw['composition_plan']
         self.kw['composition_plan'] = compile_assembly_layout(plan['recipe'], plan['components'], local_scope=plan.get('local_scope'))
         multipoles, _ = native_frontend_instances(self.kw['composition_plan'])

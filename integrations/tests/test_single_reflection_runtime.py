@@ -24,6 +24,7 @@ from integrations.tests.test_single_reflection_preparation import scientific_pre
 from integrations.tests.test_single_reflection_program import field_observation_spec
 from integrations.tests.test_single_reflection_geometry import reframe_parent
 from msplatform.workflows.single_reflection_flight.prepare import prepare
+from msplatform.workflows.single_reflection_flight import field_evidence
 from integrations.workflows.single_reflection_flight import downstream_fields, runtime
 from integrations.workflows.single_reflection_flight.field_plan import frontend_field_identity
 from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
@@ -37,7 +38,8 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
 from msplatform.backends.simion.source import render_restart_fly2
-from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
+from msplatform.results.single_reflection_source import instance_design_record
+from msplatform.backends.simion.frontend import native_frontend_instances
 
 ROOT = Path(__file__).resolve().parents[2]
 LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
@@ -483,7 +485,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             self.invoke_runtime("--field-receipt", self.field_receipt, "--downstream-publication", publication)
         self.assertFalse((self.run / "simion/full_instrument").exists())
         freeze_flight(self.flight)
-        with patch.object(downstream_fields, "verify_record", wraps=downstream_fields.verify_record) as verified:
+        with patch.object(field_evidence, "verify_record", wraps=field_evidence.verify_record) as verified:
             result = self.invoke_runtime("--field-receipt", self.field_receipt, "--downstream-publication", publication)
         design_path = self.preparation["outputs"]["frontend_field_design"]["path"]
         self.assertEqual(sum(call.args[1].get("path") == design_path for call in verified.call_args_list), 1)
@@ -502,7 +504,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         workbench["outputs"]["iob"] = first["iob_record"]
         write_json(receipt_path, workbench)
         with patch.object(runtime, "file_record", side_effect=AssertionError("unnecessary second IOB hash")), \
-                patch.object(downstream_fields, "verify_record", wraps=downstream_fields.verify_record) as verified:
+                patch.object(field_evidence, "verify_record", wraps=field_evidence.verify_record) as verified:
             repeated = self.invoke_runtime("--verify-controls", receipt_path)
         self.assertEqual(repeated["iob_record"], first["iob_record"])
         self.assertEqual(sum(call.args[1].get("path") == str(iob) for call in verified.call_args_list), 1)

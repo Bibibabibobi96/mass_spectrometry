@@ -6,6 +6,11 @@ exact PA records to protect before invoking the IOB builder. It never searches
 for a Formal/latest asset, copies a PA family, or transforms source rows again.
 """
 from __future__ import annotations
+from functools import partial
+from msplatform.execution.retention import classify_file
+from msplatform.results.single_reflection_continuation import _parent as _parent_reader
+_parent = partial(_parent_reader, retention_classifier=classify_file)
+from msplatform.workflows.single_reflection_flight.field_evidence import _field_observation, _frontend_fields
 
 import csv
 import argparse
@@ -15,28 +20,23 @@ from pathlib import Path
 from msplatform.execution.resources import resource_path
 from msplatform.backends.simion.source import execution_particle_ids, validate_consumed_plane_events
 import shutil
-import stat
 from typing import Any, Mapping
 
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.write_run_manifest import file_record
-from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key, canonical_json_sha256
+from msplatform.backends.simion.pa_family_cache import canonical_json_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (
     build_successor_program, validate_native_flight,
-    validate_native_field_observation,
-    STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2, lua_value as _lua_value
-from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
-from integrations.workflows.single_reflection_flight.field_plan import (
-    frontend_field_identity, validate_frozen_generation_metadata, working_point_member_id, _member_projection,
-)
+from msplatform.results.single_reflection_source import instance_design_record
+from msplatform.backends.simion.frontend import native_frontend_instances
+from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
 
-from integrations.workflows.single_reflection_flight.downstream_fields import (
-    _SLOTS, _pa_record, _small_record, load_downstream_fields,
-)
+from integrations.workflows.single_reflection_flight.downstream_fields import _SLOTS, load_downstream_fields
+from msplatform.workflows.single_reflection_flight.field_evidence import _small_record
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
 _SOURCES = {
@@ -52,114 +52,9 @@ def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _field_observation(preparation: dict, source: list[dict], provenance: dict,
-                       geometry: dict, fields: dict, flight: dict, phase: str) -> dict | None:
-    """Load only the opt-in, already frozen validation input; never modify controls."""
-    record = preparation['input_records'].get('validation_contract')
-    if record is None:
-        return None
-    document = _read(_small_record(record,'native field observation validation contract'))
-    if 'native_field_observation' not in document:
-        return None
-    request = _read(_small_record(preparation['input_records']['request'],'native field observation request'))
-    if type(request.get('schema_version')) is not int or request['schema_version'] != 10:
-        raise ValueError('native field observation is an explicit request10 validation capability')
-    instances,_ = native_frontend_instances(geometry['composition_plan'])
-    ids = [int(row['particle_id']) for row in source]
-    spec = validate_native_field_observation(document['native_field_observation'],particle_ids=ids,
-        source_instances=instances,domain_ids=list(geometry['numerical_domains']),
-        clock_epoch_id=provenance['clock_epoch_id'],flight=flight)
-    if spec['source_instance_id'] != request['source']['instance_id'] or spec['source_instance_id'] != provenance['source_instance_id']:
-        raise ValueError('native field observation requires the actual frozen RF particle-source instance')
-    records = dict(validation_contract=record,request=preparation['input_records']['request'],
-        source=preparation['outputs']['projected_source'],geometry=preparation['outputs']['frontend_geometry'],
-        field_design=preparation['outputs']['frontend_field_design'])
-    return dict(specification=spec,evidence_context=dict(phase=phase,clock_epoch_id=provenance['clock_epoch_id'],
-        mother_particle_ids=ids,input_records=records,field_records=fields,
-        provider_inputs=geometry['backend_electrode_bindings']['provider_inputs']))
 
 
 
-def _frontend_fields(receipt_path: Path, design: dict) -> tuple[dict, dict]:
-    """Bind published ordinary PA members by stable physical member identity."""
-    stage = _read(receipt_path)
-    if (stage.get("schema_version") != 3 or stage.get("role") != "single_reflection_frontend_working_fields"
-            or stage.get("status") != "success" or design.get("schema_version") != 3):
-        raise ValueError("completed current frontend domain field-stage receipt is required")
-    points = design["working_points"]
-    kinds = [point["kind"] for point in points]
-    members = [working_point_member_id(point) for point in points]
-    expected_kinds = ['carrier_off', *[kind for kind in kinds if kind == 'rf_reference'],
-                      *(['pulse_delta'] if 'pulse_delta' in kinds else [])]
-    if kinds != expected_kinds or len(members) != len(set(members)):
-        raise ValueError("frontend requires ordered unique carrier/RF/pulse working members")
-    requires_rf = "rf_reference" in kinds
-    if (requires_rf and stage.get("rf_reference_voltage_v") != design["rf_reference_voltage_v"]) or (
-            not requires_rf and ("rf_reference_voltage_v" in stage or "rf_reference_voltage_v" in design)):
-        raise ValueError("frontend receipt RF reference differs from the actual field design")
-    names = [domain["domain_id"] for domain in design["domains"]]
-    if names not in (["parent"], ["parent", "entrance_refinement"]) or [d["domain_id"] for d in stage["domains"]] != names:
-        raise ValueError("frontend field receipt numerical domains differ from the design")
-    fields, rows, parent_fields = {}, [], {}
-    for index, domain in enumerate(stage["domains"], 1):
-        name = domain["domain_id"]
-        records = domain["working_points"]
-        if [working_point_member_id(record) for record in records] != members:
-            raise ValueError("frontend domain requires ordered published working members")
-        prefix = "frontend" if name == "parent" else "frontend_entrance_refinement"
-        by_member = {}
-        for point, record in zip(points, records, strict=True):
-            member = working_point_member_id(point)
-            identity = _read(_small_record(record["cache_identity_record"], name + " " + member + " identity"))
-            expected = frontend_field_identity(design, name, member_id=member,
-                parent_fields=parent_fields if name != "parent" else None)
-            if record["source_schema_version"] == 2:
-                candidates = [value for value in identity["working_points"] if value["kind"] == point["kind"]
-                    and value["electrode_voltages_v"] == expected["working_points"][0]["electrode_voltages_v"]]
-                if len(candidates) != 1:
-                    raise ValueError("historical source member is ambiguous")
-                projection = _member_projection(identity, candidates[0], member_id=member)
-            elif record["source_schema_version"] == 3:
-                projection = identity
-            else:
-                raise ValueError("unsupported field member source schema")
-            if (any(projection.get(key) != value for key, value in expected.items())
-                    or canonical_pa_family_cache_key(identity) != record["cache_key"]):
-                raise ValueError("frontend field member differs from the prepared domain/parent/GEM")
-            generation = Path(record["generation_directory"]).resolve()
-            filename = f"{prefix}.{member}.pa"
-            validate_frozen_generation_metadata(dict(identity=identity, cache_key=record["cache_key"],
-                filenames=record["cache_filenames"], frozen_field_source=dict(working_points=[record])), generation)
-            if record_path(record) != generation / filename:
-                raise ValueError("frontend working member must reference its canonical common generation")
-            row_record = _pa_record(record, generation, name + " " + member)
-            if row_record.get("read_only") is not True or Path(row_record["path"]).stat().st_mode & stat.S_IWRITE:
-                raise ValueError("frontend working point is not a read-only standalone PA")
-            audit = _read(_small_record(record["audit_record"], "field member audit"))
-            if audit.get("status") != "pass":
-                raise ValueError("field member lacks a successful native audit")
-            by_member[member] = row_record
-            if name == "parent":
-                parent_fields[member] = dict(cache_key=record["cache_key"], record=record)
-        rf_members = [member for member, point in zip(members, points, strict=True) if point["kind"] == "rf_reference"]
-        row = dict(role="coarse_frontend" if name == "parent" else name, instance_index=index,
-                   carrier_pa_basename=Path(by_member["carrier_off"]["path"]).name)
-        if "pulse_delta" in by_member:
-            row['pulse_delta_pa_basename'] = Path(by_member['pulse_delta']['path']).name
-        if rf_members:
-            row.update(rf_differential_pa_basenames=[Path(by_member[member]["path"]).name for member in rf_members],
-                       rf_reference_voltage_v=design["rf_reference_voltage_v"])
-        rows.append(row)
-        fields[name] = by_member
-    bank = _read(_small_record(stage["field_bank_record"], "frontend field bank"))
-    expected_bank = dict(schema_version=STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, role=STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
-        runtime_representation=STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION, dynamic_roles=rows)
-    if bank != expected_bank:
-        raise ValueError("frontend bank differs from its published field records")
-    for row in rows:
-        row.update(role="accelerator_main" if row["role"] == "coarse_frontend" else "entrance_refinement",
-                   instance_index=3 if row["instance_index"] == 1 else 5)
-    return fields, expected_bank
 
 
 
@@ -597,8 +492,9 @@ def materialize_phase_continuation(preparation: Mapping[str, Any], preview_workb
                                    context: dict, run: Path, phase: str) -> dict[str, Any] | None:
     """Materialize only replay units, retaining parent cases as explicit read-only bindings."""
     from integrations.workflows.single_reflection_flight.continuation import (
-        _read as read_continuation, _published_case, _parent, prepare_phase_continuation,
+        _published_case, prepare_phase_continuation,
     )
+    from msplatform.results.single_reflection_continuation import _read as read_continuation
     planned = prepare_phase_continuation(preparation, preview_workbench, run, phase)
     if planned is None:
         return None
@@ -676,7 +572,7 @@ def main() -> int:
         if args.continuation_phase is None:
             parser.error("materialize-continuation requires --continuation-phase")
         from integrations.workflows.single_reflection_flight.continuation import (
-            _parent, _phase_paths, freeze_phase_inputs,
+            _phase_paths, freeze_phase_inputs,
             prepare_phase_continuation, _published_case, recover_provisional_dispatch,
         )
         context = _prepare_context(preparation, args.field_receipt, publication["receipt_record"], args.run,

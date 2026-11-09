@@ -4,18 +4,19 @@ The managed caller executes each argv through its public resource-budget
 wrapper. This module never spawns SIMION, owns no cache and does not Fly.
 """
 from __future__ import annotations
+from msplatform.workflows.single_reflection_flight.field_evidence import _small_record, _pa_record
 
 import argparse
 import json
 import math
-import re
 from pathlib import Path
 import stat
 
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from msplatform.backends.simion.source import lua_value as _lua_value
-from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
+from msplatform.results.single_reflection_source import instance_design_record
+from msplatform.backends.simion.frontend import native_frontend_instances
 from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
 from msplatform.backends.simion.tof_geometry import derive_simion_geometry, resolve_physical_geometry
 from msplatform.backends.simion.downstream import _validate_provider_inputs
@@ -40,19 +41,8 @@ def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _small_record(record: dict, label: str) -> Path:
-    verify_record(label, record)
-    return record_path(record)
 
 
-def _pa_record(record: dict, base: Path, label: str) -> dict:
-    """Reuse the publisher identity; the caller holds the public PA guard."""
-    path = record_path(record)
-    if (not path.is_relative_to(base.resolve()) or not path.is_file()
-            or path.stat().st_size != record.get("bytes")
-            or not re.fullmatch(r"[A-Fa-f0-9]{64}", str(record.get("sha256", "")))):
-        raise ValueError(f"{label}: published PA path/size/identity differs: {path}")
-    return {**record, "path": str(path)}
 
 
 def load_downstream_fields(record: dict, oatof_record: dict, manifest_record: dict | None = None) -> tuple[dict, dict, list[dict]]:

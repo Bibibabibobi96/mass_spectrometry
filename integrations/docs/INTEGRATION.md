@@ -722,3 +722,15 @@ their source/GEM bytes and rejected a missing workflow schema in a cold process.
 schema files retain their original bytes and IDs. These checks did not run a native solver.
 The wider original consumer run is retained separately, including its fixture migration failures
 and targeted successor checks; it is not a complete Repository or performance acceptance.
+
+### Installed single-reflection collection
+
+The same collection functions and CLI now live in
+`msplatform.workflows.single_reflection_flight.collect`. They read explicit frozen
+preparation, workbench and native logs, preserve the complete original mother and
+clock, and publish the existing collection, pulse-decision and replay-comparison
+records. Native parsing remains in `msplatform.backends.simion.tracking_collection`;
+the retired census import alias has no production body. Manifest-bound inherited
+case authorization is a read-only result adapter, while continuation planning and
+native execution remain under their existing owners. This migration does not
+perform Fly, establish a native checkpoint, or grant scientific qualification.
