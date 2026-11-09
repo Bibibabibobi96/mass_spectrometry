@@ -749,11 +749,17 @@ function Get-FiniteComsolWriterCompletion {param($State,$RunId)
 }
 function Invoke-ResourceBudgetedProcess {param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
  if($Limits.wall_clock_seconds-ne30){throw 'resolved-limits-not-forwarded'}
+ $carrier=ConvertFrom-Json -InputObject $ArgumentList[([Array]::IndexOf($ArgumentList,'-HostContextJson')+1)] -AsHashtable
+ if(@(Compare-Object @('workspace','python_executable','host_state_path','policy_path') @($carrier.Keys)).Count-or@($carrier.Values|Where-Object{[string]::IsNullOrWhiteSpace([string]$_)}).Count){throw 'Incomplete explicit host carrier'}
+ if($carrier.python_executable-ne'@@PYTHON@@'-or$ArgumentList[([Array]::IndexOf($ArgumentList,'-WorkingDirectory')+1)]-ne$codeRoot-or$ArgumentList[([Array]::IndexOf($ArgumentList,'-ComsolLauncherPath')+1)]-ne(Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe')-or$ArgumentList[([Array]::IndexOf($ArgumentList,'-MatlabRootPath')+1)]-ne$env:MATLAB_R2025B_ROOT){throw 'Actual deployment argv was not carried'}
  $script:events+='child-start'
  if($scenario-eq'child_failure'){throw 'child-original-failure'}
  return @{resource_budget_exceeded=$false;exit_code=$(if($scenario-eq'receipt_unknown_native_failure'){1}else{0});root_process_id=1;root_process_started_at_utc_ticks=1L}
 }
-$RunId='fixture';$resolvedBudget=@{limits=[pscustomobject]@{wall_clock_seconds=30}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$codeRoot='.';$task='unused';$report='unused';$workspacePaths=@{host_resource_state_path='unused'}
+$env:COMSOL_64_ROOT=Join-Path '@@CODE@@' 'TEST_ONLY_COMSOL'
+$env:MATLAB_R2025B_ROOT=Join-Path '@@CODE@@' 'TEST_ONLY_MATLAB'
+$script:HostResourceExecutionContext=@{workspace='@@CODE@@';python_executable='@@PYTHON@@';host_state_path=(Join-Path '@@CODE@@' host.sqlite3);policy_path='@@POLICY@@'}
+$RunId='fixture';$resolvedBudget=@{limits=[pscustomobject]@{wall_clock_seconds=30}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$codeRoot='@@CODE@@';$task='unused';$report='unused';$workspacePaths=@{host_resource_state_path='unused'}
 foreach($scenario in @('success','child_failure','postprocess_denied','receipt_unknown','receipt_unknown_native_failure','inherited_light','inherited_heavy')){
  $script:events=@()
  $ownerState=@{host_lease=@{inherited=($scenario-like'inherited_*');heavy=($scenario-eq'inherited_heavy');token='prepare';role='COMSOL';stage='prepare';environment_set=$false;completed_work_processes=@();state_path='unused'};native_attempted=$false;wrapper_observation=$null;launcher_receipt='unused';writer_unknown=$false}
@@ -773,15 +779,27 @@ foreach($scenario in @('success','child_failure','postprocess_denied','receipt_u
         script = script.replace(
             "@@FACADE@@", str(REPO_ROOT / "common/host_execution_lease.ps1")
         ).replace("@@RUNNER@@", str(runner))
-        completed = subprocess.run(
-            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=30,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            launcher = fixture / "src/msplatform/backends/comsol/launcher"
+            launcher.mkdir(parents=True)
+            for name in ("resolve_comsol_64.ps1", "run_comsol_r2025b.ps1"):
+                shutil.copyfile(REPO_ROOT / "src/msplatform/backends/comsol/launcher" / name, launcher / name)
+            executable = fixture / "TEST_ONLY_COMSOL/bin/win64/comsolmphserver.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("TEST_ONLY_NEVER_EXECUTED", encoding="utf-8")
+            (fixture / "TEST_ONLY_MATLAB").mkdir()
+            script = script.replace("@@CODE@@", str(fixture)).replace("@@PYTHON@@", sys.executable).replace(
+                "@@POLICY@@", str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json"))
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_internal_dispatch_checks_host_permit_before_work(self) -> None:
         """Pending and active workers require permission before touching inputs."""

@@ -1811,7 +1811,13 @@ def execute_prepared_run(*args):
             def fake_managed(command, log, actual_plan, receipt, role, environment):
                 fake_run(command, log, environment)
 
-            with mock.patch(
+            host_context = dict(workspace=str(root_path), python_executable=sys.executable,
+                host_state_path=str(root_path / "TEST_ONLY_HOST.sqlite3"),
+                policy_path=str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json"))
+            with mock.patch.dict(os.environ, {
+                "MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(host_context),
+                "MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY": plan["run_root"],
+            }), mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._verify_frozen_cad_python",
                 return_value=plan["execution_source_closure"]["runtime"]["python_executable"],
             ), mock.patch(
@@ -1831,6 +1837,8 @@ def execute_prepared_run(*args):
             commercial_commands = [command for command in observed if "-TaskScript" in command]
             self.assertEqual(len(commercial_commands), 2)
             for command in commercial_commands:
+                self.assertEqual(json.loads(command[command.index("-HostContextJson") + 1]), host_context)
+                self.assertEqual(command[command.index("-WorkingDirectory") + 1], plan["run_root"])
                 Path(command[5]).resolve().relative_to(code_root.resolve())
                 task_index = command.index("-TaskScript") + 1
                 Path(command[task_index]).resolve().relative_to(
@@ -1841,8 +1849,11 @@ def execute_prepared_run(*args):
                 {
                     (
                         code_root
-                        / "common"
+                        / "src"
+                        / "msplatform"
+                        / "backends"
                         / "comsol"
+                        / "launcher"
                         / "run_comsol_r2025b.ps1"
                     ).resolve()
                 },

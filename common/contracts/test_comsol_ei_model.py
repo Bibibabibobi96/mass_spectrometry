@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 from msplatform.backends.comsol import ei_model
 from msplatform.execution.context import ExecutionContext
+from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.run_session import RunSession
 from msplatform.execution.processes import ProcessExecutionError
 from msplatform.execution.resources import resource_path
@@ -169,6 +170,9 @@ class EiModelTests(unittest.TestCase):
             self.assertTrue(any("inert secondary diagnostics" in note for note in caught.exception.__notes__))
 
     def test_public_operation_uses_real_owner_session_and_published_product(self):
+        # This inert owner fixture reserves its own small real payload; it does
+        # not require the workstation production policy's 295-GiB free disk floor.
+        owner_policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=64 / 1024)
         for failure in (False, True):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -195,7 +199,8 @@ class EiModelTests(unittest.TestCase):
                     if failure:
                         raise ProcessExecutionError("inert native failure with actual exit seam", receipt)
                     return receipt
-                with patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
+                with patch("msplatform.execution.capacity_admission._capacity_policy", return_value=owner_policy), \
+                     patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
                     if failure:
                         with self.assertRaisesRegex(ProcessExecutionError, "inert native failure"):
                             ei_model.build_ei_model(*inputs(), mode_id="build_only_smoke", context=context)

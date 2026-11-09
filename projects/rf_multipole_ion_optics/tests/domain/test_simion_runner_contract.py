@@ -484,7 +484,15 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
     def test_frozen_comsol_runner_receives_resolved_python_environment(self) -> None:
         entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
         with tempfile.TemporaryDirectory() as directory:
-            (Path(directory) / "src").mkdir()
+            fixture = Path(directory)
+            launcher = fixture / "src/msplatform/backends/comsol/launcher"
+            launcher.mkdir(parents=True)
+            for name in ("resolve_comsol_64.ps1", "run_comsol_r2025b.ps1"):
+                shutil.copyfile(REPO_ROOT / "src/msplatform/backends/comsol/launcher" / name, launcher / name)
+            executable = fixture / "TEST_ONLY_COMSOL/bin/win64/comsolmphserver.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("TEST_ONLY_NEVER_EXECUTED", encoding="utf-8")
+            (fixture / "TEST_ONLY_MATLAB").mkdir()
             script = r"""$ErrorActionPreference='Stop'
     . '@@SUPPORT@@'
     $ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
@@ -495,10 +503,18 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
     $restore=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Restore-RunEnvironment'},$true))[-1]
     $launch=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-ResourceBudgetedProcess'},$true))[-1]
     if($names.Count-ne1-or$save.Count-ne1-or$sets.Count-lt2-or$null-eq$restore-or$null-eq$launch){throw 'Actual environment/launch boundary missing'}
+    $resolver=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.InvocationOperator-eq'Dot'-and$n.Extent.Text.Contains("'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1'")},$true))[-1]
+    $parameters=@($assignments|Where-Object{$_.Left.Extent.Text-eq'$comsolLauncherParameters'})[-1]
+    if($null-eq$resolver-or$null-eq$parameters){throw 'Actual deployment projection missing'}
+    $env:COMSOL_64_ROOT=Join-Path '@@CODE@@' 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path '@@CODE@@' 'TEST_ONLY_MATLAB'
+    $script:HostResourceExecutionContext=@{workspace='@@CODE@@';python_executable='@@PYTHON@@';host_state_path=(Join-Path '@@CODE@@' host.sqlite3);policy_path='@@POLICY@@'}
     $python='selected-python';$codeRoot='@@CODE@@';$expectedPythonPath=(@((Join-Path $codeRoot 'src'),$codeRoot)-join[IO.Path]::PathSeparator);$resolvedBudget=@{limits=@{}};$runDir='.';$resourceUsage='unused';$pwsh='unused';$task='unused';$report='unused';$RunId='fixture';$ownerState=@{launcher_receipt='unused'}
     function Invoke-ResourceBudgetedProcess {
      param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
      if($env:SIMULATION_PYTHON_EXE-cne$python-or$env:PYTHONPATH-cne$expectedPythonPath){throw 'Native child did not inherit selected interpreter/frozen source'}
+     $carrier=ConvertFrom-Json -InputObject $ArgumentList[([Array]::IndexOf($ArgumentList,'-HostContextJson')+1)] -AsHashtable
+     if(@(Compare-Object @('workspace','python_executable','host_state_path','policy_path') @($carrier.Keys)).Count-or@($carrier.Values|Where-Object{[string]::IsNullOrWhiteSpace([string]$_)}).Count){throw 'Incomplete explicit host carrier'}
+     if($carrier.python_executable-ne'@@PYTHON@@'-or$ArgumentList[([Array]::IndexOf($ArgumentList,'-WorkingDirectory')+1)]-ne$codeRoot-or$ArgumentList[([Array]::IndexOf($ArgumentList,'-ComsolLauncherPath')+1)]-ne(Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe')-or$ArgumentList[([Array]::IndexOf($ArgumentList,'-MatlabRootPath')+1)]-ne$env:MATLAB_R2025B_ROOT){throw 'Actual deployment argv was not carried'}
      $script:calls++
      if($fail){throw 'CHILD_ENV_SENTINEL'}
      return @{}
@@ -508,12 +524,13 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
      Invoke-Expression $names[0].Extent.Text;Invoke-Expression $save[0].Extent.Text
      try{
       foreach($set in $sets){Invoke-Expression $set.Extent.Text}
+      Invoke-Expression $resolver.Extent.Text;Invoke-Expression $parameters.Extent.Text
       $null=Invoke-Expression $launch.Extent.Text
      }catch{if($_.Exception.Message-cne'CHILD_ENV_SENTINEL'){throw}}
      finally{Invoke-Expression $restore.Extent.Text}
      if($script:calls-ne1-or$env:SIMULATION_PYTHON_EXE-cne'prior-python'-or$env:PYTHONPATH-cne'prior-source'){throw 'Original environment was not restored'}
     }
-    """.replace('@@CODE@@', str(Path(directory))).replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'common/contracts/run_artifact_support.ps1'))
+    """.replace('@@CODE@@', str(Path(directory))).replace('@@PYTHON@@', sys.executable).replace('@@POLICY@@', str(REPO_ROOT / 'src/msplatform/execution/resources/host_resource_policy.json')).replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'common/contracts/run_artifact_support.ps1'))
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                                     cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
