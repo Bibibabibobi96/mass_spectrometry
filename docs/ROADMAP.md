@@ -202,6 +202,26 @@ epoch、authority SHA、单位与basis失败关闭语义不变。
 run/archive/task ID、时间格式与manifest身份不变。
 `common/contracts/frozen_inputs.py`旧适配器已删除；各运行器、源码枚举、冻结输入和当前测试直接使用`execution.inputs`，
 原始字节、导入根、来源SHA和缺资源拒绝不变，历史快照不重写。
+`common/contracts/run_capacity_lifecycle.py`旧适配器已删除；各生命周期CLI、封存、恢复和测试直接使用安装实现，
+writer、容量、容量lease与manifest保护不变。锁内退休核验复用同一lease快照，owner保留原分类器回调。
+Repository-specific misplaced-run recovery remains with `common.contracts.legacy_owner_disposition`,
+where its full repository manifest verifier is available; installed lifecycle code does not import that owner.
+PA cache、continuation、dispatch、frozen-input与artifact-naming的包级导入、冻结source、CLI及fixture残留同步迁移；
+OA acceptance snapshots bind the actual package initializers and neutral identity implementation;
+cold-reader checks reject missing frozen code even with a competing installed package.
+RF隔离分析阻止editable安装finder接管冻结来源。
+The stdlib scheduler no longer loads JSON Schema engines during package initialization; actual schema
+validation still requires them. This closes a reproduced startup mechanism, not the unknown historical pipe cause.
+The 2026-11-09 takeover started at `d8bcfc36` with 76 modified tracked paths, no untracked files,
+and no active native solver. The original diff was preserved before changes. Four common-contract shards
+passed against `7cb8007e` plus the reviewed migration, including ordinary wheel/sdist installation;
+the joint Changed run remained FAIL (14 PASS, 5 FAIL, 13 BLOCKED, 20 NA; 1863.396 seconds public wall,
+eight workers). Frozen import bootstrap order and the active three-zone CLI authority remain separate
+corrections; blocked project stages are not accepted by the common result. The canonical retirement reader
+now receives its explicit classifier, including the exact frozen IOB seed context; role-less large evidence,
+actual lifecycle resealing, tamper refusal and lock-held verification retain their original guarantees.
+Saved deployment/profile loading, results ownership, remaining native rollout and the original performance
+targets remain OPEN. No new MATLAB/COMSOL/SIMION, GUI or Formal qualification is claimed by this takeover.
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

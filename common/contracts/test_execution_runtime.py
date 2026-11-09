@@ -16,7 +16,7 @@ from msplatform.execution.resources import resource_path
 from msplatform.execution import host_resource_scheduler
 from msplatform.execution.recovery import WholeUnitReplayUnit
 from msplatform.execution.processes import run_observed_process, ProcessExecutionError
-from common.simion import batch_continuation
+from msplatform.execution import recovery as batch_continuation
 
 
 class ExecutionRuntimeTests(unittest.TestCase):

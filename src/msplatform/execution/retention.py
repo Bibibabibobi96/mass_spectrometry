@@ -1,4 +1,4 @@
-"""Retention and manifest policies for the MR COMSOL scalar-field operation."""
+"""Shared run-evidence classification and installed retention policies."""
 from __future__ import annotations
 
 import fnmatch
@@ -23,6 +23,11 @@ def classify_file(
     policy = policy or artifact_retention.load_policy(POLICY_PATH)
     name = path.name.lower()
     suffix = path.suffix.lower()
+    # Frozen IOB slots are executable inputs, not solved field payloads.
+    if path.parent.as_posix().endswith(
+        "runtime_snapshot/common/simion/assets/iob_instance_seeds"
+    ) and fnmatch.fnmatch(name, "iob_seed_placeholder_[0-9][0-9].pa0"):
+        return "required_evidence"
     if any(fnmatch.fnmatch(name, pattern.lower()) for pattern in policy["dense_trajectory_globs"]):
         return "dense_trajectory"
     if suffix in policy["solver_native_suffixes"] or _numbered_simion_suffix(
@@ -88,7 +93,7 @@ def retention_api() -> tuple[Any, Any, Any, Any]:
 
 
 def apply_retention(run_config_path: Path, **kwargs: Any) -> Path:
-    """Apply the installed retention engine to one COMSOL provider run."""
+    """Apply the installed retention engine to one governed run."""
     return artifact_retention.apply_retention(
         run_config_path, classifier=classify_file, **kwargs
     )

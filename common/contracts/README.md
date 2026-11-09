@@ -272,7 +272,7 @@ MR实测源与共同场有限脉冲准备已复用同一入口，原有文件身
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。
 
-[`frozen_inputs.freeze_file(source, destination)`](frozen_inputs.py)冻结显式选定的小配置、源码或观测文件：
+[`execution.inputs.freeze_file(source, destination)`](../../src/msplatform/execution/inputs.py)冻结显式选定的小配置、源码或观测文件：
 以源文件的原始字节记录核验副本，返回目的文件record及`source_path`；缺源、目的已存在或副本身份不符均失败。
 每次只读取一次源身份和一次目的身份；调用方负责输入选择、目的目录与命名。IP和MR准备入口直接消费此API，
 沿原有源码闭包冻结公共模块；PA／MPH等求解器载荷继续使用各自owner机制。
@@ -407,7 +407,7 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 
 `New-RunPackage`在创建前要求受管`ArtifactRoot`精确指向`artifacts/projects/<Project>`。
 历史误传导致的`projects/<owner>/runs/runs/<run-id>`轻证据包，可显式用
-`run_capacity_lifecycle --action retire-misplaced-light-run --artifact-root <root> --run-config <original-config> --backup-manifest <backup-manifest> --owner <project>`预检。
+`python -m common.contracts.legacy_owner_disposition --action retire-misplaced-light-run --artifact-root <root> --run-config <original-config> --backup-manifest <backup-manifest> --owner <project>`预检。
 备份须为同项目规范run、模式`misplaced_light_run_backup`，其完整manifest绑定
 `results/misplaced_run_backup_receipt.json`及`inputs/misplaced_run_snapshot/`下全部原始文件副本。
 原包必须为无租约／消费者的ready light证据，且保留原错误账本owner=`runs`；不改身份或分类。
@@ -487,7 +487,7 @@ owner根据真实证据产生可重放的收尾决定，再由同一maintenance�
 不扫描载荷、不重新校准、不删除文件，也不将该动作计作释放容量。
 
 已停止写入且只剩轻量证据的 checkpoint 可由 owner 显式调用
-`python -m common.contracts.run_capacity_lifecycle --action seal-checkpoint --artifact-root <root> --run-config <run_config.json> --owner <project> --confirm-writing-stopped`。
+`python -m msplatform.execution.run_capacity_lifecycle --action seal-checkpoint --artifact-root <root> --run-config <run_config.json> --owner <project> --confirm-writing-stopped`。
 owner 必须先确认本次写入进程及子进程已结束，并承诺续算使用新 run；本动作不自动探测未登记进程。
 它沿用 run 的轻量预算及文件角色判据，在容量决策锁内检查保护租约并登记实际字节为 `light_evidence/ready`，
 不改 manifest 的 checkpoint 状态，不写删 run 文件，不改变 pin 或外部 PA 引用。`ready` 仅表示固定 resident，
@@ -629,7 +629,7 @@ maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`�
 已发布代际禁止原位修改；Refine、Fast Adjust和其他写操作只能
 使用独立工作副本。日常维护不依赖旧`compact/solver_review/L1-L3`分类，这些旧语义只留在迁移工具中。
 
-失败PA事务若已无任何payload或scratch文件，可由其唯一[PA owner](../simion/pa_family_cache.py)通过
+失败PA事务若已无任何payload或scratch文件，可由其唯一[PA owner](../../src/msplatform/backends/simion/pa_family_cache.py)通过
 `advance-transaction --abandon-empty-transaction <request.json>`显式收尾：绑定owner、原事务SHA、inventory及
 失败producer证据，拒绝已有publication、实际pin、活动租约或消费者引用；任何残留载荷均保留并拒绝。
 事务真实转为`retired`，保留原事务全文、verification和失败原因；同路径容量对象按证据实际字节登记为

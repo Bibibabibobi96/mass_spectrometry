@@ -414,7 +414,7 @@ try{{Invoke-RunArtifactWorkflow -RequestPath $context.request_path -ResultPath $
 if(-not$blocked){{throw 'missing parent authority was accepted'}}
 $result=Get-Content $context.result_path -Raw|ConvertFrom-Json
 if($result.resume_action-ne'parent_capacity_owner_finalize'){{throw 'missing parent recovery action'}}
-& '{sys.executable}' -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root '{root / 'artifacts'}' --run-config '{run / 'run_config.json'}' --owner '{PROJECT}' --confirm-writing-stopped --retention-reason 'review fixture'|Out-Null
+& '{sys.executable}' -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root '{root / 'artifacts'}' --run-config '{run / 'run_config.json'}' --owner '{PROJECT}' --confirm-writing-stopped --retention-reason 'review fixture'|Out-Null
 if($LASTEXITCODE-ne0){{throw 'actual parent sealing failed'}}
 $closed=Invoke-RunArtifactWorkflow -RequestPath $context.request_path -ResultPath $context.result_path -ResumeFinalization
 if(-not$closed.capacity_finalized-or$closed.lease_released-or$closed.status-ne'success'){{throw 'parent ready state was not reused'}}

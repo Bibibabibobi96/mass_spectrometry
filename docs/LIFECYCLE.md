@@ -134,7 +134,7 @@ Formal继续归原项目，联合发布不自动授予或替换它们的资格�
 `comsol/simion/cross/cad/python/repo`；`reason`限定为
 `superseded/legacy/milestone/failed-evidence/migration-snapshot`。其余词段使用小写ASCII kebab-case，
 完整标识不超过96字符，重试只在末尾增加`__r02`等序号。实现和自动检查的唯一来源为
-`common/contracts/artifact_naming.py`。
+`src/msplatform/execution/artifact_naming.py`。
 
 清晰命名主要由容器承担，容器内部采用固定角色名，避免路径过长和脚本漂移：
 

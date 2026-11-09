@@ -212,7 +212,7 @@ editable步骤建立正常安装关系，不由业务脚本修改
 并在仓库外通过 `python -I` 执行数值计算、核验模块来源和本地 schema 引用；editable 通过不能替代该验收。
 依赖锁定仍使用根声明和锁文件，不建立第二份运行环境清单。
 
-冻结运行不消费宿主当前安装的科学实现。`common.contracts.frozen_inputs.python_import_roots` 与
+冻结运行不消费宿主当前安装的科学实现。`msplatform.execution.inputs.python_import_roots` 与
 PowerShell `Get-RunPythonImportRoots` 只依据本次源码树返回实际 `src` 和根；旧快照没有 `src` 时保持原根。
 缺少本次冻结的模块或资源应失败，不能退回当前 checkout 或 site-packages 补齐。
 源码与 `.schema.json` 由既有冻结编译器按单一 provider 声明展开、校验和绑定。

@@ -931,7 +931,7 @@ function Invoke-RunArtifactWorkflow {
         $result.lease_released=$true
       }
       Set-WorkflowStage capacity_finalization
-      $sealOutput=Invoke-RunCapacityCommand -Python $python -RepoRoot $repo -Arguments @('-m','common.contracts.run_capacity_lifecycle',
+      $sealOutput=Invoke-RunCapacityCommand -Python $python -RepoRoot $repo -Arguments @('-m','msplatform.execution.run_capacity_lifecycle',
         '--action','seal-stopped-payload','--artifact-root',$artifactRoot,'--run-config',$package.run_config,
         '--owner',$request.package.project,'--confirm-writing-stopped','--retention-reason',$request.package.retention_reason) `
         -FailureLabel 'Workflow stopped payload sealing failed'

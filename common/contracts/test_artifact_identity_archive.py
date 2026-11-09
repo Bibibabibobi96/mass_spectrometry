@@ -151,7 +151,7 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             source = Path(__file__).resolve().parent
             scripts = repository / "common/contracts"
             scripts.mkdir(parents=True)
-            for name in ("artifact_identity_archive.py", "artifact_naming.py", "file_identity.py"):
+            for name in ("artifact_identity_archive.py", "file_identity.py"):
                 shutil.copyfile(source / name, scripts / name)
             ledger = fixture / "artifacts/common/fixture.sqlite3"
             ledger.parent.mkdir(parents=True)

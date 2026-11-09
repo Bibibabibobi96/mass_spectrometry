@@ -15,7 +15,7 @@ from unittest import mock
 
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from common.contracts.run_capacity_lifecycle import register_writing, seal_checkpoint
+from msplatform.execution.run_capacity_lifecycle import register_writing, seal_checkpoint
 from common.contracts.write_run_manifest import file_record
 from common.contracts.solver_review_retirement import (
     LEGACY_INITIALIZATION_SUMMARY,
@@ -122,7 +122,7 @@ $OutputEncoding = [Console]::OutputEncoding
 Write-Host 'UTF8:缂栫爜杈圭晫'
 $global:calls = [Collections.Generic.List[string]]::new()
 function python {
-  if ($args -contains 'common.contracts.run_capacity_lifecycle') {
+  if ($args -contains 'msplatform.execution.run_capacity_lifecycle') {
     if($args-contains'reseal-retired-payload'){
       if($args-notcontains'--confirm-writing-stopped'-or$args-notcontains'p'-or$args-contains'--retention-reason'){throw 'reseal authority differs'}
       $global:calls.Add('reseal')
@@ -580,7 +580,7 @@ function Exit-HostExecutionLease { param($Lease) }
 
         receipt=self.target/"solver_review_retirement_receipt.json"
         changed=json.loads(receipt.read_text())
-        from common.contracts.run_capacity_lifecycle import _verify_retired_payload_remainder
+        from msplatform.execution.run_capacity_lifecycle import _verify_retired_payload_remainder
 
         records = [{"path": p.relative_to(self.target).as_posix(), "bytes": p.stat().st_size}
                    for p in self.target.rglob("*") if p.is_file()]
@@ -593,6 +593,40 @@ function Exit-HostExecutionLease { param($Lease) }
         receipt.write_text(json.dumps(changed))
         with self.assertRaises(RetirementError):
             verify_retirement(self.target)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_lifecycle_reseal_verifies_large_unclassified_preserved_input(self, _scan):
+        from msplatform.execution.solver_review_retirement import (
+            RetirementError as LifecycleRetirementError, verify_retirement as verify_installed,
+        )
+        candidate = self.target / "candidate.json"
+        original = b'{"padding":"' + b'x' * (8 * 1024 * 1024) + b'"}'
+        candidate.write_bytes(original)
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        record = manifest["inputs"]["candidate_contract"]
+        self.assertNotIn("retention_role", record)
+        record.update(bytes=len(original), sha256=_sha(candidate))
+        manifest_path.write_text(json.dumps(manifest))
+        receipt_bytes, manifest_bytes = self._first_partial_batch(reseal=False)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(verify_installed(self.target)["status"], "PASS")
+        self.assertEqual(self._seal_partial_batch()["status"], "ready")
+        self.assertEqual(candidate.read_bytes(), original)
+        self.assertEqual(manifest_path.read_bytes(), manifest_bytes)
+        receipt = self.target / "solver_review_retirement_receipt.json"
+        self.assertEqual(receipt.read_bytes(), receipt_bytes)
+        ledger = self.artifacts / "common/capacity_ledger.json"
+        ledger_bytes = ledger.read_bytes()
+        candidate.write_bytes(original.replace(b'x', b'y', 1))
+        self.assertEqual(candidate.stat().st_size, len(original))
+        with self.assertRaises(LifecycleRetirementError):
+            verify_installed(self.target)
+        with self.assertRaises(LifecycleRetirementError):
+            self._seal_partial_batch()
+        self.assertEqual(ledger.read_bytes(), ledger_bytes)
+        self.assertEqual(manifest_path.read_bytes(), manifest_bytes)
+        self.assertEqual(receipt.read_bytes(), receipt_bytes)
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_explicit_retirement_consumption_verifies_only_selected_preserved_evidence(self, _scan):
@@ -1093,8 +1127,9 @@ function Exit-HostExecutionLease { param($Lease) }
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_checkpoint_seal_verifies_nonempty_stopped_consumers_under_held_lock(self, _scan):
+        from msplatform.execution.solver_review_retirement import RetirementError as LifecycleRetirementError
         from contextlib import contextmanager
-        from common.contracts import capacity_protection as common_protection
+        from msplatform.execution import capacity_protection as common_protection
         from msplatform.execution import capacity_protection as canonical_protection
 
         checkpoint = self._checkpoint_runtime()
@@ -1150,7 +1185,7 @@ function Exit-HostExecutionLease { param($Lease) }
         try:
             with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
                     common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader):
-                with self.assertRaisesRegex(RetirementError, "active protection lease"):
+                with self.assertRaisesRegex(LifecycleRetirementError, "active protection lease"):
                     seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True)
             self.assertEqual(reads, [self.artifacts.resolve()])
             self.assertEqual(held, [])
@@ -1177,7 +1212,7 @@ function Exit-HostExecutionLease { param($Lease) }
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_retired_remainder_seal_uses_held_snapshot_and_rejects_active_lease(self, _scan):
         from contextlib import contextmanager
-        from common.contracts import capacity_protection as common_protection
+        from msplatform.execution import capacity_protection as common_protection
         from msplatform.execution import capacity_protection as canonical_protection
 
         receipt_bytes, manifest_bytes = self._first_partial_batch(reseal=False)
@@ -1224,7 +1259,7 @@ function Exit-HostExecutionLease { param($Lease) }
             canonical_protection.delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
         with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
                 common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader), mock.patch(
-                "common.contracts.run_capacity_lifecycle.verify_retirement",
+                "msplatform.execution.run_capacity_lifecycle.verify_retirement",
                 side_effect=AssertionError("locked remainder used standalone public verifier")):
             result = self._seal_partial_batch()
         self.assertEqual(result["status"], "ready")

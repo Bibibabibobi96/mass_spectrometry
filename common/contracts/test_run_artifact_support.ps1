@@ -346,7 +346,7 @@ try {
         -Software @('contract test') -Outputs @($heavy.summary,$pa) -DeferCapacityFinalization|Out-Null
     }
     Assert-Equal (Get-Content (Join-Path $heavy.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json).status $status 'Deferred publication lost terminal status.'
-    & $python -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $governedRoot `
+    & $python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $governedRoot `
       --run-config $heavy.run_config --owner fixture_project --confirm-writing-stopped --retention-reason 'Inert owner-seal regression.'|Out-Null
     if($LASTEXITCODE-ne0){throw 'Public owner stopped-payload seal failed.'}
     $ledger=Get-Content (Join-Path $governedRoot 'common/capacity_ledger.json') -Raw|ConvertFrom-Json

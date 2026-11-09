@@ -11,7 +11,7 @@ from unittest.mock import patch
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.write_run_manifest import build_run_manifest, file_record
-from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -80,7 +80,7 @@ class CrossRootProtectionTests(unittest.TestCase):
             manifest = run / "run_manifest.json"
             config_path = run / "run_config.json"
             with patch.dict("os.environ", {"MASS_SPECTROMETRY_ARTIFACT_ROOT": str(target)}), \
-                    patch("common.contracts.run_capacity_lifecycle._inventory", side_effect=AssertionError("must not scan source payload")):
+                    patch("msplatform.execution.run_capacity_lifecycle._inventory", side_effect=AssertionError("must not scan source payload")):
                 self.assertEqual(resolve_consumed_run_capacity_owner(reference["manifest_record"]),
                                  dict(artifact_root=str(source_root.resolve()), run_directory=str(run.resolve())))
             journal = run / ".run_terminal_publication.json"

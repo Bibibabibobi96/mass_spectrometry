@@ -387,7 +387,7 @@ def _downstream_references(
                             verify_record(
                                 "downstream run_config",
                                 manifest_record,
-                                base_dir=run_dir,
+                                base_dir=run_dir, retention_classifier=classify_file,
                             )
                             identity_matches = True
                     except (AssertionError, KeyError, OSError, TypeError, ValueError):
@@ -465,7 +465,8 @@ def _manifest_records(
                             or len(str(record.get("sha256", ""))) != 64):
                         raise RetirementError(f"sealed heavy record differs: {path}")
                 else:
-                    verify_record(role, record, base_dir=run["dir"], _identity_cache=identity_cache)
+                    verify_record(role, record, base_dir=run["dir"], _identity_cache=identity_cache,
+                                  retention_classifier=classify_file)
         except (AssertionError, KeyError, OSError) as exc:
             raise RetirementError(f"run evidence identity differs: {role}: {exc}") from exc
         identity = {"manifest_role": role, "bytes": record.get("bytes"), "sha256": record.get("sha256")}
@@ -657,7 +658,8 @@ def _runtime_scope_path(document: dict[str, Any], target: Path) -> Path | None:
     if record["path"] != path.relative_to(target).as_posix():
         raise RetirementError("runtime checkpoint scope path must be canonical run-relative")
     try:
-        verify_record("stopped runtime checkpoint", {**record, "exists": True}, base_dir=target)
+        verify_record("stopped runtime checkpoint", {**record, "exists": True}, base_dir=target,
+                      retention_classifier=classify_file)
     except (AssertionError, KeyError, OSError, TypeError, ValueError) as exc:
         raise RetirementError("stopped runtime checkpoint identity differs") from exc
     return path
@@ -705,7 +707,8 @@ def _freeze_stopped_consumers(
         records = {}
         for name, record in (("run_config", config_record), ("summary", summary_records[0])):
             try:
-                verify_record("approved stopped consumer " + name, record, base_dir=run)
+                verify_record("approved stopped consumer " + name, record, base_dir=run,
+                              retention_classifier=classify_file)
             except (AssertionError, KeyError, OSError, TypeError, ValueError) as exc:
                 raise RetirementError("approved stopped consumer sealed evidence differs") from exc
             records[name] = {"path": str(run / (name + ".json")), "bytes": record["bytes"],

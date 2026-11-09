@@ -861,13 +861,13 @@ def _resume_terminal_run_owner(root: Path) -> dict[str, int]:
     reconciliation is an owner action, never an admission dependency.
     """
 
-    from common.contracts.run_capacity_lifecycle import resume_terminal_runs
+    from msplatform.execution.run_capacity_lifecycle import resume_terminal_runs
 
     return resume_terminal_runs(root)
 
 
 def _resume_partial_run_retirement_owner(root: Path) -> dict[str, int]:
-    from common.contracts.run_capacity_lifecycle import resume_partial_retirements
+    from msplatform.execution.run_capacity_lifecycle import resume_partial_retirements
 
     return resume_partial_retirements(root)
 

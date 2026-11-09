@@ -483,7 +483,7 @@ function Invoke-RunCapacityLifecycleAdapter {
     $runArgument=@('--run-config',$RunConfig)
   }
   $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python -m common.contracts.run_capacity_lifecycle --action $Action `
+    & $Python -m msplatform.execution.run_capacity_lifecycle --action $Action `
       --artifact-root $ArtifactRoot @runArgument
     if($LASTEXITCODE-ne 0){throw "Run capacity lifecycle $Action failed."}
   })
@@ -825,7 +825,7 @@ function Resolve-RunSourceExecutionInputs {
   $resolver=@'
 import json,sys
 from pathlib import Path
-from common.contracts.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.capacity_protection import load_capacity_protection_leases,path_is_protected
 request=json.load(sys.stdin)
@@ -1113,7 +1113,7 @@ function New-RunPackage {
   if($LASTEXITCODE-ne 0 -or -not($identityCheck-match '^NEW_RUN_PROJECT=PASS ')){
     throw "Run project identity rejected before package creation: $($identityCheck -join [Environment]::NewLine)"
   }
-  $validation=& $python (Join-Path $RepoRoot 'common\contracts\artifact_naming.py') run $RunId
+  $validation=& $python -m msplatform.execution.artifact_naming run $RunId
   if($LASTEXITCODE-ne 0 -or -not($validation-match '^ARTIFACT_ID=PASS ')){throw "Invalid run_id: $RunId"}
   $artifactRunDir=Join-Path $ArtifactRoot "runs\$RunId"
   if(Test-Path -LiteralPath $artifactRunDir){throw "Run already exists: $artifactRunDir"}
