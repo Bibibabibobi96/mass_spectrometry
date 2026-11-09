@@ -970,8 +970,35 @@ metadata/guard records. Native execution remains explicitly pending.
 The supplied `snapshot_root` is an authoritative frozen resource/data closure,
 not a checkout search path. Program Lua, IOB code and the path helper are consumed
 from that same closure; a missing helper cannot be supplemented from the active
-installation. The selected helper's exact identity is recorded. Legacy external
-IOB placeholder inputs and their original copying protocol remain explicit P4
-seed-migration work; they are neither packaged as new defaults nor retired here.
+installation. The selected helper's exact identity is recorded. Ordinary SFI
+four/five-slot cases freeze only the selected canonical IOB container and existing
+builder/core. They no longer read or copy legacy large placeholder PA inputs.
 Downstream-field publication is installed separately. The existing PowerShell
 field/execute/run orchestration remains separate migration work.
+
+
+### Ordinary SFI structural bootstrap closure
+
+The existing `single_reflection_iob_build` role retains its full four/five-slot
+pose/grid, priority/occupancy and interface validation. The same `iob_core.lua`
+now provisions its existing private neutral 3x3x3 bootstrap protocol for these
+ordinary builds too; no component-tracking role, solved-field copy or physics
+bypass is used. Distinct seed-local placeholder names remain required. Actual
+provider PAs replace every slot before save and path/grid/pose verification;
+only then does the writer close the PAs and remove its own neutral intermediates.
+A failed writer leaves partial evidence for the existing owner's retention path.
+
+Each existing case/workbench receipt carries an explicit `generated_paths`
+output plan before native launch: its IOB and exact case-private bootstrap paths.
+The public path context projects those planned paths; it does not register new
+retention roles. Existing verified-manifest finalization enumerates run outputs
+through the canonical classified policy, with the same writer/PA guards and
+capacity ownership. Missing frozen seed, builder or core fails before case output
+materialization. Only SFI's obsolete legacy-placeholder freezer selectors are
+removed; other consumers and historical assets remain unchanged.
+
+Software coverage includes plain-Lua four/five-slot build/reopen, original
+physical/priority/interface negatives, private-bootstrap path/count/grid guards,
+success cleanup and public-owner failed partial preservation. Actual SIMION
+build/cold reopen/Fly for this successor remains pending; software tests do not
+grant propagation or scientific qualification.

@@ -1,6 +1,6 @@
 -- Populate the public four/five-slot container from an explicit runtime build spec.
 -- This is preparation only: no Refine, Fast Adjust, or particle flight.
--- The geometry mode writes only temporary neutral bootstrap PAs before replacing slots.
+-- Every build provisions private neutral bootstrap PAs before replacing slots.
 -- Slot order is flight tube, reflectron, coupled frontend, detector. Provider
 -- placements are already resolved in oatof_global; no placement is inferred.
 return function(spec,mode,native_path)
@@ -498,7 +498,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   return
 end
 local bootstrap={}
-if source_free or tracking_role then
+do
   assert(type(spec.bootstrap_paths)=='table' and #spec.bootstrap_paths==count,'explicit private bootstrap PA paths required')
   local parent=assert(spec.seed_iob):gsub('\\','/'):match('^(.*)/')
   for _,extension in ipairs({'.lua','.fly2','.ion','.con','.rec','.wgem'}) do
@@ -523,7 +523,7 @@ if source_free or tracking_role then
 end
 simion.command('"'..assert(spec.seed_iob)..'"')
 assert(#simion.wb.instances==count, 'public container must contain the declared slots')
-if source_free or tracking_role then
+do
   -- Inspect all loaded paths before changing any slot: no author PA may be
   -- silently read and then replaced to conceal a failed relative seed.
   local reference=assert(simion.pas:open())
@@ -565,7 +565,7 @@ for path,data in pairs(companions) do
   local output=assert(io.open(path,'wb'));output:write(data);output:close()
 end
 assert(okay,message)
-if source_free or tracking_role then
+do
   -- The independently reopened output is the final path/pose proof; this
   -- process must still verify all real slots before dropping intermediates.
   local reference=assert(simion.pas:open())

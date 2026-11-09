@@ -287,13 +287,13 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
             if kind != "carrier_off":
                 response_fields.append(dict(domain=domain, kind=kind, path=Path(record["path"]).as_posix(), grid=grid))
     count = len(rows)
-    seed_names = [f"{count}_instance_seed.iob", *(f"iob_seed_placeholder_{index:02d}.pa0" for index in range(1, count + 1))]
+    seed_names = [f"{count}_instance_seed.iob"]
     seed = directory / "iob_seed"
     iob = directory / "instrument.iob"
     cache = context.setdefault("_continuation_seed_records", {})
-    seed_paths = [Path(context["snapshot_root"]) /
-                  ("src/msplatform/backends/simion/resources" if name.endswith(".iob") else
-                   "common/simion/assets/iob_instance_seeds") / name for name in seed_names]
+    seed_paths = [Path(context["snapshot_root"]) / "src/msplatform/backends/simion/resources" / name for name in seed_names]
+    bootstrap_paths = [(seed / f"iob_seed_placeholder_{index:02d}.pa0").as_posix()
+                       for index in range(1, count + 1)]
     seed_records = []
     for path in seed_paths:
         record = cache.get(path)
@@ -311,12 +311,14 @@ def preview_case_controls(context: dict, source: list[dict], directory: Path) ->
             response_fields=response_fields,
             interface_field_probes=interfaces,
             native_priority_occupancy_probes=probes,
-            seed_iob=(seed / seed_names[0]).as_posix(), output_iob=iob.as_posix())) + "\n",
+            seed_iob=(seed / seed_names[0]).as_posix(), bootstrap_paths=bootstrap_paths,
+            output_iob=iob.as_posix())) + "\n",
         builder_path=str(Path(context["snapshot_root"]) / "src/msplatform/backends/simion/resources/build_iob.lua"),
         builder_core_path=str(Path(context["snapshot_root"])/"src/msplatform/backends/simion/resources/iob_core.lua"),
         program_path_projection_record=context.setdefault("_program_path_projection_record",
             file_record(Path(context["snapshot_root"]) / _NATIVE_PATH_RESOURCE)),
-        seed_paths=[str(path) for path in seed_paths], seed_records=seed_records)
+        seed_paths=[str(path) for path in seed_paths], seed_records=seed_records,
+        generated_paths=[iob.as_posix(), *bootstrap_paths])
 
 
 def preview_batches(run: Path, phase: str, plan: dict, *, context: dict) -> dict:
@@ -350,17 +352,18 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
         raise ValueError("refusing to overwrite prepared workbench inputs")
     preview = preview_case_controls(context, source, directory)
     program, metadata, rows = preview["program"], preview["build_metadata"], preview["instance_rows"]
-    seed_root = snapshot_root / "common/simion/assets/iob_instance_seeds"
     count = len(rows)
-    seed_names = [f"{count}_instance_seed.iob", *(f"iob_seed_placeholder_{i:02d}.pa0" for i in range(1, count + 1))]
-    seed_sources = {name: (snapshot_root / "src/msplatform/backends/simion/resources" / name
-                           if name.endswith(".iob") else seed_root / name) for name in seed_names}
+    seed_names = [f"{count}_instance_seed.iob"]
+    seed_sources = {name: snapshot_root / "src/msplatform/backends/simion/resources" / name for name in seed_names}
     for name in seed_names:
         if not seed_sources[name].is_file():
             raise ValueError(f"frozen public IOB seed resource is missing: {name}")
     builder = snapshot_root / "src/msplatform/backends/simion/resources/build_iob.lua"
     if not builder.is_file():
         raise ValueError("frozen four/five-slot IOB builder is missing")
+    builder_core = Path(preview["builder_core_path"])
+    if not builder_core.is_file():
+        raise ValueError("frozen four/five-slot IOB builder core is missing")
     directory.mkdir(parents=True)
     seed = directory / "iob_seed"
     seed.mkdir()
@@ -383,11 +386,12 @@ def _materialize_case(context: dict, source: list[dict], directory: Path) -> dic
         build_metadata=metadata, inputs=records, downstream_receipt_record=downstream_receipt_record,
         native_priority_occupancy_expected_counts=preview["native_priority_occupancy_expected_counts"],
         program_path_projection_record=preview["program_path_projection_record"],
-        iob_builder_core_record=file_record(Path(preview["builder_core_path"])),
+        iob_builder_core_record=file_record(builder_core),
         iob_pa_copies=copies,
         iob_pa_guard_records=[*scientific_guards,
             *({**copy["source_record"], "path": copy["destination"]} for copy in copies)],
         field_receipt_record=file_record(field_receipt_path), pa_guard_records=[*(record for domain in fields.values() for record in domain.values()), *guards],
+        generated_paths=preview["generated_paths"],
         iob_path=str(iob), iob_builder_arguments=["--nogui", "--noprompt", "lua", str(builder), str(spec_path)],
         iob_verify_arguments=["--nogui", "--noprompt", "lua", str(builder), str(spec_path), "verify"],
         outputs={"program": file_record(iob.with_suffix(".lua")), "numerical_program": file_record(numerical_path), "particles": file_record(iob.with_suffix(".fly2")),

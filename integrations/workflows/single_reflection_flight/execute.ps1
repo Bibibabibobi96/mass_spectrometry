@@ -532,6 +532,7 @@ try {
       }
       $lease=Update-HostResourceStage -Lease $lease -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
       $nativePaths=@((Split-Path -Parent $workbench.iob_path),[string]$workbench.iob_path)+@($workbench.iob_builder_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})+@($workbench.iob_verify_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+      $nativePaths+=@($workbench.generated_paths)
       $workbenchNativeContext=Get-RunNativeExecutionContext -Package $RunPackage -Paths $nativePaths -Tool SIMION
       foreach($operation in @('build','verify')){
         $argv=if($operation-eq'build'){@($workbench.iob_builder_arguments)}else{@($workbench.iob_verify_arguments)}

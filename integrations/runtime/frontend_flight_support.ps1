@@ -140,6 +140,7 @@ function Invoke-FrontendIobBuild {
   )
   $name=[string]$Case.case_id
   $paths=@([string]$Case.working_directory,[string]$Case.iob_path)+@($Case.iob_builder_arguments|Where-Object{[IO.Path]::IsPathFullyQualified([string]$_)})
+  if(($Case-is[Collections.IDictionary]-and$Case.Contains('generated_paths'))-or$Case.PSObject.Properties.Name-contains'generated_paths'){$paths+=@($Case.generated_paths)}
   foreach($key in @('program_path','particle_input')){
     if(($Case-is[Collections.IDictionary]-and$Case.Contains($key))-or$Case.PSObject.Properties.Name-contains$key){$paths+=@([string]$Case.$key)}
   }

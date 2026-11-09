@@ -8,6 +8,7 @@ local mode=arg[2] or 'build'
 for _,key in ipairs({'seed_iob','output_iob'}) do
   if type(spec[key])=='string' then spec[key]=native_path(spec[key]) end
 end
+for index,path in ipairs(spec.bootstrap_paths or {}) do spec.bootstrap_paths[index]=native_path(path) end
 for _,key in ipairs({'instances','response_fields'}) do
   if type(spec[key])=='table' then
     for _,row in ipairs(spec[key]) do

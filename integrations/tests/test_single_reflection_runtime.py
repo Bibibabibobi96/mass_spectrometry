@@ -215,11 +215,8 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             target = self.snapshot / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(resource_path("native_run_path.lua") if name.endswith("native_run_path.lua") else ROOT / name, target)
-        seed = self.snapshot / "common/simion/assets/iob_instance_seeds"
-        seed.mkdir(parents=True)
-        for name in ["4_instance_seed.iob", "5_instance_seed.iob", *(f"iob_seed_placeholder_{i:02d}.pa0" for i in range(1, 6))]:
-            target = (self.snapshot / "src/msplatform/backends/simion/resources" / name
-                      if name.endswith(".iob") else seed / name)
+        for name in ["4_instance_seed.iob", "5_instance_seed.iob"]:
+            target = self.snapshot / "src/msplatform/backends/simion/resources" / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"INERT_SEED_RESOURCE__NOT_NATIVE_EVIDENCE")
 
@@ -542,6 +539,23 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.invoke_runtime("--verify-controls", receipt_path)
 
+    def test_missing_frozen_builder_core_fails_before_materializing_any_case_output(self):
+        core = self.snapshot / "src/msplatform/backends/simion/resources/iob_core.lua"
+        original = core.read_bytes()
+        core.unlink()
+        destination = self.run / "simion/full_instrument"
+        caught = None
+        try:
+            try:
+                self.materialize()
+            except ValueError as error:
+                caught = error
+            self.assertIsNotNone(caught, f"missing frozen core accepted; output_exists={destination.exists()}")
+            self.assertIn("builder core", str(caught))
+            self.assertFalse(destination.exists())
+        finally:
+            core.write_bytes(original)
+
     def test_full_source_encoded_once_and_external_published_fields_are_not_copied(self):
         original = (self.run / "inputs/projected_source.csv").read_bytes()
         with (self.run / "inputs/projected_source.csv").open(newline="") as stream:
@@ -567,7 +581,8 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         self.assertEqual(result["instance_roles"], dict(flight_tube=1, reflectron=2, accelerator=3, detector=4))
         self.assertEqual(len(result["pa_guard_records"]), 12)
         self.assertEqual(len(list((self.run / "simion/full_instrument").rglob("*.pa"))), 0)
-        self.assertEqual(len(result["seed_records"]), 5)
+        self.assertEqual(len(result["seed_records"]), 1)
+        self.assertEqual(len(result["generated_paths"]), 5)
         self.assertIn("rf_reference_voltage_v", program)
         self.assertIn("/spec.rf_reference_voltage_v", program)
         for role, values in result["build_metadata"]["provider_placements"].items():
@@ -585,7 +600,8 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         result=self.materialize()
         self.assertEqual(result["particle_count"],100)
         self.assertEqual(len(result["pa_guard_records"]),15)
-        self.assertEqual(len(result["seed_records"]),6)
+        self.assertEqual(len(result["seed_records"]),1)
+        self.assertEqual(len(result["generated_paths"]),6)
         self.assertEqual(result["instance_roles"]["entrance_refinement"],5)
         self.assertEqual({row["role"] for row in result["iob_pa_copies"]},
                          {"flight_tube", "reflectron", "accelerator", "detector", "entrance_refinement"})
@@ -1092,6 +1108,9 @@ class FourSlotIobTests(unittest.TestCase):
         self.particles.write_bytes(b"EXACT_PROJECTED_PARTICLES\n")
 
     def invoke(self, mode="success", *, execution_root=None):
+        self._invocation_index = getattr(self, "_invocation_index", 0) + 1
+        seed_directory = self.root / f"seed_{self._invocation_index}"
+        seed_directory.mkdir()
         responses = [dict(domain="parent" if row["role"] == "accelerator" else row["role"],
                           kind=kind, path=(self.root / (row["role"] + "." + kind + ".pa")).as_posix(), grid=row["grid"])
                      for row in self.rows if row["role"] in {"accelerator", "entrance_refinement"}
@@ -1105,7 +1124,20 @@ class FourSlotIobTests(unittest.TestCase):
                                  domain_id='parent', sample_kind='endpoint', gu=[7, 8, 9])),
                         dict(label="known_vacuum", point_mm=[1., 0., 0.], expected_instance=3, expected_electrode=False),
                         dict(label="terminal_observation", point_mm=[2., 0., 0.])],
-                    seed_iob=(self.root / f"{len(self.rows)}_instance_seed.iob").as_posix(), output_iob=self.output.as_posix())
+                    seed_iob=(seed_directory / f"{len(self.rows)}_instance_seed.iob").as_posix(),
+                    bootstrap_paths=[(seed_directory / f"iob_seed_placeholder_{i:02d}.pa0").as_posix()
+                                     for i in range(1, len(self.rows) + 1)], output_iob=self.output.as_posix())
+        self.bootstrap_paths = [Path(path) for path in spec["bootstrap_paths"]]
+        if mode == "bootstrap_missing":
+            spec.pop("bootstrap_paths")
+        elif mode == "bootstrap_wrong_count":
+            spec["bootstrap_paths"].pop()
+        elif mode == "bootstrap_wrong_path":
+            spec["bootstrap_paths"][0] = (self.root / "outside.pa0").as_posix()
+        elif mode == "bootstrap_preexisting":
+            self.bootstrap_paths[0].write_bytes(b"EXISTING_OWNED_FIXTURE_NOT_PA")
+        elif mode == "bootstrap_ambient_hook":
+            Path(spec["seed_iob"]).with_suffix(".lua").write_bytes(b"AMBIENT_HOOK_MUST_NOT_RUN")
         first_probe = spec['native_priority_occupancy_probes'][0]
         if mode in {'verify_source_fine', 'verify_crop_fine_layer'}:
             first_probe['basis']['domain_id'] = 'entrance_refinement'
@@ -1159,6 +1191,7 @@ local canonical_paths={}
 if projected then
  local native_path=assert(loadfile(arg[4]))()
  spec.seed_iob=native_path(spec.seed_iob);spec.output_iob=native_path(spec.output_iob)
+ for i,path in ipairs(spec.bootstrap_paths) do spec.bootstrap_paths[i]=native_path(path) end
  for index,row in ipairs(spec.instances) do canonical_paths[index]=row.path;row.path=native_path(row.path) end
  for _,row in ipairs(spec.response_fields) do row.path=native_path(row.path) end
 end
@@ -1168,6 +1201,15 @@ local reference_closed=false
 local response_active=false
 local response_closed=0
 local probe_calls=0
+local bootstrap_created=0
+local function fixture_pa_path(value)
+   local parts={}
+   for part in value:gsub('\\\\','/'):gmatch('[^/]+') do
+    if part=='..' then assert(#parts>0);table.remove(parts)
+    elseif part~='.' then parts[#parts+1]=part end
+   end
+   return (value:sub(1,1)=='/' and '/' or '')..table.concat(parts,'/')
+end
 function simion.wb:find_at(x,y,z)
  assert(calls==1 and reference_closed,'native points must query the independently reopened IOB')
  probe_calls=probe_calls+1
@@ -1188,7 +1230,21 @@ function simion.wb:find_at(x,y,z)
  if (mode=='verify_source_boundary' or mode=='verify_source_boundary_missing') and probe_calls==1 then electrode=false;instance=1 end
  return electrode,instance,nil
 end
+if mode=='verify_nil_point_hook' then simion.wb.find_at=nil end
 function simion.pas:open(...)
+ if not mode:match('^verify') and calls==0 and bootstrap_created<#spec.bootstrap_paths then
+  local pa={}
+  function pa:size(x,y,z) assert(x==3 and y==3 and z==3,'bootstrap dimensions changed');self.nx,self.ny,self.nz=x,y,z end
+  function pa:save(path)
+   bootstrap_created=bootstrap_created+1
+   assert(path==spec.bootstrap_paths[bootstrap_created],'bootstrap path/order changed')
+   assert(self.symmetry=='3dplanar' and self.potential_type=='electric','bootstrap type changed')
+   assert(self.dx_mm==1 and self.dy_mm==1 and self.dz_mm==1,'bootstrap pitch changed')
+   local f=assert(io.open(path,'wb'));f:write('INERT_NEUTRAL_BOOTSTRAP_NOT_NATIVE_PA');f:close()
+  end
+  function pa:close() end
+  return pa
+ end
  if select('#',...)==1 then
   assert(mode:match('^verify') and calls==0,'responses must load before the saved IOB')
   assert(not response_active,'responses must not coexist in memory')
@@ -1220,25 +1276,28 @@ function simion.pas:open(...)
  return setmetatable(reference,{
   __newindex=function(_,key,value)
    assert(key=='path')
-   local parts={}
-   for part in value:gsub('\\\\','/'):gmatch('[^/]+') do
-    if part=='..' then assert(#parts>0);table.remove(parts)
-    elseif part~='.' then parts[#parts+1]=part end
-   end
-   values.path=(value:sub(1,1)=='/' and '/' or '')..table.concat(parts,'/')
+   values.path=fixture_pa_path(value)
   end,
   __index=values,
  })
 end
+function simion.pas:close() assert(calls==1,'bootstrap cleanup before saved workbench') end
 function simion.command(command)
+ print('FIXTURE_WORKBENCH_LOAD')
  calls=calls+1
  local verifying=mode:match('^verify')~=nil
  if verifying then assert(not response_active and response_closed==#spec.response_fields,'responses were not all closed') end
  assert(command=='"'..(verifying and spec.output_iob or spec.seed_iob)..'"','wrong workbench input')
  for index,row in ipairs(spec.instances) do
   local pa={}
+  pa.path=fixture_pa_path(spec.bootstrap_paths[index])
+  pa.nx,pa.ny,pa.nz=3,3,3
+  if mode=='bootstrap_wrong_loaded_path' then pa.path='UNDECLARED_AUTHOR_PA' end
+  if mode=='bootstrap_wrong_loaded_grid' then pa.nx=4 end
   function pa:load()
+   print('FIXTURE_SLOT_LOAD')
    assert(self.filename==row.path,'wrong PA source')
+   self.path=fixture_pa_path(self.filename)
    for k,v in pairs(row.grid) do self[k]=v end
    if mode=='wrong_grid' and index==2 then self.nx=self.nx+1 end
   end
@@ -1328,6 +1387,48 @@ if mode:match('^verify') then assert(reference_closed,'temporary path reference 
                 MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(execution_root))
         return subprocess.run(arguments, env=environment,
                               cwd=self.root, capture_output=True, text=True, timeout=20)
+
+    def test_declared_neutral_bootstrap_is_removed_only_after_successful_real_slot_binding(self):
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.bootstrap_paths), 4)
+        self.assertTrue(all(not path.exists() for path in self.bootstrap_paths))
+        self.assertEqual(self.program.read_bytes(), b"EXACT_PREPARED_PROGRAM\n")
+        self.assertEqual(self.particles.read_bytes(), b"EXACT_PROJECTED_PARTICLES\n")
+        self.output.unlink()
+        failed = self.invoke("wrong_grid")
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertFalse(self.output.exists())
+        self.assertTrue(all(path.read_bytes() == b"INERT_NEUTRAL_BOOTSTRAP_NOT_NATIVE_PA" for path in self.bootstrap_paths))
+
+    def test_bootstrap_count_path_and_ambient_payload_fail_before_workbench_load(self):
+        for mode, message in (("bootstrap_missing", "explicit private bootstrap PA paths required"),
+                              ("bootstrap_wrong_count", "explicit private bootstrap PA paths required"),
+                              ("bootstrap_wrong_path", "distinct seed-local placeholder names"),
+                              ("bootstrap_preexisting", "bootstrap placeholder already exists"),
+                              ("bootstrap_ambient_hook", "seed has an unexpected source/Program companion")):
+            with self.subTest(mode=mode):
+                result = self.invoke(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn("FIXTURE_WORKBENCH_LOAD", result.stdout)
+                self.assertFalse(self.output.exists())
+        for mode in ("bootstrap_wrong_loaded_path", "bootstrap_wrong_loaded_grid"):
+            with self.subTest(mode=mode):
+                result = self.invoke(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("FIXTURE_WORKBENCH_LOAD", result.stdout)
+                self.assertNotIn("FIXTURE_SLOT_LOAD", result.stdout)
+                self.assertFalse(self.output.exists())
+
+    def test_missing_native_point_hook_rejects_verify_without_mutation_or_save(self):
+        result = self.invoke("verify_nil_point_hook")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("find_at", result.stderr)
+        self.assertNotIn("SINGLE_REFLECTION_IOB_REOPEN=PASS", result.stdout)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.program.read_bytes(), b"EXACT_PREPARED_PROGRAM\n")
+        self.assertEqual(self.particles.read_bytes(), b"EXACT_PROJECTED_PARTICLES\n")
 
     @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows execution junction required")
     def test_wrapper_projects_declared_paths_and_core_reopens_canonical_saved_paths(self):
@@ -1510,6 +1611,13 @@ if mode:match('^verify') then assert(reference_closed,'temporary path reference 
                     self.assertIn('native priority/occupancy point mismatch', result.stderr)
                     self.assertNotIn('SINGLE_REFLECTION_IOB_REOPEN=PASS', result.stdout)
                 self.assertFalse(self.output.exists())
+
+
+class SeedOwnerClosureTests(unittest.TestCase):
+    def test_existing_owner_retains_failed_partial_bootstrap_and_cleans_success(self):
+        from integrations.tests.test_support.single_reflection_execute_fixture import SingleReflectionExecuteFixture
+        owner = SingleReflectionExecuteFixture("run")
+        owner._check_public_cases(("workbench", "workbench_build"))
 
 
 if __name__ == "__main__":

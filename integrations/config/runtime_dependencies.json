@@ -126,7 +126,6 @@
           "consumers": [
             "oa_mr",
             "accelerator_interface",
-            "single_reflection_flight",
             "paired_accelerator_pulse"
           ]
         },
@@ -164,34 +163,6 @@
           "source_repo_path": "common/simion/assemble_native_fast_adjust_family.lua",
           "consumers": [
             "oa_mr"
-          ]
-        },
-        {
-          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_02_pa0",
-          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_02.pa0",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_03_pa0",
-          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_03.pa0",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_04_pa0",
-          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_04.pa0",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_05_pa0",
-          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_05.pa0",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {

@@ -93,7 +93,7 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
                          {path.resolve() for path in copies})
 
 
-    def _prepare_source_template(self, directory, contract, *, lightweight_seeds):
+    def _prepare_source_template(self, directory, contract):
         source_started=time.perf_counter()
         repo=directory/'repo'
         paths=declared_dependency_paths(REPO, contract, 'single_reflection_flight')
@@ -101,17 +101,10 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
                       'integrations/runtime/dependencies.ps1','src/msplatform/execution/artifact_naming.py'})
         seed_names = {f'iob_seed_placeholder_{number:02d}.pa0' for number in range(1, 6)}
         seed_paths = {f'common/simion/assets/iob_instance_seeds/{name}' for name in seed_names}
-        if lightweight_seeds:
-            self.assertTrue(seed_paths <= paths)
+        self.assertTrue(seed_paths.isdisjoint(paths))
         for relative in paths:
             target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True)
-            if lightweight_seeds and relative in seed_paths:
-                # This fixture's native builder is inert. Keep the real
-                # freezer/manifest binding, without copying five unused
-                # 16 MB native seeds into each isolated test repository.
-                target.write_bytes(b'INERT_TEST_SEED_NOT_A_PA\n')
-            else:
-                shutil.copyfile(REPO/relative,target)
+            shutil.copyfile(REPO/relative,target)
         # Only the isolated test repository's solver/capacity boundary is inert.
         support=repo/'integrations/workflows/single_reflection_flight/field_stage.ps1'
         support.write_text(r'''
@@ -225,6 +218,13 @@ function Invoke-ResourceBudgetedProcess {
      [IO.File]::AppendAllText((Join-Path $WorkingDirectory 'instrument.lua'),'DRIFT')
    }
  }elseif($name-eq'build_iob.lua'){
+   $casePath=Join-Path $WorkingDirectory 'workbench.json'
+   if(-not(Test-Path $casePath)){$casePath=Join-Path $RunDir 'results/single_reflection/workbench_preparation.json'}
+   $preparedCase=Get-Content $casePath -Raw|ConvertFrom-Json -Depth 100
+   $generated=@($preparedCase.generated_paths)
+   $bootstrap=@($generated|Where-Object{[IO.Path]::GetFullPath($_)-ne[IO.Path]::Combine($WorkingDirectory,'instrument.iob')})
+   if($generated.Count-notin@(5,6)-or$bootstrap.Count-ne@($preparedCase.instance_roles.PSObject.Properties).Count){throw 'UNDECLARED_SFI_BOOTSTRAP_OUTPUTS'}
+   foreach($path in $bootstrap){if([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($path))-cne[IO.Path]::Combine($WorkingDirectory,'iob_seed')){throw 'BOOTSTRAP_NOT_CASE_OWNED'}}
    if($ArgumentList.Count-eq6){
      $operation='verify';$marker='SINGLE_REFLECTION_IOB_REOPEN=PASS'
      $casePath=Join-Path $WorkingDirectory 'workbench.json'
@@ -234,7 +234,12 @@ function Invoke-ResourceBudgetedProcess {
      if($env:TEST_FIELD_FAILURE-notin@('workbench_priority_marker','flight_priority_marker')){$marker+="`n$pointMarker"}
    }
    else{$operation='build';$marker='SINGLE_REFLECTION_IOB=PASS'}
-   if($operation-eq'build'){[IO.File]::WriteAllText((Join-Path $WorkingDirectory 'instrument.iob'),'INERT_IOB_NOT_NATIVE')}
+   if($operation-eq'build'){
+     foreach($path in $bootstrap){[IO.File]::WriteAllText($path,'INERT_NEUTRAL_BOOTSTRAP_NOT_NATIVE_PA')}
+     [IO.File]::WriteAllText((Join-Path $WorkingDirectory 'instrument.iob'),'INERT_IOB_NOT_NATIVE')
+     if($env:TEST_FIELD_FAILURE-ne'workbench_build'){foreach($path in $bootstrap){[IO.File]::Delete($path)}}
+     [IO.File]::AppendAllText((Join-Path $RunDir 'boundary.txt'),"declared_bootstrap:$($bootstrap.Count)`nbootstrap_retained:$( @($bootstrap|Where-Object{Test-Path -LiteralPath $_}).Count )`n")
+   }
    if($env:TEST_FIELD_FAILURE-eq"workbench_$operation"){$code=1;$marker='INERT_IOB_FAILURE'}
    if($env:TEST_FIELD_FAILURE-eq'workbench_drift'-and$operation-eq'verify'){
      [IO.File]::AppendAllText((Join-Path $WorkingDirectory 'instrument.lua'),'DRIFT')
@@ -382,10 +387,10 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
 }
 ''',encoding='utf-8',newline='\n')
         if os.environ.get('SIMULATION_TEST_FIXTURE_TIMING')=='1':
-            print(f'SOURCE_FIXTURE files={len(paths)} copies={len(paths-seed_paths) if lightweight_seeds else len(paths)} wall_seconds={time.perf_counter()-source_started:.9f}',flush=True)
+            print(f'SOURCE_FIXTURE files={len(paths)} copies={len(paths)} wall_seconds={time.perf_counter()-source_started:.9f}',flush=True)
         return repo
 
-    def _check_public_cases(self, cases, *, rename_instances=False, borrowed_capacity=False, lightweight_seeds=True, verify_replay=True, omit_replay_budget=False):
+    def _check_public_cases(self, cases, *, rename_instances=False, borrowed_capacity=False, verify_replay=True, omit_replay_budget=False):
         # Every case below replaces the vendor builder and Fly with the same inert
         # boundary; it never parses native seed bytes. Freeze tiny seed inputs
         # before preparation, retaining real identity, closure and failure checks.
@@ -393,17 +398,17 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
         # The source template is read-only; every case still freezes a private
         # snapshot and owns its request, budget, run, failures and native stubs.
         with tempfile.TemporaryDirectory() as source_directory:
-            repo=self._prepare_source_template(Path(source_directory),contract,lightweight_seeds=lightweight_seeds)
+            repo=self._prepare_source_template(Path(source_directory),contract)
             before={path.relative_to(repo):(path.stat().st_size,path.stat().st_mtime_ns)
                     for path in repo.rglob('*') if path.is_file()}
             self._check_cases_with_source(cases,repo,rename_instances=rename_instances,
                 borrowed_capacity=borrowed_capacity,verify_replay=verify_replay,omit_replay_budget=omit_replay_budget,
-                lightweight_seeds=lightweight_seeds)
+                )
             after={path.relative_to(repo):(path.stat().st_size,path.stat().st_mtime_ns)
                    for path in repo.rglob('*') if path.is_file()}
             self.assertEqual(after,before,'case modified the shared source template')
 
-    def _check_cases_with_source(self,cases,repo,*,rename_instances,borrowed_capacity,verify_replay,omit_replay_budget,lightweight_seeds):
+    def _check_cases_with_source(self,cases,repo,*,rename_instances,borrowed_capacity,verify_replay,omit_replay_budget):
         full_source = None
         for failure in cases:
             case_started = time.perf_counter()
@@ -540,7 +545,7 @@ try {
                     stderr_path.read_text(encoding='utf-8',errors='replace'))
                 if os.environ.get('SIMULATION_TEST_FIXTURE_TIMING') == '1':
                     print(f'FIELD_FIXTURE_CASE={failure} WALL_SECONDS={time.perf_counter()-case_started:.6f} '
-                          f'LIGHTWEIGHT_SEEDS={lightweight_seeds}', flush=True)
+                          'LEGACY_SEED_DEPENDENCIES=0', flush=True)
                 if discovery:
                     print(result.stderr,flush=True)
                 self.assertEqual(result.returncode==0,failure in ('downstream_source_fly','none','elapsed','workbench','workbench_held_off','local_fly','fly','fly_held_off','fly_refinement','discovery_fly','local_discovery_fly'),result.stdout+result.stderr)
@@ -661,6 +666,21 @@ try {
                         self.assertNotIn('workbench_native:', events)
                         self.assertNotIn('guard_acquired', events)
                         continue
+                    if failure in ('workbench','workbench_build'):
+                        prepared_case=json.loads((run/'results/single_reflection/workbench_preparation.json').read_text())
+                        generated=[Path(path) for path in prepared_case['generated_paths']]
+                        bootstrap=generated[1:]
+                        self.assertEqual(generated[0],Path(prepared_case['iob_path']))
+                        self.assertEqual(len(bootstrap),len(prepared_case['instance_roles']))
+                        self.assertTrue(all(path.parent==generated[0].parent/'iob_seed' for path in bootstrap))
+                        self.assertIn('declared_bootstrap:4',events)
+                        self.assertIn('bootstrap_retained:'+('4' if failure=='workbench_build' else '0'),events)
+                        if failure=='workbench':
+                            self.assertTrue(all(not path.exists() for path in bootstrap))
+                        else:
+                            # The failed public child keeps its declared inert
+                            # partial payloads; no manual/parent cleanup claims.
+                            self.assertTrue(all(path.read_bytes()==b'INERT_NEUTRAL_BOOTSTRAP_NOT_NATIVE_PA' for path in bootstrap))
                     if failure=='field_drift':
                         self.assertNotIn('workbench_native:',events)
                         self.assertFalse((run/'simion/full_instrument').exists())

@@ -395,7 +395,7 @@ with tempfile.TemporaryDirectory() as request_directory:
         from integrations.tests.test_support.single_reflection_execute_fixture import SingleReflectionExecuteFixture
         fixture = SingleReflectionExecuteFixture("run")
         with tempfile.TemporaryDirectory() as directory:
-            author = fixture._prepare_source_template(Path(directory), load(INVENTORY), lightweight_seeds=True)
+            author = fixture._prepare_source_template(Path(directory), load(INVENTORY))
             self.assertTrue((author / "src/msplatform/workflows/single_reflection_flight/prepare.py").is_file())
             self.assertTrue((author / "src/msplatform/execution/inputs.py").is_file())
             self.assertTrue((author / "projects/orthogonal_accelerator/analysis/sectioned_geometry.py").is_file())
@@ -407,8 +407,10 @@ with tempfile.TemporaryDirectory() as request_directory:
             for original in originals:
                 self.assertEqual((author / resources / original.name).read_bytes(), original.read_bytes())
             seeds = list((author / "common/simion/assets/iob_instance_seeds").glob("iob_seed_placeholder_*.pa0"))
-            self.assertEqual(len(seeds), 5)
-            self.assertTrue(all(path.read_bytes() == b"INERT_TEST_SEED_NOT_A_PA\n" for path in seeds))
+            self.assertEqual(len(seeds), 0)
+            self.assertTrue(all((author / "src/msplatform/backends/simion/resources" / name).read_bytes() ==
+                                (REPO_ROOT / "src/msplatform/backends/simion/resources" / name).read_bytes()
+                                for name in ("4_instance_seed.iob", "5_instance_seed.iob")))
 
     def test_joint_finalization_owners_freeze_the_existing_public_adapter(self) -> None:
         entries = {item["source_repo_path"]: set(item["consumers"])

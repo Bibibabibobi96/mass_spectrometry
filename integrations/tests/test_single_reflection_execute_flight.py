@@ -18,7 +18,7 @@ class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
         # Missing-stage policy belongs to test_engineering_budget; separate
         # native/control faults below keep real consumer failure coverage.
         self._check_public_cases(('fly','flight_ram_floor',
-            'flight_native','replay_native','flight_controls','flight_marker','flight_mismatch'), lightweight_seeds=True)
+            'flight_native','replay_native','flight_controls','flight_marker','flight_mismatch'))
 
 
     def test_batch_priority_point_evidence_is_bound_before_any_fly(self):
@@ -29,4 +29,4 @@ class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
     def test_normal_fly_omits_replay_and_its_budget(self):
         # Explicit True is exercised by the full-mother test above. Keep the
         # omitted action and omitted replay budget through the same real freezer.
-        self._check_public_cases(('fly',), lightweight_seeds=True, verify_replay=None, omit_replay_budget=True)
+        self._check_public_cases(('fly',), verify_replay=None, omit_replay_budget=True)
