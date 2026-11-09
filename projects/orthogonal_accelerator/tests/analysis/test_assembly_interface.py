@@ -1,5 +1,6 @@
 """Independent mechanical vectors for the OA assembly provider boundary."""
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 from projects.orthogonal_accelerator.analysis.sectioned_geometry import resolve_bare_three_zone_component
 
@@ -17,8 +18,8 @@ from projects.orthogonal_accelerator.analysis.assembly_interface import (
     resolve_assembly_interface,
 )
 from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
-from projects.orthogonal_accelerator.simion.two_zone_candidate import compile_closed_two_zone_accelerator
-from projects.orthogonal_accelerator.simion.bare_three_zone_component import (
+from msplatform.backends.simion.two_zone_candidate import compile_closed_two_zone_accelerator
+from msplatform.backends.simion.bare_three_zone_component import (
     render_bare_three_zone_electrode_body,
 )
 from projects.orthogonal_accelerator.tests.analysis import test_two_zone_geometry as two_zone
@@ -38,7 +39,7 @@ def two_zone_requirements() -> dict:
 
 class AssemblyInterfaceTests(unittest.TestCase):
     def test_legacy_two_zone_outer_face_and_component_ids(self) -> None:
-        with patch("projects.orthogonal_accelerator.simion.two_zone_candidate.render_closed_two_zone_local_pa",
+        with patch("msplatform.backends.simion.two_zone_candidate.render_closed_two_zone_local_pa",
                    side_effect=AssertionError("interface query must not render GEM")):
             result = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE, schema_version=1)
         self.assertEqual(set(result["ports"]), {"side_entry", "axial_exit"})
@@ -61,7 +62,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
         plan = derive(project_root / "config" / "two_zone_component_focus_campaign.json")
         compiled = compile_closed_two_zone_accelerator(
             plan["requirements"], geometry_profile_id=plan["geometry_profile_id"],
-        )
+         geometry_profile=_load_oa_geometry_profile(plan["geometry_profile_id"]))
         result = resolve_assembly_interface(
             plan["requirements"], geometry_profile_id=plan["geometry_profile_id"], schema_version=1,
         )
@@ -178,14 +179,14 @@ class AssemblyInterfaceTests(unittest.TestCase):
         two = two_zone_requirements()
         three = three_zone_requirements_fixture()
         original = copy.deepcopy((two, three))
-        before_two = compile_closed_two_zone_accelerator(two)
+        before_two = compile_closed_two_zone_accelerator(two, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         before_three = resolve_bare_three_zone_component(three)
         ids = {i: i + 40 for i in range(1, 10)}
         cells = dict(x=.2, y=.1, z=.1)
         before_body = render_bare_three_zone_electrode_body(before_three, cell_mm_xyz=cells, local_electrode_ids=ids)
         resolve_assembly_interface(two, geometry_profile_id=TWO_ZONE_PROFILE)
         resolve_assembly_interface(three, geometry_profile_id=None)
-        after_two = compile_closed_two_zone_accelerator(two)
+        after_two = compile_closed_two_zone_accelerator(two, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         after_three = resolve_bare_three_zone_component(three)
         self.assertEqual((two, three), original)
         self.assertEqual(after_two.gem, before_two.gem)
@@ -209,7 +210,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
                 self.assertEqual(resolve_assembly_interface(candidate, geometry_profile_id=TWO_ZONE_PROFILE), expected)
         request["local_pa"]["span_mm"] = [1, 1, 1]
         with self.assertRaises(ValueError):
-            compile_closed_two_zone_accelerator(request)
+            compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
 
     def test_physical_profile_changes_reach_interface_and_emitter_together(self) -> None:
         from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
@@ -219,7 +220,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
                    return_value=profile), patch("projects.orthogonal_accelerator.analysis.two_zone_geometry.load_geometry_profile",
                    return_value=profile):
             interface = resolve_assembly_interface(two_zone_requirements(), geometry_profile_id=TWO_ZONE_PROFILE)
-            compiled = compile_closed_two_zone_accelerator(two_zone_requirements())
+            compiled = compile_closed_two_zone_accelerator(two_zone_requirements(), geometry_profile=profile)
         self.assertEqual(interface["ports"]["axial_exit"]["cross_section"]["width_mm"], 24)
         self.assertEqual(compiled.resolved_electrodes.aperture_half_x_mm, 12)
         invalid = two_zone_requirements()
@@ -249,7 +250,7 @@ assert result['ports']['axial_exit']['center_mm']==[0.0,0.0,0.0]
         from integrations.runtime.single_flight_frontend import _canonical_component
         from integrations.tests.frontend_fixtures import canonical_frontend_fixture
         _, _, component = canonical_frontend_fixture()
-        with patch("projects.orthogonal_accelerator.simion.two_zone_candidate.render_closed_two_zone_local_pa",
+        with patch("msplatform.backends.simion.two_zone_candidate.render_closed_two_zone_local_pa",
                    side_effect=AssertionError("assembly must not render a discarded local PA")):
             projected = _canonical_component(component)
         self.assertEqual(projected["planes"]["exit"], 34)

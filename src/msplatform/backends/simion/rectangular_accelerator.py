@@ -10,7 +10,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Sequence
 
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
+from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
     ShieldedRectangularEnclosure,
     TwoZoneGeometryError,
 )
@@ -51,7 +51,7 @@ def emit_solid_rectangular_plate(
     electrode_id: int, *, half_x_mm: float, half_y_mm: float,
     front_z_mm: float, back_z_mm: float,
 ) -> str:
-    """Emit a closed extraction/re­peller plate.
+    """Emit a closed extraction/re颅peller plate.
 
     Unlike an intermediate or exit grid, a repeller sits behind the source and
     must establish the first axial field.  Giving it a beam aperture turns it

@@ -10,7 +10,9 @@ local fields_only=mode=='build_fields' or mode=='verify_fields'
 local model_only=mode=='build_model' or mode=='verify_model'
 local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_only
 local source_free=geometry_only or fields_only
-local independent_rf=spec.role=='independent_rf_geometry_iob_build'
+local independent_oa=spec.role=='independent_oa_geometry_iob_build'
+local independent_rf=spec.role=='independent_rf_geometry_iob_build' or independent_oa
+local independent_marker=independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_rf or mode=='build_geometry' or mode=='verify_geometry','RF only supports raw geometry')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_rf),
   'unsupported single-reflection IOB build specification')
@@ -320,7 +322,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     assert(actual==data,'workbench reopening changed a prepared companion: '..path)
   end
   if geometry_only then
-    print((independent_rf and 'INDEPENDENT_RF_GEOMETRY_IOB_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
+    print((independent_rf and independent_marker..'_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
     return
   end
   -- SIMION 2020 official lua_simion.wb.html#simion.wb..find_at:
@@ -532,7 +534,7 @@ if source_free then
     if handle then handle:close();error('geometry save unexpectedly materialized a source/Program companion') end
   end
   if fields_only then print('SINGLE_REFLECTION_FIELD_IOB=PASS SOURCE=False FLY=False REFINE=False')
-  else print((independent_rf and 'INDEPENDENT_RF_GEOMETRY_IOB=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False') end
+  else print((independent_rf and independent_marker..'=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False') end
 else
   print('SINGLE_REFLECTION_IOB=PASS INSTANCES='..count..' ROLES='..role_list)
 end

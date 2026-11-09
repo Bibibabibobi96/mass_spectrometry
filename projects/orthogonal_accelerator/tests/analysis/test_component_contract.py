@@ -46,9 +46,9 @@ class ComponentContractTest(unittest.TestCase):
                          "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity")
         self.assertEqual(api["request_api"]["two_zone"]["geometry_authority"],
                          "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement")
-        self.assertIn("simion/two_zone_candidate.py", api["implementation_modules"])
+        self.assertTrue((REPO / "src/msplatform/backends/simion/two_zone_candidate.py").is_file())
         self.assertEqual(api["request_api"]["three_zone"]["role"], "orthogonal_accelerator_bare_three_zone_requirements")
-        self.assertIn("simion/bare_three_zone_component.py", api["implementation_modules"])
+        self.assertTrue((REPO / "src/msplatform/backends/simion/bare_three_zone_component.py").is_file())
         self.assertEqual(descriptor["formal_assets"]["status"], "none")
 
     def test_consumers_explicitly_declare_provider_and_variant(self) -> None:

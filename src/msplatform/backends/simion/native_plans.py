@@ -46,7 +46,7 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
-    if compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry":
+    if compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}:
         return _plan_rf_geometry_build(compiled, root, seed_record, path_resource)
     domains = compiled.frontend_geometry["numerical_domains"]
     count = 4 + int("entrance_refinement" in domains)
@@ -170,13 +170,13 @@ def _plan_rf_geometry_build(compiled, root, seed_record, path_resource):
     seed = root/'simion/geometry/iob_seed'/(str(count)+'_instance_seed.iob')
     iob = root/'simion/geometry/geometry.iob'
     spec = root/'inputs/geometry_iob.lua'
-    materializations[str(spec)] = 'return '+lua_value(dict(schema_version=1,role='independent_rf_geometry_iob_build',
+    materializations[str(spec)] = 'return '+lua_value(dict(schema_version=1,role=('independent_oa_geometry_iob_build' if geometry['role']=='simion_independent_oa_geometry' else 'independent_rf_geometry_iob_build'),
         instances=instances, seed_iob=str(seed),output_iob=str(iob),empty_particle_control=str(control),
         bootstrap_paths=[str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1,count+1)]))+'\n'
     for mode in ('build_geometry','verify_geometry'):
         operations.append(_operation(mode,'prepare',['lua',str(native_resource_path('build_geometry_iob.lua')),
             str(spec),mode,str(path_resource)], [str(iob),str(iob.with_suffix('.fly2'))] if mode=='build_geometry' else [],
-            'INDEPENDENT_RF_GEOMETRY_IOB'+('_REOPEN' if mode=='verify_geometry' else '')+'=PASS'))
+            ('INDEPENDENT_OA_GEOMETRY_IOB' if geometry['role']=='simion_independent_oa_geometry' else 'INDEPENDENT_RF_GEOMETRY_IOB')+('_REOPEN' if mode=='verify_geometry' else '')+'=PASS'))
     outputs = tuple(dict.fromkeys(path for op in operations for path in op['outputs']))
     return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),tuple(operations),outputs)
 

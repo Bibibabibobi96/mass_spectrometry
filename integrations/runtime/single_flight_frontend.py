@@ -1,6 +1,7 @@
 """Compile explicit bare-guide geometry and resolve native frontend instance bindings."""
 
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 from projects.orthogonal_accelerator.analysis.sectioned_geometry import resolve_bare_three_zone_component
 
@@ -41,7 +42,7 @@ def _component_bounds(boxes: list[list[float]], rotation: list, translation: lis
 def _canonical_three_zone_component(component: dict[str, Any], *, cells: dict[str, float],
                                     target_solver_frame: str | None) -> dict[str, Any]:
     """Project the existing explicit sectioned provider; copy no OA CSG model."""
-    from projects.orthogonal_accelerator.simion.bare_three_zone_component import (
+    from msplatform.backends.simion.bare_three_zone_component import (
         render_bare_three_zone_electrode_body,
     )
     from integrations.runtime.single_flight_electrode_contract import (
@@ -117,7 +118,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
         if cells is None:
             raise ValueError("sectioned canonical adapter requires its actual xyz PA grid")
         return _canonical_three_zone_component(component, cells=cells, target_solver_frame=target_solver_frame)
-    from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+    from msplatform.backends.simion.two_zone_candidate import (
         resolve_closed_two_zone_electrodes, render_closed_two_zone_electrode_body,
     )
     from integrations.runtime.single_flight_electrode_contract import (
@@ -140,7 +141,7 @@ def _canonical_component(component: dict[str, Any], *, target_solver_frame: str 
     if (not isinstance(translation, list) or len(translation) != 3
             or any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) for v in translation)):
         raise ValueError("component translation must be finite xyz")
-    resolved = resolve_closed_two_zone_electrodes(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
+    resolved = resolve_closed_two_zone_electrodes(component["requirements"], geometry_profile_id=component["geometry_profile_id"], geometry_profile=_load_oa_geometry_profile(component["geometry_profile_id"]))
     # Recipe poses use the mechanical exit-origin frame. Canonical electrodes
     # retain the explicit legacy PA-coordinate projection consumed by CAD and
     # voltage sampling; transform that projection back exactly once.

@@ -8,7 +8,7 @@ from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     TwoZoneGeometryError,
     derive_shielded_rectangular_enclosure,
 )
-from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
+from msplatform.backends.simion.rectangular_accelerator import (
     emit_closed_two_zone_endplates,
     emit_grounded_enclosure,
     emit_grounded_enclosure_with_rear_aperture,

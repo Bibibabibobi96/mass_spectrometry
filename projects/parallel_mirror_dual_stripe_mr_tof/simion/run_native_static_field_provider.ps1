@@ -67,6 +67,7 @@ try{
         $copies.geometry_contract_loader=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py'
     }
     $copies.crop_adapter=Join-Path $PSScriptRoot 'crop_native_static_field.lua'
+    foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $repo ("src/msplatform/backends/simion/$name.py")}
     if($isComposition){$copies.composer=Join-Path $repo 'src/msplatform/backends/simion/standalone_pa_composition.py'}
     $frozen=[ordered]@{}
     foreach($key in $copies.Keys){
@@ -126,6 +127,7 @@ try{
     if($plan.ContainsKey('consumer_view')){$cfg.parameters.collision_role1='unchanged full source collision PA';$cfg.parameters.consumer_view=$plan.consumer_view}
     if($isResponse){$cfg.parameters.response_basis=$plan.response_basis;$cfg.parameters.fly_authorized=$false}
     Write-RunJson -Path $pkg.run_config -Value $cfg -Depth 40
+    foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $repo ("src/msplatform/backends/simion/$name.py")}
     if($isComposition){
         $budget=Get-HostResourceBudget -Role GATE -Stage prepare
         $budget.io_slots=1 # Bulk sequential PA reads/writes; still a light, bounded-memory stage.

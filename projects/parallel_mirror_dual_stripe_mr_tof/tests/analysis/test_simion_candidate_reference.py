@@ -381,7 +381,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
                                                for i in range(3)]
         legacy = compile_assembly_layout(legacy["recipe"], legacy["components"])
         legacy_bytes = json.dumps(legacy, sort_keys=True)
-        with patch("projects.orthogonal_accelerator.simion.two_zone_candidate.render_closed_two_zone_local_pa",
+        with patch("msplatform.backends.simion.two_zone_candidate.render_closed_two_zone_local_pa",
                    side_effect=AssertionError("IOB pose query must not render a discarded GEM")):
             self.assertEqual(resolve_accelerator_iob_origin(contract, provider_plan, legacy), origin)
         self.assertEqual(json.dumps(legacy, sort_keys=True), legacy_bytes)

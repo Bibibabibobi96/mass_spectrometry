@@ -6,6 +6,7 @@ geometry that solver adapters must consume.  CAD evidence appears only as
 explicit constraints already frozen in the project contract.
 """
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 import copy
 import hashlib
@@ -22,7 +23,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import (
     build_two_zone_accelerator_requirements,
 )
-from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+from msplatform.backends.simion.two_zone_candidate import (
     resolve_closed_two_zone_layout,
 )
 
@@ -1308,7 +1309,7 @@ def resolve_geometry(
     if not isinstance(accelerator, dict) or accelerator.get("axis") != "z_negative":
         raise CandidateContractError("detector placement requires the -z two-zone accelerator")
     accelerator_requirements = build_two_zone_accelerator_requirements(contract)
-    accelerator_layout = resolve_closed_two_zone_layout(accelerator_requirements).to_dict()
+    accelerator_layout = resolve_closed_two_zone_layout(accelerator_requirements, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm')).to_dict()
     placement = accelerator_requirements["placement"]
     if not isinstance(placement, dict):
         raise CandidateContractError("accelerator provider placement request is invalid")

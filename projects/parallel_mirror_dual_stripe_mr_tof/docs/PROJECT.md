@@ -599,3 +599,5 @@ terminal仍记录供应商最终状态；ion_splat、步长、电压和接受条
 并显式断言先加载输入、只保存一次、再重开同一输出；不依赖调用文本或参数包装形式。
 三项既有行为方法通过1.194秒；新增顺序断言的方法通过0.578秒。
 CI 41181531874 的失败记录仍保留，本修正不是完整软件性能或原生求解资格验收。
+
+MR analytical and native-geometry callers now import the installed OA two-zone renderer. Existing source inventories also retain its three canonical backend files; geometry/voltage semantics and historical runs remain unchanged. This migration does not establish new MR native or frozen-execution qualification.

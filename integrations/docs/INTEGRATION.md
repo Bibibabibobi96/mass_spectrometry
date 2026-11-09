@@ -691,3 +691,5 @@ accelerator_interface 与 multipole_ip 的公开入口启动时解析一次公�
 原生模型身份仍在实际消费前验证，已完成导出分支不生成无用任务。
 两项真实工厂／惰性原生边界测试通过13.814秒，三项既有复用／CLI 闭包测试通过18.839秒；
 覆盖任务只生成一次、原参数传递及坏 stage／缺计划在原生调用前拒绝，未新增商业求解或科学资格。
+
+Standalone OA consumers now import canonical installed two-zone and bare three-zone renderers. Their existing full scientific-core package freeze includes the moved implementations; missing frozen code continues to fail instead of falling back to the active checkout. This is software geometry ownership, not new field or flight evidence.

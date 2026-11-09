@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry
+from msplatform.backends.simion.accelerator_renderer import render_accelerator_local_geometry
 
 
 def render_bare_three_zone_electrode_body(resolved: dict[str, Any], *, cell_mm_xyz: dict[str, float],

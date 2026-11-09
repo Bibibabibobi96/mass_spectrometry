@@ -5,6 +5,7 @@ inputs only; no execution workflow or qualification run consumes them.
 """
 
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
     derive_simion_geometry,
@@ -13,7 +14,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
     """Return an artifact-free two-zone provider contract."""
     from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
-    from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+    from msplatform.backends.simion.two_zone_candidate import (
         resolve_closed_two_zone_electrodes,
     )
 
@@ -24,7 +25,7 @@ def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
                         local_pa=dict(span_mm=[64, 64, 84], mesh_mm_per_gu=[.25, .25, .1], exit_z_mm=6, margin_z_mm=6),
                         placement=dict(focus_y_mm=0, global_repeller_z_mm=34, global_exit_z_mm=0),
                         side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
-    resolved = resolve_closed_two_zone_electrodes(requirements)
+    resolved = resolve_closed_two_zone_electrodes(requirements, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
     ids = {15: 9, 22: 10, 23: 11, 24: 27, **{26 + i: 12 + i for i in range(15)}}
     volts = {15: 0.0, 22: 4400.0, 23: 4000.0, 24: 0.0,
              **{int(row["id"]): 4000 * (row["center_z_mm"] - 6) / 30 for row in resolved.rings}}

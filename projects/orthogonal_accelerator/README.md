@@ -50,3 +50,12 @@
 ## History索引
 
 [历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+
+The installed SIMION `compile_geometry` now accepts standalone two/three-zone OA assemblies.
+Supply per-instance `component_domains` with explicit `cell_mm_xyz` and six `pa_bounds_mm` values,
+then use the existing `build_geometry` owner. This creates raw geometry and reopens its posed IOB;
+it does not Refine, solve fields, Fly, or grant scientific qualification.
+
+The exact ordinary-wheel two/three-zone raw PA and IOB acceptance is recorded in
+[the project state](docs/PROJECT.md#ordinary-wheel-native-raw-geometry-acceptance-2026-11-09).
+Its cold reopen does not establish fields, Fly, GUI or relocation qualification.

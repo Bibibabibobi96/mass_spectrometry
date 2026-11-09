@@ -12,6 +12,7 @@ from msplatform.contracts.machine_contracts import ContractError
 from msplatform.results import artifacts as artifact_reader
 from .compiler import CompiledSimionGeometry, compile_geometry as compile_simion_geometry
 from .rf_compiler import compile_independent_multipoles
+from .oa_compiler import compile_independent_accelerators
 
 if TYPE_CHECKING:
     from msplatform.assembly.handoff import HandoffResult
@@ -49,7 +50,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
-    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") == "simion_independent_rf_geometry"
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
@@ -342,6 +343,10 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
             dict(composition_plan=plan, components_resolved=assembly.components_resolved),
             numerics=copy.deepcopy(dict(numerics)),
         )
+    if selected and all(plan["components"][name]["project_id"] == "orthogonal_accelerator" for name in selected):
+        return compile_independent_accelerators(
+            dict(composition_plan=plan, components_resolved={name:assembly.components_resolved[name] for name in selected}),
+            numerics=copy.deepcopy(dict(numerics)))
     compiled = compile_simion_geometry(
         {"composition_plan": copy.deepcopy(dict(assembly.composition_plan)),
          "components_resolved": {name: copy.deepcopy(assembly.components_resolved[name]) for name in selected}},

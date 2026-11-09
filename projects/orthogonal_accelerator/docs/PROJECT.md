@@ -270,3 +270,58 @@ Python进程OS lifetime峰值工作集33,173,504 B包含解释器／import／pro
 不再仅到名义内壁；偏离孔中心线1 mm的真实CadQuery源实体与导出后冷读STEP探针均不为金属。
 方形投影字节金标准不变，仅有意更新受修正影响的五个圆柱哈希。这些是几何及负例软件证据，
 不是圆柱OA的原生场、粒子、GUI或Formal验收。
+
+### Installed standalone raw geometry slice
+
+The existing two-zone CSG and rectangular primitives, and the bare three-zone adapter,
+now reside in `msplatform.backends.simion`. Repository callers load their existing named
+physical profile explicitly; installed callers consume their already resolved mechanical
+snapshot. The independent compiler does not infer a TOF, source, drive or voltage.
+Each selected instance supplies explicit full PA bounds and anisotropic grid pitch.
+No mirror is assumed for an asymmetric side opening. Mechanical coordinates remain intact;
+the existing IOB compiler transforms each PA origin through the declared rigid pose once.
+Scientific electrode groups map to explicit unique native IDs; metal, ideal-sheet, cavity
+and side-opening witnesses must survive the actual grid projection.
+
+The existing raw GEM2PA builder, reviewed structural seeds, fractional-surface checks,
+source-free IOB save/reopen and public run owner are reused. Official SIMION representation
+and long-input facts remain those in `docs/tools/SIMION_REFERENCE.md`; this change introduces
+no alternative long-path transport, IOB byte editor, solver or physical accelerator model.
+Pure software acceptance and original GEM goldens do not establish native build, GUI/CAD,
+field, particle, convergence or Candidate/Formal qualification; the native evidence below is limited to this exact raw-geometry request.
+Project-only implementation lists keep their containment rule; canonical package sources
+join frozen runs through the existing full `src/msplatform` package enumeration. Legacy MR
+analytical source inventories retain their original execution behavior and also record the
+moved backend source bytes; this is not a claim of new MR frozen execution qualification.
+
+
+#### Ordinary-wheel native raw geometry acceptance, 2026-11-09
+
+The combined source epoch was `5c4d5e883d4822ca5c370362f24bc07b8bb4d297` plus the reviewed
+Wehnelt and standalone OA worktree slices. Ordinary wheel SHA-256
+`f4c3874eb2843c6b19209756272a77c8ba4aac4b46e0c7a17b315b7a582ef573`
+passed the actual wheel/sdist installation module (five parents), with original/rebuilt wheel
+member bytes equal. A separate fresh installed probe denied reads from both author trees;
+181 loaded core modules came from that environment's site-packages and required-resource
+negative cases still rejected missing files.
+
+The public `build_geometry` owner completed
+`20261109_173100__build__simion__geometry-e9142dbba3ee`: two-zone 185×145×406 and three-zone
+145×145×401 full arrays at 0.25/0.25/0.1 mm pitch, descending native IDs beginning at 200,
+and the example's actual mated nonidentity three-zone pose. The two raw PA files contain
+87,127,656 and 67,448,256 bytes; their fractional companions contain 3,565,140 and 522,900
+bytes. The 20,846-byte IOB was saved and cold-reopened with both real instances. Existing
+Lua checks validated grid, metal/ideal-sheet/vacuum nodes, fractional-surface witnesses and
+original rigid-transform readback. All four native process receipts record exit 0 and released
+host leases; the terminal owner records success and stopped writers.
+
+Refine, Fly, GUI and sampled-source calls were zero. Reopen was at the same execution
+projection; relocation qualification was not assessed. This proves raw geometry and IOB
+transport for this explicit two/three-zone request, not a solved field, particle experiment,
+GUI/CAD validation, convergence, full variant baseline or Candidate/Formal qualification.
+A later ordinary Python process opened the real published geometry product and verified all
+nine manifest-bound data members with subprocess, mkdir and write guards active. It also
+joined all 347 installed package files back to the same wheel after the native run. The retained
+read-only evidence is `oa-native-fresh-readonly-proof.json` in the existing P4 takeover evidence
+directory; its first attempted read used the wrong manifest filename and is preserved separately.
+No native operation was repeated for the reader verification.

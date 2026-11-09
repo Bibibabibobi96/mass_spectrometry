@@ -6,6 +6,7 @@ it does not derive a second accelerator geometry or a trajectory qualification.
 """
 
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 import argparse
 import math
@@ -23,7 +24,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     load_contract,
 )
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface as resolve_oa_assembly_interface
-from projects.orthogonal_accelerator.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
+from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
 
 
 def build_static_c0_gem(
@@ -465,7 +466,7 @@ def resolve_accelerator_iob_origin(
 
     local_to_pa = resolve_closed_two_zone_electrodes(
         requirements, geometry_profile_id=layout["geometry_profile_id"],
-    ).to_dict()["local_to_pa_translation_mm"]
+     geometry_profile=_load_oa_geometry_profile(layout["geometry_profile_id"])).to_dict()["local_to_pa_translation_mm"]
     return tuple(oa_translation[index] - float(local_to_pa[index]) for index in range(3))
 
 

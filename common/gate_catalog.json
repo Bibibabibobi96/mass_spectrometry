@@ -983,6 +983,7 @@
               "common/contracts/test_platform_api.py",
               "common/contracts/test_platform_capabilities.py",
               "common/contracts/test_simion_geometry_compiler.py",
+              "common/contracts/test_oa_geometry_compiler.py",
               "common/contracts/test_simion_native_plans.py",
               "common/contracts/test_geometry_execution.py",
               "common/contracts/test_simion_prepared_model.py",
@@ -1845,7 +1846,7 @@
           "reason": "installed_oa_provider_changed"
         },
         {
-          "exact": "src/msplatform/backends/simion/oa_geometry.py",
+          "regex": "^src/msplatform/backends/simion/(?:oa_compiler|two_zone_candidate|rectangular_accelerator|bare_three_zone_component|accelerator_renderer|accelerator_projection)\\.py$",
           "reason": "installed_oa_backend_changed"
         }
       ],

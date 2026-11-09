@@ -85,8 +85,6 @@
     "analysis/two_zone_theory.py",
     "analysis/three_zone_ideal_theory.py",
     "analysis/two_zone_geometry.py",
-    "simion/rectangular_accelerator.py",
-    "simion/two_zone_candidate.py",
     "analysis/component_focus_analysis.py",
     "analysis/component_focus_simion_source.py",
     "simion/component_focus.lua",
@@ -98,7 +96,6 @@
     "simion/run_component_focus_fast_adjust.ps1",
     "analysis/component_focus_field_contrast.py",
     "simion/run_component_focus_field_contrast.ps1",
-    "simion/sectioned_accelerator.py",
-    "simion/bare_three_zone_component.py"
+    "simion/sectioned_accelerator.py"
   ]
 }

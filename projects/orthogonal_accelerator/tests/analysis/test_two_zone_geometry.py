@@ -1,5 +1,6 @@
 """Regression tests for solver-neutral two-zone accelerator geometry."""
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 import hashlib
 import json
@@ -11,7 +12,7 @@ from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     derive_shielded_rectangular_enclosure,
     derive_uniform_ring_planes,
 )
-from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+from msplatform.backends.simion.two_zone_candidate import (
     compile_closed_two_zone_accelerator,
     render_closed_two_zone_electrode_body,
 )
@@ -36,7 +37,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
             request = self.requirements()
             if version == 2:
                 request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
-            compiled = compile_closed_two_zone_accelerator(request)
+            compiled = compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
             body = render_closed_two_zone_electrode_body(compiled.resolved_electrodes)
             full = compiled.gem.splitlines()
             start = full.index("locate(0,$(y_span/2),0) {")+1
@@ -50,7 +51,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
     def test_body_namespace_changes_only_ids_and_never_mutates_canonical_geometry(self) -> None:
         request = self.requirements()
         request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
-        compiled = compile_closed_two_zone_accelerator(request)
+        compiled = compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         resolved = compiled.resolved_electrodes
         before = json.dumps(resolved.to_dict(), sort_keys=True)
         original = "\n".join(render_closed_two_zone_electrode_body(resolved))
@@ -63,7 +64,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
         self.assertEqual(before, json.dumps(resolved.to_dict(), sort_keys=True))
 
     def test_body_namespace_rejects_missing_extra_alias_and_invalid_ids(self) -> None:
-        resolved = compile_closed_two_zone_accelerator(self.requirements()).resolved_electrodes
+        resolved = compile_closed_two_zone_accelerator(self.requirements(), geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm')).resolved_electrodes
         original = dict(resolved.local_electrode_ids)
         bad = []
         value = dict(original); value.pop(15); bad.append(value)
@@ -77,7 +78,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
                 render_closed_two_zone_electrode_body(resolved, local_electrode_ids=mapping)
 
     def test_closed_schema1_frozen_gem_and_projection_bytes_unchanged(self) -> None:
-        compiled = compile_closed_two_zone_accelerator(self.requirements())
+        compiled = compile_closed_two_zone_accelerator(self.requirements(), geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         self.assertEqual(hashlib.sha256(compiled.gem.encode()).hexdigest(),
                          "1105dfb1e01fbb3995832f879e65f5981572fa7eae5efac16deb37441cb87939")
         for value, expected in [
@@ -88,9 +89,9 @@ class TwoZoneGeometryTest(unittest.TestCase):
 
     def test_explicit_negative_y_side_entry_has_provider_center_and_distinct_identity(self) -> None:
         request = self.requirements()
-        closed = compile_closed_two_zone_accelerator(request)
+        closed = compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
-        compiled = compile_closed_two_zone_accelerator(request)
+        compiled = compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         port = compiled.layout.to_dict()["side_entry"]
         self.assertEqual(port["center_mm"], [0.0, -16.5, 38.0])
         self.assertEqual(port["physical_cutout_box_mm"], [-1.5, -17, 36.6, 1.5, -16, 39.4])
@@ -109,7 +110,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
     def test_side_port_z_overlap_with_support_slab_is_not_solid_intersection(self) -> None:
         request = self.requirements()
         request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.8))
-        compiled = compile_closed_two_zone_accelerator(request)
+        compiled = compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         data = compiled.resolved_electrodes.to_dict()
         cut = data["grounded_enclosure"]["side_entry"]["physical_cutout_box_mm"]
         support = data["grid_supports"][0]["frame_outer_box_mm"]
@@ -132,7 +133,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
             request = self.requirements()
             request.update(change)
             with self.subTest(change=change), self.assertRaises(TwoZoneGeometryError):
-                compile_closed_two_zone_accelerator(request)
+                compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
 
     @staticmethod
     def requirements() -> dict[str, object]:
@@ -151,7 +152,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
         }
 
     def test_provider_compiles_only_closed_end_topology_from_cylindrical_request(self) -> None:
-        result = compile_closed_two_zone_accelerator(self.requirements())
+        result = compile_closed_two_zone_accelerator(self.requirements(), geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         self.assertEqual((result.source_cylinder_radius_mm, result.source_cylinder_height_mm), (1.0, 1.0))
         self.assertEqual(result.source_center_z_mm, 32.0)
         self.assertEqual(result.static_minimum_y_extent_mm, 34.0)
@@ -175,7 +176,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
         self.assertIn("e(4)", result.gem)
 
     def test_resolved_electrodes_match_closed_gem_and_local_frame(self) -> None:
-        compiled = compile_closed_two_zone_accelerator(self.requirements())
+        compiled = compile_closed_two_zone_accelerator(self.requirements(), geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         geometry = compiled.resolved_electrodes.to_dict()
         self.assertEqual(geometry["coordinate_frame"], "accelerator_centered_transverse_local_z_mm")
         self.assertEqual(geometry["local_to_pa_translation_mm"], [0.0, 32.0, 0.0])
@@ -212,21 +213,21 @@ class TwoZoneGeometryTest(unittest.TestCase):
         request = self.requirements()
         request["end_topology"] = "grid"
         with self.assertRaisesRegex(TwoZoneGeometryError, "unknown"):
-            compile_closed_two_zone_accelerator(request)
+            compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         request = self.requirements()
         request["two_zone"] = {"gap_1_mm": 2.0}
         with self.assertRaisesRegex(TwoZoneGeometryError, "unknown"):
-            compile_closed_two_zone_accelerator(request)
+            compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
 
     def test_provider_rejects_source_that_does_not_fit_first_gap_or_rigid_placement(self) -> None:
         request = self.requirements()
         request["source_cylinder"] = {"radius_mm": 3.0, "height_mm": 1.0}
         with self.assertRaisesRegex(TwoZoneGeometryError, "first gap"):
-            compile_closed_two_zone_accelerator(request)
+            compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
         request = self.requirements()
         request["placement"]["global_repeller_z_mm"] = 34.1  # type: ignore[index]
         with self.assertRaisesRegex(TwoZoneGeometryError, "repeller-to-exit"):
-            compile_closed_two_zone_accelerator(request)
+            compile_closed_two_zone_accelerator(request, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm'))
 
     def test_descending_second_region_has_uniform_interior_ring_planes(self) -> None:
         layout = derive_uniform_ring_planes(33.0, 0.0, 5, ring_thickness_mm=1.0)

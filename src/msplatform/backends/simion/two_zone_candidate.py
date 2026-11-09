@@ -12,13 +12,13 @@ from dataclasses import dataclass, replace
 from math import isclose, isfinite
 from typing import Any, Mapping, Sequence
 
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
+from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
     CLOSED_TWO_ZONE_PROFILE_ID,
     resolve_closed_two_zone_geometry,
     ShieldedRectangularEnclosure,
     TwoZoneGeometryError,
 )
-from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
+from msplatform.backends.simion.rectangular_accelerator import (
     emit_closed_two_zone_endplates,
     emit_grounded_enclosure,
     emit_ideal_grid,
@@ -201,9 +201,9 @@ def _triple(value: Any, label: str) -> tuple[float, float, float]:
     return tuple(_finite_positive(item, label) for item in value)  # type: ignore[return-value]
 
 
-def _resolve_closed_two_zone_projection(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID):
+def _resolve_closed_two_zone_projection(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID, geometry_profile: Mapping[str, float | int]):
     """Project the single owned mechanical model into a frozen SIMION PA."""
-    model = resolve_closed_two_zone_geometry(requirements, geometry_profile_id=geometry_profile_id)
+    model = resolve_closed_two_zone_geometry(requirements, geometry_profile_id=geometry_profile_id, geometry_profile=geometry_profile)
     local = _mapping(requirements["local_pa"], "local_pa", {"span_mm", "mesh_mm_per_gu", "exit_z_mm", "margin_z_mm"})
     span = _triple(local["span_mm"], "local_pa.span_mm")
     mesh = _triple(local["mesh_mm_per_gu"], "local_pa.mesh_mm_per_gu")
@@ -240,9 +240,9 @@ def _resolve_closed_two_zone_projection(requirements: Mapping[str, Any], *, geom
     return model, resolved_electrodes, span, mesh, margin_z
 
 
-def resolve_closed_two_zone_electrodes(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID) -> ResolvedClosedTwoZoneElectrodes:
+def resolve_closed_two_zone_electrodes(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID, geometry_profile: Mapping[str, float | int]) -> ResolvedClosedTwoZoneElectrodes:
     """Resolve a validated PA-coordinate projection without rendering any GEM."""
-    return _resolve_closed_two_zone_projection(requirements, geometry_profile_id=geometry_profile_id)[1]
+    return _resolve_closed_two_zone_projection(requirements, geometry_profile_id=geometry_profile_id, geometry_profile=geometry_profile)[1]
 
 
 def _project_closed_two_zone_layout(model, resolved_electrodes) -> CompiledTwoZoneLayout:
@@ -263,16 +263,16 @@ def _project_closed_two_zone_layout(model, resolved_electrodes) -> CompiledTwoZo
     return resolved_layout
 
 
-def resolve_closed_two_zone_layout(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID) -> CompiledTwoZoneLayout:
+def resolve_closed_two_zone_layout(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID, geometry_profile: Mapping[str, float | int]) -> CompiledTwoZoneLayout:
     """Project physical layout into the validated PA frame without GEM output."""
-    model, electrodes, _, _, _ = _resolve_closed_two_zone_projection(requirements, geometry_profile_id=geometry_profile_id)
+    model, electrodes, _, _, _ = _resolve_closed_two_zone_projection(requirements, geometry_profile_id=geometry_profile_id, geometry_profile=geometry_profile)
     return _project_closed_two_zone_layout(model, electrodes)
 
 
-def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID) -> CompiledTwoZoneAccelerator:
+def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID, geometry_profile: Mapping[str, float | int]) -> CompiledTwoZoneAccelerator:
     """Render the single owned model through its validated PA projection."""
     model, resolved_electrodes, span, mesh, margin_z = _resolve_closed_two_zone_projection(
-        requirements, geometry_profile_id=geometry_profile_id,
+        requirements, geometry_profile_id=geometry_profile_id, geometry_profile=geometry_profile,
     )
     enclosure = resolved_electrodes.enclosure
     exit_z, repeller_z = resolved_electrodes.local_exit_z_mm, resolved_electrodes.local_repeller_z_mm

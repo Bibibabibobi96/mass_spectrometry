@@ -1,5 +1,6 @@
 """Derive the smallest numerical domain for the closed two-zone focus PA."""
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 import argparse
 import json
@@ -10,7 +11,7 @@ from typing import Any
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
-from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+from msplatform.backends.simion.two_zone_candidate import (
     compile_closed_two_zone_accelerator,
 )
 
@@ -151,7 +152,7 @@ def derive(campaign_path: Path) -> dict[str, Any]:
     declared_span_z = declared_spans[2]
     if not math.isclose(declared_span_z, resolved_span_z, rel_tol=0.0, abs_tol=1e-9):
         raise ComponentFocusPAPlanError("declared PA z span differs from focus-plane-derived numerical domain")
-    compiled = compile_closed_two_zone_accelerator(requirements, geometry_profile_id=campaign["geometry_profile_id"])
+    compiled = compile_closed_two_zone_accelerator(requirements, geometry_profile_id=campaign["geometry_profile_id"], geometry_profile=_load_oa_geometry_profile(campaign["geometry_profile_id"]))
     focus_local = local_exit + focus_offset
     if focus_local < focus_padding - 1e-9 or focus_local <= 0.0:
         raise ComponentFocusPAPlanError("derived focus plane is outside the PA")
