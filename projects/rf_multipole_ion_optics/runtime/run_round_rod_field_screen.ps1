@@ -23,7 +23,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $taskLabel = $ProjectId.Replace('_','-') + '-' + $DesignProfileId + '-round-rod-screen'
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__sim__comsol__${taskLabel}__l2"
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 
 $runDir = Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs\$RunId"

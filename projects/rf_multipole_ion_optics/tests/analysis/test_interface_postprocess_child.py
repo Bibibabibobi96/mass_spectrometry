@@ -87,6 +87,30 @@ if($code.Count-ne1){throw 'actual project analysis Python body missing'}
                                     cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             execution = json.loads(result.stdout)
+            # Observe the actual launcher's dependency boundary before scientific
+            # imports, for both the selected venv and its ordinary base interpreter.
+            for interpreter in dict.fromkeys((sys.executable, sys._base_executable)):
+                with self.subTest(interpreter=interpreter):
+                    expected = subprocess.run([interpreter, '-I', '-c',
+                        'import sysconfig;print(sysconfig.get_path("purelib"))'],
+                        cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=20)
+                    self.assertEqual(expected.returncode, 0, expected.stdout + expected.stderr)
+                    probe = '''
+import json,pathlib,sys
+expected=pathlib.Path(sys.argv.pop(1)).resolve()
+def dependency_boundary(event,args):
+    if event=='import' and args[0]=='msplatform':
+        assert expected in [pathlib.Path(p).resolve() for p in sys.path]
+        assert 'sitecustomize' not in sys.modules
+        print('CONFIGURED_DEPENDENCY_PATH=PASS')
+        raise SystemExit(0)
+sys.addaudithook(dependency_boundary)
+'''
+                    observed = subprocess.run([interpreter, '-I', '-S', '-B', '-c',
+                        probe + execution['code'], expected.stdout.strip(), execution['root']],
+                        cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=20)
+                    self.assertEqual(observed.returncode, 0, observed.stdout + observed.stderr)
+                    self.assertIn('CONFIGURED_DEPENDENCY_PATH=PASS', observed.stdout)
             ions = root / "ions.ion"
             ions.write_text("0.25,100,1,0,0,0,0,0,2,1,3\n", encoding="utf-8")
             rows = []
@@ -114,7 +138,7 @@ if($code.Count-ne1){throw 'actual project analysis Python body missing'}
             shutil.copyfile(PROJECT / "variants/quadrupole/config/interface_contract.json", contract)
             environment = os.environ.copy()
             environment.update(PYTHONPATH=execution["root"], PYTHONNOUSERSITE="1", PYTHONDONTWRITEBYTECODE="1")
-            result = subprocess.run([sys.executable, "-I", "-B", "-c", execution["code"], execution["root"],
+            result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", execution["code"], execution["root"],
                                      str(metadata), str(state), str(root / "metrics.json"), str(ions), str(contract),
                                      "1100000", "0", str(root / "report.json"), str(root / "origins.json")],
                                     cwd=execution["root"], env=environment, capture_output=True, text=True,
@@ -260,7 +284,7 @@ if($lease.inherited-or$released.status-cne'released'-or$released.token-cne$lease
 $receipt=@{role='comsol_launcher_completion';run_id=$parentId;fixture='not_native_comsol';host_release=@{inherited=[bool]$lease.inherited;token=[string]$lease.token;result=$released;error=$null};operations=@(@{operation_id='synthetic-completed-task';observation=@{exit_confirmed=$true;returncode=[int]$seen.exit_code;process_id=[int]$seen.root_process_id;process_started_at_utc_ticks=[long]$seen.root_process_started_at_utc_ticks}})}
 Write-RunJson -Path (Join-Path $parent.log_dir 'native_completion.json') -Value $receipt -Depth 20
 $stopped=Join-Path ROOT 'stopped.json'
-$seal="import json,sys;from pathlib import Path;from common.contracts.run_capacity_lifecycle import seal_checkpoint;print(json.dumps(seal_checkpoint(Path(sys.argv[1]),Path(sys.argv[2]),owner='rf_multipole_ion_optics',writing_stopped=True,retain_payload=True,retention_reason='explicit synthetic fixture source')))"
+$seal="import json,sys;from pathlib import Path;from msplatform.execution.run_capacity_lifecycle import seal_checkpoint;print(json.dumps(seal_checkpoint(Path(sys.argv[1]),Path(sys.argv[2]),owner='rf_multipole_ion_optics',writing_stopped=True,retain_payload=True,retention_reason='explicit synthetic fixture source')))"
 Push-Location $repo;try{$json=& $python -B -c $seal $artifact $parent.run_config;if($LASTEXITCODE){throw 'fixture seal failed'};$json|Set-Content $stopped}finally{Pop-Location}
 $before=@{};foreach($file in @('run_config.json','run_manifest.json','summary.json','logs/native_completion.json','results/solver_raw_metadata.json','results/release_source_mapping.json','results/particle_state.csv','inputs/source.ion')){$before[$file]=[Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $parent.artifact_run_dir $file)))}
 $badStopped=Join-Path ROOT 'bad_stopped.json';'{}'|Set-Content $badStopped

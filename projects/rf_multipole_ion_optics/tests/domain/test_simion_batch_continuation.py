@@ -13,7 +13,7 @@ from pathlib import Path
 from msplatform.contracts.machine_contracts import ContractError
 from common.contracts.write_run_manifest import build_run_manifest
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from common.contracts.run_capacity_lifecycle import register_writing
+from msplatform.execution.run_capacity_lifecycle import register_writing
 from projects.rf_multipole_ion_optics.runtime.simion_batch_continuation import prepare
 
 

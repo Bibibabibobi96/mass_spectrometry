@@ -28,7 +28,7 @@ import json, pathlib, sys
 request = json.load(sys.stdin)
 root = pathlib.Path(request["source_root"]).resolve()
 sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
-from common.contracts import frozen_inputs
+from msplatform.execution import inputs as frozen_inputs
 if pathlib.Path(frozen_inputs.__file__).resolve() != root / "src/msplatform/execution/inputs.py":
     raise RuntimeError("Frozen Python source selector escaped the selected source root")
 paths = frozen_inputs.enumerate_python_sources(

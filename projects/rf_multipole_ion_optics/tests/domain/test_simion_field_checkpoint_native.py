@@ -79,7 +79,7 @@ function Publish-FixtureRun($Summary){
  $script:sealPending=$true
  $script:capacity=(Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $capacity -RemainingCommittedNewBytes 0).session
  Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $capacity|Out-Null;$script:capacity=$null
- & $Python -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner rf_multipole_ion_optics --confirm-writing-stopped --retention-reason $reason
+ & $Python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner rf_multipole_ion_optics --confirm-writing-stopped --retention-reason $reason
  if($LASTEXITCODE-ne0){throw 'Native fixture stopped payload did not seal.'}
  $script:sealPending=$false
 }
@@ -250,7 +250,7 @@ program:close()
   if($null-ne$lease){Exit-HostResourceStage -Lease $lease}
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $capacity|Out-Null}
   if($sealPending-and$null-ne$package){
-   & $Python -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config (Join-Path $package.artifact_run_dir 'run_config.json') --owner rf_multipole_ion_optics --confirm-writing-stopped --retention-reason $reason
+   & $Python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config (Join-Path $package.artifact_run_dir 'run_config.json') --owner rf_multipole_ion_optics --confirm-writing-stopped --retention-reason $reason
    if($LASTEXITCODE-ne0){throw 'Native fixture final stopped payload sealing failed.'}
   }
   if($null-ne$package){Remove-RunPackageExecutionAlias -Package $package}

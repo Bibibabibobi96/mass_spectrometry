@@ -414,7 +414,7 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                 roots_json = json.dumps(python_import_roots(root / "code"))
                 imports = "from common.host_resource_scheduler import load_policy; assert load_policy()"
                 if "simion" in runner_name:
-                    imports += "; from common.simion import resource_scheduler; assert resource_scheduler.CPU_ADMISSION_PERCENT > 0"
+                    imports += "; from msplatform.execution import simion_dispatch as resource_scheduler; assert resource_scheduler.CPU_ADMISSION_PERCENT > 0"
                 probe = subprocess.run(
                     [sys.executable, "-I", "-c", f"import json,sys; sys.path[:0]=json.loads({roots_json!r}); " + imports],
                     cwd=root, capture_output=True, text=True, timeout=15, check=False,

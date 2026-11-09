@@ -341,15 +341,20 @@ function Invoke-InterfacePostprocessChild {
         # One existing managed Python process runs the two real module CLIs from
         # the frozen closure. This is not a new process/registry implementation.
         $code=@'
-import importlib,json,pathlib,runpy,sys
+import importlib,json,pathlib,runpy,sys,sysconfig
 root=pathlib.Path(sys.argv[1]).resolve()
-sys.path.insert(0,str(root))
+executable=pathlib.Path(sys.executable).resolve()
+# Python 3.11 -S omits venv site initialization; use its documented marker.
+prefix=next((directory for directory in (executable.parent,executable.parent.parent)
+             if (directory/'pyvenv.cfg').is_file()),pathlib.Path(sys.prefix))
+sys.path.append(sysconfig.get_paths(vars={'base':str(prefix),'platbase':str(prefix)})['purelib'])
+sys.path[:0]=[str(root/'src'),str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0]=python_import_roots(root)
 metadata,state,summary,particles,contract,frequency,phase,report,origins=sys.argv[2:]
 modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','projects.rf_multipole_ion_optics.analysis.rf_event_table_validation','projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics']
 paths={name:str(pathlib.Path(importlib.import_module(name).__file__).resolve()) for name in modules}
-if any(not pathlib.Path(path).is_relative_to(root) for path in paths.values()): raise RuntimeError('analysis escaped frozen source')
+if any(not pathlib.Path(path).is_relative_to(root) for path in paths.values()): raise RuntimeError('analysis escaped frozen source: '+','.join(name+'='+path for name,path in paths.items() if not pathlib.Path(path).is_relative_to(root)))
 pathlib.Path(origins).write_text(json.dumps(paths,indent=2)+'\n',encoding='utf-8')
 from projects.rf_multipole_ion_optics.simion.ion11_source_adapter import read_ion11_source_states
 raw=json.loads(pathlib.Path(metadata).read_text(encoding='utf-8-sig'))
@@ -365,7 +370,7 @@ runpy.run_module(modules[0],run_name='__main__')
 sys.argv=['state','--state',state,'--particles',particles,'--source-format','ion11','--contract',contract,'--axial-offset-mm',str(raw['source_axial_offset_mm']),'--frequency-hz',frequency,'--phase-rad',phase,'--solver','COMSOL','--output',report]
 runpy.run_module(modules[1],run_name='__main__')
 '@
-        $arguments=@('-I','-B','-c',$code,$frozen.code_root,$metadata,$state,$summary,$config.inputs.particle_table,$config.inputs.interface_contract,[string]$design.drive.frequency_Hz,[string]$design.drive.phase_rad,$contract,$origin)
+        $arguments=@('-I','-S','-B','-c',$code,$frozen.code_root,$metadata,$state,$summary,$config.inputs.particle_table,$config.inputs.interface_contract,[string]$design.drive.frequency_Hz,[string]$design.drive.phase_rad,$contract,$origin)
         $quoted=@($arguments|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
         try{
             $observed=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $package.artifact_run_dir -UsagePath $usage -FilePath $python `

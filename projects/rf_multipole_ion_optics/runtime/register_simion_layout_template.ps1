@@ -37,7 +37,7 @@ if (-not $ConfirmGuiCreatedAndReopened) {
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) {
   throw "SIMION executable is missing: $SimionExe"
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
+& $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid template registration RunId: $RunId" }
 
 $sourceIob = (Resolve-Path -LiteralPath $SourceIobPath).Path

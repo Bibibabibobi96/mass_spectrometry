@@ -26,7 +26,15 @@ interface 的真实 postprocess worker 从本次冻结源码导入规范核心�
 经用户明确批准恢复原有 10 处子进程 cwd/timeout 后，RF 恢复模块 13 项通过（378.341 秒），
 全量开发标准硬门禁通过。原失败轮次保留；这些软件结果不授予新的求解或接口资格。
 后继冻结子进程回归核对实际`msplatform.contracts.particle_physics`来源及其规范源码字节，
-保持原offset、粒子CSV和报告数值断言；两项定向5.726秒通过，不以旧桥模块名代替真实来源。
+保持原offset、粒子CSV和报告数值断言。postprocess使用`-S`阻止editable finder接管，只追加依赖目录并把
+冻结`src`置前；4项定向测试通过，不以旧桥模块名或活动安装代替真实来源。
+The isolated dependency bootstrap also supports an explicitly selected base interpreter: treating every
+executable as a venv selected the wrong site-packages directory for normal Python. The bootstrap uses
+the documented `pyvenv.cfg` location when present and the interpreter prefix otherwise, keeping site
+hooks disabled. The actual launch expression is checked at its first scientific import under both
+interpreter layouts, while the original frozen-analysis numerical and origin assertions remain.
+Reference: Python 3.11 [site initialization](https://docs.python.org/3.11/library/site.html), reviewed
+2026-11-09; this changes dependency loading only, not scientific output or solver qualification.
 
 两个有限输运运行器的独立复制清单与容量估算同步包含规范核心和完整 schema；
 analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导入根。
