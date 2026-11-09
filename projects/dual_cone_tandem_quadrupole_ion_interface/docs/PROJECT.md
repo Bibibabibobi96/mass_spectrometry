@@ -10,11 +10,14 @@ gas pressure as an electric field or perform PA refinement/Fly. Uniform-gas runt
 separate explicitly identified control. The old project implementation and serializer bridge are retired.
 
 A reproduced pre-existing defect accepted a COMSOL runtime manifest made for different producer geometry;
-the migrated preparation now rejects that mismatch. Official collision_sds initialization also previously
-ignored the declared nitrogen mass/diameter and diffusion switch, leaving its air defaults active. The
-Program now uses the installed official `SDS.init` hook to bind those three explicit values before SDS
-mass-data completion. This is a behavior correction from default air to declared nitrogen, not an inherited
-native trajectory PASS. Original mass/diameter/diffusion defaults are not silently redefined.
+the migrated preparation now rejects that mismatch. An inert direct-Program initialization test also
+showed that the Program did not consume its declared nitrogen mass/diameter and diffusion settings;
+that invocation used vendor air defaults. The installed Program now binds those three explicit values
+through official `SDS.init` before mass-data completion. This correction concerns direct invocation,
+not the physics of historical runs. In particular, the preserved `simion_fly.log` from
+`20260914_162400__sim__simion__dual-cone-comsol-field-n100` explicitly reports gas mass
+28.0134 u, diameter 0.364 nm and diffusion enabled. Its original results and qualification remain
+unchanged; they must not be described as an air-default run or inherited as a new native PASS.
 
 Official API evidence: SIMION-2020 `examples/collision_sds/collision_sds.lua`, version
 `8.1.2.7.20140407`, user-init documentation near line807 and initialize_run before massdata completion
