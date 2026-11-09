@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.analysis.peak_metrics import half_height_width
-from projects.rf_multipole_ion_optics.core import mass_response
+from msplatform.analysis import mass_response
 
 from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
     evaluate_simion as MODULE,

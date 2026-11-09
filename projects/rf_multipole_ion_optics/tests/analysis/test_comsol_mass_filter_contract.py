@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.paired_mass_scan import generate_paired_case_tables
+from msplatform.ion_release.paired_mass_scan import generate_paired_case_tables
 from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
     evaluate_comsol as module,
 )

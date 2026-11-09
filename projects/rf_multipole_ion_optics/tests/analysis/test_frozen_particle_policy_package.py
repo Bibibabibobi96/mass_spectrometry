@@ -719,9 +719,9 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                     origins = {item["name"]: Path(item["origin"]).resolve()
                                for item in record["execution"]["frozen_modules"]}
                     for module in (
-                        "projects.rf_multipole_ion_optics.core.mass_response",
-                        "projects.rf_multipole_ion_optics.core.paired_mass_scan",
-                        "common.contracts.file_identity",
+                        "msplatform.analysis.mass_response",
+                        "msplatform.ion_release.paired_mass_scan",
+                        "msplatform.io.file_identity",
                         "msplatform.analysis.peak_metrics",
                     ):
                         self.assertIn(module, origins)

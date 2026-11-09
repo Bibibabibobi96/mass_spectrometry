@@ -14,7 +14,7 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 
-from projects.rf_multipole_ion_optics.core.mass_response import prepare_response_analysis
+from msplatform.analysis.mass_response import prepare_response_analysis
 
 from .theory import theory_masses
 

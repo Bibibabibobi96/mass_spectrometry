@@ -1578,6 +1578,14 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/ion_release/paired_mass_scan.py",
+          "reason": "installed_paired_mass_response_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/mass_response.py",
+          "reason": "installed_paired_mass_response_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -2610,6 +2618,14 @@
         "rf_multipole_generated_publications"
       ],
       "matches": [
+        {
+          "exact": "src/msplatform/ion_release/paired_mass_scan.py",
+          "reason": "installed_paired_mass_response_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/mass_response.py",
+          "reason": "installed_paired_mass_response_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"

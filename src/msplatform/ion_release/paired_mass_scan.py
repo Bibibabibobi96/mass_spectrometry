@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256 as sha256
+from msplatform.io.file_identity import file_sha256 as sha256
 
 
 def load_ion_rows(path: Path) -> list[list[str]]:

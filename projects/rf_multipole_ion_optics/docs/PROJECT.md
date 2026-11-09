@@ -1114,3 +1114,37 @@ with zero unclassified files; full per-language counts and filters are retained 
 `cloc-rf-main.txt` under the workspace takeover evidence directory.
 
 Independent installed RF tracking accepts the documented integer Program trajectory-quality range through the [shared Program validator](../../../common/simion/README.md#program-owned-trajectory-quality), including zero and negative values. Existing positive defaults, source/mother identities, absolute clock and positive RF/time controls are unchanged. This is parameter-contract/software coverage; native Fly/accuracy is not newly qualified, and legacy CLI-only RF runners retain their existing separate policy.
+
+
+## Installed paired mass scans and sampled responses
+
+The positive singly charged ION11 paired-mass construction and sampled mass-response
+aggregation now have sole implementations in `msplatform.ion_release.paired_mass_scan`
+and `msplatform.analysis.mass_response`. Mass-filter preparation, evaluation and frozen
+analysis consumers use those installed modules. Original row order, physical mass/+1
+scope, complete particle denominator, terminal statuses, SHA/provenance, sampled and
+interpolated half-height metrics, and caller-supplied functional criteria are unchanged.
+The retired root modules are not compatibility imports. Existing study mode JSON, L0
+Mathieu reference, L1 ideal integration and native orchestration remain separate active
+responsibilities. This ownership slice adds no native or scientific qualification.
+The six affected original modules exercised 50 distinct parent tests; the initial run
+passed 48 and failed two. A preexisting duplicate policy-file fixture declaration and a
+missed comparison-worker required-module identity were corrected; only those two original
+parents reran, passing five parent/subtest records in 65.479 seconds. The separate fixture
+repair preserves the complete selected file set and strict duplicate guard. The original
+failed run is retained. The actual PowerShell frozen analysis consumers use the new modules.
+
+Ordinary wheel and sdist-rebuilt-wheel computation passed the existing installation parent
+in 188.266 seconds, following five successful original software-check parents. Both rounds
+performed actual paired-source/response readback and missing-module rejection with author
+roots blocked. All 412 package payloads match source and both wheels byte for byte. The first
+attempt failed before build because its outer read-only Git metadata path was wrong; the next
+attempt exposed a new test output-directory collision between installation rounds. Both failures
+are retained; only runner metadata and test fixture isolation changed. A clean-source final-LF
+successor wheel and separate fresh ordinary consumer passed the actual source/response and
+missing-module probe; all 412 final source/build/wheel/installed payloads join exactly. The two
+migrated Python files differ from the R3 sdist epoch only by CRLF-to-LF normalization. An initial
+bounded successor build reused a copied old build directory; strict inventory rejected its 13
+retired files. That failed wheel is retained, and the corrected clean build/fresh consumer confirms
+those files are absent. No native solver, complete Repository acceptance, convergence or broader
+RF-variant qualification follows.

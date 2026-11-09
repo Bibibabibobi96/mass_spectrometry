@@ -93,9 +93,9 @@ try {
       -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
       -RelativePaths @($analysisFiles+$frozenMatlabRelativePaths)
   $analysisRequiredModules = @($analysisModule,
-      'projects.rf_multipole_ion_optics.core.mass_response',
-      'projects.rf_multipole_ion_optics.core.paired_mass_scan',
-      'common.contracts.file_identity','msplatform.analysis.peak_metrics')
+      'msplatform.analysis.mass_response',
+      'msplatform.ion_release.paired_mass_scan',
+      'msplatform.io.file_identity','msplatform.analysis.peak_metrics')
   $analysisDistributions = @('matplotlib','numpy','scipy')
   $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
       -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
@@ -110,7 +110,7 @@ try {
       'comsol\solve_deterministic_rf_quadrupole_particles.m')
     contract_loader=(Join-Path $projectRoot 'load_rf_quadrupole_contract.m')
     case_preparer=(Join-Path $PSScriptRoot 'prepare_comsol_scan.py')
-    paired_mass_library=(Join-Path $repoRoot 'projects\rf_multipole_ion_optics\core\paired_mass_scan.py')
+    paired_mass_library=(Join-Path $repoRoot 'src\msplatform\ion_release\paired_mass_scan.py')
   }
   foreach($key in $codeSources.Keys){
     $extension=[IO.Path]::GetExtension($codeSources[$key]);$destination=Join-Path $inputDir "$key$extension.txt"

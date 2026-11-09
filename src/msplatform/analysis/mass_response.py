@@ -10,7 +10,7 @@ import matplotlib
 import numpy as np
 
 from msplatform.analysis.peak_metrics import half_height_width
-from projects.rf_multipole_ion_optics.core.paired_mass_scan import load_ion_rows
+from msplatform.ion_release.paired_mass_scan import load_ion_rows
 
 
 matplotlib.use("Agg")

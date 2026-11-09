@@ -23,7 +23,7 @@ from typing import Any
 import numpy as np
 from scipy.constants import atomic_mass, elementary_charge, electron_volt
 
-from projects.rf_multipole_ion_optics.core.mass_response import (
+from msplatform.analysis.mass_response import (
     export_response_figure as export_sampled_response_figure,
     prepare_response_analysis,
 )
@@ -277,7 +277,7 @@ def _prepare_analysis_request(inputs: Path, results: Path) -> tuple[Path, dict[s
         "python_packages": python_packages,
         "required_modules": [
             "msplatform.analysis.peak_metrics",
-            "projects.rf_multipole_ion_optics.core.mass_response",
+            "msplatform.analysis.mass_response",
             "projects.rf_multipole_ion_optics.workflows.mass_filter_reference.run_finite_length",
         ],
         "module": "projects.rf_multipole_ion_optics.workflows.mass_filter_reference.run_finite_length",

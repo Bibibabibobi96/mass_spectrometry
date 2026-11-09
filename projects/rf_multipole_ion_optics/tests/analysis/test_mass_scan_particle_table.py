@@ -8,8 +8,8 @@ from pathlib import Path
 from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
     prepare_simion_scan as MODULE,
 )
-from projects.rf_multipole_ion_optics.core import paired_mass_scan
-from projects.rf_multipole_ion_optics.core.mass_response import load_ion_masses
+from msplatform.ion_release import paired_mass_scan
+from msplatform.analysis.mass_response import load_ion_masses
 
 
 PROJECT_ROOT = Path(__file__).parents[2]

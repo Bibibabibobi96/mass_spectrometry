@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.core.mass_response import (
+from msplatform.analysis.mass_response import (
     aggregate_response,
     evaluate_functional_contrast,
     export_response_figure,

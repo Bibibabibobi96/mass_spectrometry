@@ -1094,6 +1094,46 @@ for case in fixture['prepared_joint_diagnostics']:
             assert failed.returncode!=0 and not (pathlib.Path(str(output)+'-missing-trajectory')/'diagnostics_receipt.json').exists()
         finally:backup.rename(trajectory)
 
+# Actual paired source generation and response readback from the installed owners.
+from msplatform.ion_release import paired_mass_scan as paired_scan
+from msplatform.analysis import mass_response as response_analysis
+for module in (paired_scan,response_analysis):
+    assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+import tempfile
+mass_scan_root=pathlib.Path(tempfile.mkdtemp(prefix='paired-mass-scan-',dir=root))
+scan_source=mass_scan_root/'source.ion'
+scan_source.write_text('0,100,1,0,0,0,0,0,1,0,1\n0,100,1,1,0,0,0,0,1,0,1\n0,100,1,2,0,0,0,0,1,0,1\n',encoding='utf-8')
+scan_table=mass_scan_root/'scan.ion';scan_metadata=mass_scan_root/'scan.json'
+scan=paired_scan.generate_paired_ion_table(scan_source,scan_table,scan_metadata,[96.,100.,104.],3,{'scope':'installed_software_fixture'})
+scan_rows=paired_scan.load_ion_rows(scan_table)
+assert scan['particles']==9 and scan['particles_per_mass']==3 and scan['charge_state']==1
+assert scan['source_sha256']==hashlib.sha256(scan_source.read_bytes()).hexdigest().upper()
+assert scan['particle_table_sha256']==hashlib.sha256(scan_table.read_bytes()).hexdigest().upper()
+assert scan_rows[0][0]==scan_rows[3][0] and scan_rows[0][2:]==scan_rows[3][2:]
+assert [float(scan_rows[index][1]) for index in (0,3,6)]==[96.,100.,104.]
+scan_cases=paired_scan.generate_paired_case_tables(scan_source,mass_scan_root/'cases',[96.,100.,104.],3)
+assert len(scan_cases)==3 and all(row['particles']==3 for row in scan_cases)
+scan_terminal=mass_scan_root/'terminal.csv'
+scan_terminal.write_text('particle_id,event,status\n'+''.join(f'{pid},terminal,{"transmitted" if 4<=pid<=6 else "lost"}\n' for pid in range(1,10)),encoding='utf-8')
+scan_response=response_analysis.aggregate_response(response_analysis.load_ion_masses(scan_table),response_analysis.load_terminal_statuses(scan_terminal))
+assert [row['particles'] for row in scan_response]==[3,3,3]
+assert [row['transmission_fraction'] for row in scan_response]==[0.,1.,0.]
+scan_analysis=response_analysis.prepare_response_analysis(scan_response)
+assert scan_analysis['status']=='computed' and scan_analysis['observed_half_maximum_band_Th']==[100.,100.]
+assert scan_analysis['interpolated_main_peak_fwhm_Th']==4. and scan_analysis['resolution_claim_allowed'] is False
+response_analysis.write_response(mass_scan_root/'response.csv',scan_response)
+assert len(list(csv.DictReader((mass_scan_root/'response.csv').open(encoding='utf-8'))))==3
+try:response_analysis.aggregate_response({1:100.},{2:'transmitted'})
+except ValueError as error:assert 'IDs differ' in str(error)
+else:raise AssertionError('mass response accepted mismatched particle identities')
+for module in (paired_scan,response_analysis):
+    original=pathlib.Path(module.__file__);hidden=original.with_suffix('.missing');original.rename(hidden)
+    try:
+        absent=subprocess.run([sys.executable,'-I','-B','-c','import '+module.__name__],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        assert absent.returncode!=0 and module.__name__.split('.')[-1] in absent.stderr,absent.stdout+absent.stderr
+    finally:hidden.rename(original)
+print('INSTALLED_PAIRED_MASS_RESPONSE=PASS')
+
 # Exercise installed recorded-beam APIs over sparse IDs, unequal weights and unknown samples.
 from msplatform.analysis import population_moments as beam_moments, plane_crossings as beam_crossings, beam_focus_diagnostics as beam_focus
 from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface

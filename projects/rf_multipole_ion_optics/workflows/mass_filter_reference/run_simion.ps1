@@ -145,9 +145,9 @@ try {
         -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
         -RelativePaths $analysisFiles
     $analysisRequiredModules = @($analysisModule,
-      'projects.rf_multipole_ion_optics.core.mass_response',
-      'projects.rf_multipole_ion_optics.core.paired_mass_scan',
-      'common.contracts.file_identity','msplatform.analysis.peak_metrics')
+      'msplatform.analysis.mass_response',
+      'msplatform.ion_release.paired_mass_scan',
+      'msplatform.io.file_identity','msplatform.analysis.peak_metrics')
     $analysisDistributions = @('matplotlib','numpy','scipy')
     $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `

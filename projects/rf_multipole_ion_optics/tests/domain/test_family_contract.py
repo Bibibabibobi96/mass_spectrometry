@@ -17,9 +17,9 @@ from projects.rf_multipole_ion_optics.core.family_contract import (
     load_family_contract,
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.core.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
+from msplatform.analysis.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from projects.rf_multipole_ion_optics.core.ideal_transport import source_particles
-from projects.rf_multipole_ion_optics.core.paired_mass_scan import build_paired_ion_rows
+from msplatform.ion_release.paired_mass_scan import build_paired_ion_rows
 
 
 REPO_ROOT = Path(__file__).parents[4]

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.core.mass_response import evaluate_functional_contrast, write_response
+from msplatform.analysis.mass_response import evaluate_functional_contrast, write_response
 
 
 def analyze(

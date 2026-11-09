@@ -122,3 +122,7 @@ pulse, Fly or private copy of a published family is introduced. See the
 Independent RF `track` uses that published family directly with the same owner and fixed-unit
 recovery. Its explicit collision-free dynamics, RF timestep, clock, observations and current
 validation boundary are recorded in [PROJECT](docs/PROJECT.md#independent-rf-tracking).
+
+Paired ION11 mass-scan construction and sampled response aggregation use the installed
+`msplatform.ion_release.paired_mass_scan` and `msplatform.analysis.mass_response` owners;
+see [scope and validation](docs/PROJECT.md#installed-paired-mass-scans-and-sampled-responses).

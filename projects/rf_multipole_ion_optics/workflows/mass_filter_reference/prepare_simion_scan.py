@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.paired_mass_scan import (
+from msplatform.ion_release.paired_mass_scan import (
     generate_paired_ion_table,
     load_ion_rows,
     sha256,

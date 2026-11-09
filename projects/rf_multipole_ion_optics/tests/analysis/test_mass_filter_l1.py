@@ -242,7 +242,7 @@ class MassFilterL1Tests(unittest.TestCase):
             execution = MODULE._invoke_analysis_stage(request, prepare_only=False)
             self.assertTrue(execution["module_invoked"])
             origins = {entry["name"]: Path(entry["origin"]) for entry in execution["frozen_modules"]}
-            for name in ("msplatform.analysis.peak_metrics", "projects.rf_multipole_ion_optics.core.mass_response"):
+            for name in ("msplatform.analysis.peak_metrics", "msplatform.analysis.mass_response"):
                 self.assertTrue(origins[name].is_relative_to(inputs / "analysis_code"))
             actual = load_json(results / "mass-filter__functional-metrics.json")
             self.assertEqual(actual["status"], "PASS")
