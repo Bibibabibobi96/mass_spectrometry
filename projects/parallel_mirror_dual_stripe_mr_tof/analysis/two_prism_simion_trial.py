@@ -22,35 +22,16 @@ from common.paths.workspace_paths import project_native_run_path
 
 from pathlib import Path
 from typing import Any
+from msplatform.contracts import trajectory_recording as _trajectory_recording
 
 
-def resolve_trajectory_recording(contract: dict[str, Any]) -> dict[str, Any] | None:
-    """Validate callback observation without changing integration or event settings."""
-    value = contract["simion"].get("trajectory_recording")
-    if value is None:
-        return None
-    common = {"schema_version", "mode", "retention_class", "reason", "output_budget_bytes"}
-    if not isinstance(value, dict) or value.get("mode") not in {"every_step", "fixed_interval"}:
-        raise ValueError("trajectory_recording requires every_step or fixed_interval")
-    expected = common | ({"interval_us"} if value["mode"] == "fixed_interval" else set())
-    if set(value) != expected or value["schema_version"] != 1:
-        raise ValueError("trajectory_recording fields differ from its schema 1 sampling mode")
-    if value["retention_class"] != "solver_review" or not isinstance(value["reason"], str) or not value["reason"].strip():
-        raise ValueError("recorded trajectories require solver_review with a reason")
-    if type(value["output_budget_bytes"]) is not int or value["output_budget_bytes"] < 1:
-        raise ValueError("trajectory output_budget_bytes must be a positive integer")
-    if value["mode"] == "fixed_interval":
-        interval = value["interval_us"]
-        if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not math.isfinite(interval) or interval <= 0:
-            raise ValueError("trajectory interval_us must be finite and positive")
-    return dict(value)
 
 
 def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_path: Path,
                                recording_config: dict[str, Any] | None = None,
                                scientific_event_output: dict[str, Any] | None = None) -> dict[str, Any]:
     """Stream solver callback states into CSV, rejecting incomplete per-ion lifecycles."""
-    recording = resolve_trajectory_recording({"simion": {"trajectory_recording": recording_config}})
+    recording = _trajectory_recording.resolve_trajectory_recording({"simion": {"trajectory_recording": recording_config}})
     mode = recording["mode"] if recording else "every_step"
     columns = ["ion", "phase", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"]
     counts: dict[int, int] = {}
@@ -2039,7 +2020,7 @@ def materialize_trial(
     trajectory_profile = _apply_trajectory_step_scale(
         trajectory_profile, trajectory_step_scale,
     )
-    trajectory_recording = resolve_trajectory_recording(trajectory_contract)
+    trajectory_recording = _trajectory_recording.resolve_trajectory_recording(trajectory_contract)
     timeout = _full_path_timeout_us(contract, source_contract, target_k)
     p1_plane = _finite(contract["prism_transport"]["first_prism"]["target_interface"]["coordinate_mm"], "P1 plane")
     p1_acceptance = contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0]["box"][1:5:3]
@@ -2925,8 +2906,6 @@ def main() -> int:
     analyze.add_argument("--trial-receipt", required=True, type=Path)
     analyze.add_argument("--output", required=True, type=Path)
     analyze.add_argument("--scientific-event-receipt", type=Path)
-    recording = sub.add_parser("recording-config")
-    recording.add_argument("--contract", required=True, type=Path)
     extract = sub.add_parser("extract-trajectory")
     extract.add_argument("--log", required=True, type=Path)
     extract.add_argument("--output", required=True, type=Path)
@@ -2987,10 +2966,8 @@ def main() -> int:
         )
         if short_exit_failed:
             return 1
-    elif args.command == "recording-config":
-        print(json.dumps(resolve_trajectory_recording(json.loads(args.contract.read_text(encoding="utf-8-sig")))))
     elif args.command == "extract-trajectory":
-        recording = resolve_trajectory_recording(json.loads(args.contract.read_text(encoding="utf-8-sig"))) if args.contract else None
+        recording = _trajectory_recording.resolve_trajectory_recording(json.loads(args.contract.read_text(encoding="utf-8-sig"))) if args.contract else None
         result = extract_trajectory_samples(log_path=args.log, output_path=args.output, receipt_path=args.receipt,
                                             recording_config=recording)
         print(f"MRTOF_TRAJECTORY_EXTRACT=PASS SAMPLES={result['sample_count']}")

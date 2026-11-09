@@ -24,6 +24,7 @@ class PreparedJointBatchTests(unittest.TestCase):
         command = r'''
 import importlib.abc, json, sys, tempfile
 from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "src"))
 class BlockIntegrationCli(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname == "integrations.workflows.accelerator_interface.prepare":

@@ -83,7 +83,7 @@ function Invoke-PreparedJointTrial {
     if((Split-Path -Leaf $parentManifest)-ne'run_manifest.json'){throw 'Prepared-joint continuation requires an explicit predecessor run_manifest.json.'}
     $parentRun=Split-Path -Parent $parentManifest
   }
-  $recording=(@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$observation))-join"`n")|ConvertFrom-Json
+  $recording=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$observation))-join"`n")|ConvertFrom-Json
   if($null-eq$recording){throw 'Prepared joint flight requires retained trajectory observations.'}
   $jointRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
   $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $pathContext.artifact_root "projects/$projectId") `
@@ -430,7 +430,7 @@ function Invoke-PreparedJointAnalysis {
   . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
   $source=(Resolve-Path -LiteralPath $AnalyzeRunPath).Path
   $contract=(Resolve-Path -LiteralPath $ContractPath).Path
-  $recording=(@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$contract))-join"`n")|ConvertFrom-Json
+  $recording=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$contract))-join"`n")|ConvertFrom-Json
   if($null-eq$recording){throw 'Joint analysis requires the original retained-observation budget.'}
   $analysisRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
   $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $pathContext.artifact_root "projects/$projectId") `
@@ -461,7 +461,7 @@ function Invoke-PreparedJointAnalysis {
       -CommitmentInputPaths @($frozenAnalysisContract) -Software @('Python 3.11')
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     $stage='admit_completed_native_source'
-    $selection=(@(Invoke-ProjectPython -Arguments @('-m','integrations.workflows.prepared_joint.analysis','--source-run',$source,'--contract',$contract,'--output-inputs',$inputDir))-join"`n")|ConvertFrom-Json -Depth 50
+    $selection=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.analysis_inputs','--source-run',$source,'--contract',$contract,'--output-inputs',$inputDir))-join"`n")|ConvertFrom-Json -Depth 50
     if(($selection.recording|ConvertTo-Json -Compress)-cne($recording|ConvertTo-Json -Compress)){throw 'Analysis observation budget changed during input freezing.'}
     $configuration.inputs.source_manifest=$selection.source_manifest
     $configuration.inputs.analysis_contract=$selection.analysis_contract

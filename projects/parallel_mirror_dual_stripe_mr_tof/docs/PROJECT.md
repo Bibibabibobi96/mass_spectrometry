@@ -602,6 +602,32 @@ CI 41181531874 的失败记录仍保留，本修正不是完整软件性能或�
 
 MR analytical and native-geometry callers now import the installed OA two-zone renderer. Existing source inventories also retain its three canonical backend files; geometry/voltage semantics and historical runs remain unchanged. This migration does not establish new MR native or frozen-execution qualification.
 
+## Installed prepared-joint analysis admission
+
+`msplatform.workflows.prepared_joint.analysis_inputs.prepare_analysis_inputs` admits
+one explicit terminal prepared-joint source and freezes only its manifest and the
+author's analysis contract. It uses the existing canonical capacity ledger and
+manifest verification with the existing retention classifier; no new owner exists.
+Original native logs, batch receipts, FLY2, preparation and protected source paths
+remain at their producer locations. Complete original-ID merge, mother/launched
+counts, clock epoch, ready owner and failed-analysis stage checks are unchanged.
+Earlier failed native flights are not newly admitted; their existing continuation
+path remains separate. Admission does not perform scientific analysis or native Fly.
+
+The sole recording validator and query CLI are now
+`msplatform.contracts.trajectory_recording` (`python -m ... --contract <path>`).
+Original every-step/fixed-interval choices, positive explicit output budget,
+solver-review retention/reason and default-off behavior remain unchanged. The old
+multipurpose recording-config command and root admission module are retired.
+Full prepared-joint diagnostics and trajectory extraction remain explicit P4 work;
+this slice does not claim them installed or change cohort/clock/event/loss semantics.
+
+The bounded admission migration passed the original six-scenario public post-hoc
+analysis fixture with its 45-second/process/outcome assertions preserved, focused
+source/policy/boundary regressions, frozen OA/MR provider origin checks and the
+original five-method ordinary wheel/sdist acceptance. Plain-Lua launcher fixtures
+are software checks; no new SIMION Fly/Refine or COMSOL solve was performed.
+
 ### Installed batching dependency
 
 Active batching callers now consume the sole installed

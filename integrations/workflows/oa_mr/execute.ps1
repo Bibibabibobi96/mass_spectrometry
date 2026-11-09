@@ -228,7 +228,7 @@ $mirrorVoltageVariation=if([string]::IsNullOrWhiteSpace($MirrorVoltageVariationP
 $trajectoryContractInput=if([string]::IsNullOrWhiteSpace($ContractPath)){
   Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
 }else{(Resolve-Path -LiteralPath $ContractPath).Path}
-$trajectoryRecording=((@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$trajectoryContractInput))-join"`n")|ConvertFrom-Json)
+$trajectoryRecording=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$trajectoryContractInput))-join"`n")|ConvertFrom-Json)
 $trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}else{[string]$trajectoryRecording.retention_class}
 $trajectoryRetentionReason=if($null-eq$trajectoryRecording){''}else{[string]$trajectoryRecording.reason}
 if($null-ne$trajectoryRecording-and$null-ne$CapacityWorkflowSession){

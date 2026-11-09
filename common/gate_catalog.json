@@ -1671,6 +1671,10 @@
           "reason": "canonical_rf_exit_observation_changed"
         },
         {
+          "prefix": "src/msplatform/workflows/prepared_joint/",
+          "reason": "canonical_prepared_joint_admission_changed"
+        },
+        {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
         }

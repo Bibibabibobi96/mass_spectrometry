@@ -10,10 +10,14 @@ import argparse
 import json
 from pathlib import Path
 
-from common.contracts.capacity_ledger import load_capacity_ledger
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.execution.capacity_ledger import load_capacity_ledger
+from msplatform.io.manifest_records import record_path, verify_record as _verify_record
+from msplatform.execution.retention import classify_file
+from functools import partial
+
+verify_record = partial(_verify_record, retention_classifier=classify_file)
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
+from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 
 
 def prepare_analysis_inputs(source_run: Path, contract: Path, output_inputs: Path) -> dict:

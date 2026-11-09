@@ -802,3 +802,23 @@ do not rewrite the original failed run or prove its unique permission cause.
 Wall time was 3,862.029 s at four requested gate workers with concurrent P4
 diagnostics; this is not a controlled performance comparison. Full Repository
 and the 15-minute target remain open.
+### Installed prepared-joint source admission
+
+The post-hoc source-admission CLI is
+`python -m msplatform.workflows.prepared_joint.analysis_inputs --source-run <run>
+--contract <author.json> --output-inputs <managed-run-inputs>`.
+It consumes explicit sealed source evidence and does not run an owner, Fly or the
+full analyzer. The existing prepared-joint PowerShell owner invokes this installed
+stage and the sole `msplatform.contracts.trajectory_recording --contract <path>`
+query. Source data is never relocated or rewritten. Full diagnostics/extraction
+migration remains open; successful admission does not confer scientific qualification.
+
+The integrated implementation passed two main-checkout admission tests in 0.432 s.
+Independent byte review matched all production and protected process-fixture code
+to the accepted 13-method checkpoint (227.497 s, no skips), retaining all six
+scenarios, the original 45-second deadlines and the canonical batching CLI.
+The exact admission code also passed the combined ordinary-wheel/sdist-rebuilt
+acceptance with the subsequent analyzer and beam slices; those later slices are
+recorded separately. No repeated full gate or native execution is claimed here.
+Official CLOC 2.10, e0ae4690 to this slice: total +26, production +11, tests +15,
+zero unclassified; full language counts and filtering are retained in task evidence.

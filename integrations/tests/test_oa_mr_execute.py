@@ -245,7 +245,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_bunch_source_and_schedule import _states
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import materialize_bunch_source
         from msplatform.backends.comsol.static_field_binding import load_binding
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
+        from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
         from common.contracts.verify_run_manifest import verify_record
         from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
         from common.integration.test_resolve_assembly import direct_fixture
@@ -683,7 +683,7 @@ foreach($staticFieldRequested in @($false,$true)){
   Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination
  }
  function Invoke-ProjectPython {param($Arguments)
-  $env:PYTHONPATH=$script:pythonRoot
+  $env:PYTHONPATH=(Join-Path $script:pythonRoot 'src')+[IO.Path]::PathSeparator+$script:pythonRoot
   & $Python -B -s $Fixture @Arguments
   if($LASTEXITCODE-ne0){throw 'Inert physics fixture or real CLI dispatch failed'}
  }
@@ -751,12 +751,12 @@ $runConfig=Join-Path $Root 'run_config.json'
 """ + freeze + r"""
 $config=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
 if($config.inputs.code_inventory-ne$frozen.code_inventory_path){throw 'Frozen code identity was lost'}
-$env:PYTHONPATH=$null
+$env:PYTHONPATH=(Join-Path $script:pythonRoot 'src')+[IO.Path]::PathSeparator+$script:pythonRoot
 Push-Location -LiteralPath $script:pythonRoot
 try{
- & $Python -B -s -c "from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial, mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd())"
+ & $Python -B -s -c "from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial, mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
- & $Python -B -s -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial recording-config --contract (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
+ & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}
  & $Python -B -s -c "import json; from pathlib import Path; from common.contracts.particle_count_policy import validate_standard_particle_count; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import build_two_zone_accelerator_requirements; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); assert build_two_zone_accelerator_requirements(c)['variant_id']=='two_zone'"
  if($LASTEXITCODE-ne0){throw 'Detached source policy or physical provider requirements failed'}

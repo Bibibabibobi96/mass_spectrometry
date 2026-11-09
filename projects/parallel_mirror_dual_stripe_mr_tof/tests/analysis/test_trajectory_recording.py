@@ -9,8 +9,9 @@ import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     extract_trajectory_samples,
-    resolve_trajectory_recording,
 )
+
+from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 
 PROJECT = Path(__file__).resolve().parents[2]
 
@@ -153,10 +154,11 @@ scientific_events:close();scientific_trajectory:close()
 
     def test_cli_and_runner_use_same_recording_authority(self):
         import sys
+        import os
         with TemporaryDirectory() as temporary:
             contract = Path(temporary) / "contract.json"
             contract.write_text(json.dumps({"simion": {}}), encoding="utf-8")
-            result = subprocess.run([sys.executable, "-m", "projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial", "recording-config", "--contract", str(contract)], cwd=PROJECT.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=20)
+            result = subprocess.run([sys.executable, "-m", "msplatform.contracts.trajectory_recording", "--contract", str(contract)], cwd=PROJECT.parents[1], env=dict(os.environ, PYTHONPATH=str(PROJECT.parents[1] / "src")), capture_output=True, text=True, encoding="utf-8", timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIsNone(json.loads(result.stdout))
         runner = (PROJECT.parents[1] / "integrations/workflows/oa_mr/execute.ps1").read_text(encoding="utf-8")

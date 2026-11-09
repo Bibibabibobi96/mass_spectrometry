@@ -537,12 +537,6 @@
           ]
         },
         {
-          "source_repo_path": "integrations/workflows/prepared_joint",
-          "consumers": [
-            "prepared_joint"
-          ]
-        },
-        {
           "source_repo_path": "integrations/workflows/single_reflection_flight",
           "consumers": [
             "cooled_frontend",

@@ -664,6 +664,48 @@ try:
 finally:
     gas_contract_backup.rename(gas_contract_path)
 
+from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
+import msplatform.workflows.prepared_joint.analysis_inputs as admission_module
+import msplatform.contracts.trajectory_recording as recording_module
+assert pathlib.Path(admission_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+assert pathlib.Path(recording_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+for admission_case in fixture['prepared_joint_admission']:
+    source = pathlib.Path(admission_case['source'])
+    author_contract = pathlib.Path(admission_case['contract'])
+    original = {path: path.read_bytes() for path in source.rglob('*') if path.is_file()}
+    output = root / ('admitted-' + admission_case['scenario'] + '-' + sys.argv[2])
+    if admission_case['scenario'] in ('success', 'failed_analysis'):
+        admitted = prepare_analysis_inputs(source, author_contract, output)
+        assert (admitted['mother_particle_count'], admitted['launched_particle_count']) == (100, 97)
+        assert admitted['preparation'] == str(source/'results/prepared_joint_trial.json')
+        assert admitted['merged_log'] == str(source/'logs/native_two_prism_flight.log')
+        assert pathlib.Path(admitted['analysis_contract']).read_bytes() == author_contract.read_bytes()
+        assert {path.name for path in output.iterdir()} == {'source_run_manifest.json','analysis_contract.json'}
+        cli_output = output.with_name(output.name + '-cli')
+        admitted_cli = subprocess.run([sys.executable, '-I', '-m', 'msplatform.workflows.prepared_joint.analysis_inputs',
+            '--source-run', str(source), '--contract', str(author_contract), '--output-inputs', str(cli_output)],
+            cwd=root, capture_output=True, timeout=30)
+        assert admitted_cli.returncode == 0, admitted_cli.stderr
+        assert json.loads(admitted_cli.stdout)['mother_particle_count'] == 100
+    else:
+        try:
+            prepare_analysis_inputs(source, author_contract, output)
+        except ValueError as error:
+            assert admission_case['error'] in str(error)
+        else:
+            raise AssertionError('invalid sealed source was admitted')
+        assert not output.exists()
+    assert all(path.read_bytes() == value for path,value in original.items())
+recording_path = pathlib.Path(recording_module.__file__)
+recording_backup = recording_path.with_suffix('.absent')
+recording_path.rename(recording_backup)
+try:
+    missing_recording = subprocess.run([sys.executable, '-I', '-m', 'msplatform.contracts.trajectory_recording',
+        '--contract', str(author_contract)], cwd=root, capture_output=True, timeout=30)
+    assert missing_recording.returncode != 0 and b'trajectory_recording' in missing_recording.stderr
+finally:
+    recording_backup.rename(recording_path)
+
 for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
     (prepared_run/'inputs').mkdir(parents=True)
@@ -987,6 +1029,20 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         workbench.write_text(json.dumps(case.workbench),encoding='utf-8')
         return dict(preparation=str(preparation),workbench=str(workbench),run=str(case.run),log=str(case.log),
                     expected=collect_log(case.preparation,case.workbench,case.run,case.log))
+
+    def prepared_joint_admission_probe_fixture(self, root: Path) -> list[dict]:
+        from integrations.tests.test_prepared_joint_execute import analysis_source_fixture
+        result = []
+        for scenario in ("success", "failed_analysis", "wrong_owner", "incomplete_native"):
+            workspace = root / ("sealed-analysis-source-" + scenario)
+            workspace.mkdir()
+            source, contract = analysis_source_fixture(workspace,
+                status="success" if scenario == "success" else "failed",
+                owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",
+                complete=scenario != "incomplete_native")
+            result.append(dict(scenario=scenario, source=str(source), contract=str(contract),
+                error="instrument_assembly/prepared_joint" if scenario == "wrong_owner" else "complete original-ID"))
+        return result
 
     def gas_field_probe_fixture(self, root: Path) -> dict:
         from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_gas_flow_contract import (
@@ -1317,6 +1373,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
+                                              prepared_joint_admission=self.prepared_joint_admission_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),

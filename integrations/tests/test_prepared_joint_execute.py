@@ -59,13 +59,13 @@ def analysis_source_fixture(workspace, *, status="failed", owner="instrument_ass
 
 class PreparedJointAnalysisTests(unittest.TestCase):
     def test_source_admission_keeps_original_paths_and_does_not_read_native_logs(self):
-        from integrations.workflows.prepared_joint.analysis import prepare_analysis_inputs
+        from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
         for status in ("success", "failed"):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 workspace = Path(directory)
                 source, contract = analysis_source_fixture(workspace, status=status)
                 before = {p: p.read_bytes() for p in source.rglob("*") if p.is_file()}
-                with patch("integrations.workflows.prepared_joint.analysis.verify_record", wraps=__import__(
+                with patch("msplatform.workflows.prepared_joint.analysis_inputs.verify_record", wraps=__import__(
                     "common.contracts.verify_run_manifest", fromlist=["verify_record"]).verify_record) as verifier:
                     result = prepare_analysis_inputs(source, contract, workspace / "inputs")
                 verified = [str(call.args[1]["path"]) for call in verifier.call_args_list]
@@ -84,7 +84,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), payload)
 
     def test_source_admission_rejects_wrong_owner_and_incomplete_native_before_output(self):
-        from integrations.workflows.prepared_joint.analysis import prepare_analysis_inputs
+        from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
         for owner, complete, message in (("parallel_mirror_dual_stripe_mr_tof", True, "instrument_assembly/prepared_joint"),
                                          ("instrument_assembly", False, "complete original-ID")):
             with self.subTest(owner=owner, complete=complete), tempfile.TemporaryDirectory() as directory:
@@ -316,7 +316,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                     self.assertEqual(Path(configuration["inputs"]["analysis_contract"]).read_bytes(), contract.read_bytes())
                     self.assertEqual((configuration["parameters"]["mother_particle_count"],
                                       configuration["parameters"]["launched_particle_count"]), (100, 97))
-                    self.assertTrue((run / "inputs/runtime_snapshot/integrations/workflows/prepared_joint/analysis.py").is_file())
+                    self.assertTrue((run / "inputs/runtime_snapshot/src/msplatform/workflows/prepared_joint/analysis_inputs.py").is_file())
                 else:
                     self.assertEqual(summary["failure_stage"], "admit_completed_native_source")
                     self.assertFalse((run / "results/diagnostics").exists())
@@ -579,7 +579,7 @@ function Invoke-ProjectPython {
   $units=@();$batches=@();foreach($index in 1..2){$d=Join-Path $parent ('results/batches/batch_{0:D3}'-f$index);New-Item -ItemType Directory -Force -Path $d|Out-Null;$log=Join-Path $parent ('logs/joint_flight_batch_{0:D3}.log'-f$index);$receipt=Join-Path $d 'batch_receipt.json';$fly=Join-Path $d 'joint.fly2';'parent'|Set-Content $log;'{}'|Set-Content $receipt;'parent fly'|Set-Content $fly;$action=if($Scenario-in@('mixed','mixed_insufficient')-and$index-eq2){'replay'}else{'reuse'};$units+=@{key=('batch-{0:D3}'-f$index);action=$action;terminal_outputs=@(@{path=$log;sha256=('A'*64)},@{path=$receipt;sha256=('B'*64)},@{path=$fly;sha256=('C'*64)})};$batches+=@{index=$index;particle_id_min=$index;particle_id_max=$index;count=1;action=$action}}
   $o=Value '--output-dir';New-Item -ItemType Directory -Force -Path $o|Out-Null;Write-RunJson (Join-Path $o 'simion_whole_unit_replay_plan.json') 40 @{schema_version=2;role='simion_whole_unit_replay_plan';batch_plan=@{path=$plan;sha256=('D'*64)};dispatch_request=@{path=$request;sha256=('E'*64)};resource_profiles=@{path=$profiles;sha256=('F'*64)};dispatch_plan=@{path=$dispatch;sha256=('G'*64)};units=$units;batches=$batches;reusable_unit_count=$(if($Scenario-in@('mixed','mixed_insufficient')){1}else{2});replay_unit_count=$(if($Scenario-in@('mixed','mixed_insufficient')){1}else{0})};return
  }
- if($command-eq'recording-config'){return '{"mode":"fixed_interval","interval_us":0.1,"reason":"test","output_budget_bytes":10000}'}
+ if($Arguments[1]-eq'msplatform.contracts.trajectory_recording'){return '{"mode":"fixed_interval","interval_us":0.1,"reason":"test","output_budget_bytes":10000}'}
  if($command-eq'prepare'){
   $r=Value '--run-directory';$results=Join-Path $r 'results'
   $fieldDirectory=if($Scenario-eq'candidate'){'candidate_fields'}else{'live_fields'}
