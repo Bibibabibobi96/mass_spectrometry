@@ -323,7 +323,7 @@ def frontend_field_source_fixture(root: Path, request_path: Path, request: dict,
 
 def downstream_field_source_fixture(root: Path, request_path: Path, request: dict, *, oatof_record: dict | None = None) -> tuple[Path, Path]:
     """Sealed small I/O fixture; its explicit dummy PA bytes are never native inputs."""
-    from integrations.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields
+    from msplatform.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields
 
     producer = _field_source_fixture_run(root)
     config=producer/"run_config.json"

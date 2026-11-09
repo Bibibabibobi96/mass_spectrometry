@@ -298,7 +298,7 @@ $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot (Join-Path
                                       capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(imported.returncode, 0, imported.stderr)
             preflight_help=subprocess.run([sys.executable,'-B','-s','-m',
-                'integrations.workflows.single_reflection_flight.downstream_fields','--help'],
+                'msplatform.workflows.single_reflection_flight.downstream_fields','--help'],
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding='utf-8',timeout=30)
             self.assertEqual(preflight_help.returncode,0,preflight_help.stderr)
             self.assertIn('--engineering-budget',preflight_help.stdout)

@@ -410,7 +410,7 @@ try {
     }
   }
   $downstreamPlan=Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
-    $planned=& $Python -B -m integrations.workflows.single_reflection_flight.downstream_fields `
+    $planned=& $Python -B -m msplatform.workflows.single_reflection_flight.downstream_fields `
       --preparation (Join-Path $resultDirectory 'preparation_receipt.json') --run $OutputDirectory --snapshot-root $frozenExecutionRoot `
       --engineering-budget $budget.frozen_budget
     if($LASTEXITCODE-ne0){throw 'Downstream field planning failed.'}
@@ -493,7 +493,7 @@ try {
   Write-NativeExecutionEvidence -Records $downstreamExecution -Path $downstreamEvidencePath
   Write-InstrumentWallClockWarning
   $published=Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
-    $publication=& $Python -B -m integrations.workflows.single_reflection_flight.downstream_fields `
+    $publication=& $Python -B -m msplatform.workflows.single_reflection_flight.downstream_fields `
       --plan $downstreamPlanPath --execution-records $downstreamEvidencePath
     if($LASTEXITCODE-ne0){throw 'Downstream field publication failed.'}
     return $publication|ConvertFrom-Json -AsHashtable -Depth 100

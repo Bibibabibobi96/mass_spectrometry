@@ -224,7 +224,7 @@ held-OFF由原科学mode派生场依赖，仅省略恒0脉冲响应；完整carr
 单反射Program由同一编译器输出原生执行文本及仅省略路径运输的`numerical_program`。续跑比较科学数值控制，仍保留完整原生来源：原生文本须由数值文本与父manifest绑定的原helper精确前向生成；core、build spec或非单位pulse的真实数值变化仍拒绝。已退役alias的小控制／审计记录只从producer manifest按原名称、bytes／SHA唯一解析持久路径，不搜索历史目录或读取大PA。原生执行证据的大清单沿现有小JSON运输，不把未完成分析写成成功。
 
 工作流内部采用单向依赖：`census`读取原生日志证据，`pulse`派生阶段控制，`continuation`验证父记录并规划
-完整批复用，`runtime`物化所需批次；下游发布字段由`downstream_fields`统一验证。各调用保留原母群、
+完整批复用，`runtime`物化所需批次；Downstream planning and publication validation now use `msplatform.workflows.single_reflection_flight.downstream_fields`; the root execution entry only transports its CLI arguments.各调用保留原母群、
 源行顺序、时钟和错误判据；元数据准备不读取PA载荷。已有冻结清单覆盖这些模块，隔离快照可独立导入及执行，
 无需新增CLI或恢复状态；这项职责整理不改变科学计算，也不构成性能提升或原生验收声明。
 
@@ -955,5 +955,5 @@ starts a solver. Parent/optional entrance-refinement ordering, parent Dirichlet
 binding, schema2/3 source evidence, durable retired-alias audit resolution and cache
 identities are unchanged. Backend identity, bank and audit kernels retain their
 existing owners. The old root planning module is retired with its actual consumers.
-SFI runtime, downstream publication and PowerShell stage orchestration remain
+SFI runtime and PowerShell stage orchestration remain
 separate migration work; installed metadata planning is not native qualification.

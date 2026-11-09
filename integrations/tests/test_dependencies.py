@@ -444,7 +444,8 @@ with tempfile.TemporaryDirectory() as request_directory:
         """Include deferred imports; they must not hide a reverse ownership edge."""
         prefix = "integrations.workflows.single_reflection_flight."
         paths = {prefix+name:INTEGRATION_ROOT/"workflows/single_reflection_flight"/f"{name}.py"
-                 for name in ("runtime", "downstream_fields")}
+                 for name in ("runtime",)}
+        paths["msplatform.workflows.single_reflection_flight.downstream_fields"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/downstream_fields.py"
         paths["msplatform.workflows.single_reflection_flight.pulse"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/pulse.py"
         paths["msplatform.workflows.single_reflection_flight.prepare"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/prepare.py"
         paths["msplatform.workflows.single_reflection_flight.collect"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/collect.py"
@@ -755,7 +756,7 @@ class NoOrchestrationImport:
             raise ImportError('pure evidence/continuation cannot import orchestration: '+fullname)
 guard=NoOrchestrationImport()
 sys.meta_path.insert(0,guard)
-from integrations.workflows.single_reflection_flight import downstream_fields
+from msplatform.workflows.single_reflection_flight import downstream_fields
 from msplatform.workflows.single_reflection_flight import continuation
 from msplatform.backends.simion import tracking_collection as census
 from msplatform.workflows.single_reflection_flight import pulse
@@ -795,7 +796,7 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
             resource.unlink()
             refused = subprocess.run([sys.executable, "-B", "-s", "-c",
                 "import json,sys; from pathlib import Path; "
-                "from integrations.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields; "
+                "from msplatform.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields; "
                 "plan_downstream_fields(json.loads(Path(sys.argv[1]).read_text()),Path(sys.argv[2]),snapshot_root=Path.cwd())",
                 str(run / "preparation_for_dependency_test.json"), str(run)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
