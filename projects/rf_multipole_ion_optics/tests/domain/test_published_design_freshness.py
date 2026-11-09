@@ -29,11 +29,24 @@ if($request.Count-ne1){throw 'More than the selected governance request was froz
 $source=Join-Path $Root 'source'
 foreach($entry in $facts.package.files){
  $target=Join-Path $source $entry.relative_path
- New-Item -ItemType Directory -Force -Path (Split-Path $target)|Out-Null
- Copy-Item -LiteralPath $entry.path -Destination $target
+ [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))|Out-Null
+ [IO.File]::Copy($entry.path,$target)
 }
-$sourceFacts=New-RfPublishedDesignFreshnessPackage -Python $Python -SourceRoot $source -SnapshotRoot (Join-Path $Root 'source_good') -Profile $Profile
+# Reuse only the immutable selected inventory, not the checked package or mutable source.
+# Both checker executions and the separate good/stale snapshots remain real.
+$sourcePackage=New-FrozenPythonPackage -SourceRoot $source -CodeRoot (Join-Path $Root 'source_good') `
+ -RelativePaths @($facts.package.files.relative_path)
+$sourceCheck=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $sourcePackage `
+ -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
+ -Arguments @('--profile',$Profile,'--check') -DistributionNames @('jsonschema','referencing') `
+ -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.resolve_contract') -ForbiddenRoots @($source)
 $resolvedRelative=[IO.Path]::GetRelativePath($snapshot,$facts.resolved_path)
+$sourceFacts=@{profile=$Profile;package=$sourcePackage;execution=$sourceCheck;
+ resolved_path=Get-FrozenPythonPackageFile -Package $sourcePackage -RelativePath $resolvedRelative}
+$originalInventory=@($facts.package.files|ForEach-Object{$_.relative_path+' '+$_.sha256})
+$sourceInventory=@($sourceFacts.package.files|ForEach-Object{$_.relative_path+' '+$_.sha256})
+if(($originalInventory-join"`n")-cne($sourceInventory-join"`n")){throw 'Selected frozen bytes changed'}
+if($sourceFacts.execution.module_stdout-notlike'*RESOLVED_DESIGN=PASS*'){throw 'Isolated source checker did not execute'}
 [IO.File]::AppendAllText((Join-Path $source $resolvedRelative),' ')
 $failed=$false
 try{New-RfPublishedDesignFreshnessPackage -Python $Python -SourceRoot $source -SnapshotRoot (Join-Path $Root 'bad') -Profile $Profile|Out-Null}catch{$failed=$true}
