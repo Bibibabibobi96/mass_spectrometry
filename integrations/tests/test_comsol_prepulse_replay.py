@@ -9,9 +9,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from msplatform.execution.inputs import python_import_roots
 
 from integrations.analysis.build_comsol_prepulse_replay import build_comsol_prepulse_replay
-from integrations.runtime.single_flight_source import select_timed_pre_pulse_states
+from msplatform.results.single_reflection_source import select_timed_pre_pulse_states
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
@@ -262,7 +263,7 @@ class ComsolPrePulseReplayTests(unittest.TestCase):
                     "--pulse-decision", str(pulse_decision),
                 ],
                 cwd=REPO,
-                env={**os.environ, "PYTHONPATH": str(REPO), "PYTHONNOUSERSITE": "1"},
+                env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(REPO)), "PYTHONNOUSERSITE": "1"},
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -297,8 +298,14 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             self.assertTrue((snapshot / "integrations/analysis/build_comsol_prepulse_replay.py").is_file())
             replay = subprocess.run(
                 [
-                    sys.executable, "-B", "-s", "-m",
-                    "integrations.analysis.build_comsol_prepulse_replay",
+                    sys.executable, "-I", "-B", "-c",
+                    "import sys,runpy;from pathlib import Path;root=Path(sys.argv[1]).resolve();"
+                    "sys.path[:0]=[str(root/'src'),str(root)];"
+                    "from msplatform.execution.inputs import python_import_roots;sys.path[:0]=python_import_roots(root);"
+                    "import msplatform.results.single_reflection_source as source;"
+                    "assert Path(source.__file__).resolve().is_relative_to(root);"
+                    "sys.argv=['integrations.analysis.build_comsol_prepulse_replay',*sys.argv[2:]];"
+                    "runpy.run_module(sys.argv[0],run_name='__main__')", str(snapshot),
                     "--collection", str(collection), "--geometry", str(geometry),
                     "--release-output", str(root / "snapshot.release.csv"),
                     "--metadata-output", str(root / "snapshot.metadata.json"),

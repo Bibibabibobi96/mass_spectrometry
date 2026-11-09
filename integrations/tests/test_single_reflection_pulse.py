@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import copy
 import math
+import os
+from msplatform.execution.inputs import python_import_roots
 from pathlib import Path
 import subprocess
 import sys
 import unittest
 
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture
-from integrations.workflows.single_reflection_flight.pulse import ROLE, select_discovery_pulse
+from msplatform.workflows.single_reflection_flight.pulse import ROLE, select_discovery_pulse
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import resolve_accelerator_geometry
 
 
@@ -43,7 +45,7 @@ class NoLayout:
         if fullname == 'integrations.runtime.single_flight_layout':
             raise ImportError('unrelated instrument layout compiler entered pulse selection')
 sys.meta_path.insert(0, NoLayout())
-from integrations.workflows.single_reflection_flight.pulse import select_discovery_pulse
+from msplatform.workflows.single_reflection_flight.pulse import select_discovery_pulse
 record = dict(path='fixture.json', bytes=1, sha256='A'*64)
 row = dict(particle_id=1, candidate_time_us=1., instrument_time_us=1.,
            x_mm=0., y_mm=0., z_mm=1., vx_mm_per_us=1., vy_mm_per_us=0., vz_mm_per_us=0.)
@@ -57,7 +59,8 @@ assert decision['actual_pulse_time_us'] == 1.
 assert 'integrations.runtime.single_flight_layout' not in sys.modules
 """
         result = subprocess.run([sys.executable,'-B','-c',code],
-            cwd=Path(__file__).resolve().parents[2],capture_output=True,text=True,encoding='utf-8',timeout=30)
+            cwd=Path(__file__).resolve().parents[2],env=dict(os.environ,PYTHONPATH=os.pathsep.join(python_import_roots(Path(__file__).resolve().parents[2]))),
+            capture_output=True,text=True,encoding='utf-8',timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_shared_order_counts_then_spread_then_center_then_earlier(self):

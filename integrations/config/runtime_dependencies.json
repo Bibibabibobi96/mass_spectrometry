@@ -471,20 +471,6 @@
           ]
         },
         {
-          "id": "single_reflection_integrations_workflows_single_reflection_flight_schema_json",
-          "source_repo_path": "integrations/workflows/single_reflection_flight/schema.json",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "single_reflection_integrations_workflows_single_reflection_flight_schema_v10_json",
-          "source_repo_path": "integrations/workflows/single_reflection_flight/schema_v10.json",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "assembly_integrations_workflows_single_reflection_flight_field_stage_ps1",
           "source_repo_path": "integrations/workflows/single_reflection_flight/field_stage.ps1",
           "consumers": [

@@ -66,6 +66,7 @@ assert not root.is_relative_to(pathlib.Path(fixture['repo_root']))
 blocked_source_roots = [pathlib.Path(fixture['repo_root']).resolve(),
                        (root/'source-offline').resolve(), (root/'sdist-offline').resolve()]
 blocked_source_roots.extend(pathlib.Path(value).resolve() for value in fixture.get('additional_blocked_source_roots', []))
+blocked_source_roots.extend(pathlib.Path(value).resolve() for value in fixture.get('author_source_roots', []))
 def reject_author_files(event, arguments):
     if event == 'open' and arguments and isinstance(arguments[0], (str, bytes)):
         candidate = pathlib.Path(os.fsdecode(arguments[0])).resolve()
@@ -560,6 +561,25 @@ assert described['scientific_qualification']=='not_granted' and 'velocity' in de
 print('INSTALLED_PUBLIC_COMPARISON=PASS')
 import msplatform.examples
 example_path = pathlib.Path(msplatform.examples.__file__).with_name('rf_oatof_functional_v1.json')
+# Exercise the real installed workflow with three explicit outside-tree input bundles.
+from msplatform.workflows.single_reflection_flight import prepare as sfi_prepare
+workflow_modes = []
+for case in fixture['single_reflection_workflow']:
+    prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
+    (prepared_run/'inputs').mkdir(parents=True)
+    receipt = sfi_prepare.prepare(pathlib.Path(case['request']),prepared_run)
+    assert receipt['particle_count'] == case['particle_count']
+    projected = prepared_run/'inputs/projected_source.csv'
+    assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
+    with projected.open(encoding='utf-8',newline='') as stream:
+        assert [row['particle_id'] for row in csv.DictReader(stream)] == case['particle_ids']
+    assert {path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in (prepared_run/'inputs').glob('*.gem')} == case['gem_sha256']
+    provenance = json.loads((prepared_run/'inputs/source_provenance.json').read_text(encoding='utf-8'))
+    assert {name:provenance[name] for name in case['provenance']} == case['provenance']
+    assert json.loads((prepared_run/'inputs/request.json').read_text(encoding='utf-8'))['schema_version'] == case['version']
+    workflow_modes.append(case['kind'])
+assert workflow_modes == ['recorded_birth','release_spec','recorded_pre_pulse_state']
+
 missing_rejected = []
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
@@ -582,6 +602,18 @@ for label, missing_path, action in (
         except FileNotFoundError: missing_rejected.append(label)
         else: raise AssertionError('missing installed resource accepted: ' + label)
     finally: hidden_path.rename(missing_path)
+workflow_schema = sfi_prepare.SCHEMA
+hidden_workflow_schema = workflow_schema.with_name(workflow_schema.name+'.missing')
+workflow_schema.rename(hidden_workflow_schema)
+try:
+    import subprocess
+    failed = subprocess.run([sys.executable,'-I','-c',
+        "import json,sys;from pathlib import Path;from msplatform.workflows.single_reflection_flight.prepare import validate_preparation_request;validate_preparation_request(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')))",
+        fixture['single_reflection_workflow'][1]['request']], cwd=root,capture_output=True,timeout=30)
+    failed_output = (failed.stdout+failed.stderr).decode('utf-8',errors='backslashreplace')
+    assert failed.returncode != 0 and workflow_schema.name in failed_output, failed_output
+    missing_rejected.append('workflow_schema')
+finally: hidden_workflow_schema.rename(workflow_schema)
 schema_path = machine_contracts.SCHEMA_DIR/'multipole_design_request_v4.schema.json'
 hidden_schema = schema_path.with_name(schema_path.name+'.missing')
 schema_path.rename(hidden_schema)
@@ -614,6 +646,7 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      geometry_only_native_calls=0, release_independent_geometry=True,
                      prepared_model_compile_only=True, field_plan_only=True, field_execution_performed=False,
                      author_tree_reads_blocked=True,
+                     single_reflection_preparation_modes=workflow_modes,
                      missing_resources_rejected=missing_rejected)))
 '''
 
@@ -714,6 +747,43 @@ class InstalledScientificCoreTests(unittest.TestCase):
             with self.subTest(records=records),self.assertRaisesRegex(ValueError,'canonical decimal key'):
                 decode(records)
 
+    def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
+        from msplatform.io.manifest_records import file_record
+        from integrations.tests.test_single_reflection_preparation import (
+            fixture, release_fixture, scientific_preparation_fixture, RecordedPrePulsePreparationTests, write_json,
+        )
+        from msplatform.workflows.single_reflection_flight.prepare import prepare
+        cases = []
+        for kind in ('recorded_birth', 'release_spec', 'recorded_pre_pulse_state'):
+            case_root = root / ('workflow-input-' + kind)
+            case_root.mkdir()
+            if kind == 'recorded_birth':
+                request_path, baseline_run, request = scientific_preparation_fixture(case_root, recorded_birth=True)
+            elif kind == 'release_spec':
+                request_path, baseline_run, request, _ = release_fixture(case_root)
+            else:
+                _, _, _, collection, decision, manifest = RecordedPrePulsePreparationTests()._winner(case_root)
+                consumer = case_root / 'consumer'
+                consumer.mkdir()
+                request_path, baseline_run, request = fixture(consumer)
+                request['source'] = dict(kind=kind, instance_id='oatof', frame_id='oatof_global',
+                    pre_pulse_collection=file_record(collection), pulse_decision=file_record(decision),
+                    producer_manifest=file_record(manifest),
+                    **{name:request['source'][name] for name in ('clock_authority','instrument_epoch')})
+                write_json(request_path, request)
+            receipt = prepare(request_path, baseline_run)
+            with (baseline_run/'inputs/projected_source.csv').open(encoding='utf-8',newline='') as stream:
+                import csv
+                rows = list(csv.DictReader(stream))
+            provenance = json.loads((baseline_run/'inputs/source_provenance.json').read_text(encoding='utf-8'))
+            cases.append(dict(kind=kind, request=str(request_path), version=request['schema_version'],
+                particle_count=receipt['particle_count'], particle_ids=[row['particle_id'] for row in rows],
+                projected_sha256=hashlib.sha256((baseline_run/'inputs/projected_source.csv').read_bytes()).hexdigest(),
+                gem_sha256={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in (baseline_run/'inputs').glob('*.gem')},
+                provenance={name:provenance[name] for name in ('source_kind','population_policy','clock_epoch_id',
+                    'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
+        return cases
+
     def comparison_probe_fixture(self) -> dict:
         from common.contracts import test_simion_trajectory_analysis as fixtures
         case = fixtures.PublishedTrajectoryAnalysisTests()
@@ -735,8 +805,6 @@ class InstalledScientificCoreTests(unittest.TestCase):
             self.assertNotRegex(name, r'\.(pa\d*|pa#|pa-surf|mph|iob|dll|exe|pyc)$')
 
     def inspect_wheel(self, wheel: Path) -> list[str]:
-        expected_schemas = sorted([path.name for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json')]
-            + [path.name for path in (REPO_ROOT/'src/msplatform/backends/simion/resources').glob('*.schema.json')])
         config = tomllib.loads((REPO_ROOT/'pyproject.toml').read_text(encoding='utf-8'))
         expected_resources = {
             path.relative_to(REPO_ROOT/'src').as_posix()
@@ -745,6 +813,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
             for path in (REPO_ROOT/'src'/Path(*package.split('.'))).glob(pattern)
             if path.is_file()
         }
+        expected_schemas = sorted(Path(name).name for name in expected_resources if name.endswith('.schema.json'))
         with zipfile.ZipFile(wheel) as archive:
             inventory = archive.namelist()
             actual_schemas = sorted(Path(name).name for name in inventory if name.endswith('.schema.json'))
@@ -961,7 +1030,10 @@ class InstalledScientificCoreTests(unittest.TestCase):
             (root/'paired-request.json').write_text(json.dumps(paired_request), encoding='utf-8')
             paired = dict(expected_plan=prepare_paired_field(root/'paired-request.json', root/'paired-installed'))
             fixture = root / 'fixture.json'
-            fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT), recipe=recipe, components=components,
+            fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
+                                              author_source_roots=sorted({str(REPO_ROOT), *(str(Path(value).resolve().parent)
+                                                  for value in sys.path if value and (Path(value)/'msplatform/__init__.py').is_file())}),
+                                              recipe=recipe, components=components,
                                               distribution_version=config['project']['version'],
                                               source=spec, expected_states=generate_release_states(spec),
                                               schemas=expected_schemas,
@@ -970,6 +1042,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
+                                              single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               comparison=self.comparison_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

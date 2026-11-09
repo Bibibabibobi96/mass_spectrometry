@@ -18,16 +18,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.runtime.single_flight_source import lua_value as _lua_value
+from msplatform.backends.simion.source import lua_value as _lua_value
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_author_instances
 from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
 from integrations.tests.test_single_reflection_program import field_observation_spec
 from integrations.tests.test_single_reflection_geometry import reframe_parent
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight import downstream_fields, runtime
 from integrations.workflows.single_reflection_flight.field_plan import frontend_field_identity
 from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
-from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
+from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
 from common.simion.particle_batching import plan_single_wave_batches
 from common.contracts.write_run_manifest import file_record
@@ -36,7 +36,7 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
-from integrations.runtime.single_flight_source import render_restart_fly2
+from msplatform.backends.simion.source import render_restart_fly2
 from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
 
 ROOT = Path(__file__).resolve().parents[2]

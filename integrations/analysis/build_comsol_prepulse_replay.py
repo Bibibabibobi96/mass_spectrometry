@@ -11,7 +11,7 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from integrations.runtime.single_flight_source import select_timed_pre_pulse_states
+from msplatform.results.single_reflection_source import select_timed_pre_pulse_states
 
 
 def _finite(row: dict[str, Any], name: str) -> float:

@@ -19,14 +19,18 @@ from unittest.mock import patch
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path, verify_record as _verify_record
+from msplatform.execution.retention import classify_file
+from functools import partial
+verify_record = partial(_verify_record, retention_classifier=classify_file)
 from msplatform.components.rf_multipole.source_validation import validate_source
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from common.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent
-from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, SOURCE_COLUMNS, published_producer_input
-from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS
+from msplatform.results.single_reflection_source import published_producer_input
+from msplatform.backends.simion.geometry import compile_frontend_geometry
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 
 
 def write_json(path, value):
@@ -374,13 +378,38 @@ def downstream_field_source_fixture(root: Path, request_path: Path, request: dic
 
 
 class SingleReflectionPreparationTests(unittest.TestCase):
+    def test_large_unclassified_json_inputs_and_field_producer_keep_retention_policy(self):
+        for boundary in ('frozen_design','producer_config'):
+            with self.subTest(boundary=boundary),tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path,run,request = fixture(root)
+                if boundary == 'frozen_design':
+                    target = path.parent/'multipole.json'
+                    target.write_bytes(target.read_bytes()+b' '*(8*1024**2))
+                    request['providers']['instances']['multipole']['resolved_design'] = file_record(target)
+                    write_json(path,request)
+                else:
+                    _,manifest_path = frontend_field_source_fixture(root,path,request)
+                    target = manifest_path.parent/'run_config.json'
+                    target.write_bytes(target.read_bytes()+b' '*(8*1024**2))
+                    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+                    manifest['run_config'] = file_record(target)
+                    write_json(manifest_path,manifest)
+                record = file_record(target)
+                self.assertNotIn('retention_role',record)
+                before = target.read_bytes()
+                result = prepare(path,run)
+                self.assertEqual(result['particle_count'],100)
+                self.assertEqual(target.read_bytes(),before)
+                self.assertTrue((run/'inputs/projected_source.csv').is_file())
+
     def test_scientific_request10_prepares_full_and_local_from_verified_records(self):
         source_outputs = []
         for local in (False, True):
             with self.subTest(local=local), tempfile.TemporaryDirectory() as directory:
                 path, run, request = scientific_preparation_fixture(Path(directory), local=local)
                 originals = {p: p.read_bytes() for p in path.parent.iterdir() if p.is_file()}
-                with (patch('integrations.workflows.single_reflection_flight.prepare.verify_record', wraps=verify_record) as verified,
+                with (patch('msplatform.workflows.single_reflection_flight.prepare.verify_record', wraps=verify_record) as verified,
                       patch('subprocess.run', side_effect=AssertionError('prepare must not start a native solver'))):
                     result = prepare(path, run)
                 geometry = json.loads((run/'inputs/frontend_geometry.json').read_text())
@@ -456,7 +485,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                     request['composition_plan'] = old['composition_plan']
                     request['composition_plan']['path'] = str(old_root/'author/parent_plan.json')
                 write_json(path, request)
-                with patch('integrations.workflows.single_reflection_flight.prepare.materialize_release',
+                with patch('msplatform.workflows.single_reflection_flight.prepare.materialize_release',
                            side_effect=AssertionError('invalid bindings must fail before sampling')) as sample:
                     with self.assertRaises((ValueError, AssertionError)):
                         prepare(path, run)
@@ -704,7 +733,8 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 receipt,manifest=downstream_field_source_fixture(root,path,request)
                 originals={p:p.read_bytes() for p in receipt.parent.iterdir() if p.suffix=='.json'}
                 manifest_bytes=manifest.read_bytes()
-                with patch('integrations.workflows.single_reflection_flight.prepare.verify_record',wraps=verify_record) as verified:
+                with (patch('msplatform.workflows.single_reflection_flight.prepare.verify_record',wraps=verify_record) as verified,
+                          patch('msplatform.results.field_sources.verify_record',new=verified)):
                     result=prepare(path,run)
                 for key,name,source in (
                     ('downstream_fields','downstream_field_source_receipt.json',receipt),
@@ -724,7 +754,8 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                     self.assertFalse((run/'inputs/downstream_field_source_manifest.json').exists())
                     another_run=root/'another_run'
                     (another_run/'inputs').mkdir(parents=True)
-                    with patch('integrations.workflows.single_reflection_flight.prepare.verify_record',wraps=verify_record) as repeated_verification:
+                    with (patch('msplatform.workflows.single_reflection_flight.prepare.verify_record',wraps=verify_record) as repeated_verification,
+                          patch('msplatform.results.field_sources.verify_record',new=repeated_verification)):
                         repeated=prepare(path,another_run)
                     self.assertEqual(sum(call.args[0]=='field source producer run_config' for call in repeated_verification.call_args_list),1)
                     self.assertNotEqual(repeated['input_records']['frontend_fields_manifest']['path'],
@@ -789,7 +820,8 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 receipt,manifest=frontend_field_source_fixture(root,path,request,fine=fine)
                 originals={p:p.read_bytes() for p in receipt.parent.iterdir()}
                 manifest_bytes=manifest.read_bytes()
-                with patch('integrations.workflows.single_reflection_flight.prepare.verify_record',wraps=verify_record) as verified:
+                with (patch('msplatform.workflows.single_reflection_flight.prepare.verify_record',wraps=verify_record) as verified,
+                          patch('msplatform.results.field_sources.verify_record',new=verified)):
                     result=prepare(path,run)
                 records=result['input_records']
                 self.assertEqual((run/'inputs/frontend_field_source_receipt.json').read_bytes(),receipt.read_bytes())
@@ -902,7 +934,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
     def test_ordinary_request_does_not_resolve_a_frontend_source(self):
         with tempfile.TemporaryDirectory() as directory:
             path,run,_=fixture(Path(directory))
-            with patch('integrations.workflows.single_reflection_flight.prepare._freeze_frontend_source',
+            with patch('msplatform.workflows.single_reflection_flight.prepare._freeze_frontend_source',
                        side_effect=AssertionError('undeclared frontend source')):
                 result=prepare(path,run)
             self.assertNotIn('frontend_fields',result['input_records'])
@@ -940,7 +972,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
             rename_author_instances(path,request)
             request['source'].update(instance_id='tof_b',frame_id='oatof_global')
             write_json(path,request)
-            with patch('integrations.workflows.single_reflection_flight.prepare.load_validated_source',
+            with patch('msplatform.workflows.single_reflection_flight.prepare.load_validated_source',
                        side_effect=AssertionError('wrong provider must be refused before reading source')):
                 with self.assertRaisesRegex(ValueError,'actual multipole upstream'):
                     prepare(path,run)
@@ -1326,7 +1358,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 request["source"]["release_spec"] = file_record(path.parent / "release_spec.json")
                 write_json(path, request)
                 with patch(
-                    "integrations.workflows.single_reflection_flight.prepare.materialize_release",
+                    "msplatform.workflows.single_reflection_flight.prepare.materialize_release",
                     side_effect=AssertionError("invalid inputs must not sample"),
                 ) as sample:
                     with self.assertRaises((ValueError, AssertionError)):
@@ -1406,7 +1438,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
             replay_root.mkdir()
             path, run, _ = fixture(replay_root, source=source, source_rows=raw,
                 source_metadata=metadata, clock_bytes=clock, epoch_bytes=epoch)
-            with patch('integrations.workflows.single_reflection_flight.prepare.materialize_release',
+            with patch('msplatform.workflows.single_reflection_flight.prepare.materialize_release',
                        side_effect=AssertionError('recorded mother must never be regenerated')):
                 result = prepare(path, run)
             self.assertEqual(result['particle_count'], 100)

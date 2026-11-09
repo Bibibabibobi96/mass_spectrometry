@@ -11,8 +11,8 @@ import unittest
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import compile_assembly_layout
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, reframe_parent
-from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.backends.simion.geometry import compile_frontend_geometry
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology

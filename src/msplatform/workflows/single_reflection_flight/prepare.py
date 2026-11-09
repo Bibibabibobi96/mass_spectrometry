@@ -16,29 +16,30 @@ import shutil
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
-from msplatform.io.manifest_records import require_completed_terminal_publication
-from common.integration.resolve_assembly import derive_assembly_scope
-from msplatform.components.rf_multipole.source_validation import load_validated_source
-from common.ion_release.cylinder import CANONICAL_COLUMNS
-from common.ion_release.release import materialize_release, validate_release_spec
-from integrations.runtime.single_flight_source import (
-    GLOBAL_COLUMNS,
-    binary64_serialization_close,
-    published_producer_input,
-    require_producer_manifest_binding,
-    select_timed_pre_pulse_states,
-    transform_source_rows,
-)
-from integrations.runtime.build_single_flight_program import validate_native_flight
-from integrations.runtime.single_flight_frontend import native_frontend_instances
-from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-from integrations.workflows.single_reflection_flight.fields import prepare_field_design
-from integrations.workflows.single_reflection_flight.pulse import _capture_bounds
+from msplatform.io.manifest_records import record_path, verify_record as _verify_record
+from functools import partial
+from msplatform.io.manifest_records import file_record as _file_record
+from msplatform.execution.retention import classify_file
+from msplatform.results.field_sources import _require_field_source_binding, _source_identity_path, _read_field_source_manifest
 
-SCHEMA = Path(__file__).with_name("schema.json")
-SCHEMA_V10 = Path(__file__).with_name("schema_v10.json")
+from msplatform.assembly.resolve_assembly import derive_assembly_scope
+from msplatform.components.rf_multipole.source_validation import load_validated_source
+from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+from msplatform.ion_release.release import materialize_release, validate_release_spec
+from msplatform.backends.simion.source import GLOBAL_COLUMNS, transform_source_rows
+from msplatform.contracts.particle_state import binary64_serialization_close
+from msplatform.results.single_reflection_source import published_producer_input, require_producer_manifest_binding, select_timed_pre_pulse_states
+from msplatform.backends.simion.tracking_program import validate_native_flight
+from msplatform.backends.simion.frontend import native_frontend_instances
+from msplatform.backends.simion.geometry import compile_frontend_geometry
+from msplatform.backends.simion.fields import prepare_field_design
+from msplatform.workflows.single_reflection_flight.pulse import _capture_bounds
+
+file_record = partial(_file_record, retention_classifier=classify_file)
+verify_record = partial(_verify_record, retention_classifier=classify_file)
+
+SCHEMA = Path(__file__).with_name("request_v9.schema.json")
+SCHEMA_V10 = Path(__file__).with_name("request_v10.schema.json")
 ROLE = "instrument_assembly_single_reflection_preparation_request"
 FROZEN_NAMES = {
     "validation_contract": "functional_validation.json",
@@ -101,62 +102,10 @@ def _write(path: Path, document: dict) -> None:
     path.write_text(json.dumps(document, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
 
 
-def _require_field_source_binding(records: list[dict], source: Path, identity: dict, producer: Path) -> None:
-    matches = [record for record in records if record_path(record, base_dir=producer) == source]
-    if (len(matches) != 1 or matches[0].get("bytes") != identity["bytes"]
-            or str(matches[0].get("sha256", "")).upper() != identity["sha256"].upper()):
-        raise ValueError(f"field source is not uniquely identity-bound by its producer manifest: {source}")
 
 
-def _source_identity_path(records: list[dict], identity: dict, producer: Path) -> Path:
-    """Find the receipt producer's frozen scientific input by its bound identity."""
-    owner_inputs = (producer / "inputs").resolve()
-    matches = []
-    for record in records:
-        if (record.get("bytes") != identity.get("bytes")
-                or str(record.get("sha256", "")).upper() != str(identity.get("sha256", "")).upper()):
-            continue
-        path = record_path(record, base_dir=producer)
-        if path.is_relative_to(owner_inputs):
-            matches.append(path)
-    if len(matches) != 1:
-        raise ValueError("frontend field identity is not uniquely bound by its receipt producer manifest")
-    return matches[0]
 
 
-def _read_field_source_manifest(producer: Path, *, statuses: set[str] | None = None,
-                                stopped_receipt: dict | None = None) -> dict:
-    """Validate a managed source run without scanning its output payloads."""
-    manifest_path = producer / "run_manifest.json"
-    if not manifest_path.is_file():
-        raise ValueError("field source requires its managed producer run manifest")
-    require_completed_terminal_publication(manifest_path)
-    manifest = _read(manifest_path)
-    allowed = {"success", "failed", "interrupted", "superseded"} if statuses is None else statuses
-    if (manifest.get("schema_version") != 2 or manifest.get("role") != "simulation_run_manifest"
-            or manifest.get("status") not in allowed):
-        raise ValueError("field source producer must have a terminal current run manifest")
-    config_record = manifest.get("run_config", {})
-    if manifest["status"] == "checkpoint" and stopped_receipt is not None:
-        if (not isinstance(stopped_receipt, dict) or stopped_receipt.get("schema_version") != 1
-                or stopped_receipt.get("role") != "run_capacity_lifecycle_receipt"
-                or stopped_receipt.get("action") != "seal_stopped_payload"
-                or stopped_receipt.get("status") != "ready" or stopped_receipt.get("run_status") != "checkpoint"
-                or Path(str(stopped_receipt.get("run_directory", ""))).resolve() != producer.resolve()):
-            raise ValueError("field continuation requires its public stopped checkpoint receipt")
-        # Initialization manifests precede code/input freezing. Only the public
-        # stopped receipt binds the final config; it grants no completed output.
-        config_record = stopped_receipt.get("run_config", {})
-    if (not config_record.get("path")
-            or record_path(config_record, base_dir=producer) != producer / "run_config.json"):
-        raise ValueError("field source producer manifest must bind its local run_config")
-    verify_record("field source producer run_config", config_record, base_dir=producer)
-    config = _read(producer / "run_config.json")
-    if (config.get("schema_version") != 2 or config.get("project") != "instrument_assembly"
-            or any(config.get(key) != manifest.get(key) for key in ("run_id", "project", "mode"))
-            or manifest.get("run_id") != producer.name):
-        raise ValueError("field source producer managed run identity differs")
-    return manifest
 
 
 def _freeze_field_source_manifest(producer: Path, destination: Path, producer_manifests: dict) -> tuple[dict, dict]:
@@ -164,7 +113,7 @@ def _freeze_field_source_manifest(producer: Path, destination: Path, producer_ma
     if producer in producer_manifests:
         return producer_manifests[producer]
     manifest_path = producer / "run_manifest.json"
-    manifest = _read_field_source_manifest(producer)
+    manifest = _read_field_source_manifest(producer, retention_classifier=classify_file)
     shutil.copyfile(manifest_path, destination)
     producer_manifests[producer] = manifest, {**file_record(destination), "source_path": str(manifest_path)}
     return producer_manifests[producer]
@@ -306,7 +255,7 @@ def prepare(request_path: Path, run: Path) -> dict:
             continuation_inputs["continuation_stopped_receipt"] = frozen
             stopped = _read(destination)
         parent = _read_field_source_manifest(parent_manifest.parent, statuses={"success", "failed", "interrupted", "checkpoint"},
-                                             stopped_receipt=stopped)
+                                             stopped_receipt=stopped, retention_classifier=classify_file)
         if parent.get("mode") != "single_reflection_fly":
             raise ValueError("continuation parent must be a single-reflection Fly run")
         if ("frontend_field_transactions" not in continuation

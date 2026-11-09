@@ -98,10 +98,7 @@ $f.import_roots|ConvertTo-Json -Compress
             entries = load(output / 'code_inventory.json')['dependencies']
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
-            expected = sorted(path.name for directory in (
-                REPO_ROOT / 'src/msplatform/contracts/schemas',
-                REPO_ROOT / 'src/msplatform/backends/simion/resources',
-            ) for path in directory.glob('*.schema.json'))
+            expected = sorted(path.name for path in (REPO_ROOT/'src/msplatform').rglob('*.schema.json'))
             self.assertEqual(sorted(Path(row['source_repo_path']).name for row in resources), expected)
             self.assertTrue(all(row['id'] == 'resource:' + row['source_repo_path'] for row in resources))
             code = '''import json,sys
@@ -254,7 +251,7 @@ with tempfile.TemporaryDirectory() as request_directory:
         fixture = SingleReflectionExecuteFixture("run")
         with tempfile.TemporaryDirectory() as directory:
             author = fixture._prepare_source_template(Path(directory), load(INVENTORY), lightweight_seeds=True)
-            self.assertTrue((author / "integrations/workflows/single_reflection_flight/prepare.py").is_file())
+            self.assertTrue((author / "src/msplatform/workflows/single_reflection_flight/prepare.py").is_file())
             self.assertTrue((author / "src/msplatform/execution/inputs.py").is_file())
             self.assertTrue((author / "projects/orthogonal_accelerator/analysis/sectioned_geometry.py").is_file())
             resources = Path('src/msplatform/contracts/schemas')
@@ -301,14 +298,15 @@ with tempfile.TemporaryDirectory() as request_directory:
     def test_single_reflection_workflow_imports_form_a_dag(self) -> None:
         """Include deferred imports; they must not hide a reverse ownership edge."""
         prefix = "integrations.workflows.single_reflection_flight."
-        names = {"runtime", "continuation", "collect", "census", "pulse", "downstream_fields"}
+        paths = {prefix+name:INTEGRATION_ROOT/"workflows/single_reflection_flight"/f"{name}.py"
+                 for name in ("runtime", "continuation", "collect", "census", "downstream_fields")}
+        paths["msplatform.workflows.single_reflection_flight.pulse"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/pulse.py"
+        paths["msplatform.workflows.single_reflection_flight.prepare"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/prepare.py"
         graph = {}
-        for name in names:
-            source = INTEGRATION_ROOT / "workflows/single_reflection_flight" / f"{name}.py"
+        for name, source in paths.items():
             graph[name] = {
-                node.module.removeprefix(prefix) for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
-                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(prefix)
-                and node.module.removeprefix(prefix) in names
+                node.module for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
+                if isinstance(node, ast.ImportFrom) and node.module in paths
             }
 
         def visit(name: str, chain: tuple[str, ...]) -> None:
@@ -597,9 +595,11 @@ class NoOrchestrationImport:
             raise ImportError('pure evidence/continuation cannot import orchestration: '+fullname)
 guard=NoOrchestrationImport()
 sys.meta_path.insert(0,guard)
-from integrations.workflows.single_reflection_flight import continuation,pulse,census,downstream_fields
+from integrations.workflows.single_reflection_flight import continuation,census,downstream_fields
+from msplatform.workflows.single_reflection_flight import pulse
 sys.meta_path.remove(guard)
-from integrations.workflows.single_reflection_flight import prepare,runtime,collect
+from msplatform.workflows.single_reflection_flight import prepare
+from integrations.workflows.single_reflection_flight import runtime,collect
 assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census,continuation,pulse))
 assert not any('rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' in name for name in sys.modules)
 assert not (Path.cwd()/'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer').exists()

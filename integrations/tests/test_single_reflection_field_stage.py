@@ -17,7 +17,7 @@ from integrations.workflows.single_reflection_flight.field_plan import (
     KINDS, bind_parent_fields, build_field_plan, field_bank, frontend_field_identity, audit_input_identity,
     validate_frozen_generation_metadata, write_audit_spec, reusable_audit, _bound_source_audit,
 )
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
 from common.contracts.write_run_manifest import file_record
 from msplatform.backends.simion import pa_family_cache
@@ -42,8 +42,8 @@ class DirectFieldPlanTests(unittest.TestCase):
         from integrations.tests.test_single_reflection_geometry import (
             scientific_inputs, candidate_300mm_fixture, source_fixture,
         )
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-        from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.fields import prepare_field_design, POLICY
 
         for source in (source_fixture(), multipole_source('octupole')):
             with tempfile.TemporaryDirectory() as directory:
@@ -237,8 +237,8 @@ class DirectFieldPlanTests(unittest.TestCase):
     def test_two_rf_sources_preserve_scope_and_bind_explicit_member_boundary(self):
         import hashlib
         from integrations.tests.test_single_reflection_geometry import multi_inputs, quadrupole_source, candidate_300mm_fixture
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-        from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.fields import prepare_field_design, POLICY
         from integrations.workflows.single_reflection_flight.field_plan import _check_source_physics, _member_projection, _parent_boundary
         sources = [quadrupole_source(r0=4., dc=1., frequency_hz=1e6, phase_rad=.1),
                    quadrupole_source(r0=4.5, dc=2., frequency_hz=1.1e6, phase_rad=.2)]

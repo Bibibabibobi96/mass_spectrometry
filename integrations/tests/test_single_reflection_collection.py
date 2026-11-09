@@ -14,11 +14,12 @@ import tempfile
 import unittest
 
 from integrations.workflows.single_reflection_flight.census import canonical_census, read_native_events
+from msplatform.execution.inputs import python_import_roots
 from common.contracts.write_run_manifest import file_record
 from integrations.tests.test_single_reflection_preparation import fixture, write_json
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight.collect import collect_log, compare_collections, select_pulse
-from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
+from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -125,7 +126,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         output = owner.run/'results/observed'
         command = [sys.executable,'-m','integrations.workflows.single_reflection_flight.collect',
                    '--preparation',str(prep),'--workbench',str(bench),'--run',str(owner.run),'--output',str(output)]
-        completed = subprocess.run(command,cwd=ROOT,capture_output=True,text=True,timeout=60,check=False)
+        completed = subprocess.run(command,cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"},capture_output=True,text=True,timeout=60,check=False)
         self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
         receipt = json.loads(completed.stdout)
         self.assertEqual(receipt['output_records']['native_field_observation.json'],file_record(output/'native_field_observation.json'))
@@ -134,7 +135,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         failed.mkdir()
         (failed/'native_field_observation.json').write_text('original protected evidence')
         command[command.index('--output')+1] = str(failed)
-        rejected = subprocess.run(command,cwd=ROOT,capture_output=True,text=True,timeout=60,check=False)
+        rejected = subprocess.run(command,cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"},capture_output=True,text=True,timeout=60,check=False)
         self.assertNotEqual(rejected.returncode,0)
         self.assertEqual((failed/'native_field_observation.json').read_text(),'original protected evidence')
 
@@ -640,7 +641,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         command = [sys.executable, '-m', 'integrations.workflows.single_reflection_flight.collect',
                    '--preparation', str(preparation), '--workbench', str(workbench), '--run', str(self.run),
                    '--output', str(output), '--select-pulse', '--collection-record', json.dumps(record)]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=60, check=False)
+        result = subprocess.run(command, cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"}, capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(result.returncode, 1, result.stderr)
         receipt = json.loads(result.stdout)
         self.assertFalse(receipt['passed'])
@@ -762,7 +763,7 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         command = [sys.executable, '-m', 'integrations.workflows.single_reflection_flight.collect',
             '--preparation', str(preparation), '--workbench', str(workbench), '--run', str(self.run),
             '--log', str(self.log), '--output', str(output)]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=60, check=False)
+        result = subprocess.run(command, cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"}, capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)['passed'])
         baseline_record=json.loads(result.stdout)['output_records']['collection.json']
@@ -770,14 +771,14 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         replay_log.write_bytes(self.log.read_bytes())
         self.log.unlink()  # Replay must consume the first collection, not parse the old raw log again.
         command[command.index('--log')+1]=str(replay_log)
-        replay = subprocess.run([*command, '--baseline-record', json.dumps(baseline_record)], cwd=ROOT,
+        replay = subprocess.run([*command, '--baseline-record', json.dumps(baseline_record)], cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"},
             capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(replay.returncode, 0, replay.stderr)
         self.assertEqual(existing.read_text(), 'original evidence')
         self.assertTrue((output / 'replay_comparison.json').is_file())
         baseline_record['bytes']+=1
         command[command.index('--output')+1]=str(output/'bad_baseline')
-        rejected=subprocess.run([*command,'--baseline-record',json.dumps(baseline_record)],cwd=ROOT,
+        rejected=subprocess.run([*command,'--baseline-record',json.dumps(baseline_record)],cwd=ROOT, env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(ROOT)), "PYTHONNOUSERSITE": "1"},
             capture_output=True,text=True,timeout=60,check=False)
         self.assertNotEqual(rejected.returncode,0)
         self.assertIn('baseline collection',rejected.stderr)

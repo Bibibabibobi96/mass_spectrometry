@@ -28,6 +28,7 @@ from integrations.tests.test_local_frontend_workflow import fixture, REPO
 from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts import capacity_ledger
 from msplatform.backends.simion import pa_family_cache
+from msplatform.execution.inputs import python_import_roots
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import compile_assembly_layout
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import export_cooled_buncher_assembly_interface
@@ -624,7 +625,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             import os
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
-            prepared = subprocess.run([sys.executable, "-B", "-s", "-m", "integrations.workflows.cooled_frontend.prepare",
+            prepared = subprocess.run([sys.executable, "-I", "-c", "import sys,json,runpy;from pathlib import Path;sys.path[:0]=json.loads(sys.argv[1]);import msplatform.backends.simion.source as source;assert Path(source.__file__).resolve().is_relative_to(Path.cwd().resolve());sys.argv=['prepare',*sys.argv[2:]];runpy.run_module('integrations.workflows.cooled_frontend.prepare',run_name='__main__')", json.dumps(python_import_roots(snapshot)),
                 "--request", str(request_path), "--repo-root", str(REPO), "--workspace-root", str(workspace),
                 "--output-directory", str(output), "--run-id", "20261022_120000__build__python__cooled-fixture"],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
@@ -767,7 +768,7 @@ try{
                     glue=program[program.index("local single_flight_native_run_path=(function()"):program.index("local function single_flight_apply_standalone_dynamic_field")]
                     configuration=program.split("end)()\ncooled_frontend_component.install(",1)[1].split(", {\n clock=",1)[0]
                     response_names=expected_paths
-                    from integrations.runtime.single_flight_source import lua_value as _lua_value
+                    from msplatform.backends.simion.source import lua_value as _lua_value
                     transport=glue+"\nlocal cfg="+configuration+"\nlocal expected="+_lua_value(response_names)+r'''
 local expected_paths={};for _,path in ipairs(expected) do expected_paths[path]=true end
 local base={nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1,symmetry='planar',potential_type='electric'}

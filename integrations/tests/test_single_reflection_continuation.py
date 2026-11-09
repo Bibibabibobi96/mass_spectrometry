@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import unittest
 
+from msplatform.execution.inputs import python_import_roots
 from common.contracts.write_run_manifest import file_record
 from common.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
@@ -754,7 +756,8 @@ class SingleReflectionContinuationTests(unittest.TestCase):
                 repo = Path(__file__).resolve().parents[2]
                 process = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(repo), sys.executable,
                     str(self.run), str(self.snapshot), str(self.field_receipt), phase], cwd=repo,
-                    capture_output=True, text=True, encoding="utf-8", timeout=60)
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
+                    env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(repo)), "PYTHONNOUSERSITE": "1"})
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr + '\n'.join(
                     p.read_text(encoding='utf-8-sig', errors='replace') for p in (self.run/'logs').glob('*.stderr.log')))
                 counts = json.loads((result_dir / "inert_counts.json").read_text(encoding="utf-8-sig"))

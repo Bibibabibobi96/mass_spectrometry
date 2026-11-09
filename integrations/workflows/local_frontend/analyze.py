@@ -12,7 +12,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from integrations.runtime.single_flight_source import binary64_serialization_close as _close
+from msplatform.contracts.particle_state import binary64_serialization_close as _close
 
 from msplatform.analysis.particle_census import (
     CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,

@@ -24,7 +24,7 @@ from common.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (
     build_local_frontend_program, load_initial_state, _resolve_standalone_dynamic_field_bank,
 )
-from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, render_restart_fly2
+from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2
 from integrations.workflows.local_frontend.prepare import SOURCE_CLOCK
 
 

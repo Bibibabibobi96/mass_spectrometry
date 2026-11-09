@@ -9,8 +9,8 @@ import tempfile
 import unittest
 
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, write_json, rename_author_instances
-from integrations.workflows.single_reflection_flight.prepare import prepare
-from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+from msplatform.workflows.single_reflection_flight.prepare import prepare
+from msplatform.backends.simion.fields import prepare_field_design, POLICY
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from integrations.runtime.single_flight_frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
@@ -26,7 +26,7 @@ def multipole_source(project):
 
 class SingleReflectionFieldsTests(unittest.TestCase):
     def test_plan5_actual_fields_preserve_native_tables_samples_and_relabel_physics(self):
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
         # Deliberately asymmetric endpoints distinguish first/second/exit grids.
         for old, semantic, value in (('grid1','intermediate1',1701.), ('intermediate2','intermediate2',1203.), ('grid2','exit',7.)):
@@ -62,7 +62,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 self.assertEqual(source, original_source)
 
     def test_plan5_two_actual_instances_and_local_scope_keep_complete_group_samples(self):
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         sources = dict(a=quadrupole_source(r0=4.,dc=1.,frequency_hz=1e6,phase_rad=.1),
                        b=chained_source('hexapole', shell=True))
         oatof = candidate_300mm_fixture()
@@ -132,7 +132,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
     def test_entrance_samples_actual_ring_intersection_not_parent_representative(self):
         with tempfile.TemporaryDirectory() as directory:
             path, run, request = fixture(Path(directory), entrance_refinement=True)
-            from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+            from msplatform.backends.simion.geometry import compile_frontend_geometry
             source = json.loads((path.parent/'multipole.json').read_text())
             oatof = json.loads((path.parent/'oatof.json').read_text())
             plan=json.loads(record_path(request['composition_plan'],base_dir=path.parent).read_text())
@@ -196,7 +196,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             box_sample(box,None,**kwargs,local_bounds_mm=dict(bounds,x_min=.2,x_max=.3))
 
     def test_four_six_eight_provider_preparation_and_invalid_pieces(self):
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs
 
         for project, rod_count in [('quadrupole', 4), ('hexapole', 6),
@@ -223,7 +223,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                     compile_frontend_geometry({'multipole': invalid}, oatof, **kw)
 
     def test_two_and_three_provider_dc_and_rf_tables_are_independent(self):
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
         sources = [chained_source('octupole', shell=True), chained_source('hexapole'), chained_source('quadrupole', shell=True)]
         for count in (2, 3):
@@ -271,7 +271,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                                     for key in carrier if key not in provider_ids))
 
     def test_narrow_fine_fields_sample_actual_entry_wall_and_all_multipole_groups(self):
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
         sources = [chained_source(project) for project in
                    ('octupole','hexapole','quadrupole')]
@@ -307,7 +307,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                    for r0, dc, freq, phase in ((4., 1., 1_000_000., .1), (4.5, 2., 1_100_000., .2), (5., 3., 1_200_000., .3))]
         names = ['q1', 'q2', 'q3']
         kw = multi_inputs(sources, oatof, names=names)
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         _, geometry = compile_frontend_geometry(dict(zip(names, sources, strict=True)), oatof, **kw)
         design = prepare_field_design(dict(zip(names, sources, strict=True)), oatof, geometry,
             variant_id='three_zone_square', pulse_voltage_policy_id=POLICY, boundary_policy='native_zero_neumann',
@@ -459,7 +459,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                     self.assertFalse((run / 'inputs' / name).exists())
 
     def test_only_whole_author_held_off_omits_pulse_and_preserves_two_three_rf_members(self):
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
         sources = [chained_source('octupole'), chained_source('hexapole'), chained_source('quadrupole')]
         for count in (2, 3):

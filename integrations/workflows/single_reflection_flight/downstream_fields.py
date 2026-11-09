@@ -14,7 +14,7 @@ import stat
 
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
-from integrations.runtime.single_flight_source import lua_value as _lua_value
+from msplatform.backends.simion.source import lua_value as _lua_value
 from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
 from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
 from msplatform.backends.simion.tof_geometry import derive_simion_geometry, resolve_physical_geometry

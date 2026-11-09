@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from integrations.tests.test_single_reflection_preparation import fixture
-from integrations.workflows.single_reflection_flight.prepare import (
+from msplatform.workflows.single_reflection_flight.prepare import (
     SCHEMA, SCHEMA_V10, validate_preparation_request,
 )
 

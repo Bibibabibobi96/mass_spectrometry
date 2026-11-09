@@ -21,11 +21,11 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,
     DOWNSTREAM_STATIC_ASSET_ROLE, DOWNSTREAM_STATIC_ASSET_REPRESENTATION,
 )
-from integrations.runtime.single_flight_source import lua_value as _lua_value
+from msplatform.backends.simion.source import lua_value as _lua_value
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, rename_recipe_instances, rename_author_instances
 from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
 from integrations.tests.test_single_reflection_fields import multipole_source
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
 from integrations.runtime.single_flight_frontend import native_frontend_instances
 
@@ -69,7 +69,7 @@ class SingleReflectionProgramTests(unittest.TestCase):
     def test_installed_serializers_and_neutral_lua_validator_keep_exact_legacy_protocol(self):
         from msplatform.backends.simion.source import canonical_clock_lua, lua_number, lua_value, render_restart_fly2
         from msplatform.backends.simion.tracking_program import BoundaryContractError, validate_pure_lua_component_source
-        from integrations.runtime.single_flight_source import canonical_clock_lua as old_clock, render_restart_fly2 as old_fly
+        from msplatform.backends.simion.source import canonical_clock_lua as old_clock, render_restart_fly2 as old_fly
         self.assertIs(old_clock, canonical_clock_lua)
         self.assertIs(old_fly, render_restart_fly2)
         self.assertEqual(lua_value({"a": [True, False, None, 1.25], "name": "中文"}), '{a={true,false,nil,1.25},name="\\u4e2d\\u6587"}')
@@ -510,7 +510,7 @@ end
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             rows=[line.split()[1:] for line in result.stdout.splitlines() if line.startswith('MODEL_DRIVE_PROBE ')]
             self.assertEqual(len(rows),8)
-            from integrations.runtime.single_flight_source import binary64_serialization_close
+            from msplatform.contracts.particle_state import binary64_serialization_close
             for t,phase,value,active in rows:
                 t=float(t)
                 expected=t*(1700000.*1e-6*2*math.pi)+.625
@@ -576,8 +576,8 @@ end
     @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
     def test_plan5_two_and_three_actual_rf_callbacks_keep_independent_provider_drives(self):
         from integrations.tests.test_single_reflection_geometry import scientific_inputs
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-        from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.fields import prepare_field_design, POLICY
 
         original = self.multiple_provider_inputs
         def current_inputs(count):
@@ -600,8 +600,8 @@ end
 
     def test_plan5_fixed_native_map_preserves_complete_program_for_continuous_and_segmented_shells(self):
         from integrations.tests.test_single_reflection_geometry import scientific_inputs,source_fixture
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-        from integrations.workflows.single_reflection_flight.fields import prepare_field_design,POLICY
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.fields import prepare_field_design,POLICY
 
         for source in (source_fixture(), multipole_source('octupole')):
             with self.subTest(segmented=source['segmentation']['segmented_rod_array'] is not None):
@@ -843,8 +843,8 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         from integrations.tests.test_single_reflection_geometry import (
             multi_inputs, quadrupole_source, candidate_300mm_fixture,
         )
-        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
-        from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
+        from msplatform.backends.simion.geometry import compile_frontend_geometry
+        from msplatform.backends.simion.fields import prepare_field_design, POLICY
 
         parameters = ((4., 1., 1_000_000., .1), (4.5, 2., 1_100_000., .7),
                       (5., 3., 1_200_000., 1.3))[:count]

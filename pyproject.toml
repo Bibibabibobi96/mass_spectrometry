@@ -42,6 +42,7 @@ namespaces = false
 "msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.schema.json"]
 "msplatform.backends.comsol" = ["matlab/*.m", "launcher/*.ps1"]
 "msplatform.components.parallel_mirror_dual_stripe_mr_tof" = ["resources/*.lua"]
+"msplatform.workflows.single_reflection_flight" = ["*.schema.json"]
 "msplatform.execution" = ["resources/*.ps1", "resources/*.lua", "resources/*.json"]
 
 [tool.ruff]

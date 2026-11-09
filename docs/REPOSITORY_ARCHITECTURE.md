@@ -110,6 +110,7 @@
 | `results` | Published-product reading over neutral I/O and data contracts; no execution owner, backend, provider or host discovery. Opening data does not confer scientific applicability or qualification. |
 | `components` | 科学域及本链明确交付的器件实现；提供者拥有物理知识，不调用后端、求解器或执行owner。 |
 | `backends` | 科学域、器件、只读results与唯一execution；纯编译和显式原生动作分开，不私建调度或运行状态机。 |
+| `workflows` | Named scientific preparation/orchestration over domain, component, backend, results and the existing execution owner. It owns study ordering/policy, not another scheduler or duplicated solver implementation; scientific inner layers and results do not import it. |
 | `execution` | 科学合同／I/O、只读results与执行实现；只消费外层传入的科学政策和回调，不反导器件、后端或API。 |
 | `exporters` | 科学域、器件、只读results及execution；可选CAD内核只在明确导出动作使用，不进入科学内层。 |
 | `applications` | 科学域、只读results及execution；仅`applications.operations`可导入具名SIMION模型读取、几何／视图准备与资源模块。显式原生应用适配可加载COM，具名worker可启动并持有自己的应用进程，继承显式子进程环境；资源、发布与外层观测仍使用唯一execution。不能改进程搜索路径、导入求场／轨迹编排或借此向科学域开放宿主能力。 |

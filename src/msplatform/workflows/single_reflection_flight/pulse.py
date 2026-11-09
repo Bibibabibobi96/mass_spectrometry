@@ -5,7 +5,7 @@ import math
 from typing import Any
 
 from msplatform.analysis.pulse_selection import select_actual_occupancy_pulse
-from integrations.runtime.single_flight_source import binary64_serialization_close as _close
+from msplatform.contracts.particle_state import binary64_serialization_close as _close
 
 ROLE = "single_reflection_actual_occupancy_pulse_decision"
 _STATE = ("x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us")
@@ -14,7 +14,7 @@ _STATE = ("x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us"
 def resolve_phase_flight(author_flight: dict, *, phase: str, decision: dict | None = None,
                          requires_rf: bool = True) -> dict[str, Any]:
     """Derive the one actual native control from the frozen author's explicit plan."""
-    from integrations.runtime.build_single_flight_program import validate_native_flight
+    from msplatform.backends.simion.tracking_program import validate_native_flight
 
     author = validate_native_flight(author_flight, requires_rf=requires_rf, allow_discovery=True)
     if phase not in {"discovery", "full_instrument"}:

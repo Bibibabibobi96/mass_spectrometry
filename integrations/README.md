@@ -108,7 +108,7 @@ component 3输入生成composition plan 5；显式旧component 1／2输入分别
 以下为公开入口。商业执行须有明确科学输入、授权及相称预算；准备成功不代表求场、Fly或物理验收。
 跨项目新run归`instrument_assembly`，独立组件几何／场／CAD仍归其提供者项目。
 
-单反射新科学组入口采用[request 10](workflows/single_reflection_flight/schema_v10.json)、component 3、
+单反射新科学组入口采用[request 10](../src/msplatform/workflows/single_reflection_flight/request_v10.schema.json)、component 3、
 plan 5与backend binding 2；具名旧request 9／plan 3仍按原协议读取。
 实际准备、后端接线和隔离冻结已通过定向软件验证；原生与GUI验收及可选观测规格见
 [当前单反射状态](docs/INTEGRATION.md#单反射整机)。

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from integrations.runtime.build_single_flight_program import build_local_frontend_program
-from integrations.runtime.single_flight_source import lua_value as _lua_value
+from msplatform.backends.simion.source import lua_value as _lua_value
 from integrations.workflows.local_frontend.runtime import _write_once, response_field_paths
 
 

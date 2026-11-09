@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.verify_run_manifest import record_path
-from integrations.runtime.single_flight_source import binary64_serialization_close
+from msplatform.contracts.particle_state import binary64_serialization_close
 
 
 FIELDS = ("x_mm", "y_mm", "z_mm", "vx_m_per_s", "vy_m_per_s", "vz_m_per_s")

@@ -1617,6 +1617,14 @@
         {
           "exact": "src/msplatform/assembly/handoff.py",
           "reason": "canonical_handoff_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/single_reflection_flight/",
+          "reason": "installed_single_reflection_workflow_changed"
+        },
+        {
+          "regex": "^src/msplatform/results/(?:field_sources|single_reflection_source)\\.py$",
+          "reason": "single_reflection_result_adapter_changed"
         }
       ],
       "command": {

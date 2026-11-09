@@ -28,7 +28,7 @@ from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
 )
-from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, render_restart_fly2, lua_value as _lua_value
+from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2, lua_value as _lua_value
 from integrations.runtime.single_flight_frontend import instance_design_record, native_frontend_instances
 from integrations.workflows.single_reflection_flight.field_plan import (
     frontend_field_identity, validate_frozen_generation_metadata, working_point_member_id, _member_projection,
@@ -37,7 +37,7 @@ from integrations.workflows.single_reflection_flight.field_plan import (
 from integrations.workflows.single_reflection_flight.downstream_fields import (
     _SLOTS, _pa_record, _small_record, load_downstream_fields,
 )
-from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight
+from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
 _SOURCES = {
     "analyzer_component_source": "src/msplatform/backends/simion/resources/oatof_analyzer_component.lua",

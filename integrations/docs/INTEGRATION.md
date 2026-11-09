@@ -207,9 +207,9 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 
 [公开owner](../workflows/single_reflection_flight/run.ps1)接收`-Request -ExecutionBudgetPath`，默认执行完整Fly；
 `-FieldDesignOnly`、`-WorkbenchOnly`显式选择有限阶段。内部`execute.ps1`只由owner调用，作者格式见
-[request 10](../workflows/single_reflection_flight/schema_v10.json)。新链引用component3／plan5，
+[request 10](../../src/msplatform/workflows/single_reflection_flight/request_v10.schema.json)。新链引用component3／plan5，
 由提供者独立确定实际前端域，再用binding2绑定该域的完整科学组；不以标签顺序定义组或角色。
-明确旧[request 9](../workflows/single_reflection_flight/schema.json)保留其原plan3／native-view读取分支，
+明确旧[request 9](../../src/msplatform/workflows/single_reflection_flight/request_v9.schema.json)保留其原plan3／native-view读取分支，
 没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
 
 可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
@@ -693,3 +693,32 @@ accelerator_interface 与 multipole_ip 的公开入口启动时解析一次公�
 覆盖任务只生成一次、原参数传递及坏 stage／缺计划在原生调用前拒绝，未新增商业求解或科学资格。
 
 Standalone OA consumers now import canonical installed two-zone and bare three-zone renderers. Their existing full scientific-core package freeze includes the moved implementations; missing frozen code continues to fail instead of falling back to the active checkout. This is software geometry ownership, not new field or flight evidence.
+
+
+### Installed single-reflection preparation
+
+`msplatform.workflows.single_reflection_flight.prepare.prepare(request_path, run)` owns the
+existing explicit-provider preparation, with the same request9/request10 data semantics.
+Its `python -m msplatform.workflows.single_reflection_flight.prepare --request ... --run ...`
+entry consumes the same request in an already managed `run/inputs` directory. It freezes and
+verifies author inputs, prepares GEM/field specifications, and projects the complete original
+birth/release or recorded timed source; it does not create a second run owner or execute a solver.
+The two versioned schemas now ship with that package. The root preparation/pulse/source and
+geometry/fields bridge files were retired with their active callers and frozen package selection.
+
+Pure recorded-state/producer adapters live in `msplatform.results`, without execution imports.
+SIMION source projection and native validators remain in the backend; pulse/discovery policy is
+part of the named workflow. The workflow explicitly supplies the existing retention classifier
+to neutral file-record I/O, preserving the previous input/output role policy. These ownership
+changes do not alter field reuse, original IDs/births/clock, mother population, state relaunch,
+recorded schema versions or native/qualification evidence. Actual acceptance remains separately
+reported; merely moving preparation does not imply that all SFI execution is already installed.
+
+The integrated preparation module passed 45 tests, including the large JSON input/producer
+retention regression. Ordinary wheel/sdist acceptance passed all five tests in 144.396 seconds;
+all 357 installed package members matched the accepted wheel byte-for-byte. The installed probe
+prepared recorded-birth, release-specification and recorded pre-pulse-state requests, checked
+their source/GEM bytes and rejected a missing workflow schema in a cold process. Both migrated
+schema files retain their original bytes and IDs. These checks did not run a native solver.
+The wider original consumer run is retained separately, including its fixture migration failures
+and targeted successor checks; it is not a complete Repository or performance acceptance.

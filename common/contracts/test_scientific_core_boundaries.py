@@ -27,6 +27,7 @@ DOMAIN_IMPORTS = {
     "backends": SCIENTIFIC_DOMAINS | {"components", "backends", "execution", "results"},
     "execution": SCIENTIFIC_DOMAINS | {"execution", "results"},
     "results": SCIENTIFIC_DOMAINS | {"results"},
+    "workflows": SCIENTIFIC_DOMAINS | {"workflows", "components", "backends", "execution", "results"},
     "examples": SCIENTIFIC_DOMAINS | {"examples"},
     "exporters": SCIENTIFIC_DOMAINS | {"components", "exporters", "execution", "results"},
     "applications": SCIENTIFIC_DOMAINS | {"applications", "execution", "results"},

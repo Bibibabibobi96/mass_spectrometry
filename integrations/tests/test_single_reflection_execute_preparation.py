@@ -288,12 +288,12 @@ $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot (Join-Path
             origin_probe = subprocess.run([sys.executable, '-B', '-s', '-c',
                 "import importlib,pathlib,sys;root=pathlib.Path(sys.argv[1]).resolve();"
                 "[pathlib.Path(importlib.import_module(name).__file__).resolve().relative_to(root) "
-                "for name in ('integrations.workflows.single_reflection_flight.prepare',"
+                "for name in ('msplatform.workflows.single_reflection_flight.prepare',"
                 "'msplatform.backends.simion.accelerator_renderer')]", str(snapshot)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(origin_probe.returncode, 0, origin_probe.stdout + origin_probe.stderr)
             command = [sys.executable, '-B', '-s', '-m',
-                       'integrations.workflows.single_reflection_flight.prepare', '--help']
+                       'msplatform.workflows.single_reflection_flight.prepare', '--help']
             imported = subprocess.run(command, cwd=snapshot, env=environment,
                                       capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(imported.returncode, 0, imported.stderr)

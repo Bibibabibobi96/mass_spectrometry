@@ -759,7 +759,7 @@ try {
                         self.assertEqual(published_workbench['pending_validation'],['real_full_population_flight_validation'])
                         self.assertIn('iob',published_workbench['outputs'])
                         self.assertEqual(published_workbench['flight'],author['flight'])
-                        from integrations.runtime.single_flight_source import render_restart_fly2
+                        from msplatform.backends.simion.source import render_restart_fly2
                         import csv
                         with (run/'inputs/projected_source.csv').open(newline='') as stream:
                             rows=list(csv.DictReader(stream))

@@ -19,8 +19,9 @@ from common.analysis.particle_events import group_particle_events
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from integrations.runtime.build_single_flight_program import validate_native_flight, validate_native_field_observation
-from integrations.workflows.single_reflection_flight.pulse import resolve_phase_flight, select_discovery_pulse
-from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, binary64_serialization_close as _close
+from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight, select_discovery_pulse
+from msplatform.backends.simion.source import GLOBAL_COLUMNS
+from msplatform.contracts.particle_state import binary64_serialization_close as _close
 
 
 

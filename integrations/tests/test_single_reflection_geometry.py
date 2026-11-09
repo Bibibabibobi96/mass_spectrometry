@@ -16,7 +16,7 @@ from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request i
 from common.integration.resolve_assembly import compile_assembly_layout
 # These fixtures exercise the explicitly retained request-v9/native-v1 reader.
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface as build_assembly_interface
-from integrations.workflows.single_reflection_flight.geometry import (
+from msplatform.backends.simion.geometry import (
     compile_frontend_geometry, render_frontend_body, render_frontend_domain,
 )
 from integrations.tests.frontend_fixtures import compile_geometry_and_port
@@ -367,7 +367,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         full_bindings=copy.deepcopy(self.kw['electrode_bindings'])
         self.kw['composition_plan']['local_scope'] = declaration
         self.kw['electrode_bindings']={'tof_b':full_bindings['tof_b']}
-        with patch('integrations.workflows.single_reflection_flight.geometry.render_physical_gem') as native:
+        with patch('msplatform.backends.simion.geometry.render_physical_gem') as native:
             local_gem, local = self.compile()
             native.assert_not_called()
         self.assertEqual(local['composition_plan']['recipe'], full['composition_plan']['recipe'])
@@ -442,7 +442,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.assertIn(f"e({geometry['electrode_bindings']['multipole'][rod['electrode_group']]})", gem)
 
     def test_numerical_domains_reuse_the_exact_complete_body_without_rendering_again(self):
-        module = "integrations.workflows.single_reflection_flight.geometry"
+        module = "msplatform.backends.simion.geometry"
         with patch(module + ".render_frontend_body", wraps=render_frontend_body) as renderer:
             gem, geometry = self.compile()
             renderer.assert_called_once()
@@ -697,7 +697,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
                     compile_frontend_geometry(providers, self.oatof, **kw)
 
     def test_fine_active_window_contains_true_wall_slab_and_guard_not_whole_oa(self):
-        from integrations.workflows.single_reflection_flight.geometry import _require_domain_contains
+        from msplatform.backends.simion.geometry import _require_domain_contains
         accelerator = dict(shield_outer_width_mm=20., axis_x_mm=0., axis_y_mm=0.,
                            shield_back_z_mm=-10., grid2_z_mm=20., shield_wall_mm=2.)
         opening = dict(center_mm=[-10., 3., 4.], width_mm=4., height_mm=6.)

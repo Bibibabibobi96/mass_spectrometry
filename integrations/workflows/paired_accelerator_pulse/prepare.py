@@ -19,11 +19,7 @@ from common.contracts.verify_run_manifest import record_path
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from integrations.analysis.build_comsol_prepulse_replay import build_comsol_prepulse_replay
 from integrations.runtime.paired_accelerator_model import load_paired_static_model_source
-from integrations.runtime.single_flight_source import (
-    published_producer_input,
-    require_producer_manifest_binding,
-    select_timed_pre_pulse_states,
-)
+from msplatform.results.single_reflection_source import published_producer_input, require_producer_manifest_binding, select_timed_pre_pulse_states
 
 
 def _freeze(record: dict, destination: Path, base: Path) -> dict:

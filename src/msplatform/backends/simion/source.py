@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import math
 import re
+from msplatform.contracts.clock import seconds_to_microseconds
+from msplatform.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 
 GLOBAL_COLUMNS = [
     "particle_id",
@@ -331,3 +334,65 @@ def validate_consumed_plane_events(events, *, state_kind, source_rows):
                 or event["position_mm"] != [float(row["position_"+a+"_mm"]) for a in "xyz"]):
             raise ValueError("consumed event identity/start time/position differs from actual source")
     return deepcopy(list(events))
+
+
+SOURCE_COLUMNS = [
+    "particle_id",
+    "birth_time_s",
+    "x_mm",
+    "y_mm",
+    "z_mm",
+    "vx_m_s",
+    "vy_m_s",
+    "vz_m_s",
+    "mass_amu",
+    "charge_state",
+]
+
+
+def transform_source_rows(
+    source_rows: list[dict[str, str]],
+    transform: RigidTransform,
+) -> list[dict[str, str]]:
+    """Map parsed source rows once, retaining IDs, species and birth times.
+
+    Positions use Rr+t in mm, velocities use Rv in m/s, and seconds become us.
+    Invalid frames, non-finite states or duplicate IDs raise ValueError.
+    This pure function performs no I/O, propagation, selection or ION encoding.
+    """
+    if not source_rows:
+        raise ValueError("mother sample is empty")
+    global_rows: list[dict[str, str]] = []
+    actual_ids = [int(row["particle_id"]) for row in source_rows]
+    if any(particle_id < 1 for particle_id in actual_ids) or len(set(actual_ids)) != len(actual_ids):
+        raise ValueError("mother-sample particle IDs must be positive and unique")
+    for row in source_rows:
+        particle_id = int(row["particle_id"])
+        state = transform.transform_state(PhaseSpaceState(
+            transform.from_frame_id,
+            tuple(float(row[f"{axis}_mm"]) for axis in "xyz"),
+            tuple(float(row[f"v{axis}_m_s"]) for axis in "xyz"),
+            seconds_to_microseconds(float(row["birth_time_s"])),
+        ))
+        x, y, z = state.position_mm
+        vx, vy, vz = state.velocity_m_s
+        mass = float(row["mass_amu"])
+        charge = int(row["charge_state"])
+        time_us = state.instrument_time_us
+        energy = kinetic_energy_ev(mass, vx, vy, vz)
+        global_rows.append(
+            {
+                "particle_id": str(particle_id),
+                "instrument_time_us": format(time_us, ".17g"),
+                "mass_amu": format(mass, ".17g"),
+                "charge_state": str(charge),
+                "position_x_mm": format(x, ".17g"),
+                "position_y_mm": format(y, ".17g"),
+                "position_z_mm": format(z, ".17g"),
+                "velocity_x_m_s": format(vx, ".17g"),
+                "velocity_y_m_s": format(vy, ".17g"),
+                "velocity_z_m_s": format(vz, ".17g"),
+                "kinetic_energy_eV": format(energy, ".17g"),
+            }
+        )
+    return global_rows

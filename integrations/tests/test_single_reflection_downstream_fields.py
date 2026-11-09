@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from common.contracts.write_run_manifest import file_record
 from integrations.tests.test_single_reflection_preparation import fixture
-from integrations.workflows.single_reflection_flight.prepare import prepare
+from msplatform.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight.downstream_fields import _live_run, plan_downstream_fields, preflight_frontend_resources, publish_downstream_fields
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -73,7 +73,7 @@ Write-RunJson -Path $configPath -Depth 100 -Value $config
 $prepareCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.prepare import FROZEN_NAMES,prepare
+from msplatform.workflows.single_reflection_flight.prepare import FROZEN_NAMES,prepare
 request,run=map(Path,sys.argv[1:3])
 try:
     receipt=prepare(request,run)

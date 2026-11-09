@@ -12,7 +12,7 @@ import unittest
 from integrations.tests.test_single_reflection_preparation import fixture, scientific_preparation_fixture
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = "integrations.workflows.single_reflection_flight.prepare"
+MODULE = "msplatform.workflows.single_reflection_flight.prepare"
 
 # Bootstrap the installed selector from this snapshot's src layout before any
 # package import; scientific imports then use its validated root order.
@@ -26,7 +26,7 @@ import msplatform.execution.inputs as roots_module
 assert Path(roots_module.__file__).resolve().is_relative_to(snapshot)
 sys.path[:0]=python_import_roots(snapshot)
 arguments=json.loads(argvfile.read_text(encoding='utf-8'))
-assert arguments[:2]==['-m','integrations.workflows.single_reflection_flight.prepare']
+assert arguments[:2]==['-m','msplatform.workflows.single_reflection_flight.prepare']
 sys.argv=[arguments[1],*arguments[2:]]
 try:
  runpy.run_module(arguments[1],run_name='__main__',alter_sys=True)
@@ -99,8 +99,8 @@ $frozen.execution_root
             self.assertEqual(set(path for path in source_paths if path.startswith("src/msplatform/contracts/schemas/")), schemas)
             for relative in schemas:
                 self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
-            for version in ("schema.json", "schema_v10.json"):
-                relative = "integrations/workflows/single_reflection_flight/" + version
+            for version in ("request_v9.schema.json", "request_v10.schema.json"):
+                relative = "src/msplatform/workflows/single_reflection_flight/" + version
                 self.assertIn(relative, source_paths)
                 self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
             backend = snapshot / "src/msplatform/backends/simion/tof_electrode_mapping.py"
@@ -112,6 +112,9 @@ $frozen.execution_root
                 "src/msplatform/components/rf_multipole/electrode_topology.py",
                 "src/msplatform/backends/simion/rf_electrode_mapping.py",
                 "src/msplatform/assembly/resolve_assembly.py",
+                "src/msplatform/workflows/single_reflection_flight/prepare.py",
+                "src/msplatform/results/field_sources.py",
+                "src/msplatform/results/single_reflection_source.py",
             )
             for relative in required_sources:
                 self.assertIn(relative, source_paths)
