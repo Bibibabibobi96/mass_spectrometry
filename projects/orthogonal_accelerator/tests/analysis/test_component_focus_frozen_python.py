@@ -29,8 +29,9 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$
 $prepare=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Initialize-FocusFrozenPython'},$true))
 $native=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.CommandElements[0].Extent.Text-eq'$SimionExe'},$true))
 if($prepare.Count-ne1-or$native.Count-ne2-or$prepare[0].Extent.StartOffset-ge$native[0].Extent.StartOffset){throw 'Actual frozen preparation must precede either native command'}
+$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path (Split-Path $Entry) 'focus_python.ps1'),[ref]$null,[ref]$null)
 foreach($name in @('Invoke-FocusFrozenPython','Initialize-FocusFrozenPython')){
- $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+ $node=$helperAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
 }
 $modules=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'},$true)|ForEach-Object{
@@ -49,7 +50,7 @@ try{
  $savedEncoding=$OutputEncoding
  New-Item -ItemType Junction -Path $sourceAlias -Target $Repo|Out-Null
  try{
-  $context=Initialize-FocusFrozenPython -RepoRoot $sourceAlias -RunConfig $config -Python $Python -CampaignPath (Join-Path $Root 'inputs/campaign.json')
+  $context=Initialize-FocusFrozenPython -RepoRoot $sourceAlias -RunConfig $config -Python $Python -CampaignPath (Join-Path $Root 'inputs/campaign.json') -InputNames @('campaign_template.json','campaign.json','component_focus_pa_plan.json','release_spec.json','resolved_projection.json')
  }finally{Remove-Item -LiteralPath $sourceAlias -Force}
  if(-not[object]::ReferenceEquals($OutputEncoding,$savedEncoding)){throw 'Package enumeration changed caller OutputEncoding'}
  if($Mode-eq'failure'){
@@ -143,6 +144,9 @@ class FocusFrozenPythonTests(unittest.TestCase):
             self.assertEqual(config["capacity_ledger_lifecycle"]["light_evidence_budget_bytes"], 26214400)
             code = (run / "inputs/code").resolve()
             copied = list(code.rglob("*.py")) + list(code.rglob("*.json"))
+            helper = code / "projects/orthogonal_accelerator/simion/focus_python.ps1"
+            copied.append(helper)
+            self.assertEqual(helper.read_bytes(), (REPO / "projects/orthogonal_accelerator/simion/focus_python.ps1").read_bytes())
             recorded = {Path(value) for key, value in config["inputs"].items() if key.startswith("python_code__")}
             self.assertEqual(set(copied), recorded)
             manifest = build_run_manifest(run / "run_config.json", "success",

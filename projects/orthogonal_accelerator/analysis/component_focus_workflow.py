@@ -18,7 +18,7 @@ from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 from msplatform.ion_release.release import validate_release_spec
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
-from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
+from msplatform.backends.simion.oa_focus_plan import derive
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state, time_to_plane_s
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
@@ -44,6 +44,8 @@ def _load_request(path: Path) -> dict[str, Any]:
             or not isinstance(value["consumer_project_id"], str)
             or not value["consumer_project_id"]):
         raise ComponentFocusWorkflowError("component workflow request has missing or unknown fields")
+    if not isinstance(value["numerics"], dict) or set(value["numerics"]) != {"trajectory_quality", "maximum_step_us", "mesh_mm_per_gu"}:
+        raise ComponentFocusWorkflowError("component workflow requires explicit PA mesh numerical input")
     return value
 
 
@@ -180,7 +182,7 @@ def compile_workflow(request_path: Path, release_path: Path) -> dict[str, Any]:
         "geometry_profile_id": request["geometry_profile_id"],
         "release_spec": resolved_release,
         "operating_point": _operating_point(request, resolved_release),
-        "numerics": request["numerics"],
+        "numerics": {key: request["numerics"][key] for key in ("trajectory_quality", "maximum_step_us")},
         "acceptance": request["acceptance"],
         "simion_projection": request["simion_projection"],
     }
@@ -191,7 +193,8 @@ def compile_workflow(request_path: Path, release_path: Path) -> dict[str, Any]:
         try:
             temporary_campaign.write_text(json.dumps(campaign, indent=2) + "\n", encoding="utf-8")
             _load_campaign(temporary_campaign)
-            plan = derive(temporary_campaign)
+            plan = derive(temporary_campaign, geometry_profile=load_geometry_profile(campaign["geometry_profile_id"]),
+                          mesh_mm_per_gu=request["numerics"]["mesh_mm_per_gu"])
         except OSError as error:
             raise ComponentFocusWorkflowError("component workflow cannot write its resolved campaign") from error
     return {

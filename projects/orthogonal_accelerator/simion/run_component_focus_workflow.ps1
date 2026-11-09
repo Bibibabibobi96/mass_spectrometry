@@ -20,7 +20,7 @@ try {
     $stage='compile_provider_plan';Push-Location $repoRoot;try{&$python -m projects.orthogonal_accelerator.analysis.component_focus_workflow --request $request --release-spec $release --output $workflowPlan;if($LASTEXITCODE-ne0){throw 'Provider workflow compilation failed'}}finally{Pop-Location}
     $resolvedCampaign=Join-Path $package.input_dir 'resolved_campaign.json';$workflow=Get-Content -Raw $workflowPlan|ConvertFrom-Json -Depth 40;$workflow.campaign|ConvertTo-Json -Depth 40|Set-Content $resolvedCampaign -Encoding utf8
     $paRunId="$RunId`__pa";$flightRunId="$RunId`__n100";$paRunner=Join-Path $PSScriptRoot 'run_component_focus_pa.ps1';$flightRunner=Join-Path $PSScriptRoot 'run_component_focus_flight.ps1'
-    $stage='provider_pa_cache_probe_or_build';$paArgs=@{RunId=$paRunId;CampaignPath=$resolvedCampaign;SimionExe=$SimionExe};if($RuntimeCheckpointPath){$paArgs.RuntimeCheckpointPath=$RuntimeCheckpointPath};&$paRunner @paArgs;if($LASTEXITCODE-ne0){throw 'Provider PA cache probe/build child failed'}
+    $stage='provider_pa_cache_probe_or_build';$paArgs=@{RunId=$paRunId;CampaignPath=$resolvedCampaign;MeshMmPerGu=@($workflow.pa_plan.numerical_domain.mesh_mm_per_gu);SimionExe=$SimionExe};if($RuntimeCheckpointPath){$paArgs.RuntimeCheckpointPath=$RuntimeCheckpointPath};&$paRunner @paArgs;if($LASTEXITCODE-ne0){throw 'Provider PA cache probe/build child failed'}
     $paRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $paRunId)
     $paResultForRuntime=Get-Content -Raw (Join-Path $paRun 'results\component_focus_pa_result.json')|ConvertFrom-Json -Depth 40
     $paPlanForRuntime=Get-Content -Raw (Join-Path $paRun 'results\component_focus_pa_plan.json')|ConvertFrom-Json -Depth 40

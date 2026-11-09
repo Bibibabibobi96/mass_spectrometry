@@ -1,5 +1,6 @@
 """Independent mechanical vectors for the OA assembly provider boundary."""
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 from projects.orthogonal_accelerator.analysis.sectioned_geometry import resolve_bare_three_zone_component
@@ -17,7 +18,7 @@ from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, R
 from projects.orthogonal_accelerator.analysis.assembly_interface import (
     resolve_assembly_interface,
 )
-from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
+from msplatform.backends.simion.oa_focus_plan import derive
 from msplatform.backends.simion.two_zone_candidate import compile_closed_two_zone_accelerator
 from msplatform.backends.simion.bare_three_zone_component import (
     render_bare_three_zone_electrode_body,
@@ -59,7 +60,7 @@ class AssemblyInterfaceTests(unittest.TestCase):
 
     def test_closed_two_zone_actual_provider_publishes_its_real_axial_exit(self) -> None:
         project_root = Path(__file__).resolve().parents[2]
-        plan = derive(project_root / "config" / "two_zone_component_focus_campaign.json")
+        plan = derive(project_root / "config" / "two_zone_component_focus_campaign.json", geometry_profile=load_geometry_profile(json.loads((project_root / "config" / "two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         compiled = compile_closed_two_zone_accelerator(
             plan["requirements"], geometry_profile_id=plan["geometry_profile_id"],
          geometry_profile=_load_oa_geometry_profile(plan["geometry_profile_id"]))

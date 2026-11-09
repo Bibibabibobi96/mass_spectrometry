@@ -1,5 +1,32 @@
 # 正交脉冲加速器项目状态
 
+## Installed legacy closed-focus PA planning
+
+`msplatform.backends.simion.oa_focus_plan` is the sole closed two-zone focus PA
+planner. Its CLI requires explicit campaign, component-contract and three-axis
+`--mesh-mm-per-gu` inputs; its Python API requires explicit profile content and mesh.
+The shared campaign validator is owned by
+`msplatform.components.orthogonal_accelerator.focus_campaign`; project file readers
+select their declared profile, while the installed operation reads no project default.
+
+The current MR OA-provider request explicitly declares `numerics.mesh_mm_per_gu`.
+The component workflow passes that author value into the PA plan and forwards the
+resolved mesh to its PA child. It keeps the existing two flight-numerics fields in
+the campaign: mesh is not inserted into historical campaign/projection documents.
+The former unreachable projection mesh fallback has been removed. Explicit
+`[0.25, 0.25, 0.1]` reproduces the original nineteen-electrode, x-mirrored half-domain
+plan; other finite positive meshes remain subject to the existing grid/enclosure
+checks, including exact mirrored half-span alignment.
+
+The existing leaf Python freezer now lives once in `simion/focus_python.ps1` and
+serves flight and PA-plan preparation with explicit input-name lists. The PA planner
+runs through that frozen `-I` execution boundary; cache/native lifecycle remains
+with its existing runner. This migration and software regression do not establish
+new native build, Refine, Fly, convergence or qualification. Legacy focus analysis,
+FastAdjust, parent-coupled/Dirichlet workflows and the separately recorded seed-helper
+consumer migration remain open.
+
+
 Current API2/API3 implementation declarations now name the installed
 `src/msplatform/backends/simion/accelerator_renderer.py` directly. The provider reader
 resolves that explicit package namespace from the source root while preserving

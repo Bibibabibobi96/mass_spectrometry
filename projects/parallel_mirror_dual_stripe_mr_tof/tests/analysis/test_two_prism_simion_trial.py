@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import hashlib
@@ -151,9 +152,9 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         seed = {"stripe_biases_v": [-20., 50.]}
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial"
         if parent_plan is not None:
-            from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
+            from msplatform.backends.simion.oa_focus_plan import derive
             paths["provider"].write_text(json.dumps(derive(
-                project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json")))
+                project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json", geometry_profile=load_geometry_profile(json.loads((project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])))
             paths["composition"].write_text(json.dumps(parent_plan))
         geometry_context = (nullcontext() if parent_plan is not None else
                             patch(module + "._resolve_trial_geometry", return_value=resolved))
@@ -826,11 +827,11 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         self.assertAlmostEqual(row["source_position_provider_mm"][1], -1.35182899425077)
         self.assertEqual(row["source_position_provider_mm"][2], 32.0)
         self.assertEqual(result["expected_particle_ids"], [7])
-        from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
+        from msplatform.backends.simion.oa_focus_plan import derive
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_oa_mr_direct_pose
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference import reframe_oa_mr_plan
         project = Path(__file__).resolve().parents[2]
-        actual_provider = derive(project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json")
+        actual_provider = derive(project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json", geometry_profile=load_geometry_profile(json.loads((project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         actual_contract = two_prism_simion_trial.load_contract(project / "config/simion_candidate_two_zone.json")
         parent = json.loads((project.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json").read_text())
         original_states = copy.deepcopy(selection)

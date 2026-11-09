@@ -13,7 +13,12 @@
   },
   "numerics": {
     "trajectory_quality": 8.0,
-    "maximum_step_us": 0.0005
+    "maximum_step_us": 0.0005,
+    "mesh_mm_per_gu": [
+      0.25,
+      0.25,
+      0.1
+    ]
   },
   "acceptance": {
     "required_transport_fraction": 1.0,

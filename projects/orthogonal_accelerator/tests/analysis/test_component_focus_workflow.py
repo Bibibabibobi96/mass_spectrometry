@@ -34,10 +34,27 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
                 "focus_plane_offset_from_exit_mm": 0.0,
                 "gap1_voltage_drop_bounds_v": [100.0, 1500.0],
             },
-            "numerics": self.campaign["numerics"],
+            "numerics": {**self.campaign["numerics"], "mesh_mm_per_gu": [0.25, 0.25, 0.1]},
             "acceptance": self.campaign["acceptance"],
             "simion_projection": self.campaign["simion_projection"],
         }
+
+    def test_explicit_request_mesh_roundtrip_and_missing_mesh(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request, release = root / "request.json", root / "release.json"
+            release.write_text(json.dumps(self.campaign["release_spec"]), encoding="utf-8")
+            value = self._request()
+            del value["numerics"]["mesh_mm_per_gu"]
+            request.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "explicit PA mesh"):
+                compile_workflow(request, release)
+            value["numerics"]["mesh_mm_per_gu"] = [.2, .5, .2]
+            request.write_text(json.dumps(value), encoding="utf-8")
+            result = compile_workflow(request, release)
+            self.assertEqual(result["pa_plan"]["numerical_domain"]["mesh_mm_per_gu"], [.2, .5, .2])
+            self.assertEqual(result["campaign"]["numerics"], self.campaign["numerics"])
+            self.assertEqual(result["request_sha256"], file_sha256(request).lower())
 
     def test_compiles_one_frozen_campaign_and_pa_plan_from_caller_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

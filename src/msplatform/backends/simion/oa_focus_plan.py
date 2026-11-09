@@ -1,16 +1,14 @@
 """Derive the smallest numerical domain for the closed two-zone focus PA."""
 from __future__ import annotations
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 import argparse
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
-from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
-from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
+from msplatform.components.orthogonal_accelerator.focus_campaign import validate_campaign
+from msplatform.components.orthogonal_accelerator.accelerator_time_focus import accelerator_state
 from msplatform.backends.simion.two_zone_candidate import (
     compile_closed_two_zone_accelerator,
 )
@@ -68,14 +66,14 @@ def _validate_theory_seed(campaign: dict[str, Any], layout: dict[str, Any]) -> d
             "nominal_energy_per_charge_v": state.nominal_energy_per_charge_v}
 
 
-def derive(campaign_path: Path) -> dict[str, Any]:
+def derive(campaign_path: Path, *, geometry_profile: Mapping[str, float | int], mesh_mm_per_gu: list[float]) -> dict[str, Any]:
     """Place exit/focus/end enclosure inside one PA without changing hardware.
 
     ``focus_plane_padding_mm`` is the distance from PA z=0 to the declared
     downstream focus plane.  The positive-z padding protects the closed cap.
     Both values are numerical-domain requirements, never geometry knobs.
     """
-    campaign = _load_campaign(campaign_path)
+    campaign = validate_campaign(json.loads(campaign_path.read_text(encoding="utf-8")), geometry_profile=geometry_profile)
     projection = campaign["simion_projection"]
     required = {
         "source_frame", "workbench_mapping", "local_pa_span_mm", "iob_origin_rule",
@@ -86,16 +84,12 @@ def derive(campaign_path: Path) -> dict[str, Any]:
     span = projection["local_pa_span_mm"]
     if not isinstance(span, list) or len(span) != 3:
         raise ComponentFocusPAPlanError("component focus transverse PA span is invalid")
-    mesh = projection.get("mesh_mm_per_gu")
-    # The original public campaign schema did not carry mesh. Keep it in the
-    # numerical plan contract instead of letting callers infer it from PA bytes.
-    if mesh is None:
-        mesh = [0.25, 0.25, 0.1]
+    mesh = mesh_mm_per_gu
     if not isinstance(mesh, list) or len(mesh) != 3:
         raise ComponentFocusPAPlanError("component focus PA mesh is invalid")
     declared_spans = [_positive(value, "PA span") for value in span]
     mesh_xyz = [_positive(value, "PA mesh") for value in mesh]
-    profile = load_geometry_profile(campaign["geometry_profile_id"])
+    profile = geometry_profile
     # The provider derives transverse PA extents from its closed grounded shell,
     # retaining one mesh cell on either side.  Consumers cannot waste cache
     # capacity by prescribing a larger numerical aperture.
@@ -152,7 +146,7 @@ def derive(campaign_path: Path) -> dict[str, Any]:
     declared_span_z = declared_spans[2]
     if not math.isclose(declared_span_z, resolved_span_z, rel_tol=0.0, abs_tol=1e-9):
         raise ComponentFocusPAPlanError("declared PA z span differs from focus-plane-derived numerical domain")
-    compiled = compile_closed_two_zone_accelerator(requirements, geometry_profile_id=campaign["geometry_profile_id"], geometry_profile=_load_oa_geometry_profile(campaign["geometry_profile_id"]))
+    compiled = compile_closed_two_zone_accelerator(requirements, geometry_profile_id=campaign["geometry_profile_id"], geometry_profile=profile)
     focus_local = local_exit + focus_offset
     if focus_local < focus_padding - 1e-9 or focus_local <= 0.0:
         raise ComponentFocusPAPlanError("derived focus plane is outside the PA")
@@ -191,10 +185,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--campaign", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--component-contract", type=Path, required=True)
+    parser.add_argument("--mesh-mm-per-gu", type=float, nargs=3, required=True)
     args = parser.parse_args()
     try:
-        plan = derive(args.campaign)
-    except (OSError, ValueError) as error:
+        campaign = json.loads(args.campaign.read_text(encoding="utf-8"))
+        contract = json.loads(args.component_contract.read_text(encoding="utf-8"))
+        profile = contract["geometry_profiles"][campaign["geometry_profile_id"]]
+        plan = derive(args.campaign, geometry_profile=profile, mesh_mm_per_gu=args.mesh_mm_per_gu)
+    except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"ACCELERATOR_COMPONENT_FOCUS_PA_PLAN=FAIL ERROR={error}")
         return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)

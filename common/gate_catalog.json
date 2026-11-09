@@ -2145,7 +2145,7 @@
           "reason": "installed_oa_provider_changed"
         },
         {
-          "regex": "^src/msplatform/backends/simion/(?:oa_compiler|oa_focus_source|two_zone_candidate|rectangular_accelerator|bare_three_zone_component|accelerator_renderer|accelerator_projection)\\.py$",
+          "regex": "^src/msplatform/backends/simion/(?:oa_compiler|oa_focus_source|oa_focus_plan|two_zone_candidate|rectangular_accelerator|bare_three_zone_component|accelerator_renderer|accelerator_projection)\\.py$",
           "reason": "installed_oa_backend_changed"
         }
       ],

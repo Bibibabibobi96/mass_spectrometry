@@ -96,6 +96,9 @@
     "simion/run_component_focus_fast_adjust.ps1",
     "analysis/component_focus_field_contrast.py",
     "simion/run_component_focus_field_contrast.ps1",
-    "src/msplatform/backends/simion/accelerator_renderer.py"
+    "src/msplatform/backends/simion/accelerator_renderer.py",
+    "src/msplatform/backends/simion/oa_focus_plan.py",
+    "src/msplatform/components/orthogonal_accelerator/focus_campaign.py",
+    "simion/focus_python.ps1"
   ]
 }

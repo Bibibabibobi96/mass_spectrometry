@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 import json
 import subprocess
 import sys
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from common.contracts.file_identity import file_sha256
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 
-from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive
+from msplatform.backends.simion.oa_focus_plan import derive
 from projects.orthogonal_accelerator.analysis.component_focus_pa_cache import expected_files, identity
 
 
@@ -98,7 +99,7 @@ try{. $production}catch{$failure=$_.Exception.Message}
 
     def test_focus_is_inside_domain_and_closed_end_is_padded(self) -> None:
         root=Path(__file__).resolve().parents[2]
-        plan=derive(root/'config'/'two_zone_component_focus_campaign.json')
+        plan=derive(root/'config'/'two_zone_component_focus_campaign.json', geometry_profile=load_geometry_profile(json.loads((root/'config'/'two_zone_component_focus_campaign.json').read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         domain=plan['numerical_domain']; layout=plan['layout']
         self.assertAlmostEqual(domain['focus_plane_local_z_mm'], domain['focus_plane_padding_mm'])
         self.assertGreater(domain['focus_plane_local_z_mm'], 0.0)
@@ -124,7 +125,7 @@ try{. $production}catch{$failure=$_.Exception.Message}
         self.assertAlmostEqual(plan['theory_seed']['first_order_focus_drift_mm'], 0.0, places=7)
 
     def test_identity_includes_dynamic_standalone_response_bank(self) -> None:
-        root=Path(__file__).resolve().parents[2]; plan=derive(root/'config'/'two_zone_component_focus_campaign.json')
+        root=Path(__file__).resolve().parents[2]; plan=derive(root/'config'/'two_zone_component_focus_campaign.json', geometry_profile=load_geometry_profile(json.loads((root/'config'/'two_zone_component_focus_campaign.json').read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         builder=root/'simion'/'build_component_focus_pa.lua'
         executable=Path(__file__) # identity only requires stable existing file for this static unit test
         value=identity(plan,builder,executable)
@@ -234,6 +235,77 @@ try{. $production}catch{$failure=$_.Exception.Message}
         self.assertIn('$savedRuntime.directory', reuse)
         self.assertNotIn('New-NativeFastAdjustRuntimeFamily', reuse)
         self.assertIn('New-NativeFastAdjustRuntimeFamily', create)
+
+
+
+
+class ExplicitFocusMeshTests(unittest.TestCase):
+    def test_explicit_mesh_rejects_missing_invalid_and_changes_actual_grid(self):
+        root = Path(__file__).resolve().parents[2]
+        campaign = root / "config/two_zone_component_focus_campaign.json"
+        profile = load_geometry_profile(json.loads(campaign.read_text(encoding="utf-8"))["geometry_profile_id"])
+        with self.assertRaises(TypeError):
+            derive(campaign, geometry_profile=profile)
+        for mesh in (None, [], [1, 1], [1, 1, 1, 1], [True, .25, .1], [0, .25, .1], [-1, .25, .1], [float("nan"), .25, .1], [float("inf"), .25, .1]):
+            with self.subTest(mesh=mesh), self.assertRaises(ValueError):
+                derive(campaign, geometry_profile=profile, mesh_mm_per_gu=mesh)
+        plan = derive(campaign, geometry_profile=profile, mesh_mm_per_gu=[.2, .5, .2])
+        self.assertEqual(plan["numerical_domain"]["mesh_mm_per_gu"], [.2, .5, .2])
+        self.assertEqual(plan["requirements"]["local_pa"]["mesh_mm_per_gu"], [.2, .5, .2])
+        self.assertIn("contract_mmgu_x, contract_mmgu_y, contract_mmgu_z = 0.2, 0.5, 0.2", plan["gem"])
+        self.assertEqual(plan["numerical_domain"]["mirror_axes"], ["x"])
+        self.assertEqual(plan["electrode_count"], 19)
+
+
+class FrozenFocusPlanTests(unittest.TestCase):
+    def test_actual_pa_runner_plan_cli_is_frozen_and_missing_code_fails(self):
+        repo = Path(__file__).resolve().parents[4]
+        script_text = r'''param($Repo,$Python,$Root,$Mode)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/contracts/run_artifact_support.ps1'),[ref]$null,[ref]$null)
+$copy=$support.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true)
+Invoke-Expression $copy.Extent.Text
+$repoRoot=$Repo;$projectRoot=Join-Path $Repo 'projects/orthogonal_accelerator';$python=$Python
+. (Join-Path $projectRoot 'simion/focus_python.ps1')
+[IO.Directory]::CreateDirectory((Join-Path $Root 'inputs'))|Out-Null
+[IO.Directory]::CreateDirectory((Join-Path $Root 'results'))|Out-Null
+$config=Join-Path $Root 'run_config.json'
+@{schema_version=2;inputs=@{};parameters=@{}}|ConvertTo-Json -Depth 10|Set-Content $config -Encoding utf8
+$package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results');run_config=$config}
+$frozenCampaign=Copy-VerifiedRunInput (Join-Path $projectRoot 'config/two_zone_component_focus_campaign.json') (Join-Path $package.input_dir 'campaign.json')
+$MeshMmPerGu=@(.2,.5,.2)
+$runner=Get-Content -Raw (Join-Path $projectRoot 'simion/run_component_focus_pa.ps1')
+$start=$runner.IndexOf('$frozenContract=');$end=$runner.IndexOf('$planDocument=')
+$block=$runner.Substring($start,$end-$start)
+if($Mode-eq'missing'){
+ $block=$block.Replace(' $plan=Join-Path',(' Remove-Item -LiteralPath (Join-Path $focusPython.code_root ''src/msplatform/backends/simion/oa_focus_plan.py'')'+"`n"+' $plan=Join-Path'))
+}
+. ([scriptblock]::Create($block))
+$origins=Get-Content -Raw $focusPython.origins_path|ConvertFrom-Json
+$planFact=@($origins|Where-Object{$_.module-eq'msplatform.backends.simion.oa_focus_plan'})
+if($planFact.Count-ne1){throw 'Actual PA plan CLI did not run'}
+$planFact|ConvertTo-Json -Depth 20
+'''
+        for mode in ("success", "missing"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                script = root / "frozen.ps1"
+                script.write_text(script_text, encoding="utf-8")
+                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(repo), sys.executable, str(root), mode], cwd=root,
+                                        capture_output=True, text=True, encoding="utf-8", timeout=90)
+                output = root / "results/component_focus_pa_plan.json"
+                if mode == "missing":
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertFalse(output.exists())
+                    self.assertIn("Frozen provider focus PA plan failed", result.stdout + result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    plan = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertEqual(plan["numerical_domain"]["mesh_mm_per_gu"], [.2, .5, .2])
+                    self.assertEqual(plan["electrode_count"], 19)
+                    origins = json.loads((root / "results/python_execution.json").read_text(encoding="utf-8"))
+                    fact = next(row for row in origins if row["module"] == "msplatform.backends.simion.oa_focus_plan")
+                    self.assertTrue(all(Path(path).is_relative_to(Path(fact["code_root"])) for path in fact["module_paths"].values()))
 
 
 if __name__=='__main__': unittest.main()

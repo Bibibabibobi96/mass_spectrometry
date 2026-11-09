@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
 import copy
 import json
@@ -19,7 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry
     build_analyzer_gem, resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose,
     resolve_static_iob_origins,
 )
-from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive as derive_oa_provider_plan
+from msplatform.backends.simion.oa_focus_plan import derive as derive_oa_provider_plan
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_edge_evaluators,
@@ -334,7 +335,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         provider_plan = derive_oa_provider_plan(
             PROJECT.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json"
-        )
+        , geometry_profile=load_geometry_profile(json.loads((PROJECT.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         composition_plan = json.loads((
             PROJECT.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
         ).read_text(encoding="utf-8"))
