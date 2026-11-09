@@ -82,8 +82,8 @@
     },
     "three_zone_cli": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/run_theory.py",
-      "bytes": 5746,
-      "sha256": "E3A0F8F1693BDBD77C2F00EBD30BDBE11BDE0C871277F0EFE6F5A7A940C96D25"
+      "bytes": 5750,
+      "sha256": "66FE0DC3D6563DA8B4B70FB782268626F4544787F684993A0FB4A6B073870527"
     },
     "accelerator_two_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",

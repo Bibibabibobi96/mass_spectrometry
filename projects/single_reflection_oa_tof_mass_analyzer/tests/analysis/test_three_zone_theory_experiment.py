@@ -267,13 +267,24 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
                 load_campaign(campaign_path, repository_root=PROJECT_ROOT.parents[1])
 
     def test_live_campaign_refresh_preserves_science_and_is_idempotent(self) -> None:
-        for version in ("v1", "v2"):
-            path = CAMPAIGN_PATH.with_name(f"three_zone_solver_free_funnel_{version}.json")
-            original = load_campaign(path)
-            rendered = render_campaign_authorities(path)
-            refreshed = json.loads(rendered)
-            self.assertEqual(refreshed, original)
-            self.assertEqual(rendered, path.read_text(encoding="utf-8"))
+        original = load_campaign(CAMPAIGN_PATH)
+        rendered = render_campaign_authorities(CAMPAIGN_PATH)
+        refreshed = json.loads(rendered)
+        self.assertEqual(refreshed, original)
+        self.assertEqual(rendered, CAMPAIGN_PATH.read_text(encoding="utf-8"))
+
+    def test_historical_v1_keeps_its_recorded_authorities_and_refuses_current_execution(self) -> None:
+        # The C3/J3 contract retains v1 as historical input, not a second live
+        # campaign to refresh against today's implementation.
+        path = CAMPAIGN_PATH.with_name("three_zone_solver_free_funnel_v1.json")
+        before = path.read_bytes()
+        historical = json.loads(before)
+        self.assertEqual(historical["campaign_id"], "three_zone_solver_free_funnel_v1")
+        recorded_cli = copy.deepcopy(historical["authorities"]["three_zone_cli"])
+        with self.assertRaisesRegex(ValueError, r"authority (byte count|SHA-256) differs"):
+            load_campaign(path)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(json.loads(path.read_bytes())["authorities"]["three_zone_cli"], recorded_cli)
 
     def test_missing_and_stale_provider_authorities_are_rejected(self) -> None:
         for action in ("missing", "stale"):

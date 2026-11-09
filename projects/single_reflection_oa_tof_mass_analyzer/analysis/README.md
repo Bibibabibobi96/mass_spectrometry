@@ -48,11 +48,18 @@ PA/COMSOL/SIMION/CAD重建影响，不能直接晋升Formal。
 拥有，OA 与 integration 消费同一公共 API，不复制公式。来源冻结包含所调用的独立项目源码；原有
 Formal 参数、源、资产和历史运行均不因源码归属迁移而重写。
 
-三区理想漏斗的两个获准作者合同在加速器独立化后仍由 OA 拥有；其 `authorities` 必须冻结独立提供方
-的二区、三区和几何源码。显式使用既有 `workflows.three_zone_ideal_theory.run_theory` 模块的
-`<campaign> --refresh-authorities` 更新源路径、LF 规范字节数与 SHA，再用 `--validate` 复核。
-刷新动作拒绝科学阶段参数，只更新项目 `config/experiments/` 内的作者合同，不修改科学字段或历史
-run/receipt；已有阶段证据不能在新 campaign 身份下直接续跑。缺提供方依赖或内容漂移继续失败关闭。
+The current executable three-zone funnel is `three_zone_solver_free_funnel_v2.json`.
+Its `authorities` bind the independent accelerator's two-zone, three-zone and geometry sources.
+Use the existing `workflows.three_zone_ideal_theory.run_theory` module with
+`<v2-campaign> --refresh-authorities`, then `--validate`, to refresh repository-source paths,
+canonical LF byte counts and SHA values. This authoring action accepts no scientific-stage options.
+Scientific fields and historical run/receipt bytes remain unchanged; old stage evidence cannot
+continue under a newly authored campaign identity. Missing dependencies or source drift still fail closed.
+
+The retained v1 file is historical input, as specified by the
+[C3/J3 contract](../docs/publication/paper_1_jasms/stage_c3_j3_real_field_contract.md#冻结输入与设计).
+Do not refresh it to make current execution pass or reinterpret its old T5 evidence as v2 results.
+Its present source bindings fail strict current loading; existing historical snapshots keep their own bytes.
 
 T5三区理论结果沿用`three_zone_t5_simion_candidate.py`唯一CLI进入后续Candidate。canonical发布使用
 `--run-dir artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/<candidate-run>`，并同时传入

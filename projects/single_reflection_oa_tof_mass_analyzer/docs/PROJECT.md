@@ -203,11 +203,21 @@ MATLAB 原生输出的写入授权现复用公共真实路径身份解析：现�
 理想源入口测试按实际 analyze 动作、工具、输入、seed／run 绑定及输出验收，不再读取已退役的验证等级字段。
 这项维护只修复源码／合同 CI，不产生商业求解、科学资格或重新授权。
 
-2026-10-31 已沿既有 `run_theory --refresh-authorities` 刷新活动 three-zone funnel v1／v2 的
-OA geometry 来源绑定，仅更新该来源的 LF 字节数与 SHA；科学字段和对象外文本均保持不变。
-修复前 CI 41149973792（320.267秒）因 geometry authority byte count 漂移失败；当前两相关模块
-18项纯软件回归通过（16.534秒），覆盖原拒绝漂移与刷新幂等。此为活动作者合同的新鲜度维护，
-不改旧 run／receipt，不执行原生求解，也不提升现有科学资格。
+The current executable three-zone funnel is v2. Its active authoring contract is refreshed
+through the existing `run_theory --refresh-authorities` compiler when repository-source imports change;
+strict authority byte/SHA checks remain in force. The P4 artifact-naming import migration changed
+the CLI source without updating this binding, so software verification correctly rejected it.
+The v2 refresh changes only that CLI source record, preserving all scientific fields and other authorities.
+
+V1 is retained as historical input under the C3/J3 contract and is not refreshed for current execution.
+Its current file bytes are preserved; strict loading rejects its stale source binding. Earlier maintenance
+(including the 2026-10-31 geometry refresh and later source migrations) had already updated this repository
+copy, so it must not be described as the original historical freeze. Original run/receipt snapshots retain
+their own identities. This correction does not execute scientific stages, commercial solvers or native
+SIMION, and does not confer scientific qualification. The original theory-experiment and T5 compiler
+modules passed 26 of 27 parent tests (16.965 seconds); one existing optional T5 receipt test skipped
+because `OATOF_THREE_ZONE_T5_RECEIPT` is unconfigured. Both executed subtests passed. The public
+refresh and validate commands passed, the refresh is idempotent, and non-authority fields are unchanged.
 
 ION 生成入口支持显式 `-PythonExe`，其次使用 `SIMULATION_PYTHON_EXE`，否则使用仓库 Python 3.11 环境；所选文件缺失即拒绝。Candidate 冻结源码时仍将该选择绑定为本次唯一解释器，不在后续运行重新选择。受管进程按真实 worker PID、创建身份、握手、退出和输出排空确认归属；系统 Python 的 worker 与 launcher 同 PID 合法，venv 也可能不同，不能用 PID 不等代替归属证据。
 
