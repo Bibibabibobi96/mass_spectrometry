@@ -12,7 +12,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_acceler
 
 ROOT = Path(__file__).resolve().parents[4]
 PROJECT = ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
-OA = ROOT / "src/msplatform/backends/comsol/resources"
+OA = ROOT / "src/msplatform/backends/comsol/matlab"
 
 
 def source(name):

@@ -12,7 +12,7 @@ from msplatform.backends.simion.resources import native_resource_path
 PROJECT = Path(__file__).resolve().parents[2]
 LUA = Path('C:/Program Files/SIMION-2020/lua.exe')
 EXPORT = native_resource_path('export_paired_accelerator_field.lua')
-COMSOL = Path(__file__).resolve().parents[4] / 'src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m'
+COMSOL = Path(__file__).resolve().parents[4] / 'src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m'
 
 
 class PairedFieldAdapterTests(unittest.TestCase):

@@ -12,8 +12,9 @@ classdef OaTofSolverPolicyTest < matlab.unittest.TestCase
             projectRoot = fileparts(fileparts(testDir));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(projectRoot,'comsol')));
             repositoryRoot=fileparts(fileparts(projectRoot));
-            resourceRoot=fullfile(repositoryRoot,'src','msplatform','backends','comsol','resources');
+            resourceRoot=fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab');
             addpath(resourceRoot); testCase.addTeardown(@() rmpath(resourceRoot));
+            testCase.assertEqual(which('oatof_cpt_solver_policy'),fullfile(resourceRoot,'oatof_cpt_solver_policy.m'));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(testDir,'test_support')));
         end
     end

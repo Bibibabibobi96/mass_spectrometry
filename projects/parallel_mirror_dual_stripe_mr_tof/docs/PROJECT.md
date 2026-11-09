@@ -73,8 +73,8 @@ IP交接、实测源及实测分析现直接调用`msplatform.analysis.particle_
 峰形、刚体变换与中立状态消费者均直接调用安装canonical实现；三份旧公共桥删除，门禁仍覆盖原消费者范围。
 
 IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并保留实际仍调用的
-`resolve_assembly`、`release` 及
-`resource_profile` 仍导入的 `resource_scheduler` 三个兼容桥；刚体变换与粒子物理旧桥均已退出。
+`resolve_assembly`、`release`；调度职责已由 `msplatform.execution.simion_dispatch` 承担，
+生命周期职责直接使用 `msplatform.execution.run_capacity_lifecycle`，相关旧桥均已退出。
 机器合同校验直接使用安装实现，仓库路径边界与科学校验保持分离。
 runner 使用公共导入根，并在每次 Python 调用前校验核心及目标模块来自本次快照；
 缺少冻结核心时拒绝宿主安装补齐。上述桥随具名调用迁移退出，最迟 P4 删除。
@@ -87,7 +87,7 @@ MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒）�
 `msplatform.backends.comsol.corridor_field` 实现；项目 `comsol/run_corridor_field_provider.ps1`
 仍是唯一原生执行入口，显式传入仓库根、runner 路径和安装资源目录。四个 MATLAB 文件
 `candidate_field.m`、`update_corridor_workpoint_voltages.m`、`export_corridor_scalar_field.m`、
-`classify_corridor_conductor_voltage.m` 唯一保存在 `msplatform/backends/comsol/resources`；
+`classify_corridor_conductor_voltage.m` 唯一保存在 `msplatform/backends/comsol/matlab`；
 旧项目 Python 与同份 MATLAB 副本已退役，不保留转发。
 
 科学几何、电压、binding 与 manifest 校验仍属 MR owner。真实科学算法位于

@@ -5,7 +5,7 @@ testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
 repositoryRoot = fileparts(fileparts(projectRoot));
 addpath(projectRoot, fullfile(projectRoot, 'comsol'), ...
-    fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
+    fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
 cleanup = onCleanup(@() fclose(fid));

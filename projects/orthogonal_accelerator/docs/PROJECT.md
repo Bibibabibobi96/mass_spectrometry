@@ -255,7 +255,7 @@ Python进程OS lifetime峰值工作集33,173,504 B包含解释器／import／pro
 
 ### 可安装COMSOL原生资源切片
 
-方形加速器的实体与零厚栅COMSOL helper已迁入`msplatform.backends.comsol/resources/`，由oa-TOF静态场、
+方形加速器的实体与零厚栅COMSOL helper已迁入`msplatform.backends.comsol/matlab/`，由oa-TOF静态场、
 候选和Formal几何入口共同消费；旧项目副本已退役。迁移保持原几何构造与调用参数，不授予新的原生场、
 保存重开、GUI/CAD或独立器件资格。
 

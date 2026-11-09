@@ -282,7 +282,7 @@ def materialize_comsol_task(plan_path: Path,output_dir: Path,code_root: Path,sav
     plan_path,output_dir,code_root=plan_path.resolve(strict=True),output_dir.resolve(),code_root.resolve(strict=True)
     output_dir.mkdir(parents=True,exist_ok=True)
     quote=lambda p: "'"+Path(p).as_posix().replace("'","''")+"'"
-    folder=code_root/"src/msplatform/backends/comsol/resources"
+    folder=code_root/"src/msplatform/backends/comsol/matlab"
     args=[quote(plan_path),quote(output_dir)]
     if saved_particle_model is not None:
         args.append(quote(saved_particle_model.resolve()))

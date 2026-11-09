@@ -230,8 +230,12 @@ through the existing stage-policy validator and freezes their provenance in the 
 24 platform tests and real wheel/sdist outside-tree probe passed (143.242 seconds for installation).
 Results ownership, remaining native rollout and the original performance targets remain OPEN.
 No new COMSOL/SIMION, GUI or Formal qualification is claimed by this takeover. MATLAB R2025b rejected
-the migrated helper directory named `resources` before executing tests; its canonical layout correction
-and actual helper-class acceptance remain separate from package delivery/text checks.
+the migrated helper directory named `resources` before executing tests. The eleven byte-identical sources
+now use the canonical `matlab` directory, with selectors, wheel metadata, callers, frozen declarations
+and original tests migrated together. Three helper classes passed all 38 MATLAB cases with exact function
+origins; the original path/folder and public GATE lease were restored. Complete installed acceptance
+then passed all five tests (142.756 seconds), including ordinary wheel and sdist-rebuilt-wheel consumers
+using the installed MATLAB directory. These are helper/software and delivery checks, not native model solves.
 科学事件CSV writer已从`common/simion`迁入安装SIMION backend；IP、OA、MR、联合飞行及测试直接冻结新位置，
 原1688字节及SHA保持，运行内相对别名、列、精度、flush与错误拒绝语义不变。
 公共`voltage_waveforms.lua`与`rf_drive.lua`旧转发器现已删除，真实Lua消费者、RF路由及原冻结消费者直接绑定安装实现；

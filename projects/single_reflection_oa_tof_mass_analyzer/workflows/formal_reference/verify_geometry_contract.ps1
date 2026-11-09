@@ -45,9 +45,9 @@ $comsolSources = @(
   (Join-Path $comsolSourceDir 'run_oatof_model.m')
 ) + @(Get-ChildItem -LiteralPath $comsolSourceDir -Filter 'oatof_*.m' -File |
   Select-Object -ExpandProperty FullName)
-$acceleratorComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\resources\build_sectioned_geometry.m'
-$acceleratorGridComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\resources\build_accelerator_grids.m'
-$acceleratorGeometryComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\resources\oatof_build_accelerator_geometry.m'
+$acceleratorComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\build_sectioned_geometry.m'
+$acceleratorGridComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\build_accelerator_grids.m'
+$acceleratorGeometryComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\oatof_build_accelerator_geometry.m'
 $comsolSources += @($acceleratorComsolSource, $acceleratorGridComsolSource, $acceleratorGeometryComsolSource)
 $simionLua = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.lua'
 $simionFly2 = Join-Path $componentDir 'simion\workbench\formal\oatof_ideal_grounded.fly2'

@@ -255,7 +255,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         task = root / "inputs/cold_postprocess.m"
         result_path = output / "cold_postprocess_result.json"
         task.write_text("addpath("+quote(project)+","+quote(str(Path(project)/"comsol"))+","
-                        +quote(str(Path(code)/"src/msplatform/backends/comsol/resources"))+");\n"
+                        +quote(str(Path(code)/"src/msplatform/backends/comsol/matlab"))+");\n"
                         "request=jsondecode(fileread("+quote(execution_path(request_path))+"));\n"
                         "request.output_dir="+quote(execution_path(output))+";request.child_run_directory="+quote(str(execution))+";\n"
                         "request.model_path="+quote(native_model)+";request.context_path="+quote(native_context)+";\n"

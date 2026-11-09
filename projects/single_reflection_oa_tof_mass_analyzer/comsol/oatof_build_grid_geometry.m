@@ -6,7 +6,7 @@ projectRoot = fileparts(fileparts(mfilename('fullpath')));
 repositoryRoot = fileparts(fileparts(projectRoot));
 previousPath = path;
 restorePath = onCleanup(@() path(previousPath)); %#ok<NASGU>
-addpath(fullfile(repositoryRoot,'src','msplatform','backends','comsol','resources'));
+addpath(fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab'));
 if nargin < 3, geometry=struct(); end
 sheets=struct('tag',{'wp_grid1','wp_grid2'},'z',{'z_accel_grid1','z_accel_grid2'}, ...
     'width',{'2*(accel_shield_half-accel_ring_gap)','2*accel_shield_half'}, ...

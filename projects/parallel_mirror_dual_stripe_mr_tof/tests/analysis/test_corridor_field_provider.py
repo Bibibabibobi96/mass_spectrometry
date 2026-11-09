@@ -691,7 +691,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
             for name in resource_names:
                 (original / name).write_bytes(
                     (Path(__file__).resolve().parents[4] /
-                     "src/msplatform/backends/comsol/resources" / name).read_bytes()
+                     "src/msplatform/backends/comsol/matlab" / name).read_bytes()
                 )
             with patch(module + ".native_resource_path", side_effect=lambda name: original / name):
                 run, plan = self.candidate()

@@ -105,9 +105,9 @@ RELATIVE_PATHS = (
     "projects/orthogonal_accelerator/analysis/component_contract.py",
     "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
     "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
-    "src/msplatform/backends/comsol/resources/build_sectioned_geometry.m",
+    "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
     "projects/orthogonal_accelerator/config/component_contract.json",
-    "src/msplatform/backends/comsol/resources/build_accelerator_grids.m",
+    "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m",
     "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
     "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
     "common/ion_release/dotnet_gaussian_box_ion11.py",
@@ -121,7 +121,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/cad/ms_export_oatof_to_solidworks.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/oatof_cad_export_manifest.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/configure_oatof_segmented_output.m",
-    "src/msplatform/backends/comsol/resources/oatof_build_accelerator_geometry.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_detector_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_drift_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
@@ -137,13 +137,13 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_particle_plot_view.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_reflectron_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_configure_particle_model.m",
-    "src/msplatform/backends/comsol/resources/oatof_cpt_solver_policy.m",
+    "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_create_result_nodes.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_extract_detector_arrivals.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
-    "src/msplatform/backends/comsol/resources/oatof_read_cartesian_release.m",
+    "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
     "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_DELIVERY_CHECKLIST.md",
@@ -554,11 +554,11 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         "comsol/oatof_build_reflectron_geometry.m", "comsol/oatof_configure_particle_model.m",
         "comsol/oatof_parse_field_idealization.m"))
     native_names += ("common/comsol/add_comsol_size_feature.m",
-        "src/msplatform/backends/comsol/resources/oatof_cpt_solver_policy.m",
-        "src/msplatform/backends/comsol/resources/oatof_read_cartesian_release.m",
-        "src/msplatform/backends/comsol/resources/oatof_build_accelerator_geometry.m",
-        "src/msplatform/backends/comsol/resources/build_sectioned_geometry.m",
-        "src/msplatform/backends/comsol/resources/build_accelerator_grids.m")
+        "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
+        "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
+        "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
+        "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
+        "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m")
     export_names = tuple(prefix+name for name in (
         "workflows/design_candidate/run_candidate_contract_build.m",
         "comsol/oatof_build_model_core.m", "comsol/oatof_postprocess_saved_solution.m", "comsol/reextract_oatof_saved_solution.m",
@@ -574,7 +574,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         or name.startswith(("src/msplatform/analysis/", "src/msplatform/io/"))))
     analysis_names += ("common/contracts/file_identity.py",prefix+"config/analysis_contract.json")
     sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
-                  prefix+"load_oatof_contract.m", "src/msplatform/backends/comsol/resources/oatof_cpt_solver_policy.m")
+                  prefix+"load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     return {"native": {"sources": records(native_names),
                         "implementation": project_comsol_native_implementation(closure),
                         "dispatch": project_comsol_dispatch(closure,"native"),

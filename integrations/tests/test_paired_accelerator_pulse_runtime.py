@@ -309,7 +309,7 @@ assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by 
             text=Path(tasks["matlab"]).read_text()
             self.assertIn(saved.resolve().as_posix(),text)
             self.assertIn("run_paired_accelerator_pulse(",text)
-            self.assertIn((ROOT/"src/msplatform/backends/comsol/resources").as_posix(),text)
+            self.assertIn((ROOT/"src/msplatform/backends/comsol/matlab").as_posix(),text)
             self.assertNotIn(".run",text)
             self.assertFalse(saved.exists())
 

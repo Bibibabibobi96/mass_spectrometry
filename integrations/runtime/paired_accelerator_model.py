@@ -132,7 +132,7 @@ def load_paired_static_model_source(
         raise ValueError('native COMSOL fact does not bind the source plan/model')
     backend_candidates = [
         Path('projects/single_reflection_oa_tof_mass_analyzer/comsol/build_and_export_paired_accelerator_field.m'),
-        Path('src/msplatform/backends/comsol/resources/build_and_export_paired_accelerator_field.m'),
+        Path('src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m'),
     ]
     backend_matches = [path for path in backend_candidates if any(
         record_path(row, base_dir=base) == (base/'inputs/runtime_snapshot'/path).resolve() for row in records)]

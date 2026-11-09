@@ -139,7 +139,11 @@ assert (root/'uniform.lua').read_bytes() == cone['uniform_lua'].encode()
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field
 assert callable(corridor_field.compile_request)
-from msplatform.backends.comsol.resources import native_resource_text
+from msplatform.backends.comsol.resources import native_resource_directory, native_resource_path, native_resource_text
+import msplatform.backends.comsol as comsol_backend
+matlab_directory = native_resource_directory().resolve()
+assert matlab_directory == pathlib.Path(comsol_backend.__file__).resolve().parent / "matlab"
+assert matlab_directory.is_relative_to(pathlib.Path(sysconfig.get_path("purelib")).resolve())
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 assert callable(load_contract)
 candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict(s1=1., s2=2., p1=3., p2=4.))
@@ -150,6 +154,8 @@ for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_acceler
              'build_sectioned_geometry.m', 'build_accelerator_grids.m', 'run_paired_accelerator_pulse.m',
              'oatof_read_cartesian_release.m', 'oatof_cpt_solver_policy.m'):
     text = native_resource_text(name)
+    assert native_resource_path(name).resolve() == matlab_directory / name
+    assert native_resource_path(name).read_bytes() == text.encode('utf-8')
     assert text.startswith('function') and 'mfilename' not in text
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem

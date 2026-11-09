@@ -6,11 +6,13 @@ testDir = fileparts(testSupportDir);
 detectorSuite = testsuite(fullfile(testDir, 'OaTofDetectorArrivalTest.m'));
 fieldSuite = testsuite(fullfile(testDir, 'OaTofFieldIdealizationTest.m'));
 solverSuite = testsuite(fullfile(testDir, 'OaTofSolverPolicyTest.m'));
+cartesianSuite = testsuite(fullfile(testDir,'OaTofCartesianReleaseTest.m'));
+pulseSuite = testsuite(fullfile(testDir,'OaTofPairedAcceleratorPulseTest.m'));
 plotSuite = testsuite(fullfile(testDir,'OaTofParticlePlotViewTest.m'));
 validationSuite = testsuite(fullfile(testDir,'OaTofCandidateSolutionValidationTest.m'));
 timingSuite = testsuite(fullfile(testDir,'OaTofModelTimingReportTest.m'));
 saveSuite = testsuite(fullfile(testDir,'OaTofGuiSaveCompletionTest.m'));
-suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).',plotSuite(:).',validationSuite(:).',timingSuite(:).',saveSuite(:).'];
+suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).',cartesianSuite(:).',pulseSuite(:).',plotSuite(:).',validationSuite(:).',timingSuite(:).',saveSuite(:).'];
 results = run(suite);
 
 fid = fopen(reportPath, 'w');

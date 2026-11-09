@@ -1,7 +1,7 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 componentDir = fileparts(fileparts(mfilename('fullpath')));
 repositoryRoot = fileparts(fileparts(componentDir));
-addpath(componentDir, fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
+addpath(componentDir, fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
 paths = oatof_paths();
 contractPath = getenv('OATOF_CONTRACT_PATH');
 if isempty(contractPath)

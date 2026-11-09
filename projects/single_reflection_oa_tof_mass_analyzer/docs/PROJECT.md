@@ -11,7 +11,7 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 ### 可安装COMSOL原生资源切片
 
 OA-only配对静态场的MATLAB构建/导出器及加速器实体、仪器投影和零厚栅helper的唯一实现位于
-`msplatform.backends.comsol/resources/`。活动静态场任务通过`native_resource_directory()`安装路径调用；
+`msplatform.backends.comsol/matlab/`。活动静态场任务通过`native_resource_directory()`安装路径调用；
 候选与Formal几何继续使用同一组helper，项目旧副本已退役。公共`common/comsol/add_comsol_size_feature.m`
 保持共享网格依赖。本次只迁移源码与软件接线，不新增MPH、原生求解、保存重开、GUI/CAD或科学资格。
 
@@ -20,11 +20,23 @@ paired静态场SIMION采样器和paired脉冲SIMION回调现唯一保存在`mspl
 旧manifest所绑定的项目路径仅用于历史完成结果只读复用，不改写历史记录。采样坐标、`pa:field_vc`
 符号、脉冲时钟与回调、Program嵌入顺序及Lua原始字节保持；本迁移不启动场求解或Fly。
 
-paired CPT主脚本、Cartesian释放读取与CPT步策略helper的唯一实现现位于`msplatform.backends.comsol/resources/`。
+paired CPT主脚本、Cartesian释放读取与CPT步策略helper的唯一实现现位于`msplatform.backends.comsol/matlab/`。
 普通构建、Candidate源码闭包、同步、重追踪、冷后处理和MATLAB测试均显式加入该安装目录；paired任务只生成新位置调用。
 三份MATLAB原始字节、算法、原生读回及原ID语义保持，项目旧副本退役且无转发；本次不启动COMSOL求解或GUI。
-四份测试的backend资源路径已改为从实际仓库根进入`src/msplatform/backends/comsol/resources`，不再落到
-`projects/src`；这只修正测试路径接线，尚需当前MATLAB运行结果确认实际函数来源。
+Actual R2025b execution exposed a second path defect: MATLAB refuses a folder named `resources`
+on its search path. All eleven installed MATLAB sources now use the ordinary `matlab` directory;
+the resource selector, wheel metadata, active launchers, frozen declarations and tests use that same
+location. The eleven source files retain their original bytes and SHA values; historical snapshots are
+unchanged. The SolverPolicy, CartesianRelease and PairedAcceleratorPulse class fixtures assert actual
+function origins, and the existing software runner includes all three classes. This is a source-layout
+repair; COMSOL models, field/particle solves and scientific qualification require separate evidence.
+Official basis: [MathWorks genpath](https://www.mathworks.com/help/matlab/ref/genpath.html), checked
+2026-11-09; the installed R2025b `toolbox/matlab/general/genpath.m` excludes `resources`, and the
+runtime refused its `addpath` before any tests ran. Real R2025b software verification passed all 38 selected SolverPolicy, CartesianRelease and
+PairedAcceleratorPulse cases (27.2856221 seconds; zero failures or incomplete tests). Before and after
+the run, `which` resolved all three production functions to this canonical `matlab` directory.
+The original MATLAB path and current folder were restored and the public GATE lease was released.
+No COMSOL server/model, field solve, particle solve, SIMION or GUI was started.
 
 飞行管、反射镜和检测器variant Lua旧项目路径原先仅转发安装实现；实际smoke、冻结依赖、集成及物理测试现已直接消费新位置，
 三份旧桥已删除。新原生builder字节、错误拒绝及fast_adjust输入不变；本切片未启动SIMION或生成PA。
@@ -63,7 +75,7 @@ This is bounded software evidence, not wheel/sdist, native solver or scientific 
 项目粒子物理消费者及Candidate闭包直接使用`msplatform.contracts.particle_physics`，常量、公式和冻结身份边界不变。
 机器合同科学函数直接使用安装实现；真实checkout根从`common.paths.repository_root`取得，不进入可安装科学核心。
 
-活动三区理论campaign v1/v2只通过既有`render_campaign_authorities`刷新六项源码身份，
+活动三区理论campaign v2只通过既有`render_campaign_authorities`刷新六项源码身份，
 科学数值、阶段、资格与阈值保持；旧run和冻结输入不回写，缺失、过期或篡改来源仍拒绝。
 质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
 不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。
@@ -283,7 +295,7 @@ API调压、保存与独立重开通过，后继整机已越过该调压点。�
 | 提供者与冻结Candidate回归 | 几何、电压、半cell网格、源码闭包及退出码保真；既有baseline序列化保持 | 新Refine/Fly或Formal资格；旧12位电压文本构建场不能自动继承新源码资格 |
 | 共同静态场比较 | 按唯一point_id对齐完整坐标／电场，比较与显示机制闭合 | 没有获批容差时仅为COMPARISON_COMPLETE，不判场等价 |
 | [完整组件几何保存、重开及STEP][geometry-only-evidence] | 45域／40物理对象，整包及独立STEP发布，geometry_save_reopen_step_only | 上游多极杆、SolidWorks、ES/CPT/Fly及Formal；该run未做人工GUI，当前代码对等与CAD范围见[集成交付边界](../../../integrations/docs/INTEGRATION.md#工程几何与gui边界) |
-| OA-only共同场有限脉冲 | [消费者](../../../src/msplatform/backends/comsol/resources/run_paired_accelerator_pulse.m)已读取已解ES和实录Cartesian源；真实N100 CPT及状态导出见[集成状态](../../../integrations/docs/INTEGRATION.md#共同场与有限脉冲) | 完整反射器仪器、RF等价、检测命中、GUI/CAD或Formal资格 |
+| OA-only共同场有限脉冲 | [消费者](../../../src/msplatform/backends/comsol/matlab/run_paired_accelerator_pulse.m)已读取已解ES和实录Cartesian源；真实N100 CPT及状态导出见[集成状态](../../../integrations/docs/INTEGRATION.md#共同场与有限脉冲) | 完整反射器仪器、RF等价、检测命中、GUI/CAD或Formal资格 |
 | 有限ON/OFF微例程 | 具名均匀场单粒子解析对照及保存重开通过，失败前驱原样保留 | 仪器默认数值配置或通用误差界；操作与冻结判据见[COMSOL说明](COMSOL.md#有限脉冲微型回归) |
 
 仍需在所选配方中核对分析器与OA实例边界，避免重复装入加速器；关闭条件是原分段／连续工作流的

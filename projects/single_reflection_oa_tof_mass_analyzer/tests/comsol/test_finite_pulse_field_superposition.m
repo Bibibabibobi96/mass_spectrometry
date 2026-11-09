@@ -11,7 +11,7 @@ runDir = fileparts(reportPath);
 testDir = fileparts(mfilename('fullpath'));
 repositoryRoot = fileparts(fileparts(fileparts(fileparts(testDir))));
 addpath(fullfile(fileparts(fileparts(testDir)), 'comsol'));
-addpath(fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'resources'));
+addpath(fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
 detailPath = fullfile(runDir,'finite_pulse_field_superposition.log');
 fid = fopen(detailPath, 'w');
 assert(fid >= 0, 'Cannot open probe detail report.');

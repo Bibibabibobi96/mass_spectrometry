@@ -9,8 +9,9 @@ classdef OaTofCartesianReleaseTest < matlab.unittest.TestCase
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(projectRoot));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(projectRoot,'comsol')));
             repositoryRoot=fileparts(fileparts(projectRoot));
-            resourceRoot=fullfile(repositoryRoot,'src','msplatform','backends','comsol','resources');
+            resourceRoot=fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab');
             addpath(resourceRoot); testCase.addTeardown(@() rmpath(resourceRoot));
+            testCase.assertEqual(which('oatof_read_cartesian_release'),fullfile(resourceRoot,'oatof_read_cartesian_release.m'));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.path=fullfile(fixture.Folder,'cartesian.csv');
             testCase.release=array2table([17,100,1,-14,0,-18,3000,-45,90,5; ...
