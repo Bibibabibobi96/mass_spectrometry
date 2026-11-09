@@ -292,7 +292,7 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 候选目录仅是求解输入，不表示已经求场或完成出口匹配。
 
 外层主机`flight`租约只管理整项重任务的准入；粒子worker并发由公共
-`common.simion.resource_scheduler`、`common.simion.particle_batching`及
+`common.simion.resource_scheduler`、`msplatform.backends.simion.particle_batching`及
 `Invoke-ResourceBudgetedProcesses`决定。未知资源身份先保留首正式批，观测峰值后重规划；
 不在项目固定并发路数或以PA磁盘大小代替进程峰值。
 观测后的准备或调度错误会停止新worker启动，但不会中止仍健康的首正式worker；运行器等待其自然终态，

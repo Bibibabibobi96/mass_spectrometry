@@ -602,6 +602,13 @@ CI 41181531874 的失败记录仍保留，本修正不是完整软件性能或�
 
 MR analytical and native-geometry callers now import the installed OA two-zone renderer. Existing source inventories also retain its three canonical backend files; geometry/voltage semantics and historical runs remain unchanged. This migration does not establish new MR native or frozen-execution qualification.
 
+### Installed batching dependency
+
+Active batching callers now consume the sole installed
+`msplatform.backends.simion.particle_batching` implementation. Existing batch
+plans, ID rebasing, emission ordering and project-owned scientific checks are
+unchanged. This migration provides no new native or scientific qualification.
+
 ### IP/prism placeholder source ownership
 
 IP/prism preparation keeps the structural IOB under the canonical installed

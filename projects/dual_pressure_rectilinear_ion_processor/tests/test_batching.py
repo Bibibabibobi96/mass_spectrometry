@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from msplatform.execution.resources import resource_path
+from msplatform.execution.inputs import python_import_roots
 from msplatform.execution import ip_continuation
 from msplatform.io import manifest_records
 import tempfile
@@ -18,7 +19,7 @@ import zipfile
 
 from common.contracts import verify_run_manifest, write_run_manifest
 from common.contracts.file_identity import file_sha256
-from common.simion.particle_batching import batch_plan_from_dispatch
+from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
@@ -363,7 +364,8 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
 """, encoding="utf-8")
         result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(PROJECT.parents[1]),
             str(runner), str(self.run), sys.executable], cwd=PROJECT.parents[1], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=30)
+            encoding="utf-8", errors="replace", timeout=30,
+            env={**os.environ,"PYTHONPATH":os.pathsep.join(python_import_roots(PROJECT.parents[1])),"PYTHONNOUSERSITE":"1"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("FORMAL_GUARDED_IDENTITY=PASS", result.stdout)
 

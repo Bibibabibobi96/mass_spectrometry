@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import subprocess
 import tempfile
 import unittest
@@ -8,7 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.write_run_manifest import file_record
-from common.simion.particle_batching import plan_single_wave_batches
+from msplatform.execution.inputs import python_import_roots
+from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages import render_lua_profile
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation import run_compensation as study
 
@@ -275,10 +277,11 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.write(run / "inputs/compensation_plan.json", plan)
         result = study.freeze_inputs(run)
         code = Path(result["frozen_code_root"])
-        command = ("import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import "+study.MODULE+
+        command = ("import sys,json;from pathlib import Path;sys.path[:0]=json.loads(sys.argv.pop(1));import "+study.MODULE+
                    " as m;assert Path(m.__file__).is_relative_to(Path(sys.argv[1]));"
+                   "assert all(Path(v.__file__).resolve().is_relative_to(Path(sys.argv[1])/'src') for k,v in sys.modules.items() if k.startswith('msplatform') and getattr(v,'__file__',None));"
                    "assert m.export_specification(Path(sys.argv[2]))['name']=='reflectron_axis_basis'")
-        subprocess.run([sys.executable, "-B", "-c", command, str(code), str(run)], cwd=code, timeout=60,
+        subprocess.run([sys.executable, "-I", "-c", command,json.dumps(python_import_roots(code)), str(code), str(run)], cwd=code, timeout=60,
                        check=True, capture_output=True, text=True, encoding="utf-8")
         self.assertTrue(result["basis_export_required"])
         self.assertFalse((run / "simion").exists())

@@ -25,12 +25,12 @@ from integrations.tests.test_single_reflection_program import field_observation_
 from integrations.tests.test_single_reflection_geometry import reframe_parent
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.workflows.single_reflection_flight import field_evidence
-from integrations.workflows.single_reflection_flight import downstream_fields, runtime
+from integrations.workflows.single_reflection_flight import runtime
 from integrations.workflows.single_reflection_flight.field_plan import frontend_field_identity
 from integrations.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
-from common.simion.particle_batching import plan_single_wave_batches
+from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from common.contracts.write_run_manifest import file_record
 from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 from integrations.runtime.build_single_flight_program import (
@@ -370,7 +370,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
             **file_record(terminal_manifest), "source_path": str(self.producer / "run_manifest.json")}
         with patch.object(runtime, "file_record", side_effect=AssertionError("PA source must not be rehashed")), \
                 patch.object(runtime.shutil, "copyfile", side_effect=AssertionError("PA source must not be copied")):
-            carriers, _, guards = downstream_fields.load_downstream_fields(
+            carriers, _, guards = field_evidence.load_downstream_fields(
                 self.preparation["input_records"]["downstream_fields"],
                 instance_design_record(self.preparation, native_frontend_instances(self.geometry['composition_plan'])[1]),
                 self.preparation["input_records"]["downstream_fields_manifest"])
@@ -395,7 +395,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
                 source = {**file_record(frozen_receipt), "source_path": str(alias / "field_receipt.json")}
                 manifest = {**file_record(terminal_manifest), "source_path": str(self.producer / "run_manifest.json")}
                 with self.assertRaises(ValueError):
-                    downstream_fields.load_downstream_fields(source, instance_design_record(self.preparation, native_frontend_instances(self.geometry['composition_plan'])[1]), manifest)
+                    field_evidence.load_downstream_fields(source, instance_design_record(self.preparation, native_frontend_instances(self.geometry['composition_plan'])[1]), manifest)
 
     @unittest.skipUnless(os.name == "nt", "Windows execution junction semantics")
     def test_workbench_uses_absolute_execution_paths_without_internal_junctions(self):

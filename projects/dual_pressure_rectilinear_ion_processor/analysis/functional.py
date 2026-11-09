@@ -56,7 +56,7 @@ FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
 FROZEN_RUNTIME_MODULES = (
     "src/msplatform/execution/simion_dispatch.py",
     "common/simion/resource_profile.py",
-    "common/simion/particle_batching.py",
+    "src/msplatform/backends/simion/particle_batching.py",
 )
 PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENTS = ["source", "hp_enter", "capture", "transfer", "pre_extraction", "extraction_exit", "terminal"]

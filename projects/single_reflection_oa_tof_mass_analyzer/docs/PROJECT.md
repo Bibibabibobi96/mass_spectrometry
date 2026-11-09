@@ -997,3 +997,10 @@ GUI同路径保存的开始／完成事实沿现小context记录：唯一初始r
 真实展开输入、完整科学组和树外 `-I` 无仓库/backend/host 导入。初轮真实例子中 ground
 实体数误当 pointer 数的断言失败、以及资源迁移期间旧 GEM 路径失败均保留；最终对应断言已通过。
 该结果不是普通 wheel/sdist、原生执行、Formal 或整个 P3 的验收，后续由统一安装/API 链验证。
+
+### Installed batching dependency
+
+Active batching callers now consume the sole installed
+`msplatform.backends.simion.particle_batching` implementation. Existing batch
+plans, ID rebasing, emission ordering and project-owned scientific checks are
+unchanged. This migration provides no new native or scientific qualification.

@@ -708,6 +708,21 @@ assert collection_receipt['output_records']['collection.json']['sha256'].upper()
 assert actual_collection['native_complete'] is True and len(actual_collection['native_terminals']) == 100
 assert actual_collection['claim'] == 'canonical census only; no peak/bootstrap or physical qualification'
 
+# Plan whole-unit recovery from an explicit external predecessor; no native action.
+from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+from msplatform.backends.simion import particle_batching
+continuation_case=fixture['single_reflection_continuation'][int(sys.argv[2])]
+continuation=prepare_phase_continuation(continuation_case['preparation'],continuation_case['workbench'],pathlib.Path(continuation_case['run']),'baseline')
+assert continuation == continuation_case['expected']
+assert continuation['plan']['reusable_unit_count'] == 2 and continuation['plan']['replay_unit_count'] == 0
+assert len(continuation['source_record']['sha256']) == 64
+assert continuation_case['preparation']['default_replay_requested'] is False
+assert prepare_phase_continuation(continuation_case['preparation'],continuation_case['workbench'],pathlib.Path(continuation_case['run']),'default_replay') is None
+batching_output=root/('installed-batch-plan-'+sys.argv[2]+'.json')
+batched=subprocess.run([sys.executable,'-I','-m','msplatform.backends.simion.particle_batching','--particle-count','100','--batch-count','3','--output',str(batching_output)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+assert batched.returncode == 0,batched.stdout+batched.stderr
+assert json.loads(batching_output.read_text(encoding='utf-8')) == particle_batching.plan_single_wave_batches(100,3)
+
 missing_rejected = []
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
@@ -776,6 +791,7 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
                      author_tree_reads_blocked=True,
                      single_reflection_preparation_modes=workflow_modes,
                      installed_single_reflection_collection=True,
+                     installed_single_reflection_continuation=True,installed_particle_batching_cli=True,
                      missing_resources_rejected=missing_rejected)))
 '''
 
@@ -875,6 +891,45 @@ class InstalledScientificCoreTests(unittest.TestCase):
         for records in invalid:
             with self.subTest(records=records),self.assertRaisesRegex(ValueError,'canonical decimal key'):
                 decode(records)
+
+    def single_reflection_continuation_probe_fixture(self) -> list[dict]:
+        from integrations.tests.test_single_reflection_continuation import SingleReflectionContinuationTests
+        from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+        cases=[]
+        for _ in range(2):
+            case=SingleReflectionContinuationTests()
+            case.setUp()
+            self.addCleanup(case.doCleanups)
+            current=case._current_workbench()
+            # Freeze the fixture's actual projection dependency before publishing
+            # its predecessor; no installed action may read the author package.
+            projection=Path(current['batches'][0]['program_path_projection_record']['path'])
+            frozen_projection=case.workbench_fixture.root/'frozen-native-run-path.lua'
+            shutil.copyfile(projection,frozen_projection)
+            assert frozen_projection.read_bytes()==projection.read_bytes()
+            def bind_projection(value):
+                if isinstance(value,dict):
+                    if value.get('path')==str(projection) and 'sha256' in value:
+                        value['path']=str(frozen_projection)
+                    for child in value.values():bind_projection(child)
+                elif isinstance(value,list):
+                    for child in value:bind_projection(child)
+            bind_projection(current)
+            case._parent(current)
+            case.preparation['default_replay_requested']=False
+            request_path=Path(case.preparation['input_records']['request']['path'])
+            request=json.loads(request_path.read_text(encoding='utf-8'))
+            request['verify_saved_workbench_replay']=False
+            request_path.write_text(json.dumps(request),encoding='utf-8')
+            from msplatform.io.manifest_records import file_record
+            case.preparation['input_records']['request']=file_record(request_path)
+            expected=prepare_phase_continuation(case.preparation,current,case.run,'baseline')
+            # Remove only this fixture's just-created consumer planning outputs;
+            # the installed call must construct its own plan from the bound parent.
+            generated=case.run/'inputs/continuation'
+            shutil.rmtree(generated)
+            cases.append(dict(preparation=case.preparation,workbench=current,run=str(case.run),expected=expected))
+        return cases
 
     def single_reflection_collection_probe_fixture(self) -> dict:
         from integrations.tests.test_single_reflection_collection import SingleReflectionCollectionTests
@@ -1220,6 +1275,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
+                                              single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

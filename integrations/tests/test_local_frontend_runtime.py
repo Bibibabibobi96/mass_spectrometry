@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.write_run_manifest import file_record
-from common.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
+from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
 from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_ROLE, STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION,

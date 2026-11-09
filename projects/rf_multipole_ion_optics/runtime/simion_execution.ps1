@@ -520,14 +520,14 @@ function Invoke-RfSimionParticleBatchWave {
         foreach ($merge in @(@{output = $BatchRuns[0].merged_state; property = 'state'}, @{output = $BatchRuns[0].merged_trajectory; property = 'trajectory'})) {
             if($merge.property-eq'trajectory'-and$ContinuationUnits.Count){continue}
             if($BatchRuns.Count-eq1-and[IO.Path]::GetFullPath($BatchRuns[0].($merge.property))-ieq[IO.Path]::GetFullPath($merge.output)){continue}
-            $arguments = @('-m','common.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
+            $arguments = @('-m','msplatform.backends.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
             foreach ($batchRun in $BatchRuns) {
                 $arguments += @('--batch-csv',$batchRun.($merge.property),[string]$batchRun.batch.simion_particle_id_offset)
             }
             & $PythonExe @arguments | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'SIMION shared particle CSV merge failed.' }
         }
-        $summaryArguments = @('-m','common.simion.particle_batching','--merge-summaries',
+        $summaryArguments = @('-m','msplatform.backends.simion.particle_batching','--merge-summaries',
             '--batch-plan',$BatchPlanPath,'--output',$BatchRuns[0].merged_summary)
         foreach ($batchRun in $BatchRuns) { $summaryArguments += @('--batch-summary',$batchRun.summary) }
         if($BatchRuns.Count-ne1-or[IO.Path]::GetFullPath($BatchRuns[0].summary)-ine[IO.Path]::GetFullPath($BatchRuns[0].merged_summary)){
@@ -568,7 +568,7 @@ function Update-RfSimionDispatchAfterFormalObservation {
     try {
         & $PythonExe @arguments | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'SIMION formal-first dispatch replanning failed.' }
-        & $PythonExe -m common.simion.particle_batching --from-dispatch-plan $DispatchPlanPath `
+        & $PythonExe -m msplatform.backends.simion.particle_batching --from-dispatch-plan $DispatchPlanPath `
             --output $BatchPlanPath | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'SIMION formal-first particle batch planning failed.' }
     } finally {

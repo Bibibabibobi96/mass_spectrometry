@@ -362,6 +362,13 @@ IP原CLI沿公共workspace路径约定优先消费SIMULATION_PYTHON_EXE，未显
 
 上述为定向软件方法及真实PowerShell／Python进程，公共GATE自然释放、零商业调用；两种隔离投影都使用HEAD公共机制，不依赖dirty common支持。不是最终全范围CI、SIMION物理或科学资格，也不把不同scope的b771成功当作覆盖。
 
+### Installed batching dependency
+
+Active batching callers now consume the sole installed
+`msplatform.backends.simion.particle_batching` implementation. Existing batch
+plans, ID rebasing, emission ordering and project-owned scientific checks are
+unchanged. This migration provides no new native or scientific qualification.
+
 ### P4 installed MP-to-IP preparation
 
 The canonical `msplatform.workflows.multipole_ip.prepare` consumes the original

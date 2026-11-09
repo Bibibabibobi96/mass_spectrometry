@@ -168,7 +168,7 @@ with tempfile.TemporaryDirectory() as request_directory:
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_expanded_package_report_module_preserves_frozen_fly_reuse(self) -> None:
         from integrations.tests.test_single_reflection_continuation import SingleReflectionContinuationTests
-        from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+        from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
 
         fixture = SingleReflectionContinuationTests("run")
         fixture.setUp()
@@ -299,13 +299,14 @@ with tempfile.TemporaryDirectory() as request_directory:
         """Include deferred imports; they must not hide a reverse ownership edge."""
         prefix = "integrations.workflows.single_reflection_flight."
         paths = {prefix+name:INTEGRATION_ROOT/"workflows/single_reflection_flight"/f"{name}.py"
-                 for name in ("runtime", "continuation", "downstream_fields")}
+                 for name in ("runtime", "downstream_fields")}
         paths["msplatform.workflows.single_reflection_flight.pulse"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/pulse.py"
         paths["msplatform.workflows.single_reflection_flight.prepare"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/prepare.py"
         paths["msplatform.workflows.single_reflection_flight.collect"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/collect.py"
         paths["msplatform.workflows.single_reflection_flight.field_evidence"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/field_evidence.py"
         paths["msplatform.backends.simion.tracking_collection"] = REPO_ROOT/"src/msplatform/backends/simion/tracking_collection.py"
         paths["msplatform.results.single_reflection_continuation"] = REPO_ROOT/"src/msplatform/results/single_reflection_continuation.py"
+        paths["msplatform.workflows.single_reflection_flight.continuation"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/continuation.py"
         graph = {}
         for name, source in paths.items():
             graph[name] = {
@@ -599,7 +600,8 @@ class NoOrchestrationImport:
             raise ImportError('pure evidence/continuation cannot import orchestration: '+fullname)
 guard=NoOrchestrationImport()
 sys.meta_path.insert(0,guard)
-from integrations.workflows.single_reflection_flight import continuation,downstream_fields
+from integrations.workflows.single_reflection_flight import downstream_fields
+from msplatform.workflows.single_reflection_flight import continuation
 from msplatform.backends.simion import tracking_collection as census
 from msplatform.workflows.single_reflection_flight import pulse
 sys.meta_path.remove(guard)

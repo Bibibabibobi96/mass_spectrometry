@@ -762,3 +762,43 @@ the retired census import alias has no production body. Manifest-bound inherited
 case authorization is a read-only result adapter, while continuation planning and
 native execution remain under their existing owners. This migration does not
 perform Fly, establish a native checkpoint, or grant scientific qualification.
+
+### Installed continuation planning and batching
+
+`msplatform.workflows.single_reflection_flight.continuation` now owns the existing
+SFI fixed-partition continuation adapter. It uses the same manifest-bound parent
+readers and common whole-unit recovery planner. Complete units are reused; an
+incomplete unit is replayed from its original start. This is neither native
+checkpoint restoration nor permission to change the original mother, births,
+absolute clock or numerical Program controls. Saved-default replay remains
+explicitly requested. The existing batching CLI and CSV/summary operations are
+installed at `msplatform.backends.simion.particle_batching`; their formats and
+ID/emission ordering are unchanged. These software moves perform no Fly.
+
+Root integration acceptance (2026-11-09): 35 focused tests passed in 116.570 s,
+and the five original ordinary-wheel/sdist-rebuilt-wheel tests passed in
+143.000 s. The installed consumer exercised complete/incomplete-unit recovery,
+explicit saved-default replay and the batching CLI outside the author tree.
+A separate cold installed field reader accepted manifest-bound downstream
+roles and rejected missing publication, changed binding SHA and stale receipt
+byte counts, without opening any PA payload or starting a reader process.
+The original 1,275 integer plans and 1,887 normalized assertions were retained;
+these software checks do not grant native, full-Repository or performance acceptance.
+Official CLOC 2.10, d7232d46 to this slice: total code 459179 -> 459265
+(+86), production 275949 -> 275976 (+27), tests 183230 -> 183289 (+59),
+zero unclassified files. The full per-language counts and repository filter
+are retained with the task evidence outside the checkout.
+
+The broader Changed run on this slice is retained as FAIL: 24 stages passed,
+two failed and 22 were not applicable; 3,325 parent tests succeeded, two errored,
+one failed and eight were explicitly skipped, with 4,034 successful subtests.
+All 788 integration parents passed. The three unsuccessful parents were the
+installation test's unconfigured offline wheelhouse, a pre-existing reused-field
+fixture missing metadata, and a managed dummy-process termination denied in the
+restricted execution context. The exact ordinary installation previously passed
+with the offline wheelhouse; the field fixture has a separately validated repair,
+and the unchanged resource test passed in normal-user context. These follow-ups
+do not rewrite the original failed run or prove its unique permission cause.
+Wall time was 3,862.029 s at four requested gate workers with concurrent P4
+diagnostics; this is not a controlled performance comparison. Full Repository
+and the 15-minute target remain open.

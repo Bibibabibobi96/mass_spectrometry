@@ -19,7 +19,7 @@ from integrations.workflows.paired_accelerator_pulse.runtime import (
 
 from msplatform.contracts.particle_physics import AMU_KG
 from common.contracts.write_run_manifest import build_run_manifest, file_record
-from common.simion.particle_batching import plan_single_wave_batches
+from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch
 
 ROOT=Path(__file__).resolve().parents[2]

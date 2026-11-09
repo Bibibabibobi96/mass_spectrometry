@@ -14,10 +14,10 @@ import unittest
 
 from msplatform.execution.inputs import python_import_roots
 from common.contracts.write_run_manifest import file_record
-from common.simion.particle_batching import plan_single_wave_batches
+from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
 from integrations.workflows.single_reflection_flight import runtime
-from integrations.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case, render_legacy_iob_builder
+from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation, _published_case, render_legacy_iob_builder
 from msplatform.workflows.single_reflection_flight.collect import collect_log
 
 

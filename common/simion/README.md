@@ -644,7 +644,7 @@ drain只确认其实际接管的记录；若准备回调另外启动的IOB write
 根进程退出不证明脱离它的后代已停止；调用者仍须满足已有进程owner的后代完成判据，未知状态不得封存或清理输出。
 相邻测试使用短小Python子进程验证持续写入、非零退出、观察异常与清理异常，不构成真实SIMION验收。
 
-`particle_batching.merge_rebased_particle_csvs`按列名`particle_id`恢复ID，保留原列顺序和批次／事件行顺序。
+`msplatform.backends.simion.particle_batching.merge_rebased_particle_csvs`按列名`particle_id`恢复ID，保留原列顺序和批次／事件行顺序。
 消费者可直接合并原CSV，不需为ID列重排物化中间表；项目母群、终态和碰撞校验仍由原消费者负责。
 
 ### 结果收据与串行边界

@@ -553,6 +553,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -1256,6 +1260,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "reason": "common_simion_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -1444,6 +1452,10 @@
         {
           "exact": "src/msplatform/backends/simion/rf_observations.py",
           "reason": "canonical_rf_exit_observation_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -1657,6 +1669,10 @@
         {
           "exact": "src/msplatform/backends/simion/rf_observations.py",
           "reason": "canonical_rf_exit_observation_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -1936,6 +1952,10 @@
         {
           "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_peak_metrics_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -2462,6 +2482,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -2722,6 +2746,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -2839,6 +2867,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {
@@ -2945,6 +2977,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
           "reason": "shared_rf_drive_changed"
+        },
+        {
+          "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
+          "reason": "installed_particle_batching_dependency_changed"
         }
       ],
       "command": {

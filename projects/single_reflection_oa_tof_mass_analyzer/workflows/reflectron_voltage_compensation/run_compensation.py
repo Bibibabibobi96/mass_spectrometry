@@ -25,7 +25,7 @@ from common.contracts.write_run_manifest import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from msplatform.backends.simion.native_completion import require_one_fly_completion
-from common.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
+from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, prepare_fixed_partition_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import derive_candidate_source_closure, freeze_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_contract, resolve_contract_documents
@@ -351,7 +351,7 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
     freeze_file(Path(plan["source_manifest"]["path"]), run / "inputs/source_manifest.json")
     closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable),
         extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
-            "src/msplatform/execution/recovery.py", "common/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
+            "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
             "common/simion/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
             f"projects/{PROJECT}/analysis/optimize_reflectron_ring_voltages.py",
             f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"))

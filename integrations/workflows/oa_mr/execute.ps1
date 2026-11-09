@@ -638,7 +638,7 @@ try{
       field_loading_policy_id=$(if($staticFieldRequested){if($staticFieldMode-eq'native_static_pa'){'native_static_pa__four_read_only_collision_instances'}else{'comsol_scalar_v__four_read_only_collision_instances'}}else{'shared_native_corridor_runtime__four_instances__no_refine'})
     })
     Invoke-ProjectPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath,'--output',$runtimeDispatchPlanPath)
-    Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
+    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
     # Publish the immutable N>1 identity before any worker starts.  The common
     # continuation protocol then needs only the canonical batch plan and
     # naturally completed logs; it never revalidates or transports PA payloads.
@@ -1042,7 +1042,7 @@ try{
       Invoke-ProjectPython -Arguments $adaptiveArguments
       if($firstBatchCompleted){Publish-MrtofFirstBatchAberration -Record $batchRecords[$formalBatchIndex]}
       if($null-eq$batchContinuationPlan){
-        Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
+        Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
         $replanned=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
         foreach($planned in @($replanned.batches)){
           $plannedIndex=[int]$planned.index

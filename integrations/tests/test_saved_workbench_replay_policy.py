@@ -129,7 +129,7 @@ foreach($scenario in @('normal','explicit','mismatch','stochastic')){
                 prepare(path, run)
 
     def test_unrequested_continuation_phase_does_not_consume_parent_evidence(self):
-        from integrations.workflows.single_reflection_flight import continuation
+        from msplatform.workflows.single_reflection_flight import continuation
 
         preparation = dict(role="single_reflection_geometry_preparation", default_replay_requested=False)
         with tempfile.TemporaryDirectory() as temporary, patch.object(continuation, "_parent", side_effect=AssertionError("unrequested source access")):

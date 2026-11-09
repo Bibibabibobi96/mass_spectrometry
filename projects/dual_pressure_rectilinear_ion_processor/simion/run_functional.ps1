@@ -490,7 +490,7 @@ print(json.dumps(refs))
   $usagePath=Join-Path $run 'results/simion_batch_resource_usage.json'
   Invoke-PreparedPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profilesPath)
   Invoke-PreparedPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$requestPath,'--profiles',$profilesPath,'--output',$dispatchPath)
-  Invoke-PreparedPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
+  Invoke-PreparedPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
   if($partialContinuation){
    $oldPlanPath=Join-Path $run 'inputs/partial_batch_replay/batch_plan.json'
    $oldPlan=Get-Content $oldPlanPath -Raw|ConvertFrom-Json
@@ -534,7 +534,7 @@ print(json.dumps(refs))
     if($formal.process_record.completed){$adaptive+='--first-batch-completed'}
     Invoke-PreparedPython -Arguments $adaptive
     if(-not$partialContinuation){
-     Invoke-PreparedPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
+     Invoke-PreparedPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
      Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
     }
     }

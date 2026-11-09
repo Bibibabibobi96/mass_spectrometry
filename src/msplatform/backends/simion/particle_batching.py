@@ -6,6 +6,7 @@ own source projection and physics-specific output materialization.
 """
 
 from __future__ import annotations
+from msplatform.execution.partitioning import _balanced_lane_loads, _batches_from_counts
 
 import argparse
 import csv
@@ -20,23 +21,9 @@ def plan_single_wave_batches(particle_count: int, batch_count: int) -> dict[str,
         raise ValueError("particle count must be a positive integer")
     if isinstance(batch_count, bool) or not 1 <= batch_count <= particle_count:
         raise ValueError("batch count must be between one and the particle count")
-    quotient, remainder = divmod(particle_count, batch_count)
-    offset = 0
-    batches: list[dict[str, int]] = []
-    for index in range(1, batch_count + 1):
-        count = quotient + (1 if index <= remainder else 0)
-        first = offset + 1
-        last = offset + count
-        batches.append(
-            {
-                "index": index,
-                "count": count,
-                "particle_id_min": first,
-                "particle_id_max": last,
-                "simion_particle_id_offset": offset,
-            }
-        )
-        offset = last
+    counts = _balanced_lane_loads(particle_count, batch_count)
+    batches = _batches_from_counts(counts)
+    offset = sum(counts)
     if offset != particle_count:
         raise AssertionError("single-wave batch plan does not cover its population")
     return {

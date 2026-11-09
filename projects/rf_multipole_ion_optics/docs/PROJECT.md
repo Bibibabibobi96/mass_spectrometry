@@ -930,3 +930,11 @@ Refine, family copy, Fly, source sampling or GUI occurred. This is native reuse/
 evidence for the declared quadrupole scope, not a solver-accuracy or broader-variant qualification.
 Tracking and scientific qualification remain open; finite/interface/mass-filter project workflows
 and checkpoint consumers are retained.
+
+
+### Installed batching dependency
+
+Active batching callers now consume the sole installed
+`msplatform.backends.simion.particle_batching` implementation. Existing batch
+plans, ID rebasing, emission ordering and project-owned scientific checks are
+unchanged. This migration provides no new native or scientific qualification.

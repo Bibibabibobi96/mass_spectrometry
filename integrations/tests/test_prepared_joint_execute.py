@@ -598,7 +598,7 @@ function Invoke-ProjectPython {
   if($Arguments-contains'--observed-formal-peak-bytes'){if($Scenario-in@('drain_failure','drain_budget_failure')){throw 'Synthetic replan failure'};$script:adapted=$true}
   $kind=if($script:adapted){'observed'}else{'formal_first_batch_observation'}
   Write-RunJson (Value '--output') 20 @{estimation=@{kind=$kind}}
- }elseif($Arguments[1]-eq'common.simion.particle_batching'){
+ }elseif($Arguments[1]-eq'msplatform.backends.simion.particle_batching'){
   $batches=@(@{index=1;particle_id_min=1;particle_id_max=1;count=1})
   if($script:adapted){$batches+=@{index=2;particle_id_min=2;particle_id_max=2;count=1}}
   Write-RunJson (Value '--output') 20 @{batches=$batches}

@@ -228,7 +228,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                                                         output_dir=root / "recovery")
 
     def test_prepared_replans_formal_batch_from_sealed_observation(self) -> None:
-        from common.simion.particle_batching import batch_plan_from_dispatch
+        from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
         from msplatform.execution.simion_dispatch import plan_simion_dispatch
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -280,7 +280,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertIsNone(recovered["recovered_formal_provenance"]["resource_usage"])
 
     def test_prepared_recovers_committed_dispatch_when_batch_plan_write_failed(self) -> None:
-        from common.simion.particle_batching import batch_plan_from_dispatch
+        from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
         from msplatform.execution.simion_dispatch import plan_adaptive_followup, plan_simion_dispatch
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -812,7 +812,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertNotEqual(plan["frozen_trial_authority"]["sha256"], plan["current_materialization"]["sha256"])
 
     def test_oa_formal_recovery_keeps_first_and_replans_remaining(self):
-        from common.simion.particle_batching import batch_plan_from_dispatch
+        from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
         from msplatform.execution.simion_dispatch import plan_simion_dispatch
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

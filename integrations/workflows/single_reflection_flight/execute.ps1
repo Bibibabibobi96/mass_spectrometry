@@ -292,7 +292,7 @@ function Get-InstrumentSourceProtectionProjection {
   $code=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.continuation import source_capacity_projection
+from msplatform.workflows.single_reflection_flight.continuation import source_capacity_projection
 value=json.load(sys.stdin)
 print(json.dumps(source_capacity_projection(artifact_root=Path(sys.argv[1]),preparation=value['preparation'],borrowed_paths=value['borrowed_paths'])))
 '@

@@ -157,7 +157,7 @@ function Invoke-PreparedJointTrial {
     }else{
       Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $pathContext.artifact_root "projects/$projectId/runs"),'--output',$profiles)
       Invoke-ProjectPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch)
-      Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
+      Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
     }
     $batchRoot=Join-Path $resultDir 'batches'
     New-Item -ItemType Directory -Path $batchRoot|Out-Null
@@ -272,7 +272,7 @@ function Invoke-PreparedJointTrial {
       if($completed){$adaptive+='--first-batch-completed'}
       Invoke-ProjectPython -Arguments $adaptive
       if($recoverObservation){return}
-      Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
+      Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
       $replanned=Get-Content -LiteralPath $plan -Raw|ConvertFrom-Json
       foreach($batch in @($replanned.batches)){
         if($records.ContainsKey([int]$batch.index)){

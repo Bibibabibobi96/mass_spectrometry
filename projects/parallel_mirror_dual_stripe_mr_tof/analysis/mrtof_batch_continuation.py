@@ -338,7 +338,7 @@ def _recover_observed_formal_plan(*, parent: Path, manifest: Mapping[str, Any],
                                   provisional: dict[str, Any], dispatch_record: dict[str, str],
                                   output_dir: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Replan a stopped first interval only from sealed owner and measurement facts."""
-    from common.simion.particle_batching import batch_plan_from_dispatch
+    from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
     from msplatform.execution.simion_dispatch import plan_recovered_formal_followup
 
     if manifest.get("status") not in {"failed", "interrupted"}:

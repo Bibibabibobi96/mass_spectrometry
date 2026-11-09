@@ -372,7 +372,7 @@ if ($dispatchPlanDocument.role -ne 'simion_repository_dispatch_plan' -or
     @($dispatchPlanDocument.waves).Count -ne 1 -or [int]$dispatchPlanDocument.waves[0].batch_count -lt 1) {
     throw 'SIMION repository dispatch plan differs from the canonical source population.'
 }
-& $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan `
+& $python -m msplatform.backends.simion.particle_batching --from-dispatch-plan $dispatchPlan `
     --output $batchPlan
 if ($LASTEXITCODE -ne 0) { throw 'SIMION shared particle batch planning failed.' }
 $batchPlanDocument = Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8 | ConvertFrom-Json

@@ -25,7 +25,7 @@ from typing import Any, Mapping
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.write_run_manifest import file_record
 from msplatform.backends.simion.pa_family_cache import canonical_json_sha256
-from common.simion.particle_batching import batch_plan_from_dispatch
+from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (
     build_successor_program, validate_native_flight,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
@@ -35,7 +35,7 @@ from msplatform.results.single_reflection_source import instance_design_record
 from msplatform.backends.simion.frontend import native_frontend_instances
 from integrations.workflows.single_reflection_flight.field_plan import working_point_member_id
 
-from integrations.workflows.single_reflection_flight.downstream_fields import _SLOTS, load_downstream_fields
+from msplatform.workflows.single_reflection_flight.field_evidence import _SLOTS, load_downstream_fields
 from msplatform.workflows.single_reflection_flight.field_evidence import _small_record
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 
@@ -491,7 +491,7 @@ def materialize_batches(run: Path, phase: str, plan: dict, *, context: dict,
 def materialize_phase_continuation(preparation: Mapping[str, Any], preview_workbench: Mapping[str, Any],
                                    context: dict, run: Path, phase: str) -> dict[str, Any] | None:
     """Materialize only replay units, retaining parent cases as explicit read-only bindings."""
-    from integrations.workflows.single_reflection_flight.continuation import (
+    from msplatform.workflows.single_reflection_flight.continuation import (
         _published_case, prepare_phase_continuation,
     )
     from msplatform.results.single_reflection_continuation import _read as read_continuation
@@ -571,7 +571,7 @@ def main() -> int:
             raise ValueError("saved-workbench replay was not requested")
         if args.continuation_phase is None:
             parser.error("materialize-continuation requires --continuation-phase")
-        from integrations.workflows.single_reflection_flight.continuation import (
+        from msplatform.workflows.single_reflection_flight.continuation import (
             _phase_paths, freeze_phase_inputs,
             prepare_phase_continuation, _published_case, recover_provisional_dispatch,
         )

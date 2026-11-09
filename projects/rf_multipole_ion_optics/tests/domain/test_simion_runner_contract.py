@@ -1564,7 +1564,7 @@ exit 0
     def test_parallel_batching_is_single_wave_and_revalidates_the_merged_state(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
         support = (REPO_ROOT / "src/msplatform/execution/resources/simion_dispatch_support.ps1").read_text(encoding="utf-8")
-        self.assertIn("common.simion.particle_batching", runner)
+        self.assertIn("msplatform.backends.simion.particle_batching", runner)
         self.assertIn("SIMION shared single-wave batch plan differs from the canonical source.", runner)
         self.assertIn("--particle-id-min", runner)
         self.assertIn("Invoke-SimionBatchPhase", runner)

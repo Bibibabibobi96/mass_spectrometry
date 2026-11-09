@@ -13,7 +13,7 @@ from msplatform.execution import run_capacity_lifecycle as lifecycle
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.write_run_manifest import build_run_manifest, file_record
-from integrations.workflows.single_reflection_flight.continuation import source_capacity_projection
+from msplatform.workflows.single_reflection_flight.continuation import source_capacity_projection
 
 
 REPO = Path(__file__).resolve().parents[2]

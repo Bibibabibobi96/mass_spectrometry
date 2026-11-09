@@ -1,9 +1,12 @@
 import unittest
+import subprocess
+import sys
+import importlib
 import json
 import tempfile
 from pathlib import Path
 
-from common.simion.particle_batching import (
+from msplatform.backends.simion.particle_batching import (
     batch_plan_from_dispatch,
     merge_rebased_particle_csvs,
     merge_simion_summaries,
@@ -12,6 +15,33 @@ from common.simion.particle_batching import (
 
 
 class ParticleBatchingTests(unittest.TestCase):
+    def test_batch_csv_cli_does_not_load_host_policy_and_retired_module_is_absent(self) -> None:
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module('common.simion.particle_batching')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root/'source.csv'
+            source.write_text('event,status\npass,kept\npass,lost\n',encoding='utf-8')
+            output = root/'count.json'
+            code = """import sys,pathlib,runpy
+source_root=pathlib.Path(sys.argv.pop(1)).resolve()
+sys.path.insert(0,str(source_root))
+import importlib.util
+assert pathlib.Path(importlib.util.find_spec('msplatform.backends.simion.particle_batching').origin).resolve().is_relative_to(source_root)
+def no_host_policy(event,args):
+    if event=='open' and args and isinstance(args[0],(str,bytes)):
+        if pathlib.Path(__import__('os').fsdecode(args[0])).name=='host_resource_policy.json':raise AssertionError('CSV operation loaded host policy')
+sys.addaudithook(no_host_policy)
+sys.argv=['particle_batching',*sys.argv[1:]]
+runpy.run_module('msplatform.backends.simion.particle_batching',run_name='__main__')
+"""
+            completed = subprocess.run([sys.executable,'-I','-c',code,
+                str(Path(__file__).resolve().parents[2]/'src'),'--count-csv',str(source),
+                '--status','kept','--output',str(output)],cwd=root,capture_output=True,
+                text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
+            self.assertEqual(json.loads(output.read_text(encoding='utf-8')),{'rows':1})
+
     def test_balanced_complete_plan(self) -> None:
         plan = plan_single_wave_batches(5000, 5)
         self.assertEqual(plan["dispatch"], "single_wave_parallel")

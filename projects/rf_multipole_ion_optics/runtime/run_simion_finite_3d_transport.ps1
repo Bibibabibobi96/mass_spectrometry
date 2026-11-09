@@ -645,10 +645,10 @@ try{
         batch_count=[int]$dispatchPlanDocument.waves[0].batch_count}
     }
     if($null-ne$dispatchPlan){
-      & $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan --output $batchPlan
+      & $python -m msplatform.backends.simion.particle_batching --from-dispatch-plan $dispatchPlan --output $batchPlan
     }else{
       $declaredBatchCount=if($null-ne$executionBatching){[int]$executionBatching.batch_count}else{1}
-      & $python -m common.simion.particle_batching --particle-count ([string]$sourceMeta.particle_count) `
+      & $python -m msplatform.backends.simion.particle_batching --particle-count ([string]$sourceMeta.particle_count) `
         --batch-count ([string]$declaredBatchCount) --output $batchPlan
     }
     if($LASTEXITCODE-ne 0){throw 'SIMION shared single-wave batch planning failed.'}
@@ -1225,7 +1225,7 @@ return config
           throw 'SIMION formal-first dispatch plan is invalid.'
         }
         if(-not$continuationPredecessor){
-          & $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan `
+          & $python -m msplatform.backends.simion.particle_batching --from-dispatch-plan $dispatchPlan `
             --output $batchPlan | Out-Null
           if($LASTEXITCODE-ne 0){throw 'SIMION formal-first particle batch planning failed.'}
           $updatedBatchPlan=Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8|ConvertFrom-Json
@@ -1379,7 +1379,7 @@ return config
           if ($existingBatchPaths.Count -ne $batchRuns.Count) {
             throw "SIMION $name shared $($merge.property) CSV is incomplete across batches."
           }
-          $mergeArguments=@('-m','common.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
+          $mergeArguments=@('-m','msplatform.backends.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
           foreach($batchRun in $batchRuns){
             $mergeArguments+=@('--batch-csv',[string]$batchRun.($merge.property),[string]$batchRun.batch.simion_particle_id_offset)
           }
@@ -1392,7 +1392,7 @@ return config
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-        $summaryMergeArguments=@('-m','common.simion.particle_batching','--merge-summaries',
+        $summaryMergeArguments=@('-m','msplatform.backends.simion.particle_batching','--merge-summaries',
           '--batch-plan',$batchPlan,'--output',$caseSummary)
         foreach($batchRun in $batchRuns){$summaryMergeArguments+=@('--batch-summary',[string]$batchRun.summary)}
         # The shared Python merger may emit diagnostics on stdout.  Keep that

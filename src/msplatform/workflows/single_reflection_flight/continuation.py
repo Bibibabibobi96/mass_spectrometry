@@ -17,10 +17,11 @@ from pathlib import Path
 import shutil
 from typing import Any, Mapping
 
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path,verify_record as _verify_record,file_record as _file_record
+verify_record=partial(_verify_record,retention_classifier=classify_file)
+file_record=partial(_file_record,retention_classifier=classify_file)
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
-from common.simion.particle_batching import batch_plan_from_dispatch
+from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
 from msplatform.backends.simion.tracking_collection import read_native_evidence
 from msplatform.backends.simion.native_completion import frontend_batch_completion_path, validate_frontend_batch_completion
@@ -271,7 +272,7 @@ def source_capacity_projection(*, artifact_root: Path, request_path: Path | None
                     # explicit provenance, never a root inferred from a PA path.
                     payload_records.append(dict(row, path=str(Path(info["generation_directory"]).resolve()/Path(row["path"]).name), cache_key=info["cache_key"]))
         else:
-            from integrations.workflows.single_reflection_flight.downstream_fields import load_downstream_fields
+            from msplatform.workflows.single_reflection_flight.field_evidence import load_downstream_fields
             canonical = Path(manifest_record.get("source_path", manifest_record["path"]))
             normalized = dict(manifest_record, path=str(canonical), source_path=str(canonical))
             _, _, guards = load_downstream_fields(record, value["oatof_resolved_record"], normalized)
@@ -609,7 +610,7 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
         if isinstance(parent_numeric_record, Mapping):
             _bound_parent_file(record_path(parent_numeric_record), parent_records, "numerical Program")
             parent_numeric = _verified_text(parent_numeric_record, "parent numerical Program")
-            from integrations.runtime.build_single_flight_program import project_program_paths
+            from msplatform.backends.simion.tracking_program import project_program_paths
             projection_record = parent_case.get("program_path_projection_record")
             if not isinstance(projection_record, Mapping):
                 raise ValueError("single-reflection numerical Program lacks its frozen path projection")
@@ -638,7 +639,7 @@ def prepare_phase_continuation(preparation: Mapping[str, Any], current_workbench
             current_numeric = _verified_text(numeric_record, "current numerical Program") if isinstance(numeric_record, Mapping) else current_native
         if ((preview is not None and "numerical_program" in preview)
                 or (preview is None and isinstance(current_outputs.get("numerical_program"), Mapping))):
-            from integrations.runtime.build_single_flight_program import project_program_paths
+            from msplatform.backends.simion.tracking_program import project_program_paths
             projection_record = (preview.get("program_path_projection_record") if preview is not None
                                  else current_case.get("program_path_projection_record"))
             if not isinstance(projection_record, Mapping):

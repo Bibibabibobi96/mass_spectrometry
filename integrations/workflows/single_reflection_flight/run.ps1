@@ -87,7 +87,7 @@ try {
   $sourceProtectionCode=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.single_reflection_flight.continuation import source_capacity_projection
+from msplatform.workflows.single_reflection_flight.continuation import source_capacity_projection
 print(json.dumps(source_capacity_projection(artifact_root=Path(sys.argv[1]),request_path=Path(sys.argv[2]))))
 '@
   $sourceProtection=Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {

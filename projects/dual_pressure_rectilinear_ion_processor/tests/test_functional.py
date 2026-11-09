@@ -644,7 +644,7 @@ assert (run/'simion/iob_seed/1_instance_seed.iob').is_file()
 assert (run/'simion/iob_seed/iob_seed_placeholder_01.pa0').is_file()
 assert not (run/'simion/processor.iob').exists()
 # Existing inert template fixture tests metadata/copy wiring only, never vendor IOB validity.
-from common.simion.particle_batching import plan_single_wave_batches
+from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
 import shutil
 shutil.copyfile(run/'simion/runtime.lua',run/'simion/processor.lua')
@@ -682,7 +682,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
                 "from pathlib import Path; "
                 "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
                 "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "
-                "from common.simion import resource_profile, particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;"
+                "from common.simion import resource_profile; from msplatform.backends.simion import particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;assert Path(particle_batching.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve());"
                 "assert resource_profile.PROFILE_ROLE == 'simion_resource_profile'; "
                 "from projects.dual_pressure_rectilinear_ion_processor.analysis import batching; "
                 "completion = batching.require_one_fly_completion(['status,Fly completed. 10 splats, 2.19 seconds']); "

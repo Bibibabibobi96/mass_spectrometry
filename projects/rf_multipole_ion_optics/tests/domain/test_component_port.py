@@ -160,7 +160,7 @@ class MultipoleComponentPortTests(unittest.TestCase):
             for row in rows:
                 row["transverse_x_mm"] = 0.0
             write()
-            from common.simion.particle_batching import merge_rebased_particle_csvs
+            from msplatform.backends.simion.particle_batching import merge_rebased_particle_csvs
 
             batches = []
             for particle in (1, 2):

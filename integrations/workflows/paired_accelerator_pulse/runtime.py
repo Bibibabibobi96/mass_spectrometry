@@ -20,7 +20,7 @@ from msplatform.io.manifest_records import require_completed_terminal_publicatio
 from msplatform.backends.simion.native_completion import (parse_fly_completed_line, require_one_fly_completion,
     frontend_batch_completion_path, validate_frontend_batch_completion)
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
-from common.simion.particle_batching import batch_plan_from_dispatch
+from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from msplatform.contracts.particle_state import binary64_serialization_close
 from msplatform.backends.simion.source import canonical_clock_lua, lua_value, render_restart_fly2
 from msplatform.results.single_reflection_source import select_timed_pre_pulse_states
