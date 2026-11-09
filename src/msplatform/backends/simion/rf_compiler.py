@@ -12,6 +12,7 @@ from .compiler import CompiledSimionGeometry, _content_sha256
 from .numerics import normalize_cell_mm_xyz
 from .rf_electrode_mapping import build_simion_electrode_map
 from .rf_geometry import render_standalone_physical_gem
+from .physical_samples import standalone_rf_samples
 
 
 def compile_independent_multipoles(assembly: Mapping[str, Any], *,
@@ -36,7 +37,7 @@ def compile_independent_multipoles(assembly: Mapping[str, Any], *,
     if not isinstance(requested, Mapping) or set(requested) - set(selected):
         raise ValueError("independent RF native mappings cannot name unselected instances")
     components = assembly["components_resolved"]
-    gems, compiled_domains, bindings, identities = {}, {}, {}, {}
+    gems, compiled_domains, bindings, identities, samples = {}, {}, {}, {}, {}
     for name in selected:
         if not isinstance(components.get(name), Mapping):
             raise ValueError(f"{name}: complete RF design is required")
@@ -62,9 +63,10 @@ def compile_independent_multipoles(assembly: Mapping[str, Any], *,
             bounds_mm=dict(x_min=-radius, x_max=radius, y_min=-radius, y_max=radius,
                            z_min=z_min, z_max=z_max),
         )
+        samples[name] = standalone_rf_samples(design, mapping, compiled_domains[name])
         identities[name] = dict(resolved_content_sha256=_content_sha256(design),
                                 component_interface_sha256=_content_sha256(plan["components"][name]))
     frontend = dict(role="simion_independent_rf_geometry", composition_plan=plan,
                     numerical_domains=compiled_domains, electrode_bindings=bindings,
-                    raw_physical_samples={})
+                    raw_physical_samples=samples)
     return CompiledSimionGeometry(gems, frontend, (), identities, copy.deepcopy(dict(components)))

@@ -268,7 +268,7 @@ try{
       Close-PairedHostStage
       $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage flight -Budget $budget.host_budgets.simion_flight -RunId $RunId
       if(-not$reusedBaseline){
-        $seed=Join-Path $frozen.execution_root 'common/simion/assets/iob_instance_seeds/1_instance_seed.iob'
+        $seed=Join-Path $frozen.execution_root 'src/msplatform/backends/simion/resources/1_instance_seed.iob'
         $runtimeInputs=@('--plan',$planPath,'--code-root',$frozen.execution_root,'--field-pa',$fieldPa,'--seed-iob',$seed)
         $continuationArguments=@{}
         if($PredecessorManifest){

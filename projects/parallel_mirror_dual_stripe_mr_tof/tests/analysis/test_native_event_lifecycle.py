@@ -23,7 +23,7 @@ from common.simion.particle_source import render_standard_beams
 
 
 REPOSITORY = Path(__file__).resolve().parents[4]
-SEED = REPOSITORY / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
+SEED = REPOSITORY / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
 GEM = """pa_define(11,11,11,planar,none,electrostatic,,1,1,1,surface=none)
 e(0) { box3D(8,0,0,10,10,10) }
 """

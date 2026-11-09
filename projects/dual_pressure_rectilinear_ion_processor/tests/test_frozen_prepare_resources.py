@@ -92,7 +92,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             Path("src/msplatform/backends/simion/resources/native_drive.lua"),
             Path("src/msplatform/backends/simion/resources/scientific_event_csv.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
-            Path("common/simion/assets/iob_instance_seeds/1_instance_seed.iob"),
+            Path("src/msplatform/backends/simion/resources/1_instance_seed.iob"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
             Path("src/msplatform/execution/resources/artifact_retention.json"),
             Path("common/contracts/particle_count_policy.json"),

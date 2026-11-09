@@ -1,5 +1,9 @@
 # 正交脉冲加速器项目状态
 
+Component-focus flight preparation now selects its three-instance structural IOB from the installed
+SIMION resource owner. The template bytes, placeholder PA inputs and scientific flight configuration
+are unchanged; this path migration does not establish a new OA native-flight result.
+
 本页维护独立器件的能力、资格和开放动作。理论、源码和操作从[项目入口](../README.md)进入；
 完整迁移、组件实验及实现修复记录见[文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)。
 

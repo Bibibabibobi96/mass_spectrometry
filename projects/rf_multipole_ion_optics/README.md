@@ -43,7 +43,10 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 [组装配方](../../integrations/README.md)表达，不复制项目或源码。
 普通安装的`msplatform.backends.simion.compile_geometry`也可对显式选定的纯RF scope编译独立PA GEM；
 `component_domains`逐实例提供`cell_mm_xyz`，可选科学组原生映射不改变物理身份。多实例／局部scope保留完整父设计，
-无TOF、粒子源或下游占位。该入口只生成文本，不创建PA、不Refine、不Fly；既有原生运行仍从下列项目工作流进入。
+无TOF、粒子源或下游占位。
+The compiler remains pure. `build_geometry` materializes the selected RF scope through the shared
+managed owner; no Refine or Fly is requested. See [implementation and native-validation status](docs/PROJECT.md#independent-rf-geometry-build);
+existing project workflows remain below.
 
 ## 机器权威
 

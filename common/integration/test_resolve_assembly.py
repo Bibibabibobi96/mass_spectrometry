@@ -106,6 +106,30 @@ class DirectAssemblyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.recipe, self.components = direct_fixture()
 
+    def test_single_actual_component_has_no_invented_connections_or_parent(self):
+        import copy
+        recipe=copy.deepcopy(self.recipe)
+        recipe['instances']=recipe['instances'][:1]
+        recipe['connections']=[]
+        components={'guide':self.components['guide']}
+        plan=compile_assembly_layout(recipe,components)
+        self.assertEqual(plan['scope']['instance_ids'],['guide'])
+        self.assertEqual(plan['scope']['connection_ids'],[])
+        self.assertEqual(plan['connection_checks'],[])
+        self.assertEqual(set(plan['components']),{'guide'})
+        self.assertEqual(derive_assembly_scope(plan),plan)
+        for name, mutate in (
+            ('empty',lambda doc: doc.update(instances=[])),
+            ('wrong_frame',lambda doc: doc['instances'][0]['transform'].update(to_frame_id='other')),
+            ('self_edge',lambda doc: doc.update(connections=[dict(connection_id='bad',upstream=dict(instance_id='guide',port_id='exit'),downstream=dict(instance_id='guide',port_id='exit'),gap_mm=0,coupling_mode='state_handoff')])),
+            ('unknown_edge',lambda doc: doc.update(connections=[dict(connection_id='bad',upstream=dict(instance_id='guide',port_id='exit'),downstream=dict(instance_id='missing',port_id='entry'),gap_mm=0,coupling_mode='state_handoff')]))):
+            bad=copy.deepcopy(recipe);mutate(bad)
+            with self.subTest(name=name),self.assertRaises(ContractError):
+                compile_assembly_layout(bad,components)
+        multi=copy.deepcopy(self.recipe);multi['connections']=[]
+        with self.assertRaises(ContractError):
+            compile_assembly_layout(multi,self.components)
+
     def test_file_adapter_calls_canonical_layout_without_legacy_bridge(self) -> None:
         original_import = builtins.__import__
 

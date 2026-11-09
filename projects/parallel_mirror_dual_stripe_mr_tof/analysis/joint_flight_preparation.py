@@ -494,8 +494,7 @@ def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
     if overlay is not None:
         priority["collision_overlay"] = dict(overlay, pa_path=binding["instances"][4]["pa_path"])
     return dict(roles=roles, priority=priority,
-        seed=str(REPO / ("src/msplatform/backends/simion/resources" if len(roles) in (4, 5) else
-                         "common/simion/assets/iob_instance_seeds") / f"{len(roles)}_instance_seed.iob"))
+        seed=str(REPO / "src/msplatform/backends/simion/resources" / f"{len(roles)}_instance_seed.iob"))
 
 
 def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *, numerics: dict[str, float],

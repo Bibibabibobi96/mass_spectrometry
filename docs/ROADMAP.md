@@ -128,8 +128,9 @@ P4按其余已支持设计及COMSOL具名推广，P5保留真实同事／新需�
 该旧轮不覆盖后续修正：直接Assembly现已与工厂同等执行提供者同源校验，圆柱侧孔贯穿曲面内壁，
 10 mm环厚负例及真实STEP离轴探针通过；方形字节投影保持，五项圆柱哈希按实际几何纠正更新。
 纯RF多实例／局部scope现可由公共SIMION入口生成独立PA GEM，覆盖四／六／八极及显式科学组映射；
-`component_domains`逐实例冻结网格，完整父设计保留，误用公共原生构建会明确拒绝。现有项目Refine／Fly仍在原工作流，
-其SDK推广和原生验收保持开放。当前修正后的完整Changed门禁22 PASS／26 NA，2458个父测试成功、
+`component_domains`逐实例冻结网格，完整父设计保留。公共原生构建后继现已接通真实独立RF几何，
+单器件无需虚构父装配，四／六／八极原生及普通安装冷重开范围见[RF项目状态](../projects/rf_multipole_ion_optics/docs/PROJECT.md#independent-rf-geometry-build)。
+现有项目Refine／Fly仍在原工作流，其余SDK推广保持开放。此前编译切片的完整Changed门禁22 PASS／26 NA，2458个父测试成功、
 2项明确skip（既定T5 receipt未配置及opt-in SIMION N1），3155个子测试成功，公共墙钟2065.079秒。
 机器配置现由`execution.load_environment`唯一加载，直接返回显式ExecutionContext；旧`api.execution_context`
 及全部活动调用已迁移，构造不探测工具或创建工作区，普通安装探针同步覆盖。

@@ -40,7 +40,7 @@
     },
     "components": {
       "type": "object",
-      "minProperties": 2,
+      "minProperties": 1,
       "propertyNames": {
         "type": "string",
         "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
@@ -61,5 +61,6 @@
     "local_scope": {
       "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"
     }
-  }
+  },
+  "allOf": [{"if": {"properties": {"recipe": {"properties": {"instances": {"minItems": 2}}}}}, "then": {"properties": {"connection_checks": {"minItems": 1}}}}]
 }

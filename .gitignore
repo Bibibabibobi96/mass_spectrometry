@@ -38,10 +38,8 @@ run_comsol_mcp.cmd
 # Version-controlled, GUI-created Workbench containers.  Their distinct
 # per-slot placeholder PAs are necessary because SIMION keeps instances that
 # share a filename attached to the same PA object.
-!common/simion/assets/iob_instance_seeds/
-!common/simion/assets/iob_instance_seeds/*.iob
-!src/msplatform/backends/simion/resources/4_instance_seed.iob
-!src/msplatform/backends/simion/resources/5_instance_seed.iob
+!src/msplatform/backends/simion/resources/[1-9]_instance_seed.iob
+!src/msplatform/backends/simion/resources/10_instance_seed.iob
 !common/simion/assets/iob_instance_seeds/iob_seed_placeholder_*.pa0
 trj*.tmp
 

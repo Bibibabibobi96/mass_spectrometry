@@ -58,7 +58,7 @@ def fixture(root: Path) -> tuple[Path, Path, Path]:
         observation_times_us=[10.,11.,12.,13.],numerics=dict(maximum_step_us=.1,simion_trajectory_quality=19,relative_tolerance=1e-5,absolute_tolerance=1e-6),
         original_mother_particle_ids=[7,41],original_birth_times_us={"7":.007,"41":.041},clock_epoch_id="fixture_epoch",instrument_epoch_us=0.,
         input_records=dict(pre_pulse_collection=record(collection),simion_field_publication=record(publication))))
-    return plan,root/"published/paired_static_on.pa",ROOT/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
+    return plan,root/"published/paired_static_on.pa",ROOT/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
 
 
 class PairedPulseRuntimeTests(unittest.TestCase):

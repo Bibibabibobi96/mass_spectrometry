@@ -14,7 +14,8 @@ class WorkbenchSeedTests(unittest.TestCase):
             repo = root/"source"
             source = repo/"common/simion/assets/iob_instance_seeds"
             source.mkdir(parents=True)
-            (source/"1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
+            (repo/"src/msplatform/backends/simion/resources").mkdir(parents=True)
+            (repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
             (source/"iob_seed_placeholder_01.pa0").write_bytes(b"INERT_PLACEHOLDER_NOT_A_FIELD")
             run = root/"artifacts/projects/example/runs/test"
             first = freeze_workbench_seed(run, repo)
@@ -39,7 +40,8 @@ class WorkbenchSeedTests(unittest.TestCase):
             repo = root/"source"
             source = repo/"common/simion/assets/iob_instance_seeds"
             source.mkdir(parents=True)
-            (source/"1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
+            (repo/"src/msplatform/backends/simion/resources").mkdir(parents=True)
+            (repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
             placeholder = source/"iob_seed_placeholder_01.pa0"
             placeholder.write_bytes(b"INERT_NOT_NATIVE!" * (1024 * 1024))
             self.assertEqual(classify_file(placeholder), "solver_native_binary")

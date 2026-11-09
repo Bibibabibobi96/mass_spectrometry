@@ -22,7 +22,7 @@ $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
 $guard=$null
 try{
   $fixture=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/tests/simion/test_workbench_load_fixture.lua'
-  $seed=Join-Path $Repo 'common/simion/assets/iob_instance_seeds/1_instance_seed.iob'
+  $seed=Join-Path $Repo 'src/msplatform/backends/simion/resources/1_instance_seed.iob'
   $launcher=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_iob_flight.lua'
   & $Simion --nogui --noprompt lua $fixture $Root prepare $seed $launcher
   if($LASTEXITCODE-ne0){throw 'Tiny loader fixture preparation failed'}

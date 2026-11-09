@@ -760,3 +760,30 @@ interface、mass-filter、same-solver 的7个 workflow 入口及发布新鲜度�
 same-solver 的真实执行发现并补齐原清单遗漏的 `ion_release` 包。中文来源路径的 stdin JSON 编码失败已复现，
 最小修正为显式 UTF-8 运输与 Python UTF-8 模式，实际中文 junction 回归通过1.020秒，调用者编码设置恢复。
 这些结果不代表完整 Owner／Repository 验收，也不包含新的商业求解或科学资格。
+
+## Independent RF geometry build
+
+The public SIMION geometry build accepts 1–10 selected RF instances, using byte-identified structural
+containers and per-instance physical GEMs/native electrode maps. A single real component needs no
+connection or placeholder; multi-component assembly still checks its declared mating. Fractional
+companions, metal/vacuum nodes and native matrix/point pose checks are retained for cold reopening.
+The Euler projection uses a stable near-gimbal decomposition rather than discarding legal roll.
+
+Two governed native cases passed on 2026-11-09: a single segmented quadrupole with grounded shell
+and both endcaps (`20261109_135314__build__simion__geometry-81feca5aaf66`), and a mated segmented
+hexapole/octupole pair (`20261109_135353__build__simion__geometry-5f5ff0aff4db`). Separate SIMION
+processes reopened the actual raw PA/IOB files and verified anisotropic grids, near-90-degree poses,
+physical nodes and exact selected fractional offsets. Nonnil surface witnesses were 48/66 for the
+quadrupole, 48/72 for the hexapole and 82/96 for the octupole. All seven native processes exited zero;
+owner, host and capacity cleanup completed. These are raw-geometry results: zero source sampling,
+Refine, Fly or GUI, and no field, trajectory, relocation or scientific qualification. The bound
+sandbox source and acceptance driver remain required evidence.
+
+The integrated ordinary wheel and sdist-rebuilt wheel passed the five installation tests after
+correcting the precise Git-ignore exceptions for the moved templates. A fresh venv then used
+`execution.load_environment` and the installed wheel for another real single-quadrupole build,
+`20261109_140845__build__simion__geometry-286c35a33d5a`. All 104 loaded platform modules came from
+that venv; all 321 installed files matched the verified wheel. Its three native processes exited
+zero, cold reopening retained 48/66 nonnil surface witnesses, and all 47 manifest/request records
+verified. No checkout fallback, source sampling, Refine, Fly or GUI was used. This does not qualify
+new RF field/tracking modes or close the full P4 acceptance and performance targets.

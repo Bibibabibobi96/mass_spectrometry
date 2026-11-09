@@ -10,11 +10,21 @@ local fields_only=mode=='build_fields' or mode=='verify_fields'
 local model_only=mode=='build_model' or mode=='verify_model'
 local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_only
 local source_free=geometry_only or fields_only
-assert(spec.schema_version==1 and spec.role=='single_reflection_iob_build',
+local independent_rf=spec.role=='independent_rf_geometry_iob_build'
+assert(not independent_rf or mode=='build_geometry' or mode=='verify_geometry','RF only supports raw geometry')
+assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_rf),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances
-assert(count==4 or count==5, 'four physical PA instances and optional entrance refinement are required')
+assert((independent_rf and count>=1 and count<=10) or (not independent_rf and (count==4 or count==5)), 'unsupported physical PA instance count')
 local roles={'flight_tube','reflectron','accelerator','detector','entrance_refinement'}
+if independent_rf then
+ roles={}
+ local unique={}
+ for index,row in ipairs(spec.instances) do
+  assert(type(row.role)=='string' and not unique[row.role],'RF instance identities must be unique')
+  unique[row.role]=true;roles[index]=row.role
+ end
+end
 local role_list=table.concat(roles,',',1,count)
 local companions={}
 local stem=assert(spec.output_iob):gsub('%.iob$','')
@@ -86,6 +96,22 @@ for _,extension in ipairs(source_free and {'.lua','.ion','.con','.rec'} or {'.lu
     companions[path]=input:read('*a');input:close()
   end
 end
+if independent_rf then
+  for _,base in ipairs({stem,assert(spec.seed_iob):gsub('%.iob$','')}) do
+    for _,extension in ipairs({'.wgem','.lua','.ion','.con','.rec'}) do
+      local file=io.open(base..extension,'rb')
+      if file then file:close();error('RF raw geometry forbids automatic-build/source/Program companion') end
+    end
+  end
+  for _,row in ipairs(spec.instances) do
+    assert(row.path:match('%.pa#$'),'RF geometry requires the actual raw PA representation')
+    for _,key in ipairs({'path','fractional_surface','surface_witnesses'}) do
+      local file=assert(io.open(assert(row[key]),'rb'),'RF geometry input missing before IOB load: '..key)
+      assert(file:seek('end')>0,'RF geometry input empty: '..key);file:close()
+    end
+  end
+end
+
 for index,row in ipairs(spec.instances) do
   assert(row.role==roles[index] and row.instance_index==index and row.priority_number==index,
     'IOB role/order differs at slot '..index)
@@ -96,6 +122,46 @@ for index,row in ipairs(spec.instances) do
       'invalid provider placement '..row.role..'.'..key)
   end
 end
+
+local function verify_rf(item,row)
+  if not independent_rf then return end
+  assert(item.ox==0 and item.oy==0 and item.oz==0,'RF PA working origin must remain zero')
+  local function near(a,b) return math.abs(a-b)<=64*2.220446049250313e-16*math.max(1,math.abs(a),math.abs(b)) end
+  for axis=1,3 do
+    local v={0,0,0};v[axis]=1
+    local x,y,z=item:pa_to_wb_orient(unpack(v))
+    for k,value in ipairs({x,y,z}) do assert(near(value,row.rotation[k][axis]),'RF basis differs from original matrix') end
+  end
+  for _,q in ipairs({{0,0,0},{1,1,1},{item.pa.nx-1,item.pa.ny-1,item.pa.nz-1}}) do
+    local x,y,z=item:pa_to_wb_coords(unpack(q))
+    local pitch={item.pa.dx_mm,item.pa.dy_mm,item.pa.dz_mm}
+    for k,value in ipairs({x,y,z}) do
+      local expected=row.placement[({'x_mm','y_mm','z_mm'})[k]]
+      for j=1,3 do expected=expected+row.rotation[k][j]*pitch[j]*q[j] end
+      assert(near(value,expected),'RF point differs from original rigid transform')
+    end
+  end
+  local surface=assert(io.open(row.fractional_surface,'rb'),'fractional companion missing before IOB load')
+  assert(surface:seek('end')>0);surface:close()
+  local witnesses=assert(io.open(row.surface_witnesses,'rb'))
+  local checked=0
+  for line in witnesses:lines() do
+    local x,y,z,sx,sy,sz=line:match('^(%d+),(%d+),(%d+),([^,]+),([^,]+),([^,]+)$')
+    assert(x,'invalid surface witness')
+    local ax,ay,az=item.pa:surface_info(tonumber(x),tonumber(y),tonumber(z))
+    for k,actual in ipairs({{ax},{ay},{az}}) do
+      local wanted=({sx,sy,sz})[k]
+      assert((wanted=='nil' and actual[1]==nil) or (wanted~='nil' and actual[1]==tonumber(wanted)), 'cold fractional surface readback differs')
+    end
+    checked=checked+1
+  end
+  witnesses:close();assert(checked>0,'fractional surface witnesses empty')
+  for _,sample in ipairs(row.physical_samples) do
+    local potential,metal=item.pa:point(unpack(sample.gu))
+    assert(metal==(sample.metal~=false) and (sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')
+  end
+end
+
 if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='verify_fields' then
   local interfaces
   if not geometry_only then
@@ -245,6 +311,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     for property,key in pairs({x='x_mm',y='y_mm',z='z_mm',az='az_deg',el='el_deg',rt='rt_deg',scale='scale'}) do
       assert(item[property]==row.placement[key],'saved provider placement differs: '..row.role..'.'..key)
     end
+    verify_rf(item,row)
   end
   path_reference:close()
   for path,data in pairs(companions) do
@@ -253,7 +320,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     assert(actual==data,'workbench reopening changed a prepared companion: '..path)
   end
   if geometry_only then
-    print('SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES='..count..' FLY=False SOURCE=False REFINE=False')
+    print((independent_rf and 'INDEPENDENT_RF_GEOMETRY_IOB_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
     return
   end
   -- SIMION 2020 official lua_simion.wb.html#simion.wb..find_at:
@@ -426,6 +493,7 @@ for index,row in ipairs(spec.instances) do
   local p=row.placement
   item.x,item.y,item.z=p.x_mm,p.y_mm,p.z_mm
   item.az,item.el,item.rt,item.scale=p.az_deg,p.el_deg,p.rt_deg,p.scale
+  if independent_rf then item.ox,item.oy,item.oz=0,0,0;verify_rf(item,row) end
   -- The provider's two-dimensional domains are cylindrical. nz_use belongs
   -- only to planar-2D extrusion (SIMION lua_simion.wb instance.nz_use).
 end
@@ -464,7 +532,7 @@ if source_free then
     if handle then handle:close();error('geometry save unexpectedly materialized a source/Program companion') end
   end
   if fields_only then print('SINGLE_REFLECTION_FIELD_IOB=PASS SOURCE=False FLY=False REFINE=False')
-  else print('SINGLE_REFLECTION_GEOMETRY_IOB=PASS INSTANCES='..count..' FLY=False SOURCE=False REFINE=False') end
+  else print((independent_rf and 'INDEPENDENT_RF_GEOMETRY_IOB=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False') end
 else
   print('SINGLE_REFLECTION_IOB=PASS INSTANCES='..count..' ROLES='..role_list)
 end

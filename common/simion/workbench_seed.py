@@ -16,7 +16,8 @@ def freeze_workbench_seed(run: Path, repo: Path) -> dict:
     destination.mkdir(parents=True, exist_ok=True)
     identities = {}
     for name, key in (("1_instance_seed.iob", "seed"), ("iob_seed_placeholder_01.pa0", "placeholder")):
-        source, frozen = source_root/name, destination/name
+        source = (Path(repo)/"src/msplatform/backends/simion/resources"/name if key == "seed" else source_root/name)
+        frozen = destination/name
         if frozen.exists():
             original = file_record(source)
             verify_record("official frozen IOB seed", dict(original, path=str(frozen)))

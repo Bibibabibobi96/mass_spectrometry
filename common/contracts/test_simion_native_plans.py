@@ -31,16 +31,19 @@ NATIVE_PATH = resource_path("native_run_path.lua")
 class NativePlanTests(unittest.TestCase):
     def test_installed_structural_seeds_require_exact_source_bytes(self):
         import hashlib
+        import re
         from unittest.mock import patch
         from msplatform.backends.simion import resources
 
-        actual = {count: structural_seed_path(count).read_bytes() for count in (4, 5)}
+        actual = {count: structural_seed_path(count).read_bytes() for count in range(1, 11)}
         for count, content in actual.items():
             with self.subTest(count=count):
                 self.assertEqual((len(content), hashlib.sha256(content).hexdigest()),
                                  resources.STRUCTURAL_SEEDS[count])
                 self.assertEqual(structural_seed_path(count).parent.name, "resources")
-        for count in (True, False, 0, 3, 6, "4", None):
+                self.assertEqual(re.findall(rb"iob_seed_placeholder_[0-9]{2}\.pa0", content),
+                                 [f"iob_seed_placeholder_{index:02d}.pa0".encode() for index in range(1,count+1)])
+        for count in (True, False, 0, 11, "4", None):
             with self.subTest(invalid_count=count), self.assertRaisesRegex(ValueError, "seed count"):
                 structural_seed_path(count)
         with tempfile.TemporaryDirectory() as directory:
@@ -317,3 +320,214 @@ print('INERT_IOB_DISPATCH=PASS OUTSIDE='..tostring(outside))
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IndependentRFPlanTests(unittest.TestCase):
+    def test_real_rf_plan_has_complete_surface_closure_and_no_tof_placeholders(self):
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform.backends import simion
+        from msplatform.io.manifest_records import file_record
+        instrument, numerics = independent_rf_inputs()
+        compiled = simion.compile_geometry(instrument, numerics=numerics)
+        before = copy.deepcopy(compiled)
+        root = Path('C:/pure-rf-plan')
+        plan = plan_geometry_build(compiled, run_directory=root,
+            seed_record=file_record(structural_seed_path(2), 'required_evidence'),
+            native_path_resource=NATIVE_PATH)
+        self.assertEqual(compiled, before)
+        self.assertEqual([row['operation_id'] for row in plan.operations],
+                         ['geometry_first','geometry_second','build_geometry','verify_geometry'])
+        for operation in plan.operations[:2]:
+            self.assertEqual([Path(x).suffix for x in operation['outputs']], ['.pa#','.pa-surf','.csv'])
+        spec = plan.materializations[str(root/'inputs/geometry_iob.lua')]
+        self.assertIn('independent_rf_geometry_iob_build', spec)
+        self.assertNotIn('flight_tube', spec)
+        self.assertNotIn('reflectron', spec)
+        self.assertIn('surface_witnesses', spec)
+        self.assertIn('ox=0', spec)
+        self.assertEqual(set(compiled.frontend_geometry['raw_physical_samples']), {'first','second'})
+        for name, samples in compiled.frontend_geometry['raw_physical_samples'].items():
+            self.assertEqual({row['electrode_id'] for row in samples if row['metal']},
+                             set(compiled.frontend_geometry['electrode_bindings'][name].values()))
+            self.assertTrue(any(row['metal'] is False for row in samples))
+        bad = dict(file_record(structural_seed_path(2), 'required_evidence'), sha256='F'*64)
+        with self.assertRaisesRegex(ValueError,'registered matching'):
+            plan_geometry_build(compiled,run_directory=root,seed_record=bad,native_path_resource=NATIVE_PATH)
+
+    def test_ellipse_witness_is_actual_metal_and_coarse_absence_fails(self):
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform import examples
+        from msplatform.backends import simion
+        request = copy.deepcopy(examples.load_example('rf_oatof_functional_v1').component_requests['multipole'])
+        instrument, numerics = independent_rf_inputs(request)
+        for row in numerics['component_domains'].values():
+            row['cell_mm_xyz'] = dict(x=1000., y=1000., z=1000.)
+        with self.assertRaisesRegex(ValueError,'represented interior metal node'):
+            simion.compile_geometry(instrument,numerics=numerics)
+
+    @unittest.skipUnless(LUA.is_file(),'official Lua interpreter unavailable')
+    def test_frontend_surface_readback_records_nil_and_fractional_actual_observations(self):
+        builder=native_resource_path('build_frontend_geometry.lua')
+        for fractional in (False,True):
+            with self.subTest(fractional=fractional), tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary)
+                gem=root/'model.gem';gem.write_text('INERT_GEM_FOR_TRANSPORT_ONLY',encoding='ascii')
+                raw=root/'model.pa#';surface=raw.with_suffix('.pa-surf');witness=root/'surface.csv'
+                spec=dict(schema_version=1,role='simion_frontend_raw_geometry',domain_id='actual-fixture',
+                    gem=str(gem),output=str(raw),grid=dict(nx=4,ny=4,nz=4),fractional_surface=str(surface),
+                    surface_witnesses=str(witness),physical_samples=[dict(label='metal',gu=[1,1,1],metal=True,electrode_id=7),
+                        dict(label='vacuum',gu=[0,0,0],metal=False)])
+                path=root/'spec.lua';path.write_text('return '+lua_value(spec),encoding='utf8')
+                script='arg={'+lua_value(str(path))+'};local spec=dofile(arg[1]);'
+                script+='local pa={nx=4,ny=4,nz=4,potential_type="electric"};function pa:close() end;'
+                script+='function pa:point(x,y,z) local m=x==1 and y==1 and z==1;return m and 7 or 0,m end;'
+                script+='function pa:surface_info(x,y,z) return '+('0.25,nil,nil' if fractional else 'nil,nil,nil')+' end;'
+                script+='simion={pas={}};function simion.pas:close() end;function simion.pas:open() return pa end;'
+                script+='function simion.command() for _,p in ipairs({spec.output,spec.fractional_surface}) do local f=assert(io.open(p,"wb"));f:write("INERT");f:close() end end;'
+                script+='dofile('+lua_value(str(builder))+')'
+                result=subprocess.run([str(LUA),'-e',script],capture_output=True,text=True,timeout=30,cwd=temporary)
+                self.assertEqual(result.returncode,0,result.stderr)
+                lines=witness.read_text(encoding='ascii').splitlines()
+                self.assertEqual(len(lines),6)
+                self.assertTrue(all(line.endswith(',0.25,nil,nil' if fractional else ',nil,nil,nil') for line in lines))
+
+
+    def test_segmented_elliptical_rods_and_shell_caps_have_real_member_witnesses(self):
+        import math
+        from msplatform.backends.simion.physical_samples import standalone_rf_samples
+        from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
+        from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
+        from projects.rf_multipole_ion_optics.tests.domain.test_simion_geometry import resolved_design, shell
+        source = resolved_design(shell(dict(entrance=dict(aperture_radius_mm=2.,thickness_mm=.5),
+                                           exit=dict(aperture_radius_mm=2.,thickness_mm=.5))),segmented=True)
+        for rod in source['segmentation']['segmented_rod_array']['electrodes']:
+            rod.pop('radius_mm')
+            rod.update(semi_major_axis_mm=1.,semi_minor_axis_mm=.6,major_axis_angle_rad=.37)
+        topology=build_electrode_topology(source)
+        mapping=build_simion_electrode_map(source,topology)
+        domain=dict(instance_origin_mm=dict(x=-11.,y=-11.,z=0.),cell_mm_xyz=dict(x=.2,y=.3,z=.1),
+                    dimensions=dict(nx=111,ny=75,nz=201),bounds_mm=dict(z_min=0.,z_max=20.))
+        samples=standalone_rf_samples(source,mapping,domain)
+        expected=sum(len(row['member_refs']) for row in topology)
+        self.assertEqual(len(samples),expected+1)
+        self.assertFalse(samples[-1]['metal'])
+        for sample in samples[:-1]:
+            body=source
+            for token in sample['label'].split('/')[1:]:
+                body=body[int(token)] if isinstance(body,list) else body[token]
+            x,y,z=[domain['instance_origin_mm'][a]+sample['gu'][k]*domain['cell_mm_xyz'][a] for k,a in enumerate('xyz')]
+            self.assertLess(body['z_min_mm'],z)
+            self.assertLess(z,body['z_max_mm'])
+            if 'semi_major_axis_mm' in body:
+                dx,dy=x-body['center_x_mm'],y-body['center_y_mm']
+                c,t=math.cos(body['major_axis_angle_rad']),math.sin(body['major_axis_angle_rad'])
+                self.assertLess(((c*dx+t*dy)/body['semi_major_axis_mm'])**2+
+                                ((-t*dx+c*dy)/body['semi_minor_axis_mm'])**2,1.)
+            else:
+                self.assertLess(body['inner_radius_mm']**2,x*x+y*y)
+                self.assertLess(x*x+y*y,body['outer_radius_mm']**2)
+
+    @unittest.skipUnless(LUA.is_file(),'official Lua interpreter unavailable')
+    def test_noncommuting_pose_and_anisotropic_local_origin_applied_once(self):
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform import assembly
+        from msplatform.backends import simion
+        from msplatform.contracts.rigid_transform import RigidTransform
+        from msplatform.io.manifest_records import file_record
+        instrument,numerics=independent_rf_inputs()
+        rotation=[[.8137976813493739,.09449287120628139,.5734147112880661],
+                  [.34202014332566877,.7198463103929543,-.6040227735550536],
+                  [-.4698463103929541,.6876717143411119,.5534907929724615]]
+        recipe=instrument.composition_plan['recipe']
+        global_pose=RigidTransform('rf_test_global','rf_test_global',rotation,[11.,17.,23.])
+        for row in recipe['instances']:
+            row['transform']=RigidTransform.from_contract(row['transform']).then(global_pose).to_contract()
+        instrument=assembly.assemble(recipe,instrument.components)
+        numerics['component_domains']['second']['cell_mm_xyz']=dict(x=.25,y=.3,z=.15)
+        compiled=simion.compile_geometry(instrument,numerics=numerics)
+        root=Path('C:/pure-rf-plan')
+        plan=plan_geometry_build(compiled,run_directory=root,seed_record=file_record(structural_seed_path(2),'required_evidence'),native_path_resource=NATIVE_PATH)
+        with tempfile.TemporaryDirectory() as temporary:
+            spec=Path(temporary)/'spec.lua';spec.write_text(plan.materializations[str(root/'inputs/geometry_iob.lua')],encoding='utf8')
+            script='local s=dofile('+lua_value(str(spec))+');local p=s.instances[1].placement;'
+            script+='assert(math.abs(p.az_deg-30)<1e-10 and math.abs(p.el_deg-20)<1e-10 and math.abs(p.rt_deg-40)<1e-10);'
+            origin=compiled.frontend_geometry['numerical_domains']['first']['instance_origin_mm']
+            expected=[sum(rotation[k][j]*origin[a] for j,a in enumerate('xyz'))+[11,17,23][k] for k in range(3)]
+            script+='local e='+lua_value(expected)+';for k,a in ipairs({"x_mm","y_mm","z_mm"}) do assert(math.abs(p[a]-e[k])<1e-10) end;'
+            script+='assert(p.ox==0 and p.oy==0 and p.oz==0 and p.scale==1)'
+            result=subprocess.run([str(LUA),'-e',script],capture_output=True,text=True,timeout=30,cwd=temporary)
+            self.assertEqual(result.returncode,0,result.stderr)
+
+
+    def test_public_rf_build_dispatches_same_managed_owner_and_exact_two_slot_seed(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform.backends import simion
+        instrument,numerics=independent_rf_inputs()
+        compiled=simion.compile_geometry(instrument,numerics=numerics)
+        context=SimpleNamespace(tools=dict(simion=LUA),execution_root=Path('C:/explicit-execution'))
+        stage=dict(limits=dict(transient_run_directory_bytes=123456),artifact_retention=dict(policy_version=1,**{'class':'solver_review'},reason='test'))
+        with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
+             patch('msplatform.execution.owner.run_managed_stage',return_value=dict(manifest={'identity':'managed-owner'})) as owner, \
+             patch('msplatform.results.artifacts.open_artifact',return_value='OPENED') as opened:
+            self.assertEqual(simion.build_geometry(compiled,context=context),'OPENED')
+        call=owner.call_args.kwargs
+        self.assertEqual(call['expected_operation_ids'],('geometry_first','geometry_second','build_geometry','verify_geometry'))
+        self.assertEqual(call['action'].keywords['seed_record']['path'],str(structural_seed_path(2)))
+        self.assertEqual(call['committed_new_bytes'],123456)
+        self.assertTrue(call['use_short_execution_path'])
+        self.assertEqual(opened.call_args.args[0]['manifest'],{'identity':'managed-owner'})
+
+
+    @unittest.skipUnless(LUA.is_file(),'official Lua interpreter unavailable')
+    def test_near_gimbal_and_exact_zero_branch_preserve_nonzero_roll(self):
+        import math
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform import assembly
+        from msplatform.backends import simion
+        from msplatform.contracts.rigid_transform import RigidTransform
+        from msplatform.io.manifest_records import file_record
+        instrument,numerics=independent_rf_inputs()
+        for elevation in (89.9999999,-89.9999999,90.,-90.):
+            with self.subTest(elevation=elevation):
+                a,e,t=map(math.radians,(20.,elevation,35.))
+                ca,sa,ce,se,ct,st=math.cos(a),math.sin(a),math.cos(e),math.sin(e),math.cos(t),math.sin(t)
+                if abs(elevation)==90.:
+                    ce=0.
+                rotation=[[ca*ce,-ca*se*ct+sa*st,ca*se*st+sa*ct],
+                          [se,ce*ct,-ce*st],[-sa*ce,sa*se*ct+ca*st,-sa*se*st+ca*ct]]
+                recipe=instrument.composition_plan['recipe']
+                pose=RigidTransform('rf_test_global','rf_test_global',rotation,[11.,17.,23.])
+                for row in recipe['instances']:
+                    row['transform']=RigidTransform.from_contract(row['transform']).then(pose).to_contract()
+                compiled=simion.compile_geometry(assembly.assemble(recipe,instrument.components),numerics=numerics)
+                root=Path('C:/pure-rf-plan')
+                plan=plan_geometry_build(compiled,run_directory=root,seed_record=file_record(structural_seed_path(2),'required_evidence'),native_path_resource=NATIVE_PATH)
+                with tempfile.TemporaryDirectory() as temporary:
+                    path=Path(temporary)/'spec.lua';path.write_text(plan.materializations[str(root/'inputs/geometry_iob.lua')],encoding='utf8')
+                    script='local s=dofile('+lua_value(str(path))+');local row=s.instances[1];local p=row.placement;'
+                    script+='local a,e,t=math.rad(p.az_deg),math.rad(p.el_deg),math.rad(p.rt_deg);local ca,sa,ce,se,ct,st=math.cos(a),math.sin(a),math.cos(e),math.sin(e),math.cos(t),math.sin(t);'
+                    script+='local R={{ca*ce,-ca*se*ct+sa*st,ca*se*st+sa*ct},{se,ce*ct,-ce*st},{-sa*ce,sa*se*ct+ca*st,-sa*se*st+ca*ct}};'
+                    script+='for i=1,3 do for j=1,3 do assert(math.abs(R[i][j]-row.rotation[i][j])<1e-14) end end'
+                    result=subprocess.run([str(LUA),'-e',script],capture_output=True,text=True,timeout=30,cwd=temporary)
+                    self.assertEqual(result.returncode,0,result.stderr)
+
+
+    def test_one_real_rf_component_compiles_and_plans_without_invented_parent(self):
+        from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
+        from msplatform import assembly
+        from msplatform.backends import simion
+        from msplatform.io.manifest_records import file_record
+        instrument,numerics=independent_rf_inputs()
+        recipe=instrument.composition_plan['recipe']
+        recipe['instances']=recipe['instances'][:1];recipe['connections']=[]
+        single=assembly.assemble(recipe,{'first':instrument.components['first']})
+        compiled=simion.compile_geometry(single,numerics=dict(component_domains={'first':numerics['component_domains']['first']}))
+        self.assertEqual(set(compiled.components_resolved),{'first'})
+        self.assertEqual(compiled.frontend_geometry['composition_plan']['connection_checks'],[])
+        root=Path('C:/single-real-rf')
+        plan=plan_geometry_build(compiled,run_directory=root,seed_record=file_record(structural_seed_path(1),'required_evidence'),native_path_resource=NATIVE_PATH)
+        self.assertEqual([row['operation_id'] for row in plan.operations],['geometry_first','build_geometry','verify_geometry'])
+        self.assertEqual(len(plan.input_copies),1)
+        self.assertIn('1_instance_seed.iob',plan.input_copies[0]['destination'])

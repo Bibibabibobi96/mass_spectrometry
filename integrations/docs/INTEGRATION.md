@@ -36,6 +36,11 @@ bytes and task content rather than checkout absolute paths. These are directed
 software checks, not a new native CAD/COMSOL qualification.
 Frontend aperture discretization and its frozen declarations now use the installed
 SIMION backend directly; the former common aperture module bridge is retired.
+The one- and three-instance structural IOB seeds now belong to the existing
+`repository_core/msplatform` dependency group. Their original dependency IDs,
+consumer sets and bytes remain unchanged; the common PA placeholder remains with
+its original owner. Provider containment checks remain strict. This repairs frozen
+source ownership and does not claim a new native build or flight.
 
 | Public stage | Supported behavior and side-effect boundary |
 |---|---|

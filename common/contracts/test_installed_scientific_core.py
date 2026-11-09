@@ -680,11 +680,10 @@ class InstalledScientificCoreTests(unittest.TestCase):
 
     def assert_distribution_member(self, name: str) -> None:
         self.assertNotRegex(name, r'(^|/)(tests?|test_support|__pycache__|history|runs)(/|_)')
-        # Only the two reviewed, already tracked structural source templates
+        # Only the ten reviewed, already tracked structural source templates
         # migrate into the wheel. Generated/native payloads remain forbidden.
-        template = any(name == path or name.endswith('/' + path) for path in (
-            'msplatform/backends/simion/resources/4_instance_seed.iob',
-            'msplatform/backends/simion/resources/5_instance_seed.iob'))
+        template = any(name == path or name.endswith('/' + path) for path in
+            (f'msplatform/backends/simion/resources/{count}_instance_seed.iob' for count in range(1,11)))
         if not template:
             self.assertNotRegex(name, r'\.(pa\d*|pa#|pa-surf|mph|iob|dll|exe|pyc)$')
 

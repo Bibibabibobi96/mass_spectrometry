@@ -139,7 +139,7 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
         ])
         with (solver / "processor.lua").open("a", encoding="utf-8") as stream:
             stream.write(orchestrator)
-    seed = project.parents[1] / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
+    seed = project.parents[1] / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed, solver / "1_instance_seed.iob")
     config = _read(inputs / "resolved_model.json")
     if "native_timing" in config and _read(inputs / "native_timing.json") != config["native_timing"]:

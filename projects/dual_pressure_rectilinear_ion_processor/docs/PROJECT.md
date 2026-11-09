@@ -1,5 +1,10 @@
 # 双压力区矩形射频离子处理器项目状态
 
+Functional and GUI-replay preparation now select the byte-identified structural IOB from the
+installed SIMION resource owner; the original common PA placeholder remains unchanged. Frozen
+preparation and functional software tests cover the moved source. This does not add IP native
+flight, collision or scientific qualification.
+
 本页维护独立器件的输入、有效结论、资格和开放动作。操作见[项目入口](../README.md)与
 [SIMION说明](SIMION.md)；完整局部实验、接口迁移及实现修复见
 [文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)。

@@ -25,7 +25,7 @@
     "angular_tolerance_rad": {"type": "number", "exclusiveMinimum": 0, "maximum": 3.141592653589793},
     "instances": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -39,7 +39,7 @@
     },
     "connections": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -70,6 +70,7 @@
       }
     }
   },
+  "allOf": [{"if": {"properties": {"instances": {"minItems": 2}}}, "then": {"properties": {"connections": {"minItems": 1}}}}],
   "$defs": {
     "transform": {
       "type": "object",

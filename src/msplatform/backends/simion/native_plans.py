@@ -46,6 +46,8 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
+    if compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry":
+        return _plan_rf_geometry_build(compiled, root, seed_record, path_resource)
     domains = compiled.frontend_geometry["numerical_domains"]
     count = 4 + int("entrance_refinement" in domains)
     if (seed_record.get("bytes"), str(seed_record.get("sha256", "")).lower()) != STRUCTURAL_SEEDS[count]:
@@ -120,6 +122,63 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     outputs = tuple(dict.fromkeys(path for op in operations for path in op["outputs"]))
     return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),
                            tuple(operations),outputs)
+
+
+def _plan_rf_geometry_build(compiled, root, seed_record, path_resource):
+    """Use the same native owner and IOB transport for independent RF arrays."""
+    geometry = compiled.frontend_geometry
+    names = geometry['composition_plan']['scope']['instance_ids']
+    count = len(names)
+    if count not in STRUCTURAL_SEEDS or (seed_record.get('bytes'), str(seed_record.get('sha256', '')).lower()) != STRUCTURAL_SEEDS[count]:
+        raise ValueError('RF geometry requires the registered matching structural seed')
+    _absolute(Path(seed_record['path']))
+    poses = {row['instance_id']: row['transform'] for row in geometry['composition_plan']['recipe']['instances']}
+    materializations, operations, instances = {}, [], []
+    for index, name in enumerate(names, 1):
+        domain = geometry['numerical_domains'][name]
+        grid = dict(domain['dimensions'], **{'d'+axis+'_mm': domain['cell_mm_xyz'][axis] for axis in 'xyz'})
+        raw = root/'simion/geometry'/(name+'.pa#')
+        surface, witnesses = raw.with_suffix('.pa-surf'), root/'results'/(name+'_surface.csv')
+        gem, audit = root/'inputs'/(name+'.gem'), root/'inputs'/(name+'_build.lua')
+        materializations[str(gem)] = compiled.frontend_gems[name]
+        samples = geometry['raw_physical_samples'][name]
+        if not samples or not any(row.get('metal') is False for row in samples):
+            raise ValueError('RF geometry requires physical metal and vacuum witnesses')
+        materializations[str(audit)] = 'return '+lua_value(dict(schema_version=1,
+            role='simion_frontend_raw_geometry', domain_id=name, gem=str(gem), output=str(raw), grid=grid,
+            physical_samples=samples, fractional_surface=str(surface), surface_witnesses=str(witnesses)))+'\n'
+        operations.append(_operation('geometry_'+name,'prepare',
+            ['lua',str(native_resource_path('build_frontend_geometry.lua')),str(audit)],
+            [str(raw),str(surface),str(witnesses)],'BUILD_GEOMETRY=PASS ROLE='+name))
+        transform = poses[name]
+        rotation, translation = transform['rotation'], transform['translation_mm']
+        cos_el = math.hypot(rotation[0][0], rotation[2][0])
+        el = math.atan2(rotation[1][0], cos_el)
+        if cos_el > 0.:
+            az, rt = math.atan2(-rotation[2][0],rotation[0][0]), math.atan2(-rotation[1][2],rotation[1][1])
+        else:
+            az, rt = math.atan2(rotation[0][2],rotation[2][2]), 0.
+        origin = [domain['instance_origin_mm'][axis] for axis in 'xyz']
+        world_origin = [sum(rotation[a][k]*origin[k] for k in range(3))+translation[a] for a in range(3)]
+        instances.append(dict(role=name, instance_index=index, priority_number=index, path=str(raw),
+            fractional_surface=str(surface), surface_witnesses=str(witnesses),grid=grid,
+            physical_samples=samples, rotation=rotation,
+            placement=dict(zip(('x_mm','y_mm','z_mm'),world_origin,strict=True),
+                           az_deg=math.degrees(az),el_deg=math.degrees(el),rt_deg=math.degrees(rt),scale=1.,ox=0.,oy=0.,oz=0.)))
+    control = root/'inputs/no_particles.fly2'
+    materializations[str(control)] = render_restart_fly2([])
+    seed = root/'simion/geometry/iob_seed'/(str(count)+'_instance_seed.iob')
+    iob = root/'simion/geometry/geometry.iob'
+    spec = root/'inputs/geometry_iob.lua'
+    materializations[str(spec)] = 'return '+lua_value(dict(schema_version=1,role='independent_rf_geometry_iob_build',
+        instances=instances, seed_iob=str(seed),output_iob=str(iob),empty_particle_control=str(control),
+        bootstrap_paths=[str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1,count+1)]))+'\n'
+    for mode in ('build_geometry','verify_geometry'):
+        operations.append(_operation(mode,'prepare',['lua',str(native_resource_path('build_geometry_iob.lua')),
+            str(spec),mode,str(path_resource)], [str(iob),str(iob.with_suffix('.fly2'))] if mode=='build_geometry' else [],
+            'INDEPENDENT_RF_GEOMETRY_IOB'+('_REOPEN' if mode=='verify_geometry' else '')+'=PASS'))
+    outputs = tuple(dict.fromkeys(path for op in operations for path in op['outputs']))
+    return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),tuple(operations),outputs)
 
 
 def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_directory: Path,

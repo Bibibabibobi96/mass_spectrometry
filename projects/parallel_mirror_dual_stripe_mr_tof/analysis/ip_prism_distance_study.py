@@ -565,7 +565,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
     refs = freeze_references(contract, inputs)
     geometry, authority = (read_json(refs[k]) for k in ("geometry", "voltages"))
     prism_voltage = authority["analyzer_electrode_voltages_v"][15]
-    seed = repo/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
+    seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed, inputs/"workbench_seed.iob")
     shutil.copyfile(seed.parent/"iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")
     source_cache, fields, field_paths, pending = {}, {}, {}, []
@@ -751,7 +751,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
     epoch=min(float(r["instrument_time_us"]) for r in source)
     ip_voltage=[next(v["voltage_v"] for v in authority["component_voltages_v"] if v["component_namespace"]=="ion_processor" and v["component_electrode_id"]==k) for k in range(1,16)]
     prism_voltage=authority["analyzer_electrode_voltages_v"][15]
-    seed=repo/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
+    seed=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed,inputs/"workbench_seed.iob")
     shutil.copyfile(seed.parent/"iob_seed_placeholder_01.pa0",inputs/"iob_seed_placeholder_01.pa0")
     cases=[]
@@ -921,7 +921,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
                              producer_status=read_json(owner/"run_manifest.json")["status"],
                              payload_source=str(field.parent), payload_inventory=inventory))
         pending.append((case, resolved, directory, field, inventory, states))
-    seed = repo/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
+    seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     for original, target in ((seed, inputs/"workbench_seed.iob"), (seed.parent/"iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")):
         shutil.copyfile(original, target)
     cases = []

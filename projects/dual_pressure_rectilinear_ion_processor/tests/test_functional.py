@@ -344,7 +344,7 @@ class FunctionalContractTests(unittest.TestCase):
                          repo / "src/msplatform/backends/simion/resources/native_drive.lua",
                          repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
                          repo / "src/msplatform/execution/resources/native_run_path.lua",
-                         repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
+                         repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
                          repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
         for path in fixture_paths:

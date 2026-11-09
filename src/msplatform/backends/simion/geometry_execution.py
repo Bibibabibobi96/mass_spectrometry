@@ -37,7 +37,9 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     if not isinstance(compiled, CompiledSimionGeometry):
         raise TypeError("SIMION geometry requires a compiled scientific geometry")
     verify_record("geometry structural seed", dict(seed_record))
-    sources = {name: native_resource_path(name) for name in GEOMETRY_RESOURCES}
+    independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
+    names = GEOMETRY_RESOURCES[:4] if independent_rf else GEOMETRY_RESOURCES
+    sources = {name: native_resource_path(name) for name in names}
     sources["native_run_path.lua"] = resource_path("native_run_path.lua")
     frozen_dir = session.input_dir / "native_sources"
     # Validate the complete pure plan before any materialization or native call.
@@ -60,7 +62,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
               for row in plan.input_copies]
     controls = {Path(row["outputs"][1]) for row in plan.operations
                 if row["operation_id"] == "build_geometry" and len(row["outputs"]) == 2}
-    outputs = [owned(path, "required_evidence" if Path(path) in controls else "solver_native_binary")
+    outputs = [owned(path, "required_evidence" if Path(path) in controls or str(path).endswith("_surface.csv") else "solver_native_binary")
                for path in plan.declared_outputs]
     for path in outputs:
         if path.name.endswith(".pa#"):
@@ -108,7 +110,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
         path.parent.mkdir(parents=True, exist_ok=True)
     # Tiny neutral seed bootstrap files exist only during the native IOB build.
     seed_path = copies[0][1]
-    count = 4 + int("entrance_refinement" in compiled.frontend_geometry["numerical_domains"])
+    count = len(compiled.frontend_gems) if independent_rf else 4 + int("entrance_refinement" in compiled.frontend_geometry["numerical_domains"])
     for index in range(1, count + 1):
         owned(seed_path.parent / f"iob_seed_placeholder_{index:02d}.pa0", "solver_native_binary")
     for ordinal, operation in enumerate(plan.operations, 1):
@@ -131,9 +133,9 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             role = operation_id.removeprefix("geometry_")
             member = {}
             for index, path in enumerate(operation["outputs"]):
-                label = "raw_geometry" if index == 0 else "fractional_surface"
+                label = ("raw_geometry", "fractional_surface", "surface_witnesses")[index]
                 key = role + "_" + label
-                records[key] = file_record(session.canonical_path(path), "solver_native_binary")
+                records[key] = file_record(session.canonical_path(path), "required_evidence" if label == "surface_witnesses" else "solver_native_binary")
                 member[label] = key
             native_assets[role] = member
         elif operation_id == "build_geometry":

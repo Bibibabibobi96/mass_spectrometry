@@ -174,7 +174,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
             self.assertIn('FROZEN_OWNER_INLINE_IMPORTS=PASS', imported.stdout)
             arguments = ['--run', str(worker), '--phase', 'pulse', '--plan', str(run / 'inputs/pulse/paired_accelerator_pulse_plan.json'),
                 '--code-root', str(frozen), '--field-pa', str(generation / 'paired_static_on.pa'),
-                '--seed-iob', str(frozen / 'common/simion/assets/iob_instance_seeds/1_instance_seed.iob')]
+                '--seed-iob', str(frozen / 'src/msplatform/backends/simion/resources/1_instance_seed.iob')]
             scheduled = subprocess.run([sys.executable, '-B', '-s', '-m',
                 'integrations.workflows.paired_accelerator_pulse.runtime', 'prepare-dispatch', *arguments],
                 cwd=frozen, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)

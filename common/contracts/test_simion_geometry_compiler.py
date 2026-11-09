@@ -182,7 +182,7 @@ class SimionGeometryCompilerTests(unittest.TestCase):
         remapped = simion_api.compile_geometry(instrument, numerics=changed)
         self.assertNotEqual(remapped.frontend_gems['first'],
                             simion_api.compile_geometry(instrument, numerics=numerics).frontend_gems['first'])
-        with self.assertRaisesRegex(ValueError, 'pure compile only'):
+        with self.assertRaisesRegex(ValueError, 'explicit available SIMION executable'):
             simion_api.build_geometry(remapped, context=None)
 
 

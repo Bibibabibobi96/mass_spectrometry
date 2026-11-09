@@ -1,6 +1,6 @@
 # SIMION IOB 实例种子
 
-本目录保存由 GUI 创建的一至十实例 Workbench 种子。实例数量选择与禁止空槽的公共规则见
+The GUI-created one-to-ten-slot Workbench containers are installed under `src/msplatform/backends/simion/resources/`. This directory retains the original large placeholder PAs. Instance-count and no-empty-slot rules:
 [SIMION 实现入口](../../README.md)。种子只提供容器结构，不定义器件、电极或项目资格。
 
 每个槽使用不同的本地 `iob_seed_placeholder_NN.pa0`。SIMION 会让引用同一文件名的实例共享 PA
@@ -14,3 +14,5 @@
 
 构建时不需要 GEM 或 Fly2 导出。运行不得原地修改本目录种子；具体实例位姿、PA 来源及验收由
 消费者的冻结输入和验证合同负责。
+
+The byte-identified 1–10 IOB containers now live only in `src/msplatform/backends/simion/resources/`; use the canonical structural-seed selector. The existing large placeholders remain here for the original one-slot helper and frozen consumers; the package geometry builder creates private neutral placeholders instead.

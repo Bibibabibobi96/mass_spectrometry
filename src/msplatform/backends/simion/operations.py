@@ -40,9 +40,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
 
     if not isinstance(compiled, CompiledSimionGeometry):
         raise ContractError("build_geometry requires compiled SIMION geometry")
-    if compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry":
-        raise ContractError("independent RF native build remains in the project workflow; this SDK operation is pure compile only")
-    if "simion" not in context.tools or not context.tools["simion"].is_file():
+    if context is None or "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("build_geometry requires an explicit available SIMION executable")
     stage, authority = read_stage_policy(context, "build_geometry", required_roles=("solver_native_binary",))
     runtime = stage.get("runtime", {})
@@ -51,8 +49,9 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
-    seed = file_record(structural_seed_path(4 + int(
-        "entrance_refinement" in snapshot.frontend_geometry["numerical_domains"])), "required_evidence")
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") == "simion_independent_rf_geometry"
+             else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
+    seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
     # The owner alone creates the actual run and its existing ASCII projection.
     planning_root = context.execution_root / "geometry-plan"
