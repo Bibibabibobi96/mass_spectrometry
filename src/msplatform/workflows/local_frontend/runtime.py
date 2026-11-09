@@ -25,7 +25,7 @@ from msplatform.backends.simion.particle_batching import batch_plan_from_dispatc
 from msplatform.backends.simion.tracking_program import (
     build_local_frontend_program, _resolve_standalone_dynamic_field_bank,
 )
-from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2, lua_value
+from msplatform.backends.simion.source import GLOBAL_COLUMNS, render_restart_fly2, lua_value, load_initial_state
 from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
 from msplatform.execution.resources import resource_path
 from msplatform.backends.simion import tracking_program
@@ -41,28 +41,6 @@ _PROGRAM_SOURCES = {
 }
 
 
-def _load_initial_state(path: Path) -> tuple[list[float], list[int], list[list[float]]]:
-    """Load canonical clocks, retained row IDs and velocities in mm/us.
-
-    A restart can reindex its SIMION rows while preserving the mother-cohort
-    identity in the separate row map.  The state-file ID is therefore only
-    validated locally; the row map is the authority for source IDs.
-    """
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        raise ValueError("single-flight initial state is empty")
-    id_column = "particle_id" if "particle_id" in rows[0] else "simulation_particle_id"
-    actual_ids = [int(row[id_column]) for row in rows]
-    if any(value <= 0 for value in actual_ids) or len(set(actual_ids)) != len(actual_ids):
-        raise ValueError("single-flight initial-state particle IDs must be unique and positive")
-    values = [float(row["instrument_time_us"]) for row in rows]
-    if any(not math.isfinite(value) or value < 0 for value in values):
-        raise ValueError("single-flight birth times must be non-negative")
-    velocities = [[float(row[f"velocity_{axis}_m_s"]) / 1000.0 for axis in "xyz"] for row in rows]
-    if any(not math.isfinite(value) for velocity in velocities for value in velocity):
-        raise ValueError("single-flight initial velocities must be finite")
-    return values, actual_ids, velocities
 
 
 
@@ -235,7 +213,7 @@ def _case(run: Path, phase: str, name: str, rows: list[dict], context: dict, pha
     writer.writeheader()
     writer.writerows(rows)
     _write_once(source_path, stream.getvalue())
-    births, ids, velocities = _load_initial_state(source_path)
+    births, ids, velocities = load_initial_state(source_path)
     numerical = context["numerics"]
     # A positive explicit pulse covers the complete declared birth+age horizon.
     width = context["flight_horizon_us"]

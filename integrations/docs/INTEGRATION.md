@@ -932,3 +932,16 @@ Official CLOC 2.10, e4fecc11 to this slice: total +2, production 0, tests +2,
 zero unclassified; full language counts/filter remain in task evidence.
 
 Modern Program-based local/cooled and paired-pulse preparation/runtime now use the installed tracking quality validator; its documented range and CLI distinction are described in [public SIMION controls](../../common/simion/README.md#program-owned-trajectory-quality). Frozen defaults and other numerical/physics guards remain unchanged. Local frontend uses its bound Program as the sole quality authority instead of also passing a CLI quality flag. This update has plain-Lua/software evidence only and adds no native qualification.
+
+
+### Shared initial-state record reader
+
+The installed local frontend runtime reads its frozen initial-state CSV through
+`msplatform.backends.simion.source.load_initial_state`. The SFI Program wrapper
+has no separate reader body or re-export. The reader preserves row order,
+explicit positive unique row IDs, each original instrument-time value and
+per-row velocity conversion from m/s to mm/us. It does not resample, reset
+births, reinterpret the mother-cohort row map, validate a producer or launch a
+process. Payload and exception semantics are unchanged. The root SFI Program
+wrapper still owns its remaining project path-default injection and is not
+retired by this reader extraction.

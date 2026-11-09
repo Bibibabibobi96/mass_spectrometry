@@ -43,6 +43,16 @@ from msplatform.workflows.multipole_ip.prepare import prepare as prepare_multipo
 from msplatform.backends.simion import rf_observations
 
 root = pathlib.Path.cwd()
+
+# Read the same explicit CSV ABI used by the installed local frontend runtime.
+from msplatform.backends.simion.source import load_initial_state
+source_record_probe = root / "installed_initial_state.csv"
+source_record_probe.write_text("particle_id,instrument_time_us,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s\n"
+                               "37,0,1000,-250,0\n7,12.5,-125,2000,3.5\n", encoding="utf-8-sig")
+source_record_bytes = source_record_probe.read_bytes()
+assert load_initial_state(source_record_probe) == ([0., 12.5], [37, 7], [[1., -.25, 0.], [-.125, 2., .0035]])
+assert source_record_probe.read_bytes() == source_record_bytes
+assert load_initial_state.__module__ == "msplatform.backends.simion.source"
 deployment = dict(schema_version=1, role='execution_environment',
     tools={'python': sys.executable, 'powershell': 'explicit-pwsh.exe'},
     policy={'host_state_path': 'shared-host.sqlite3'},
