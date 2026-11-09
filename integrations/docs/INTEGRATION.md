@@ -904,3 +904,5 @@ tests in 258.968 s. Independent weighted/unknown/cohort/crossing comparisons ret
 the original scientific definitions; no native propagation was performed here.
 Official CLOC 2.10, e4fecc11 to this slice: total +2, production 0, tests +2,
 zero unclassified; full language counts/filter remain in task evidence.
+
+Modern Program-based local/cooled and paired-pulse preparation/runtime now use the installed tracking quality validator; its documented range and CLI distinction are described in [public SIMION controls](../../common/simion/README.md#program-owned-trajectory-quality). Frozen defaults and other numerical/physics guards remain unchanged. Local frontend uses its bound Program as the sole quality authority instead of also passing a CLI quality flag. This update has plain-Lua/software evidence only and adds no native qualification.

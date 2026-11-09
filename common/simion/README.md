@@ -695,3 +695,11 @@ MR和IP正常生产者携带冻结写入器，实际分析调用同一读取器�
 外部发布资产仍用原manifest预期身份，未知writer不得进入新身份建立边界，身份不代表科学适用性。
 IP的prepare也调用现`workbench_seed.freeze_workbench_seed`冻结官方seed和placeholder配套，
 不另复制科学场；其冻结Python闭包同时保留实际Lua资源和已选作者配置。
+
+### Program-owned trajectory quality
+
+Modern installed tracking uses `validate_program_trajectory_quality` in `msplatform.backends.simion.tracking_program`: an explicit integer from -500 through500 is accepted; booleans, fractions and values outside that range are rejected. The RF, shared single-flight, local/cooled frontend and paired-pulse Program paths consume that one validator. Their existing positive defaults, RF-period steps, time/step limits, seeds, pulse/clock and particle identity rules are unchanged.
+
+This range is for the reserved variable `sim_trajectory_quality`, documented by [Workbench Program Extensions](https://simion.com/info/workbench_program_extensions.html#sim_trajectory_quality) and the installed SIMION2020 supplemental Help; [Time Step Size](https://simion.com/info/time_step_size.html) explains that zero/negative and positive values select different numerical behavior. It is a user numerical choice, not an accuracy qualification or automatic tuning recommendation.
+
+The local frontend applies quality through its same-stem frozen Program on load and every initialize_run, with `--programs 1`; its redundant CLI quality argument has been removed. The separate `--trajectory-quality` CLI range has not been verified for8.2.0.11. Legacy CLI-only RF runners and dual-cone CLI numerics have not been broadened by this change. Plain-Lua callback/readback checks are software evidence, not a native Fly or convergence claim.

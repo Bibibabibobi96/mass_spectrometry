@@ -1112,3 +1112,5 @@ checks do not relabel the earlier native epoch or close the final Repository/per
 CLOC 2.10, 756ea890 to this integration, reports code total +797, production +381, tests +416,
 with zero unclassified files; full per-language counts and filters are retained outside Git in
 `cloc-rf-main.txt` under the workspace takeover evidence directory.
+
+Independent installed RF tracking accepts the documented integer Program trajectory-quality range through the [shared Program validator](../../../common/simion/README.md#program-owned-trajectory-quality), including zero and negative values. Existing positive defaults, source/mother identities, absolute clock and positive RF/time controls are unchanged. This is parameter-contract/software coverage; native Fly/accuracy is not newly qualified, and legacy CLI-only RF runners retain their existing separate policy.

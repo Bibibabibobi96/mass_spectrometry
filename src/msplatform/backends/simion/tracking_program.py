@@ -1034,6 +1034,13 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
     return frontend, config
 
 
+def validate_program_trajectory_quality(value: Any) -> int:
+    """Validate the documented reserved-variable range, not the separate CLI option."""
+    if type(value) is not int or not -500 <= value <= 500:
+        raise ValueError("SIMION Program trajectory_quality must be an integer within -500..500")
+    return value
+
+
 def validate_native_flight(flight: Mapping[str, Any] | None, *, requires_rf: bool = True,
                            allow_discovery: bool = False) -> dict[str, Any]:
     """Validate author discovery explicitly; native execution accepts actual pulses only."""
@@ -1079,10 +1086,11 @@ def validate_native_flight(flight: Mapping[str, Any] | None, *, requires_rf: boo
             raise ValueError("discovery pulse end must be finite and later than each candidate")
     if pulse['mode'] == 'discover' and 'observation_times_us' in flight:
         raise ValueError("author discovery cannot contain derived observation times")
-    for key, upper in [("trajectory_quality",500)]+([("rf_steps_per_period",None)] if requires_rf else []):
-        value = flight[key]
-        if type(value) is not int or value < 1 or (upper is not None and value > upper):
-            raise ValueError(f"native flight {key} must be a positive integer" + (" within 1..500" if upper else ""))
+    validate_program_trajectory_quality(flight["trajectory_quality"])
+    if requires_rf:
+        value = flight["rf_steps_per_period"]
+        if type(value) is not int or value < 1:
+            raise ValueError("native flight rf_steps_per_period must be a positive integer")
     return dict(flight)
 
 
@@ -2229,8 +2237,7 @@ def build_local_frontend_program(
         raise ValueError("local shared times must be explicit, unique and increasing")
     if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period < 1:
         raise ValueError("local RF steps per period must be positive")
-    if type(trajectory_quality) is not int or not 1 <= trajectory_quality <= 500:
-        raise ValueError("local frontend requires explicit positive integer trajectory quality within SIMION range 1..500")
+    validate_program_trajectory_quality(trajectory_quality)
     specs = _resolve_standalone_dynamic_field_bank(
         standalone_dynamic_field_bank, {"coarse_frontend": 1},
     )

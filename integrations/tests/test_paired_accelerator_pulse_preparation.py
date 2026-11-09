@@ -295,7 +295,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
                 "quality_bool": lambda q: q["numerics"].update(simion_trajectory_quality=True),
                 "quality_fraction": lambda q: q["numerics"].update(simion_trajectory_quality=1.5),
                 "quality_string": lambda q: q["numerics"].update(simion_trajectory_quality="10"),
-                "quality_zero": lambda q: q["numerics"].update(simion_trajectory_quality=0),
+                "quality_below_supported": lambda q: q["numerics"].update(simion_trajectory_quality=-501),
                 "quality_above_supported": lambda q: q["numerics"].update(simion_trajectory_quality=501),
                 "frame_changed": lambda q: q["source"].update(frame_id="different_frame"),
                 "instance_changed": lambda q: q["source"].update(instance_id="different_instance"),
@@ -378,7 +378,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
             root = Path(directory)
             path, author, producer, model = self.fixture(root)
             original = prepare(path, root / "before")
-            for quality in (1, 500):
+            for quality in (-500,-1,0,1,500):
                 author["numerics"]["simion_trajectory_quality"] = quality
                 runtime.write(path, author)
                 quality_plan = prepare(path, root / f"quality_{quality}")

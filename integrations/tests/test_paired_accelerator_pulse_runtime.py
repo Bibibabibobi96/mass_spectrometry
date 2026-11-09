@@ -191,93 +191,99 @@ class PairedPulseRuntimeTests(unittest.TestCase):
 
     @unittest.skipUnless(LUA.is_file(),"standalone Lua unavailable")
     def test_generated_program_emits_two_fly_evidence_without_overwriting_assets(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);plan,pa,seed=fixture(root)
-            task=materialize_simion_batches(plan,root/"batch",[[41,7]],field_pa=pa,code_root=ROOT,seed_iob=seed)[0]
-            harness=root/"program_harness.lua"
-            harness.write_text(r'''simion={wb={instances={}}};segment={}
-function simion.workbench_program() end
-local pa={path=arg[2],potential_type='electric',nx=10,ny=11,nz=12,dx_mm=.5,dy_mm=1,dz_mm=.05}
-function pa:inside_vc() return true end
-function pa:field_vc() return 2,-3,4 end
-local item={pa=pa,x=-1,y=-5,z=-2,az=0,el=0,rt=0,scale=1}
-function item:wb_to_pa_coords(x,y,z) return (x+1)/.5,y+5,(z+2)/.05 end
-simion.wb.instances[1]=item
-dofile(arg[1]);sim_trajectory_quality=-1;segment.load();assert(sim_trajectory_quality==19)
-for fly=1,2 do
-sim_trajectory_quality=-1;segment.initialize_run();assert(sim_trajectory_quality==19)
-for i=1,2 do
- ion_number=i;ion_instance=1;ion_time_of_flight=0;ion_splat=0
- ion_px_mm,ion_py_mm,ion_pz_mm=0,0,0;ion_vx_mm,ion_vy_mm,ion_vz_mm=0,0,0
- segment.initialize();assert(ion_vx_mm==1.25 and ion_vy_mm==-.5 and ion_vz_mm==2)
- segment.efield_adjust();assert(ion_dvoltsx_gu==-2)
- for elapsed=1,3 do ion_time_of_flight=elapsed;segment.other_actions() end
- assert(ion_splat==1)
- ion_splat=nil
- setmetatable(_G,{__index=function(_,key) if key=='ion_splat' then error('terminate must not read ion_splat') end end})
- segment.terminate()
- setmetatable(_G,nil)
-end
-segment.terminate_run()
-end
-print('GENERATED_PULSE_PROGRAM_FIXTURE=PASS')
-''',encoding="utf-8")
-            result=subprocess.run([str(LUA),str(harness),task["paths"]["paired_pulse.lua"],str(pa)],cwd=root,capture_output=True,text=True,timeout=20,check=False)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            payloads=[line[len(ROW_PREFIX):] for line in result.stdout.splitlines() if line.startswith(ROW_PREFIX)]
-            rows=list(csv.DictReader(io.StringIO(",".join(COLUMNS)+"\n"+"\n".join(payloads))))
-            self.assertEqual(rows[:len(rows)//2],rows[len(rows)//2:])
-            self.assertFalse(list(root.rglob("paired_pulse_particles.csv")))
-            sources=[a for a in rows if a["event"]=="source_state"]
-            self.assertEqual([int(a["particle_id"]) for a in sources],[41,7,41,7])
-            self.assertEqual([float(a["instrument_time_us"]) for a in sources],[10.,10.,10.,10.])
-            self.assertEqual([float(a["original_birth_time_us"]) for a in sources],[.041,.007,.041,.007])
-            self.assertEqual(len([a for a in rows if a["event"]=="observation"]),16)
-            self.assertTrue(all(a["terminal_reason"]=="observation_window_complete" for a in rows if a["event"]=="terminal"))
-            self.assertTrue(all(a["solver_raw_status"]=="" for a in rows if a["event"]=="terminal"))
+        for quality in (19,-500,-1,0,1,500):
+            with self.subTest(quality=quality):
+                with tempfile.TemporaryDirectory() as temp:
+                    root=Path(temp);plan,pa,seed=fixture(root)
+                    document=json.loads(plan.read_text());document["numerics"]["simion_trajectory_quality"]=quality;plan.write_text(json.dumps(document))
+                    task=materialize_simion_batches(plan,root/"batch",[[41,7]],field_pa=pa,code_root=ROOT,seed_iob=seed)[0]
+                    harness=root/"program_harness.lua"
+                    harness.write_text(r'''simion={wb={instances={}}};segment={}
+        function simion.workbench_program() end
+        local pa={path=arg[2],potential_type='electric',nx=10,ny=11,nz=12,dx_mm=.5,dy_mm=1,dz_mm=.05}
+        function pa:inside_vc() return true end
+        function pa:field_vc() return 2,-3,4 end
+        local item={pa=pa,x=-1,y=-5,z=-2,az=0,el=0,rt=0,scale=1}
+        function item:wb_to_pa_coords(x,y,z) return (x+1)/.5,y+5,(z+2)/.05 end
+        simion.wb.instances[1]=item
+        dofile(arg[1]);sim_trajectory_quality=-1;segment.load();assert(sim_trajectory_quality==tonumber(arg[3]))
+        for fly=1,2 do
+        sim_trajectory_quality=-1;segment.initialize_run();assert(sim_trajectory_quality==tonumber(arg[3]))
+        for i=1,2 do
+         ion_number=i;ion_instance=1;ion_time_of_flight=0;ion_splat=0
+         ion_px_mm,ion_py_mm,ion_pz_mm=0,0,0;ion_vx_mm,ion_vy_mm,ion_vz_mm=0,0,0
+         segment.initialize();assert(ion_vx_mm==1.25 and ion_vy_mm==-.5 and ion_vz_mm==2)
+         segment.efield_adjust();assert(ion_dvoltsx_gu==-2)
+         for elapsed=1,3 do ion_time_of_flight=elapsed;segment.other_actions() end
+         assert(ion_splat==1)
+         ion_splat=nil
+         setmetatable(_G,{__index=function(_,key) if key=='ion_splat' then error('terminate must not read ion_splat') end end})
+         segment.terminate()
+         setmetatable(_G,nil)
+        end
+        segment.terminate_run()
+        end
+        print('GENERATED_PULSE_PROGRAM_FIXTURE=PASS')
+        ''',encoding="utf-8")
+                    result=subprocess.run([str(LUA),str(harness),task["paths"]["paired_pulse.lua"],str(pa),str(quality)],cwd=root,capture_output=True,text=True,timeout=20,check=False)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                    payloads=[line[len(ROW_PREFIX):] for line in result.stdout.splitlines() if line.startswith(ROW_PREFIX)]
+                    rows=list(csv.DictReader(io.StringIO(",".join(COLUMNS)+"\n"+"\n".join(payloads))))
+                    self.assertEqual(rows[:len(rows)//2],rows[len(rows)//2:])
+                    self.assertFalse(list(root.rglob("paired_pulse_particles.csv")))
+                    sources=[a for a in rows if a["event"]=="source_state"]
+                    self.assertEqual([int(a["particle_id"]) for a in sources],[41,7,41,7])
+                    self.assertEqual([float(a["instrument_time_us"]) for a in sources],[10.,10.,10.,10.])
+                    self.assertEqual([float(a["original_birth_time_us"]) for a in sources],[.041,.007,.041,.007])
+                    self.assertEqual(len([a for a in rows if a["event"]=="observation"]),16)
+                    self.assertTrue(all(a["terminal_reason"]=="observation_window_complete" for a in rows if a["event"]=="terminal"))
+                    self.assertTrue(all(a["solver_raw_status"]=="" for a in rows if a["event"]=="terminal"))
 
     @unittest.skipUnless(LUA.is_file(),"standalone Lua unavailable")
     def test_materialized_iob_task_builds_and_reopens_one_slot_preserving_companions(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);plan,pa,seed=fixture(root)
-            task=materialize_simion_batches(plan,root/"batch",[[41,7]],field_pa=pa,code_root=ROOT,seed_iob=seed)[0]
-            program=Path(task["paths"]["paired_pulse.lua"]);fly=Path(task["paths"]["paired_pulse.fly2"])
-            before=[program.read_bytes(),fly.read_bytes()]
-            harness=root/"iob_harness.lua"
-            harness.write_text(r'''-- Simulated API object behavior only; no native IOB/PA data.
-local original_args=arg
-local s=dofile(original_args[2])
-local pa={path=s.field_pa,nx=10,ny=11,nz=12,dx_mm=.5,dy_mm=1,dz_mm=.05}
-function pa:load() self.path=self.filename end
-local item={pa=pa}
-function item:_debug_update_size() end
-simion={wb={instances={item}}}
-function simion.command() end
-function simion.wb:load_particles(path) assert(path==s.fly2) end
-function simion.wb:save(path)
- local f=assert(io.open(path,'w'));f:write('INERT IOB API FIXTURE');f:close()
- for _,companion in ipairs({s.program,s.fly2}) do
-  f=assert(io.open(companion,'w'));f:write('seed overwritten companion');f:close()
- end
-end
--- A separate command context has no Program reserved-variable value.
-assert(sim_trajectory_quality==nil)
-arg={original_args[2],'build'};dofile(original_args[1])
-assert(sim_trajectory_quality==nil,'builder wrote a command-context quality')
-arg={original_args[2],'verify'};dofile(original_args[1])
-assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by writing it')
-''',encoding="utf-8")
-            result=subprocess.run([str(LUA),str(harness),task["paths"]["build_iob.lua"],task["paths"]["build_spec.lua"]],
-                                  cwd=ROOT,capture_output=True,text=True,check=False,timeout=20)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn("PAIRED_ACCELERATOR_PULSE_IOB_VERIFY=PASS",result.stdout)
-            self.assertEqual([program.read_bytes(),fly.read_bytes()],before)
-            # Wrong frozen Program quality is refused even though command-global Q is absent.
-            program.write_text(program.read_text().replace("trajectory_quality=19,maximum_step_us", "trajectory_quality=20,maximum_step_us"))
-            rejected=subprocess.run([str(LUA),str(harness),task["paths"]["build_iob.lua"],task["paths"]["build_spec.lua"]],
-                cwd=ROOT,capture_output=True,text=True,check=False,timeout=20)
-            self.assertNotEqual(rejected.returncode,0)
-            self.assertIn("frozen OA Program trajectory quality differs",rejected.stderr)
+        for quality in (19,-500,-1,0,1,500):
+            with self.subTest(quality=quality):
+                with tempfile.TemporaryDirectory() as temp:
+                    root=Path(temp);plan,pa,seed=fixture(root)
+                    document=json.loads(plan.read_text());document["numerics"]["simion_trajectory_quality"]=quality;plan.write_text(json.dumps(document))
+                    task=materialize_simion_batches(plan,root/"batch",[[41,7]],field_pa=pa,code_root=ROOT,seed_iob=seed)[0]
+                    program=Path(task["paths"]["paired_pulse.lua"]);fly=Path(task["paths"]["paired_pulse.fly2"])
+                    before=[program.read_bytes(),fly.read_bytes()]
+                    harness=root/"iob_harness.lua"
+                    harness.write_text(r'''-- Simulated API object behavior only; no native IOB/PA data.
+        local original_args=arg
+        local s=dofile(original_args[2])
+        local pa={path=s.field_pa,nx=10,ny=11,nz=12,dx_mm=.5,dy_mm=1,dz_mm=.05}
+        function pa:load() self.path=self.filename end
+        local item={pa=pa}
+        function item:_debug_update_size() end
+        simion={wb={instances={item}}}
+        function simion.command() end
+        function simion.wb:load_particles(path) assert(path==s.fly2) end
+        function simion.wb:save(path)
+         local f=assert(io.open(path,'w'));f:write('INERT IOB API FIXTURE');f:close()
+         for _,companion in ipairs({s.program,s.fly2}) do
+          f=assert(io.open(companion,'w'));f:write('seed overwritten companion');f:close()
+         end
+        end
+        -- A separate command context has no Program reserved-variable value.
+        assert(sim_trajectory_quality==nil)
+        arg={original_args[2],'build'};dofile(original_args[1])
+        assert(sim_trajectory_quality==nil,'builder wrote a command-context quality')
+        arg={original_args[2],'verify'};dofile(original_args[1])
+        assert(sim_trajectory_quality==nil,'verifier covered a missing saved quality by writing it')
+        ''',encoding="utf-8")
+                    result=subprocess.run([str(LUA),str(harness),task["paths"]["build_iob.lua"],task["paths"]["build_spec.lua"]],
+                                          cwd=ROOT,capture_output=True,text=True,check=False,timeout=20)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                    self.assertIn("PAIRED_ACCELERATOR_PULSE_IOB_VERIFY=PASS",result.stdout)
+                    self.assertEqual([program.read_bytes(),fly.read_bytes()],before)
+                    # Wrong frozen Program quality is refused even though command-global Q is absent.
+                    program.write_text(program.read_text().replace(f"trajectory_quality={quality},maximum_step_us", f"trajectory_quality={quality+1},maximum_step_us"))
+                    rejected=subprocess.run([str(LUA),str(harness),task["paths"]["build_iob.lua"],task["paths"]["build_spec.lua"]],
+                        cwd=ROOT,capture_output=True,text=True,check=False,timeout=20)
+                    self.assertNotEqual(rejected.returncode,0)
+                    self.assertIn("frozen OA Program trajectory quality differs",rejected.stderr)
 
     def test_public_dispatch_and_retained_formal_case_reuse_exact_controls(self):
         with tempfile.TemporaryDirectory() as temp:

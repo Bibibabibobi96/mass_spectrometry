@@ -70,6 +70,29 @@ def field_assets(root,compiled):
 
 class RfTrackingTests(unittest.TestCase):
     @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
+    def test_documented_program_quality_range_is_written_and_read_back(self):
+        _,_,_,_,_,numerics=rf_tracking_case()
+        for quality in (0,-500,-1,1,500):
+            with self.subTest(quality=quality):
+                _,model,packet,plan=plan_case(numerics=dict(numerics,trajectory_quality=quality))
+                self.assertEqual(plan['flight']['trajectory_quality'],quality)
+                self.assertEqual([row['particle_id'] for row in plan['rows']],[7,91])
+                self.assertEqual([row['instrument_time_us'] for row in plan['rows']],[1.25,1.25])
+                program=render_rf_controls(model,plan,assets={},native_sources={})['program']
+                stub="simion={workbench_program=function() segment={} end};sim_grouped=1;sim_segment_global=0;"
+                code=stub+program+'\nsegment.initialize_run();assert(sim_trajectory_quality=='+str(quality)+');print("QUALITY_READBACK="..sim_trajectory_quality)'
+                with tempfile.TemporaryDirectory() as directory:
+                    root=Path(directory);script=root/'quality.lua';script.write_text(code,encoding='utf-8')
+                    completed=subprocess.run([str(LUA),str(script)],cwd=root,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(completed.returncode,0,completed.stderr)
+                    self.assertIn('QUALITY_READBACK='+str(quality),completed.stdout)
+        for quality in (True,False,-501,501,0.0,'0',None):
+            with self.subTest(invalid=quality),self.assertRaises(ValueError):
+                plan_case(numerics=dict(numerics,trajectory_quality=quality))
+        with self.assertRaises(ValueError):
+            plan_case(numerics=dict(numerics,trajectory_quality=0,rf_steps_per_period=0))
+
+    @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
     def test_callback_permissions_and_outside_instance_terminal_keep_full_mother(self):
         from msplatform.backends.simion.rf_tracking_collection import collect_rf_tracking_logs
         _,model,_,plan=plan_case()

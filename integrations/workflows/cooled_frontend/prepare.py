@@ -1,6 +1,8 @@
 """Freeze original births and an explicitly designed cooled-to-OA assembly."""
 from __future__ import annotations
 
+from msplatform.backends.simion.tracking_program import validate_program_trajectory_quality
+
 import argparse
 import copy
 import hashlib
@@ -80,12 +82,12 @@ def validate_request(request: dict) -> None:
     numerical = request["numerics"]
     _keys(numerical["cell_mm_xyz"], set("xyz"), "cell pitch")
     for key, value in {**numerical["cell_mm_xyz"], **{k: v for k, v in numerical.items() if k != "cell_mm_xyz"}}.items():
-        _number(value, key, positive=True)
-    for key in ("rf_steps_per_period", "trajectory_quality", "collision_seed"):
+        if key != "trajectory_quality":
+            _number(value, key, positive=True)
+    for key in ("rf_steps_per_period", "collision_seed"):
         if type(numerical[key]) is not int:
             raise ValueError(f"{key} must be an integer")
-    if not 1 <= numerical["trajectory_quality"] <= 500:
-        raise ValueError("SIMION trajectory quality must be within 1..500")
+    validate_program_trajectory_quality(numerical["trajectory_quality"])
     if type(request["pressure_scale"]) not in (int, float) or request["pressure_scale"] not in (0, 1):
         raise ValueError("controlled pressure scale must be exactly zero or one")
     _keys(request["drive"], {"capture_voltages_v", "closed_voltages_v", "release_voltages_v", "entrance_close_us", "release_start_us"}, "cooled drive")

@@ -152,6 +152,22 @@ def publish_inert_fields(run, cache_root):
 
 
 class CooledFrontendTests(unittest.TestCase):
+    def test_program_quality_range_does_not_relax_other_numerics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _,request=cooled_request_fixture(Path(directory))
+            for quality in (-500,-1,0,1,500):
+                with self.subTest(quality=quality):
+                    selected=copy.deepcopy(request);selected['numerics']['trajectory_quality']=quality
+                    self.assertIsNone(cooled_prepare.validate_request(selected))
+            for quality in (True,False,-501,501,0.0,'0',None):
+                with self.subTest(invalid=quality),self.assertRaises(ValueError):
+                    selected=copy.deepcopy(request);selected['numerics']['trajectory_quality']=quality
+                    cooled_prepare.validate_request(selected)
+            for key in ('rf_steps_per_period','collision_seed','maximum_step_us'):
+                with self.subTest(positive_guard=key),self.assertRaises(ValueError):
+                    selected=copy.deepcopy(request);selected['numerics'].update(trajectory_quality=0,**{key:0})
+                    cooled_prepare.validate_request(selected)
+
     def test_two_zone_author_recipe_uses_mechanical_frame(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -637,19 +653,20 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             self.assertTrue((snapshot/"common/simion/collision_hs1.py").exists())
             # Provider packages may also deliver modules unused by this preparation.
             # Exercise new static imports and dynamic seed resources from this same frozen tree.
-            smoke_code = ("from pathlib import Path; import sys; "
+            smoke_code = ("from pathlib import Path; import sys,json; sys.path[:0]=json.loads(sys.argv[1]); "
+                "import msplatform.backends.simion.tracking_program as tracking; "
                 "import common.simion.workbench_seed as seed; "
                 "import integrations.workflows.local_frontend.runtime as local; "
                 "import integrations.workflows.cooled_frontend.runtime as cooled; "
                 "import integrations.workflows.single_reflection_flight.field_plan as fields; "
                 "root=Path.cwd().resolve(); "
-                "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in (seed,local,cooled,fields)); "
-                "first=seed.freeze_workbench_seed(Path(sys.argv[1]),root); "
+                "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in (seed,local,cooled,fields,tracking)); "
+                "first=seed.freeze_workbench_seed(Path(sys.argv[2]),root); "
                 "before={k:Path(v['frozen']['path']).stat().st_mtime_ns for k,v in first.items()}; "
-                "second=seed.freeze_workbench_seed(Path(sys.argv[1]),root); "
+                "second=seed.freeze_workbench_seed(Path(sys.argv[2]),root); "
                 "assert before=={k:Path(v['frozen']['path']).stat().st_mtime_ns for k,v in second.items()}; "
                 "assert set(second)=={'seed','placeholder'}; print('FROZEN_MEMBER_AND_SEED=PASS')")
-            smoke = subprocess.run([sys.executable, "-B", "-s", "-c", smoke_code, str(output)],
+            smoke = subprocess.run([sys.executable, "-I", "-c", smoke_code, json.dumps(python_import_roots(snapshot)), str(output)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(smoke.returncode,0,smoke.stdout+smoke.stderr)
             self.assertIn("FROZEN_MEMBER_AND_SEED=PASS",smoke.stdout)

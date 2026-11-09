@@ -5,6 +5,8 @@ belong to the executing owner; no solver or particle propagation occurs here.
 """
 from __future__ import annotations
 
+from msplatform.backends.simion.tracking_program import validate_program_trajectory_quality
+
 import json
 import math
 from pathlib import Path
@@ -73,8 +75,7 @@ def prepare(request_path: Path, output_dir: Path, *, source_base_dir: Path | Non
     if not isinstance(numerics, dict) or set(numerics) != {"maximum_step_us", "relative_tolerance", "absolute_tolerance", "simion_trajectory_quality"}:
         raise ValueError("explicit pulse numerical controls required")
     quality = numerics["simion_trajectory_quality"]
-    if type(quality) is not int or not 1 <= quality <= 500:
-        raise ValueError("simion_trajectory_quality must be an integer from 1 to 500")
+    validate_program_trajectory_quality(quality)
     numerics = {**{key: require_number(value, key, minimum=0.0, strict_minimum=True) for key, value in numerics.items() if key != "simion_trajectory_quality"},
                 "simion_trajectory_quality": quality}
     output_dir = output_dir.resolve()

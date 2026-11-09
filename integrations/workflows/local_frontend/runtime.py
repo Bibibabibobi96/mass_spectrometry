@@ -7,6 +7,8 @@ or rehashed: the completed same-owner field stage supplies verified identities.
 """
 from __future__ import annotations
 
+from msplatform.backends.simion.tracking_program import validate_program_trajectory_quality
+
 from common.simion.workbench_seed import freeze_workbench_seed
 
 import argparse
@@ -159,8 +161,7 @@ def _context(run: Path, *, field_provider=None) -> dict:
     if type(replay_requested) is not bool:
         raise ValueError("frozen verify_saved_workbench_replay must be a boolean")
     numerics = _load(inputs/"numerics.json")
-    if type(numerics["trajectory_quality"]) is not int or not 1 <= numerics["trajectory_quality"] <= 500:
-        raise ValueError("trajectory quality must be explicit positive integer")
+    validate_program_trajectory_quality(numerics["trajectory_quality"])
     fields = (field_provider or _fields)(run)
     materializer = Path(__file__).resolve()
     repo = materializer.parents[3]
@@ -272,8 +273,7 @@ def _case(run: Path, phase: str, name: str, rows: list[dict], context: dict, pha
                   stdout=str(logs/(name+".stdout.log")), stderr=str(logs/(name+".stderr.log")),
                   iob_builder_arguments=["--nogui", "--noprompt", "lua", "build_iob.lua", str(seed), str(directory/"local.iob"), carrier_reference,
                                          *[format(float(origin[a]), ".17g") for a in "xyz"]],
-                  fly_arguments=["--default-num-particles", str(max(100, len(rows))), "--nogui", "--noprompt", "fly", "--trajectory-quality",
-                                 str(numerical["trajectory_quality"]), "--retain-trajectories", "0", "--particles", "local.fly2", "--programs", "1", "local.iob"],
+                  fly_arguments=["--default-num-particles", str(max(100, len(rows))), "--nogui", "--noprompt", "fly", "--retain-trajectories", "0", "--particles", "local.fly2", "--programs", "1", "local.iob"],
                   pulse_width_us=width, pulse_width_derivation="max_complete_source_birth_us_plus_maximum_particle_age_us",
                   carrier_reference=carrier_reference, seed_record=context["iob_seed"]["seed"]["frozen"],
                   seed_placeholder_record=context["iob_seed"]["placeholder"]["frozen"],

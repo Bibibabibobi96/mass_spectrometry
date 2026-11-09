@@ -5,6 +5,8 @@ identity is created here. Every batch shares the selected original ordinary PA.
 """
 from __future__ import annotations
 
+from msplatform.backends.simion.tracking_program import validate_program_trajectory_quality
+
 import argparse
 import csv
 import json
@@ -52,7 +54,7 @@ end
 -- Numerical quality belongs to the frozen workbench Program callbacks. A
 -- command-script global is neither the Program context nor a saved IOB fact.
 local program=originals[s.program]
-assert(tonumber(program:match('trajectory_quality%s*=%s*(%d+)%s*[,}]'))==s.trajectory_quality,
+assert(tonumber(program:match('trajectory_quality%s*=%s*([+-]?%d+)%s*[,}]'))==s.trajectory_quality,
  'frozen OA Program trajectory quality differs')
 assert(program:find('function callbacks.load() sim_trajectory_quality=cfg.trajectory_quality end',1,true) and
  program:find('segment.load=callbacks.load',1,true) and
@@ -183,8 +185,7 @@ def materialize_simion_batches(
             or len(set(flattened)) != len(flattened) or not set(flattened) <= set(source)):
         raise ValueError("external batches must contain disjoint known particle IDs")
     quality = plan["numerics"]["simion_trajectory_quality"]
-    if type(quality) is not int or not 1 <= quality <= 500:
-        raise ValueError("explicit SIMION trajectory quality must be an integer1..500")
+    validate_program_trajectory_quality(quality)
     if plan["pulse"]["on_us"]+(plan["pulse"]["off_us"]-plan["pulse"]["on_us"]) != plan["pulse"]["off_us"]:
         raise ValueError("shared pulse hook cannot represent the exact declared OFF edge")
     grid = static["native_geometry_compilation"]["grid"]

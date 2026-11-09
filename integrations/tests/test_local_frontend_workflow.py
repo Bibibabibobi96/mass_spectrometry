@@ -672,8 +672,12 @@ class LocalFrontendTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.prepare()
 
-    def test_trajectory_quality_is_required_positive_integer(self):
-        for value in (None, True, 0, -1, 1.5, 501, float("inf")):
+    def test_trajectory_quality_is_required_documented_integer_range(self):
+        for value in (-500,-1,0,1,500):
+            with self.subTest(accepted=value):
+                self.request["numerics"]["trajectory_quality"] = value
+                self.assertEqual(self.prepare()["status"], "validated")
+        for value in (None, True, False, -501, 1.5, 501, float("inf"), "0"):
             with self.subTest(value=value):
                 if value is None:
                     self.request["numerics"].pop("trajectory_quality", None)

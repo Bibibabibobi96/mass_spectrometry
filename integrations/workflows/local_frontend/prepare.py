@@ -5,6 +5,8 @@ native discovery, field solving, capacity admission, or run publication.
 """
 from __future__ import annotations
 
+from msplatform.backends.simion.tracking_program import validate_program_trajectory_quality
+
 import argparse
 import copy
 import csv
@@ -435,8 +437,7 @@ def prepare_local_frontend(request_path: Path, output_directory: Path | None, wo
         _number(numerics[key], key, positive=True)
     if type(numerics["rf_steps_per_period"]) is not int or numerics["refine_policy"] != "official_defaults":
         raise ValueError("explicit integer RF steps and official_defaults refine policy required")
-    if type(numerics["trajectory_quality"]) is not int or not 1 <= numerics["trajectory_quality"] <= 500:
-        raise ValueError("trajectory_quality must be an explicit integer within local policy 1..500")
+    validate_program_trajectory_quality(numerics["trajectory_quality"])
     if request["diagnostics"] != {"policy_id": "automatic_full_population_v1"}:
         raise ValueError("automatic full-population diagnostics required")
     paths, model, spec, raw_rows, manifest = _source_inputs(request["source"], workspace)

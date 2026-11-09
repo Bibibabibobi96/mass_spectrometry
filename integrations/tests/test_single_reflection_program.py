@@ -1131,6 +1131,22 @@ print('LOCAL_OATOF_NO_RF=PASS')
             with self.subTest(times=times), self.assertRaises(ValueError):
                 self.build(flight={**self.flight,'observation_times_us':times})
 
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_documented_program_quality_range_load_readback(self):
+        for quality in (0,-500,-1,1,500):
+            with self.subTest(quality=quality):
+                program=self.build(flight={**self.flight,"trajectory_quality":quality})
+                self.assertIn("adjustable trajectory_quality="+str(quality),program)
+                stub="simion={workbench_program=function() segment={} end,early_access=function() end};\n"
+                code=stub+re.sub(r"\badjustable\s+","",program)+"\nsegment.load();assert(sim_trajectory_quality=="+str(quality)+");print('QUALITY_READBACK='..sim_trajectory_quality)"
+                path=self.root/("quality_"+str(quality)+".lua");path.write_text(code,encoding="utf-8",newline="\n")
+                completed=subprocess.run([str(LUA),str(path)],cwd=self.root,capture_output=True,text=True,timeout=30)
+                self.assertEqual(completed.returncode,0,completed.stderr)
+                self.assertIn("QUALITY_READBACK="+str(quality),completed.stdout)
+        for quality in (True,False,-501,501,0.0,"0",None):
+            with self.subTest(invalid=quality),self.assertRaises(ValueError):
+                self.build(flight={**self.flight,"trajectory_quality":quality})
+
     def test_native_flight_requires_each_explicit_value_without_rf_dual_authority(self):
         with self.assertRaises(ValueError): self.build(flight=None)
         for key in self.flight:
@@ -1140,7 +1156,7 @@ print('LOCAL_OATOF_NO_RF=PASS')
                     if value is None: flight.pop(key)
                     else: flight[key] = value
                     with self.assertRaises(ValueError): self.build(flight=flight)
-        for key in set(self.flight)-{"pulse"}:
+        for key in set(self.flight)-{"pulse","trajectory_quality"}:
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.build(flight={**self.flight, key:0})
         with self.assertRaises(ValueError): self.build(flight={**self.flight, "trajectory_quality":501})

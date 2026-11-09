@@ -5,7 +5,7 @@ import math
 from .model import require_prepared_model,model_geometry,render_model_configuration
 from .source import lua_value,canonical_clock_lua
 from .resources import native_resource_path
-from .tracking_program import _instrument_plane_observations
+from .tracking_program import _instrument_plane_observations,validate_program_trajectory_quality
 
 
 def validate_rf_flight(flight,*,requires_rf):
@@ -20,10 +20,11 @@ def validate_rf_flight(flight,*,requires_rf):
         value=flight[key]
         if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or value<=0:
             raise ValueError('RF flight '+key+' must be positive finite')
-    for key,upper in [('trajectory_quality',500)]+([('rf_steps_per_period',None)] if requires_rf else []):
-        value=flight[key]
-        if type(value)is not int or value<1 or upper is not None and value>upper:
-            raise ValueError('RF flight '+key+' is outside the supported native range')
+    validate_program_trajectory_quality(flight['trajectory_quality'])
+    if requires_rf:
+        value=flight['rf_steps_per_period']
+        if type(value)is not int or value<1:
+            raise ValueError('RF flight rf_steps_per_period is outside the supported native range')
     if 'observation_times_us' in flight:
         times=flight['observation_times_us']
         if (not isinstance(times,list) or not times or any(type(t)not in (int,float) or not math.isfinite(t) for t in times)
