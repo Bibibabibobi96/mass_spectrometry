@@ -113,6 +113,14 @@ capacity policy and selected failed-output preservation use the existing owner a
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.
+The latest diagnostic full Repository baseline, `778e7015`, ended with 38 PASS, 12 FAIL
+and 12 NOT_APPLICABLE stages: 7,006 parents (6,838 success, 21 skip, 56 failure, 91 error),
+plus one loader error; 7,996 subtests (7,894 success, 59 failure, 43 error). Its summary
+elapsed time was 3,243.832287 seconds, not a separately retained external command wall.
+Overlapping private validation makes this a correctness diagnosis rather than a controlled
+performance baseline. Successor repairs and focused checks do not turn that failed run green.
+The current manifest-policy and frontend workflow migrations remain under validation;
+ordinary composed-source, final full regression and the original performance targets stay OPEN.
 
 
 | 当前对象／职责 | 规范所有者与活动消费者 | 本阶段退出条件 |
@@ -125,6 +133,9 @@ software target and owner budgets remain OPEN; pending/cancelled CI is not accep
 | 既有COMSOL操作 | `backends.comsol`具名入口；真实项目工作流与原生证据 | 只迁移实际能力，不以脚本或假模型冒充完成 |
 | STEP导出／冷读 | `exporters`；CAD和独立几何检查 | 与后端并列消费完整Assembly，无默认GUI |
 | 结果读取／分析／比较 | `results`组合中立I/O与纯`analysis`；离线消费者 | 无隐藏重算／owner，缺失和篡改失败关闭 |
+| Independent OA model/field/tracking | Installed SIMION model, field and shared tracking owners; explicit drive, source/clock and original protected family | Source and ordinary-install software slices delivered; actual OA native field/Fly and coupled-field qualification stay OPEN. Detailed evidence belongs to the OA project state. |
+| OA accelerator-only theory and closed-focus source | `components.orthogonal_accelerator.three_zone_ideal_theory` and `backends.simion.oa_focus_source`; actual contracts, CLI and frozen consumers | Old bodies retired with scientific definitions unchanged; current v2 authority refresh preserves historical v1 bytes/refusal. Closed-focus plan/analysis/workflow and native acceptance remain OPEN. |
+| Paired RF source and sampled response | `ion_release.paired_mass_scan` and `analysis.mass_response`; actual RF preparation/evaluation and three frozen PS consumers | Both old bodies retired, explicit mass/input/criteria preserved; ordinary source epochs and main scoped checks delivered. Remaining root RF workflows and final composed-source acceptance remain OPEN. |
 | Named SFI preparation/pulse/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers | Installed slices delivered; remaining native execution and affected final acceptance stay OPEN |
 | MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
 | Dual-cone SIMION input preparation | `backends.simion.dual_cone_transport` and canonical source serializers; Program resource/callers migrated, old preparation/source/Program copies retired | Ordinary installation and explicit observation cadence delivered; actual seven-electrode field/ion-flight integration stays OPEN |
@@ -320,7 +331,7 @@ duplicate test or changing production budgets. The public GATE run passed in 67.
 software payload waited 45.515 seconds for a validated replan, the failing payload exited 7, pending work
 never started, immutable protection held, and the independent SIMION and GATE leases released. This
 restores the original OS failure-window combination; the complete performance targets remain OPEN.
-Current takeover acceptance at `70cddb63` plus test-only field timing completed the full Repository
+Earlier takeover acceptance at `70cddb63` plus test-only field timing completed the full Repository
 scope with eight workers: 46 PASS, 4 FAIL, 12 NOT_APPLICABLE; 6,833 distinct parent tests
 (6,808 success, 21 skip, one failure, three errors) and 7,774 successful subtests. Public wall was
 2,807.993174 seconds. All stages drained; six native Dirichlet tests actually succeeded. The four
