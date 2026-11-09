@@ -931,8 +931,7 @@ class PlatformApiTests(unittest.TestCase):
                 overrides=dict(export_cad=dict(limits=dict(wall_clock_seconds=900))))
             stage, authority = read_stage_policy(context, "export_cad")
             policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
-            with patch.object(owner, "_capacity_policy", return_value=policy), \
-                 patch("msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
+            with patch("msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 result = owner.run_managed_stage(context,
                     descriptor=dict(project="instrument_assembly", mode="geometry", software=[]),
                     run_id="20261109_120000__build__python__deployment", payload=dict(stage_policy=stage),

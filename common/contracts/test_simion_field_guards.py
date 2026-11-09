@@ -123,7 +123,7 @@ class FieldLeaseGuardTests(unittest.TestCase):
             policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
             private = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
                 MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='', MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
-            with patch.dict(os.environ, private), patch.object(owner, '_capacity_policy', return_value=policy), patch(
+            with patch.dict(os.environ, private), patch(
                     'msplatform.execution.capacity_admission._capacity_policy', return_value=policy):
                 with self.assertRaisesRegex(owner.CapacityAccountingDeferredError, 'INJECTED_ACCOUNTING_HOLD'):
                     owner.run_managed_stage(context, descriptor=dict(project='instrument_assembly',mode='inert_keys',software=[]),

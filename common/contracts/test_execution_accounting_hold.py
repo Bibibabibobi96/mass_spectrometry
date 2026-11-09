@@ -41,7 +41,7 @@ class ExecutionAccountingHoldTests(unittest.TestCase):
             policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
             environment = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
                 MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='', MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
-            with patch.dict(os.environ, environment), patch.object(owner, '_capacity_policy', return_value=policy), patch(
+            with patch.dict(os.environ, environment), patch(
                     'msplatform.execution.capacity_admission._capacity_policy', return_value=policy):
                 with patch.object(owner, '_finalize', side_effect=OSError('PUBLICATION_INTERRUPTED')):
                     with self.assertRaisesRegex(ValueError, 'ORIGINAL_ACTION_FAILURE'):
@@ -144,7 +144,7 @@ class ExecutionAccountingHoldTests(unittest.TestCase):
                 MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID="",
                 MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE="",
                 MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
-            with patch.dict(os.environ, environment), patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch.dict(os.environ, environment), patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 with self.assertRaisesRegex(ValueError, "ORIGINAL_SCIENTIFIC_FAILURE") as caught:
                     owner.run_managed_stage(context,

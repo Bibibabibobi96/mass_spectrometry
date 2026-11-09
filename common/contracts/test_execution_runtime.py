@@ -495,7 +495,7 @@ class NormalOwnerTests(unittest.TestCase):
                 return self._action(session)
             arguments = self._arguments(root, action)
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 with patch("msplatform.execution.workflow_publication.publish_terminal_state", side_effect=OSError("PUBLICATION_FAULT")):
                     with self.assertRaisesRegex(OSError, "PUBLICATION_FAULT"):
@@ -530,7 +530,7 @@ class NormalOwnerTests(unittest.TestCase):
                 return self._action(session)
             arguments = self._arguments(root, unknown)
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 with self.assertRaisesRegex(ValueError, "completion is unknown"):
                     owner.run_managed_stage(context, **arguments)
@@ -548,7 +548,7 @@ class NormalOwnerTests(unittest.TestCase):
             context = self._context(root)
             arguments = self._arguments(root, self._action)
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy), patch(
                     "msplatform.execution.workflow_publication.publish_terminal_state", side_effect=OSError("PUBLICATION_FAULT")):
                 with self.assertRaisesRegex(OSError, "PUBLICATION_FAULT"):
@@ -581,7 +581,7 @@ class NormalOwnerTests(unittest.TestCase):
                 private_environment = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN="",
                     MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID="", MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE="",
                     MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
-                with patch.dict(os.environ, private_environment), patch.object(owner, "_capacity_policy", return_value=policy), patch(
+                with patch.dict(os.environ, private_environment), patch(
                         "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                     if exit_code:
                         with self.assertRaisesRegex(ProcessExecutionError, "Observed process failed with exit 7"):
@@ -624,7 +624,7 @@ class NormalOwnerTests(unittest.TestCase):
             arguments["retention"] = dict(policy_version=1, **{"class": "solver_review"}, reason="fixture payload reuse")
             arguments["use_short_execution_path"] = True
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 producer = owner.run_managed_stage(context, **arguments)
                 producer_run = Path(producer["run_directory"])
@@ -674,7 +674,7 @@ class NormalOwnerTests(unittest.TestCase):
             arguments = self._arguments(root, parent_action)
             arguments["completion_api"] = lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set())
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 parent = owner.run_managed_stage(context, **arguments)
                 parent_root = Path(parent["run_directory"])
@@ -728,7 +728,7 @@ class NormalOwnerTests(unittest.TestCase):
             arguments = self._arguments(root, action)
             arguments["completion_api"] = lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set())
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy):
                 with patch("msplatform.execution.workflow_publication.publish_terminal_state", side_effect=OSError("SECONDARY_PUBLICATION")):
                     with self.assertRaisesRegex(ValueError, "ORIGINAL_ACTION_FAILURE") as caught:
@@ -774,7 +774,7 @@ class NormalOwnerTests(unittest.TestCase):
             arguments["expected_operation_ids"] = ["fixture"]
             arguments["completion_api"] = lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set())
             policy = self._policy()
-            with patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy), patch(
                     "msplatform.execution.run_session.run_observed_process",
                     side_effect=ProcessExecutionError("ORIGINAL_PROCESS_FAILURE", receipt)):

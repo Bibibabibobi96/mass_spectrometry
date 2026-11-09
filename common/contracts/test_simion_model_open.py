@@ -211,8 +211,7 @@ class SimionModelOpenTests(unittest.TestCase):
                     # Python process falsely qualified as a vendor SIMION run.
                     options.update(executable=Path(sys.executable), arguments=['-I','-c',code], role='GATE', stage='inert_view_software')
                 return original_process(session, operation_id, **options)
-            with patch.dict(os.environ, environment), patch.object(owner, '_capacity_policy', return_value=policy), \
-                    patch('msplatform.execution.capacity_admission._capacity_policy', return_value=policy), \
+            with patch.dict(os.environ, environment), patch('msplatform.execution.capacity_admission._capacity_policy', return_value=policy), \
                     patch.object(RunSession, 'run_process', inert_process):
                 producer = owner.run_managed_stage(context, run_id='20261104_000010__test__cad__inert-model-source',
                     expected_operation_ids=(), operation_dependencies={}, action=publish,

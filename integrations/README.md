@@ -36,9 +36,25 @@ For example, save `machine.json` beside `stages.json`:
 
 The stage file uses the existing `execution_stage_policy` format shown in the
 [standalone STEP tutorial](../common/README.md#独立导出-step普通安装后的最短完整例子).
-Optional machine policy fields are `policy_path` (host resource policy) and
-`execution_root` (shared short execution aliases). Omission uses the installed host
-policy and the workspace's existing alias convention. The shared host ledger belongs
+Optional machine policy fields are `policy_path` (host resource policy),
+`execution_root` (shared short execution aliases), and `capacity_policy_path`
+(the storage policy file, with the existing `artifact_capacity_policy` schema).
+File-relative policy paths resolve beside the saved machine document. Omission
+retains the installed storage policy unchanged: 700 GiB target and 295 GiB free
+reserve. Select another explicit deployment file when configuring a different
+machine; this does not change the artifact root, host ledger or protection leases.
+A new managed owner captures that policy once, records the selected source
+identity and freezes its snapshot in `inputs/capacity_policy.json`. Renewal and
+readmission use this frozen policy, so changing the deployment file affects new
+owners only. Existing run lifecycle budgets and historical records are not
+rewritten. A legacy session can renew the same commitment and finalize using its
+original evidence; increasing its commitment requires explicit current-phase
+admission authority rather than inventing a historical policy. Storage policy
+is machine configuration, not a per-study stage override. The existing repository
+maintenance CLI retains its default policy; an explicit pressure-maintenance
+callback receives the owner's captured policy in its capacity session.
+Omission of the host policy and execution root retains the installed host policy
+and the workspace's existing alias convention. The shared host ledger belongs
 to the machine, never an individual study or profile.
 
 ```python

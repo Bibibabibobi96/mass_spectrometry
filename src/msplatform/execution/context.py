@@ -26,6 +26,7 @@ class ExecutionContext:
     host_state_path: Path
     policy_path: Path
     execution_root: Path | None = None
+    capacity_policy_path: Path | None = None
     stage_policy_path: Path | None = None
     _environment_json: str | None = None
 
@@ -45,6 +46,11 @@ class ExecutionContext:
         if not execution_root.is_absolute():
             raise ValueError("execution context execution_root must be absolute")
         object.__setattr__(self, "execution_root", execution_root)
+        if self.capacity_policy_path is not None:
+            capacity_policy_path = Path(self.capacity_policy_path)
+            if not capacity_policy_path.is_absolute():
+                raise ValueError("execution context capacity_policy_path must be absolute")
+            object.__setattr__(self, "capacity_policy_path", capacity_policy_path)
         if self.stage_policy_path is not None:
             stage_policy_path = Path(self.stage_policy_path)
             if not stage_policy_path.is_absolute():
@@ -89,8 +95,8 @@ def load_environment(configuration: str | Path | Mapping, *, workspace: str | Pa
         raise ContractError("execution tools must explicitly declare python and powershell")
     required_policy = {"host_state_path"}
     if (not isinstance(policy, Mapping) or not required_policy <= policy.keys()
-            or set(policy) - required_policy - {"policy_path", "execution_root"}):
-        raise ContractError("execution policy requires host_state_path; policy_path and execution_root are optional")
+            or set(policy) - required_policy - {"policy_path", "execution_root", "capacity_policy_path"}):
+        raise ContractError("execution policy requires host_state_path; policy_path, execution_root and capacity_policy_path are optional")
     if not isinstance(profiles, Mapping) or not isinstance(profile, str) or profile not in profiles:
         raise ContractError("Select an explicitly named engineering profile")
     selected = profiles[profile]
@@ -117,5 +123,5 @@ def load_environment(configuration: str | Path | Mapping, *, workspace: str | Pa
         powershell_executable=resolved_tools["powershell"], tools=resolved_tools,
         host_state_path=resolved_policy["host_state_path"],
         policy_path=resolved_policy.get("policy_path", resource_path("host_resource_policy.json")),
-        execution_root=resolved_policy.get("execution_root"), stage_policy_path=stage_path,
+        execution_root=resolved_policy.get("execution_root"), capacity_policy_path=resolved_policy.get("capacity_policy_path"), stage_policy_path=stage_path,
         _environment_json=json.dumps(environment))

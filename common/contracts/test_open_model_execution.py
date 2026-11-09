@@ -394,8 +394,7 @@ class OpenModelExecutionTests(unittest.TestCase):
                 environment = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
                     MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='', MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
                 policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
-                with patch.dict(os.environ, environment), patch.object(owner, '_capacity_policy', return_value=policy), \
-                        patch('msplatform.execution.capacity_admission._capacity_policy', return_value=policy):
+                with patch.dict(os.environ, environment), patch('msplatform.execution.capacity_admission._capacity_policy', return_value=policy):
                     producer = owner.run_managed_stage(context, run_id='20261104_000001__test__cad__inert-view-source',
                         expected_operation_ids=(), operation_dependencies={}, action=publish,
                         action_record=file_record(Path(__file__), 'required_evidence'), **base)

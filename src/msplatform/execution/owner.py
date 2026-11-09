@@ -6,6 +6,7 @@ solver formula, cache, secondary ledger, or alternative recovery state machine.
 from __future__ import annotations
 
 from functools import partial
+import copy
 import inspect
 import json
 from pathlib import Path
@@ -15,8 +16,8 @@ from typing import Any, Callable, Mapping, Sequence
 from msplatform.execution import artifact_retention as retention_policy
 from msplatform.execution import capacity_ledger, capacity_protection, run_capacity_lifecycle as lifecycle
 from msplatform.execution.artifact_naming import validate_run_id
-from msplatform.execution.capacity_admission import _capacity_policy
-from msplatform.execution.capacity_session import enter_capacity_session, exit_capacity_session, renew_capacity_session
+from msplatform.execution.capacity_admission import capture_capacity_policy
+from msplatform.execution.capacity_session import enter_capacity_session, exit_capacity_session, renew_capacity_session, selected_capacity_policy
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.io.manifest_records import file_record, verify_record
@@ -96,6 +97,12 @@ def _require_capacity_accounted(session: RunSession) -> None:
     for name in ("owner", "artifact_root", "lease_id"):
         if original[name] != session.capacity_session[name]:
             raise ValueError("Original finalization capacity session differs")
+    if "capacity_policy" in original:
+        request = _json(session.execution_request)
+        if (request["capacity"].get("policy") != original["capacity_policy"]
+                or session.capacity_session.get("capacity_policy") != original["capacity_policy"]):
+            raise ValueError("Original finalization capacity policy differs")
+        selected_capacity_policy(original)
     for capacity in (original, session.capacity_session):
         if "defer_capacity_finalization" in capacity:
             reason = capacity["defer_capacity_finalization"]
@@ -231,10 +238,13 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
     result_path = root / "projects" / project / "scratch/workflow_results" / run_id / "result.json"
     if result_path.exists():
         raise FileExistsError("Workflow Result already exists")
+    policy_selection = capture_capacity_policy(context.capacity_policy_path)
+    policy_snapshot = policy_selection["snapshot"]
     capacity = enter_capacity_session(root, run_root,
         owner=f"run-artifact-workflow:{project}:{run_id}", committed_new_bytes=committed_new_bytes,
         protected_paths=protected_paths, protected_cache_keys=protected_cache_keys,
-        source_references=source_references, pressure_maintenance=pressure_maintenance)
+        source_references=source_references, pressure_maintenance=pressure_maintenance,
+        capacity_policy=policy_selection)
     package = dict(artifact_run_dir=str(run_root), run_dir=str(run_root), execution_alias=None)
     session = RunSession(context, root, run_id, project, descriptor["mode"], package, capacity,
         run_root / "inputs/execution_request.json", result_path, ids, dict(operation_dependencies))
@@ -255,7 +265,7 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
             project_root=str(context.workspace), inputs={"execution_request": str(session.execution_request)},
             parameters=dict(payload), formal_gate_passed=False, paths=paths, artifact_retention=dict(retention),
             capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(root),
-                light_evidence_budget_bytes=_capacity_policy()["light_evidence_budget_bytes"]))
+                light_evidence_budget_bytes=policy_snapshot["light_evidence_budget_bytes"]))
         request = dict(schema_version=1, role="run_artifact_workflow_request", package=dict(descriptor, run_id=run_id),
             payload=dict(payload), capacity=dict(committed_new_bytes=committed_new_bytes,
                 commitment_inputs=list(commitment_inputs), protected_paths=list(map(str, protected_paths)),
@@ -265,8 +275,13 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         for target in (session.run_config, session.execution_request, run_root / "run_manifest.json", run_root / "summary.json",
                        run_root / "logs/capacity_session.json", run_root / "results/execution_completion.json"):
             session.declare_file(target, "required_evidence")
+        frozen_policy = session.declare_file(run_root / "inputs/capacity_policy.json", "required_evidence")
+        write_json_atomic(frozen_policy, policy_snapshot)
+        capacity["capacity_policy"]["frozen_record"] = file_record(frozen_policy, "required_evidence")
+        request["capacity"]["policy"] = copy.deepcopy(capacity["capacity_policy"])
         write_json_atomic(session.execution_request, request)
         write_json_atomic(session.run_config, config)
+        session.add_input("capacity_policy", capacity["capacity_policy"]["frozen_record"])
         for index, authority in enumerate([action_record, *commitment_inputs]):
             session.add_input(f"owner_authority_{index}", dict(authority, retention_role="required_evidence"))
         write_json_atomic(run_root / "summary.json", dict(schema_version=1, status="checkpoint",

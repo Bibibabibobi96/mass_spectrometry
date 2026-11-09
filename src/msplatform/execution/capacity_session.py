@@ -1,6 +1,9 @@
 """Normal workflow capacity sessions using the existing ledger and TTL leases."""
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
@@ -65,8 +68,27 @@ def _source_protection(session: dict[str, Any], references: Iterable[Mapping[str
     return touched
 
 
+def selected_capacity_policy(session: Mapping[str, Any]) -> dict[str, Any]:
+    """Use only the new owner's captured policy; never reread its deployment file."""
+    selection = session.get("capacity_policy")
+    if selection is None:
+        raise ValueError("Capacity admission requires explicit current-phase policy authority for a legacy session")
+    policy = copy.deepcopy(selection["snapshot"])
+    capacity_admission.validate_capacity_policy(policy)
+    payload = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if hashlib.sha256(payload).hexdigest() != selection["snapshot_sha256"]:
+        raise ValueError("Captured capacity policy snapshot differs")
+    if "frozen_record" in selection:
+        from msplatform.io.manifest_records import verify_record
+        verify_record("frozen capacity policy", selection["frozen_record"])
+        frozen = json.loads(Path(selection["frozen_record"]["path"]).read_text(encoding="utf-8-sig"))
+        if frozen != policy:
+            raise ValueError("Frozen capacity policy differs from captured snapshot")
+    return policy
+
+
 def _admit(session: dict[str, Any], maintenance: Callable[[dict[str, Any]], Any] | None) -> dict[str, Any]:
-    policy = capacity_admission._capacity_policy()
+    policy = selected_capacity_policy(session)
 
     def decision() -> dict[str, Any]:
         receipt = capacity_admission.plan_startup(Path(session["artifact_root"]),
@@ -74,7 +96,7 @@ def _admit(session: dict[str, Any], maintenance: Callable[[dict[str, Any]], Any]
             minimum_free_bytes=int(policy["minimum_free_gib"] * 1024**3),
             required_paths=map(Path, session["protected_paths"]),
             required_cache_keys=session["protected_cache_keys"],
-            capacity_protection_lease_id=session["lease_id"])
+            capacity_protection_lease_id=session["lease_id"], policy=policy)
         receipt.update(applied=bool(receipt["satisfied"]), removed=[], removed_bytes=0,
             free_bytes_after=receipt["free_bytes_before"], satisfied_after_apply=bool(receipt["satisfied"]))
         return receipt
@@ -110,7 +132,7 @@ def _admit(session: dict[str, Any], maintenance: Callable[[dict[str, Any]], Any]
 def create_capacity_session(root: Path, run_directory: Path, *, owner: str,
         committed_new_bytes: int, protected_paths: Iterable[Path] = (),
         protected_cache_keys: Iterable[str] = (), source_references: Iterable[Mapping[str, Any]] = (),
-        lease_ttl_seconds: int = 21600) -> dict[str, Any]:
+        lease_ttl_seconds: int = 21600, capacity_policy: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Acquire original source/own protection before the explicit admission policy."""
     session = dict(schema_version=1, role="artifact_workflow_capacity_session", status="active",
         artifact_root=str(root.resolve(strict=True)), lease_id="workflow-" + uuid4().hex,
@@ -118,6 +140,9 @@ def create_capacity_session(root: Path, run_directory: Path, *, owner: str,
         protected_paths=sorted({str(run_directory.resolve()), *map(lambda p: str(p.resolve()), protected_paths)}),
         protected_cache_keys=sorted(set(protected_cache_keys)), source_protection_leases=[],
         lease=None, startup_gate=None)
+    if capacity_policy is not None:
+        session["capacity_policy"] = copy.deepcopy(dict(capacity_policy))
+        selected_capacity_policy(session)
     with ExitStack() as guards:
         try:
             _source_protection(session, source_references, guards)
@@ -144,12 +169,15 @@ def enter_capacity_session(root: Path, run_directory: Path, *, owner: str,
         committed_new_bytes: int, protected_paths: Iterable[Path] = (),
         protected_cache_keys: Iterable[str] = (), source_references: Iterable[Mapping[str, Any]] = (),
         lease_ttl_seconds: int = 21600,
-        pressure_maintenance: Callable[[dict[str, Any]], Any] | None = None) -> dict[str, Any]:
+        pressure_maintenance: Callable[[dict[str, Any]], Any] | None = None,
+        capacity_policy: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Create the one protected session and evaluate its actual startup budget."""
+    if capacity_policy is None:
+        capacity_policy = capacity_admission.capture_capacity_policy()
     session = create_capacity_session(root, run_directory, owner=owner,
         committed_new_bytes=committed_new_bytes, protected_paths=protected_paths,
         protected_cache_keys=protected_cache_keys, source_references=source_references,
-        lease_ttl_seconds=lease_ttl_seconds)
+        lease_ttl_seconds=lease_ttl_seconds, capacity_policy=capacity_policy)
     try:
         session["startup_gate"] = _admit(session, pressure_maintenance)
         return session
@@ -173,6 +201,10 @@ def renew_capacity_session(session: dict[str, Any], *, remaining_committed_new_b
     if session["status"] != "active":
         raise ValueError("Workflow capacity session is not active")
     prior = session["committed_new_bytes"]
+    if "capacity_policy" in session:
+        selected_capacity_policy(session)
+    elif remaining_committed_new_bytes is not None and remaining_committed_new_bytes > prior and admission is None:
+        raise ValueError("Capacity admission requires explicit current-phase policy authority for a legacy session")
     with ExitStack() as guards:
         touched = _source_protection(session, source_references, guards)
         for source in session["source_protection_leases"]:

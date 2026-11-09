@@ -180,7 +180,7 @@ class FieldActionTests(unittest.TestCase):
                         for path in session.log_dir.rglob('*.stderr.log'):
                             failure.add_note('INERT_STDERR='+path.read_text(encoding='utf-8'))
                         raise
-            with patch.dict(os.environ, environment), patch.object(owner, '_capacity_policy', return_value=policy), patch(
+            with patch.dict(os.environ, environment), patch(
                     'msplatform.execution.capacity_admission._capacity_policy', return_value=policy), patch.object(
                     RunSession, 'run_process', new=inert_transport), patch(
                     'msplatform.execution.processes.resource_path',

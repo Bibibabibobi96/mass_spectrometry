@@ -105,7 +105,7 @@ field_worker.main()
             private = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
                 MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='', MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
             policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
-            with patch.dict(os.environ, private), patch.object(owner, '_capacity_policy', return_value=policy), patch(
+            with patch.dict(os.environ, private), patch(
                     'msplatform.execution.capacity_admission._capacity_policy', return_value=policy), patch.object(
                     RunSession, 'run_process', new=transport):
                 for case in ('valid_tool_bad_builder','tool_sha','tool_bytes'):
@@ -251,7 +251,7 @@ field_worker.main()
                             _require_published_parent(cache_root, changed, "carrier_off", **kwargs)
                 return dict(status="success", summary=dict(fixture="INERT_ONLY"), output_paths=[],
                     required_output_paths=[], retention_preserve_paths=[], manifest_extra_fields={})
-            with patch.dict(os.environ, environment), patch.object(owner, "_capacity_policy", return_value=policy), patch(
+            with patch.dict(os.environ, environment), patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy), patch.object(
                     RunSession, "run_process", new=inert_transport):
                 for suffix in ("cold", "hit"):

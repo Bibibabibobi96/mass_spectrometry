@@ -63,8 +63,11 @@ def _load_object(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _capacity_policy() -> dict[str, Any]:
-    policy = _load_object(POLICY_PATH)
+def _capacity_policy(path: Path | None = None) -> dict[str, Any]:
+    return validate_capacity_policy(_load_object(POLICY_PATH if path is None else path))
+
+
+def validate_capacity_policy(policy: dict[str, Any] | None) -> dict[str, Any]:
     expected = {
         "schema_version", "role", "description", "target_gib", "minimum_free_gib",
         "light_evidence_budget_bytes", "startup_gate_target_seconds",
@@ -91,6 +94,18 @@ def _capacity_policy() -> dict[str, Any]:
     ]:
         raise RuntimeError("artifact capacity policy eviction_order differs")
     return policy
+
+
+def capture_capacity_policy(path: Path | None = None) -> dict[str, Any]:
+    """Read one deployment selection with its source identity before admission."""
+    import hashlib
+    from msplatform.io.manifest_records import file_record, verify_record
+    source = file_record(POLICY_PATH if path is None else path, "required_evidence")
+    policy = _capacity_policy() if path is None else _capacity_policy(path)
+    verify_record("selected capacity policy", source)
+    return dict(source_record=source, snapshot=policy,
+        snapshot_sha256=hashlib.sha256(json.dumps(policy, sort_keys=True,
+            separators=(",", ":")).encode("utf-8")).hexdigest())
 
 
 def _timings(policy: dict[str, Any] | None = None) -> _PhaseTimings:
@@ -173,8 +188,9 @@ def _startup_capacity_gate(
     required_paths: Iterable[Path], required_cache_keys: Iterable[str],
     capacity_ledger_path: Path | None,
     capacity_protection_lease_id: str | None,
+    policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    timings = _timings()
+    timings = _timings(policy)
     with timings.phase("disk_usage"):
         free_bytes = shutil.disk_usage(root).free
     with timings.phase("ledger_and_leases"):
@@ -289,7 +305,8 @@ def _startup_capacity_gate(
 def plan_startup(root: Path, *, target_bytes: int, minimum_free_bytes: int,
                  required_paths: Iterable[Path] = (), required_cache_keys: Iterable[str] = (),
                  capacity_ledger_path: Path | None = None,
-                 capacity_protection_lease_id: str | None = None) -> dict[str, Any]:
+                 capacity_protection_lease_id: str | None = None,
+                 policy: dict[str, Any] | None = None) -> dict[str, Any]:
     root = root.absolute()
     if not root.is_dir():
         raise ValueError("artifact root must exist")
@@ -298,4 +315,4 @@ def plan_startup(root: Path, *, target_bytes: int, minimum_free_bytes: int,
             raise ValueError(f"{name} must be a nonnegative integer")
     return _startup_capacity_gate(root, target_bytes=target_bytes, minimum_free_bytes=minimum_free_bytes,
         required_paths=required_paths, required_cache_keys=required_cache_keys,
-        capacity_ledger_path=capacity_ledger_path, capacity_protection_lease_id=capacity_protection_lease_id)
+        capacity_ledger_path=capacity_ledger_path, capacity_protection_lease_id=capacity_protection_lease_id, policy=policy)
