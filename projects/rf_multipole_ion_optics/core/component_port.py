@@ -12,7 +12,7 @@ from typing import Any
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.machine_contracts import ContractError
 from common.contracts.file_identity import file_sha256
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as build_assembly_interface
 from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain, transport_observations

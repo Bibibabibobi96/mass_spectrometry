@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.frozen_inputs import freeze_file
 from common.contracts.strict_json import load_json_object, require_number
 from common.contracts.particle_count_policy import validate_positive_particle_count

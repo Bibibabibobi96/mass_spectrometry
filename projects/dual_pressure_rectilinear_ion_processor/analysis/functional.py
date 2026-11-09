@@ -22,7 +22,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.artifact_retention import classify_file
 from common.contracts.frozen_inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
 from common.contracts.particle_count_policy import validate_positive_particle_count, validate_standard_particle_count
 from msplatform.contracts.particle_physics import kinetic_energy_ev

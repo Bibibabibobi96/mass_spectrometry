@@ -13,7 +13,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th

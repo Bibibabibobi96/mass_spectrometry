@@ -27,7 +27,7 @@ from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_bunche
 from integrations.tests.test_local_frontend_workflow import fixture, REPO
 from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts import capacity_ledger
-from common.simion import pa_family_cache
+from msplatform.backends.simion import pa_family_cache
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import compile_assembly_layout
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import export_cooled_buncher_assembly_interface

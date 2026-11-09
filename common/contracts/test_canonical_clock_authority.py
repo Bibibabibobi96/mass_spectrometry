@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.file_identity import file_sha256
 
 
@@ -53,9 +53,7 @@ class CanonicalClockAuthorityTests(unittest.TestCase):
         from unittest.mock import patch
         from jsonschema.exceptions import ValidationError
         from msplatform.execution import clock_authority as canonical
-        from common.contracts import canonical_clock_authority as legacy
 
-        self.assertIs(legacy.validate_clock_authority, canonical.validate_clock_authority)
         self.assertEqual(canonical.validate_clock_authority.__module__, "msplatform.execution.clock_authority")
         self.assertEqual(canonical.file_sha256.__module__, "msplatform.io.file_identity")
         with tempfile.TemporaryDirectory() as directory:

@@ -13,7 +13,7 @@ import math
 from pathlib import Path
 import shutil
 
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 from common.contracts.verify_run_manifest import record_path, verify_record

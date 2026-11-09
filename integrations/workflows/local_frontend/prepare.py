@@ -17,7 +17,7 @@ import shutil
 from typing import Any
 
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.contracts.rigid_transform import RigidTransform

@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.particle_state import (
     ComponentParticleStateTable, load_component_particle_state_csv, write_component_particle_state_csv,

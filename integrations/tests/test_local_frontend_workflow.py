@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.contracts.rigid_transform import RigidTransform
-from common.contracts.canonical_clock_authority import validate_clock_authority
+from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.write_run_manifest import file_record
 from common.integration.resolve_assembly import compile_assembly_layout
 from msplatform.backends.simion.pa_family_cache import CACHE_KEY_FIELDS, canonical_pa_family_cache_key

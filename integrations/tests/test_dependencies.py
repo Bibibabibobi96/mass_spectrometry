@@ -861,7 +861,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                     self.assertEqual(prepared.returncode, 0, prepared.stdout+prepared.stderr)
                     self.assertEqual(load(workspace / variant / "inputs/integration_identity.json")["integration_id"],
                                      "instrument_assembly")
-                    from common.contracts.canonical_clock_authority import validate_clock_authority
+                    from msplatform.execution.clock_authority import validate_clock_authority
                     self.assertEqual(validate_clock_authority(output / "inputs/clock_authority.json", output)["clock_epoch_id"],
                                      load(output / "inputs/source_identity.json")["clock_epoch_id"])
                     self.assertFalse((output / "inputs/source_clock.json").exists())
@@ -871,7 +871,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             # Each omitted resource failed in a real frozen run. Fresh processes
             # and -B prevent an already imported module/pyc masking the omission.
             for relative in ("src/msplatform/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
-                             "common/contracts/canonical_clock_authority.py",
+                             "src/msplatform/execution/clock_authority.py",
                              "src/msplatform/contracts/schemas/canonical_clock_authority.schema.json",
                              "src/msplatform/contracts/schemas/assembly_recipe.schema.json",
                              "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",

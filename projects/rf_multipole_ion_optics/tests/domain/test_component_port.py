@@ -56,7 +56,7 @@ class MultipoleComponentPortTests(unittest.TestCase):
             )
 
     def test_clock_guard_and_no_artificial_bare_aperture(self):
-        from common.contracts.canonical_clock_authority import validate_clock_authority
+        from msplatform.execution.clock_authority import validate_clock_authority
 
         for shell in (False, True):
             with tempfile.TemporaryDirectory() as directory:
