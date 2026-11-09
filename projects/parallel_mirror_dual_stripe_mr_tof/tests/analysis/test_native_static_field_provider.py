@@ -15,8 +15,8 @@ from msplatform.backends.comsol.candidate_authority import derive_candidate_auth
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
 from msplatform.backends.comsol.static_field_binding import _record, load_binding
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _pure_axis_authority, _te1_excitation
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.standalone_pa_composition import PaHeader
 
 
@@ -1865,7 +1865,7 @@ if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable aft
                 ledger = current
                 self.assertEqual(before, {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()})
             verified = subprocess.run(
-                [sys.executable, "-B", "-m", "common.contracts.verify_run_manifest", str(run / "run_manifest.json"), "--require-status", "success"],
+                [sys.executable, "-B", "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(run / "run_manifest.json"), "--require-status", "success"],
                 cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
             )
             self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)

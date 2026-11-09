@@ -1392,7 +1392,7 @@ exit 0
     def test_reference_comsol_run_is_verified_before_simion(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         for token in (
-            "common.contracts.verify_run_manifest",
+            "msplatform.execution.manifest_verification",
             "--require-status success",
             "--require-local-run-config",
             "--require-run-id $ReferenceComsolRunId",
@@ -1407,7 +1407,7 @@ exit 0
         ):
             self.assertIn(token, source)
         self.assertLess(
-            source.index("common.contracts.verify_run_manifest"),
+            source.index("msplatform.execution.manifest_verification"),
             source.index("Invoke-SimionStep 'gem2pa'"),
         )
 

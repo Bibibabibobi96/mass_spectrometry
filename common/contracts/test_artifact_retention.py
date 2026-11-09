@@ -11,18 +11,16 @@ from unittest import mock
 
 from msplatform.execution import artifact_retention as execution_artifact_retention
 
-from common.contracts.artifact_retention import (
-    apply_retention,
-    classify_file,
-    load_failed_recovery_exemptions,
-    load_policy,
-    validate_retained_files,
-    validate_retention,
-)
+from msplatform.backends.simion.native_completion import apply_retention
+from msplatform.execution.retention import classify_file
+from msplatform.backends.simion.native_completion import load_failed_recovery_exemptions
+from msplatform.execution.artifact_retention import load_policy
+from msplatform.execution.retention import validate_retained_files
+from msplatform.execution.artifact_retention import validate_retention
 
 REPO_ROOT = Path(__file__).parents[2]
-WRITER = Path(__file__).with_name("write_run_manifest.py")
-VERIFIER = Path(__file__).with_name("verify_run_manifest.py")
+WRITER = Path(__file__).parents[2] / "src/msplatform/execution/manifest_publication.py"
+VERIFIER = Path(__file__).parents[2] / "src/msplatform/execution/manifest_verification.py"
 
 
 class ArtifactRetentionTests(unittest.TestCase):
@@ -285,13 +283,13 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertEqual(classify_file(trace), "dense_trajectory")
         writer = subprocess.run(
             [
-                sys.executable, str(WRITER), "--run-config", str(self.config),
+                sys.executable, "-c", 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', "--run-config", str(self.config),
                 "--status", "failed", "--output", str(summary),
             ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
         self.assertEqual(writer.returncode, 0, writer.stderr)
         verifier = subprocess.run(
-            [sys.executable, str(VERIFIER), str(self.run / "run_manifest.json"),
+            [sys.executable, "-c", 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', str(self.run / "run_manifest.json"),
              "--require-status", "failed"],
             cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
@@ -348,9 +346,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         for module in (False, True):
             with self.subTest(module=module):
                 environment = dict(os.environ, PYTHONNOUSERSITE="1")
-                environment.pop("PYTHONPATH", None)
-                if module:
-                    environment["PYTHONPATH"] = str(REPO_ROOT)
+                environment["PYTHONPATH"] = os.pathsep.join((str(REPO_ROOT / "src"), str(REPO_ROOT)))
                 run = self.run.parent / f"cli_{module}"
                 logs = run / "logs"
                 logs.mkdir(parents=True)
@@ -359,8 +355,22 @@ class ArtifactRetentionTests(unittest.TestCase):
                 config.write_bytes(self.config.read_bytes())
                 stdout = logs / "simion__batch01.stdout.log"
                 stdout.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
-                entry = (["-m", "common.contracts.artifact_retention"] if module else
-                         [str(REPO_ROOT / "common/contracts/artifact_retention.py")])
+                entry = ["-c", (
+                    "from msplatform.execution.artifact_retention import main; "
+                    "from msplatform.backends.simion import native_completion; "
+                    "from msplatform.execution.retention import classify_file; "
+                    "main(classifier=classify_file, completion_api=lambda: native_completion)"
+                ) if module else (
+                    "import msplatform.execution.artifact_retention as engine; "
+                    "from msplatform.backends.simion import native_completion; "
+                    "from msplatform.execution.retention import classify_file; "
+                    "engine.main(classifier=classify_file, completion_api=lambda: native_completion)"
+                )]
+                entry[1] = (
+                    "from pathlib import Path; import msplatform.execution.artifact_retention as actual_owner; "
+                    f"assert Path(actual_owner.__file__).resolve().is_relative_to(Path({str(REPO_ROOT / 'src')!r}).resolve()); "
+                    + entry[1]
+                )
                 result = subprocess.run(
                     [sys.executable, *entry, "apply", "--run-config", str(config),
                      "--failed-run", "--preserve-path", str(stdout)],
@@ -375,8 +385,6 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.write_config("compact", None)
         copy = Path(self.temporary.name) / "frozen/common/contracts"
         copy.mkdir(parents=True)
-        for name in ("artifact_retention.py", "file_identity.py"):
-            shutil.copyfile(REPO_ROOT / "common/contracts" / name, copy / name)
         from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
         snapshot = copy.parents[1]
         copy_scientific_core(REPO_ROOT, snapshot)
@@ -387,9 +395,12 @@ class ArtifactRetentionTests(unittest.TestCase):
         environment.pop("PYTHONPATH", None)
         result = subprocess.run(
             [sys.executable, "-I", "-c",
-             "import sys,runpy; from pathlib import Path; root=Path(sys.argv[1]); "
-             "sys.path[:0]=[str(root/'src'),str(root),str(Path(sys.argv[2]).parent)]; sys.argv=sys.argv[2:]; "
-             "runpy.run_path(sys.argv[0],run_name='__main__')", str(snapshot), str(copy / "artifact_retention.py"), "apply",
+             "import sys; from pathlib import Path; root=Path(sys.argv[1]); "
+             "sys.path[:0]=[str(root/'src')]; sys.argv=['retention',*sys.argv[2:]]; "
+             "from msplatform.execution.artifact_retention import main; "
+             "from msplatform.backends.simion import native_completion; "
+             "from msplatform.execution.retention import classify_file; "
+             "main(classifier=classify_file,completion_api=lambda:native_completion)", str(snapshot), "apply",
              "--run-config", str(self.config), "--failed-run"],
             cwd=self.temporary.name, env=environment, capture_output=True,
             text=True, encoding="utf-8", timeout=30,
@@ -409,7 +420,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         apply_retention(self.config, preserve_paths=[trace])
         writer = subprocess.run(
             [
-                sys.executable, str(WRITER), "--run-config", str(self.config),
+                sys.executable, "-c", 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', "--run-config", str(self.config),
                 "--status", "success",
             ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
@@ -433,13 +444,13 @@ class ArtifactRetentionTests(unittest.TestCase):
             "retained_completed_simion_batch_log_for_recovery",
         )
         writer = subprocess.run(
-            [sys.executable, str(WRITER), "--run-config", str(self.config),
+            [sys.executable, "-c", 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', "--run-config", str(self.config),
              "--status", "failed", "--output", str(summary)],
             cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
         self.assertEqual(writer.returncode, 0, writer.stderr)
         verifier = subprocess.run(
-            [sys.executable, str(VERIFIER), str(self.run / "run_manifest.json"),
+            [sys.executable, "-c", 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', str(self.run / "run_manifest.json"),
              "--require-status", "failed"],
             cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
@@ -459,7 +470,7 @@ class ArtifactRetentionTests(unittest.TestCase):
             stream.write(b"x")
         writer = subprocess.run(
             [
-                sys.executable, str(WRITER), "--run-config", str(self.config),
+                sys.executable, "-c", 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', "--run-config", str(self.config),
                 "--status", "failed",
             ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
@@ -540,7 +551,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                str(WRITER),
+                "-c", 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
                 "--run-config",
                 str(self.config),
                 "--status",
@@ -560,7 +571,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertEqual(manifest["artifact_retention"]["class"], "compact")
         self.assertEqual(manifest["outputs"][0]["retention_role"], "required_evidence")
         verification = subprocess.run(
-            [sys.executable, str(VERIFIER), str(self.run / "run_manifest.json")],
+            [sys.executable, "-c", 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', str(self.run / "run_manifest.json")],
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
@@ -575,7 +586,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                str(WRITER),
+                "-c", 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
                 "--run-config",
                 str(self.config),
                 "--status",

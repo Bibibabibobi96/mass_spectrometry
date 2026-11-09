@@ -25,10 +25,11 @@ from typing import Any, Iterable
 
 from common.contracts import reconcile_artifact_capacity as daily_capacity
 from common.contracts import capacity_protection as protection
-from common.contracts.artifact_retention import classify_file, validate_retention
+from msplatform.execution.retention import classify_file
+from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic as _write_json_atomic
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 
 GIB = 1024**3
 # Run manifests in this repository publish successful solver work as

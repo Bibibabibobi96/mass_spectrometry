@@ -42,8 +42,8 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
             "ConfirmGuiCreatedAndReopened",
             "provider project scratch directory",
             "multipole_simion_layout_template_build",
-            "write_run_manifest.py",
-            "verify_run_manifest.py",
+            "msplatform.execution.manifest_publication",
+            "msplatform.execution.manifest_verification",
             "INSTANCE_COUNT=1",
             "PARTICLE_FLY_EXECUTED=false",
         ):

@@ -90,7 +90,7 @@ foreach ($path in @(
   )) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   $candidateManifestSource --require-status success --require-local-run-config `
   --require-project single_reflection_oa_tof_mass_analyzer --require-mode design_candidate
 if ($LASTEXITCODE -ne 0) { throw 'Candidate source manifest verification failed.' }
@@ -338,13 +338,13 @@ $outputs = @(
     Sort-Object FullName | Select-Object -ExpandProperty FullName
 )
 $outputs += $summaryPath
-$manifestArgs = @((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),
+$manifestArgs = @('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
   '--run-config',$runConfig,'--manifest',(Join-Path $runDir 'run_manifest.json'),
   '--status','success','--software','COMSOL R2025b','--software','SIMION 2020')
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Formal vNext manifest creation failed.' }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $runDir 'run_manifest.json') --require-status success
 if ($LASTEXITCODE -ne 0) { throw 'Formal vNext manifest verification failed.' }
 $runRecordComplete = $true

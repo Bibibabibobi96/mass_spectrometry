@@ -258,7 +258,7 @@ if($null-ne$bunchSourceReceipt){
   # Bind exactly those records; the bunch loader performs its own later payload
   # read when it materializes the selected cohort.
   $bunchConsumerProjectionId='mrtof_bunch_source_materialization_v1'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $bunchSourceManifest --require-status success --require-project $providerProjectId `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $bunchSourceManifest --require-status success --require-project $providerProjectId `
     --consumer-projection-id $bunchConsumerProjectionId --consumed-output $bunchSourceReceipt `
     --consumed-output ([string]$bunchSourceContract.state_table.path) --consumed-output ([string]$bunchSourceContract.fly2.path)
   if($LASTEXITCODE-ne0){throw 'Bunch source run manifest is not verified success.'}
@@ -307,15 +307,15 @@ $stripeManifest=Join-Path $stripeRun 'run_manifest.json'
 $acceleratorManifest=Join-Path $acceleratorRun 'run_manifest.json'
 $geometryReviewedContract=$trajectoryContractInput
 $mirrorConsumerProjectionId='mrtof_mirror_summary_v1'
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $mirrorManifest --require-status success --require-project $providerProjectId `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $mirrorManifest --require-status success --require-project $providerProjectId `
   --consumer-projection-id $mirrorConsumerProjectionId --consumed-output (Join-Path $mirrorRun 'summary.json')
 if($LASTEXITCODE-ne 0){throw "Upstream run manifest is not verified success: $mirrorManifest"}
 $stripeConsumerProjectionId='mrtof_stripe_summary_v1'
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $stripeManifest --require-status success --require-project $providerProjectId `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $stripeManifest --require-status success --require-project $providerProjectId `
   --consumer-projection-id $stripeConsumerProjectionId --consumed-output (Join-Path $stripeRun 'summary.json')
 if($LASTEXITCODE-ne 0){throw "Upstream run manifest is not verified success: $stripeManifest"}
 $acceleratorConsumerProjectionId='mrtof_accelerator_provider_receipt_v1'
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $acceleratorManifest --require-status success --require-project orthogonal_accelerator --require-mode component_focus_workflow `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $acceleratorManifest --require-status success --require-project orthogonal_accelerator --require-mode component_focus_workflow `
   --consumer-projection-id $acceleratorConsumerProjectionId --consumed-output $acceleratorProviderReceipt
 if($LASTEXITCODE-ne0){throw 'Provider accelerator workflow manifest is not verified success.'}
 $providerAccelerator=Get-Content -Raw -LiteralPath $acceleratorProviderReceipt|ConvertFrom-Json -Depth 40
@@ -341,7 +341,7 @@ $nativeBankManifest=Join-Path $nativeCorridorRun 'run_manifest.json'
   # manifest.  Verifying every producer payload here would reread the entire
   # PA bank for every child despite the guarded runtime already establishing
   # the family identity once per workflow.
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $nativeBankManifest --require-status success --require-project $providerProjectId --require-mode native_corridor_detached_response_bank `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $nativeBankManifest --require-status success --require-project $providerProjectId --require-mode native_corridor_detached_response_bank `
     --consumer-projection-id mrtof_native_corridor_bank_consumer_v1 --consumed-output $nativeBankPublicationPath
   if($LASTEXITCODE-ne0){throw 'Native corridor bank run is not verified success.'}
   $nativeBankRunRecord=Get-Content -Raw -LiteralPath $nativeBankManifest|ConvertFrom-Json -Depth 40

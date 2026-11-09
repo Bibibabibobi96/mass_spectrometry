@@ -74,7 +74,7 @@ $metrics = Join-Path $resultDir 'round_rod_field_screen_metrics.json'
 $report = Join-Path $logDir 'comsol_round_rod_field_screen.txt'
 $summary = Join-Path $runDir 'summary.json'
 $runConfig = Join-Path $runDir 'run_config.json'
-$manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
+$manifestWriter = 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
 $analysis = Join-Path $repoRoot 'projects\rf_multipole_ion_optics\analysis\analyze_round_rod_screen.py'
 $task = Join-Path $repoRoot 'projects\rf_multipole_ion_optics\comsol\solve_round_rod_field_screen.m'
 
@@ -109,7 +109,7 @@ $task = Join-Path $repoRoot 'projects\rf_multipole_ion_optics\comsol\solve_round
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 [ordered]@{ schema_version=1; role='multipole_round_rod_field_screen_summary'; status='checkpoint' } |
   ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
-& $python $manifestWriter --run-config $runConfig --status checkpoint --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
+& $python -c $manifestWriter --run-config $runConfig --status checkpoint --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest failed.' }
 
 $environmentNames = @('MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_ROUND_ROD_SCREEN','MULTIPOLE_ROUND_ROD_SAMPLES')
@@ -139,13 +139,13 @@ try {
       particle_tracking = $false
       formal_gate_passed = $false
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summary -Encoding UTF8
-    & $python $manifestWriter --run-config $runConfig --status success --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $samples --output $metrics --output $report --output $summary
+    & $python -c $manifestWriter --run-config $runConfig --status success --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $samples --output $metrics --output $report --output $summary
     if ($LASTEXITCODE -ne 0) { throw 'Final run manifest failed.' }
     Write-Output "ROUND_ROD_L2=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash CANDIDATES=$(@($result.candidates).Count)"
   } catch {
     [ordered]@{ schema_version=1; role='multipole_round_rod_field_screen_summary'; status='failed'; reason=$_.Exception.Message } |
       ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
-    & $python $manifestWriter --run-config $runConfig --status failed --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
+    & $python -c $manifestWriter --run-config $runConfig --status failed --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $summary
     throw
   }
 } finally {

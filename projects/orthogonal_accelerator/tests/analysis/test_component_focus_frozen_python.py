@@ -1,6 +1,8 @@
 """Real leaf Python snapshot preparation/analysis; no SIMION process."""
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import os
 from pathlib import Path
@@ -13,7 +15,7 @@ import unittest
 from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
 from msplatform.backends.simion.oa_focus_source import materialize
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import analyze
-from common.contracts.write_run_manifest import build_run_manifest
+from msplatform.execution.manifest_publication import build_run_manifest
 
 REPO = Path(__file__).resolve().parents[4]
 ENTRY = REPO / "projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1"
@@ -144,7 +146,7 @@ class FocusFrozenPythonTests(unittest.TestCase):
             recorded = {Path(value) for key, value in config["inputs"].items() if key.startswith("python_code__")}
             self.assertEqual(set(copied), recorded)
             manifest = build_run_manifest(run / "run_config.json", "success",
-                output_paths=[run / "results/python_execution.json"])
+                output_paths=[run / "results/python_execution.json"], retention_api=_manifest_retention_api)
             self.assertEqual(set(manifest["inputs"]), set(config["inputs"]))
             self.assertTrue(all(row["exists"] and row["bytes"] >= 0 and row["sha256"]
                                 for row in manifest["inputs"].values()))

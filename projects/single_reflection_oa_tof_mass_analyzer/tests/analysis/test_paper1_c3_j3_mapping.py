@@ -13,7 +13,8 @@ import unittest
 from unittest import mock
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from msplatform.contracts.machine_contracts import validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import paper1_c3_j3_publish as publisher
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c3_j3_mapping import (

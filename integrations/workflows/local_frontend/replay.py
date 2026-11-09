@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.analysis.particle_events import group_particle_events, iter_particle_event_fields
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from integrations.workflows.local_frontend.analyze import (
     _FLOATS, _close, _csv, _source_rows, _validate_lifetimes, parse_local_logs,
 )

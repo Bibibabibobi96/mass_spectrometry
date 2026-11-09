@@ -91,7 +91,7 @@ try {
     'projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_operating_point.py',
     'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py',
     'common/contracts/file_identity.py',
-    'common/contracts/verify_run_manifest.py',
+    'src/msplatform/execution/manifest_verification.py',
     'common/contracts/run_artifact_support.ps1'
   )
   $sourceCopies = @{}

@@ -14,7 +14,8 @@ from typing import Any, Iterable, Sequence
 from scipy.stats import qmc
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from common.host_resource_python import ensure_heavy_entry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_transport_source import (
     materialize_accelerator_exit_transport_source,

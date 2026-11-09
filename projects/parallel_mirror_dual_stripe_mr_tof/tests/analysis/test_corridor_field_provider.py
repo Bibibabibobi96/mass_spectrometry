@@ -573,7 +573,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
 
     def verify(self, manifest, status="success"):
         repo = Path(__file__).resolve().parents[4]
-        result = subprocess.run([sys.executable, str(repo / "common/contracts/verify_run_manifest.py"),
+        result = subprocess.run([sys.executable, str(repo / "src/msplatform/execution/manifest_verification.py"),
             str(manifest), "--require-status", status, "--require-local-run-config"],
             cwd=repo, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)

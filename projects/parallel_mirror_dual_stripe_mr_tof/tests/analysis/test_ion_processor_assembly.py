@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from integrations.workflows.accelerator_interface import geometry as assembly_geometry
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection

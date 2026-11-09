@@ -8,7 +8,7 @@ import itertools
 from common.contracts.file_identity import file_sha256
 from msplatform.backends.simion.gem_primitives import format_number
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface as ip_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem

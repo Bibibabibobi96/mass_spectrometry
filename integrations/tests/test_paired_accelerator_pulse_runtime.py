@@ -1,6 +1,8 @@
 """OA pulse materialization and actual Lua callbacks, without native fields/Fly."""
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import csv
 import io
 import json
@@ -18,7 +20,8 @@ from integrations.workflows.paired_accelerator_pulse.runtime import (
 )
 
 from msplatform.contracts.particle_physics import AMU_KG
-from common.contracts.write_run_manifest import build_run_manifest, file_record
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch
 
@@ -372,7 +375,7 @@ class PairedPulseRuntimeTests(unittest.TestCase):
         config.write_text(json.dumps(dict(schema_version=1,project="instrument_assembly",mode="paired_accelerator_pulse",
             run_id="20261026_060000__test__python__pulse-recovery",inputs=dict(plan=str(plan),source=str(root/"source.csv"),static=str(root/"static.json"),**(extra_inputs or {})))))
         outputs=[p for folder in ("results","logs","simion","comsol") for p in (root/folder).rglob("*") if p.is_file()]
-        manifest=root/"run_manifest.json";manifest.write_text(json.dumps(build_run_manifest(config,status,output_paths=outputs)))
+        manifest=root/"run_manifest.json";manifest.write_text(json.dumps(build_run_manifest(config,status,output_paths=outputs, retention_api=_manifest_retention_api)))
         snapshot=root/"snapshot.json";shutil.copyfile(manifest,snapshot)
         return manifest,snapshot
 
@@ -634,7 +637,7 @@ class PairedPulseRuntimeTests(unittest.TestCase):
             config=json.loads((consumer/"run_config.json").read_text())
             config["inputs"]={key if value!=str(log) else "unrelated_log":value for key,value in config["inputs"].items()}
             (consumer/"run_config.json").write_text(json.dumps(config))
-            broken=build_run_manifest(consumer/"run_config.json","failed",output_paths=list((consumer/"results").iterdir()))
+            broken=build_run_manifest(consumer/"run_config.json","failed",output_paths=list((consumer/"results").iterdir()), retention_api=_manifest_retention_api)
             next_manifest.write_text(json.dumps(broken));shutil.copyfile(next_manifest,next_snapshot)
             with self.assertRaisesRegex(ValueError,"exactly one canonical output or borrowed log"):
                 load_completed_pulse_stages(current,next_manifest,next_snapshot)

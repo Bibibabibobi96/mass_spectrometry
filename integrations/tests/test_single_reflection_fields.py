@@ -15,7 +15,7 @@ from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_ele
 from msplatform.backends.simion.frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
 from integrations.tests.test_single_reflection_geometry import scientific_inputs, source_fixture
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 
 

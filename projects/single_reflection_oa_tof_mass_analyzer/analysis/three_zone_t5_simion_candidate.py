@@ -414,8 +414,7 @@ def _publish_manifest(
     pending = run_dir / ".run_manifest.json.pending"
     command = [
         sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
+        "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
         "--run-config",
         str(run_config),
         "--manifest",
@@ -460,8 +459,7 @@ def _publish_manifest(
     verified = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "common.contracts.verify_run_manifest",
+            "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
             str(pending),
             "--require-status",
             "success",

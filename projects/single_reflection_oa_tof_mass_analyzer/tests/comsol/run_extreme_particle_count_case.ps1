@@ -192,13 +192,13 @@ foreach ($path in @($reportPath,$csvPath) + @($newCrashLogs) + @($launcherLogs))
 $outputs += @(Get-ChildItem -LiteralPath $resultDir -File -Filter '*_selected_release_from_data_file.txt' |
   ForEach-Object { $_.FullName })
 $manifestStatus = if ($passed) { 'success' } else { 'failed' }
-$manifestArgs = @((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),
+$manifestArgs = @('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
   '--run-config',$runConfigPath,'--manifest',$manifestPath,'--status',$manifestStatus,
   '--software','COMSOL 6.4 build 293 via MATLAB R2025b')
 foreach ($path in $outputs) { $manifestArgs += @('--output',$path) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Extreme-N manifest creation failed.' }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifestPath `
   --require-status $manifestStatus
 if ($LASTEXITCODE -ne 0) { throw 'Extreme-N manifest verification failed.' }
 $runRecordComplete = $true

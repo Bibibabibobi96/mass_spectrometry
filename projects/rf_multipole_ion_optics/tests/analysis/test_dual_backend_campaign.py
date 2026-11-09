@@ -540,7 +540,7 @@ $budget=Join-Path (Split-Path '@@EVENTS@@') ('budget_@@SOLVER@@.json')
 Push-Location '@@SOURCE@@'
 try{& $PythonExe -B -m projects.rf_multipole_ion_optics.runtime.resource_budget --repo-root '@@SOURCE@@' --budget $EngineeringBudgetPath --project-id $ProjectId --solver '@@SOLVER@@' --runtime-profile-id $RuntimeProfileId --design-profile-id $DesignProfileId --particle-source $ParticleSourcePath --retention-class $RetentionClass --run-id $RunId --resolved-runtime-profile $ResolvedRuntimeProfilePath --output $budget
  if($LASTEXITCODE-ne0){throw 'REAL_BUDGET_FAILED'}
- & $PythonExe -B -c 'import sys;from common.contracts.artifact_retention import validate_retention;validate_retention(dict(policy_version=1,**{"class":sys.argv[1]},reason=sys.argv[2] if sys.argv[1]!="compact" else None))' $RetentionClass $RetentionReason
+ & $PythonExe -B -c 'import sys;from msplatform.execution.artifact_retention import validate_retention;validate_retention(dict(policy_version=1,**{"class":sys.argv[1]},reason=sys.argv[2] if sys.argv[1]!="compact" else None))' $RetentionClass $RetentionReason
  if($LASTEXITCODE-ne0){throw 'REAL_RETENTION_POLICY_FAILED'}
 }finally{Pop-Location}
 $frozenMinimum=$null

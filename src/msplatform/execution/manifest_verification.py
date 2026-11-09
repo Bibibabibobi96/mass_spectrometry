@@ -1,32 +1,12 @@
-"""Verify a complete run manifest or an explicit downstream-consumer projection."""
-
+"""Verify one run manifest or an explicit path-bound consumer projection."""
 from __future__ import annotations
-
 import argparse
 import json
 import re
 from pathlib import Path
 from typing import Any
-from msplatform.io import manifest_records as _manifest_records
-
-try:
-    from common.contracts.write_run_manifest import file_record as file_record, retention_api
-    from msplatform.io.manifest_records import require_completed_terminal_publication
-except ModuleNotFoundError:
-    from write_run_manifest import file_record as file_record, retention_api
-    from msplatform.io.manifest_records import require_completed_terminal_publication
-
-
-record_path = _manifest_records.record_path
-
-
-def verify_record(
-    name: str, record: dict, *, base_dir: Path | None = None,
-    _identity_cache: dict[tuple[Any, ...], tuple[int, str]] | None = None,
-) -> None:
-    return _manifest_records.verify_record(name, record, base_dir=base_dir,
-        _identity_cache=_identity_cache,
-        retention_classifier=lambda *args, **kwargs: retention_api()[0](*args, **kwargs))
+from msplatform.io.manifest_records import record_path, require_completed_terminal_publication
+from msplatform.execution.retention import verify_record
 
 
 def require_equal(name: str, actual: Any, expected: str, *, sha256: bool = False) -> None:
@@ -36,26 +16,6 @@ def require_equal(name: str, actual: Any, expected: str, *, sha256: bool = False
         expected = expected.upper()
     if actual_text != expected:
         raise AssertionError(f"{name} is {actual!r}, expected {expected!r}")
-
-
-def verified_successful_run_reference(
-    run: Path, relative: str, *, project: str, mode: str,
-    manifest: dict[str, Any] | None = None,
-) -> Path:
-    """Verify one consumed input/output record, without reading other payloads."""
-    require_completed_terminal_publication(run / "run_manifest.json")
-    if manifest is None:
-        manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
-    if (manifest.get("project") != project or manifest.get("mode") != mode
-            or manifest.get("status") != "success"):
-        raise ValueError(f"reference must be a successful {project} {mode} run")
-    desired = (run / relative).resolve()
-    matches = [record for record in [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
-               if record_path(record, base_dir=run) == desired]
-    if len(matches) != 1:
-        raise ValueError("reference manifest must bind exactly one record for " + relative)
-    verify_record("consumed run reference", matches[0], base_dir=run)
-    return desired
 
 
 def _consumed_input(value: list[str]) -> tuple[str, Path]:
@@ -81,7 +41,10 @@ def _select_consumed_output(
     return matches[0]
 
 
-def main() -> None:
+def main(*, retention_api=None) -> None:
+    """Verify one full run or its explicitly named consumed projection."""
+    if retention_api is None:
+        from msplatform.execution.retention import retention_api
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--require-status", default="success")

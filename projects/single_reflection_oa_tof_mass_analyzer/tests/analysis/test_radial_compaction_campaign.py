@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import copy
 from contextlib import contextmanager, ExitStack
 import json
@@ -12,8 +14,9 @@ import unittest
 import pandas as pd
 from pathlib import Path
 from unittest.mock import patch
-from common.contracts.artifact_retention import apply_retention
-from common.contracts.write_run_manifest import build_run_manifest, publish_terminal_state
+from msplatform.backends.simion.native_completion import apply_retention
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.terminal_publication import publish_terminal_state
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -181,7 +184,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             radial._write_json(run / "summary.json", {"schema_version": 1,
                 "role": "run_package_initialization_summary", "status": "checkpoint"})
             radial._write_json(run / "run_manifest.json", build_run_manifest(
-                config_path, "checkpoint", output_paths=[run / "summary.json"], software=["software fixture"]))
+                config_path, "checkpoint", output_paths=[run / "summary.json"], software=["software fixture"], retention_api=_manifest_retention_api))
             session = run / "logs/capacity_session.json"
             radial._write_json(session, {"schema_version": 1, "role": "artifact_workflow_capacity_session",
                 "status": "active", "lease_id": "software-fixture", "artifact_root": str(root),
@@ -205,7 +208,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                     outputs = [path for path in run.rglob("*") if path.is_file()
                                and path.name not in {"run_config.json", "run_manifest.json"}]
                     manifest = build_run_manifest(config_path, summary["status"], output_paths=outputs,
-                        virtual_documents={run / "summary.json": summary}, software=["software fixture"])
+                        virtual_documents={run / "summary.json": summary}, software=["software fixture"], retention_api=_manifest_retention_api)
                     publish_terminal_state(run, summary, manifest)
             if failure is not None:
                 raise failure
@@ -860,7 +863,7 @@ def run(case_root, run_id, context, managed):
                     parent / "run_config.json", "success",
                     output_paths=[Path(row["path"]) for row in manifest["outputs"]],
                     virtual_documents={parent / "summary.json": summary},
-                )
+                retention_api=_manifest_retention_api)
                 # Construct a self-consistent but semantically wrong external asset.
                 # Production terminal publication correctly refuses this rewrite.
                 from msplatform.execution.recorded_file_removal import write_json_atomic
@@ -983,7 +986,7 @@ def run(case_root, run_id, context, managed):
             })
             radial._write_json(run / "run_manifest.json", build_run_manifest(
                 config_path, "checkpoint", software=["software fixture"], output_paths=[run / "summary.json"],
-            ))
+            retention_api=_manifest_retention_api))
             session = {"schema_version": 1, "role": "artifact_workflow_capacity_session",
                        "status": "active", "lease_id": "software-session-fixture",
                        "artifact_root": str(root), "protected_paths": [str(run)]}

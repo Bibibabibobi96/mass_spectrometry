@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import shutil
 import sys
@@ -12,7 +14,9 @@ from typing import Any, Iterator, Mapping
 
 from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.artifact_project import ensure_artifact_project
-from common.contracts.write_run_manifest import build_run_manifest, publish_run_manifest, publish_terminal_state
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.manifest_publication import publish_run_manifest
+from msplatform.execution.terminal_publication import publish_terminal_state
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from projects.rf_multipole_ion_optics.core.family_contract import (
     from_high_order_resolved_design,
@@ -49,10 +53,10 @@ def _finalize(run: TransportRun, status: str, fields: Mapping[str, Any]) -> None
     if status == "interrupted":
         _write_json(summary, document)
         publish_run_manifest(config, status, software=software, output_paths=output_paths,
-                             extra_fields={"lifecycle_state": "provisional"})
+                             extra_fields={"lifecycle_state": "provisional"}, retention_api=_manifest_retention_api)
     else:
         manifest = build_run_manifest(config, status, software=software, output_paths=output_paths,
-                                      virtual_documents={summary: document}, extra_fields={"lifecycle_state": "terminal"})
+                                      virtual_documents={summary: document}, extra_fields={"lifecycle_state": "terminal"}, retention_api=_manifest_retention_api)
         publish_terminal_state(run.run_dir, document, manifest, allow_provisional=True)
 
 

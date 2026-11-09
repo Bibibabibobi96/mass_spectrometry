@@ -316,7 +316,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_compiled_executor_uses_frozen_definition_and_rejects_drift_or_other_entrypoint(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             project = root/"projects/fixture"
@@ -898,7 +898,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
     def test_python_owner_uses_compiler_interpreter_without_repo_venv_and_propagates_exit(self):
         import os
         from common.contracts.compile_execution_plan import compile_integration_execution
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         interpreter = str(Path(sys.executable).resolve())
         with tempfile.TemporaryDirectory() as directory:
             compile_root = Path(directory)

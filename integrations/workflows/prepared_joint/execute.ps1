@@ -63,7 +63,7 @@ function Get-PreparedJointSourceReferences {
   param([string[]]$RunDirectories)
   # These are explicit run authorities from the request or verified trial,
   # never inferred ancestors of an arbitrary external file.
-  $code='import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))'
+  $code='import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))'
   $json=(@(Invoke-ProjectPython -Arguments @('-c',$code,(ConvertTo-Json -InputObject @($RunDirectories|Where-Object{$_}|Select-Object -Unique) -Compress)))-join"`n")
   return @($json|ConvertFrom-Json -AsHashtable -Depth 100)
 }

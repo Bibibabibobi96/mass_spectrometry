@@ -22,8 +22,8 @@ from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts.file_identity import FileIdentityGuard, guarded_file_identity
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from common.contracts.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import (
@@ -897,7 +897,7 @@ def _execute_candidate_stages(
                     disposition = runtime_plan.get("comsol_disposition")
                     if disposition is None:
                         disposition = _comsol_reuse_disposition(Path(reuse_parent), runtime_plan["execution_source_closure"], run_root.parents[3])
-                    from common.contracts.verify_run_manifest import record_path
+                    from msplatform.io.manifest_records import record_path
                     evidence = dict(evidence)
                     for phase, original in disposition["origins"].items():
                         for name, record in original["outputs"].items():
@@ -1536,7 +1536,7 @@ def _comsol_phase_sources(parent: Path) -> dict[str, dict[str, Any]]:
     covered by this manifest; an inherited phase has its original manifest as
     an explicit input. The original owner's records remain its records.
     """
-    from common.contracts.verify_run_manifest import record_path
+    from msplatform.io.manifest_records import record_path
     parent = parent.resolve(strict=True)
     manifest_path = parent / 'run_manifest.json'
     require_completed_terminal_publication(manifest_path)
@@ -1607,7 +1607,7 @@ def _comsol_phase_sources(parent: Path) -> dict[str, dict[str, Any]]:
 def _publish_comsol_phase_sources(run_root: Path, runtime_plan: dict, evidence: dict,
                                   execution: dict, inherited: dict | None = None) -> None:
     """Bind actual local outputs or original owners into existing provenance."""
-    from common.contracts.verify_run_manifest import record_path
+    from msplatform.io.manifest_records import record_path
     config_path = run_root / 'run_config.json'
     config = load_json(config_path)
     names = {'native':('model','build_report'), 'export':('analysis_request',),
@@ -1750,7 +1750,7 @@ def _record_candidate_native_completion(stage: dict, plan: dict) -> bool:
 
 def _comsol_csv_selection(origins: dict) -> dict:
     """Project sufficient existing events with their flat original science owner."""
-    from common.contracts.verify_run_manifest import record_path
+    from msplatform.io.manifest_records import record_path
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import validate_artifact_capacity
     science = origins['native']
     science_manifest = load_json(Path(science['manifest_record']['path']))

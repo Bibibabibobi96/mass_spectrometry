@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     materialize_measured_source, materialize_measured_source_slice,
 )

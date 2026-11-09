@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import contextlib
 import io
 import json
@@ -191,7 +193,8 @@ class OwnerDispositionAuthoringTests(unittest.TestCase):
 
 class MisplacedLightRunRecoveryTests(unittest.TestCase):
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
-        from common.contracts.write_run_manifest import build_run_manifest, file_record
+        from msplatform.execution.manifest_publication import build_run_manifest
+        from msplatform.execution.retention import file_record
         source = root / "projects/p/runs/runs/20261017_000000__analysis__python__misplaced"
         source.mkdir(parents=True)
         config = dict(schema_version=2, project="p", run_id=source.name, mode="target_authoring", inputs={},
@@ -204,7 +207,7 @@ class MisplacedLightRunRecoveryTests(unittest.TestCase):
         (source / "retention_actions.json").write_text(json.dumps(dict(schema_version=1,
             role="artifact_retention_actions", status="complete", retention_class="compact")))
         manifest = build_run_manifest(source / "run_config.json", "success",
-                                      output_paths=[source / n for n in ("summary.json", "result.json", "retention_actions.json")])
+                                      output_paths=[source / n for n in ("summary.json", "result.json", "retention_actions.json")], retention_api=_manifest_retention_api)
         (source / "run_manifest.json").write_text(json.dumps(manifest))
         backup = root / "projects/p/runs/20261017_000001__analysis__python__backup"
         snapshot = backup / "inputs/misplaced_run_snapshot"
@@ -226,9 +229,9 @@ class MisplacedLightRunRecoveryTests(unittest.TestCase):
 
     @staticmethod
     def seal_backup(backup: Path) -> None:
-        from common.contracts.write_run_manifest import build_run_manifest
+        from msplatform.execution.manifest_publication import build_run_manifest
         manifest = build_run_manifest(backup / "run_config.json", "success",
-                                      output_paths=[backup / "results/misplaced_run_backup_receipt.json"])
+                                      output_paths=[backup / "results/misplaced_run_backup_receipt.json"], retention_api=_manifest_retention_api)
         (backup / "run_manifest.json").write_text(json.dumps(manifest))
 
     def test_exact_backup_dry_run_apply_and_replay_preserve_identity(self):

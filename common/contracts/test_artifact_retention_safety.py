@@ -1,12 +1,15 @@
 """Regression checks for evidence protection and audited retention failures."""
 
+import msplatform.backends.simion.native_completion as _canonical_native_completion
+import msplatform.execution.retention as _canonical_retention
+
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts import artifact_retention as retention
+
 
 
 class RetentionSafetyTests(unittest.TestCase):
@@ -24,26 +27,26 @@ class RetentionSafetyTests(unittest.TestCase):
     def test_canonical_evidence_survives_large_file_threshold(self) -> None:
         for name in ("particle_state.csv", "particle_events.csv", "metrics.json", "summary.json"):
             with self.subTest(name=name):
-                self.assertEqual(retention.classify_file(Path(name), bytes_count=2**30), "required_evidence")
+                self.assertEqual(_canonical_retention.classify_file(Path(name), bytes_count=2**30), "required_evidence")
 
     def test_compressed_trajectory_and_pa_work_array_are_not_optional(self) -> None:
         for name, role in (("trajectory_samples.csv.gz", "dense_trajectory"), ("field.pa_", "solver_native_binary")):
-            self.assertEqual(retention.classify_file(Path(name), bytes_count=1), role)
-        self.assertEqual(retention.classify_file(Path("trajectory_metrics.csv.gz"), bytes_count=1), "required_evidence")
+            self.assertEqual(_canonical_retention.classify_file(Path(name), bytes_count=1), role)
+        self.assertEqual(_canonical_retention.classify_file(Path("trajectory_metrics.csv.gz"), bytes_count=1), "required_evidence")
 
     def test_final_interrupted_manifest_blocks_direct_retention(self) -> None:
         (self.run / "run_manifest.json").write_text('{"status":"interrupted"}', encoding="utf-8")
         payload = self.run / "field.pa0"
         payload.write_bytes(b"retained")
         with self.assertRaisesRegex(ValueError, "terminal manifest"):
-            retention.apply_retention(self.config)
+            _canonical_native_completion.apply_retention(self.config)
         self.assertTrue(payload.exists())
 
     def test_checkpoint_allows_preterminal_retention(self) -> None:
         (self.run / "run_manifest.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
         payload = self.run / "field.pa0"
         payload.write_bytes(b"transient")
-        action = json.loads(retention.apply_retention(self.config).read_text())
+        action = json.loads(_canonical_native_completion.apply_retention(self.config).read_text())
         self.assertEqual(action["status"], "complete")
         self.assertFalse(payload.exists())
 
@@ -52,7 +55,7 @@ class RetentionSafetyTests(unittest.TestCase):
         payload.write_bytes(b"transient")
         with patch("msplatform.execution.artifact_retention.remove_recorded_files", side_effect=OSError("busy")):
             with self.assertRaisesRegex(OSError, "busy"):
-                retention.apply_retention(self.config)
+                _canonical_native_completion.apply_retention(self.config)
         action = json.loads((self.run / "retention_actions.json").read_text())
         self.assertEqual(action["status"], "pending")
         self.assertEqual(action["removed"], [{
@@ -74,12 +77,12 @@ class RetentionSafetyTests(unittest.TestCase):
             return original_open(path, *args, **kwargs)
 
         with patch.object(Path, "open", open_evidence):
-            receipt = retention.apply_retention(self.config)
+            receipt = _canonical_native_completion.apply_retention(self.config)
         self.assertFalse(payload.exists())
         action = json.loads(receipt.read_text())
         self.assertEqual((action["status"], action["removed_bytes"]), ("complete", len(b"transient")))
 
     def test_prior_receipt_cannot_be_overwritten(self) -> None:
-        retention.apply_retention(self.config)
+        _canonical_native_completion.apply_retention(self.config)
         with self.assertRaisesRegex(ValueError, "already has"):
-            retention.apply_retention(self.config)
+            _canonical_native_completion.apply_retention(self.config)

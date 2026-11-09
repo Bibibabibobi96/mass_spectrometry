@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file, python_import_roots
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 
 
 class FrozenInputTests(unittest.TestCase):

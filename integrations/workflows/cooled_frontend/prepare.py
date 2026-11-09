@@ -18,8 +18,9 @@ from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
 from msplatform.contracts.rigid_transform import RigidTransform
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, transform_source_rows
 from integrations.workflows.local_frontend.prepare import (

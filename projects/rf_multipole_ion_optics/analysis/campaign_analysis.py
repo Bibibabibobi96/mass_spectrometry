@@ -12,7 +12,7 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256 as _sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 from projects.rf_multipole_ion_optics.analysis.campaign_status import _verify_manifest as verify_campaign_manifest
 from projects.rf_multipole_ion_optics.analysis.numerical_qualification import run_data
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
@@ -60,7 +60,7 @@ def _verify_manifest_cli(
     mode: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     command = [
-        sys.executable, "-m", "common.contracts.verify_run_manifest", str(path),
+        sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(path),
         "--require-status", "success", "--require-project", project_id,
         "--require-run-id", run_id, "--require-local-run-config",
     ]

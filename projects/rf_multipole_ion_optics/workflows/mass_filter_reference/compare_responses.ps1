@@ -101,8 +101,7 @@ try {
         L1 = $l1Closure
     }
     foreach ($closure in $closures.Values) {
-        & $python (Join-Path $repoRoot `
-            'common\contracts\verify_run_manifest.py') `
+        & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
             $closure.manifest --require-status success `
             --require-project rf_multipole_ion_optics
         if ($LASTEXITCODE -ne 0) {

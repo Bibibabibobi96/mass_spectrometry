@@ -359,8 +359,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         verified = subprocess.run(
             [
                 sys.executable,
-                "-m",
-                "common.contracts.verify_run_manifest",
+                "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
                 str(run_dir / "run_manifest.json"),
                 "--require-status",
                 "success",

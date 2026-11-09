@@ -1,4 +1,6 @@
 """Original fractional producer checkpoints, using inert software payloads."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import json
 import os
 from pathlib import Path
@@ -10,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import build_run_manifest
+from msplatform.execution.manifest_publication import build_run_manifest
 from projects.rf_multipole_ion_optics.runtime.simion_field_checkpoint import read_checkpoint, write_checkpoint
 
 REPO = Path(__file__).resolve().parents[4]
@@ -152,7 +154,7 @@ foreach($path in $second.output_paths|Where-Object{$_-ne$second.checkpoint_path}
             "formal_gate_passed": False,
             "artifact_retention": {"policy_version": 1, "class": "solver_review", "reason": "inert checkpoint fixture"}}
         (run / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
-        (run / "run_manifest.json").write_text(json.dumps(build_run_manifest(run / "run_config.json", "checkpoint")), encoding="utf-8")
+        (run / "run_manifest.json").write_text(json.dumps(build_run_manifest(run / "run_config.json", "checkpoint", retention_api=_manifest_retention_api)), encoding="utf-8")
         for suffix in ("pa#", "pa0", "pa1", "pa2", "pa-surf", *( ("iob", "lua", "fly2", "con") if layout else () )):
             (run / "simion" / ("quad_monolithic." + suffix)).write_bytes(("inert " + suffix).encode())
         return run, identity, run / "simion/quad_monolithic.iob"
@@ -162,7 +164,7 @@ foreach($path in $second.output_paths|Where-Object{$_-ne$second.checkpoint_path}
             if path.suffix != ".json":
                 path.chmod(path.stat().st_mode & ~stat.S_IWRITE)
         (run / "run_manifest.json").write_text(json.dumps(build_run_manifest(run / "run_config.json", "failed",
-            output_paths=list(map(Path, result["output_paths"])))), encoding="utf-8")
+            output_paths=list(map(Path, result["output_paths"])), retention_api=_manifest_retention_api)), encoding="utf-8")
 
     def test_original_fractional_family_is_metadata_bound_without_pa_reads(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -171,13 +173,13 @@ foreach($path in $second.output_paths|Where-Object{$_-ne$second.checkpoint_path}
                 {"operation_id": name, "observation": dict(NATIVE_SUCCESS)}
                 for name in ("refine", "build_runtime_iob", "inspect_runtime_iob")])
             self.publish(run, result)
-            from common.contracts import write_run_manifest as writer
-            original = writer.file_record
+            from msplatform.io import manifest_records
+            original = manifest_records.file_record
             def no_pa(path, *args, **kwargs):
                 if ".pa" in Path(path).name:
                     raise AssertionError("protected field was reread by metadata projection")
                 return original(path, *args, **kwargs)
-            with patch("common.contracts.verify_run_manifest.file_record", side_effect=no_pa):
+            with patch("msplatform.io.manifest_records.file_record", side_effect=no_pa):
                 plan = read_checkpoint(run, identity, iob.with_suffix(".lua"))
             self.assertFalse(plan["requires_iob_rebind"])
             self.assertEqual(plan["controller_path"], str(iob.with_suffix(".pa0")))
@@ -228,13 +230,13 @@ foreach($path in $second.output_paths|Where-Object{$_-ne$second.checkpoint_path}
             config["inputs"].update(simion_field_checkpoint=result["checkpoint_path"],
                 simion_field_producer_manifest=str(producer / "run_manifest.json"))
             (child / "run_config.json").write_text(json.dumps(config))
-            (child / "run_manifest.json").write_text(json.dumps(build_run_manifest(child / "run_config.json", "success")))
+            (child / "run_manifest.json").write_text(json.dumps(build_run_manifest(child / "run_config.json", "success", retention_api=_manifest_retention_api)))
             plan = read_checkpoint(child, identity, root / "unused.lua")
             self.assertEqual(plan["producer_manifest"], str(producer / "run_manifest.json"))
             self.assertIn(str(producer), plan["protected_paths"])
             del config["inputs"]["simion_field_producer_manifest"]
             (child / "run_config.json").write_text(json.dumps(config))
-            (child / "run_manifest.json").write_text(json.dumps(build_run_manifest(child / "run_config.json", "success")))
+            (child / "run_manifest.json").write_text(json.dumps(build_run_manifest(child / "run_config.json", "success", retention_api=_manifest_retention_api)))
             with self.assertRaisesRegex(ValueError, "manifest bound"):
                 read_checkpoint(child, identity, root / "unused.lua")
 

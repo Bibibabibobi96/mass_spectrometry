@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C, kinetic_energy_ev
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from integrations.workflows.cooled_frontend import runtime
 from integrations.workflows.local_frontend import runtime as shared

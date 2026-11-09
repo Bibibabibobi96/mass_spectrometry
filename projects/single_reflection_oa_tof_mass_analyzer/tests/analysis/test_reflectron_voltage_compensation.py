@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.execution.inputs import python_import_roots
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages import render_lua_profile

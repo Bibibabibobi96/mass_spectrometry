@@ -11,8 +11,10 @@ import sys
 from pathlib import Path, PurePosixPath
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record as verify_run_record, _select_consumed_output
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record as verify_run_record
+from msplatform.execution.manifest_verification import _select_consumed_output
+from msplatform.execution.retention import file_record
 
 
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
@@ -148,7 +150,7 @@ def stage_diagnostic_inputs(source_run: Path, destination: Path, receipt: Path, 
     sources = {f'logs/{case}.log': source_run / 'logs' / f'{case}.log' for case in cases}
     sources.update({f'ions/ions_{case.split("__")[0]}_N{count}.ion':
         source_run / 'simion' / f'ions_{case.split("__")[0]}_N{count}.ion' for case in cases})
-    command = [sys.executable, '-B', '-m', 'common.contracts.verify_run_manifest', str(manifest_path),
+    command = [sys.executable, '-B', '-c', 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', str(manifest_path),
         '--require-status', manifest['status'], '--require-project', PROJECT_ID,
         '--require-run-id', source_run.name, '--require-mode', 'simion_ideal_field_matrix',
         '--require-local-run-config', '--consumer-projection-id', 'ideal_field_diagnostic_analysis']

@@ -58,7 +58,7 @@ try {
  $outputs=@(Get-ChildItem -LiteralPath $run -Recurse -File|Where-Object{$_.Name-notin@('run_manifest.json','run_config.json')-and-not$_.Name.StartsWith('.')}|ForEach-Object{$_.FullName})
  $status=$(if($accepted){'success'}else{'failed'})
  Write-RunManifest -Python $PythonExe -RepoRoot $repoRoot -RunConfig $configPath -Status $status -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
- & $PythonExe -m common.contracts.verify_run_manifest (Join-Path $run 'run_manifest.json') --require-status $status --require-project dual_pressure_rectilinear_ion_processor --require-local-run-config
+ & $PythonExe -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $run 'run_manifest.json') --require-status $status --require-project dual_pressure_rectilinear_ion_processor --require-local-run-config
  if($LASTEXITCODE-ne0){throw 'Final GUI replay manifest verification failed'}
  Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null
  $capacity=$null

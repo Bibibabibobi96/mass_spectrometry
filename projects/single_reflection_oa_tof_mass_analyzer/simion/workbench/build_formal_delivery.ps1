@@ -145,7 +145,7 @@ if($ProducerHandoffPath){
   $handoffCode=@'
 import json,sys
 from pathlib import Path
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import load_pa_producer_handoffs
 path,run,plan,session=map(Path,sys.argv[1:])
 record=json.loads((run/'run_config.json').read_text(encoding='utf-8-sig'))['pa_producer_handoffs']

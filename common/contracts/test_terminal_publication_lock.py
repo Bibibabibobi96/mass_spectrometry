@@ -1,5 +1,8 @@
 """Terminal publication serializes journal replay and standard manifest writes."""
 
+import msplatform.execution.recorded_file_removal as _canonical_recorded_file_removal
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import shutil
 import subprocess
@@ -12,14 +15,11 @@ from unittest.mock import patch
 
 from common.contracts.capacity_protection import process_file_lock
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
-from common.contracts.write_run_manifest import (
-    TERMINAL_LOCK_NAME,
-    build_run_manifest,
-    publish_run_manifest,
-    publish_terminal_state,
-    replay_terminal_publication,
-)
-from common.contracts import write_run_manifest
+from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.manifest_publication import publish_run_manifest
+from msplatform.execution.terminal_publication import publish_terminal_state
+from msplatform.execution.terminal_publication import replay_terminal_publication
 from msplatform.execution import terminal_publication
 
 
@@ -29,9 +29,9 @@ class TerminalPublicationLockTests(unittest.TestCase):
         config.write_text(json.dumps({"schema_version": 1, "run_id": "20261029_120000__sim__simion__fixture",
             "project": "fixture", "mode": "fixture", "inputs": {}}), encoding="utf-8")
         (root / "summary.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
-        checkpoint = build_run_manifest(config, "checkpoint")
+        checkpoint = build_run_manifest(config, "checkpoint", retention_api=_manifest_retention_api)
         (root / "run_manifest.json").write_text(json.dumps(checkpoint), encoding="utf-8")
-        failed = build_run_manifest(config, "failed")
+        failed = build_run_manifest(config, "failed", retention_api=_manifest_retention_api)
         return config, {"status": "failed"}, failed
 
     def test_checkpoint_updates_but_terminal_manifest_cannot_be_overwritten(self):
@@ -39,7 +39,7 @@ class TerminalPublicationLockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config, _, _ = self._fixture(root)
-            command = [sys.executable, "-m", "common.contracts.write_run_manifest", "--run-config", str(config)]
+            command = [sys.executable, "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", "--run-config", str(config)]
             for status in ("checkpoint", "checkpoint", "success"):
                 result = subprocess.run([*command, "--status", status], cwd=repo, capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -58,7 +58,7 @@ class TerminalPublicationLockTests(unittest.TestCase):
             lock.write_bytes(b"\0")
             payload = root / "result.txt"
             payload.write_text("result", encoding="utf-8")
-            command = [sys.executable, "-m", "common.contracts.write_run_manifest", "--run-config", str(config),
+            command = [sys.executable, "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", "--run-config", str(config),
                        "--status", "success", "--output", str(lock), "--output", str(payload)]
             result = subprocess.run(command, cwd=repo, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -70,7 +70,7 @@ class TerminalPublicationLockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config, _, _ = self._fixture(root)
-            command = [sys.executable, "-m", "common.contracts.write_run_manifest", "--run-config", str(config)]
+            command = [sys.executable, "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", "--run-config", str(config)]
             self.assertEqual(subprocess.run([*command, "--status", "superseded"], cwd=repo, capture_output=True, timeout=30).returncode, 0)
             before = (root / "run_manifest.json").read_bytes()
             self.assertNotEqual(subprocess.run([*command, "--status", "success"], cwd=repo, capture_output=True, timeout=30).returncode, 0)
@@ -80,16 +80,16 @@ class TerminalPublicationLockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config, _, _ = self._fixture(root)
-            provisional = build_run_manifest(config, "interrupted", extra_fields={"lifecycle_state": "provisional"})
+            provisional = build_run_manifest(config, "interrupted", extra_fields={"lifecycle_state": "provisional"}, retention_api=_manifest_retention_api)
             (root / "run_manifest.json").write_text(json.dumps(provisional), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "already published"):
-                publish_run_manifest(config, "checkpoint")
+                publish_run_manifest(config, "checkpoint", retention_api=_manifest_retention_api)
             wrong = dict(provisional, project="other")
             (root / "run_manifest.json").write_text(json.dumps(wrong), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "already published"):
-                publish_run_manifest(config, "checkpoint", allow_provisional=True)
+                publish_run_manifest(config, "checkpoint", allow_provisional=True, retention_api=_manifest_retention_api)
             (root / "run_manifest.json").write_text(json.dumps(provisional), encoding="utf-8")
-            self.assertEqual(publish_run_manifest(config, "checkpoint", allow_provisional=True)["status"], "checkpoint")
+            self.assertEqual(publish_run_manifest(config, "checkpoint", allow_provisional=True, retention_api=_manifest_retention_api)["status"], "checkpoint")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_standard_writer_and_journal_publisher_cannot_overwrite_each_other(self):
@@ -101,7 +101,7 @@ class TerminalPublicationLockTests(unittest.TestCase):
             intent.write_text(json.dumps({"summary": summary, "manifest": failed}), encoding="utf-8")
             journal_command = [sys.executable, "-c", (
                 "import json,sys;from pathlib import Path;"
-                "from common.contracts.write_run_manifest import publish_terminal_state;"
+                "from msplatform.execution.terminal_publication import publish_terminal_state;"
                 "p=Path(sys.argv[1]);d=json.loads(Path(sys.argv[2]).read_text());"
                 "publish_terminal_state(p,d['summary'],d['manifest'])"), str(root), str(intent)]
             wrapper = root / "writer.ps1"
@@ -204,7 +204,7 @@ try {
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config, failed_summary, failed = self._fixture(root)
-            success = build_run_manifest(config, "success")
+            success = build_run_manifest(config, "success", retention_api=_manifest_retention_api)
             publish_terminal_state(root, {"status": "success"}, success)
             before = (root / "run_manifest.json").read_bytes()
             (root / TERMINAL_JOURNAL_NAME).write_text(json.dumps({"schema_version": 1,
@@ -218,7 +218,7 @@ try {
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, summary, manifest = self._fixture(root)
-            write = write_run_manifest.write_json_atomic
+            write = _canonical_recorded_file_removal.write_json_atomic
             def fail_summary(path, document):
                 if path.name == "summary.json":
                     raise OSError("injected publication failure")

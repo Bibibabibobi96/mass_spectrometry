@@ -253,7 +253,7 @@ print(json.dumps({'held_off_pulse_time_us':math.nextafter(max(pulse['source_birt
  $pulseDecisionCode=@'
 import json,sys
 from pathlib import Path
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from integrations.workflows.local_frontend.prepare import resolve_pulse_decision
 run=Path(sys.argv[1]);read=lambda path:json.loads(path.read_text(encoding='utf-8-sig'))
 recommendation=run/'results/local_frontend/discovery/pulse_selection.json'

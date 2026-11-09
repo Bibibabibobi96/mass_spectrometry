@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from common.contracts.test_support import run_artifact_workflow as owner_fixture
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 
 REPO = owner_fixture.REPO
 OWNER = owner_fixture.OWNER

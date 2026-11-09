@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import msplatform.execution.retention as _canonical_retention
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import os
 import shutil
@@ -10,7 +13,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 from msplatform.contracts.machine_contracts import load_json, sha256
-from common.contracts import write_run_manifest as terminal_publication
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
@@ -197,8 +199,8 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 index, proof = folder / "handoffs.json", folder / "original_result.json"
                 index.write_text('{"fixture": "index"}', encoding="utf-8")
                 proof.write_text('{"fixture": "original result"}', encoding="utf-8")
-                return {**terminal_publication.file_record(index), "frozen_input_records": [
-                    terminal_publication.file_record(proof), terminal_publication.file_record(index)]}
+                return {**_canonical_retention.file_record(index), "frozen_input_records": [
+                    _canonical_retention.file_record(proof), _canonical_retention.file_record(index)]}
             def stop(stage, plan, _simion):
                 self.assertEqual(stage["stage_id"], "static_inputs")
                 config = load_json(Path(plan["run_root"]) / "run_config.json")
@@ -291,9 +293,9 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             self.assertEqual(request["package"]["run_id"], plan["run_id"])
             self.assertEqual(request["prepared"]["import_root"], plan["execution_source_closure"]["code_root"])
             runtime = Path(plan["candidate_inputs"]["candidate_runtime.json"]["path"])
-            self.assertIn(terminal_publication.file_record(runtime), request["capacity"]["commitment_inputs"])
+            self.assertIn(_canonical_retention.file_record(runtime), request["capacity"]["commitment_inputs"])
             pairs = [(Path(directory) / "transaction.json", Path(directory) / "owner_result.json")]
-            handoff = {"source_records": [terminal_publication.file_record(plan_path)],
+            handoff = {"source_records": [_canonical_retention.file_record(plan_path)],
                        "protected_paths": [str(Path(directory) / "prior-run")], "sources": []}
             with mock.patch.object(candidate_workflow, "plan_pa_producer_handoffs", return_value=handoff) as preflight:
                 selected = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs)
@@ -372,7 +374,7 @@ def execute_prepared_run(*args):
     workflow.execute_prepared_run(*args)
 '''.replace("FAIL", repr(failed)), encoding="utf-8")
                 request["prepared"] = {"module": "candidate_fixture", "function": "execute_prepared_run",
-                    "import_root": str(root), "entrypoint": terminal_publication.file_record(callback)}
+                    "import_root": str(root), "entrypoint": _canonical_retention.file_record(callback)}
                 request_path, result_path = root / "request.json", root / "result.json"
                 request_path.write_text(json.dumps(request), encoding="utf-8")
                 driver = root / "driver.ps1"
@@ -2398,7 +2400,7 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
     """Producer-shaped small records; no vendor process or model is fabricated."""
     import csv
     from common.contracts.capacity_ledger import record_capacity_object
-    from common.contracts.write_run_manifest import publish_run_manifest
+    from msplatform.execution.manifest_publication import publish_run_manifest
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
     artifact = directory / "artifacts"
     parent = artifact / "projects" / PROJECT_ROOT.name / "runs/20261031_121000__sim__comsol__postprocess-parent"
@@ -2445,7 +2447,7 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
     if resolved_alias:
         config["inputs"]["simion_candidate_input_001"] = str(physical)
     config_path = parent / "run_config.json"
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     request_path = parent / "inputs/execution_request.json"
     request_path.write_text(json.dumps({"schema_version":1,"role":"run_artifact_workflow_request",
         "package":{"project":PROJECT_ROOT.name,"run_id":parent.name,"mode":"design_candidate"}}),encoding="utf-8")
@@ -2484,7 +2486,7 @@ def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_b
         report=parent/"logs/comsol_build.txt"
         report.write_text("STATUS=PASS\n",encoding="utf-8")
         outputs.append(report)
-    publish_run_manifest(config_path,"failed",output_paths=outputs)
+    publish_run_manifest(config_path,"failed",output_paths=outputs, retention_api=_manifest_retention_api)
     initialize_capacity_ledger(artifact,objects=[])
     record_capacity_object(artifact,path=parent,object_class="light_evidence",bytes_count=sum(
         path.stat().st_size for path in parent.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
@@ -2560,7 +2562,8 @@ def postprocess_public_entry(root, artifact):
 def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=False, normal_phase=False, resolved_alias=False, science_alias_conflict=False):
     """Small stopped-cold-export producer fixture; this executes no solver."""
     from common.contracts.capacity_ledger import record_capacity_object
-    from common.contracts.write_run_manifest import file_record, publish_run_manifest
+    from msplatform.execution.retention import file_record
+    from msplatform.execution.manifest_publication import publish_run_manifest
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
     artifact,science,_,_=postprocess_source_fixture(directory,retain_model=normal_phase,resolved_alias=resolved_alias)
@@ -2627,7 +2630,7 @@ def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=F
         "run_config":file_record(config_path),"writer_completion":writer,
         "summary":{"status":"failed","scope":"comsol_postprocessing_only","source_identity_verified":True},
         "exception":{"type":"RuntimeError","message":"ANALYSIS_FAILED_AFTER_EXPORT"}}),encoding="utf-8")
-    publish_run_manifest(config_path,"failed",output_paths=[events,analysis,native,completion])
+    publish_run_manifest(config_path,"failed",output_paths=[events,analysis,native,completion], retention_api=_manifest_retention_api)
     record_capacity_object(artifact,path=child,object_class="light_evidence",bytes_count=sum(
         path.stat().st_size for path in child.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
     return artifact,science,child,events
@@ -2699,7 +2702,7 @@ class CandidatePostprocessTests(unittest.TestCase):
 
     def test_cold_prepared_plan_uses_public_native_view_and_prelaunch_failure_has_no_receipt(self):
         from common.contracts.test_support.run_artifact_workflow import CALLBACK, RunArtifactWorkflowFixture
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
         extra = '''    from unittest import mock
     from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow, candidate_comsol_stage
@@ -2756,7 +2759,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             self.assertEqual(before,{str(path):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
 
     def test_completion_request_content_identity_rejects_rebound_records(self):
-        from common.contracts.verify_run_manifest import verify_record
+        from msplatform.execution.retention import verify_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
 
         for case in ("role_only", "same_bytes_wrong_path", "wrong_bytes", "wrong_hash"):
@@ -3024,7 +3027,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             self.assertEqual(before,{str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()})
 
     def test_postprocess_failure_preserves_source_identity_and_reports_original_recovery_cli(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
         with tempfile.TemporaryDirectory() as directory:
@@ -3214,7 +3217,8 @@ class CandidatePostprocessTests(unittest.TestCase):
 
     def test_flat_exporter_cannot_substitute_another_science_owner(self):
         from common.contracts.capacity_ledger import record_capacity_object
-        from common.contracts.write_run_manifest import file_record,publish_run_manifest
+        from msplatform.execution.retention import file_record
+        from msplatform.execution.manifest_publication import publish_run_manifest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -3244,7 +3248,7 @@ class CandidatePostprocessTests(unittest.TestCase):
                 "project":PROJECT_ROOT.name,"run_id":parent.name,"status":"failed","execution_request":file_record(request),
                 "run_config":file_record(config),"writer_completion":{"operations":[],"resource_releases":[]},
                 "summary":{"source_identity_verified":True}}),encoding="utf-8")
-            publish_run_manifest(config,"failed",output_paths=[completion])
+            publish_run_manifest(config,"failed",output_paths=[completion], retention_api=_manifest_retention_api)
             record_capacity_object(artifact,path=parent,object_class="light_evidence",bytes_count=sum(
                 path.stat().st_size for path in parent.rglob("*") if path.is_file()),owner=PROJECT_ROOT.name)
             before={str(path):path.read_bytes() for owner in (science,foreign,parent) for path in owner.rglob("*") if path.is_file()}
@@ -3326,7 +3330,7 @@ class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
 
 class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
     def test_actual_engine_binds_four_phase_owners_and_successor_flattens_origins(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -3371,7 +3375,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
             self.assertEqual(before, {path:path.read_bytes() for path in before})
 
     def test_analysis_implementation_change_runs_only_frozen_csv_analysis(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source_owner
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
         with tempfile.TemporaryDirectory() as temporary:
@@ -3644,7 +3648,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
 
 
     def test_actual_formal_consumer_preserves_per_stage_cross_root_proofs_and_rejects_owner_swap(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);inputs=root/'formal/inputs';inputs.mkdir(parents=True)
             candidate=root/'candidate';candidate.mkdir()

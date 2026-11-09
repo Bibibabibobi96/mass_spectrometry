@@ -63,10 +63,10 @@ try{
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $failureStage='verify_sources'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $sourceManifest `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $sourceManifest `
     --require-status success --require-project $projectId --require-mode deterministic_bunch_source_materialization
   if($LASTEXITCODE-ne 0){throw 'Bunch source run manifest failed verification.'}
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $pilotManifest `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $pilotManifest `
     --require-status success --require-project $projectId
   if($LASTEXITCODE-ne 0){throw 'Static pilot run manifest failed verification.'}
   $sourceData=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|ConvertFrom-Json

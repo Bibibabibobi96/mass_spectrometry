@@ -19,7 +19,7 @@ from msplatform.backends.simion.transport_result import load_transport_producer_
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from msplatform.execution.clock_authority import validate_clock_authority
-from msplatform.io.manifest_records import file_record, record_path, verify_record
+from msplatform.io.manifest_records import file_record, record_path, verify_record, verified_successful_run_reference
 from msplatform.execution.retention import classify_file
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.ion_release.release import generate_release_states
@@ -31,22 +31,6 @@ FATE_COLUMNS = ["particle_id", "particle_birth_time_us", "mass_amu", "charge_sta
 
 def _json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
-
-
-def _verified_successful_run_reference(
-    run: Path, relative: str, *, project: str, mode: str, manifest: dict[str, Any]
-) -> Path:
-    """Verify one published record using the installed execution primitives."""
-    require_completed_terminal_publication(run / "run_manifest.json")
-    if manifest.get("project") != project or manifest.get("mode") != mode or manifest.get("status") != "success":
-        raise ValueError(f"reference must be a successful {project} {mode} run")
-    desired = (run / relative).resolve()
-    matches = [record for record in [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
-               if record_path(record, base_dir=run) == desired]
-    if len(matches) != 1:
-        raise ValueError("reference manifest must bind exactly one record for " + relative)
-    verify_record("consumed run reference", matches[0], base_dir=run, retention_classifier=classify_file)
-    return desired
 
 
 def injected_source_protection_paths(contract_path: Path) -> list[Path]:
@@ -86,8 +70,8 @@ def _published_producer_result(manifest_path: Path, source_path: Path, producer_
     except ValueError as exc:
         raise ValueError("handoff source is outside its publishing run") from exc
     options = dict(project="instrument_assembly", mode="multipole_ip_preparation", manifest=manifest)
-    _verified_successful_run_reference(root, relative, **options)
-    receipt_path = _verified_successful_run_reference(root, "results/multipole_ip/preparation_receipt.json", **options)
+    verified_successful_run_reference(root, relative, retention_classifier=classify_file, **options)
+    receipt_path = verified_successful_run_reference(root, "results/multipole_ip/preparation_receipt.json", retention_classifier=classify_file, **options)
     receipt = _json(receipt_path)
     if receipt.get("role") != "multipole_ip_preparation" or receipt.get("status") != "success":
         raise ValueError("handoff preparation receipt differs")

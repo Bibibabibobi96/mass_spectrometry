@@ -971,7 +971,7 @@ $PreparedJointWorkbenchRunPath='same-audited-prepared-source';$frozenContract='s
 $script:providerCalls=0;$script:flights=@();$script:request=$null
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function mock-python {$global:LASTEXITCODE=0;if($args-contains'common.contracts.verify_run_manifest'){return};'false'}
+function mock-python {$global:LASTEXITCODE=0;if($args-contains'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){return};'false'}
 function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths)return @{session=$Session}}
 function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)}
 function public-provider {
@@ -1111,7 +1111,7 @@ function mock-python {
  }elseif($args[1]-match 'load_prepared_centroid_trial'){
   if($args[-2]-ne'__none__'-or$args[-1]-ne$BuildMode){throw 'Source/mode argument lost'}
   '{"mode":"native_static_pa"}'
- }elseif($args[1]-ne'common.contracts.verify_run_manifest'){throw 'Unexpected Python entry'}
+ }elseif($args[1]-ne'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){throw 'Unexpected Python entry'}
  $global:LASTEXITCODE=0
 }
 function Invoke-StagedWorkpointBootstrap {

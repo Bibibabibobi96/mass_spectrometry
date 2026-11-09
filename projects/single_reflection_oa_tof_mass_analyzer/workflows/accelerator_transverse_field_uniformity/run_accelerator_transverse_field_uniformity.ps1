@@ -43,11 +43,11 @@ $summary = Join-Path $runDir 'summary.json'
   schema_version=1;role='oatof_accelerator_transverse_field_uniformity_run_summary'
   status='interrupted';reason='Run package initialized; final status was not yet recorded.'
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summary -Encoding UTF8
-$manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
-& $python $manifestWriter --run-config $runConfig --status interrupted `
+$manifestWriter = 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
+& $python -c $manifestWriter --run-config $runConfig --status interrupted `
   --software 'COMSOL 6.4 saved field' --software 'MATLAB R2025b' --software 'Python 3.11'
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest generation failed.' }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $runDir 'run_manifest.json') --require-status interrupted
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest verification failed.' }
 
@@ -75,9 +75,9 @@ try {
     schema_version=1;role='oatof_accelerator_transverse_field_uniformity_run_summary'
     status='failed';reason=$_.Exception.Message
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summary -Encoding UTF8
-  & $python $manifestWriter --run-config $runConfig --status failed `
+  & $python -c $manifestWriter --run-config $runConfig --status failed `
     --software 'COMSOL 6.4 saved field' --software 'MATLAB R2025b' --software 'Python 3.11'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
     (Join-Path $runDir 'run_manifest.json') --require-status failed
   throw
 }
@@ -101,7 +101,7 @@ $manifestArgs = @(
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest generation failed.' }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $runDir 'run_manifest.json') --require-status success
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
 Write-Output "STATUS=PASS RUN_ID=$RunId"

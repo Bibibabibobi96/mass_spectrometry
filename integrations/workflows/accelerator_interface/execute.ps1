@@ -87,7 +87,7 @@ function Get-MultipoleIpPreparation {
   $code=@'
 import json, sys
 from pathlib import Path
-from common.contracts.verify_run_manifest import verified_successful_run_reference, verify_record, record_path
+from msplatform.execution.retention import verified_successful_run_reference, verify_record; from msplatform.io.manifest_records import record_path
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import transform_from_config
 run, config = map(Path, sys.argv[1:])
@@ -118,7 +118,7 @@ function Assert-MultipoleIpRecoveryRequest {
 import sys
 from pathlib import Path
 from msplatform.workflows.multipole_ip.prepare import load_request
-from common.contracts.verify_run_manifest import verified_successful_run_reference
+from msplatform.execution.retention import verified_successful_run_reference
 run, request = map(Path, sys.argv[1:])
 frozen = verified_successful_run_reference(run, 'inputs/multipole_ip_request.json', project='instrument_assembly', mode='multipole_ip_preparation')
 if load_request(request) != load_request(frozen):
@@ -441,7 +441,7 @@ try{
   # count toward the logical-file peak; no field PA or samples are copied.
   $parents=@(@($reference,$sourceRun,$designRun,$fieldRun)|Where-Object{$_}|Select-Object -Unique)
   $sourceRecords=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
-    & $python -B -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p]) for p in json.loads(sys.argv[1])]))' ($parents|ConvertTo-Json -Compress -AsArray)
+    & $python -B -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p]) for p in json.loads(sys.argv[1])]))' ($parents|ConvertTo-Json -Compress -AsArray)
     if($LASTEXITCODE-ne0){throw 'Interface source manifest binding failed.'}
   }
   $sourceReferences=@(($sourceRecords-join"`n")|ConvertFrom-Json -AsHashtable)

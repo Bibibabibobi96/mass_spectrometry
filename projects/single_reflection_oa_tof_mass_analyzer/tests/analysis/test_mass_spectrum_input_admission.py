@@ -1,4 +1,6 @@
 """Thin normal/resume geometry admission; does not grant Formal access."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 from pathlib import Path
 import hashlib
 import json
@@ -17,7 +19,7 @@ REPO = PROJECT.parents[1]
 def sealed_mass_source(root):
     """Small real producer-shaped manifest and calibrated private capacity owner."""
     from common.contracts.capacity_ledger import initialize_capacity_ledger, record_capacity_object
-    from common.contracts.write_run_manifest import publish_run_manifest
+    from msplatform.execution.manifest_publication import publish_run_manifest
 
     artifacts = root / 'artifacts'
     source = artifacts / 'projects/single_reflection_oa_tof_mass_analyzer/runs/20261031_100000__sim__cross__mass-parent'
@@ -61,7 +63,7 @@ def sealed_mass_source(root):
               'particle_source_provenance': [{'origin': 'original_species_source'}]}
     config_path = source / 'run_config.json'
     config_path.write_text(json.dumps(config), encoding='utf-8')
-    publish_run_manifest(config_path, 'success', output_paths=outputs)
+    publish_run_manifest(config_path, 'success', output_paths=outputs, retention_api=_manifest_retention_api)
     initialize_capacity_ledger(artifacts, objects=[])
     record_capacity_object(artifacts, path=source, object_class='light_evidence',
                            bytes_count=sum(p.stat().st_size for p in source.rglob('*') if p.is_file()),
@@ -99,7 +101,7 @@ def mass_analysis_fixture(root):
 class MassSpectrumReanalysisTests(unittest.TestCase):
     def test_consumed_projection_rejects_unsealed_tampered_and_incomplete_records(self):
         from common.contracts.capacity_ledger import record_capacity_object
-        from common.contracts.write_run_manifest import publish_run_manifest
+        from msplatform.execution.manifest_publication import publish_run_manifest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import select_source
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -117,12 +119,12 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                     change()
                     # New fixture owner publication, never a mutation of a real run.
                     (source/'run_manifest.json').unlink()
-                    publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs)
+                    publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs, retention_api=_manifest_retention_api)
                     with self.assertRaisesRegex(ValueError, message):
                         select_source(source, artifacts)
                     target.write_bytes(before)
                     (source/'run_manifest.json').unlink()
-                    publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs)
+                    publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs, retention_api=_manifest_retention_api)
             original = (source/'inputs/resolved_geometry.json').read_bytes()
             (source/'inputs/resolved_geometry.json').write_bytes(original+b' ')
             with self.assertRaisesRegex(AssertionError, 'changed'):
@@ -265,7 +267,7 @@ ConvertTo-Json -InputObject $analysisLaunch -Compress
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
 
     def test_analysis_failure_is_sealed_and_finalization_failure_resumes_without_analysis(self):
-        from common.contracts.write_run_manifest import publish_run_manifest
+        from msplatform.execution.manifest_publication import publish_run_manifest
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -285,11 +287,11 @@ ConvertTo-Json -InputObject $analysisLaunch -Compress
                     if case == 'analysis':
                         csv_path.write_text(source_bytes.decode().replace('1,100,1,', '99,100,1,', 1), encoding='utf-8')
                         (source/'run_manifest.json').unlink()
-                        publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs)
+                        publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs, retention_api=_manifest_retention_api)
                     else:
                         csv_path.write_bytes(source_bytes)
                         (source/'run_manifest.json').unlink()
-                        publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs)
+                        publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs, retention_api=_manifest_retention_api)
                         # Fault only the public finalization invocation, after the
                         # real Complete adapter persists actual stopped writers.
                         marker='  if($ResumeFinalization){'
@@ -348,7 +350,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
                         'AmbiguousParameterSet' if index < 2 else 'ParameterArgumentValidationError'), outcome)
 
     def test_release_failure_keeps_actual_analysis_primary_and_required_protection(self):
-        from common.contracts.write_run_manifest import publish_run_manifest
+        from msplatform.execution.manifest_publication import publish_run_manifest
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -369,7 +371,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
             csv_path = source/'results/simion_particles.csv'
             csv_path.write_text(csv_path.read_text(encoding='utf-8').replace('1,100,1,', '99,100,1,', 1), encoding='utf-8')
             (source/'run_manifest.json').unlink()
-            publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs)
+            publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs, retention_api=_manifest_retention_api)
             snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
             env = {key: value for key, value in os.environ.items()
                    if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}

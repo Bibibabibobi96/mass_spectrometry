@@ -17,13 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts import capacity_protection as protection
-from common.contracts.artifact_retention import (
-    _execute_removals,
-    _publish_removal_preflight,
-    classify_file,
-    load_run_retention,
-)
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.execution.artifact_retention import _execute_removals
+from msplatform.execution.artifact_retention import _publish_removal_preflight
+from msplatform.execution.retention import classify_file
+from msplatform.execution.artifact_retention import load_run_retention
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from msplatform.execution.solver_review_retirement import _downstream_references
 
 

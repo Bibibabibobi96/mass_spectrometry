@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
     _analyzer_geometry_lines,
@@ -235,8 +235,8 @@ def compile_materializable_fields(request: dict) -> dict:
     The extra fine occupancy instance preserves IP thin auxiliaries without
     imposing their spacing on the complete 800-mm MR enclosure.
     """
-    from common.contracts.verify_run_manifest import record_path
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.io.manifest_records import record_path
+    from msplatform.execution.retention import file_record
     from msplatform.backends.comsol.static_field_binding import (
         _native_active_box,
         resolve_native_refine_numerics,

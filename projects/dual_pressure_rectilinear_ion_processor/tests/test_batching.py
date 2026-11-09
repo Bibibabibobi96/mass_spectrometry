@@ -1,6 +1,10 @@
 """Solver-free batch projections and full-ID merge contracts; no physics claim."""
 from __future__ import annotations
 
+import msplatform.execution.retention as _canonical_retention
+import msplatform.execution.manifest_verification as _canonical_manifest_verification
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import copy
 import json
 import os
@@ -17,7 +21,6 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from common.contracts import verify_run_manifest, write_run_manifest
 from common.contracts.file_identity import file_sha256
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
@@ -88,7 +91,7 @@ class BatchingTests(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as bundle:
             for name in names:
                 path = parent/folder/name
-                record = write_run_manifest.file_record(path)
+                record = _canonical_retention.file_record(path)
                 record["path"] = f"{folder}/{name}"
                 sources.append(record)
                 bundle.write(path, record["path"])
@@ -99,8 +102,8 @@ class BatchingTests(unittest.TestCase):
         functional.write_json(parent/(prefix+"_archive_receipt.json"), dict(role="ion_processor_worker_csv_archive_receipt",
             status="complete", plan_sha256=file_sha256(archive_plan), removed_files=[row["path"] for row in sources]))
         functional.write_json(parent/"run_config.json", dict(run_id=parent.name))
-        records = [write_run_manifest.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
-        manifest = dict(run_config=write_run_manifest.file_record(parent/"run_config.json"), inputs={}, outputs=records)
+        records = [_canonical_retention.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
+        manifest = dict(run_config=_canonical_retention.file_record(parent/"run_config.json"), inputs={}, outputs=records)
         functional.write_json(parent/"run_manifest.json", dict(role="simulation_run_manifest", project=functional.PROJECT,
             mode="native_electrode_functional", run_id=parent.name, status="failed", **manifest))
         before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
@@ -118,11 +121,11 @@ class BatchingTests(unittest.TestCase):
         # already reused units remain at the original owner instead of re-flying.
         functional.write_json(self.run/"results/simion_execution_batch_plan.json", dict(particle_count=6, batches=batches))
         config_record = functional.read_json(self.run/"run_config.json")
-        inputs = {key: write_run_manifest.file_record(Path(value)) for key, value in config_record["inputs"].items()}
-        outputs = [write_run_manifest.file_record(path) for path in self.run.rglob("*")
+        inputs = {key: _canonical_retention.file_record(Path(value)) for key, value in config_record["inputs"].items()}
+        outputs = [_canonical_retention.file_record(path) for path in self.run.rglob("*")
                    if path.is_file() and path.name not in {"run_manifest.json", "run_config.json"}]
         child_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
-            run_id=self.run.name, status="failed", run_config=write_run_manifest.file_record(self.run/"run_config.json"),
+            run_id=self.run.name, status="failed", run_config=_canonical_retention.file_record(self.run/"run_config.json"),
             inputs=inputs, outputs=outputs)
         functional.write_json(self.run/"run_manifest.json", child_manifest)
         grandchild = Path(self.temp.name)/"grandchild"
@@ -168,8 +171,8 @@ class BatchingTests(unittest.TestCase):
             (prior / "simion" / name).write_text("inert fixture\n", encoding="utf-8")
         files = [path for path in prior.rglob("*") if path.is_file() and path.name != "run_config.json"]
         manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
-            run_id=prior.name, status="failed", run_config=write_run_manifest.file_record(prior / "run_config.json"),
-            inputs={}, outputs=[write_run_manifest.file_record(path) for path in files])
+            run_id=prior.name, status="failed", run_config=_canonical_retention.file_record(prior / "run_config.json"),
+            inputs={}, outputs=[_canonical_retention.file_record(path) for path in files])
         functional.write_json(prior / "run_manifest.json", manifest)
         before = {path: path.read_bytes() for path in prior.rglob("*") if path.is_file()}
         with patch.object(sys, "argv", ["functional", "prepare-continuation", "--run", str(self.run), "--baseline-run", str(prior)]):
@@ -181,9 +184,9 @@ class BatchingTests(unittest.TestCase):
         self.assertEqual(before, {path: path.read_bytes() for path in prior.rglob("*") if path.is_file()})
         self.assertEqual(functional.read_json(self.run / "run_config.json")["parameters"]["continuation_predecessor"], str(prior))
         child_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
-            run_id=self.run.name, status="failed", run_config=write_run_manifest.file_record(self.run / "run_config.json"),
-            inputs={"continuation_plan": write_run_manifest.file_record(self.run / "inputs/simion_whole_unit_replay_plan.json"),
-                    "continuation_predecessor_manifest": write_run_manifest.file_record(prior / "run_manifest.json")}, outputs=[])
+            run_id=self.run.name, status="failed", run_config=_canonical_retention.file_record(self.run / "run_config.json"),
+            inputs={"continuation_plan": _canonical_retention.file_record(self.run / "inputs/simion_whole_unit_replay_plan.json"),
+                    "continuation_predecessor_manifest": _canonical_retention.file_record(prior / "run_manifest.json")}, outputs=[])
         functional.write_json(self.run / "run_manifest.json", child_manifest)
         self.assertEqual(ip_continuation.continuation_ancestry(self.run), [self.run, prior])
         grandchild = Path(self.temp.name) / "grandchild"
@@ -194,10 +197,10 @@ class BatchingTests(unittest.TestCase):
         self.assertEqual(config["inputs"]["continuation_origin_manifest"], str(prior / "run_manifest.json"))
         self.assertEqual(batching.native_data_directory(grandchild), prior / "simion")
         grandchild_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
-            run_id=grandchild.name, status="failed", run_config=write_run_manifest.file_record(grandchild / "run_config.json"),
-            inputs={"continuation_plan": write_run_manifest.file_record(grandchild / "inputs/simion_whole_unit_replay_plan.json"),
-                    "continuation_predecessor_manifest": write_run_manifest.file_record(self.run / "run_manifest.json"),
-                    "continuation_origin_manifest": write_run_manifest.file_record(prior / "run_manifest.json")}, outputs=[])
+            run_id=grandchild.name, status="failed", run_config=_canonical_retention.file_record(grandchild / "run_config.json"),
+            inputs={"continuation_plan": _canonical_retention.file_record(grandchild / "inputs/simion_whole_unit_replay_plan.json"),
+                    "continuation_predecessor_manifest": _canonical_retention.file_record(self.run / "run_manifest.json"),
+                    "continuation_origin_manifest": _canonical_retention.file_record(prior / "run_manifest.json")}, outputs=[])
         functional.write_json(grandchild / "run_manifest.json", grandchild_manifest)
         self.assertEqual(ip_continuation.continuation_ancestry(grandchild), [grandchild, self.run, prior])
         child_manifest["inputs"]["continuation_predecessor_manifest"]["sha256"] = "0" * 64
@@ -257,7 +260,7 @@ class BatchingTests(unittest.TestCase):
 
     def verify_published_manifest(self) -> None:
         with patch.object(sys, "argv", ["verifier", str(self.run/"run_manifest.json")]):
-            verify_run_manifest.main()
+            _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
 
     def test_frozen_inputs_are_read_once_per_publication_stage_and_generated_assets_remain_outputs(self) -> None:
         self.publishable_config()
@@ -301,7 +304,7 @@ class BatchingTests(unittest.TestCase):
         self.assertGreater(sum(len(str(path)) for path in outputs),32767)
         self.assertFalse(any(path.name in {"run_manifest.json","run_config.json",".private"} for path in outputs))
         with patch.object(sys,"argv",["verifier",str(self.run/"run_manifest.json"),"--require-status","failed"]):
-            verify_run_manifest.main()
+            _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
 
     def test_guarded_new_controller_identity_avoids_hash_and_rejects_external_override(self) -> None:
         external = self.run / "inputs/resolved_model.json"
@@ -587,8 +590,8 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
         parent = Path(self.temp.name)/"parent"
         shutil.copytree(self.run, parent)
         functional.write_json(parent/"run_config.json", dict(run_id=parent.name))
-        records = [write_run_manifest.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
-        manifest = dict(run_config=write_run_manifest.file_record(parent/"run_config.json"), inputs={}, outputs=records)
+        records = [_canonical_retention.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
+        manifest = dict(run_config=_canonical_retention.file_record(parent/"run_config.json"), inputs={}, outputs=records)
         functional.write_json(parent/"run_manifest.json", dict(role="simulation_run_manifest", project=functional.PROJECT,
             mode="native_electrode_functional", run_id=parent.name, status="failed", **manifest))
         before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}

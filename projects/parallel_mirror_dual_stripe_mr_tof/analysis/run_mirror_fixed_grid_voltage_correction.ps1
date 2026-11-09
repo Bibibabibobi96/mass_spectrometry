@@ -65,7 +65,7 @@ if ($nativeL1 -and ($gradientSource -or $sourceCorrection)) {
 }
 $inputRoots = @($coarse, $fixed) + $(if ($nativeL1) { @($nativeL1) } else { @() }) + $(if ($gradientSource) { @($gradientSource) } else { @() }) + $(if ($sourceCorrection) { @($sourceCorrection, $secantFixed) } else { @() })
 foreach ($root in $inputRoots) {
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
     (Join-Path $root 'run_manifest.json') --require-status success
   if ($LASTEXITCODE -ne 0) { throw "Input manifest failed: $root" }
 }

@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any, Mapping, TypeAlias
 
 from msplatform.execution.artifact_naming import validate_run_id
-from common.contracts.artifact_retention import validate_retention
+from msplatform.execution.artifact_retention import validate_retention
 from common.contracts.file_identity import FileIdentityGuard, file_sha256
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from common.contracts.write_run_manifest import retention_api
+from msplatform.execution.retention import classify_file as classify_run_file
 
 
 SCHEMA_VERSION = 1
@@ -129,7 +129,7 @@ def _manifest_binds(
             and str(record.get("sha256", "")).upper() == expected["sha256"]
         ):
             if manifest.get("schema_version") == 2 and record in manifest.get("outputs", []):
-                classify_file = retention_api()[0]
+                classify_file = classify_run_file
                 expected_role = classify_file(path, bytes_count=int(record["bytes"]))
                 if record.get("retention_role") != expected_role:
                     raise StageReuseError(f"parent output retention role differs: {path}")

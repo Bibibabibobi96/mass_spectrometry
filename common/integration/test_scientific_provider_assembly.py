@@ -11,8 +11,8 @@ import shutil
 import tempfile
 import unittest
 
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.workflows.connection_inputs import resolve_assembly_recipe, verify_composition_plan
 from msplatform.assembly.electrode_binding import ElectrodeKey, validate_electrode_bindings
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope

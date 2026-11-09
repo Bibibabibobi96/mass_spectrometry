@@ -1102,12 +1102,7 @@ if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
             verified = subprocess.run(
                 [
                     sys.executable,
-                    str(
-                        REPO_ROOT
-                        / "common"
-                        / "contracts"
-                        / "verify_run_manifest.py"
-                    ),
+                    "-c", "from msplatform.execution.manifest_verification import main; main()",
                     str(manifest_path),
                     "--require-status",
                     "success",

@@ -1273,7 +1273,7 @@ exit 0
             self.assertFalse(any((run / "simion").glob("*.pa0")))
             self.assertFalse((run/"inputs/simion_layout_template").exists())
             verification = subprocess.run(
-                [sys.executable, "-m", "common.contracts.verify_run_manifest", str(run/"run_manifest.json"),
+                [sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(run/"run_manifest.json"),
                  "--require-status", "failed", "--require-local-run-config"],
                 cwd=fixture_source, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )

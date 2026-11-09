@@ -13,7 +13,7 @@ from unittest.mock import patch
 from matplotlib import pyplot as plt
 import numpy as np
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.dual_pressure_rectilinear_ion_processor.analysis import geometry_comparison as geometry
 from projects.dual_pressure_rectilinear_ion_processor.analysis import extraction_phase_space_comparison as recorded
 

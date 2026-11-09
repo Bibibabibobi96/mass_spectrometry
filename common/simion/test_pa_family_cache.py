@@ -1,6 +1,8 @@
 """Regression tests for the device-neutral SIMION PA-family cache."""
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
@@ -600,7 +602,7 @@ class PAFamilyCacheTest(unittest.TestCase):
     def _producer_handoff_fixture(self, *, complete=False, sealed=False, prepared=False, retention_class="solver_review"):
         from msplatform.execution.inputs import freeze_file
         from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
-        from common.contracts.write_run_manifest import build_run_manifest
+        from msplatform.execution.manifest_publication import build_run_manifest
 
         artifacts, cache = self._artifact_cache()
         predecessor = self.producer_run_config.parent
@@ -609,7 +611,7 @@ class PAFamilyCacheTest(unittest.TestCase):
             reason=None if retention_class == "compact" else "fixture review")
         self.producer_run_config.write_text(json.dumps(config), encoding="utf-8")
         manifest = predecessor / "run_manifest.json"
-        manifest.write_text(json.dumps(build_run_manifest(self.producer_run_config, "checkpoint")), encoding="utf-8")
+        manifest.write_text(json.dumps(build_run_manifest(self.producer_run_config, "checkpoint", retention_api=_manifest_retention_api)), encoding="utf-8")
         # Initialization precedes the normal dependency closure written before construction.
         config["dependency_closure"] = {"fixture": "frozen actual builder inputs"}
         self.producer_run_config.write_text(json.dumps(config), encoding="utf-8")
@@ -833,7 +835,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                 finally:
                     capacity_protection.delete_capacity_protection_lease(artifacts, lease_id="fixture-prior-writer")
                 self.assertEqual(transaction.read_bytes(), before)
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         for name, field, value in (("transaction_record", "owner", "foreign-owner"),
                                    ("predecessor_manifest", "run_id", "foreign-run"),
                                    ("stopped_receipt", "action", "register_writing"),
@@ -944,7 +946,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(active_lease_ids(), workflow_leases)
 
     def test_producer_handoff_uses_existing_advance_cli_and_rejects_changed_identity(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         _, cache, first, successor, request = self._producer_handoff_fixture()
         transaction = first.transaction_directory / "transaction.json"
         before = transaction.read_bytes()

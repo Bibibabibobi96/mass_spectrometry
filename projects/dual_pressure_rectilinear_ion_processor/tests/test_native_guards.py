@@ -400,7 +400,7 @@ if(@($result.pending).Count-ne1-or$result.pending[0].scheduler_batch.index-ne2-o
 
     def test_continuation_rechecks_frozen_science_before_reuse(self) -> None:
         import copy
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_batching import BatchingTests
 

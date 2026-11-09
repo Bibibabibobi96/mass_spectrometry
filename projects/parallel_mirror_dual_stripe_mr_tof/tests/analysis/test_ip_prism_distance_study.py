@@ -18,7 +18,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_stud
     lua_literal, read_source, validate_contract, validate_contour_contract, validate_replay_contract, prepare_replay_package, analyze_replay_package,
     prepare, prepare_recorded_analysis, validate_fields, main, freeze_code, FROZEN_SCIENTIFIC_BRIDGE_MODULES, _contour_source_tables, _contour_geometry_and_voltage, _freeze_recorded_contour_source, _freeze_completed_field_source,
 )
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ip_prism_local_geometry import fixture
 

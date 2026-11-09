@@ -18,7 +18,7 @@ import unittest
 import pandas as pd
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from integrations.tests.test_local_frontend_analysis import (
     _TIMES, fixture, write_log,
 )

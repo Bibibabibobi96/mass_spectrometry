@@ -159,7 +159,7 @@ if ($Level -eq 'Candidate') {
     $summary = Join-Path $runDir 'summary.json'
     [ordered]@{schema_version=1;role='oa_tof_comsol_candidate_gate_summary';status='success'} |
       ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
-    & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $report --output $summary
+    & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $runConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $report --output $summary
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL candidate gate manifest failed.' }
   }
   else {
@@ -230,7 +230,7 @@ elseif ($Level -eq 'Formal') {
   $formalSummary = Join-Path $formalRunDir 'summary.json'
   [ordered]@{schema_version=1;role='oa_tof_comsol_formal_gate_summary';status='success'} |
     ConvertTo-Json | Set-Content -LiteralPath $formalSummary -Encoding UTF8
-  & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $formalRunConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $comsolReport --output $formalSummary
+  & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $formalRunConfig --status success --software 'COMSOL 6.4 via MATLAB R2025b' --output $comsolReport --output $formalSummary
   if ($LASTEXITCODE -ne 0) { throw 'COMSOL formal gate manifest failed.' }
 
   & (Join-Path $projectRoot 'workflows\formal_reference\verify_geometry_contract.ps1') -SimionExe $SimionExe

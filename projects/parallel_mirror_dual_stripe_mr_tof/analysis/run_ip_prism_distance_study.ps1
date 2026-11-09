@@ -190,7 +190,7 @@ try {
   if($null-ne$package){
    $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
    Invoke-StudyPython -Arguments @('-m',$module,'publish-manifest','--run',$run,'--status',$(if($succeeded){'success'}else{'failed'}))
-   Invoke-StudyPython -Arguments @('-m','common.contracts.verify_run_manifest',(Join-Path $run 'run_manifest.json'),'--require-status',$(if($succeeded){'success'}else{'failed'}),'--require-project',$projectId)
+   Invoke-StudyPython -Arguments @('-c', 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',(Join-Path $run 'run_manifest.json'),'--require-status',$(if($succeeded){'success'}else{'failed'}),'--require-project',$projectId)
   }
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity|Out-Null;$capacity=$null}
   if($null-ne$package){Invoke-StudyPython -Arguments @('-m','msplatform.execution.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',$artifactRoot,'--run-config',$package.run_config,'--owner',$projectId,'--confirm-writing-stopped','--retention-reason','Retain local case fields and complete diagnostics for reproducibility')}

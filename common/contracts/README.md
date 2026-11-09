@@ -72,7 +72,7 @@ and the protected six-scenario parent are preserved.
 公共PowerShell owner在完成记录保存alias清理事实，writer确认结束后执行清理，失败可从原Result恢复。
 此junction只指向本次可写run；外部只读PA仍沿[既有隔离入口](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，
 不能用alias代替不可变源的独立普通副本或防写保护。
-`Write-RunManifest`通过UTF-8标准输入向`write_run_manifest.py --output-list-json -`传递输出路径，
+`Write-RunManifest`通过UTF-8标准输入向`msplatform.execution.manifest_publication main --output-list-json -`传递输出路径，
 避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，不再落盘临时运输文件。
 原Python入口的重复`--output`仍可使用，两种输入共同进入同一manifest校验和身份计算。
 该CLI的状态输出与错误诊断也显式使用UTF-8，不因非UTF-8系统locale丢失中文发布路径。
@@ -272,7 +272,7 @@ PowerShell 消费者可用`Enter-RunTerminalConsumptionGuard -RunDirectory <sour
 
 ### 文件身份与读取
 
-`verify_run_manifest.verified_successful_run_reference`核对调用方声明的project／mode及成功状态，
+`msplatform.io.manifest_records.verified_successful_run_reference`核对调用方声明的project／mode及成功状态，
 并拒绝尚有终态发布journal的run，即使调用方已经传入manifest；
 再从manifest的inputs／outputs选择唯一匹配路径并校验其原始字节；不读取其他载荷或把run config当第二记录权威。
 接口准备与MR组件直接使用这一校验，组件不再为了消费记录而导入integration命令入口。
@@ -370,7 +370,7 @@ MR原生场provider、IP私有GUI准备和oaTOF跨求解器诊断在同次完整
 保留各自原有的status以及适用的project／mode约束；后两项同时核对run config，比较保持大小写敏感。
 这三处不再另起全文verifier。私有build-plus-write publisher、发布后路径变换和独立下游消费的验证仍保留；
 不能仅因上游调用过writer就跨越这些不同边界复用本次发布证明。
-`verify_run_manifest.py`作为独立消费入口仍默认复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
+`msplatform.execution.manifest_verification`作为独立消费入口仍默认复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
 历史run若有不再被下游读取的大型记录丢失或损坏，下游可用具名`--consumer-projection-id`，并逐项提供
 `--consumed-input NAME PATH`／`--consumed-output PATH`；入口仍复核manifest状态、run config、项目／模式等
 约束，并把每个实际消费路径唯一绑定到manifest记录后核对字节数和SHA-256。投影不得用于发布或宣称整个

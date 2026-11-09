@@ -30,7 +30,7 @@ def classify_file(
         return "required_evidence"
     if any(fnmatch.fnmatch(name, pattern.lower()) for pattern in policy["dense_trajectory_globs"]):
         return "dense_trajectory"
-    if suffix in policy["solver_native_suffixes"] or _numbered_simion_suffix(
+    if suffix in policy["solver_native_suffixes"] or is_numbered_simion_suffix(
         suffix, policy["solver_native_numbered_suffix_prefixes"]
     ):
         return "solver_native_binary"
@@ -59,7 +59,7 @@ def classify_file(
     return "lightweight_optional"
 
 
-def _numbered_simion_suffix(suffix: str, prefixes: list[str]) -> bool:
+def is_numbered_simion_suffix(suffix: str, prefixes: list[str]) -> bool:
     lowered = suffix.lower()
     return any(
         lowered.startswith(prefix.lower()) and lowered[len(prefix):].isdigit()
@@ -80,12 +80,12 @@ def validate_retained_files(
     )
 
 
-def retention_api() -> tuple[Any, Any, Any, Any]:
+def retention_api(*, completion_api: Any = None) -> tuple[Any, Any, Any, Any]:
     """Return the complete installed policy tuple expected by manifest publication."""
     return (
         classify_file,
         lambda run_dir, retention: artifact_retention.load_failed_recovery_exemptions(
-            run_dir, retention, classifier=classify_file
+            run_dir, retention, classifier=classify_file, completion_api=completion_api
         ),
         validate_retained_files,
         artifact_retention.validate_retention,
@@ -102,3 +102,21 @@ def apply_retention(run_config_path: Path, **kwargs: Any) -> Path:
 def build_run_manifest(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Build a manifest using the installed retention policy."""
     return build(*args, retention_api=retention_api, **kwargs)
+
+
+def file_record(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Record exact identity using the canonical run-evidence classifier."""
+    from msplatform.io.manifest_records import file_record as record
+    return record(*args, retention_classifier=classify_file, **kwargs)
+
+
+def verify_record(*args: Any, **kwargs: Any) -> None:
+    """Verify exact identity using the canonical run-evidence classifier."""
+    from msplatform.io.manifest_records import verify_record as verify
+    verify(*args, retention_classifier=classify_file, **kwargs)
+
+
+def verified_successful_run_reference(*args: Any, **kwargs: Any) -> Path:
+    """Verify a consumed run reference using the run-evidence classifier."""
+    from msplatform.io.manifest_records import verified_successful_run_reference as verify
+    return verify(*args, retention_classifier=classify_file, **kwargs)

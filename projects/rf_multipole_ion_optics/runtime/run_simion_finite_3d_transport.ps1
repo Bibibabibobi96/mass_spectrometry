@@ -586,7 +586,7 @@ try{
       if(-not(Test-Path -LiteralPath $referenceManifestOriginal -PathType Leaf)){
         throw "Reference COMSOL run manifest is missing: $referenceManifestOriginal"
       }
-      & $python -m common.contracts.verify_run_manifest $referenceManifestOriginal `
+      & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $referenceManifestOriginal `
         --require-status success --require-local-run-config `
         --require-run-id $ReferenceComsolRunId --require-project $ProjectId `
         --require-mode resolved_design_transport --require-design-profile-id $DesignProfileId `

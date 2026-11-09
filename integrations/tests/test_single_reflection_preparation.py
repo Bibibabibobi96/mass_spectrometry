@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import record_path, verify_record as _verify_record
 from msplatform.execution.retention import classify_file
 from functools import partial

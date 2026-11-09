@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts import capacity_ledger, capacity_protection
-from common.contracts.artifact_retention import classify_file
+from msplatform.execution.retention import classify_file
 from msplatform.execution.run_capacity_lifecycle import (
     HEAVY_RETENTION_ROLES, TERMINAL_STATUSES, _load_json, _inventory,
     _partial_retirement_is_protected_with_leases,
@@ -702,7 +702,7 @@ def retire_misplaced_light_run(artifact_root: Path, run_config: Path, *,
     repo = Path(__file__).resolve().parents[2]
     # The public full verifier binds every backup input/output, not just a
     # hand-authored inventory. No consumer projection is used for this proof.
-    subprocess.run([sys.executable, "-m", "common.contracts.verify_run_manifest", str(backup_manifest),
+    subprocess.run([sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(backup_manifest),
                     "--require-project", owner, "--require-mode", "misplaced_light_run_backup",
                     "--require-local-run-config"], cwd=repo, check=True, capture_output=True,
                    text=True, encoding="utf-8", timeout=60)
@@ -777,7 +777,7 @@ def retire_misplaced_light_run(artifact_root: Path, run_config: Path, *,
         if journal is None:
             if source.is_symlink() or not source.is_dir():
                 raise ValueError("misplaced source is not a regular existing run")
-            subprocess.run([sys.executable, "-m", "common.contracts.verify_run_manifest", str(source / "run_manifest.json"),
+            subprocess.run([sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(source / "run_manifest.json"),
                             "--require-status", archived_manifest["status"], "--require-project", owner,
                             "--require-run-id", source.name, "--require-local-run-config"], cwd=repo,
                            check=True, capture_output=True, text=True, encoding="utf-8", timeout=60)

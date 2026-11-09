@@ -45,7 +45,7 @@ exit 0
 
 
     def test_iob_copy_initializer_hands_off_guard_before_capacity_debit(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from common.simion.test_short_pa_path_support import PA_HASH_READ_COUNTERS
 
         for mode in ('fresh', 'capacity_failure', 'existing_good', 'existing_bad'):
@@ -105,7 +105,7 @@ if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPa
 
 
     def test_public_prepare_registers_field_continuation_frozen_closure(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from integrations.tests.test_single_reflection_preparation import (
             frontend_field_source_fixture, downstream_field_source_fixture, write_json,
         )

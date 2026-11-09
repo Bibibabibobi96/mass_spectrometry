@@ -243,7 +243,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         self.assertEqual(calls, [True])
 
     def test_source_z_and_prepared_equivalence_consume_declared_outputs(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             legacy = root / 'legacy.log'
@@ -277,7 +277,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                 source_z._load_selected_events([(log, 10, 1, declaration)])
 
     def test_measured_merge_reads_each_science_once_and_bound_recovery_rejects_damage(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             preparation = dict(expected_particle_ids=[11, 45], mother_particle_count=100, solver_epoch_instrument_time_us=7)
@@ -333,7 +333,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
             self.assertIn('PRIVATE_BATCH_LOCATORS=PASS', result.stdout)
 
     def test_recovery_identity_keeps_physical_sidecar_and_separates_io_locators(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as directory:
             identities = []
             for name in ('parent', 'child'):

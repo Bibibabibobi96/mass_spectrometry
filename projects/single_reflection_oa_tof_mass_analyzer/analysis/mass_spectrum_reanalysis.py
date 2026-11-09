@@ -30,8 +30,9 @@ def select_source(source: Path, consumer_artifact_root: Path, stopped: Path | No
     """Verify only the consumed small-record projection, under the caller's guard."""
     from common.contracts.capacity_ledger import load_capacity_ledger
     from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
-    from common.contracts.verify_run_manifest import record_path, verify_record
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.io.manifest_records import record_path
+    from msplatform.execution.retention import verify_record
+    from msplatform.execution.retention import file_record
     from msplatform.io.manifest_records import require_completed_terminal_publication
 
     source = source.resolve(strict=True)
@@ -122,7 +123,7 @@ def select_source(source: Path, consumer_artifact_root: Path, stopped: Path | No
 def freeze_analysis(repo: Path, destination: Path, selection: dict) -> dict:
     """Freeze just the imported analysis files and the parent's physical resource."""
     from msplatform.execution.inputs import enumerate_python_sources, freeze_file
-    from common.contracts.verify_run_manifest import verify_record
+    from msplatform.execution.retention import verify_record
 
     for name, record in selection["inputs"].items():
         verify_record(name, record)

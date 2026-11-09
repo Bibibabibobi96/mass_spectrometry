@@ -15,7 +15,7 @@ def prepare(repo: Path, root: Path) -> None:
         "voltage_map_current.lua": project / "simion/candidate_voltage_map.lua",
         "scientific_event_csv.lua": repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
     }
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     records = {}
     for name, source in copies.items():
         target = root / name

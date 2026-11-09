@@ -274,7 +274,7 @@ function Invoke-CooledFieldDesign {
  $recordCode=@'
 import json,sys
 from pathlib import Path
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 run=Path(sys.argv[1]).resolve();plan=json.loads((run/'inputs/cooled_field_plan.json').read_text())
 rows=[dict(file_record(run/'simion/cooled_fields'/p['output_basename'],'solver_native_binary'),kind=p['kind'],read_only=True) for p in plan['working_points']]
 (run/'inputs/cooled_working_points.json').write_text(json.dumps(rows,indent=2)+'\n',encoding='utf-8',newline='\n')
@@ -600,7 +600,7 @@ try{
  $profileCode=@'
 import json,sys
 from pathlib import Path
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 run=Path(sys.argv[1]).resolve();root=run/'inputs'
 mesh=sys.argv[2]=='local_static_mesh_check'
 native_count=int(sys.argv[3])

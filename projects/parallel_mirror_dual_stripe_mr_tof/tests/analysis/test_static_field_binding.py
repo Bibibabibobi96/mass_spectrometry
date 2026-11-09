@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 class RecordLookupScopeTest(unittest.TestCase):
     def test_actual_joint_payloads_are_verified_once_and_conflicts_or_drift_rejected(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from msplatform.backends.comsol.static_field_binding import verify_joint_asset_records
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1990,7 +1990,7 @@ print('GENERATED_SCALAR_TRANSPORT_FIXTURE_PASS')
 class VoltageResponseBindingTest(unittest.TestCase):
     def test_native_and_scalar_metadata_validation_does_not_import_workpoint(self):
         """Response consumers need sealed field metadata, not the workpoint controller."""
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2545,7 +2545,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
         return binding, source, run, plan
 
     def publish_fixture(self, run, plan):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         plan_path = run / "inputs/composition_plan.json"
         plan_path.write_text(json.dumps(plan), encoding="utf-8")
         files = [plan_path]
@@ -3207,7 +3207,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
 
     def retire(self, root, name="source", *, full_owner=False):
         from msplatform.execution.solver_review_retirement import RECEIPT_NAME, verify_retirement
-        from common.contracts.artifact_retention import classify_file
+        from msplatform.execution.retention import classify_file
         source = root / name
         owner = source / "run_manifest.json"
         declaration = source / "results/field_binding.json"
@@ -3452,7 +3452,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
                 load_binding(extended)
 
     def test_retired_metadata_does_not_consume_unrelated_preserved_native_payload(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from msplatform.execution.solver_review_retirement import RetirementError, verify_retirement
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

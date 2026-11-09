@@ -15,7 +15,8 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_exact_keys, require_number
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 
 PROJECT = "rf_multipole_ion_optics"

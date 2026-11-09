@@ -646,7 +646,7 @@ function Write-RunManifest {
     [switch]$PassThru
   )
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    $arguments=@((Join-Path $RepoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$RunConfig,'--status',$Status)
+    $arguments=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$RunConfig,'--status',$Status)
     if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
     foreach($item in $Software){$arguments+=@('--software',$item)}
     # CreateProcessW limits the command line to 32,767 UTF-16 characters.
@@ -826,7 +826,7 @@ function Resolve-RunSourceExecutionInputs {
 import json,sys
 from pathlib import Path
 from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 from common.contracts.capacity_protection import load_capacity_protection_leases,path_is_protected
 request=json.load(sys.stdin)
 session,refs,paths,require=(request[key] for key in ('session','source_references','native_input_paths','require_protection'))
@@ -1233,7 +1233,7 @@ function Apply-RunArtifactRetention {
   if($Resume){$arguments+='--resume'}
   if($null-ne$MaximumRunBytes){$arguments+=@('--maximum-run-bytes',[string]$MaximumRunBytes)}
   $output=Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') @arguments
+    & $Python -c 'from msplatform.execution.artifact_retention import main; from msplatform.backends.simion import native_completion; from msplatform.execution.retention import classify_file; main(classifier=classify_file, completion_api=lambda: native_completion)' @arguments
     if($LASTEXITCODE-ne 0){throw 'Run artifact retention failed.'}
   }
   Write-Verbose ($output -join [Environment]::NewLine)

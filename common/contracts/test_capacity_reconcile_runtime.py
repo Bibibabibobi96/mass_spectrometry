@@ -624,8 +624,8 @@ for name in (
     'common.contracts.reconcile_interrupted_compact_runs',
     'common.contracts.solver_review_retirement',
     'msplatform.execution.solver_review_retirement',
-    'common.contracts.artifact_retention',
-    'common.contracts.verify_run_manifest',
+    'msplatform.execution.artifact_retention',
+    'msplatform.execution.manifest_verification',
 ):
     assert name not in sys.modules, name
 """

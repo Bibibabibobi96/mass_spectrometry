@@ -5,6 +5,8 @@ the common scheduler owns intervals, and the common CSV merger owns ID offsets.
 """
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import copy
 import csv
 import hashlib
@@ -18,8 +20,11 @@ import zipfile
 
 from common.contracts.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import remove_recorded_files
-from common.contracts.write_run_manifest import publish_run_manifest, resolve_path, write_json_atomic
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.execution.manifest_publication import publish_run_manifest
+from msplatform.execution.manifest_publication import resolve_path
+from msplatform.execution.recorded_file_removal import write_json_atomic
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from msplatform.backends.simion.particle_batching import merge_rebased_particle_csvs
@@ -77,7 +82,7 @@ def publish_manifest(run: Path, status: str) -> dict:
                      and path.name not in {"run_manifest.json", "run_config.json"}
                      and not path.name.startswith("."))
     return publish_run_manifest(run/"run_config.json", status,
-                                software=["SIMION 2020", "Python 3.11"], output_paths=outputs)
+                                software=["SIMION 2020", "Python 3.11"], output_paths=outputs, retention_api=_manifest_retention_api)
 
 
 def dispatch_request_for_field(run: Path, c: dict, pa_sha: str, retain: bool, *, processor_program: Path) -> dict:

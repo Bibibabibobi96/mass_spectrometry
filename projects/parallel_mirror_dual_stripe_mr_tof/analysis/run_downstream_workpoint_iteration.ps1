@@ -144,7 +144,7 @@ function Invoke-PreparedWorkpointAcquisition {
     $outputs=@(Get-ChildItem -LiteralPath $pkg.result_dir -Recurse -File|ForEach-Object{$_.FullName})+@($pkg.summary,$retention)
     Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $pkg.run_config -Status $status -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & $python -m common.contracts.verify_run_manifest (Join-Path $pkg.artifact_run_dir 'run_manifest.json') --require-status $status
+      & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $pkg.artifact_run_dir 'run_manifest.json') --require-status $status
       if($LASTEXITCODE-ne0){throw 'Prepared acquisition terminal manifest verification failed.'}
     }
     if($null-ne$session){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session}
@@ -540,7 +540,7 @@ import hashlib,json,sys
 from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match,native_response_operator,_record
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 r,ref=json.loads(sys.argv[1]),json.loads(sys.argv[2])
 m=Path(ref['provider_manifest']); old_request=Path(ref['request_path'])
 assert ref['operation'] in ('compose','refine') and m.parent.name==ref['child_run_id']+'-field', 'Retained provider ownership differs'
@@ -635,7 +635,7 @@ print(json.dumps(str(p)))
         # Refine/GEM/field errors continue to fail; no candidate flight is made.
         $failedManifest=Join-Path $providerRun 'run_manifest.json'
         Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-          & $python -m common.contracts.verify_run_manifest $failedManifest --require-status failed | Out-Host
+          & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $failedManifest --require-status failed | Out-Host
           if($LASTEXITCODE-ne0){throw 'Refused provider capacity evidence is not a verified terminal run.'}
         }
         $failedDoc=Get-Content -LiteralPath $failedManifest -Raw|ConvertFrom-Json -AsHashtable
@@ -703,7 +703,7 @@ function Find-ContinuationTransportSeed {
 
 function Get-WorkpointBootstrapEvidence {
   param([string]$Manifest,[double[]]$Voltages)
-  & $python (Join-Path $repoRoot 'common/contracts/verify_run_manifest.py') $Manifest --require-status success `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $Manifest --require-status success `
     --require-project instrument_assembly --require-mode oa_mr | Out-Host
   if($LASTEXITCODE-ne0){throw 'Centre trial manifest is not verified success.'}
   $materialization=Get-ManifestOutputPath -ManifestPath $Manifest -FileName 'two_prism_trial_materialization.json'
@@ -1138,7 +1138,7 @@ function Complete-StagedTrial {
     Write-RunJson -Path $predictionInput -Depth 100 -Value $Pending.decision
     $predictionBytes=(Get-Item -LiteralPath $predictionInput).Length
     $predictionSha=(Get-FileHash -LiteralPath $predictionInput -Algorithm SHA256).Hash
-    $identityCode+="; import json; from common.contracts.verify_run_manifest import verify_record; verify_record('staged prediction input',dict(path=sys.argv[3],bytes=int(sys.argv[6]),sha256=sys.argv[7])); from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assess_staged_prediction,resolve_prism_controller_policy; print(json.dumps(assess_staged_prediction(json.loads(Path(sys.argv[3]).read_text(encoding='utf-8-sig')),a,c,json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig')),resolve_prism_controller_policy(Path(sys.argv[5])))))"
+    $identityCode+="; import json; from msplatform.execution.retention import verify_record; verify_record('staged prediction input',dict(path=sys.argv[3],bytes=int(sys.argv[6]),sha256=sys.argv[7])); from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assess_staged_prediction,resolve_prism_controller_policy; print(json.dumps(assess_staged_prediction(json.loads(Path(sys.argv[3]).read_text(encoding='utf-8-sig')),a,c,json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig')),resolve_prism_controller_policy(Path(sys.argv[5])))))"
   }
   $identityArguments=@('-c',$identityCode,([string]$Pending.anchor_manifest),$child)
   if($ControllerPolicyPath){$identityArguments+=@($predictionInput,$frozenContract,$ControllerPolicyPath,([string]$predictionBytes),$predictionSha)}
@@ -1675,7 +1675,7 @@ function Restore-PreparedOriginalStages {
   $document=Get-Content -LiteralPath $manifest -Raw|ConvertFrom-Json
   if($document.status-notin@('checkpoint','failed','interrupted','success')-or$document.run_id-eq$RunId){throw 'Prepared resume requires a sealed prior parent and a new RunId.'}
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m common.contracts.verify_run_manifest $manifest --require-status $document.status --require-project $project --require-mode downstream_fixed_grid_workpoint_iteration | Out-Host
+    & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifest --require-status $document.status --require-project $project --require-mode downstream_fixed_grid_workpoint_iteration | Out-Host
     if($LASTEXITCODE-ne0){throw 'Prepared resume parent manifest is invalid.'}
   }
   $old=Get-Content -LiteralPath (Join-Path $parent 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
@@ -1944,7 +1944,7 @@ print(json.dumps(b))
     $outputs=@(Get-ChildItem -LiteralPath $package.result_dir -Recurse -File|ForEach-Object{$_.FullName})+@($package.summary,$retention)
     Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status $status -Software @('SIMION 2020','Python 3.11','NumPy') -Outputs $outputs
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & $python -m common.contracts.verify_run_manifest (Join-Path $package.artifact_run_dir 'run_manifest.json') --require-status $status
+      & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $package.artifact_run_dir 'run_manifest.json') --require-status $status
       if($LASTEXITCODE-ne0){throw 'Prepared original-stage terminal manifest verification failed.'}
     }
     if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
@@ -1976,7 +1976,7 @@ if($ResumeParentCheckpoint){
     '--require-mode','downstream_fixed_grid_workpoint_iteration','--consumer-projection-id','mrtof_native_execution_resume_v1',
     '--consumed-output',$resumeNativeCheckpoint)
   if($resumeBootstrapPath){$projectionArgs+=@('--consumed-output',$resumeBootstrapPath)}
-  & $python (Join-Path $repoRoot 'common/contracts/verify_run_manifest.py') @projectionArgs
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @projectionArgs
   if($LASTEXITCODE-ne0){throw 'Native recovery checkpoint manifest binding differs.'}
   }else{
     if($freshBootstrap){$resumeBootstrapPath=Get-ManifestOutputPath -ManifestPath $resumeManifest -FileName 'workpoint_bootstrap.json'}
@@ -2003,7 +2003,7 @@ if($NativeRuntimeCheckpoint){
   $runtimeOwnerManifest=Join-Path $runtimeOwnerRun 'run_manifest.json'
   $runtimeOwnerStatus=[string](Get-Content -LiteralPath $runtimeOwnerManifest -Raw|ConvertFrom-Json).status
   if($runtimeOwnerStatus-notin@('checkpoint','success')){throw 'Native runtime owner did not reach a reusable checkpoint or success state.'}
-  & $python (Join-Path $repoRoot 'common/contracts/verify_run_manifest.py') $runtimeOwnerManifest `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $runtimeOwnerManifest `
     --require-status $runtimeOwnerStatus --require-project $project --require-mode downstream_fixed_grid_workpoint_iteration `
     --consumer-projection-id mrtof_native_runtime_reuse_v1 --consumed-output $resumeNativeCheckpoint
   if($LASTEXITCODE-ne0){throw 'Native runtime reuse checkpoint manifest binding differs.'}
@@ -2293,7 +2293,7 @@ try {
       consumed_output=$seedMaterialization
       assertion_scope='run_config_and_voltage_materialization_only__other_historical_records_not_asserted'
     }
-    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $seedManifest `
+    & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $seedManifest `
       --require-status success --require-project $seedIdentity.project --require-mode $seedIdentity.mode `
       --consumer-projection-id $seedProjection.projection_id --consumed-output $seedMaterialization
     if($LASTEXITCODE-ne0){throw 'Bootstrap voltage seed manifest is invalid.'}
@@ -2442,7 +2442,7 @@ try {
     $terminalDecision=$staged.terminal_decision;$history=$staged.history;$lineage=$staged.lineage
   }else{
   $initialManifest = (Resolve-Path -LiteralPath $InitialWorkpointManifest).Path
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $initialManifest `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $initialManifest `
     --require-status success --require-project $project --require-mode downstream_fixed_grid_workpoint
   if ($LASTEXITCODE -ne 0) { throw 'Initial downstream workpoint manifest is not verified success.' }
   $initialProposal = Get-ManifestOutputPath -ManifestPath $initialManifest -FileName 'downstream_fixed_grid_workpoint.json'
@@ -2452,7 +2452,7 @@ try {
   $frozenResumeChildManifest = $null
   if ($ResumeSuccessfulChildManifest) {
     $resumeChildManifest = (Resolve-Path -LiteralPath $ResumeSuccessfulChildManifest).Path
-    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $resumeChildManifest `
+    & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $resumeChildManifest `
       --require-status success --require-project instrument_assembly --require-mode oa_mr
     if ($LASTEXITCODE -ne 0) { throw 'Resume child manifest is not verified success.' }
     $frozenResumeChildManifest = Copy-VerifiedRunInput -Source $resumeChildManifest `
@@ -2727,7 +2727,7 @@ try {
       '--require-mode','oa_mr','--consumer-projection-id','mrtof_downstream_iteration_child_v1',
       '--consumed-output',$observation,'--consumed-output',$materialization,
       '--consumed-output',$cacheIdentity,'--consumed-output',$childProtectionPath)
-    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') @childProjectionArgs
+    & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @childProjectionArgs
     if ($LASTEXITCODE -ne 0) { throw "Child flight manifest projection is invalid: $childManifest" }
     $cacheBindingPath = Join-Path $package.result_dir ('iteration_{0:D2}_cache_binding.json' -f $iteration)
     $cacheBindingArguments = @(

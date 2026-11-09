@@ -9,7 +9,7 @@ from unittest.mock import patch
 import json
 import os
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from common.contracts.file_identity import file_sha256
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import (

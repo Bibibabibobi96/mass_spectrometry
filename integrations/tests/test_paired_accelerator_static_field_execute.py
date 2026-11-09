@@ -1,6 +1,8 @@
 """Actual frozen preparation and inert vendor transport; no field solver."""
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import copy
 import os
 import math
@@ -14,7 +16,8 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.resources import resource_path
-from common.contracts.write_run_manifest import build_run_manifest, file_record
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger, record_capacity_object
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
@@ -45,7 +48,7 @@ class PairedStaticExecutionTests(unittest.TestCase):
                 facts.write_text('backend=SIMION\napi=pa:field_vc\nnative_field_unit=V/gu\nexport_field_unit=V/m\nfield_sign=negative_potential_gradient\npoint_count=115\n')
                 config=runtime.read(producer/'run_config.json');config['inputs'].update(simion_identity=str(identity),simion_exporter=str(exporter));runtime.write(producer/'run_config.json',config)
                 outputs=[Path(row['path']) for row in runtime.read(producer/'run_manifest.json')['outputs']]+[simion,facts]
-                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs, retention_api=_manifest_retention_api);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
                 model.unlink()
                 with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
                     selected=runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
@@ -57,11 +60,11 @@ class PairedStaticExecutionTests(unittest.TestCase):
                     Path('src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')) if path!=exporter_relative)
                 duplicate=producer/'inputs/runtime_snapshot'/other;duplicate.parent.mkdir(parents=True);shutil.copyfile(exporter,duplicate)
                 config=runtime.read(producer/'run_config.json');config['inputs']['duplicate_simion_exporter']=str(duplicate);runtime.write(producer/'run_config.json',config)
-                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs, retention_api=_manifest_retention_api);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
                 with self.assertRaisesRegex(ValueError,'multiple native exporter'):
                     runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
                 del config['inputs']['duplicate_simion_exporter'];runtime.write(producer/'run_config.json',config)
-                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs, retention_api=_manifest_retention_api);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
                 facts.write_text(facts.read_text()+'corruption\n')
                 with self.assertRaises(AssertionError): runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
 
@@ -244,7 +247,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
             inputs={'plan':str(plan_path),'points':str(points),'backend':str(frozen)}))
 
         def publish(outputs=None):
-            manifest=build_run_manifest(config,'success',output_paths=outputs or [solution,model,samples,facts])
+            manifest=build_run_manifest(config,'success',output_paths=outputs or [solution,model,samples,facts], retention_api=_manifest_retention_api)
             runtime.write(producer/'run_manifest.json',manifest)
             runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
         publish()
@@ -277,7 +280,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
             runtime.write(run/'run_config.json',dict(schema_version=1,project='instrument_assembly',
                 run_id='20261026_010001__test__python__inert-export-consumer',
                 mode='paired_accelerator_static_field',inputs=inputs))
-            manifest=build_run_manifest(run/'run_config.json','success')
+            manifest=build_run_manifest(run/'run_config.json','success', retention_api=_manifest_retention_api)
             runtime.write(run/'run_manifest.json',manifest)
             next_run=root/'next';(next_run/'inputs/bvp').mkdir(parents=True)
             shutil.copyfile(run/'inputs/bvp/paired_accelerator_static_field_plan.json',
@@ -525,7 +528,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
                     text=completion.read_text(encoding='utf-8')
                     self.assertIn('"tetrahedra": 31',text)
                     completion.write_text(text.replace('"tetrahedra": 31',f'"tetrahedra": {tetrahedra_literal}'),encoding='utf-8')
-                manifest=build_run_manifest(config,'failed',output_paths=[completion,model])
+                manifest=build_run_manifest(config,'failed',output_paths=[completion,model], retention_api=_manifest_retention_api)
                 runtime.write(manifest_path,manifest);runtime.write(snapshot,manifest)
                 return manifest
 
@@ -677,7 +680,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
                     runtime.write(completion,dict(schema_version=1,role='oatof_paired_accelerator_static_field_solution',
                         status=stage,solution_present=stage=='solved_saved',solution_tag='sol1',study_tag='std1',
                         mesh_complete=True,tetrahedra=31,plan_path=str(fact_plan),model_path=str(fact_model)))
-                    manifest=build_run_manifest(config,'failed',output_paths=[completion,model])
+                    manifest=build_run_manifest(config,'failed',output_paths=[completion,model], retention_api=_manifest_retention_api)
                     manifest_path=producer/'run_manifest.json';runtime.write(manifest_path,manifest)
                     runtime.write(consumer/'inputs/comsol_source_manifest.json',manifest)
                     self.assertEqual(runtime.comsol_reuse(consumer,manifest_path)['source_stage'],stage)
@@ -756,7 +759,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
             config['inputs'].update({str(path.relative_to(producer/'inputs')):str(path) for path in (producer/'inputs').rglob('*') if path.is_file()})
             runtime.write(producer/'run_config.json',config)
             manifest=build_run_manifest(producer/'run_config.json','failed',
-                output_paths=[model,producer/'comsol/comsol_field_solution.json'])
+                output_paths=[model,producer/'comsol/comsol_field_solution.json'], retention_api=_manifest_retention_api)
             runtime.write(producer/'run_manifest.json',manifest)
             self.assertEqual(manifest['status'],'failed')
             bound={Path(row['path']).name for row in manifest['outputs']}
@@ -846,7 +849,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
         first=runtime.advance_cache(predecessor,plan)
         scratch=Path(first['scratch_directory'])/'working.pa#'
         scratch.write_bytes(b'inert scratch is preserved, never certified as a completed field')
-        runtime.write(predecessor/'run_manifest.json',build_run_manifest(public.producer_run_config,'failed'))
+        runtime.write(predecessor/'run_manifest.json',build_run_manifest(public.producer_run_config,'failed', retention_api=_manifest_retention_api))
         record_capacity_object(artifacts,path=predecessor,object_class='rebuildable_payload',bytes_count=0,
             status='writing',owner=predecessor.parent.parent.name,recovery_reason='inert producer stopped',
             review_deadline='2026-11-01')
@@ -912,7 +915,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
         transaction=Path(sealed['transaction_directory'])/'transaction.json'
         before=runtime.read(transaction)
         self.assertTrue(before['inventory_sha256'])
-        runtime.write(predecessor/'run_manifest.json',build_run_manifest(public.producer_run_config,'failed'))
+        runtime.write(predecessor/'run_manifest.json',build_run_manifest(public.producer_run_config,'failed', retention_api=_manifest_retention_api))
         record_capacity_object(artifacts,path=predecessor,object_class='rebuildable_payload',bytes_count=0,
             status='writing',owner=predecessor.parent.parent.name,recovery_reason='inert producer stopped',
             review_deadline='2026-11-01')

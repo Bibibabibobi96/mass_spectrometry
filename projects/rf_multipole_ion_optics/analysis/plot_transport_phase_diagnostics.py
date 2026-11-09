@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.rf_multipole_ion_optics.analysis.rfquad_contract import (
     DEFAULT_INTERFACE, DEFAULT_REQUEST, DEFAULT_RESOLVED, load as load_contract,
 )

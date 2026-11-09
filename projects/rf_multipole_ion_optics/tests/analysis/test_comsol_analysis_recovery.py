@@ -14,7 +14,7 @@ from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import
 from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
 from msplatform.execution.resources import resource_path
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from projects.rf_multipole_ion_optics.tests.domain.test_analyze_comsol_transport_metrics import scenario
 

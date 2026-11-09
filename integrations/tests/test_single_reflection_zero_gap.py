@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, reframe_parent
 from msplatform.backends.simion.geometry import compile_frontend_geometry

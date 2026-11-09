@@ -326,7 +326,7 @@ $callback=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefin
 $null=New-Item -ItemType Directory -Path (Join-Path $Root logs)
 $paths=@('paired_pulse.lua','paired_pulse.fly2','build_iob.lua','build_spec.lua','paired_pulse.iob')|ForEach-Object{
  $path=Join-Path $Root $_;[IO.File]::WriteAllText($path,'TEST_ONLY_INERT_CONTROL_IDENTITY');$path}
-$raw=&$Python -B -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([file_record(Path(p)) for p in sys.argv[1:]]))' @($paths[0..3])
+$raw=&$Python -B -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps([file_record(Path(p)) for p in sys.argv[1:]]))' @($paths[0..3])
 if($LASTEXITCODE-ne0){throw 'Test controls could not be recorded'}
 $case=[pscustomobject]@{case_id='batch_0001';working_directory=$Root;reopen_arguments=@('TEST_ONLY_REOPEN');iob_path=$paths[4];receipt_path=(Join-Path $Root receipt.json);control_records=@($raw|ConvertFrom-Json)}
 $buildLog=Join-Path $Root 'logs/pulse.batch_0001.assembly.stdout.log'

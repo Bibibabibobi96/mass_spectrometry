@@ -17,7 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuati
     build_prepared_joint_whole_unit_plan,
     continuation_protection_projection,
 )
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 
 
 class MrtofBatchContinuationTests(unittest.TestCase):

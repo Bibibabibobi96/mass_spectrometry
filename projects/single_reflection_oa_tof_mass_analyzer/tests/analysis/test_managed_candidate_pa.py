@@ -1,6 +1,8 @@
 """Exercise the production native-operation adapter with Python-only writers."""
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import os
 from pathlib import Path
@@ -29,7 +31,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
         from unittest.mock import patch
         from common.contracts.capacity_ledger import record_capacity_object
         from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
-        from common.contracts.write_run_manifest import build_run_manifest
+        from msplatform.execution.manifest_publication import build_run_manifest
         from msplatform.backends.simion import pa_family_cache
         from common.simion.test_pa_family_cache import PAFamilyCacheTest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
@@ -88,7 +90,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
                         bytes_count=fixture.producer_run_config.stat().st_size, status="writing", owner="fixture",
                         recovery_reason="inert fixture is active", review_deadline="2026-10-01")
                     manifest_path = predecessor / "run_manifest.json"
-                    manifest_path.write_text(json.dumps(build_run_manifest(fixture.producer_run_config, "checkpoint")), encoding="utf-8")
+                    manifest_path.write_text(json.dumps(build_run_manifest(fixture.producer_run_config, "checkpoint", retention_api=_manifest_retention_api)), encoding="utf-8")
                     sources, components, operations, retained = [], [], [], []
                     transactions = {}
                     worker = dict(schema_version=1, role="repository_managed_python_completion", worker_process_id=10,
@@ -140,7 +142,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
                     completion_path.write_text(json.dumps(dict(schema_version=1, role="oatof_component_build_completion",
                         run_id=predecessor.name, components=components, operations=operations)), encoding="utf-8")
                     manifest_path.write_text(json.dumps(build_run_manifest(fixture.producer_run_config, "checkpoint",
-                        output_paths=[completion_path, *retained])), encoding="utf-8")
+                        output_paths=[completion_path, *retained], retention_api=_manifest_retention_api)), encoding="utf-8")
                     stopped = seal_checkpoint(artifacts, fixture.producer_run_config, owner="fixture", writing_stopped=True,
                         retain_payload=True, retention_reason="inert fixture producer is stopped")
                     (root / "owner_result.json").write_text(json.dumps(dict(schema_version=1, role="run_artifact_workflow_result",
@@ -281,7 +283,7 @@ write_json_atomic(run/'run_config.json',config)
                             retained_config = json.loads(config_path.read_text(encoding="utf-8-sig"))
                             retained_config.setdefault("inputs", {})["original_build_completion"] = component["response_build_completion"]["path"]
                             config_path.write_text(json.dumps(retained_config), encoding="utf-8")
-                            (predecessor / "run_manifest.json").write_text(json.dumps(build_run_manifest(config_path, "checkpoint", output_paths=retained)), encoding="utf-8")
+                            (predecessor / "run_manifest.json").write_text(json.dumps(build_run_manifest(config_path, "checkpoint", output_paths=retained, retention_api=_manifest_retention_api)), encoding="utf-8")
                             stopped = seal_checkpoint(artifacts, config_path, owner="fixture", writing_stopped=True,
                                 retain_payload=True, retention_reason="inert publication failure with confirmed closed writers")
                             transport = root / f"owner_result{attempt}.json"
@@ -328,7 +330,7 @@ write_json_atomic(run/'run_config.json',config)
                     fixture.tearDown()
 
     def test_handoff_freezing_preserves_raw_owner_result_and_binds_receipt_projection(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from common.simion.test_pa_family_cache import PAFamilyCacheTest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
             freeze_pa_producer_handoffs, load_pa_producer_handoffs, plan_pa_producer_handoffs,

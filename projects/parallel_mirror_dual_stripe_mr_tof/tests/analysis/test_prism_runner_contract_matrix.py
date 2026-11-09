@@ -43,7 +43,7 @@ PRISM_CASES = {
         ),
         "forbidden": (
             "SIMION", "'--local-p2-values-v',$localP2",
-            "common.contracts.verify_run_manifest',$exitManifest",
+            "msplatform.execution.manifest_verification',$exitManifest",
         ),
     },
     "segmented_continuation": {

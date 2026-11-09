@@ -376,7 +376,7 @@ def execute_reused_comsol_phases(stage: dict, plan: dict, evidence: dict, record
         phase_execution['sync'] = 'executed'
     for name in ('analysis_request','analysis_receipt','analysis_contract','sync_report'):
         if name in result and result[name] != evidence.get(name):
-            from common.contracts.write_run_manifest import file_record
+            from msplatform.execution.retention import file_record
             records[name] = file_record(Path(result[name]))
     return result, phase_execution
 

@@ -91,7 +91,7 @@ function Assert-VerifiedManifest {
   }
   $arguments=@($ManifestPath,'--require-status',$Status,'--require-project',$Owner,'--require-mode',$Mode)
   if($ConsumedOutput){$arguments+=@('--consumer-projection-id','mrtof_static_screening_center_v1','--consumed-output',$ConsumedOutput)}
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') @arguments|Out-Host
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @arguments|Out-Host
   if($LASTEXITCODE-ne0){throw "Manifest verification failed: $ManifestPath"}
 }
 
@@ -292,11 +292,11 @@ try{
     Assert-VerifiedManifest -ManifestPath $workpointManifest -Status success -Mode downstream_fixed_grid_workpoint_iteration
   }else{
   $checkpoint=Get-DeclaredManifestOutputPath -ManifestPath $workpointManifest -Name 'native_corridor_runtime_checkpoint.json'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $workpointManifest --require-status checkpoint --require-project $projectId --require-mode downstream_fixed_grid_workpoint_iteration `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $workpointManifest --require-status checkpoint --require-project $projectId --require-mode downstream_fixed_grid_workpoint_iteration `
     --consumer-projection-id mrtof_native_bunch_workpoint_consumer_v1 --consumed-output $handoff --consumed-output $checkpoint|Out-Host
   if($LASTEXITCODE-ne0){throw 'Workpoint handoff/checkpoint projection failed verification.'}
   $bankPublication=Join-Path $bankRun 'results\pa_family_cache_publication.json'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $bankManifest --require-status success --require-project $projectId --require-mode native_corridor_detached_response_bank `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $bankManifest --require-status success --require-project $projectId --require-mode native_corridor_detached_response_bank `
     --consumer-projection-id mrtof_native_bunch_bank_consumer_v1 --consumed-output $bankPublication|Out-Host
   if($LASTEXITCODE-ne0){throw 'Native bank publication projection failed verification.'}
   }

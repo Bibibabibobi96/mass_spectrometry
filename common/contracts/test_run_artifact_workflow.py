@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 from common.contracts.capacity_ledger import load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from common.contracts.test_support import run_artifact_workflow as fixture
 from common.contracts.test_support.run_artifact_workflow import OWNER, PROJECT, PWSH, REPO, released_writer
 

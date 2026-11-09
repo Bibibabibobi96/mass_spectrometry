@@ -10,8 +10,9 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.write_run_manifest import file_record
-from common.contracts.artifact_retention import classify_file, load_policy
+from msplatform.execution.retention import file_record
+from msplatform.execution.retention import classify_file
+from msplatform.execution.artifact_retention import load_policy
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.stage_formal_simion_runtime import (
     PROJECT_ID, stage_diagnostic_inputs,
 )
@@ -133,7 +134,7 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment','Write-RunJson
 function New-RunPackage {param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,$RetentionClass,$RetentionReason,$AdditionalDirectories,$PathContext,[switch]$RetentionContractEnabled,[switch]$CapacityLedgerLifecycleEnabled)
  if($null-eq$PathContext-or$ArtifactRoot-cne(Join-Path $PathContext.artifact_root ('projects/'+$Project))){throw 'Package roots differ'}
  $run=Join-Path $ArtifactRoot "runs/$RunId";foreach($name in @('inputs','results','logs','simion')){New-Item -ItemType Directory (Join-Path $run $name) -Force|Out-Null}
- $config=Join-Path $run 'run_config.json';Write-RunJson -Path $config -Value @{schema_version=2;run_id=$RunId;project=$Project;mode=$Mode;paths=$PathContext;package_sentinel='keep';artifact_retention=@{};capacity_ledger_lifecycle=@{artifact_root=$PathContext.artifact_root}}
+ $config=Join-Path $run 'run_config.json';Write-RunJson -Path $config -Value @{schema_version=2;run_id=$RunId;project=$Project;mode=$Mode;paths=$PathContext;package_sentinel='keep';artifact_retention=@{policy_version=1;class=$RetentionClass;reason=$RetentionReason};capacity_ledger_lifecycle=@{artifact_root=$PathContext.artifact_root}}
  return @{artifact_run_dir=$run;input_dir=(Join-Path $run 'inputs');result_dir=(Join-Path $run 'results');log_dir=(Join-Path $run 'logs');run_config=$config}
 }
 function New-RunExecutionAlias {param($TargetDirectory,$AdditionalDirectories,$ExpectedExecutionRelativePaths,$ExecutionRoot) if($ExecutionRoot-cne$env:MASS_SPECTROMETRY_EXECUTION_ROOT){throw 'Execution root differs'};return @{execution_alias=$TargetDirectory}}
@@ -166,12 +167,12 @@ if(-not(Test-Path $Log)-or-not(Test-Path $IonFile)){throw 'actual consumed recor
 'inert'|Set-Content $ParticleCsv
 return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyPct=0;MeanTofUs=$null;StdTofNs=$null;GaussianProxyFwhmTofNs=$null;GaussianProxyTimeEquivalentResolution=$null;MaxCrossingRadiusMm=$null}
 ''')
-        for name in ('artifact_naming.py','write_run_manifest.py','verify_run_manifest.py'):
+        for name in ('artifact_naming.py',):
             write(repo/'common/contracts'/name, '# inert outer lifecycle adapter\n')
         return script, repo
 
     def environment(self, root: Path, trace: Path):
-        return dict(os.environ, PYTHONPATH=str(ROOT), DIAGNOSTIC_TRACE=str(trace),
+        return dict(os.environ, PYTHONPATH=os.pathsep.join((str(ROOT/"src"), str(ROOT))), DIAGNOSTIC_TRACE=str(trace),
                     SIMULATION_PYTHON_EXE=sys.executable,
                     DIAGNOSTIC_PUBLIC_SUPPORT=str(ROOT/'common/contracts/run_artifact_support.ps1'),
                     MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/'artifacts'),

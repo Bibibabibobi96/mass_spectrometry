@@ -13,8 +13,9 @@ from jsonschema import Draft202012Validator
 
 from common.contracts.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
-from common.contracts.verify_run_manifest import verify_record, verified_successful_run_reference
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import verify_record
+from msplatform.io.manifest_records import verified_successful_run_reference
+from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
     CONFIG, ION_PROCESSOR, REPO, verified_reference, validate_execution_contract,
@@ -54,7 +55,7 @@ def preflight_joint_analysis(design_run: Path, source_run: Path, contract_path: 
     if Path(receipt["source_run"]).resolve() != source_run.resolve():
         raise ValueError("Design measured source differs from the selected IP run")
     verify_record("design measured states", receipt["outputs"]["component_states"], base_dir=receipt_path.parent)
-    from common.contracts.verify_run_manifest import record_path
+    from msplatform.io.manifest_records import record_path
     if record_path(receipt["outputs"]["component_states"], base_dir=receipt_path.parent).resolve() != state_path.resolve():
         raise ValueError("Design measured state identity differs")
     table = load_component_particle_state_csv(state_path)

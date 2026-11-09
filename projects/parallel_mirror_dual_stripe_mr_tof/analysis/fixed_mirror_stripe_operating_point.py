@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import (
     load_fixed_grid_mirror_point,
 )

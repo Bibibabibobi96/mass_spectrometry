@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.results.single_reflection_source import published_producer_input
 

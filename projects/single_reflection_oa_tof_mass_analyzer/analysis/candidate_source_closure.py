@@ -16,8 +16,9 @@ from typing import Any
 
 from msplatform.contracts.machine_contracts import sha256
 from msplatform.execution.inputs import enumerate_python_sources
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
 
 
@@ -36,7 +37,6 @@ RELATIVE_PATHS = (
     "common/paths/workspace_paths.ps1",
     "common/contracts/artifact_identity_archive.py",
     "common/contracts/gui_source_protection.py",
-    "common/contracts/artifact_retention.py",
     "src/msplatform/execution/resources/artifact_retention.json",
     "src/msplatform/execution/resources/artifact_capacity_policy.json",
     "common/contracts/capacity_ledger.py",
@@ -49,8 +49,6 @@ RELATIVE_PATHS = (
     "common/contracts/stage_reuse.py",
     "common/contracts/validate_design_request.py",
     "common/contracts/verify_artifact_layout.py",
-    "common/contracts/verify_run_manifest.py",
-    "common/contracts/write_run_manifest.py",
     "common/simion/__init__.py",
     "common/simion/short_pa_path_support.ps1",
     "common/simion/native_fast_adjust_runtime_support.ps1",

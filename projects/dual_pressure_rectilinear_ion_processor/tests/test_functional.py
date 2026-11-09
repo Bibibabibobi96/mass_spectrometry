@@ -6,6 +6,10 @@ particle simulations or evidence for the device's physical performance.
 
 from __future__ import annotations
 
+import msplatform.execution.manifest_publication as _canonical_manifest_publication
+import msplatform.execution.manifest_verification as _canonical_manifest_verification
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import copy
 import csv
 import json
@@ -915,7 +919,6 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
 
 class NativeFieldReferenceTests(unittest.TestCase):
     def test_source_projection_and_child_publication_reference_owner_without_payload_rereads(self) -> None:
-        from common.contracts import verify_run_manifest, write_run_manifest
         from msplatform.io import manifest_records
         from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
         with tempfile.TemporaryDirectory() as temporary:
@@ -938,8 +941,8 @@ class NativeFieldReferenceTests(unittest.TestCase):
             functional.write_json(parent / "run_config.json", dict(run_id=parent.name, project=functional.PROJECT,
                 mode="native_electrode_functional", inputs={str(index): str(parent / relative) for index, relative in
                 enumerate(("inputs/resolved_model.json", "inputs/numerics.json", "simion/processor.gem"))}))
-            write_run_manifest.publish_run_manifest(parent / "run_config.json", "success",
-                output_paths=[*family, parent / "logs/refine.log"])
+            _canonical_manifest_publication.publish_run_manifest(parent / "run_config.json", "success",
+                output_paths=[*family, parent / "logs/refine.log"], retention_api=_manifest_retention_api)
             actual_hash = manifest_records.file_sha256
             actual_subprocess = functional.subprocess.run
 
@@ -965,7 +968,7 @@ class NativeFieldReferenceTests(unittest.TestCase):
                 self.assertFalse({Path(record["path"]).resolve() for record in manifest["inputs"].values()} & set(family))
                 with patch.object(sys, "argv", ["verify_run_manifest", str(child / "run_manifest.json"),
                         "--require-status", "success", "--require-project", functional.PROJECT]):
-                    verify_run_manifest.main()
+                    _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
             (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
             with self.assertRaises(subprocess.CalledProcessError):
                 functional._native_field_binding(child, copy.deepcopy(model), parent, PROJECT.parents[1])

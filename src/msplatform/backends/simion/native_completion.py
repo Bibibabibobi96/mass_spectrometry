@@ -129,3 +129,24 @@ def recoverable_batch_logs(run_dir: Path) -> set[Path]:
         return set()
     return {path.resolve() for path in logs.iterdir()
             if path.is_file() and recoverable_batch_log_kind(path) is not None}
+
+
+def retention_api():
+    """Bind SIMION completed-log recovery to the shared run retention policy."""
+    import sys
+    from msplatform.execution.retention import retention_api as policy
+    return policy(completion_api=lambda: sys.modules[__name__])
+
+
+def load_failed_recovery_exemptions(run_dir, retention):
+    """Validate recovery preservation using the actual native completion parser."""
+    return retention_api()[1](run_dir, retention)
+
+
+def apply_retention(run_config_path, **kwargs):
+    """Apply shared retention with explicit SIMION completed-log recovery."""
+    import sys
+    from msplatform.execution import artifact_retention
+    from msplatform.execution.retention import classify_file
+    return artifact_retention.apply_retention(run_config_path, classifier=classify_file,
+        completion_api=lambda: sys.modules[__name__], **kwargs)

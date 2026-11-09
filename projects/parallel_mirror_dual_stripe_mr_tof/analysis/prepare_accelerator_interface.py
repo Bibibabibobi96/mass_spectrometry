@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 
 PROJECT = "parallel_mirror_dual_stripe_mr_tof"
 ION_PROCESSOR = "dual_pressure_rectilinear_ion_processor"

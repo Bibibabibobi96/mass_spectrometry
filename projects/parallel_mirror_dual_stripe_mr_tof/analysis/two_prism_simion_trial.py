@@ -11,7 +11,7 @@ from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import argparse
 import copy
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 import csv
 import hashlib
 import json

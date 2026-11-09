@@ -1,4 +1,6 @@
 """Measured joint batch identity/clock tests; no commercial solver."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import csv
 import os
 import json
@@ -31,7 +33,7 @@ class BlockIntegrationCli(importlib.abc.MetaPathFinder):
             raise AssertionError("MR component imported integration CLI")
 sys.meta_path.insert(0, BlockIntegrationCli())
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import verified_preparation_reference
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 with tempfile.TemporaryDirectory() as directory:
     root=Path(directory)
     value=root/"input.json"
@@ -53,7 +55,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
 
     def test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states(self):
         import copy
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from msplatform.contracts.particle_state import write_component_particle_state_csv
         fixture = source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         fixture.setUp()
@@ -662,7 +664,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                 validate_candidate_binding(candidate,baseline)
 
     def test_probe_analysis_preserves_constructed_source_and_observed_collision(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_centroid_probe
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_analysis import _terminal
         fixture=source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
@@ -782,7 +784,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                     reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
 
     def test_candidate_batch_does_not_copy_old_iob_and_binds_all_actual_roles(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         fixture=source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         fixture.setUp();self.addCleanup(fixture.doCleanups);fixture._materialize()
         root=fixture.root;runtime=root/"runtime";runtime.mkdir()
@@ -901,7 +903,7 @@ print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
         self.assertNotIn(str(alias),receipt["scientific_event_output"]["events_path"])
 
     def test_representation_comparison_preserves_every_prefix_event_and_sample(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             baseline, manifest = root / "reference.log", root / "reference_manifest.json"
@@ -1005,11 +1007,11 @@ print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
         self.assertIn("LOCAL_BATCH_LAUNCH_MAPPING_PASS",result.stdout)
 
     def test_public_manifest_and_stopped_payload_seal_above_light_budget(self):
-        from common.contracts.artifact_retention import apply_retention
+        from msplatform.backends.simion.native_completion import apply_retention
         from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
         from common.contracts.file_identity import file_sha256
         from msplatform.execution.run_capacity_lifecycle import finalize_ready, register_writing, seal_checkpoint
-        from common.contracts.write_run_manifest import build_run_manifest
+        from msplatform.execution.manifest_publication import build_run_manifest
         for status in ("success", "failed"):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -1030,8 +1032,8 @@ print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
                 retained = apply_retention(config)
                 manifest = run / "run_manifest.json"
                 manifest.write_text(json.dumps(build_run_manifest(config,status,
-                    output_paths=[summary,payload,retained])))
-                verify = subprocess.run([sys.executable,"-m","common.contracts.verify_run_manifest",str(manifest),
+                    output_paths=[summary,payload,retained], retention_api=_manifest_retention_api)))
+                verify = subprocess.run([sys.executable,"-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",str(manifest),
                                          "--require-status",status],capture_output=True,text=True,
                                         cwd=Path(__file__).resolve().parents[4],timeout=60,
                                         encoding="utf-8",errors="replace",check=False)
@@ -1054,7 +1056,7 @@ print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
                 self.assertEqual(json.loads(manifest.read_text())["status"],status)
 
     def test_merge_preserves_noncontiguous_original_ids_and_absolute_clock(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             preparation = root / "preparation.json"

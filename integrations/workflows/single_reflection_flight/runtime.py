@@ -22,8 +22,8 @@ from msplatform.backends.simion.source import execution_particle_ids, validate_c
 import shutil
 from typing import Any, Mapping
 
-from common.contracts.verify_run_manifest import record_path
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.pa_family_cache import canonical_json_sha256
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (

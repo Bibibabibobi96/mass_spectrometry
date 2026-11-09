@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from msplatform.contracts.machine_contracts import sha256
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
     ROLE, derive_candidate_source_closure, verify_candidate_source_closure,
 )

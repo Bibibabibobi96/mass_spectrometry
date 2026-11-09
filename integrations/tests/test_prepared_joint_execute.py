@@ -1,4 +1,6 @@
 """Root prepared IP/MR execution routing and lifecycle, without vendor software."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import json
 import os
 from pathlib import Path
@@ -16,7 +18,8 @@ MR = REPO / "projects/parallel_mirror_dual_stripe_mr_tof"
 def analysis_source_fixture(workspace, *, status="failed", owner="instrument_assembly", complete=True):
     """Public manifest/ledger with synthetic native-completion evidence, no solver."""
     from common.contracts.capacity_ledger import initialize_capacity_ledger
-    from common.contracts.write_run_manifest import build_run_manifest, file_record
+    from msplatform.execution.manifest_publication import build_run_manifest
+    from msplatform.execution.retention import file_record
     root = workspace / "artifacts"
     run = root / "projects/instrument_assembly/runs/20261022_120000__test__simion__source"
     results = run / "results"
@@ -50,7 +53,7 @@ def analysis_source_fixture(workspace, *, status="failed", owner="instrument_ass
     config.write_text(json.dumps(dict(schema_version=2, run_id=run.name, project=owner, mode="prepared_joint", inputs={},
         capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(root)),
         artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason=recording["reason"]))))
-    manifest = build_run_manifest(config, status, output_paths=[prep, log, batch_receipt, fly, merge, summary])
+    manifest = build_run_manifest(config, status, output_paths=[prep, log, batch_receipt, fly, merge, summary], retention_api=_manifest_retention_api)
     (run / "run_manifest.json").write_text(json.dumps(manifest))
     initialize_capacity_ledger(root, objects=[dict(path=run.relative_to(root).as_posix(), owner="instrument_assembly",
         **{"class": "rebuildable_payload"}, bytes=sum(p.stat().st_size for p in run.rglob("*") if p.is_file()), status="ready")])
@@ -66,7 +69,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
                 source, contract = analysis_source_fixture(workspace, status=status)
                 before = {p: p.read_bytes() for p in source.rglob("*") if p.is_file()}
                 with patch("msplatform.workflows.prepared_joint.analysis_inputs.verify_record", wraps=__import__(
-                    "common.contracts.verify_run_manifest", fromlist=["verify_record"]).verify_record) as verifier:
+                    "msplatform.execution.retention", fromlist=["verify_record"]).verify_record) as verifier:
                     result = prepare_analysis_inputs(source, contract, workspace / "inputs")
                 verified = [str(call.args[1]["path"]) for call in verifier.call_args_list]
                 self.assertFalse(any(path.endswith((".log", ".fly2", ".pa")) for path in verified))
@@ -527,7 +530,7 @@ function Exit-ArtifactWorkflowCapacitySession {}
 function Write-VerifiedRunManifest {
  param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs,[switch]$DeferCapacityFinalization)
  if($Status-in@('success','failed','interrupted')-and-not$DeferCapacityFinalization){throw 'Stopped-payload owner must defer public capacity finalization'}
- & $PythonRuntime -m common.contracts.write_run_manifest --run-config $RunConfig --status $Status
+ & $PythonRuntime -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $RunConfig --status $Status
  if($LASTEXITCODE-ne0){throw 'Actual public manifest writer rejected runner inputs'}
  $m=Get-Content (Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json') -Raw|ConvertFrom-Json
  if($m.inputs.PSObject.Properties.Value.exists-contains$false){throw 'Actual manifest has an unbound input'}
@@ -802,7 +805,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
 
 
     def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import freeze_equivalence_reference
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

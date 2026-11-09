@@ -115,12 +115,12 @@ try {
     particle_fly_executed = $false
     formal_modified = $false
   } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-  $manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
-  $manifestVerifier = Join-Path $repoRoot 'common\contracts\verify_run_manifest.py'
-  & $python $manifestWriter --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success `
+  $manifestWriter = 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
+  $manifestVerifier = 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
+  & $python -c $manifestWriter --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success `
     --software 'SIMION 2020 no-GUI layout structure verifier' --output $summaryPath --output $runtimeReport
   if ($LASTEXITCODE -ne 0) { throw 'Template-build manifest generation failed.' }
-  & $python $manifestVerifier (Join-Path $runRoot 'run_manifest.json') --require-status success --require-local-run-config `
+  & $python -c $manifestVerifier (Join-Path $runRoot 'run_manifest.json') --require-status success --require-local-run-config `
     --require-run-id $RunId --require-project single_reflection_oa_tof_mass_analyzer --require-mode candidate_layout_template_build
   if ($LASTEXITCODE -ne 0) { throw 'Template-build manifest verification failed.' }
   "CANDIDATE_LAYOUT_TEMPLATE_REGISTER=PASS RUN_ROOT=$runRoot"
@@ -136,7 +136,7 @@ catch {
     error = $message; particle_fly_executed = $false; formal_modified = $false
   } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
   try {
-    & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') --run-config $runConfigPath `
+    & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $runConfigPath `
       --manifest (Join-Path $runRoot 'run_manifest.json') --status failed --output $summaryPath
   } catch { }
   throw

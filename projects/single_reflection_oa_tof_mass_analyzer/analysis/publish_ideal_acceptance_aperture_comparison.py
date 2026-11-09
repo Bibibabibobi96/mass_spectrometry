@@ -121,7 +121,7 @@ def _collect_input_artifacts(*, campaign_path: Path, runs_root: Path, mode: str)
 def _publish_manifest(*, run_dir: Path, run_config: Path, outputs: tuple[Path, ...]) -> None:
     pending = run_dir / ".run_manifest.json.pending"
     command = [
-        sys.executable, "-m", "common.contracts.write_run_manifest",
+        sys.executable, "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
         "--run-config", str(run_config), "--manifest", str(pending),
         "--status", "success", "--software", f"Python {sys.version_info.major}.{sys.version_info.minor}",
     ]
@@ -145,7 +145,7 @@ def _publish_manifest(*, run_dir: Path, run_config: Path, outputs: tuple[Path, .
         record["path"] = os.path.relpath(Path(str(record["path"])).resolve(), run_dir).replace("\\", "/")
     pending.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     verified = subprocess.run(
-        [sys.executable, "-m", "common.contracts.verify_run_manifest", str(pending),
+        [sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(pending),
          "--require-status", "success", "--require-local-run-config", "--require-run-id", published_run_id,
          "--require-project", PROJECT_ID, "--require-mode", PUBLISH_MODE],
         cwd=REPOSITORY_ROOT, check=False, capture_output=True, text=True,

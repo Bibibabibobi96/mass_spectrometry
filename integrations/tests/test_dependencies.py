@@ -550,9 +550,10 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                 self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
                 selected = load(output / "code_inventory.json")["dependencies"]
                 paths = {row["source_repo_path"] for row in selected}
-                self.assertIn("common/contracts/write_run_manifest.py", paths)
+                self.assertIn("src/msplatform/execution/manifest_publication.py", paths)
                 self.assertIn("common/contracts/capacity_protection.py", paths)
-                self.assertIn("common/contracts/artifact_retention.py", paths)
+                self.assertIn("src/msplatform/execution/retention.py", paths)
+                self.assertNotIn("common/contracts/artifact_retention.py", paths)
                 self.assertEqual(len({row["id"] for row in selected}), len(selected))
                 self.assertTrue(all(row["id"] == "python:" + row["source_repo_path"]
                                     for row in selected if row["source_repo_path"].endswith(".py")))
@@ -562,7 +563,8 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                 statement = """
 from pathlib import Path
 from msplatform.backends.simion import native_completion
-from common.contracts import write_run_manifest, capacity_protection
+from msplatform.execution import retention as write_run_manifest
+from common.contracts import capacity_protection
 assert Path(native_completion.__file__).is_relative_to(Path.cwd())
 assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
 assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
@@ -606,8 +608,16 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
             path.write_bytes(contents)
         payload = run / "field.pa0"
         payload.write_bytes(b"rebuildable fixture")
-        entry = (["-m", "common.contracts.artifact_retention"] if module else
-                 [str(snapshot / "common/contracts/artifact_retention.py")])
+        native_cli = (
+            "from msplatform.execution.artifact_retention import main; "
+            "from msplatform.backends.simion import native_completion; "
+            "from msplatform.execution.retention import classify_file; "
+            "main(classifier=classify_file,completion_api=lambda:native_completion)"
+        )
+        entry = ["-c", native_cli] if module else ["-c", native_cli.replace(
+            "from msplatform.execution.artifact_retention import main;",
+            "import msplatform.execution.artifact_retention as engine; main=engine.main;"
+        )]
         command = [sys.executable, "-B", "-s", *entry, "apply", "--run-config", str(config), "--failed-run"]
         for path in original_logs:
             command.extend(("--preserve-path", str(path)))
@@ -698,7 +708,7 @@ assert not (Path.cwd()/'integrations/rf_multipole_ion_optics_to_single_reflectio
 request,run=map(Path,sys.argv[1:])
 # TEST_ONLY schema branch copied from the fixture, never used as scientific input.
 from msplatform.contracts.machine_contracts import validate_schema
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 request_value=json.loads(request.read_text())
 provider=next(v for v in request_value['providers']['instances'].values() if 'geometry' not in v)
 enclosure_fixture=json.loads(record_path(provider['resolved_design'],base_dir=request.parent).read_text())

@@ -1,5 +1,7 @@
 """Small deterministic regressions for the ideal numerical-source comparison."""
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 from dataclasses import replace
 from concurrent.futures import Future
 from types import SimpleNamespace
@@ -61,7 +63,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
 
     def legacy_ideal_parent(self, root):
         from common.contracts.capacity_ledger import initialize_capacity_ledger
-        from common.contracts.write_run_manifest import publish_run_manifest
+        from msplatform.execution.manifest_publication import publish_run_manifest
         # Real public capacity CLI/SQLite protection, isolated from workstation-sized disk thresholds.
         repository = Path(run_comparison.REPO_ROOT)
         fixture_repo = root / "capacity_fixture_repo"
@@ -126,7 +128,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
         (parent / "summary.json").write_text(json.dumps({"role": "ideal_source_comparison_summary", "status": "success",
             "completed_cases": len(cases), "planned_cases": len(cases)}), encoding="utf-8")
         outputs = [path for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
-        publish_run_manifest(parent / "run_config.json", "success", output_paths=outputs)
+        publish_run_manifest(parent / "run_config.json", "success", output_paths=outputs, retention_api=_manifest_retention_api)
         return artifact_root, parent, config_path, cases
 
     def test_legacy_numeric_csv_is_referenced_through_public_source_owner_without_resampling(self):
@@ -153,13 +155,13 @@ class IdealSourceComparisonTests(unittest.TestCase):
             analysis = run_comparison._legacy_csv_analysis
             checked = []
             def protected_analysis(*args):
-                from common.contracts.write_run_manifest import publish_run_manifest
+                from msplatform.execution.manifest_publication import publish_run_manifest
                 active = load_capacity_protection_leases(artifact_root.parents[1])
                 self.assertIn(parent.resolve(), active["protected_paths"])
                 self.assertEqual(active["committed_new_bytes"], 0)
                 if not checked:
                     with self.assertRaisesRegex(ValueError, "already published terminal"):
-                        publish_run_manifest(parent / "run_config.json", "failed")
+                        publish_run_manifest(parent / "run_config.json", "failed", retention_api=_manifest_retention_api)
                     checked.append(True)
                 return analysis(*args)
             with patch.object(run_comparison, "_legacy_csv_analysis", side_effect=protected_analysis), \
@@ -212,7 +214,8 @@ class IdealSourceComparisonTests(unittest.TestCase):
             self.assertFalse((root / "arbitrary-target").exists())
 
     def test_legacy_ideal_projection_rejects_unproven_inputs_environment_settings_and_owner(self):
-        from common.contracts.write_run_manifest import build_run_manifest, file_record
+        from msplatform.execution.manifest_publication import build_run_manifest
+        from msplatform.execution.retention import file_record
         from common.contracts.capacity_protection import load_capacity_protection_leases
         import os
         with tempfile.TemporaryDirectory() as directory:
@@ -257,7 +260,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
                                 # Keep the original binding to expose the missing frozen producer.
                                 manifest = json.loads(originals[parent / "run_manifest.json"])
                             else:
-                                manifest = build_run_manifest(parent / "run_config.json", "success", output_paths=paths)
+                                manifest = build_run_manifest(parent / "run_config.json", "success", output_paths=paths, retention_api=_manifest_retention_api)
                             if scenario == "unbound_input":
                                 missing = Path(original_config["inputs"]["analysis_contract"])
                                 manifest["inputs"] = {name:record for name,record in manifest["inputs"].items() if Path(record["path"]) != missing}

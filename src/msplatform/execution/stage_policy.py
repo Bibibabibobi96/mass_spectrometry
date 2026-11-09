@@ -7,7 +7,8 @@ from typing import Any
 
 from .context import ExecutionContext
 from msplatform.io.manifest_records import file_record, verify_record
-from .artifact_retention import validate_retention, load_policy
+from msplatform.execution.artifact_retention import validate_retention
+from msplatform.execution.artifact_retention import load_policy
 
 
 def merge_overrides(*layers) -> dict:

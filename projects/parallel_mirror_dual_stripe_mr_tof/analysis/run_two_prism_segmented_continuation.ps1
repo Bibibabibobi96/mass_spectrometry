@@ -138,7 +138,7 @@ try {
   $failureStage = 'verify_parent_coverage'
   $verifyLog = Join-Path $logDir 'coverage_manifest_verification.log'
   Invoke-ProjectPython -Arguments @(
-    '-m', 'common.contracts.verify_run_manifest', $coverageManifest,
+    '-c', 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', $coverageManifest,
     '--require-status', 'success', '--require-project', $projectId
   ) -LogPath $verifyLog
   $coverageRun = Get-Content -LiteralPath $coverageManifest -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
@@ -220,7 +220,7 @@ try {
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
     'src\msplatform\contracts\particle_physics.py',
     'common\contracts\file_identity.py',
-    'common\contracts\verify_run_manifest.py',
+    'src\msplatform\execution\manifest_verification.py',
     'common\host_resource_python.py',
     'common\host_resource_python.ps1',
     'common\host_execution_lease.ps1',

@@ -31,7 +31,7 @@ from common.analysis.peak_metrics import AnalysisSettings
 from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, build_working_point, propagate_ideal_source,
 )
@@ -161,14 +161,14 @@ def _reuse_case(previous: Path | None, case: dict[str, Any], identity: str, dest
 
 
 def _publish_manifest(run_dir: Path, status: str) -> None:
-    command = [sys.executable, "-m", "common.contracts.write_run_manifest", "--run-config", str(run_dir / "run_config.json"), "--status", status, "--software", f"Python {platform.python_version()}; NumPy {np.__version__}; SciPy {scipy.__version__}"]
+    command = [sys.executable, "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", "--run-config", str(run_dir / "run_config.json"), "--status", status, "--software", f"Python {platform.python_version()}; NumPy {np.__version__}; SciPy {scipy.__version__}"]
     for path in sorted(run_dir.rglob("*")):
         if path.is_file() and path.name not in {"run_config.json", "run_manifest.json"}:
             # Writer resolves outputs against run_config's parent. Relative paths
             # keep Windows CreateProcess below its command-line length limit.
             command.extend(["--output", path.relative_to(run_dir).as_posix()])
     print(_command(command), flush=True)
-    print(_command([sys.executable, "-m", "common.contracts.verify_run_manifest", str(run_dir / "run_manifest.json"), "--require-status", status]), flush=True)
+    print(_command([sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(run_dir / "run_manifest.json"), "--require-status", status]), flush=True)
 
 
 def _write_report(run_dir: Path, records: list[dict[str, Any]], summary: dict[str, Any]) -> None:

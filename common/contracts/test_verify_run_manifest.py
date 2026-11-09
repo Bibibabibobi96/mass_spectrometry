@@ -1,3 +1,11 @@
+from msplatform.execution.retention import classify_file as _manifest_classifier
+
+import msplatform.execution.recorded_file_removal as _canonical_recorded_file_removal
+import msplatform.execution.retention as _canonical_retention
+import msplatform.execution.manifest_publication as _canonical_manifest_publication
+import msplatform.io.manifest_records as _canonical_manifest_records
+import msplatform.execution.manifest_verification as _canonical_manifest_verification
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import json
 import os
 import shutil
@@ -10,12 +18,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
-from common.contracts import verify_run_manifest, write_run_manifest
+from msplatform.execution import manifest_publication as write_run_manifest
 from msplatform.io import manifest_records
 from msplatform.execution import manifest_publication
 
 
-VERIFIER = Path(__file__).with_name("verify_run_manifest.py")
+VERIFIER = Path(__file__).parents[2] / "src/msplatform/execution/manifest_verification.py"
 REPO_ROOT = Path(__file__).parents[2]
 
 
@@ -82,7 +90,7 @@ foreach($script:attempt in $case.attempts){
   schema_version=1;run_id='20261029_120000__test__python__producer-manifest'
   project=$case.project;mode=$case.mode;inputs=@{}
  }
- $manifestArgs=@((Join-Path $RepoRoot 'common/contracts/write_run_manifest.py'),
+ $manifestArgs=@((Join-Path $RepoRoot 'src/msplatform/execution/manifest_publication.py'),
   '--run-config',$runConfig,'--status',$status,'--output',$outputs[0])
  $caught=$null
  try{$null=. $publication}catch{$caught=$_.Exception.Message}
@@ -121,12 +129,12 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
             root = Path(directory)
             path = root / "value.json"
             path.write_text("{}", encoding="utf-8")
-            record = write_run_manifest.file_record(path)
+            record = _canonical_retention.file_record(path)
             manifest = dict(project="assembly", mode="prepare", status="success",
                             inputs={"value": record}, outputs=[{"path": "unconsumed-missing.bin"}])
             def invoke(value):
-                return verify_run_manifest.verified_successful_run_reference(
-                    root, path.name, project="assembly", mode="prepare", manifest=value)
+                return _canonical_manifest_records.verified_successful_run_reference(
+                    root, path.name, project="assembly", mode="prepare", manifest=value, retention_classifier=_manifest_classifier)
             self.assertEqual(invoke(manifest), path)
             for field, value in (("project", "other"), ("mode", "other"), ("status", "interrupted")):
                 with self.subTest(field=field), self.assertRaises(ValueError):
@@ -136,8 +144,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
             with self.assertRaisesRegex(ValueError, "exactly one"):
                 invoke(dict(manifest, inputs={}))
             (root / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-            self.assertEqual(verify_run_manifest.verified_successful_run_reference(
-                root, path.name, project="assembly", mode="prepare"), path)
+            self.assertEqual(_canonical_manifest_records.verified_successful_run_reference(
+                root, path.name, project="assembly", mode="prepare", retention_classifier=_manifest_classifier), path)
             journal = root / manifest_records.TERMINAL_JOURNAL_NAME
             journal.write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "terminal publication is incomplete"):
@@ -195,7 +203,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                 with self.subTest(source=source):
                     (root / "run_manifest.json").unlink(missing_ok=True)
                     result = subprocess.run(
-                        [sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
+                        [sys.executable, str(Path(_canonical_manifest_publication.__file__)), "--run-config", str(config),
                          "--status", "success", "--output", str(files[0]), "--output-list-json", source],
                         input=listing.read_text(encoding="utf-8") if source == "-" else None,
                         cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
@@ -218,11 +226,11 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                                  "--output-list-json", str(listing)]
                     with patch.object(sys, "argv", arguments):
                         if value == []:
-                            write_run_manifest.main()
+                            _canonical_manifest_publication.main(retention_api=_manifest_retention_api)
                             self.assertEqual(json.loads((root / "run_manifest.json").read_text())["outputs"], [])
                         else:
                             with self.assertRaisesRegex(SystemExit, r"JSON list\[str\]"):
-                                write_run_manifest.main()
+                                _canonical_manifest_publication.main(retention_api=_manifest_retention_api)
 
     def test_cli_refuses_missing_outputs_and_pending_publication_before_writing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -236,19 +244,19 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                     "--output", str(root / "missing.txt"),
                 ]):
                     with self.assertRaisesRegex(SystemExit, "missing run outputs"):
-                        write_run_manifest.main()
+                        _canonical_manifest_publication.main(retention_api=_manifest_retention_api)
                     self.assertEqual(manifest.read_bytes(), b"previous publication")
             configuration = json.loads(config.read_text(encoding="utf-8"))
             configuration["inputs"] = {"required": str(root / "missing-input.txt")}
             config.write_text(json.dumps(configuration), encoding="utf-8")
             with patch.object(sys, "argv", ["writer", "--run-config", str(config), "--status", "success"]):
                 with self.assertRaisesRegex(SystemExit, "missing run inputs"):
-                    write_run_manifest.main()
+                    _canonical_manifest_publication.main(retention_api=_manifest_retention_api)
             self.assertEqual(manifest.read_bytes(), b"previous publication")
             (root / manifest_records.TERMINAL_JOURNAL_NAME).write_text("{}")
             with patch.object(sys, "argv", ["writer", "--run-config", str(config), "--status", "success"]):
                 with self.assertRaisesRegex(SystemExit, "publication is incomplete"):
-                    write_run_manifest.main()
+                    _canonical_manifest_publication.main(retention_api=_manifest_retention_api)
             self.assertEqual(manifest.read_bytes(), b"previous publication")
 
     def test_cli_rejects_corrupt_persisted_manifest_without_rereading_payloads(self):
@@ -258,11 +266,11 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
             output = root / "result.txt"
             output.write_bytes(b"result")
             arguments = ["writer", "--run-config", str(config), "--status", "success", "--output", str(output)]
-            persist = write_run_manifest.write_json_atomic
+            persist = _canonical_recorded_file_removal.write_json_atomic
             for replacement in (b"{", b'{"schema_version":true}', b'{"schema_version":1,"schema_version":1}'):
                 def corrupt(path, document):
                     persist(path, document)
-                    payload = write_run_manifest._json_bytes(document)
+                    payload = _canonical_manifest_records._json_bytes(document)
                     path.write_bytes(payload.replace(b'"schema_version": 1', replacement[1:-1])
                                      if replacement != b"{" else replacement)
 
@@ -270,7 +278,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                         patch.object(write_run_manifest, "write_json_atomic", side_effect=corrupt), \
                         patch.object(manifest_records, "file_sha256", wraps=file_sha256) as reader:
                     with self.assertRaisesRegex(SystemExit, "published manifest differs"):
-                        write_run_manifest.main()
+                        _canonical_manifest_publication.main(retention_api=_manifest_retention_api)
                     self.assertEqual(sum(Path(call.args[0]) == output for call in reader.call_args_list), 1)
 
     @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows PowerShell 7 required")
@@ -282,7 +290,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
             for path in files:
                 path.write_text("small fixture", encoding="utf-8")
             command_length = len(subprocess.list2cmdline([
-                sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
+                sys.executable, str(Path(_canonical_manifest_publication.__file__)), "--run-config", str(config),
                 "--status", "success", *[arg for path in files for arg in ("--output", str(path))],
             ]))
             self.assertGreater(command_length, 40_000)
@@ -304,7 +312,7 @@ Write-VerifiedRunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -St
             manifest = root / "run_manifest.json"
             self.assertEqual(len(json.loads(manifest.read_text(encoding="utf-8"))["outputs"]), 240)
             verified = subprocess.run(
-                [sys.executable, str(VERIFIER), str(manifest), "--require-status", "success"],
+                [sys.executable, "-c", 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)', str(manifest), "--require-status", "success"],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
             )
             self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
@@ -341,8 +349,8 @@ class ManifestPayloadReadTests(unittest.TestCase):
             return reader(*args, **options)
 
         with patch.object(manifest_publication, "file_record", reader if cached else uncached):
-            return write_run_manifest.build_run_manifest(
-                config, "success", output_paths=[self.payload, self.payload], **kwargs)
+            return _canonical_manifest_publication.build_run_manifest(
+                config, "success", output_paths=[self.payload, self.payload], **kwargs, retention_api=_manifest_retention_api)
 
     def test_build_reuses_identity_without_changing_record_shapes_or_staging_paths(self) -> None:
         calls = []
@@ -377,7 +385,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             self.assertEqual(record["retention_role"], "solver_native_binary")
             self.assertEqual(record["sha256"], "A" * 64)
             self.assertEqual(direct.call_count, 1)
-            with patch.object(write_run_manifest, "retention_api", side_effect=AssertionError("read-only must not load policy")):
+            with patch.object(_canonical_retention, "classify_file", side_effect=AssertionError("read-only must not load policy")):
                 manifest_records.verify_record("reopened input", record)
             self.assertEqual(direct.call_count, 2)
             self.assertEqual(self.payload.read_bytes(), b"fixture!")
@@ -396,8 +404,8 @@ class ManifestPayloadReadTests(unittest.TestCase):
             self.assertEqual(calls.count(self.payload.resolve()), 2)
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             with patch.object(sys, "argv", ["verify", str(manifest_path)]):
-                verify_run_manifest.main()
-                verify_run_manifest.main()
+                _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
+                _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
             self.assertEqual(calls.count(self.payload.resolve()), 4)
             for field, value, error in (("sha256", "A" * 64, "SHA-256 changed"),
                                          ("bytes", 9, "byte count changed")):
@@ -405,28 +413,28 @@ class ManifestPayloadReadTests(unittest.TestCase):
                 changed["outputs"][0][field] = value
                 manifest_path.write_text(json.dumps(changed), encoding="utf-8")
                 with patch.object(sys, "argv", ["verify", str(manifest_path)]), self.assertRaisesRegex(AssertionError, error):
-                    verify_run_manifest.main()
+                    _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             self.payload.write_bytes(b"changed!")
             with patch.object(sys, "argv", ["verify", str(manifest_path)]), self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
-                verify_run_manifest.main()
+                _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
 
     def test_same_call_metadata_changes_invalidate_identity_and_missing_files_fail(self) -> None:
         cache = {}
         with patch.object(manifest_records, "file_sha256", wraps=file_sha256) as reader:
-            original = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+            original = _canonical_retention.file_record(self.payload, _identity_cache=cache)
             metadata = self.payload.stat()
             self.payload.write_bytes(b"changed!")
             os.utime(self.payload, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 2_000_000_000))
-            changed = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+            changed = _canonical_retention.file_record(self.payload, _identity_cache=cache)
             self.assertNotEqual(changed["sha256"], original["sha256"])
             self.assertEqual(reader.call_count, 2)
             with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
-                verify_run_manifest.verify_record("old declaration", original, _identity_cache=cache)
+                _canonical_retention.verify_record("old declaration", original, _identity_cache=cache)
             self.assertEqual(reader.call_count, 2)
             self.payload.unlink()
             with self.assertRaisesRegex(AssertionError, "is missing"):
-                verify_run_manifest.verify_record("old declaration", original, _identity_cache=cache)
+                _canonical_retention.verify_record("old declaration", original, _identity_cache=cache)
 
     def test_same_call_keeps_buffered_unbuffered_and_virtual_identities_separate(self) -> None:
         cache = {}
@@ -437,13 +445,13 @@ class ManifestPayloadReadTests(unittest.TestCase):
             patch.object(manifest_records, "file_sha256_unbuffered", return_value="A" * 64) as direct,
         ):
             for _ in range(2):
-                ordinary = write_run_manifest.file_record(self.payload, "diagnostic_data", _identity_cache=cache)
-                native = write_run_manifest.file_record(self.payload, "solver_native_binary", _identity_cache=cache)
+                ordinary = _canonical_retention.file_record(self.payload, "diagnostic_data", _identity_cache=cache)
+                native = _canonical_retention.file_record(self.payload, "solver_native_binary", _identity_cache=cache)
             self.assertEqual((ordinary["sha256"], native["sha256"]), ("B" * 64, "A" * 64))
             buffered.assert_called_once_with(self.payload)
             direct.assert_called_once_with(self.payload)
-            first = write_run_manifest.file_record(self.payload, document={"future": 1}, _identity_cache=cache)
-            second = write_run_manifest.file_record(self.payload, document={"future": 2}, _identity_cache=cache)
+            first = _canonical_retention.file_record(self.payload, document={"future": 1}, _identity_cache=cache)
+            second = _canonical_retention.file_record(self.payload, document={"future": 2}, _identity_cache=cache)
             self.assertNotEqual(first["sha256"], second["sha256"])
             self.assertEqual(len(cache), 2)
             self.assertEqual(buffered.call_count, 1)
@@ -458,7 +466,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
         for manifest in (original, reused):
             manifest.pop("recorded_at_utc")
         self.assertEqual(reused, original)
-        expected = write_run_manifest.file_record(self.payload, document=document)
+        expected = _canonical_retention.file_record(self.payload, document=document)
         self.assertEqual(reused["outputs"][0]["sha256"], expected["sha256"])
         self.assertNotEqual(reused["inputs"]["first"]["sha256"], expected["sha256"])
 
@@ -471,13 +479,13 @@ class ManifestPayloadReadTests(unittest.TestCase):
             patch.object(manifest_records, "file_sha256_unbuffered", return_value="A" * 64) as direct,
         ):
             cache = {}
-            item = write_run_manifest.file_record(self.payload, _identity_cache=cache)
-            output = write_run_manifest.file_record(
+            item = _canonical_retention.file_record(self.payload, _identity_cache=cache)
+            output = _canonical_retention.file_record(
                 self.payload, "solver_native_binary", _identity_cache=cache)
             self.assertNotIn("retention_role", item)
             self.assertEqual(item["sha256"], output["sha256"])
             self.assertEqual(direct.call_count, 1)
-            verify_run_manifest.verify_record("input", item)
+            _canonical_retention.verify_record("input", item)
             self.assertEqual(item["sha256"], "A" * 64)
             self.assertEqual(direct.call_count, 2)
             for call in direct.call_args_list:
@@ -499,10 +507,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
                 patch.object(manifest_records, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", threshold),
                 patch.object(manifest_records, "file_sha256", return_value="A" * 64) as buffered,
                 patch.object(manifest_records, "file_sha256_unbuffered") as direct,
-                patch.object(write_run_manifest, "retention_api", side_effect=AssertionError("unneeded policy read")),
+                patch.object(_canonical_retention, "classify_file", side_effect=AssertionError("unneeded policy read")),
             ):
-                item = write_run_manifest.file_record(self.payload, role)
-                verify_run_manifest.verify_record("output", item)
+                item = _canonical_retention.file_record(self.payload, role)
+                _canonical_retention.verify_record("output", item)
                 self.assertEqual(buffered.call_count, 2)
                 direct.assert_not_called()
 
@@ -515,11 +523,11 @@ class ManifestPayloadReadTests(unittest.TestCase):
             patch.object(manifest_records, "file_sha256_unbuffered", side_effect=OSError("read failed")) as direct,
         ):
             with self.assertRaisesRegex(OSError, "read failed"):
-                write_run_manifest.file_record(self.payload)
+                _canonical_retention.file_record(self.payload)
             direct.assert_called_once_with(self.payload)
             direct.reset_mock()
             with self.assertRaisesRegex(OSError, "read failed"):
-                verify_run_manifest.verify_record("output", item)
+                _canonical_retention.verify_record("output", item)
             direct.assert_called_once_with(self.payload)
             buffered.assert_not_called()
 
@@ -532,14 +540,14 @@ class ManifestPayloadReadTests(unittest.TestCase):
             patch.object(manifest_records, "file_sha256_unbuffered", return_value="B" * 64) as direct,
         ):
             with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
-                verify_run_manifest.verify_record("output", item)
+                _canonical_retention.verify_record("output", item)
             direct.assert_called_once_with(self.payload)
             buffered.assert_not_called()
 
     def test_size_mismatch_rejects_before_reading_payload(self) -> None:
         with patch.object(manifest_records, "file_record") as reader:
             with self.assertRaisesRegex(AssertionError, "byte count changed"):
-                verify_run_manifest.verify_record("output", dict(path=str(self.payload), bytes=9))
+                _canonical_retention.verify_record("output", dict(path=str(self.payload), bytes=9))
             reader.assert_not_called()
 
 
@@ -606,7 +614,7 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
-                str(VERIFIER),
+                "-c", 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
                 str(self.manifest),
                 "--require-status",
                 "success",
@@ -662,7 +670,7 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                str(VERIFIER),
+                "-c", 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
                 str(self.manifest),
                 "--require-status",
                 "checkpoint",

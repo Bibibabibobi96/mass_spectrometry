@@ -75,7 +75,7 @@ CASES = {
         "session": True,
         "required": (
             "[ValidateCount(3,3)]",
-            "verify_run_manifest.py",
+            "msplatform.execution.manifest_verification",
             "--require-mode finite_3d_two_prism_voltage_trial",
             "Copy-VerifiedRunInput",
             "single_center_timestep_convergence",

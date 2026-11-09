@@ -17,8 +17,10 @@ from typing import Any
 
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.particle_state import load_component_particle_state_csv
-from common.contracts.verify_run_manifest import record_path, verify_record, verified_successful_run_reference
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
+from msplatform.io.manifest_records import verified_successful_run_reference
+from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     RUNTIME_LUA, materialize_measured_source_slice, materialize_centroid_probe,
@@ -404,7 +406,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
 def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any],
                                   inputs: Path) -> dict[str, Any]:
     """Bind a completed batch from a fully verified interrupted flight, without PA reads."""
-    subprocess.run([sys.executable, "-m", "common.contracts.verify_run_manifest",
+    subprocess.run([sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
                     str(reference_run / "run_manifest.json"), "--require-status", "interrupted"],
                    cwd=Path(__file__).resolve().parents[3], timeout=60,
                    check=True, capture_output=True, text=True, encoding="utf-8")

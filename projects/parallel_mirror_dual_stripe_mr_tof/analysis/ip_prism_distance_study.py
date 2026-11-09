@@ -5,6 +5,8 @@ electrostatic boundary problem and stops after P1; it never closes or flies MR.
 """
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import argparse
 import csv
 import hashlib
@@ -16,8 +18,9 @@ import sys
 
 from msplatform.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources
-from common.contracts.write_run_manifest import file_record, publish_run_manifest
-from common.contracts import artifact_retention
+from msplatform.execution.retention import file_record
+from msplatform.execution.manifest_publication import publish_run_manifest
+from msplatform.execution import retention as artifact_retention
 from msplatform.execution import run_capacity_lifecycle
 from common.simion import resource_profile
 from msplatform.backends.simion import particle_batching
@@ -267,7 +270,8 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
 def _freeze_recorded_contour_source(run: Path, label: str, destination: Path) -> dict:
     """Consume a complete physical cohort, retaining failed diagnostic identity."""
     from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import load_recorded_case
-    from common.contracts.verify_run_manifest import record_path, verify_record
+    from msplatform.io.manifest_records import record_path
+    from msplatform.execution.retention import verify_record
 
     case = load_recorded_case(run, label, allow_failed=True)
     destination.mkdir(parents=True, exist_ok=False)
@@ -467,7 +471,8 @@ def _freeze_completed_field_source(owner: Path, field_id: str, destination: Path
     Overall success is deliberately not a field qualification. The exact local
     field identity and complete finite/range result qualify this payload only.
     """
-    from common.contracts.verify_run_manifest import record_path, verify_record
+    from msplatform.io.manifest_records import record_path
+    from msplatform.execution.retention import verify_record
     from msplatform.io.manifest_records import require_completed_terminal_publication
 
     owner = owner.resolve()
@@ -827,7 +832,7 @@ def validate_replay_contract(contract: dict) -> None:
 
 def _replay_payload_inventory(owner: Path, field: Path) -> list[dict]:
     """Locate exact manifest-bound PA/surface; snapshot checks their copied bytes."""
-    from common.contracts.verify_run_manifest import record_path
+    from msplatform.io.manifest_records import record_path
 
     manifest = read_json(owner/"run_manifest.json")
     records = [*manifest["inputs"].values(), *manifest["outputs"]]
@@ -989,7 +994,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
 def analyze_replay_package(run: Path) -> dict:
     """Report assembled private workbenches without claiming replay validation."""
     study = read_json(run/"inputs/resolved_study.json")
-    from common.contracts.verify_run_manifest import verify_record
+    from msplatform.execution.retention import verify_record
     for record in read_json(run/"inputs/replay_companion_identity.json")["records"]:
         verify_record("preserved replay companion", record)
     for case in study["cases"]:
@@ -1015,7 +1020,7 @@ def publish_manifest(run: Path,status: str) -> None:
     config=read_json(run/"run_config.json")
     frozen={Path(p).resolve() for p in config["inputs"].values()}
     outputs=[p for p in run.rglob("*") if p.is_file() and p.resolve() not in frozen and p.name not in {"run_config.json","run_manifest.json",".run_terminal_publication.lock"}]
-    publish_run_manifest(run/"run_config.json",status,software=["SIMION 2020","Python 3.11"],output_paths=outputs)
+    publish_run_manifest(run/"run_config.json",status,software=["SIMION 2020","Python 3.11"],output_paths=outputs, retention_api=_manifest_retention_api)
 
 
 def _completed_native_stage(source_run: Path):
@@ -1034,7 +1039,8 @@ def _completed_native_stage(source_run: Path):
     def reference(relative: str) -> Path:
         if not failed_native:
             return verified_reference(source_run, relative)
-        from common.contracts.verify_run_manifest import record_path, verify_record
+        from msplatform.io.manifest_records import record_path
+        from msplatform.execution.retention import verify_record
         desired=(source_run/relative).resolve()
         desired.relative_to(source_run)
         records=[*manifest.get("inputs",{}).values(), *manifest.get("outputs",[])]
@@ -1047,7 +1053,8 @@ def _completed_native_stage(source_run: Path):
 
     stage_receipt=None
     if failed_native:
-        from common.contracts.verify_run_manifest import record_path, verify_record
+        from msplatform.io.manifest_records import record_path
+        from msplatform.execution.retention import verify_record
         project="parallel_mirror_dual_stripe_mr_tof"
         if manifest.get("project")!=project or record_path(manifest["run_config"],base_dir=source_run)!=(source_run/"run_config.json"):
             raise ValueError("Failed native producer project/config binding mismatch")
@@ -1084,7 +1091,7 @@ def _completed_native_stage(source_run: Path):
                 or not isinstance(count,int) or count<1):
             raise ValueError("Failed producer lacks completed native resource evidence")
         consumed[str(usage_path)]=file_record(usage_path)
-        from common.contracts.verify_run_manifest import record_path
+        from msplatform.io.manifest_records import record_path
         logs=sorted({record_path(r,base_dir=source_run) for r in manifest.get("outputs",[])
                      if record_path(r,base_dir=source_run).parent==source_run/"logs"
                      and record_path(r,base_dir=source_run).name.startswith("fly_batch_")

@@ -1,6 +1,8 @@
 """Pure frozen-metadata preparation; inert identity fixtures are not solutions."""
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import copy
 import csv
 from pathlib import Path
@@ -11,7 +13,8 @@ from unittest.mock import patch
 
 from msplatform.contracts.particle_physics import AMU_KG, kinetic_energy_ev
 from common.contracts.strict_json import StrictJsonError
-from common.contracts.write_run_manifest import build_run_manifest, file_record
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
 from integrations.tests import test_paired_accelerator_static_field_execute as static_tests
 from integrations.runtime import paired_accelerator_model
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
@@ -41,7 +44,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
         runtime.write(static / "run_config.json", dict(schema_version=1, project="instrument_assembly",
             mode="paired_accelerator_static_field", run_id="20261026_050001__test__python__pulse-static-input",
             inputs=dict(plan=str(static / "inputs/bvp/paired_accelerator_static_field_plan.json"), backend=str(target))))
-        runtime.write(static / "run_manifest.json", build_run_manifest(static / "run_config.json", "failed", output_paths=[model, solution, publication]))
+        runtime.write(static / "run_manifest.json", build_run_manifest(static / "run_config.json", "failed", output_paths=[model, solution, publication], retention_api=_manifest_retention_api))
 
         producer = root / "producer"
         inputs = producer / "inputs"
@@ -108,7 +111,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
         outputs = [producer / "collection.json"]
         if (producer / "pulse_decision.json").is_file():
             outputs.append(producer / "pulse_decision.json")
-        runtime.write(producer / "run_manifest.json", build_run_manifest(producer / "run_config.json", "success", output_paths=outputs))
+        runtime.write(producer / "run_manifest.json", build_run_manifest(producer / "run_config.json", "success", output_paths=outputs, retention_api=_manifest_retention_api))
 
     @staticmethod
     def export_consumer(root: Path, selected_manifest: Path, name: str, *, stale_alias=False) -> Path:
@@ -135,7 +138,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
             run_id="20261026_151000__test__python__" + name, inputs=dict(plan=str(own_plan),
                 source=str(consumer / "inputs/comsol_source.json"),
                 source_manifest=str(consumer / "inputs/comsol_source_manifest.json"))))
-        runtime.write(consumer / "run_manifest.json", build_run_manifest(config, "success", output_paths=[publication]))
+        runtime.write(consumer / "run_manifest.json", build_run_manifest(config, "success", output_paths=[publication], retention_api=_manifest_retention_api))
         return consumer
 
     def test_export_only_source_flattens_original_model_and_binds_own_simion_plan(self):
@@ -181,7 +184,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
             def publish():
                 config = consumer / "run_config.json"
                 runtime.write(consumer / "run_manifest.json", build_run_manifest(config, "success",
-                    output_paths=[consumer / "results/simion_field_publication.json"]))
+                    output_paths=[consumer / "results/simion_field_publication.json"], retention_api=_manifest_retention_api))
             for kind in ("voltage", "geometry", "comsol_mesh", "source"):
                 with self.subTest(kind=kind):
                     plan, source = copy.deepcopy(initial_plan), copy.deepcopy(initial_source)
@@ -397,7 +400,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
             runtime.write(plan_path, plan)
             model.write_bytes(b"INERT REVISED MODEL IDENTITY; NOT A NATIVE GEOMETRY PROOF")
             runtime.write(static / "run_manifest.json", build_run_manifest(static / "run_config.json", "failed",
-                output_paths=[model, static / "comsol/comsol_field_solution.json", static / "results/simion_field_publication.json"]))
+                output_paths=[model, static / "comsol/comsol_field_solution.json", static / "results/simion_field_publication.json"], retention_api=_manifest_retention_api))
             author["static_field_manifest"] = file_record(static / "run_manifest.json")
             runtime.write(path, author)
             changed = prepare(path, root / "after")

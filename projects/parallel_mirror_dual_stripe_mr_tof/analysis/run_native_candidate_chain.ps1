@@ -115,7 +115,7 @@ function Assert-Manifest {
     $arguments+=@('--consumed-output',(Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_observation.json'))
     $arguments+=@('--consumed-output',(Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_materialization.json'))
   }
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') @arguments|Out-Host
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @arguments|Out-Host
   if($LASTEXITCODE-ne0){throw "Run manifest verification failed: $manifest"}
   return $manifest
 }

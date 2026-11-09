@@ -53,8 +53,7 @@ def _publish_run_artifacts(
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     command = [
         sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
+        "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
         "--run-config",
         str(run_config_path),
         "--manifest",

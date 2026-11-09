@@ -15,7 +15,7 @@ import unittest
 
 from msplatform.backends.simion.tracking_collection import canonical_census, read_native_events
 from msplatform.execution.inputs import python_import_roots
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from integrations.tests.test_single_reflection_preparation import fixture, write_json
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.workflows.single_reflection_flight.collect import collect_log, compare_collections, select_pulse

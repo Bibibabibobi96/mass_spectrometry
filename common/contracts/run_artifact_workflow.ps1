@@ -403,7 +403,7 @@ function Publish-WorkflowTerminal {
   $publisher=@'
 import sys
 from pathlib import Path
-from common.contracts.write_run_manifest import retention_api
+from msplatform.backends.simion.native_completion import retention_api
 from msplatform.execution.workflow_publication import publish_workflow_terminal
 completion_path, session_path, wait_path = map(Path, sys.argv[1:4])
 ceiling = int(sys.argv[4]) if sys.argv[4] else None

@@ -91,7 +91,7 @@ foreach ($item in @(
     throw "Formal input identity differs from formal_validation.json: $($item[0])"
   }
 }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $sourceManifest `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $sourceManifest `
   --require-status success --require-project single_reflection_oa_tof_mass_analyzer
 if ($LASTEXITCODE -ne 0) { throw 'Formal source run manifest verification failed.' }
 if (-not (Select-String -LiteralPath $sourceTraceLog -Pattern '^TRACE: \d+,' -Quiet)) {
@@ -305,7 +305,7 @@ $outputs = @(
   (Join-Path $trajectoryResultDir 'representative_trajectory_comparison.png'),$summary
 )
 $manifestArgs = @(
-  (Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,
+  '-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,
   '--manifest',(Join-Path $runDir 'run_manifest.json'),'--status','success',
   '--software','COMSOL R2025b saved solution','--software','SIMION 2020','--software','Python 3.11'
 )

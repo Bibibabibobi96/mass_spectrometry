@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path, resolve_runtime_selection
 
 

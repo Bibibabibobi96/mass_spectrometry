@@ -552,8 +552,7 @@ def _publish_campaign_manifest(
     pending = run_root / ".run_manifest.json.pending"
     command = [
         sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
+        "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
         "--run-config",
         str(run_root / "run_config.json"),
         "--manifest",

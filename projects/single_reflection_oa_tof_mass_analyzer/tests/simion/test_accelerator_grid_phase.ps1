@@ -172,7 +172,7 @@ $runConfig = Join-Path $runDir 'run_config.json'
 $summaryPath = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_accelerator_grid_phase_summary';status='success';case_count=$manifestCases.Count;results='results'} |
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$summaryPath,'--output',$manifestPath)
+$manifestArgs=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$summaryPath,'--output',$manifestPath)
 foreach($file in Get-ChildItem -LiteralPath $resultDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 foreach($file in Get-ChildItem -LiteralPath $modelScratch -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $pythonExe @manifestArgs

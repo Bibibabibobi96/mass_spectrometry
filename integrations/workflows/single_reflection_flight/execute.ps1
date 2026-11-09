@@ -267,7 +267,7 @@ function Write-InstrumentWallClockWarning {
 $evidenceCode=@'
 import json,sys
 from pathlib import Path
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
 for row in rows:
     for kind in ("stdout","stderr","usage"):

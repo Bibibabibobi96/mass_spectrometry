@@ -96,7 +96,7 @@ function Confirm-PulseIobVerification {
   $name=[string]$Case.case_id
   if($Operation-eq'after_first_fly'){
     $null=Invoke-FrontendRuntimePython @context -Name "$Phase.$name.controls-after" -Arguments @('-c',
-      'import json,sys;from common.contracts.verify_run_manifest import verify_record;[verify_record("saved pulse control",r) for r in json.loads(sys.argv[1])]',
+      'import json,sys;from msplatform.execution.retention import verify_record;[verify_record("saved pulse control",r) for r in json.loads(sys.argv[1])]',
       (ConvertTo-Json -InputObject @($Case.control_records) -Depth 100 -Compress))
     return
   }
@@ -127,7 +127,7 @@ function Confirm-PulseIobVerification {
     throw 'Saved pulse IOB independent reopen failed.'
   }
   $binding=Invoke-FrontendRuntimePython @context -Name "$Phase.$name.bind-controls" -Json -Arguments @('-c',
-    'import json,sys;from pathlib import Path;from common.contracts.verify_run_manifest import verify_record;from common.contracts.write_run_manifest import file_record;records=json.loads(sys.argv[1]);[verify_record("prepared pulse control",r) for r in records];print(json.dumps(dict(control_records=records+[file_record(Path(sys.argv[2]))],iob_reopen_record=file_record(Path(sys.argv[3])))))',
+    'import json,sys;from pathlib import Path;from msplatform.execution.retention import verify_record;from msplatform.execution.retention import file_record;records=json.loads(sys.argv[1]);[verify_record("prepared pulse control",r) for r in records];print(json.dumps(dict(control_records=records+[file_record(Path(sys.argv[2]))],iob_reopen_record=file_record(Path(sys.argv[3])))))',
     (ConvertTo-Json -InputObject @($Case.control_records) -Depth 100 -Compress),$Case.iob_path,$reopenLog)
   $Case|Add-Member -NotePropertyName control_records -NotePropertyValue @($binding.control_records) -Force
   $Case|Add-Member -NotePropertyName iob_reopen_record -NotePropertyValue $binding.iob_reopen_record -Force
@@ -371,7 +371,7 @@ try{
     }else{
       Set-PairedStage 'verify_native_model'
       $model=if($savedParticle){$completed.particle_model}else{$plan.model}
-      $null=Invoke-PulsePython 'from common.contracts.verify_run_manifest import verify_record; verify_record("native pulse model",json.loads(sys.argv[1]));print("{}")' `
+      $null=Invoke-PulsePython 'from msplatform.execution.retention import verify_record; verify_record("native pulse model",json.loads(sys.argv[1]));print("{}")' `
         @(($model|ConvertTo-Json -Depth 100 -Compress))
       Register-PulseInputs
       Close-PairedHostStage

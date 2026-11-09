@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
 from msplatform.io.scientific_csv import iter_csv_rows
 

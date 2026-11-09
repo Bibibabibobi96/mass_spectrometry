@@ -17,7 +17,7 @@ function Assert-CrossSolverSourceManifest {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
         [Parameter(Mandatory)][string]$Manifest)
-    $null = & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') $Manifest `
+    $null = & $Python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $Manifest `
         --require-status success --require-project rf_multipole_ion_optics
     if ($LASTEXITCODE -ne 0) { throw "Source run-manifest verification failed: $Manifest" }
     Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json

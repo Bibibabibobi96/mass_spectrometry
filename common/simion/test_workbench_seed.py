@@ -34,7 +34,7 @@ class WorkbenchSeedTests(unittest.TestCase):
 
 
     def test_large_declared_placeholder_keeps_contextual_classification_and_record_shape(self):
-        from common.contracts.artifact_retention import classify_file
+        from msplatform.execution.retention import classify_file
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root/"source"

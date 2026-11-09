@@ -7,6 +7,8 @@ workflow owns SIMION execution and manifest publication.
 """
 from __future__ import annotations
 
+from msplatform.execution.retention import classify_file as _manifest_classifier
+
 import argparse
 import copy
 import json
@@ -18,7 +20,8 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 from scipy.optimize import linprog
 
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from common.contracts.file_identity import file_sha256
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
@@ -2390,7 +2393,7 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
         verify_record(key,preparation[key])
     source_path = Path(preparation["source_receipt"]["path"])
     target = load_measured_centroid_closure_target(target_path,source_path,contract_path)
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     scientific_contract = target["inputs"]["trajectory_contract"]
     scientific_document = _load(Path(scientific_contract["path"]), "target author trajectory contract")
     actual_contract = file_record(contract_path)
@@ -2506,7 +2509,7 @@ def load_measured_centroid_initial_proposal(path: Path) -> dict[str, Any]:
 def materialize_prepared_staged_adapter(manifest_path: Path, target_path: Path,
                                         contract_path: Path, output_directory: Path) -> dict[str, Any]:
     """Write explicitly measured views for the original staged workflow slots."""
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     trial=load_prepared_centroid_trial(manifest_path,target_path,contract_path)
     identity=file_sha256(manifest_path)[:12]+"_"+file_sha256(target_path)[:12]
     output_directory.mkdir(parents=True,exist_ok=True)
@@ -2533,7 +2536,7 @@ def reanchor_prepared_target(state: Mapping[str, Any], *, anchor_manifest: Path,
                              target_path: Path, contract_path: Path,
                              previous_target_path: Path | None = None) -> dict[str, Any]:
     """Use a new explicit engineering target version and discard stale columns."""
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     if "target_reanchor" in state:
         raise CandidateContractError("Repeated target re-anchor would overwrite existing debit evidence")
     if state.get("pending_trial") is not None:
@@ -2570,14 +2573,14 @@ def prepare_measured_centroid_acquisition(*, prepared_run: Path, contract_path: 
                                          proposal_path: Path, p1_response: Path, p2_response: Path,
                                          field_run_id: str, output_directory: Path) -> dict[str, Any]:
     """Freeze the topology-only request for the existing public provider and runner."""
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     from msplatform.execution.inputs import freeze_file
-    from common.contracts.verify_run_manifest import verified_successful_run_reference
+    from msplatform.io.manifest_records import verified_successful_run_reference
     from msplatform.backends.comsol.static_field_binding import load_binding, load_native_response_basis
     proposal=load_measured_centroid_initial_proposal(proposal_path)
     binding_path=verified_successful_run_reference(
         prepared_run, "results/joint_workbench/static_field_binding.json",
-        project="instrument_assembly", mode="accelerator_interface_preparation")
+        project="instrument_assembly", mode="accelerator_interface_preparation", retention_classifier=_manifest_classifier)
     binding=load_binding(binding_path)
     if binding.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor":
         raise CandidateContractError("Acquisition requires the measured IP replacement field")

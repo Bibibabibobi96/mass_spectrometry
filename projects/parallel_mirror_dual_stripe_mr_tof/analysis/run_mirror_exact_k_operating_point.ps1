@@ -84,7 +84,7 @@ try {
     -Destination (Join-Path $inputDir 'parent_mirror_run_manifest.json')
   $sourcePaths = @(
     'common\contracts\file_identity.py',
-    'common\contracts\verify_run_manifest.py',
+    'src\msplatform\execution\manifest_verification.py',
     'common\host_execution_lease.ps1',
     'common\host_resource_python.py',
     'common\host_resource_python.ps1',

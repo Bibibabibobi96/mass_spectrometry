@@ -1221,6 +1221,41 @@ for name,module in tuple(sys.modules.items()):
         origin = pathlib.Path(module.__file__).resolve()
         assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name,origin)
         origins[name] = str(origin)
+# Actual canonical manifest CLI policy/projection, outside author roots.
+from msplatform.execution import manifest_publication, manifest_verification
+from msplatform.execution.retention import retention_api as generic_retention_api
+from msplatform.backends.simion.native_completion import retention_api as native_retention_api
+manifest_run = root/('manifest-policy-'+sys.argv[2])
+(manifest_run/'logs').mkdir(parents=True)
+manifest_trace = manifest_run/'logs/simion__batch01.trace.log'
+manifest_trace.write_text('status,Fly completed.\n',encoding='utf-8')
+(manifest_run/'retention_actions.json').write_text(json.dumps(dict(schema_version=1,role='artifact_retention_actions',retention_class='compact',status='complete',preserved=[dict(path='logs/simion__batch01.trace.log',bytes=manifest_trace.stat().st_size,retention_role='dense_trajectory',action='retained_completed_native_trace_for_recovery')])),encoding='utf-8')
+manifest_config=manifest_run/'run_config.json'
+manifest_config.write_text(json.dumps(dict(schema_version=2,run_id='20261110_120000__test__python__installed-manifest',project='installed_fixture',mode='test',inputs={},artifact_retention=dict(policy_version=1,**{'class':'compact'},reason=None))),encoding='utf-8')
+try:
+    manifest_publication.publish_run_manifest(manifest_config,'failed',retention_api=generic_retention_api)
+except ValueError as error:
+    assert 'explicit completion policy' in str(error)
+else: raise AssertionError('generic policy accepted native recovery')
+assert not (manifest_run/'run_manifest.json').exists()
+manifest_publication.publish_run_manifest(manifest_config,'failed',retention_api=native_retention_api,output_paths=[manifest_trace])
+manifest_cli='from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
+manifest_verified=subprocess.run([sys.executable,'-I','-c',manifest_cli,str(manifest_run/'run_manifest.json'),'--require-status','failed'],cwd=root,capture_output=True,text=True,timeout=30)
+assert manifest_verified.returncode==0 and 'SCOPE=full' in manifest_verified.stdout,manifest_verified.stderr
+manifest_projected=subprocess.run([sys.executable,'-I','-c',manifest_cli,str(manifest_run/'run_manifest.json'),'--require-status','failed','--consumer-projection-id','installed_fixture_v1','--consumed-output',str(manifest_trace)],cwd=root,capture_output=True,text=True,timeout=30)
+assert manifest_projected.returncode==0 and 'SCOPE=consumer_projection' in manifest_projected.stdout,manifest_projected.stderr
+manifest_trace.write_text('status,Fly completEd.\n',encoding='utf-8')
+manifest_rejected=subprocess.run([sys.executable,'-I','-c',manifest_cli,str(manifest_run/'run_manifest.json'),'--require-status','failed'],cwd=root,capture_output=True,text=True,timeout=30)
+assert manifest_rejected.returncode!=0 and 'SHA-256 changed' in manifest_rejected.stderr,manifest_rejected.stderr
+manifest_module=pathlib.Path(manifest_verification.__file__)
+manifest_hidden=manifest_module.with_name(manifest_module.name+'.missing')
+manifest_module.rename(manifest_hidden)
+try:
+    missing_manifest=subprocess.run([sys.executable,'-I','-c',manifest_cli,str(manifest_run/'run_manifest.json'),'--require-status','failed'],cwd=root,capture_output=True,text=True,timeout=30)
+    assert missing_manifest.returncode!=0 and 'manifest_verification' in missing_manifest.stderr,missing_manifest.stderr
+finally:manifest_hidden.rename(manifest_module)
+missing_rejected.append('manifest_verification')
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),

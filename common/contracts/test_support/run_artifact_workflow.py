@@ -11,7 +11,7 @@ import tomllib
 import unittest
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from msplatform.execution.inputs import enumerate_python_sources
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -47,7 +47,7 @@ def copy_scientific_core(source_root: Path, destination_root: Path) -> None:
 CALLBACK = '''import json, os, sys, time
 from pathlib import Path
 sys.path.insert(0, REPOSITORY)
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from common.contracts.capacity_protection import load_capacity_protection_leases
 
 def execute_prepared_run(config_path, session_path, request_path, completion_path):
@@ -249,7 +249,7 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
             # Run the real retention CLI, failing only its first progress write
             # after the actual unlink; no fake receipt or deletion is supplied.
             hooks = '''$script:retentionFailureCode=@'
-import common.contracts.artifact_retention as owner
+import msplatform.execution.artifact_retention as owner
 import msplatform.execution.artifact_retention as canonical_owner
 original = canonical_owner.write_json_atomic
 def crash(path, value):
@@ -257,10 +257,12 @@ def crash(path, value):
         raise OSError("fixture retention progress failure")
     return original(path, value)
 canonical_owner.write_json_atomic = crash
-owner.main()
+from msplatform.backends.simion import native_completion
+from msplatform.execution.retention import classify_file
+owner.main(classifier=classify_file,completion_api=lambda:native_completion)
 '@
 $needle=@'
-& $Python (Join-Path $RepoRoot 'common\\contracts\\artifact_retention.py') @arguments
+& $Python -c 'from msplatform.execution.artifact_retention import main; from msplatform.backends.simion import native_completion; from msplatform.execution.retention import classify_file; main(classifier=classify_file, completion_api=lambda: native_completion)' @arguments
 '@
 $body=${function:Apply-RunArtifactRetention}.ToString().Replace($needle,'& $Python -B -c $script:retentionFailureCode @arguments')
 Set-Item Function:Apply-RunArtifactRetention ([scriptblock]::Create($body))

@@ -191,7 +191,7 @@ def scientific_inputs(sources, oatof, root, *, local=False, legacy_inputs=None):
     This author-only test fixture names the independent expected OA roles. Its
     consumer gets verified file records, never author-module imports or paths.
     """
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as current_interface
     from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
     from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map

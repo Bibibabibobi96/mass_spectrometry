@@ -15,13 +15,12 @@ from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
-from common.contracts.write_run_manifest import (
-    TERMINAL_LOCK_NAME,
-    build_run_manifest,
-    publish_run_manifest,
-    publish_terminal_state,
-    replay_terminal_publication,
-)
+from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
+from msplatform.backends.simion.native_completion import retention_api as native_retention_api
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.manifest_publication import publish_run_manifest
+from msplatform.execution.terminal_publication import publish_terminal_state
+from msplatform.execution.terminal_publication import replay_terminal_publication
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
 
 
@@ -80,6 +79,7 @@ def _write_manifest(
     virtual = {run_root / "summary.json": summary} if summary is not None else None
     publisher = publish_run_manifest if summary is None else build_run_manifest
     arguments = dict(
+        retention_api=native_retention_api,
         actual_root=run_root, recorded_root=recorded_root, virtual_documents=virtual,
         extra_fields=extras, allow_missing_inputs=True,
     )
@@ -362,7 +362,7 @@ def finalize_candidate_run(
         summary["recovery_requirements"]="Only sufficient sealed CSV is eligible while model save completion is unknown; otherwise inspect original saved/recovery data. No implicit new solve."
     native_record = config.get("provenance", {}).get("comsol_native_completion")
     if native_record is not None:
-        from common.contracts.verify_run_manifest import verify_record
+        from msplatform.execution.retention import verify_record
         from common.contracts.stage_reuse import SCHEMA_VERSION, RECEIPT_ROLE
         receipt_path = run_root / "stage_receipts/comsol_native.json"
         if Path(native_record.get("path", "")).resolve() != receipt_path:

@@ -47,7 +47,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             "projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics",
             "projects.dual_pressure_rectilinear_ion_processor.analysis.batching",
             "projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget",
-            "common.contracts.artifact_retention",
+            "msplatform.execution.retention",
             "msplatform.analysis.population_moments",
             "msplatform.analysis.beam_focus_diagnostics",
             "msplatform.io.figure_export",

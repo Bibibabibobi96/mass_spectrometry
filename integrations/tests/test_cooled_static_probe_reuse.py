@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from integrations.tests import test_cooled_frontend_reference as reference_fixture
 from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments

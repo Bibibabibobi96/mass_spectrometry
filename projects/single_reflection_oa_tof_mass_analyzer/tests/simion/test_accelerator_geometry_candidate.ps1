@@ -172,7 +172,7 @@ $runConfig = Join-Path $runDir 'run_config.json'
 $runSummary = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_accelerator_geometry_candidate_summary';status='success';particles=100;results='results/manifest.json'} |
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
-$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$runSummary)
+$manifestArgs=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$runSummary)
 foreach($file in Get-ChildItem -LiteralPath $resultDir,$logDir,$scratchDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $python @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Accelerator-geometry manifest failed.'}

@@ -25,7 +25,8 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )

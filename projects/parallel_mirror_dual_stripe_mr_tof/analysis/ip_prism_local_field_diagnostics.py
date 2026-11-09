@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 
 
 def _shape_mask(shape: dict, x: float, y: np.ndarray, z: np.ndarray) -> np.ndarray:

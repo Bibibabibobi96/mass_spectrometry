@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from msplatform.execution.retention import classify_file as _manifest_classifier
+
 import argparse
 import csv
 import json
@@ -10,7 +12,9 @@ from datetime import datetime
 from pathlib import Path
 
 from msplatform.execution.artifact_naming import validate_run_id
-from common.contracts.verify_run_manifest import record_path, verified_successful_run_reference, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.io.manifest_records import verified_successful_run_reference
+from msplatform.execution.retention import verify_record
 from projects.rf_multipole_ion_optics.analysis.analyze_round_rod_screen import analyze
 from projects.rf_multipole_ion_optics.runtime._transport_run_artifacts import ARTIFACT_PROJECTS_ROOT, transport_run
 from projects.rf_multipole_ion_optics.core.ideal_transport import evaluate_round_rod_contract, write_results
@@ -88,7 +92,7 @@ def _load_source(project_id: str, source_run_id: str, *, expected_design: dict) 
         raise ValueError("field-screen source run configuration identity differs")
     def consumed(relative: str) -> Path:
         return verified_successful_run_reference(source_dir, relative, project=project_id,
-                                                 mode="round_rod_field_screen", manifest=manifest)
+                                                 mode="round_rod_field_screen", manifest=manifest, retention_classifier=_manifest_classifier)
     source_design = json.loads(consumed("inputs/multipole_resolved_design.json").read_text(encoding="utf-8-sig"))
     if source_design.get("identity") != expected_design["identity"]:
         raise ValueError("field-screen source structural identity differs from selected transport design")

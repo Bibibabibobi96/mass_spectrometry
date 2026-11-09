@@ -35,8 +35,10 @@ from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import load_json
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record, retention_api
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
+from msplatform.execution.retention import classify_file
+from msplatform.execution.artifact_retention import validate_retention
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from common.contracts.capacity_protection import renew_capacity_protection_lease, PROTECTION_LEASE_DIRECTORY
 
@@ -220,7 +222,7 @@ def _legacy_ideal_binding(previous: Path, path: Path, manifest: dict[str, Any], 
     if not matches or len({(item.get("bytes"), item.get("sha256")) for item in matches}) != 1:
         raise ValueError(f"legacy {label} lacks its original manifest binding")
     if manifest.get("schema_version") == 2:
-        classify = retention_api()[0]
+        classify = classify_file
         for record in manifest.get("outputs", []):
             if Path(record["path"]).resolve() == path and record.get("retention_role") != classify(path, bytes_count=int(record["bytes"])):
                 raise ValueError(f"legacy {label} retained output role differs")
@@ -245,7 +247,7 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
         raise ValueError("legacy resume supports only a completed original basic ideal-source producer")
     _legacy_ideal_binding(previous, previous / "run_config.json", manifest, "run config")
     if manifest["schema_version"] == 2:
-        retention = retention_api()[3](parent.get("artifact_retention"))
+        retention = validate_retention(parent.get("artifact_retention"))
         expected = {"policy_version": retention.policy_version, "class": retention.class_id, "reason": retention.reason}
         if manifest.get("artifact_retention") != expected:
             raise ValueError("legacy v2 retention contract differs from original config")
@@ -539,14 +541,14 @@ def _reuse_legacy_ideal_case(previous: Path, case: dict[str, Any], identity: str
     return derived
 
 def _publish_manifest(run_dir: Path, status: str) -> None:
-    command = [sys.executable, "-m", "common.contracts.write_run_manifest", "--run-config", str(run_dir / "run_config.json"), "--status", status, "--software", f"Python {platform.python_version()}; NumPy {np.__version__}; SciPy {scipy.__version__}"]
+    command = [sys.executable, "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", "--run-config", str(run_dir / "run_config.json"), "--status", status, "--software", f"Python {platform.python_version()}; NumPy {np.__version__}; SciPy {scipy.__version__}"]
     for path in sorted(run_dir.rglob("*")):
         if path.is_file() and path.name not in {"run_config.json", "run_manifest.json"}:
             # Writer resolves outputs against run_config's parent. Relative paths
             # keep Windows CreateProcess below its command-line length limit.
             command.extend(["--output", path.relative_to(run_dir).as_posix()])
     print(_command(command), flush=True)
-    print(_command([sys.executable, "-m", "common.contracts.verify_run_manifest", str(run_dir / "run_manifest.json"), "--require-status", status]), flush=True)
+    print(_command([sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(run_dir / "run_manifest.json"), "--require-status", status]), flush=True)
 
 
 def _write_report(run_dir: Path, records: list[dict[str, Any]], summary: dict[str, Any]) -> None:

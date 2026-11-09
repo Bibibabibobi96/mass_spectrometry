@@ -271,7 +271,7 @@ try {
   $referenceCode=@'
 import json,sys
 from pathlib import Path
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 source=Path(sys.argv[1]);contract=json.loads(source.read_text(encoding='utf-8-sig'))
 paths=[Path(p).resolve() for p in json.loads(sys.argv[2])];refs=[];covered=set()
 for name in ('producer_manifest','preparation_manifest'):
@@ -293,7 +293,7 @@ print(json.dumps(refs))
  }
  if($NativeFieldRun){
   $NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path
-  $record=& $python -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps(file_record(Path(sys.argv[1])/"run_manifest.json")))' $NativeFieldRun
+  $record=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps(file_record(Path(sys.argv[1])/"run_manifest.json")))' $NativeFieldRun
   if($LASTEXITCODE-ne0){throw 'Native field requires explicit original-owner manifest evidence.'}
   $sourceReferences+=@{manifest_record=($record|ConvertFrom-Json -AsHashtable);protected_paths=@($NativeFieldRun);protected_cache_keys=@()}
  }
@@ -304,7 +304,7 @@ print(json.dumps(refs))
   $projection=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.ip_continuation import continuation_protection_paths;print(json.dumps([str(p) for p in continuation_protection_paths(Path(sys.argv[1]))]))' $predecessor
   if($LASTEXITCODE-ne0){throw 'IP continuation ancestry protection projection failed'}
   $continuationAuthorities=@(($projection|ConvertFrom-Json))
-  $records=& $python -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))' (ConvertTo-Json -InputObject @($continuationAuthorities) -Compress)
+  $records=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))' (ConvertTo-Json -InputObject @($continuationAuthorities) -Compress)
   if($LASTEXITCODE-ne0){throw 'IP continuation lacks explicit original-owner manifest evidence.'}
   $sourceReferences+=@(($records|ConvertFrom-Json -AsHashtable -Depth 100))
   $required=@('results/batch_merge_receipt.json','results/batch_input_validation_receipt.json','results/simion_execution_batch_plan.json','results/simion_batch_resource_usage.json','simion/events.csv','simion/samples.csv','simion/collision_rng_seeds.csv','simion/hs1_bound_parameters.csv','simion/extraction_steps.csv','simion/extraction_impulses.csv','simion/native_field_samples.csv','logs/flight.log')
@@ -313,7 +313,7 @@ print(json.dumps(refs))
    $sourceModel=Get-Content (Join-Path $predecessor 'inputs/resolved_model.json') -Raw|ConvertFrom-Json
    $continuationFieldRun=if($sourceModel.native_field.source_manifest){Split-Path -Parent ([string]$sourceModel.native_field.source_manifest)}else{Split-Path -Parent ([string]$sourceModel.native_field.directory)}
    $continuationFieldRun=(Resolve-Path -LiteralPath $continuationFieldRun).Path
-   $record=& $python -c 'import json,sys;from pathlib import Path;from common.contracts.write_run_manifest import file_record;print(json.dumps(file_record(Path(sys.argv[1])/"run_manifest.json")))' $continuationFieldRun
+   $record=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps(file_record(Path(sys.argv[1])/"run_manifest.json")))' $continuationFieldRun
    if($LASTEXITCODE-ne0){throw 'Continuation field requires explicit original-owner manifest evidence.'}
    $sourceReferences+=@{manifest_record=($record|ConvertFrom-Json -AsHashtable);protected_paths=@($continuationFieldRun);protected_cache_keys=@()}
   }

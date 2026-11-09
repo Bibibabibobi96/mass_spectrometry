@@ -1029,8 +1029,7 @@ $results | ConvertTo-Json -Depth 32 -Compress
             self.assertEqual((result["status"], result["stage"]), ("failed", "complete"))
             self.assertIn("logical_sha256", result["failure_reason"])
             run = artifacts / "projects/rf_multipole_ion_optics/runs" / run_id
-            verification = subprocess.run([str(RUN_PYTHON), "-B", "-m",
-                "common.contracts.verify_run_manifest", str(run / "run_manifest.json"),
+            verification = subprocess.run([str(RUN_PYTHON), "-B", "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(run / "run_manifest.json"),
                 "--require-status", "failed", "--require-local-run-config"],
                 cwd=REPO_ROOT, env=environment, capture_output=True,
                 text=True, encoding="utf-8", timeout=60)

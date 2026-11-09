@@ -118,7 +118,7 @@ try {
   New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
   $sourcePaths = @(
     'common\contracts\file_identity.py',
-    'common\contracts\verify_run_manifest.py',
+    'src\msplatform\execution\manifest_verification.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',

@@ -16,7 +16,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from common.contracts.file_identity import file_sha256
 from msplatform.backends.simion import gem_primitives
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader

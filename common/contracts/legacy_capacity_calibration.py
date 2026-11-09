@@ -21,10 +21,8 @@ from typing import Any, Callable, Iterable
 from common.contracts import capacity_ledger, capacity_protection
 from common.contracts.execution_aliases import execution_alias_root_is_valid
 from common.contracts.legacy_owner_disposition import load_legacy_owner_disposition
-from common.contracts.artifact_retention import (
-    classify_file,
-    validate_retention,
-)
+from msplatform.execution.retention import classify_file
+from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.artifact_cache_contract import INTEGRATION_CACHE_ROLES
 

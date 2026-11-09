@@ -37,7 +37,7 @@ try{
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $failureStage='verify_sources'
   foreach($manifest in $manifests){
-    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest `
+    & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifest `
       --require-status success --require-project $projectId --require-mode finite_3d_two_prism_voltage_trial
     if($LASTEXITCODE-ne 0){throw "Source flight manifest failed verification: $manifest"}
   }

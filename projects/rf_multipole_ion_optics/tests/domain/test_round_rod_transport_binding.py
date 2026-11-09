@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from projects.rf_multipole_ion_optics.runtime import run_round_rod_transport
 

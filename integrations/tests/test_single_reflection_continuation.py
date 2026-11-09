@@ -13,7 +13,7 @@ import tempfile
 import unittest
 
 from msplatform.execution.inputs import python_import_roots
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
 from integrations.workflows.single_reflection_flight import runtime

@@ -1,4 +1,6 @@
 """Accelerator interface ownership and detached preparation; no vendor solver."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import csv
 import json
 import os
@@ -12,7 +14,8 @@ from unittest.mock import patch
 
 from jsonschema import ValidationError
 
-from common.contracts.write_run_manifest import build_run_manifest, file_record
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
 from integrations.workflows.accelerator_interface.prepare import (
     CONFIG, _resolve_ip_matching, bind_joint_workbench, prepare_interface, prepare_joint_flight, verified_preparation_reference,
 )
@@ -822,7 +825,7 @@ $configuration|ConvertTo-Json -Depth 50|Set-Content -LiteralPath '{config}' -Enc
             completed = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO,
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-            manifest = build_run_manifest(config, "success", output_paths=[receipt_path])
+            manifest = build_run_manifest(config, "success", output_paths=[receipt_path], retention_api=_manifest_retention_api)
             self.assertEqual(set(manifest["inputs"]), set(receipt["inputs"]))
             (run / "run_manifest.json").write_text(json.dumps(manifest))
             for name, record in receipt["inputs"].items():

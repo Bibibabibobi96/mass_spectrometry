@@ -7,7 +7,7 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "integrations/workflows/oa_mr/execute.ps1"
@@ -246,7 +246,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import materialize_bunch_source
         from msplatform.backends.comsol.static_field_binding import load_binding
         from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
-        from common.contracts.verify_run_manifest import verify_record
+        from msplatform.execution.retention import verify_record
         from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
         from common.integration.test_resolve_assembly import direct_fixture
         recipe,components=direct_fixture()
@@ -714,7 +714,7 @@ import json
 from pathlib import Path
 import sys
 from unittest.mock import patch
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial as module
 assert Path(module.__file__).is_relative_to(Path.cwd())
 assert sys.argv[1:3] == ['-m', module.__name__]
@@ -1699,7 +1699,7 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
 
     def test_upstream_projections_bind_only_the_records_oa_mr_consumes(self):
         """Exercise the public verifier, not a runner-local manifest imitation."""
-        verifier = REPO / "common/contracts/verify_run_manifest.py"
+        verifier = REPO / "src/msplatform/execution/manifest_verification.py"
         projections = (
             ("bunch", "mrtof_bunch_source_materialization_v1", ("receipt", "states", "fly2")),
             ("mirror", "mrtof_mirror_summary_v1", ("summary",)),

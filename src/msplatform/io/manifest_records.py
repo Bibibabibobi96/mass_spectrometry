@@ -108,3 +108,24 @@ def validate_file_record(value: Any, label: str) -> dict[str, Any]:
             or not re.fullmatch(r"[0-9a-fA-F]{64}", str(value.get("sha256", "")))):
         raise ValueError(f"{label} requires a complete existing file record")
     return copy.deepcopy(dict(value))
+
+
+def verified_successful_run_reference(
+    run: Path, relative: str, *, project: str, mode: str,
+    manifest: dict[str, Any] | None = None,
+    retention_classifier: Any = None,
+) -> Path:
+    """Verify one consumed input/output record, without reading other payloads."""
+    require_completed_terminal_publication(run / "run_manifest.json")
+    if manifest is None:
+        manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
+    if (manifest.get("project") != project or manifest.get("mode") != mode
+            or manifest.get("status") != "success"):
+        raise ValueError(f"reference must be a successful {project} {mode} run")
+    desired = (run / relative).resolve()
+    matches = [record for record in [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+               if record_path(record, base_dir=run) == desired]
+    if len(matches) != 1:
+        raise ValueError("reference manifest must bind exactly one record for " + relative)
+    verify_record("consumed run reference", matches[0], base_dir=run, retention_classifier=retention_classifier)
+    return desired

@@ -1,4 +1,6 @@
 """Explicit SF source ownership reaches the existing zero-commitment leases."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import ast
 import json
 from pathlib import Path
@@ -12,7 +14,8 @@ from unittest.mock import patch
 from msplatform.execution import run_capacity_lifecycle as lifecycle
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
-from common.contracts.write_run_manifest import build_run_manifest, file_record
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
 from msplatform.workflows.single_reflection_flight.continuation import source_capacity_projection
 
 
@@ -35,7 +38,7 @@ def source(root, *, legacy=False, status="success"):
         config["capacity_ledger_lifecycle"] = dict(schema_version=1, enabled=True,
             artifact_root=str(root), light_evidence_budget_bytes=1024)
     write(run / "run_config.json", config)
-    write(run / "run_manifest.json", build_run_manifest(run / "run_config.json", status))
+    write(run / "run_manifest.json", build_run_manifest(run / "run_config.json", status, retention_api=_manifest_retention_api))
     return run
 
 
@@ -99,7 +102,7 @@ class SingleReflectionSourceProtectionTests(unittest.TestCase):
             config = json.loads((run / "run_config.json").read_text())
             config["inputs"]["frontend_fields"] = str(field)
             write(run / "run_config.json", config)
-            write(run / "run_manifest.json", build_run_manifest(run / "run_config.json", "success"))
+            write(run / "run_manifest.json", build_run_manifest(run / "run_config.json", "success", retention_api=_manifest_retention_api))
             before = (run / "run_manifest.json").read_bytes()
             request = base / "request.json"
             write(request, dict(providers=dict(frontend_fields=file_record(field))))
@@ -150,14 +153,14 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
             artifact = ancestor / "results/finished.stdout.log"
             artifact.parent.mkdir()
             artifact.write_text("complete fixture", encoding="utf-8")
-            write(ancestor / "run_manifest.json", build_run_manifest(ancestor / "run_config.json", "success", output_paths=[artifact]))
+            write(ancestor / "run_manifest.json", build_run_manifest(ancestor / "run_config.json", "success", output_paths=[artifact], retention_api=_manifest_retention_api))
             frozen = direct / "inputs/continuation_parent_manifest.json"
             frozen.parent.mkdir()
             shutil.copyfile(ancestor / "run_manifest.json", frozen)
             config = json.loads((direct / "run_config.json").read_text())
             config["inputs"].update(continuation_parent_manifest=str(frozen), continuation_artifact_baseline_fixture=str(artifact))
             write(direct / "run_config.json", config)
-            write(direct / "run_manifest.json", build_run_manifest(direct / "run_config.json", "success"))
+            write(direct / "run_manifest.json", build_run_manifest(direct / "run_config.json", "success", retention_api=_manifest_retention_api))
             request = base / "request.json"
             write(request, dict(continuation=dict(predecessor_run_manifest=file_record(direct / "run_manifest.json"))))
             projection = source_capacity_projection(artifact_root=target, request_path=request)
@@ -179,7 +182,7 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
             lifecycle.capacity_ledger.record_capacity_object(run.parents[3], path=run, object_class="rebuildable_payload",
                 bytes_count=0, status="writing", owner="fixture", retention_reason="fixture", review_deadline="2027-01-01",
                 retirement_route="owner_decision_required", recovery_reason="fixture")
-            write(run / "run_manifest.json", build_run_manifest(config_path, "checkpoint"))
+            write(run / "run_manifest.json", build_run_manifest(config_path, "checkpoint", retention_api=_manifest_retention_api))
             stopped = lifecycle.seal_checkpoint(run.parents[3], config_path, owner="fixture", writing_stopped=True,
                 retain_payload=True, retention_reason="fixture stopped source")
             stopped_path = base / "stopped.json"

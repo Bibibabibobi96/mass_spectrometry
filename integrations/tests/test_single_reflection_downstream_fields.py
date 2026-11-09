@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from integrations.tests.test_single_reflection_preparation import fixture
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight.downstream_fields import _live_run, plan_downstream_fields, preflight_frontend_resources, publish_downstream_fields

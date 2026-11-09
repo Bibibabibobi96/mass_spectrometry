@@ -1,13 +1,20 @@
 """The original manifest builder with explicit retention callbacks; publishing uses one journal."""
 from __future__ import annotations
+import argparse
 import json
+import os
+import sys
+import uuid
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.io.manifest_records import file_record, _json_bytes
-from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
+from msplatform.execution.file_lock import process_file_lock
+from msplatform.execution.recorded_file_removal import write_json_atomic
+from msplatform.io.manifest_records import require_completed_terminal_publication
+from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME, TERMINAL_STATUSES, _can_replace_provisional
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 
 
@@ -157,3 +164,90 @@ def build_run_manifest(
         }
     manifest.update(extra_fields or {})
     return manifest
+
+
+def publish_run_manifest(
+    run_config_path: Path, status: str, *, destination: Path | None = None,
+    software: list[str] | None = None, output_paths: list[Path] | None = None,
+    actual_root: Path | None = None, recorded_root: Path | None = None,
+    virtual_documents: dict[Path, dict[str, Any]] | None = None,
+    extra_fields: dict[str, Any] | None = None, allow_missing_inputs: bool = False,
+    allow_provisional: bool = False,
+    retention_api: Callable[[], tuple[Any, Any, Any, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build and atomically publish through the shared terminal exclusion."""
+    if retention_api is None:
+        from msplatform.execution.retention import retention_api
+    run_config_path = run_config_path.resolve()
+    destination = destination or run_config_path.with_name("run_manifest.json")
+    with process_file_lock(run_config_path.parent / TERMINAL_LOCK_NAME):
+        require_completed_terminal_publication(run_config_path.parent / "run_manifest.json")
+        prior, prior_error = None, None
+        is_primary = destination.resolve() == (run_config_path.parent / "run_manifest.json").resolve()
+        if is_primary and destination.is_file():
+            try:
+                prior = json.loads(destination.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                prior_error = error
+            if isinstance(prior, dict) and prior.get("status") in TERMINAL_STATUSES:
+                current = json.loads(run_config_path.read_text(encoding="utf-8-sig"))
+                if not _can_replace_provisional(prior, current, allow_provisional):
+                    raise ValueError("cannot replace an already published terminal manifest")
+        manifest = build_run_manifest(run_config_path, status, retention_api=retention_api, software=software, output_paths=output_paths,
+            actual_root=actual_root, recorded_root=recorded_root, virtual_documents=virtual_documents,
+            extra_fields=extra_fields, allow_missing_inputs=allow_missing_inputs)
+        missing = [record["path"] for record in manifest["outputs"] if not record["exists"]]
+        if missing:
+            raise ValueError(f"missing run outputs: {missing}")
+        if is_primary and destination.is_file() and (prior_error is not None or not isinstance(prior, dict)):
+            raise ValueError("existing run manifest is unreadable")
+        candidate = destination.with_name(f".{destination.stem}.{uuid.uuid4().hex}.candidate{destination.suffix}")
+        try:
+            write_json_atomic(candidate, manifest)
+            if candidate.read_bytes() != _json_bytes(manifest):
+                raise ValueError("published manifest differs from the computed records")
+            os.replace(candidate, destination)
+        finally:
+            candidate.unlink(missing_ok=True)
+        return manifest
+
+
+def main(*, retention_api: Callable[[], tuple[Any, Any, Any, Any]] | None = None) -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-config", required=True, type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument(
+        "--status",
+        required=True,
+        choices=("success", "failed", "interrupted", "checkpoint", "superseded"),
+    )
+    parser.add_argument("--software", action="append", default=[])
+    parser.add_argument("--output", action="append", default=[])
+    parser.add_argument("--output-list-json", type=Path,
+                        help="UTF-8 JSON list[str] file, or '-' for stdin; appended after --output")
+    args = parser.parse_args()
+
+    run_config_path = args.run_config.resolve()
+    destination = args.manifest or run_config_path.with_name("run_manifest.json")
+    try:
+        output_values = list(args.output)
+        if args.output_list_json is not None:
+            payload = (sys.stdin.buffer.read().decode("utf-8-sig") if str(args.output_list_json) == "-"
+                       else args.output_list_json.read_text(encoding="utf-8-sig"))
+            entries = json.loads(payload)
+            if not isinstance(entries, list) or any(not isinstance(value, str) for value in entries):
+                raise ValueError("--output-list-json requires a JSON list[str]")
+            output_values.extend(entries)
+        output_paths = [Path(value) for value in output_values]
+        publish_run_manifest(run_config_path, args.status, destination=destination,
+                             software=args.software, output_paths=output_paths, retention_api=retention_api)
+    except (ValueError, OSError) as error:
+        raise SystemExit(str(error)) from error
+    print(f"RUN_MANIFEST=PASS PATH={destination}")
+
+
+if __name__ == "__main__":
+    main()

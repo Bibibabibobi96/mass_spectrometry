@@ -31,7 +31,7 @@ from integrations.workflows.single_reflection_flight.runtime import materialize_
 from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
 from integrations.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 from integrations.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_SCHEMA_VERSION, STANDALONE_DYNAMIC_FIELD_BANK_ROLE,

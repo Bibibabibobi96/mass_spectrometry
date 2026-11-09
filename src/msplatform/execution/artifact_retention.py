@@ -1,5 +1,6 @@
 """The single retention action journal and replay engine with explicit owner policy."""
 from __future__ import annotations
+import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -437,3 +438,40 @@ def apply_retention(
         removed.append(record)
     return _execute_removals(run_dir, retention, removed, preserved, recovery_inputs=input_records,
                              maximum_run_bytes=maximum_run_bytes)
+
+
+def main(*, classifier=None, completion_api=None) -> None:
+    if classifier is None:
+        from msplatform.execution.retention import classify_file
+        classifier = classify_file
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    apply_parser = subparsers.add_parser("apply")
+    apply_parser.add_argument("--run-config", required=True, type=Path)
+    apply_parser.add_argument("--preserve-path", action="append", type=Path, default=[])
+    apply_parser.add_argument("--remove-path", action="append", type=Path, default=[])
+    apply_parser.add_argument("--failed-run", action="store_true")
+    apply_parser.add_argument("--recovery-input", action="append", type=Path, default=[])
+    apply_parser.add_argument("--resume", action="store_true")
+    apply_parser.add_argument("--maximum-run-bytes", type=int)
+    args = parser.parse_args()
+    if args.command == "apply":
+        action_path = apply_retention(
+            args.run_config, classifier=classifier, completion_api=completion_api,
+            preserve_paths=args.preserve_path,
+            remove_paths=args.remove_path,
+            failed_run=args.failed_run,
+            recovery_inputs=args.recovery_input, resume=args.resume,
+            maximum_run_bytes=args.maximum_run_bytes,
+        )
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        print(
+            "ARTIFACT_RETENTION=PASS "
+            f"CLASS={action['retention_class']} "
+            f"REMOVED_FILES={action['removed_file_count']} "
+            f"REMOVED_BYTES={action['removed_bytes']}"
+        )
+
+
+if __name__ == "__main__":
+    main()

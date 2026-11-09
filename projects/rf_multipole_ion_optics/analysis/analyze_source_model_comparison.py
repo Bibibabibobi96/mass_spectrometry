@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from projects.rf_multipole_ion_optics.analysis.campaign_analysis import SERIES_DELTA_FIELDS, summarize_run
 from projects.rf_multipole_ion_optics.analysis.numerical_observables import (
     manifest_record,

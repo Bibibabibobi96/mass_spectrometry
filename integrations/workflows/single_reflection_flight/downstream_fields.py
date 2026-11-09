@@ -12,8 +12,9 @@ import math
 from pathlib import Path
 import stat
 
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.source import lua_value as _lua_value
 from msplatform.results.single_reflection_source import instance_design_record
 from msplatform.backends.simion.frontend import native_frontend_instances

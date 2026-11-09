@@ -17,7 +17,7 @@ from integrations.workflows.single_reflection_flight.field_plan import KINDS, bi
 from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from common.contracts.file_identity import file_sha256
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion import pa_family_cache
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key, publish_pa_family_cache
 
@@ -996,7 +996,7 @@ if($FrozenSource-eq'1'){
   $legacyCode=@'
 import json,sys,shutil
 from pathlib import Path
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
 run,prepared,cache=map(Path,sys.argv[1:])
 receipt=json.loads((run/'inputs/frontend_working_field_stage_receipt.json').read_text(encoding='utf-8-sig'))

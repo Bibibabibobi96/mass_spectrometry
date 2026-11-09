@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import FixedHardwareMirrorPoint
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import derive_mirror_boundaries
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design, derive_mirror_l0_slope_tolerance_per_v

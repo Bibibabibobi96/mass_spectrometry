@@ -29,7 +29,7 @@ RUNTIME_PATH = PROJECT_ROOT / "config" / "candidate_runtime.json"
 
 def plan_pa_producer_handoffs(pairs: list[tuple[Path, Path]], *, expected_cache_keys: set[str], artifact_root: Path) -> dict:
     """Read explicit small owner inputs before admission; never inspect a PA."""
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     from msplatform.backends.simion.pa_family_cache import load_pa_family_cache_transaction
 
     artifact_root = artifact_root.resolve(strict=True)
@@ -75,7 +75,7 @@ def plan_pa_producer_handoffs(pairs: list[tuple[Path, Path]], *, expected_cache_
 
 def load_pa_producer_handoffs(path: Path, run_root: Path, *, expected_cache_keys: set[str], capacity_session: dict) -> dict:
     """Validate frozen owner results and their exact public-receipt projections."""
-    from common.contracts.verify_run_manifest import verify_record
+    from msplatform.execution.retention import verify_record
 
     run_root = run_root.resolve()
     if not path.resolve().is_relative_to(run_root / "inputs"):
@@ -205,8 +205,8 @@ def freeze_pa_producer_handoffs(run_root: Path, handoff_plan: dict, *, expected_
     """Freeze explicit transaction/result pairs; retain raw Result provenance."""
     from msplatform.execution.inputs import freeze_file
     from msplatform.execution.recorded_file_removal import write_json_atomic
-    from common.contracts.verify_run_manifest import verify_record
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import verify_record
+    from msplatform.execution.retention import file_record
     from msplatform.backends.simion.pa_family_cache import load_pa_family_cache_transaction
 
     run_root = run_root.resolve()
@@ -775,7 +775,7 @@ if __name__ == "__main__":
 
 def _manifest_alias_record(records: list[dict], path: Path, *, base_dir: Path) -> dict:
     """Resolve one content identity only after all canonical aliases agree."""
-    from common.contracts.verify_run_manifest import record_path
+    from msplatform.io.manifest_records import record_path
     matches = [value for value in records if record_path(value, base_dir=base_dir) == path]
     if not matches or any(value.get("exists") is not True for value in matches):
         raise ValueError(f"Saved dependency is not uniquely manifest bound: {path}")
@@ -792,8 +792,9 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
     """Admit only sealed Candidate inputs/exports, never a guessed old model."""
     from common.contracts.capacity_ledger import load_capacity_ledger
     from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
-    from common.contracts.verify_run_manifest import record_path, verify_record
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.io.manifest_records import record_path
+    from msplatform.execution.retention import verify_record
+    from msplatform.execution.retention import file_record
     from msplatform.io.manifest_records import require_completed_terminal_publication
     parent = parent.resolve(strict=True)
     manifest_path = parent / "run_manifest.json"
@@ -1000,7 +1001,7 @@ def candidate_native_execution_relative_paths(closure: dict, *, code_relative_ro
 def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
     """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
     from common.paths.workspace_paths import resolve_workspace_paths
-    from common.contracts.write_run_manifest import file_record
+    from msplatform.execution.retention import file_record
     validate_run_id(run_id)
     paths = resolve_workspace_paths(REPO_ROOT)
     artifact_root = Path(paths["artifact_root"])
@@ -1045,7 +1046,8 @@ def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
 def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manifest: dict,
                                        config: dict, completion: dict, bound) -> dict:
     """Admit only sealed exports with one explicit, flat original science binding."""
-    from common.contracts.verify_run_manifest import record_path, verify_record
+    from msplatform.io.manifest_records import record_path
+    from msplatform.execution.retention import verify_record
     from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
     if completion.get("summary", {}).get("source_identity_verified") is not True:
         raise ValueError("POSTPROCESS_SOURCE_UNVERIFIED: use the explicit original verified source owner")

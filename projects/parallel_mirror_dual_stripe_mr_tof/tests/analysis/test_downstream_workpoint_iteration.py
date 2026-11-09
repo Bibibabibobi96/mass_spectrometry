@@ -38,7 +38,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_i
 
 class DownstreamWorkpointIterationTests(unittest.TestCase):
     def test_measured_acquisition_uses_public_request_and_never_changes_source_energy(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
             load_measured_centroid_initial_proposal,prepare_measured_centroid_acquisition,
         )
@@ -511,7 +511,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
                 main()
 
     def test_legacy_stage_loader_derives_sealed_015_016_signatures_without_rewriting(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
         baseline = self.stripe_preclosure_fixtures()[0]
         with tempfile.TemporaryDirectory() as directory:
@@ -562,7 +562,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
                         _load_stage_trial(manifest)
 
     def test_registered_replay_overlays_only_stage_evidence_for_anchor_and_s1(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1078,7 +1078,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         self.assertEqual(result["model_refresh_reason"], "unconfirmed_P_model_improvement")
 
     def test_prior_p_loader_requires_sealed_success_and_matching_contract(self):
-        from common.contracts.write_run_manifest import file_record
+        from msplatform.execution.retention import file_record
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import _load_prior_prism_decision
         baseline, _, prior, contract, _ = self.transported_prism_fixtures()
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"

@@ -228,12 +228,12 @@ Write-RunJson -Path $runConfig -Value $finalConfig -Depth 100
 $summaryPath = Join-Path $OutputDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-$manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--output',$summaryPath)
+$manifestArgs=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,'--status','success','--output',$summaryPath)
 foreach($name in $software){$manifestArgs+=@('--software',$name)}
 foreach($file in Get-ChildItem -LiteralPath $artifactResultDir,$artifactLogDir,$artifactSimionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $python @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest failed.'}
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $OutputDir 'run_manifest.json') --require-status success
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest verification failed.'}
 $runRecordComplete = $true

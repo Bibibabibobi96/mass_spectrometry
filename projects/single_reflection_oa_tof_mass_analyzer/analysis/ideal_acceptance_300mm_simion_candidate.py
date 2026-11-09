@@ -28,7 +28,8 @@ from common.contracts.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import load_json, validate_schema
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
-from common.contracts.verify_run_manifest import record_path, verify_record
+from msplatform.io.manifest_records import record_path
+from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_theory import (
     axial_time_coefficients,
@@ -437,8 +438,7 @@ def _publish_manifest(
     pending = run_dir / ".run_manifest.json.pending"
     command = [
         sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
+        "-c", "from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
         "--run-config",
         str(run_config),
         "--manifest",
@@ -483,8 +483,7 @@ def _publish_manifest(
     verified = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "common.contracts.verify_run_manifest",
+            "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
             str(pending),
             "--require-status",
             "success",

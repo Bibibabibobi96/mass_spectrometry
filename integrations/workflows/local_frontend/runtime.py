@@ -21,7 +21,7 @@ import stat
 from typing import Any
 
 from common.contracts.file_identity import canonical_json_sha256, file_sha256
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from integrations.runtime.build_single_flight_program import (
     build_local_frontend_program, load_initial_state, _resolve_standalone_dynamic_field_bank,

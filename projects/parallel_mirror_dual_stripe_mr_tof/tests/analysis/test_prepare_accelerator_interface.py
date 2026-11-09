@@ -8,7 +8,7 @@ import copy
 
 from msplatform.execution.inputs import freeze_file
 from msplatform.backends.comsol import static_field_binding as field_binding_module
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from integrations.workflows.accelerator_interface.prepare import (
     CONFIG, ION_PROCESSOR, load_selection, verified_reference,
     validate_execution_contract, finalize_interface, prepare_interface,

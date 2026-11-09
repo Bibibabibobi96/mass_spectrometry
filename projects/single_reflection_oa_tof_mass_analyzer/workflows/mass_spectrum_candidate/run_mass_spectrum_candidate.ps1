@@ -726,14 +726,14 @@ $outputs += @(
   (Join-Path $resultDir 'mass_detector_landing_comparison.png')
 )
 $manifestArgs = @(
-  (Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),
+  '-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
   '--run-config',$runConfigPath,'--manifest',$manifestPath,'--status','success',
   '--software','SIMION 2020','--software','COMSOL 6.4 via MATLAB R2025b'
 )
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest creation failed.' }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath
+& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifestPath
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
 $runRecordComplete = $true
 Write-Output "MASS_SPECTRUM_CANDIDATE=PASS RUN_ID=$RunId PARTICLES=$totalParticles"

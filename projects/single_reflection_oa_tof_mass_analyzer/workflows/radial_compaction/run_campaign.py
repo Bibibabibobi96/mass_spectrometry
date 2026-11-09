@@ -40,9 +40,9 @@ from msplatform.execution.inputs import freeze_file, python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from common.contracts.verify_run_manifest import verify_record
+from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME, require_completed_terminal_publication
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from common.host_resource_python import run_heavy_function, run_managed_python_process
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from msplatform.backends.simion.native_completion import require_one_fly_completion

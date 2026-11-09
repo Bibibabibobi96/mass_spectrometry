@@ -16,7 +16,7 @@ from unittest import mock
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from msplatform.execution.run_capacity_lifecycle import register_writing, seal_checkpoint
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from msplatform.execution.solver_review_retirement import (
     LEGACY_INITIALIZATION_SUMMARY,
     RetirementError,

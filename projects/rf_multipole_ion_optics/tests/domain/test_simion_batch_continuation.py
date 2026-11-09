@@ -1,5 +1,7 @@
 """Exercise RF predecessor identity and whole-batch replay without SIMION."""
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import hashlib
 import shutil
@@ -11,7 +13,7 @@ import sys
 from pathlib import Path
 
 from msplatform.contracts.machine_contracts import ContractError
-from common.contracts.write_run_manifest import build_run_manifest
+from msplatform.execution.manifest_publication import build_run_manifest
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from msplatform.execution.run_capacity_lifecycle import register_writing
 from projects.rf_multipole_ion_optics.runtime.simion_batch_continuation import prepare
@@ -168,7 +170,7 @@ if(-not$caught){throw 'Actual selector error was swallowed'}
                 (parent / "summary.json").write_text(json.dumps({"schema_version": 1,
                     "run_id": parent.name, "status": "checkpoint"}), encoding="utf-8")
                 (parent / "run_manifest.json").write_text(json.dumps(build_run_manifest(
-                    parent / "run_config.json", "checkpoint")), encoding="utf-8")
+                    parent / "run_config.json", "checkpoint", retention_api=_manifest_retention_api)), encoding="utf-8")
                 script = r"""
 $ErrorActionPreference='Stop'
 . (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
@@ -274,7 +276,7 @@ exit 0
                         "outputs": [str(path) for path in (log, state, summary)]}), encoding="utf-8")
                     outputs.extend(parent / path for path in (log, state, summary, receipt))
                 def publish():
-                    value = build_run_manifest(parent / "run_config.json", "failed", output_paths=outputs)
+                    value = build_run_manifest(parent / "run_config.json", "failed", output_paths=outputs, retention_api=_manifest_retention_api)
                     (parent / "run_manifest.json").write_text(json.dumps(value), encoding="utf-8")
                 complete(2)
                 publish()
@@ -392,7 +394,7 @@ try{
                 return [owner / path for path in (receipt, log, state, summary)]
             outputs = complete(1)
             def publish() -> None:
-                manifest = build_run_manifest(parent / "run_config.json", "failed", output_paths=outputs)
+                manifest = build_run_manifest(parent / "run_config.json", "failed", output_paths=outputs, retention_api=_manifest_retention_api)
                 (parent / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             publish()
             partial = prepare(child, parent, ["rf_on"], "compact", False)
@@ -407,7 +409,7 @@ try{
             child_config["inputs"]["continuation_predecessor_manifest"] = str(parent / "run_manifest.json")
             (child / "run_config.json").write_text(json.dumps(child_config), encoding="utf-8")
             child_outputs = complete(2, child)
-            child_manifest = build_run_manifest(child / "run_config.json", "failed", output_paths=child_outputs)
+            child_manifest = build_run_manifest(child / "run_config.json", "failed", output_paths=child_outputs, retention_api=_manifest_retention_api)
             (child / "run_manifest.json").write_text(json.dumps(child_manifest), encoding="utf-8")
             grand = root / "20261029_120002__sim__simion__grand"
             shutil.copytree(child / "inputs", grand / "inputs")

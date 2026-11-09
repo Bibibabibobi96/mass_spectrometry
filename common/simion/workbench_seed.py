@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from common.contracts.artifact_retention import classify_file
+from msplatform.execution.retention import classify_file
 from msplatform.execution.inputs import freeze_file
-from common.contracts.verify_run_manifest import verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import verify_record
+from msplatform.execution.retention import file_record
 
 
 def freeze_workbench_seed(run: Path, repo: Path) -> dict:

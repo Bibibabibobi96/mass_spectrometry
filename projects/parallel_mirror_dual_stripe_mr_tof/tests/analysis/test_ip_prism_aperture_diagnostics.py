@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.write_run_manifest import file_record
+from msplatform.execution.retention import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_aperture_diagnostics as d
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_distance_study as study
 

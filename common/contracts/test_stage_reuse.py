@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
 import json
 import os
 import tempfile
@@ -368,7 +370,7 @@ class StageReuseTest(unittest.TestCase):
                 manifest_path = self.parent / "run_manifest.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 manifest.update(schema_version=2, artifact_retention=dict(retention))
-                from common.contracts.artifact_retention import classify_file
+                from msplatform.execution.retention import classify_file
                 for record in manifest["outputs"]:
                     record["retention_role"] = classify_file(Path(record["path"]), bytes_count=record["bytes"])
                 if scenario == "wrong_output_role":
@@ -430,7 +432,7 @@ class StageReuseTest(unittest.TestCase):
             )
 
     def test_v2_live_receipt_preserves_the_existing_retention_contract(self) -> None:
-        from common.contracts.write_run_manifest import build_run_manifest
+        from msplatform.execution.manifest_publication import build_run_manifest
 
         retention = {"policy_version": 1, "class": "solver_review", "reason": "software stage receipt fixture"}
         config = {"schema_version": 2, "run_id": PARENT_ID, "project": PROJECT,
@@ -438,7 +440,7 @@ class StageReuseTest(unittest.TestCase):
         self._write_json(self.parent_config, config)
         self._write_summary("running", "success")
         manifest = build_run_manifest(self.parent_config, "interrupted", output_paths=self._all_outputs(),
-                                      extra_fields={"lifecycle_state": "provisional"})
+                                      extra_fields={"lifecycle_state": "provisional"}, retention_api=_manifest_retention_api)
         self.assertEqual(manifest["schema_version"], 2)
         self._write_json(self.parent / "run_manifest.json", manifest)
         receipt = write_stage_receipt(self.parent, project=PROJECT, stage_id=STAGE,

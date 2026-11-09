@@ -208,15 +208,15 @@ $summary = [ordered]@{
 $summaryPath = Join-Path $OutputDir 'summary.json'
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
-$manifestWriter = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
-$manifestVerifier = Join-Path $repoRoot 'common\contracts\verify_run_manifest.py'
+$manifestWriter = 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
+$manifestVerifier = 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
 $manifestArguments = @($manifestWriter,'--run-config',$runConfigPath,'--manifest',(Join-Path $OutputDir 'run_manifest.json'),'--status','success','--software','SIMION 2020','--output',$summaryPath,'--output',$summaryCsv,'--output',$ionFile,'--output',(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),'--output',(Join-Path $runtimeDir 'oatof_ideal_grounded.lua'),'--output',(Join-Path $runtimeDir 'source_formal_run_manifest.json'),'--output',(Join-Path $runtimeDir 'source_formal_SHA256SUMS.csv'))
 foreach ($row in $rows) {
   $manifestArguments += @('--output',(Join-Path $OutputDir ($row.case_id + '.log')),'--output',(Join-Path $OutputDir ($row.case_id + '.stderr.log')),'--output',$row.particle_csv)
 }
 & $python @manifestArguments
 if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
-& $python $manifestVerifier (Join-Path $OutputDir 'run_manifest.json')
+& $python -c $manifestVerifier (Join-Path $OutputDir 'run_manifest.json')
 if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
 $runRecordComplete = $true
 Write-Host "SIMION_FIELD_IDEALIZATION=PASS output=$OutputDir"

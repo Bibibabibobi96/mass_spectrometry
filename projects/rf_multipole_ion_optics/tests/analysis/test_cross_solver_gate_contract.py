@@ -277,12 +277,18 @@ class CrossSolverLifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake_repo = root / "repo"
-            verifier = fake_repo / "common" / "contracts" / "verify_run_manifest.py"
-            verifier.parent.mkdir(parents=True)
+            for package in ('msplatform','msplatform/execution','msplatform/backends','msplatform/backends/simion'):
+                directory = fake_repo/'src'/package
+                directory.mkdir(parents=True, exist_ok=True)
+                (directory/'__init__.py').write_text('',encoding='utf-8')
+            verifier = fake_repo/'src/msplatform/execution/manifest_verification.py'
             verifier.write_text(
-                "print('RUN_MANIFEST_VERIFY=PASS fake-verifier')\n",
+                "def main(*, retention_api):\n    print('RUN_MANIFEST_VERIFY=PASS fake-verifier')\n",
                 encoding="utf-8",
             )
+            (fake_repo/'src/msplatform/backends/simion/native_completion.py').write_text(
+                "def retention_api():\n    raise AssertionError('stdout-only fixture does not evaluate policy')\n",
+                encoding='utf-8')
             artifact_root = root / "artifacts"
             for solver, role in (
                 ("comsol", "rf_quadrupole_comsol_run_config"),
@@ -301,6 +307,7 @@ class CrossSolverLifecycleTests(unittest.TestCase):
                 {
                     "RF_LIFECYCLE_SUPPORT": str(LIFECYCLE_SUPPORT),
                     "RF_FAKE_REPO": str(fake_repo),
+                    "PYTHONPATH": str(fake_repo/"src"),
                     "RF_ARTIFACT_ROOT": str(artifact_root),
                     "RF_PYTHON": sys.executable,
                 }

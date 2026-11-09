@@ -146,12 +146,12 @@ try {
     particle_fly_executed = $false
     formal_modified = $false
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-  & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') `
+  & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
     --run-config $runConfigPath --manifest $manifestPath --status success `
     --software 'SIMION 2020 no-GUI structure verifier' `
     --output $summaryPath --output $reportPath --output $stdoutPath --output $stderrPath
   if ($LASTEXITCODE -ne 0) { throw 'Registration manifest generation failed.' }
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifestPath `
+  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifestPath `
     --require-status success --require-local-run-config --require-run-id $RunId `
     --require-project $providerProject --require-mode simion_layout_template_build
   if ($LASTEXITCODE -ne 0) { throw 'Registration manifest verification failed.' }
@@ -168,7 +168,7 @@ try {
     formal_modified = $false
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
   try {
-    & $python (Join-Path $repoRoot 'common\contracts\write_run_manifest.py') `
+    & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
       --run-config $runConfigPath --manifest $manifestPath --status failed --output $summaryPath
   } catch { }
   throw

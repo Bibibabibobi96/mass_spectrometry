@@ -1,4 +1,6 @@
 """Real lease CRUD on two roots; metadata only, no solver or payload scan."""
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 import json
 from pathlib import Path
 import shutil
@@ -10,7 +12,8 @@ from unittest.mock import patch
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
-from common.contracts.write_run_manifest import build_run_manifest, file_record
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
 from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,7 +71,7 @@ class CrossRootProtectionTests(unittest.TestCase):
             inputs={}, capacity_ledger_lifecycle=dict(schema_version=1, enabled=True,
                 artifact_root=str(root), light_evidence_budget_bytes=1024))), encoding="utf-8")
         manifest = run / "run_manifest.json"
-        manifest.write_text(json.dumps(build_run_manifest(config, "success")), encoding="utf-8")
+        manifest.write_text(json.dumps(build_run_manifest(config, "success", retention_api=_manifest_retention_api)), encoding="utf-8")
         return run, dict(manifest_record=file_record(manifest), protected_paths=[str(run)], protected_cache_keys=[])
 
     def test_source_owner_uses_bound_metadata_and_rejects_incomplete_or_conflicting_evidence(self):
@@ -94,13 +97,13 @@ class CrossRootProtectionTests(unittest.TestCase):
             config = json.loads(config_path.read_text())
             config["paths"] = dict(artifact_root=str(target))
             config_path.write_text(json.dumps(config), encoding="utf-8")
-            manifest.write_text(json.dumps(build_run_manifest(config_path, "success")), encoding="utf-8")
+            manifest.write_text(json.dumps(build_run_manifest(config_path, "success", retention_api=_manifest_retention_api)), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "path context and capacity owner differ"):
                 resolve_consumed_run_capacity_owner(file_record(manifest))
             config.pop("paths")
             config.pop("capacity_ledger_lifecycle")
             config_path.write_text(json.dumps(config), encoding="utf-8")
-            manifest.write_text(json.dumps(build_run_manifest(config_path, "success")), encoding="utf-8")
+            manifest.write_text(json.dumps(build_run_manifest(config_path, "success", retention_api=_manifest_retention_api)), encoding="utf-8")
             legacy = file_record(manifest)
             self.assertEqual(resolve_consumed_run_capacity_owner(legacy, consumer_artifact_root=source_root)["artifact_root"], str(source_root.resolve()))
             with self.assertRaisesRegex(ValueError, "cross-root source has no frozen capacity owner"):

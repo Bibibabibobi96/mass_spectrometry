@@ -19,11 +19,11 @@ from msplatform.execution.resources import resource_path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.artifact_retention import classify_file
+from msplatform.execution.retention import classify_file
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
 from msplatform.execution.clock_authority import validate_clock_authority
-from common.contracts.verify_run_manifest import record_path
+from msplatform.io.manifest_records import record_path
 from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_count_policy import (
     validate_standard_particle_count,
@@ -243,7 +243,7 @@ def _native_field_binding(run: Path, config: dict, parent: Path, repo: Path) -> 
     if "Fast adjust Refining completed" not in (parent/"logs/refine.log").read_text(encoding="utf-8-sig"):
         raise ValueError("native field source lacks completed Refine evidence")
     family = [parent/"simion"/("processor.pa"+suffix) for suffix in ["#", *map(str, range(16)), "-surf"]]
-    arguments = [sys.executable, "-m", "common.contracts.verify_run_manifest", str(manifest_path), "--require-project", PROJECT, "--require-status", manifest["status"], "--consumer-projection-id", "ion_processor_native_field_v1"]
+    arguments = [sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(manifest_path), "--require-project", PROJECT, "--require-status", manifest["status"], "--consumer-projection-id", "ion_processor_native_field_v1"]
     required_inputs = {(parent/relative).resolve() for relative in
                        ("simion/processor.gem", "inputs/numerics.json", "inputs/resolved_model.json")}
     selected_inputs = set()
