@@ -20,7 +20,7 @@ from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
-from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import validate_source
+from msplatform.components.rf_multipole.source_validation import validate_source
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from common.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent

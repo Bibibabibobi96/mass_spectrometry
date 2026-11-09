@@ -359,7 +359,7 @@ try{
                     inputs[name] = str(path)
                 inventory = run / "inputs/code_inventory.json"
                 source_code = ["projects/rf_multipole_ion_optics/runtime/simion_particle_source.py",
-                    "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
+                    "src/msplatform/components/rf_multipole/source_validation.py",
                     "projects/rf_multipole_ion_optics/core/interface_geometry.py",
                     "common/simion/particle_source.py", "src/msplatform/contracts/particle_physics.py"]
                 inventory.write_text(json.dumps({"files": [

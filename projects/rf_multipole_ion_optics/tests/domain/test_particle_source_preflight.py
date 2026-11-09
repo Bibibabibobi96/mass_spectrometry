@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +22,7 @@ from msplatform.contracts.particle_physics import (
 )
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
-from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import (
+from msplatform.components.rf_multipole.source_validation import (
     COLUMNS,
     load_validated_source,
     load_release_spec,
@@ -235,7 +236,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
             frozen = Path(temporary) / "snapshot"
             for relative in (
                 "common/contracts", "common/simion", "common/ion_release",
-                "projects/rf_multipole_ion_optics/runtime",
+                "projects/rf_multipole_ion_optics/runtime", "src/msplatform",
             ):
                 shutil.copytree(
                     repo / relative,
@@ -258,7 +259,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from projects.rf_multipole_ion_optics.runtime import particle_source_preflight as preflight
+from msplatform.components.rf_multipole import source_validation as preflight
 from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
 from common.ion_release import mt19937_disk_cone_rf_phase as sampler
 assert Path(preflight.__file__).resolve().is_relative_to(Path.cwd().resolve())
@@ -273,12 +274,18 @@ with patch.object(sampler,'generate_mt19937_disk_cone_rf_phase_states',wraps=sam
   assert 'mass=524' in fly
   assert count==(100 if first is None else last-first+1)
  assert generate.call_count==1
+assert all(Path(module.__file__).resolve().is_relative_to(Path.cwd().resolve())
+           for name,module in sys.modules.items() if name == "msplatform" or name.startswith("msplatform."))
 print('DETACHED_RELEASE=PASS SAMPLES=1')
 """
             result = subprocess.run(
-                [sys.executable, "-B", "-c", code],
+                [sys.executable, "-I", "-S", "-B", "-c",
+                 "import sys,json; sys.path.extend(json.loads(sys.argv[2])); "
+                 "sys.path[:0]=[sys.argv[1]+'/src',sys.argv[1]]; " + code,
+                 str(frozen), json.dumps(list(dict.fromkeys(
+                     sysconfig.get_path(name) for name in ("purelib", "platlib"))))],
                 cwd=frozen,
-                env={**os.environ, "PYTHONPATH": str(frozen)},
+                env={**os.environ, "PYTHONPATH": os.pathsep.join((str(frozen / "src"), str(frozen)))},
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -287,6 +294,17 @@ print('DETACHED_RELEASE=PASS SAMPLES=1')
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("DETACHED_RELEASE=PASS SAMPLES=1", result.stdout)
+
+            (frozen / "src/msplatform/contracts/particle_count.py").unlink()
+            missing = subprocess.run(
+                [sys.executable, "-I", "-S", "-B", "-c",
+                 "import sys; sys.path.insert(0,sys.argv[1]); "
+                 "import msplatform.components.rf_multipole.source_validation", str(frozen / "src")],
+                cwd=frozen, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("msplatform.contracts.particle_count", missing.stderr)
+
 
     def test_shell_choice_does_not_change_source_projection(self) -> None:
         request = design_request(segmentation={"strategy": "off"})

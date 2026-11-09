@@ -361,12 +361,6 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     REPOSITORY_ROOT / "projects/rf_multipole_ion_optics/core/interface_geometry.py",
                     code_root / "projects/rf_multipole_ion_optics/core/interface_geometry.py",
                 ),
-                (
-                    REPOSITORY_ROOT
-                    / "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
-                    code_root
-                    / "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
-                ),
             )
             copies += tuple((REPOSITORY_ROOT / relative, code_root / relative)
                 for relative in enumerate_python_sources(REPOSITORY_ROOT,

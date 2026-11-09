@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from common.contracts.particle_count_policy import validate_positive_particle_count
+from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.ion_release.mt19937_disk_cone_rf_phase import IDEAL_TRANSPORT_STRATEGY
 from msplatform.ion_release.release import generate_release_states

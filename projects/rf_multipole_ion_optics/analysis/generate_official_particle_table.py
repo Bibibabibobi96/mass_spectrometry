@@ -15,12 +15,12 @@ from typing import Any
 import numpy as np
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from common.contracts.particle_count_policy import validate_positive_particle_count
+from msplatform.contracts.particle_count import validate_positive_particle_count
 from common.ion_release.numpy_ion11_box import (
     render_numpy_ion11_box_table,
     sample_numpy_ion11_box_latent,
 )
-from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import COLUMNS
+from msplatform.components.rf_multipole.source_validation import COLUMNS
 
 
 SEED = 20260716

@@ -115,7 +115,7 @@ canonical CSV列固定为：
 particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_state
 ```
 
-[`particle_source_preflight.py`](../runtime/particle_source_preflight.py)在商业软件启动前验证列、单位、ID、有限值、
+[`source_validation.py`](../../../src/msplatform/components/rf_multipole/source_validation.py)在商业软件启动前验证列、单位、ID、有限值、
 时钟、释放面、质量、电荷和动能，并绑定 CSV 与 resolved SHA。家族母样本、允许前缀、精确路径与
 SHA 由项目 `particle_source_profiles.json` 绑定；粒子数等级由公共机器政策定义。
 

@@ -24,7 +24,10 @@ from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
 from msplatform.execution.clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
-from common.contracts.particle_count_policy import validate_positive_particle_count, validate_standard_particle_count
+from msplatform.contracts.particle_count import validate_positive_particle_count
+from common.contracts.particle_count_policy import (
+    validate_standard_particle_count,
+)
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
 from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec

@@ -614,7 +614,7 @@ try {
         'common.ion_release.numpy_ion11_box',
         'projects.rf_multipole_ion_optics.core',
             'projects.rf_multipole_ion_optics.core.interface_geometry',
-            'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'
+            'msplatform.components.rf_multipole.source_validation'
         ) -ForbiddenRoots @($repoRoot,$projectRoot)
 
     $ionEntry = @($bundleArtifacts | Where-Object {

@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import COLUMNS
+from msplatform.components.rf_multipole.source_validation import COLUMNS
 from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
 from common.simion.resource_profile import publish_resource_profile
 
@@ -1099,7 +1099,7 @@ exit 0
             self.assertNotIn(legacy, source)
         self.assertIn("projects.rf_multipole_ion_optics.runtime.design_profile", source)
         self.assertIn("projects.rf_multipole_ion_optics.core.compile_design_request", source)
-        self.assertIn("projects.rf_multipole_ion_optics.runtime.particle_source_preflight", source)
+        self.assertIn("msplatform.components.rf_multipole.source_validation", source)
 
     def test_typed_mode_is_forwarded_to_both_solver_compilers(self) -> None:
         for runner_name in (

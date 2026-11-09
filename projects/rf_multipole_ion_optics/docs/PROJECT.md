@@ -1,5 +1,14 @@
 # RF多极杆离子光学项目状态
 
+## Installed RF source validation
+
+The complete source validator, release helpers and CLI now have one implementation in
+`msplatform.components.rf_multipole.source_validation`. Active callers and frozen source selections
+use that installed owner; the project runtime implementation has been removed. CSV byte identity,
+complete original particle IDs, species, energy, release and explicit volume receipt checks retain
+their existing meaning. This ownership migration does not grant solver or scientific qualification.
+
+
 P4 frozen-source verification now copies the canonical scientific package instead of the retired
 particle-physics bridge. Its real CLI runs with `-I -S`, explicit dependency directories and checks
 that every loaded platform module comes from the frozen tree. The full-package mutation test keeps

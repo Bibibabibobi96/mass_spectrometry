@@ -22,7 +22,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_simion_solver_numerics
-from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import load_release_spec
+from msplatform.components.rf_multipole.source_validation import load_release_spec
 
 
 def _load(path: Path) -> dict[str, Any]:

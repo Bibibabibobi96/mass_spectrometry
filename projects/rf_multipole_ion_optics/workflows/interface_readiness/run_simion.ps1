@@ -216,7 +216,7 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'common.ion_release.numpy_ion11_box',
         'projects.rf_multipole_ion_optics.core',
         'projects.rf_multipole_ion_optics.core.interface_geometry',
-        'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'
+        'msplatform.components.rf_multipole.source_validation'
     ) -ForbiddenRoots @($repoRoot,$projectRoot)
 $frozenParticlePolicy = Get-FrozenPythonPackageFile `
     -Package $frozenPythonPackage -RelativePath `
@@ -292,7 +292,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Frozen paired particle source bundle binding failed.' }
     $bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
     $preflightArguments = @(
-        '-m','projects.rf_multipole_ion_optics.runtime.particle_source_preflight',
+        '-m','msplatform.components.rf_multipole.source_validation',
         '--source',$particlePath,
         '--resolved-design',$frozenResolved,
         '--source-family',$frozenSourceFamily,
@@ -490,7 +490,7 @@ Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -CaseName 'interface_r
     -Path $runConfig.inputs.simion_fly_physics -SourcePackage $frozenPythonPackage -ProgramSourcePath $programSource `
     -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig) `
     -SourceRelativePaths @('projects/rf_multipole_ion_optics/runtime/simion_particle_source.py',
-        'projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py',
+        'src/msplatform/components/rf_multipole/source_validation.py',
         'projects/rf_multipole_ion_optics/core/interface_geometry.py',
         'common/simion/particle_source.py','src/msplatform/contracts/particle_physics.py',
         'common/contracts/particle_count_policy.py','common/contracts/particle_count_policy.json')

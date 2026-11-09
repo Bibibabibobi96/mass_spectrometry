@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from msplatform.contracts.particle_count import validate_positive_particle_count
 from common.contracts.particle_count_policy import (
     load_particle_count_policy,
-    validate_positive_particle_count,
     validate_prefix_particle_sources,
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev

@@ -233,7 +233,7 @@ try {
             'msplatform.contracts.particle_physics',
             'common.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
-            'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'
+            'msplatform.components.rf_multipole.source_validation'
         ) -ForbiddenRoots @($repoRoot,$projectRoot) -ProbeOnly
     $runConfiguration = [ordered]@{
         schema_version=2
@@ -281,7 +281,7 @@ try {
             'msplatform.contracts.particle_physics',
             'common.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
-            'projects.rf_multipole_ion_optics.runtime.particle_source_preflight'
+            'msplatform.components.rf_multipole.source_validation'
         ) -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null
     if (-not (Test-Path -LiteralPath $comparison -PathType Leaf) -or
         -not (Test-Path -LiteralPath $census -PathType Leaf)) {

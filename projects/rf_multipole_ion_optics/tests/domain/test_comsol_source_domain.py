@@ -13,8 +13,8 @@ import sys
 import tempfile
 import unittest
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from projects.rf_multipole_ion_optics.runtime import (
-    particle_source_preflight as source_api,
+from msplatform.components.rf_multipole import (
+    source_validation as source_api,
 )
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
     resolve_runtime_profile,
@@ -200,12 +200,12 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
             output = root / "not-created/metadata.json"
             resolved.write_text(json.dumps(self.resolved), encoding="utf-8")
             env = os.environ.copy()
-            env["PYTHONPATH"] = str(REPO)
+            env["PYTHONPATH"] = os.pathsep.join((str(REPO / "src"), str(REPO)))
             result = subprocess.run(
                 [
                     sys.executable,
                     "-B",
-                    str(Path(source_api.__file__)),
+                    "-m", "msplatform.components.rf_multipole.source_validation",
                     "--source",
                     str(self.source),
                     "--resolved-design",

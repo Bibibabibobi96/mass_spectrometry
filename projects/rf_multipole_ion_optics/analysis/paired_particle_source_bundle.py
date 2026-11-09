@@ -16,13 +16,13 @@ import numpy as np
 
 from msplatform.contracts import particle_physics
 from common.contracts.file_identity import file_sha256 as sha256
+from msplatform.contracts.particle_count import validate_positive_particle_count
 from common.contracts.particle_count_policy import (
     POLICY_PATH,
     load_particle_count_policy,
-    validate_positive_particle_count,
 )
 from common.ion_release.numpy_ion11_box import sample_numpy_ion11_box_latent
-from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import COLUMNS, validate_source
+from msplatform.components.rf_multipole.source_validation import COLUMNS, validate_source
 
 
 BUNDLE_SCHEMA_VERSION = 1

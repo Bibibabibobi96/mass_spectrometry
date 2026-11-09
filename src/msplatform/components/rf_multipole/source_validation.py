@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.particle_count_policy import validate_positive_particle_count
-from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations, transport_numerical_domain
+from msplatform.contracts.particle_count import validate_positive_particle_count
+from msplatform.components.rf_multipole.interface_geometry import transport_observations, transport_numerical_domain
 
 COLUMNS = [
     "particle_id",
@@ -32,8 +32,8 @@ ENERGY_BOUND_TOLERANCE_EV = 2e-9
 
 def load_release_spec(path: Path, resolved: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Validate a complete planar release authority without generating states."""
-    from common.ion_release.release import validate_release_spec
-    from common.ion_release.mt19937_disk_cone_rf_phase import STRATEGY
+    from msplatform.ion_release.release import validate_release_spec
+    from msplatform.ion_release.mt19937_disk_cone_rf_phase import STRATEGY
 
     data = path.read_bytes()
     spec = json.loads(data.decode("utf-8-sig"))
@@ -61,7 +61,7 @@ def materialize_source_release(
     spec_path: Path, source_path: Path, receipt_path: Path, resolved: dict[str, Any]
 ) -> None:
     """Generate once from the frozen authority; never overwrite a run input."""
-    from common.ion_release.release import materialize_release
+    from msplatform.ion_release.release import materialize_release
 
     if source_path.exists() or receipt_path.exists():
         raise ValueError("refuse to overwrite a materialized source release")

@@ -363,7 +363,7 @@ F5与continuous03的已发布inputs选择规范正文／资源，不证明其余
 |`projects/rf_multipole_ion_optics/core/connector_geometry.py`|`msplatform.components.rf_multipole.connector_geometry`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
 |`projects/rf_multipole_ion_optics/core/electrode_topology.py`|`msplatform.components.rf_multipole.electrode_topology`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
 |`projects/rf_multipole_ion_optics/core/face_sections.py`|`msplatform.components.rf_multipole.face_sections`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|RF所有者；最迟P4|
-|`projects/rf_multipole_ion_optics/core/interface_geometry.py`|`msplatform.components.rf_multipole.interface_geometry`|`projects/rf_multipole_ion_optics/analysis/`：`analyze_comsol_transport_metrics.py`、`analyze_source_model_comparison.py`、`generate_official_particle_table.py`、`numerical_observables.py`、`stationary_field_sampling.py`、`transport_diagnostics.py`<br>`projects/rf_multipole_ion_optics/core/`：`component_port.py`、`family_contract.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`finite_extraction_context.py`、`particle_source_preflight.py`、`simion_batch_continuation.py`、`simion_particle_source.py`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_comsol.ps1`、`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_simion.ps1`|RF所有者；最迟P4|
+|`projects/rf_multipole_ion_optics/core/interface_geometry.py`|`msplatform.components.rf_multipole.interface_geometry`|`projects/rf_multipole_ion_optics/analysis/`：`analyze_comsol_transport_metrics.py`、`analyze_source_model_comparison.py`、`generate_official_particle_table.py`、`numerical_observables.py`、`stationary_field_sampling.py`、`transport_diagnostics.py`<br>`projects/rf_multipole_ion_optics/core/`：`component_port.py`、`family_contract.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`finite_extraction_context.py`、`simion_batch_continuation.py`、`simion_particle_source.py`<br>`projects/rf_multipole_ion_optics/workflows/interface_readiness/`：`run_comsol.ps1`、`run_simion.ps1`<br>`projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_simion.ps1`|RF所有者；最迟P4|
 |`projects/rf_multipole_ion_optics/core/round_rod_geometry.py`|`msplatform.components.rf_multipole.round_rod_geometry`|`common/`：`gate_catalog.json`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/analysis/`：`resolve_geometry.py`<br>`projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/`：`run_axisymmetric_gas_flow.ps1`<br>`projects/dual_pressure_rectilinear_ion_processor/analysis/`：`guide_interface.py`|RF所有者；最迟P4|
 |`projects/rf_multipole_ion_optics/runtime/simion_numerics.py`|`msplatform.backends.simion`|`projects/rf_multipole_ion_optics/runtime/`：`runtime_profile.py`|RF所有者；最迟P4|
 |`projects/rf_multipole_ion_optics/simion/assembly_interface.py`|`msplatform.backends.simion`|`integrations/workflows/multipole_ip/`：`prepare.py`|RF所有者；最迟P4|
@@ -419,7 +419,7 @@ integration所有者负责组合入口、source/clock、程序与冻结资源声
 每行目录前缀与列出的文件名组合为完整路径，不表示整个目录或通配范围。排除测试、历史与测试辅助文件；
 同一文件可能消费多座桥，数量不相加解释为独立消费者。各类责任由对应项目／集成／公共模块所有者承担。
 
-`common.ion_release`（15个生产Python文件）：源策略、生成、物化与读回。
+`common.ion_release`（14个生产Python文件）：源策略、生成、物化与读回。
 
 - `integrations/workflows/local_frontend/`：`prepare.py`。
 - `integrations/workflows/single_reflection_flight/`：`prepare.py`。
@@ -428,7 +428,6 @@ integration所有者负责组合入口、source/clock、程序与冻结资源声
 - `projects/orthogonal_accelerator/analysis/`：`component_focus_analysis.py`、`component_focus_workflow.py`。
 - `projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`bunch_source_and_schedule.py`、`execution_binding.py`。
 - `projects/rf_multipole_ion_optics/analysis/`：`generate_official_particle_table.py`、`generate_rf_multipole_family_mother_sample.py`、`paired_particle_source_bundle.py`。
-- `projects/rf_multipole_ion_optics/runtime/`：`particle_source_preflight.py`。
 - `projects/rf_multipole_ion_optics/workflows/mass_filter_reference/`：`run_finite_length.py`。
 
 退出条件：上述调用者迁为直接规范API，并保留对应科学、失败与冻结回归后移除桥，最迟P4。

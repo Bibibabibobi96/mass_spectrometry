@@ -44,7 +44,6 @@ RELATIVE_PATHS = (
     r"common\ion_release\numpy_ion11_box.py",
     r"projects\rf_multipole_ion_optics\core\__init__.py",
     r"projects\rf_multipole_ion_optics\core\interface_geometry.py",
-    r"projects\rf_multipole_ion_optics\runtime\particle_source_preflight.py",
 )
 RELATIVE_PATHS += tuple(enumerate_python_sources(
     REPO_ROOT, package_roots=['src/msplatform'], provider_root='src/msplatform',
@@ -65,7 +64,7 @@ REQUIRED_MODULES = (
     "common.ion_release.numpy_ion11_box",
     "projects.rf_multipole_ion_optics.core",
     "projects.rf_multipole_ion_optics.core.interface_geometry",
-    "projects.rf_multipole_ion_optics.runtime.particle_source_preflight",
+    "msplatform.components.rf_multipole.source_validation",
 )
 GATE_VALIDATOR_RELATIVE_PATH = (
     r"projects\rf_multipole_ion_optics"

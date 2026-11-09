@@ -13,7 +13,7 @@ from typing import Any
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.execution.inputs import freeze_file
 from common.contracts.strict_json import load_json_object, require_number
-from common.contracts.particle_count_policy import validate_positive_particle_count
+from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_physics import AMU_KG
 from common.contracts.verify_run_manifest import record_path
 from msplatform.io.manifest_records import require_completed_terminal_publication

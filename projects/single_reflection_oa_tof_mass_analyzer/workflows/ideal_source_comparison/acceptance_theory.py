@@ -18,7 +18,7 @@ import numpy as np
 
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from msplatform.contracts.machine_contracts import load_json
-from common.contracts.particle_count_policy import validate_positive_particle_count
+from msplatform.contracts.particle_count import validate_positive_particle_count
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import DesignDomainError, prepare_source_quadrature
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_experiment import (
     accepted, exact_population_moments, midpoint_population, source_at_point,

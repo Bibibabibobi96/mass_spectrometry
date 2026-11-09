@@ -1116,7 +1116,7 @@ $comsolRunFailure=$null
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-    $preflightArguments=@('-m','projects.rf_multipole_ion_optics.runtime.particle_source_preflight',
+    $preflightArguments=@('-m','msplatform.components.rf_multipole.source_validation',
       '--source',$particleSource,'--resolved-design',$resolved,'--output',$sourceMetadata,'--solver','comsol')
     if($sourceFamily){
       $preflightArguments+=@('--source-family',$sourceFamily,
