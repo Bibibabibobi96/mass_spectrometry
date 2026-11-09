@@ -1,4 +1,4 @@
-"""Compile a provided multipole exit port from one frozen resolved design."""
+"""Freeze and validate native RF mechanical-exit observations over complete mothers."""
 
 from __future__ import annotations
 
@@ -11,12 +11,19 @@ from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.machine_contracts import ContractError
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.clock_authority import validate_clock_authority
-from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as build_assembly_interface
-from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain, transport_observations
+from msplatform.components.rf_multipole.interface_geometry import transport_numerical_domain, transport_observations
 
+
+
+PARTICLE_STATE_COLUMNS = [
+    "particle_id", "event", "status", "terminal_reason", "time_us", "elapsed_time_us",
+    "rf_phase_rad", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
+    "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV",
+    "radial_position_mm", "divergence_angle_deg", "max_rod_radius_mm",
+]
 
 
 def prepare_exit_observation_inputs(run: Path, resolved: Mapping[str, Any], *, design_profile_id: str, cell_z_mm: float) -> dict[str, Any]:

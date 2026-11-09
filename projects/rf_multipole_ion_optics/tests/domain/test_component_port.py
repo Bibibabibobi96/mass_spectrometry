@@ -7,11 +7,8 @@ from pathlib import Path
 import unittest
 from msplatform.contracts.machine_contracts import ContractError
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
-from projects.rf_multipole_ion_optics.core.component_port import (
-    build_assembly_interface,
-    prepare_exit_observation_inputs,
-    validate_exit_observations,
-)
+from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
+from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs, validate_exit_observations
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view

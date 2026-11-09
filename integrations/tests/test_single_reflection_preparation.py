@@ -206,7 +206,7 @@ def scientific_preparation_fixture(root, *, local=False, recorded_birth=False, p
     Existing source, geometry, numerical and clock fixtures are preserved;
     only the versioned provider interfaces and native labeling are changed.
     """
-    from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+    from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
     from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import project_side_opening, resolve_accelerator_geometry
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
@@ -494,7 +494,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 self.assertFalse((run/'inputs/frontend.gem').exists())
 
     def test_retired_provider_schema_is_rejected_without_mutating_input(self):
-        from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+        from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
         from integrations.tests.test_single_reflection_geometry import multipole_source
 
         current = multipole_source('octupole')

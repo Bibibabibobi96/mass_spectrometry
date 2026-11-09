@@ -38,6 +38,8 @@ from msplatform.contracts.particle_state import write_component_particle_state_c
 from msplatform.assembly.electrode_binding import validate_electrode_bindings, ElectrodeKey
 from msplatform.contracts import machine_contracts
 from msplatform import execution
+from msplatform.workflows.multipole_ip.prepare import prepare as prepare_multipole_ip, load_request as load_multipole_ip_request
+from msplatform.backends.simion import rf_observations
 
 root = pathlib.Path.cwd()
 deployment = dict(schema_version=1, role='execution_environment',
@@ -91,7 +93,8 @@ for name, module in tuple(sys.modules.items()):
         assert origin.is_relative_to(pathlib.Path(sys.prefix).resolve()), (name, origin)
         assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name, origin)
         origins[name] = str(origin)
-assert {'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
+assert {'msplatform.workflows.multipole_ip.prepare', 'msplatform.backends.simion.rf_observations',
+        'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.analysis.pulse_selection',
         'msplatform.contracts.particle_state', 'msplatform.assembly.electrode_binding',
@@ -576,6 +579,34 @@ example_path = pathlib.Path(msplatform.examples.__file__).with_name('rf_oatof_fu
 # Exercise the real installed workflow with three explicit outside-tree input bundles.
 from msplatform.workflows.single_reflection_flight import prepare as sfi_prepare
 workflow_modes = []
+# Execute the actual installed handoff with explicit external producer data.
+mpip_request = pathlib.Path(fixture['multipole_ip_request'])
+mpip_run = root / ('multipole-ip-' + sys.argv[2])
+(mpip_run/'inputs').mkdir(parents=True)
+mpip_receipt = prepare_multipole_ip(mpip_request, mpip_run)
+assert (mpip_receipt['mother_count'], mpip_receipt['exit_count']) == (2, 1)
+assert mpip_receipt['execution_scope'] == 'prepare_only_no_solver'
+mpip_states = load_component_particle_state_csv(mpip_run/'results/multipole_ip/source_states.csv')
+assert len(mpip_states.rows) == 1 and mpip_states.rows[0]['particle_id'] == 2
+assert mpip_states.rows[0]['particle_birth_time_us'] == 2 * 1e-7 * 1e6
+assert mpip_states.rows[0]['particle_weight'] == 1.
+assert rf_observations.PARTICLE_STATE_COLUMNS[0] == 'particle_id'
+import msplatform.workflows.multipole_ip.prepare as mpip_module
+assert pathlib.Path(mpip_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+assert mpip_module.SCHEMA.is_file()
+mpip_schema_backup = mpip_module.SCHEMA.with_suffix('.missing')
+mpip_module.SCHEMA.rename(mpip_schema_backup)
+try:
+    # The canonical validator caches previously loaded schemas; a fresh process
+    # is the actual incomplete-installation boundary, before that cache exists.
+    import subprocess
+    missing = subprocess.run([sys.executable, '-I', '-c',
+        'from pathlib import Path;import sys;from msplatform.workflows.multipole_ip.prepare import load_request;'
+        'load_request(Path(sys.argv[1]))', str(mpip_request)], cwd=root, capture_output=True, timeout=30)
+    assert missing.returncode != 0 and b'request.schema.json' in missing.stderr, missing.stderr
+finally:
+    mpip_schema_backup.rename(mpip_module.SCHEMA)
+
 for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
     (prepared_run/'inputs').mkdir(parents=True)
@@ -801,6 +832,14 @@ class InstalledScientificCoreTests(unittest.TestCase):
         return dict(preparation=str(preparation),workbench=str(workbench),run=str(case.run),log=str(case.log),
                     expected=collect_log(case.preparation,case.workbench,case.run,case.log))
 
+    def multipole_ip_probe_fixture(self) -> str:
+        from integrations.tests.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
+        fixture = MultipoleIPPreparationTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        write_json(fixture.request_path, fixture.request)
+        return str(fixture.request_path)
+
     def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
         from msplatform.io.manifest_records import file_record
         from integrations.tests.test_single_reflection_preparation import (
@@ -951,6 +990,9 @@ class InstalledScientificCoreTests(unittest.TestCase):
             source = root / 'source'
             source.mkdir()
             tracked = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=REPO_ROOT, timeout=30).decode('utf-8').split('\0')
+            for name in tuple(environment):
+                if name.upper().startswith('GIT_'):
+                    environment.pop(name)
             for name in filter(None, tracked):
                 if not (REPO_ROOT / name).is_file():
                     continue
@@ -984,7 +1026,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
             spec = halton_spec(7)
             from msplatform.ion_release.release import generate_release_states
             from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-            from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+            from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
             from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
             from msplatform.assembly.resolve_assembly import compile_assembly_layout
             request = design_request('octupole')
@@ -1097,6 +1139,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
+                                              multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')

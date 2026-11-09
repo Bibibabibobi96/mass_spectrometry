@@ -425,7 +425,7 @@ import csv, json, pathlib, sys
 sys.path[:0] = json.loads(sys.argv[2])
 from msplatform.analysis import particle_census as c
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
-from projects.rf_multipole_ion_optics.core.component_port import validate_exit_observations
+from msplatform.backends.simion.rf_observations import validate_exit_observations
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 source, state = pathlib.Path("mother.csv"), pathlib.Path("terminal.csv")
 source.write_text("particle_id,birth_time_s\\n31,0\\n7,0\\n")

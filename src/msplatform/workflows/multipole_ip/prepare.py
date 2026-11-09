@@ -20,20 +20,24 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_cha
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 from msplatform.contracts.clock import ClockIdentity, age_us, seconds_to_microseconds
 from msplatform.assembly.handoff import HandoffClock, HandoffMother, HandoffSelection, prepare_handoff_states
-from common.contracts.verify_run_manifest import record_path, verify_record
-from common.contracts.write_run_manifest import file_record
+from msplatform.io.manifest_records import record_path, verify_record as _verify_record
+from functools import partial
+from msplatform.io.manifest_records import file_record as _file_record
+from msplatform.execution.retention import classify_file
+
+file_record = partial(_file_record, retention_classifier=classify_file)
+verify_record = partial(_verify_record, retention_classifier=classify_file)
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from common.integration.resolve_assembly import derive_assembly_scope
-from projects.rf_multipole_ion_optics.core.component_port import (
-    build_assembly_interface, validate_exit_observations,
-)
-from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
+from msplatform.assembly.resolve_assembly import derive_assembly_scope
+from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
+from msplatform.backends.simion.rf_observations import validate_exit_observations
+from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_handoff import FATE_COLUMNS
 from msplatform.backends.simion.transport_result import load_transport_producer_result
 
-SCHEMA = Path(__file__).resolve().parents[2] / "config/schemas/multipole_ip_request.schema.json"
+SCHEMA = Path(__file__).with_name("request.schema.json")
 FRAME = "dual_pressure_ion_processor_local_v1"
 
 
@@ -261,12 +265,91 @@ def prepare(request_path: Path, run: Path) -> dict[str, Any]:
     return receipt
 
 
+def _prepare_managed(session, *, request: dict, author_record: dict) -> dict:
+    """Run the existing preparation in the sole owner's new package."""
+    from msplatform.execution.recorded_file_removal import write_json_atomic
+    run = session.artifact_run_dir
+    request_path = session.declare_file(run / "inputs/multipole_ip_request.json", "required_evidence")
+    verify_record("author multipole/IP request", author_record)
+    session.add_input("author_request", author_record)
+    write_json_atomic(request_path, request)
+    session.add_input("request", file_record(request_path, "required_evidence"))
+    for name in ("source", "receiver"):
+        original = request[name]["manifest"]
+        verify_record(name + " manifest", original)
+        session.add_input(name + "_manifest", file_record(Path(original["path"]), "required_evidence"))
+    receipt = prepare(request_path, run)
+    for name in ("clock_authority", "instrument_epoch", "parent_composition_plan"):
+        session.add_input(name, file_record(run / "inputs" / (name + ".json"), "required_evidence"))
+    output = run / "results/multipole_ip"
+    outputs = []
+    for name in ("composition_plan.json", "mother_census.json", "mother_fates.csv", "source_states.csv",
+                 "ip_injected_source.json", "preparation_receipt.json"):
+        path = output / name
+        if name == "source_states.csv" and receipt["exit_count"] == 0:
+            continue
+        if not path.is_file():
+            raise ValueError("Multipole/IP preparation output is missing: " + name)
+        session.declare_file(path, "required_evidence")
+        outputs.append(str(path))
+    verify_record("unchanged author multipole/IP request", author_record)
+    return dict(status="success", summary=receipt, output_paths=outputs, required_output_paths=outputs,
+                retention_preserve_paths=[], manifest_extra_fields={})
+
+
+def prepare_managed(request_path: Path, *, context, run_id: str | None = None) -> dict:
+    """Publish real-exit state preparation without an IP simulation or new owner.
+
+    Machine deployment and the preparation engineering policy are explicit.
+    The historical 16 MiB commitment is a selectable engineering profile value,
+    never a science restriction or a second machine ledger.
+    """
+    from datetime import datetime
+    from uuid import uuid4
+    from msplatform.execution.completion import no_particle_batch_completion_api
+    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.stage_policy import read_stage_policy
+    request_path = Path(request_path).resolve(strict=True)
+    author_record = file_record(request_path, "required_evidence")
+    request = load_request(request_path)
+    verify_record("author multipole/IP request", author_record)
+    stage, budget = read_stage_policy(context, "prepare_multipole_ip", required_roles=("required_evidence",))
+    if stage.get("runtime", {}):
+        raise ValueError("Multipole/IP preparation has no runtime overrides")
+    return run_managed_stage(context,
+        descriptor=dict(project="instrument_assembly", mode="multipole_ip_preparation", software=["Python 3.11"]),
+        run_id=run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + "__analysis__python__multipole-ip-" + uuid4().hex[:12],
+        payload=dict(action="prepare_multipole_ip", request=request, stage_policy=stage),
+        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"], commitment_inputs=[budget],
+        source_references=[dict(manifest_record=request[name]["manifest"],
+            protected_paths=[str(Path(request[name]["manifest"]["path"]).parent)]) for name in ("source", "receiver")],
+        retention=stage["artifact_retention"], expected_operation_ids=(), operation_dependencies={},
+        action=partial(_prepare_managed, request=request, author_record=author_record),
+        action_record=file_record(Path(__file__).resolve(), "required_evidence"),
+        completion_api=no_particle_batch_completion_api)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
-    parser.add_argument("--run", type=Path, required=True)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--run", type=Path, help="Existing managed run; preparation only, no owner publication")
+    target.add_argument("--environment", type=Path, help="Explicit saved machine deployment")
+    parser.add_argument("--workspace", type=Path)
+    parser.add_argument("--profile")
+    parser.add_argument("--run-id")
     args = parser.parse_args()
-    print(json.dumps(prepare(args.request, args.run), allow_nan=False))
+    if args.run is not None:
+        if args.workspace is not None or args.profile is not None or args.run_id is not None:
+            parser.error("--run does not accept managed deployment/run options")
+        result = prepare(args.request, args.run)
+    else:
+        if args.workspace is None or args.profile is None:
+            parser.error("--environment requires --workspace and --profile")
+        from msplatform.execution.context import load_environment
+        result = prepare_managed(args.request, context=load_environment(args.environment,
+            workspace=args.workspace, profile=args.profile), run_id=args.run_id)
+    print(json.dumps(result, allow_nan=False))
 
 
 if __name__ == "__main__":

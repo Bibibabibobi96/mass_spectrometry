@@ -20,6 +20,9 @@ param(
   [string]$IonProcessorRunPath='',
   [string]$MultipoleIpRequestPath='',
   [string]$MultipoleIpRunId='',
+  [string]$MultipoleIpEnvironmentPath='',
+  [string]$MultipoleIpWorkspace='',
+  [string]$MultipoleIpEngineeringProfile='',
   [string]$IonProcessorRunId='',
   [string]$IonProcessorConfigurationDirectory='',
   [string]$IonProcessorFieldRunPath='',
@@ -114,7 +117,7 @@ function Assert-MultipoleIpRecoveryRequest {
   $code=@'
 import sys
 from pathlib import Path
-from integrations.workflows.multipole_ip.prepare import load_request
+from msplatform.workflows.multipole_ip.prepare import load_request
 from common.contracts.verify_run_manifest import verified_successful_run_reference
 run, request = map(Path, sys.argv[1:])
 frozen = verified_successful_run_reference(run, 'inputs/multipole_ip_request.json', project='instrument_assembly', mode='multipole_ip_preparation')
@@ -275,8 +278,28 @@ function Invoke-JointWorkflow {
       $sourceRequest=(Resolve-Path -LiteralPath $MultipoleIpRequestPath).Path
       $ipConfiguration=(Resolve-Path -LiteralPath $IonProcessorConfigurationDirectory).Path
       $sourceRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$MultipoleIpRunId"
-      $sourceArguments=@{Request=$sourceRequest;RunId=$MultipoleIpRunId;RepoRoot=$repoRoot}
-      if($PythonExe){$sourceArguments.PythonExe=$PythonExe}
+      $sourceArguments=@{Request=$sourceRequest;RunId=$MultipoleIpRunId;PythonExe=$python;
+        EnvironmentPath=$MultipoleIpEnvironmentPath;Workspace=$MultipoleIpWorkspace;EngineeringProfile=$MultipoleIpEngineeringProfile}
+      if(-not$IonProcessorContinuationPredecessorManifestPath){
+        if(-not$MultipoleIpEnvironmentPath-or-not$MultipoleIpWorkspace-or-not$MultipoleIpEngineeringProfile){
+          throw 'New multipole/IP preparation requires explicit machine EnvironmentPath, Workspace and EngineeringProfile.'
+        }
+        $deploymentCheck=@'
+import pathlib,sys
+from msplatform.execution.context import load_environment
+context=load_environment(sys.argv[1],workspace=sys.argv[2],profile=sys.argv[3])
+if context.host_state_path.resolve()!=pathlib.Path(sys.argv[4]).resolve():
+    raise ValueError('Multipole/IP preparation must use the outer workflow shared host resource ledger')
+if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
+    raise ValueError('Multipole/IP preparation machine Python differs from the selected workflow Python')
+'@
+        & $python -B -c $deploymentCheck $MultipoleIpEnvironmentPath $MultipoleIpWorkspace $MultipoleIpEngineeringProfile ([string]$pathContext.host_resource_state_path)
+        if($LASTEXITCODE-ne0){throw 'Multipole/IP preparation deployment differs from the enclosing workflow.'}
+        $selectedArtifactRoot=Join-Path ([IO.Path]::GetFullPath($MultipoleIpWorkspace)) 'artifacts'
+        if([IO.Path]::TrimEndingDirectorySeparator($selectedArtifactRoot)-ine[IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($artifactRoot))){
+          throw 'The installed preparation workspace/artifacts must equal the outer workflow artifact root; custom roots require an explicit supported workspace.'
+        }
+      }
       if($IonProcessorContinuationPredecessorManifestPath){
         Assert-MultipoleIpRecoveryRequest -Run $sourceRun -Request $sourceRequest
       }else{

@@ -192,7 +192,7 @@ def scientific_inputs(sources, oatof, root, *, local=False, legacy_inputs=None):
     consumer gets verified file records, never author-module imports or paths.
     """
     from common.contracts.write_run_manifest import file_record
-    from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface as current_interface
+    from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as current_interface
     from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
     from projects.rf_multipole_ion_optics.simion.electrode_mapping import build_simion_electrode_map
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.electrode_topology import resolve_frontend_field_domain

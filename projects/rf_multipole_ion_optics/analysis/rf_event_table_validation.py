@@ -11,12 +11,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-PARTICLE_STATE_COLUMNS = [
-    "particle_id", "event", "status", "terminal_reason", "time_us", "elapsed_time_us",
-    "rf_phase_rad", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
-    "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV",
-    "radial_position_mm", "divergence_angle_deg", "max_rod_radius_mm",
-]
+from msplatform.backends.simion.rf_observations import PARTICLE_STATE_COLUMNS
 
 ENUMS = {
     "event": ["source", "rod_exit", "handoff", "terminal"],

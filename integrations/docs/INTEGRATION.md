@@ -466,6 +466,34 @@ RF的9³、N1 fresh＋reuse原生机制验收（66.228秒）只见[RF项目记�
 
 ## 真实多极杆→IP状态交接
 
+The installed owner is `msplatform.workflows.multipole_ip.prepare` and its adjacent
+`request.schema.json`; the repository Python bridge and old schema copy are retired.
+The PowerShell launcher requires `-Request -EnvironmentPath -Workspace
+-EngineeringProfile -PythonExe` and optional `-RunId`. Its selected environment
+names the existing shared host ledger and capacity/stage policies. The package's
+explicitly selectable `engineering_16mib.json` retains the former 16 MiB transient
+commitment; its other limits are engineering settings, not scientific defaults.
+The environment profile must reference the chosen policy path; there is no implicit
+profile or checkout lookup. Python callers may use `prepare_managed(..., context=...)`
+or pure `prepare(request_path, existing_managed_run)`; the CLI uses respectively
+`--environment --workspace --profile` or `--run`.
+
+FullJoint additionally requires `-MultipoleIpEnvironmentPath -MultipoleIpWorkspace
+-MultipoleIpEngineeringProfile` for a fresh MP/IP preparation. Its workspace/artifacts,
+selected Python and shared ledger must equal the enclosing workflow's actual context.
+A legacy independently configured artifact root is not supported by ExecutionContext;
+no root is silently redirected and no historical input is moved. Recovery of an
+already published preparation continues through its explicit existing record.
+
+
+Main integration validation passed 46 focused caller/owner tests and six frozen-provider/assembly
+checks. The five ordinary-install parents passed for wheel and sdist-rebuilt wheel; all 374
+package payloads match the reviewed source and both wheels byte-for-byte. The external
+consumer exercised sparse original identity, birth/weight and a fresh-process missing-schema
+rejection without author-source access. No IP Fly, GUI, performance or scientific
+qualification was run for this migration.
+
+
 [multipole_ip入口](../workflows/multipole_ip/execute.ps1)只准备真实出口到接收方的状态交接，
 schema 2请求显式引用来源／接收manifest、冻结父plan与可选local。保留原6D、物种、出生／到达时钟及母群；
 接收方设计与驱动继续归IP，不以旧出口分布或冷却前端代替真实多极杆源。

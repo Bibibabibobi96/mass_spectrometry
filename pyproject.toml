@@ -37,6 +37,7 @@ include = ["msplatform*"]
 namespaces = false
 
 [tool.setuptools.package-data]
+"msplatform.workflows.multipole_ip" = ["*.json"]
 "msplatform.contracts" = ["schemas/*.schema.json"]
 "msplatform.examples" = ["*.json"]
 "msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.schema.json"]

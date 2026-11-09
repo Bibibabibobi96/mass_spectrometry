@@ -1,6 +1,6 @@
 """Explicit v1 interface adapter for named legacy native consumers.
 
-The active scientific publisher is core.component_port. This adapter preserves
+The active scientific publisher is components.rf_multipole.assembly_interface. This adapter preserves
 old native identities for request-v9 readers; it is not a second topology.
 Exit after those consumers migrate, no later than P4.
 """

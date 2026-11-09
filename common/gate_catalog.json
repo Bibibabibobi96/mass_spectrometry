@@ -1424,6 +1424,14 @@
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "reason": "common_simion_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/multipole_ip/",
+          "reason": "canonical_multipole_ip_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/rf_observations.py",
+          "reason": "canonical_rf_exit_observation_changed"
         }
       ],
       "command": {
@@ -1625,6 +1633,14 @@
         {
           "regex": "^src/msplatform/results/(?:field_sources|single_reflection_source|single_reflection_continuation)\\.py$",
           "reason": "single_reflection_result_adapter_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/multipole_ip/",
+          "reason": "canonical_multipole_ip_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/rf_observations.py",
+          "reason": "canonical_rf_exit_observation_changed"
         }
       ],
       "command": {

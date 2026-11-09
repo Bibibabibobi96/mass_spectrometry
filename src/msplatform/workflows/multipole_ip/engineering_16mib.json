@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "role": "execution_stage_policy",
+  "stages": {
+    "prepare_multipole_ip": {
+      "limits": {
+        "wall_clock_seconds": 600,
+        "transient_run_directory_bytes": 16777216,
+        "process_tree_working_set_bytes": 1073741824,
+        "minimum_system_available_memory_bytes": 1048576,
+        "compact_final_retained_bytes": 16777216,
+        "automatic_retry_count": 0
+      },
+      "artifact_retention": {
+        "policy_version": 1,
+        "class": "compact",
+        "reason": null
+      }
+    }
+  }
+}

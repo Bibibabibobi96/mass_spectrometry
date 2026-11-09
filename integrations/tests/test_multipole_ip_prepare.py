@@ -15,14 +15,14 @@ import unittest
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from common.contracts.write_run_manifest import file_record
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-from projects.rf_multipole_ion_optics.core.component_port import prepare_exit_observation_inputs, validate_exit_observations
+from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs, validate_exit_observations
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from integrations.workflows.multipole_ip.prepare import FRAME, prepare
+from msplatform.workflows.multipole_ip.prepare import FRAME, prepare
 from msplatform.backends.simion.ip_handoff import load_injected_source
 
 REPO = Path(__file__).resolve().parents[2]
@@ -186,7 +186,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         self.assertEqual(plan["recipe"]["connections"], self.parent['recipe']["connections"])
 
     def test_one_pose_preserves_sparse_ids_species_birth_arrival_and_unknown_terminal(self):
-        from integrations.workflows.multipole_ip import prepare as handoff_adapter
+        from msplatform.workflows.multipole_ip import prepare as handoff_adapter
 
         self.assertEqual(handoff_adapter.prepare_handoff_states.__module__, "msplatform.assembly.handoff")
         receipt = self.execute()
@@ -466,7 +466,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             "sys.path[:0]=[str(snapshot/'src'),str(snapshot)]; "
             "from msplatform.execution.inputs import python_import_roots; "
             "sys.path[:0]=python_import_roots(snapshot); "
-            "from integrations.workflows.multipole_ip import prepare; "
+            "from msplatform.workflows.multipole_ip import prepare; "
             "from msplatform.backends.simion.ip_handoff import load_injected_source; "
             "assert Path(prepare.__file__).is_relative_to(Path.cwd()); "
             f"prepare.prepare(Path({str(self.request_path)!r}),Path({str(self.run)!r})); "

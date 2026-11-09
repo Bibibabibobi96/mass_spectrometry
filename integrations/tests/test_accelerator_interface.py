@@ -56,7 +56,7 @@ class AcceleratorInterfaceTests(unittest.TestCase):
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
-        from integrations.workflows.multipole_ip.prepare import load_request
+        from msplatform.workflows.multipole_ip.prepare import load_request
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             record = dict(path="producer/run_manifest.json", bytes=1, sha256="a" * 64)
@@ -82,7 +82,10 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-MultipoleIpRecoveryRequest'},$true)
 Invoke-Expression $definition.Extent.Text
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
+function Invoke-RunToolRootContext {param($RepoRoot,$Environment,$Operation)
+ $previous=$env:PYTHONPATH
+ try{$env:PYTHONPATH=(Join-Path $RepoRoot 'src')+[IO.Path]::PathSeparator+$RepoRoot;& $Operation}finally{$env:PYTHONPATH=$previous}
+}
 $repoRoot=$Repo;$python=$Python;$pathEnvironment=@{}
 Assert-MultipoleIpRecoveryRequest -Run $Run -Request $Request
 ''', encoding="utf-8")
@@ -194,7 +197,7 @@ if($summary.analysis_exit_code-ne2){throw 'wrong status'}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / "source_dispatch.ps1"
-            script.write_text(r'''param($Entry,$Root,$Scenario)
+            script.write_text(r'''param($Entry,$Root,$Scenario,$SelectedPython)
 $ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-JointWorkflow'},$true)
@@ -221,7 +224,10 @@ function Assert-CompletedIpScientificFailure {param($Run)
 }
 $script:calls=[Collections.Generic.List[string]]::new()
 function Invoke-JointOwnerStage {param($Script,$Arguments)
-  if($Arguments.ContainsKey('Request')){$script:calls.Add('source');return}
+  if($Arguments.ContainsKey('Request')){
+    if($Arguments.EnvironmentPath-ne$MultipoleIpEnvironmentPath-or$Arguments.Workspace-ne$Root-or$Arguments.EngineeringProfile-ne'prepare'-or$Arguments.PythonExe-ne$SelectedPython){throw 'explicit preparation deployment was not forwarded'}
+    $script:calls.Add('source');return
+  }
   if($Arguments.ContainsKey('InjectedSource')){
     $script:calls.Add('ip')
     if($Arguments.InjectedSource-ne(Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/mp/results/multipole_ip/ip_injected_source.json')){throw 'source package differs'}
@@ -254,6 +260,9 @@ function Invoke-JointOwnerStage {param($Script,$Arguments)
   $script:calls.Add('flight')
 }
 $workspaceRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$python=$SelectedPython;$pathContext=@{host_resource_state_path=(Join-Path $Root 'shared-host.sqlite3')}
+$MultipoleIpWorkspace=$Root;$MultipoleIpEngineeringProfile='prepare';$MultipoleIpEnvironmentPath=Join-Path $Root 'machine.json'
+@{schema_version=1;role='execution_environment';tools=@{python=$SelectedPython;powershell=(Get-Process -Id $PID).Path};policy=@{host_state_path=$pathContext.host_resource_state_path};profiles=@{prepare=@{stage_policy_path=(Join-Path $Root 'stages.json')}}}|ConvertTo-Json -Depth 6|Set-Content $MultipoleIpEnvironmentPath
 $MultipoleIpRequestPath=Join-Path $Root 'request.json';Set-Content $MultipoleIpRequestPath '{}'
 $MultipoleIpRunId='mp';$IonProcessorRunId='ip';$IonProcessorConfigurationDirectory=$Root;$IonProcessorFieldRunPath=''
 $ContinueOnIpScientificFailure=$Scenario-in@('negative','unsafe','seal-failure');$IonProcessorRunPath=''
@@ -266,12 +275,15 @@ if($Scenario-in@('resume','resume-failure','changed-request','field-conflict','p
   $IonProcessorContinuationPredecessorManifestPath=Join-Path $Root 'parent/run_manifest.json'
   Set-Content $IonProcessorContinuationPredecessorManifestPath 'PARENT_UNCHANGED'
 }
+if($Scenario-eq'missing-deployment'){$MultipoleIpEngineeringProfile=''}
+if($Scenario-eq'wrong-workspace'){$MultipoleIpWorkspace=Join-Path $Root 'other'}
+if($Scenario-eq'wrong-ledger'){$pathContext.host_resource_state_path=Join-Path $Root 'different-ledger.sqlite3'}
 if($Scenario-eq'field-conflict'){$IonProcessorFieldRunPath='other-field'}
 if($Scenario-eq'prepared-conflict'){$PreparedJointWorkbenchRunPath='ready'}
 if($Scenario-eq'old-design-conflict'){$PreparedInterfaceRunPath='old-source-design'}
 $failed=$false;$message='';try {Invoke-JointWorkflow} catch {$failed=$true;$message=$_.Exception.Message}
-$expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('field-conflict','prepared-conflict','old-design-conflict')){''}elseif($Scenario-eq'changed-request'){'source_reuse'}elseif($Scenario-eq'resume-failure'){'source_reuse,ip'}elseif($Scenario-eq'resume'){'source_reuse,ip,design,field,binding,flight'}elseif($Scenario-in@('unsafe','no-policy','seal-failure')){'source,ip'}else{'source,ip,design,field,binding,flight'}
-if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure','resume-failure','changed-request','field-conflict','prepared-conflict','old-design-conflict'))){throw "unexpected sequence $script:calls failure=$failed error=$message"}
+$expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('field-conflict','prepared-conflict','old-design-conflict','missing-deployment','wrong-workspace','wrong-ledger')){''}elseif($Scenario-eq'changed-request'){'source_reuse'}elseif($Scenario-eq'resume-failure'){'source_reuse,ip'}elseif($Scenario-eq'resume'){'source_reuse,ip,design,field,binding,flight'}elseif($Scenario-in@('unsafe','no-policy','seal-failure')){'source,ip'}else{'source,ip,design,field,binding,flight'}
+if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure','resume-failure','changed-request','field-conflict','prepared-conflict','old-design-conflict','missing-deployment','wrong-workspace','wrong-ledger'))){throw "unexpected sequence $script:calls failure=$failed error=$message"}
 if($Scenario-eq'resume-failure'){
   if($message-ne'IP_RECOVERY_SENTINEL'){throw 'IP recovery error was replaced'}
   if($script:failedStage-ne'ion_processor_flight'-or$script:failedOwner-ne(Join-Path $Root 'artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/ip')){throw 'IP recovery failure reported a different stage owner'}
@@ -279,11 +291,11 @@ if($Scenario-eq'resume-failure'){
 if($IonProcessorContinuationPredecessorManifestPath-and(Get-Content $IonProcessorContinuationPredecessorManifestPath)-ne'PARENT_UNCHANGED'){throw 'Parent mutated'}
 Write-Output 'MP_IP_JOINT=PASS'
 ''', encoding="utf-8")
-            for scenario in ("normal", "zero", "negative", "unsafe", "no-policy", "seal-failure", "resume", "resume-failure", "changed-request", "field-conflict", "prepared-conflict", "old-design-conflict"):
+            for scenario in ("normal", "zero", "negative", "unsafe", "no-policy", "seal-failure", "resume", "resume-failure", "changed-request", "field-conflict", "prepared-conflict", "old-design-conflict", "missing-deployment", "wrong-workspace", "wrong-ledger"):
                 case = root / scenario
                 case.mkdir()
                 result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), scenario],
+                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), scenario, sys.executable],
                     cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("MP_IP_JOINT=PASS", result.stdout)
@@ -1291,62 +1303,42 @@ foreach($key in $before.Keys){if([Environment]::GetEnvironmentVariable($key)-cne
     def test_multipole_cli_uses_nondefault_root_and_preserves_parent_records(self):
         if not shutil.which("pwsh"):
             self.skipTest("PowerShell 7 required")
-        from integrations.tests.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
-        fixture = MultipoleIPPreparationTests()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        fixture.write_parent()
-        write_json(fixture.request_path, fixture.request)
-        repo = fixture.root / "repo"
-        _copy_path_consumer_repository(repo)
-        entry = repo / "integrations/workflows/multipole_ip/execute.ps1"
-        entry.parent.mkdir(parents=True, exist_ok=True)
+        from integrations.tests.test_multipole_ip_managed import ManagedMultipoleIPTests
+        helper = ManagedMultipoleIPTests()
+        fixture, context, selected = helper._fixture()
+        self.addCleanup(helper.doCleanups)
+        machine = fixture.root / "machine.json"
+        machine.write_text(json.dumps(dict(schema_version=1, role="execution_environment",
+            tools=dict(python=sys.executable, powershell=shutil.which("pwsh")),
+            policy=dict(host_state_path=str(context.host_state_path), capacity_policy_path=str(context.capacity_policy_path),
+                execution_root=str(context.execution_root)),
+            profiles=dict(prepare=dict(stage_policy_path=str(context.stage_policy_path))))), encoding="utf-8")
+        entry = fixture.root / "thin-cli/execute.ps1"
+        entry.parent.mkdir()
         shutil.copyfile(REPO / "integrations/workflows/multipole_ip/execute.ps1", entry)
-        # The real package, input freezer and scientific Python prepare execute.
-        # Capacity admission is the explicit inert boundary of this consumer test;
-        # public SourceReferences owns the cross-root validation/fault matrix.
-        support = repo / "common/contracts/run_artifact_support.ps1"
-        support.write_text(support.read_text(encoding="utf-8") + r"""
-function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$SourceReferences,$Owner)
- @{artifact_root=$ArtifactRoot;run=$RunDirectory;protected=@($ProtectedPaths);refs=@($SourceReferences)}|ConvertTo-Json -Depth 30|Set-Content $env:TEST_CAPACITY_CAPTURE
- return [pscustomobject]@{artifact_root=$ArtifactRoot}
-}
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$RemainingCommittedNewBytes) return @{session=$Session}}
-function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session)}
-function Apply-RunArtifactRetention {param($Python,$RepoRoot,$RunConfig) throw 'AFTER_REAL_MP_PREPARE'}
-function Complete-FailedRun {param($Python,$RepoRoot,$RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureStage)
- if($Reason-notmatch'AFTER_REAL_MP_PREPARE'){throw "UNEXPECTED_PREPARE_FAILURE:$Reason"}
-}
-""", encoding="utf-8")
-        selected = fixture.root / "selected-store"
-        from common.contracts.capacity_ledger import initialize_capacity_ledger
-        selected.mkdir()
-        initialize_capacity_ledger(selected, objects=[])
-        capture = fixture.root / "capacity.json"
-        parents = {str(path): path.read_bytes() for base in (fixture.source, fixture.receiver) for path in base.rglob("*") if path.is_file()}
-        host = os.environ.get("MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH", str(fixture.root / "host.sqlite3"))
-        environment = dict(os.environ, MASS_SPECTROMETRY_ARTIFACT_ROOT=str(selected),
-            MASS_SPECTROMETRY_EXECUTION_ROOT=str(fixture.root / "execution"),
-            MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=host, SIMULATION_PYTHON_EXE=sys.executable, TEST_CAPACITY_CAPTURE=str(capture))
+        parents = {str(path): path.read_bytes() for base in (fixture.source, fixture.receiver)
+                   for path in base.rglob("*") if path.is_file()}
+        environment = dict(os.environ, PYTHONPATH=str(REPO / "src"))
         result = subprocess.run(["pwsh", "-NoProfile", "-File", str(entry), "-Request", str(fixture.request_path),
             "-RunId", "20261031_180100__analysis__python__mp-root-test", "-PythonExe", sys.executable,
-            "-RepoRoot", str(repo)], env=environment, cwd=fixture.root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("AFTER_REAL_MP_PREPARE", result.stderr)
+            "-EnvironmentPath", str(machine), "-Workspace", str(context.workspace), "-EngineeringProfile", "prepare"],
+            env=environment, cwd=fixture.root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         run = selected / "projects/instrument_assembly/runs/20261031_180100__analysis__python__mp-root-test"
         self.assertTrue((run / "results/multipole_ip/preparation_receipt.json").is_file(), result.stdout + result.stderr)
         receipt = json.loads((run / "results/multipole_ip/preparation_receipt.json").read_text(encoding="utf-8"))
         self.assertEqual((receipt["mother_count"], receipt["exit_count"]), (2, 1))
         config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
-        self.assertEqual(config["paths"], dict(source_root=str(repo.resolve()), artifact_root=str(selected.resolve()),
-            execution_root=str((fixture.root / "execution").resolve()), host_resource_state_path=str(Path(host).resolve())))
-        actual = json.loads(capture.read_text(encoding="utf-8-sig"))
-        self.assertEqual(actual["artifact_root"], str(selected))
-        self.assertEqual(actual["protected"], [str(run)])
-        self.assertEqual([row["manifest_record"] for row in actual["refs"]],
+        self.assertEqual(config["paths"], dict(artifact_root=str(selected), execution_root=str(context.execution_root),
+            host_resource_state_path=str(context.host_state_path)))
+        actual = json.loads((run / "inputs/execution_request.json").read_text(encoding="utf-8"))["capacity"]
+        self.assertEqual(actual["committed_new_bytes"], 16777216)
+        self.assertEqual(actual["protected_paths"], [])
+        self.assertEqual([row["manifest_record"] for row in actual["source_references"]],
                          [fixture.request["source"]["manifest"], fixture.request["receiver"]["manifest"]])
-        self.assertEqual({str(path): path.read_bytes() for base in (fixture.source, fixture.receiver) for path in base.rglob("*") if path.is_file()}, parents)
-        self.assertFalse((repo.parent / "artifacts").exists())
+        for path, content in parents.items():
+            self.assertEqual(Path(path).read_bytes(), content)
+        self.assertFalse((entry.parent / "artifacts").exists())
 
     def test_interface_capacity_transports_explicit_parent_manifest_authority(self):
         if not shutil.which("pwsh"):

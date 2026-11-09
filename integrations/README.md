@@ -243,7 +243,7 @@ summary指向实际composition／scope和source provenance；canonical事件及�
 | OA／IP→MR接口准备与执行 | [accelerator_interface/execute.ps1](workflows/accelerator_interface/execute.ps1)，准备时明确提供者与参考run；`-FullJoint`按源链或prepared workbench分支执行 | [输入及设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
 | 已准备IP→MR飞行／分析 | [prepared_joint/execute.ps1](workflows/prepared_joint/execute.ps1)，准备run与观测合同 | [联合执行及Analysis](docs/INTEGRATION.md#已准备ipmr联合飞行) |
 | OA→MR | [oa_mr/execute.ps1](workflows/oa_mr/execute.ps1)，`-CompositionPlanPath`及可选`-LocalScopePath` | [支持范围与证据](docs/INTEGRATION.md#已准备ipmr联合飞行) |
-| 真实多极杆→IP状态准备 | [multipole_ip/execute.ps1](workflows/multipole_ip/execute.ps1)，`-Request` | [真实源／母群与负结果](docs/INTEGRATION.md#真实多极杆ip状态交接) |
+| 真实多极杆→IP状态准备 | [multipole_ip/execute.ps1](workflows/multipole_ip/execute.ps1)，explicit `-Request -EnvironmentPath -Workspace -EngineeringProfile -PythonExe` | [真实源／母群与负结果](docs/INTEGRATION.md#真实多极杆ip状态交接) |
 | OA共同静态场 | [paired_accelerator_static_field/execute.ps1](workflows/paired_accelerator_static_field/execute.ps1)，`-Request` | [prepared／solved恢复及资格](docs/INTEGRATION.md#共同场与有限脉冲) |
 | OA共同场有限脉冲 | [paired_accelerator_pulse/execute.ps1](workflows/paired_accelerator_pulse/execute.ps1)，`-Request`及显式来源 | [阶段／整批恢复与诊断](docs/INTEGRATION.md#共同场与有限脉冲) |
 

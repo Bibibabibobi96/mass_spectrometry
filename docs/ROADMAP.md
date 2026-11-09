@@ -126,6 +126,7 @@ software target and owner budgets remain OPEN; pending/cancelled CI is not accep
 | STEP导出／冷读 | `exporters`；CAD和独立几何检查 | 与后端并列消费完整Assembly，无默认GUI |
 | 结果读取／分析／比较 | `results`组合中立I/O与纯`analysis`；离线消费者 | 无隐藏重算／owner，缺失和篡改失败关闭 |
 | Named SFI preparation/pulse/collection | `workflows.single_reflection_flight`; canonical source/results/backend consumers | Installed slices delivered; remaining execution/continuation and affected final acceptance stay OPEN |
+| MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
 | 环境、恢复与原生查看 | `execution`／`applications`；运行owner与故障矩阵 | 一次部署、单一owner；历史action仅作数据语义读取 |
 | 能力查询 | 各规范操作的校验与显式声明；调用和查询共用分派 | 不再以私有planner签名建立第二套合同 |
 

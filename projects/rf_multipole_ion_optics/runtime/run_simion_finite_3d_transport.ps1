@@ -735,7 +735,7 @@ try{
   $exitPreparationCode=@'
 import json,sys
 from pathlib import Path
-from projects.rf_multipole_ion_optics.core.component_port import prepare_exit_observation_inputs
+from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs
 run,resolved=map(Path,sys.argv[1:3])
 print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_text(encoding='utf-8-sig')),design_profile_id=sys.argv[3],cell_z_mm=float(sys.argv[4])),allow_nan=False))
 '@
@@ -1416,7 +1416,7 @@ return config
       $mechanicalValidation=@'
 import json,sys
 from pathlib import Path
-from projects.rf_multipole_ion_optics.core.component_port import validate_exit_observations
+from msplatform.backends.simion.rf_observations import validate_exit_observations
 state,source,plan,output=map(Path,sys.argv[1:])
 report=validate_exit_observations(state,source,json.loads(plan.read_text(encoding='utf-8-sig')))
 output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf-8',newline='\n')

@@ -104,7 +104,7 @@ P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产�
 不由该功能证据推定全场、收敛或Formal资格。
 
 RF完整17列事件协议已迁至`analysis.rf_event_table_validation.validate_rf_event_table`，
-`core.component_port`直接消费该领域列合同；中立交接状态另归`msplatform.contracts.particle_state`。
+`msplatform.backends.simion.rf_observations`直接消费该领域列合同；中立交接状态另归`msplatform.contracts.particle_state`。
 `simion.ion11_source_adapter`分开ION11解码与完整6D变换：WB位置映为RF的(z,−y,x+offset)，
 速度仅旋转为(vz,−vy,vx)，时间与能量保持；原角度算序和最终数值不改，不是已证物理错误的修正。
 协议与提供者联合补验12项通过（1.460秒，无skip）；独立非零位置/速度/平移oracle及旧CLI桥保持原协议。
@@ -839,6 +839,14 @@ those are not the immutable published-cache protocol. Copying a published family
 This model-only slice neither changes that protocol nor retires the existing RF Program, field
 checkpoint, finite transport, interface or mass-filter workflows. No field/trajectory, GUI or
 scientific qualification is granted.
+
+### P4 installed mechanical-exit preparation
+
+`msplatform.backends.simion.rf_observations` owns the native RF event columns and
+mechanical-exit input/complete-mother validation. Active RF runners, IP admission,
+and the MP/IP workflow use this installed implementation; the root component_port
+bridge has retired. The native event-table CLI remains a separate migration item.
+This is a code/installation migration; no new RF Fly or scientific qualification.
 
 
 ## Independent RF fractional fields

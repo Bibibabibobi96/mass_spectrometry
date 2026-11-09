@@ -141,7 +141,7 @@ print('FROZEN_SRC_CORE=PASS')
             code = '''
 from pathlib import Path
 from integrations.workflows.accelerator_interface import prepare
-from integrations.workflows.multipole_ip import prepare as handoff
+from msplatform.workflows.multipole_ip import prepare as handoff
 from msplatform.contracts.machine_contracts import ContractError
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
 import tempfile
