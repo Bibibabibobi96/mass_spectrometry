@@ -174,7 +174,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
              patch(module + "._mirror_regions", return_value={"negative": [-300., -100.], "positive": [100., 300.]}), \
              patch(module + "._accelerator_geometric_exit_reference", autospec=True, return_value=None) as exit_reference, \
              patch(module + "._scalar_field_lua_fields", return_value=""), \
-             patch(module + "._collision_geometry_projection", return_value={}):
+             patch("msplatform.backends.simion.mrtof_observations._collision_geometry_projection", return_value={}):
             result = two_prism_simion_trial.materialize_trial(
                 contract_path=paths["contract"], accelerator_geometry_contract_path=paths["contract"],
                 trajectory_contract_path=paths["trajectory"], reviewed_contract_path=paths["contract"],
