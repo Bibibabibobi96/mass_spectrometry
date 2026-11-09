@@ -29,6 +29,9 @@ def _component_interface(provider: str, resolved: dict[str, Any], profile: str |
         projection = apply_side_opening(resolve_accelerator_geometry(resolved, variant_id="three_zone_square"),
                                        side_opening=resolved["mechanical_side_opening"])
         return resolve_assembly_interface(resolved, projection=projection, geometry_profile_id=profile)
+    if provider == "dual_cone_tandem_quadrupole":
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.assembly_interface import build_assembly_interface
+        return build_assembly_interface(resolved, geometry_profile_id=profile)
     raise ContractError(f"unsupported component provider for this installed slice: {provider}")
 
 
@@ -52,6 +55,13 @@ def _from_provider(provider: str, resolved: Mapping[str, Any], interface: Mappin
         expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
         if expected["resolved_design"] != design:
             raise ContractError("TOF resolved design differs from its source design documents")
+    if provider == "dual_cone_tandem_quadrupole":
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
+        if (source_design.get("role") != "dual_cone_tandem_quadrupole_geometry_baseline"
+                or source_design.get("schema_version") != 1
+                or source_design.get("project_id") != "dual_cone_tandem_quadrupole_ion_interface"
+                or resolve_geometry(dict(source_design)) != design):
+            raise ContractError("dual-cone resolved geometry differs from its explicit source baseline")
     return ResolvedComponent(provider, design, interface, source_design=source_design)
 
 
@@ -76,6 +86,11 @@ def resolve_component(request: Mapping[str, Any]) -> ResolvedComponent:
         from msplatform.components.single_reflection_oa_tof.provider import resolve_component as resolve
         result = resolve(design, geometry_profile_id=profile)
         resolved, interface = result["resolved_design"], result["assembly_interface"]
+    elif provider == "dual_cone_tandem_quadrupole":
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.assembly_interface import build_assembly_interface
+        resolved = resolve_geometry(design)
+        interface = build_assembly_interface(resolved, geometry_profile_id=profile)
     else:
         raise ContractError(f"unsupported component provider for this installed slice: {provider}")
     return _from_provider(provider, resolved, interface, source_design=design)

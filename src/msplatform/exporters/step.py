@@ -42,6 +42,9 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
         elif project=='single_reflection_oa_tof_mass_analyzer':
             if interface['variant_id']!='three_zone_square': raise ValueError('complete TOF STEP requires three_zone_square')
             provider='single_reflection_oa_tof';members=tof_members(resolved)
+        elif project=='dual_cone_tandem_quadrupole_ion_interface':
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry_members import iter_geometry_members
+            provider='dual_cone_tandem_quadrupole';members=iter_geometry_members(resolved)
         else: raise ValueError('STEP provider not implemented: '+project)
         _from_provider(provider,resolved,interface,source_design=sources[instance])
         transform=RigidTransform.from_contract(poses[instance])
@@ -66,13 +69,20 @@ def _finite(values):
 
 def _validate_shape(spec, *, surface=False):
     kind=spec.get('kind')
-    if kind=='union':
+    if kind in {'union','intersection'}:
         if not spec.get('parts'): raise ValueError('empty physical union')
         for part in spec['parts']: _validate_shape(part,surface=surface)
     elif kind=='difference':
         _validate_shape(spec['base'],surface=surface)
         if not spec['tools']: raise ValueError('empty Boolean tool list')
         for tool in spec['tools']: _validate_shape(tool,surface=surface)
+    elif kind=='revolved_profile':
+        points=spec.get('points_zr_mm',())
+        if len(points)<3 or any(len(point)!=2 for point in points): raise ValueError('revolved profile requires z/r pairs')
+        _finite([value for point in points for value in point])
+        if any(point[1]<0 for point in points): raise ValueError('revolved profile radius cannot be negative')
+        area=sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(points,(*points[1:],points[0]),strict=True))
+        if area==0: raise ValueError('revolved profile must enclose a nonzero section')
     elif kind=='box':
         _finite([*spec['center_mm'],*spec['size_mm']])
         if len(spec['center_mm'])!=3 or len(spec['size_mm'])!=3 or any(v<0 or (v==0 and not surface) for v in spec['size_mm']): raise ValueError('invalid box dimensions')
@@ -96,16 +106,20 @@ def _validate_shape(spec, *, surface=False):
 
 def _shape(cq, spec):
     kind=spec['kind']
-    if kind=='union':
+    if kind in {'union','intersection'}:
         parts=[_shape(cq,p) for p in spec['parts']]
         if not parts: raise ValueError('empty physical union')
         result=parts[0]
-        for part in parts[1:]: result=result.fuse(part)
+        for part in parts[1:]: result=result.fuse(part) if kind=='union' else result.intersect(part)
         return result
     if kind=='difference':
         result=_shape(cq,spec['base'])
         for tool in spec['tools']: result=result.cut(_shape(cq,tool))
         return result
+    if kind=='revolved_profile':
+        _validate_shape(spec)
+        # CadQuery workplane-local x/y are radial r / axial z on the XZ plane.
+        return cq.Workplane('XZ').polyline([(r,z) for z,r in spec['points_zr_mm']]).close().revolve(360,(0,0),(0,1)).val()
     if kind=='box':
         center,size=spec['center_mm'],spec['size_mm'];_finite([*center,*size])
         if min(size)<=0: raise ValueError('physical CAD box must have positive spans')
@@ -215,7 +229,7 @@ def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
                 tokens += [f'rod_{rod:04d}', f"rf_group_{row['electrode_group']}"]
             else:
                 tokens = [row['role']]
-        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator'}:
+        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole_ion_interface'}:
             tokens = identity.split('/')
         else:
             raise ValueError('STEP naming provider is unsupported: ' + project)

@@ -150,8 +150,48 @@ C0, no-output C0 registration rejection and registered gas-source preparation,
 with author trees denied; all 382 final payload members match that build/source.
 The complete five-method suite was not rerun for the guard. Native IOB/Refine/Fly,
 pose-qualified transport, stochastic trajectory equality, mesh precision,
-GUI and Formal evidence remain unperformed in this slice. Same-source dual-cone CAD/provider delivery
-remains separately OPEN; an IOB pose does not implement a CAD provider.
+GUI and Formal evidence remain unperformed in this slice. The separate CAD/provider implementation
+and its declared projection limits are recorded below; an IOB pose alone does not implement CAD.
+
+### Declared same-source CAD/provider
+
+The installed `dual_cone_tandem_quadrupole` provider derives its complete neutral
+interface and eleven metal members from the explicit source baseline. The existing
+Assembly/STEP pipeline applies a proper device pose once, without a PA embedding.
+Two conical shells, four ellipse rods, four round rods and the apertured plate
+retain seven groups identical to the existing prepared-model drive rows. The
+initial adapter's extra `rf` group-name token was a software identity mismatch;
+the corrected provider uses the original group identities, without changing drive
+values or geometry. Real aperture ports are derived from the first cone and
+outlet plate; no enclosure, flange, pump or unknown mechanical dimension is invented.
+The cones use the already-declared computational radial truncation, not a confirmed
+manufacturing outer diameter.
+
+The declared first-stage cone-following cut is fully specified by resolved
+`upstream_end_surface`; CAD represents it as a rod/cone intersection. Existing GEM
+C0 retains its flat upstream approximation. The component owns the shell profile,
+while the GEM renderer consumes that same profile with three exact unchanged
+text goldens. This is one author-design source with an explicit projection
+approximation, not a claim that STEP and C0 PA solids are equal.
+
+The final-group CPU managed export and separate cold reader passed with eleven
+valid solids, eleven XCAF product labels, fifteen analytic aperture/metal/cut
+probes and the existing serialization bound. The bounded software set passed
+41 parents / 119 outcomes in 38.030 s with no skips. No commercial solver,
+SolidWorks or GUI was invoked, and no manufacturing, field or Formal qualification
+is granted. A separate ordinary wheel built from the current production tree plus
+these exact CAD hunks passed actual managed export and a fresh cold reader with
+all 407 payload members matching source/build/site-packages before and afterward.
+Startup audit guards denied the author/build trees in the actual worker and reader;
+all recorded scientific module origins were site-packages. Removing the new member
+module in a separate negative installation rejected the component, without author
+fallback, and the exact fixture bytes were restored. These installed CPU checks
+are not a full Repository gate or commercial-solver acceptance.
+An earlier nested-GATE invocation failed owner finalization after its worker
+exported STEP; its failed result and held capacity lease are preserved, not
+rewritten as a successful published export. The corrected managed export is a
+distinct run using the actual outer workspace and its own GATE admission.
+See [CAD usage](CAD.md) for the profile and normal installed entrypoints.
 
 ### Independent managed stages and saved-field consumption
 
@@ -305,7 +345,8 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 | SIMION 几何编译 | 纯 GEM 编译可执行；历史 `gem2pa/refine` Prototype 证据保留，新原生执行因 fractional 缓存隔离阻断 |
 | SIMION 气体辅助轨迹 | 当前新执行 BLOCKED；历史 COMSOL场受管run `20260914_162400__sim__simion__dual-cone-comsol-field-n100` success且full manifest PASS，N=100中58个到达末端；均匀400 Pa控制run为0/100，但不是自然压降模型 |
 | 独立轨迹跨求解器闭合 | 未建立 |
-| CAD / GUI / Candidate / Formal | BLOCKED |
+| Declared CAD STEP / cold BREP | CPU managed and eleven-solid readback passed; profile limits below |
+| GUI / Candidate / Formal | BLOCKED |
 
 已完成的气流失败链、质量守恒与粒子统计保存在
 [原型记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。

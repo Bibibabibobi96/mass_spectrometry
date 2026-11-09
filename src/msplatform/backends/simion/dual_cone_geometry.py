@@ -35,14 +35,9 @@ def _load(path: Path, role: str) -> dict[str, Any]:
 
 
 def _cone_electrode(cone: dict[str, Any], electrode_id: int, radius: float) -> str:
-    z0 = float(cone["aperture_reference_z_mm"])
-    angle = math.radians(float(cone["half_angle_deg"]))
-    slope = math.tan(angle)
-    inner0 = float(cone["aperture_radius_mm"])
-    thickness = float(cone["wall_normal_thickness_mm"])
-    outer0 = inner0 + thickness / math.cos(angle)
-    inner_z1 = z0 + (radius - inner0) / slope
-    outer_z1 = z0 + (radius - outer0) / slope
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry_members import cone_shell_profile
+
+    (z0, outer0), (outer_z1, _), (inner_z1, _), (_, inner0) = cone_shell_profile(cone, radius)
     return (
         f"  e({electrode_id}) {{ rotate_y(-90) {{ revolve_xy() {{ polyline("
         f"{_number(z0)},{_number(outer0)},{_number(outer_z1)},{_number(radius)},"

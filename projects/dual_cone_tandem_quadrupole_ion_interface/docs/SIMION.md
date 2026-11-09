@@ -73,6 +73,10 @@ PA 数组的嵌入平移记录在 `simion_solver_numerics.json`；新的显式�
 `msplatform.backends.simion.dual_cone_geometry` 编译，杆几何直接复用
 `msplatform.backends.simion.rf_geometry.render_grouped_rod_array_gem`，项目不复制圆杆或椭圆杆公式。
 
+The declared CAD profile follows the resolved conical upstream cut; its
+implementation and limits are described in [CAD](CAD.md). The existing C0
+approximation below is unchanged and is not claimed shape-equivalent to that STEP.
+
 当前 C0 GEM 把椭圆杆入口暂时截为 `z=4.6 mm` 平面。真实“沿第二锥面切削”仍需项目级、经拓扑
 测试的 CSG mask；在它完成前，C0 只证明 GEM/PA 电极命名和粗几何可编译，不证明入口边缘场。
 

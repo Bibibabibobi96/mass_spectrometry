@@ -1065,6 +1065,7 @@
             ],
             "modules": [
               "common/contracts/test_geometry_members.py",
+              "common/contracts/test_dual_cone_cad.py",
               "common/contracts/test_step_export.py",
               "common/contracts/test_cad_execution.py"
             ],

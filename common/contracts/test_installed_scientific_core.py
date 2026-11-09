@@ -209,6 +209,22 @@ except ValueError as error:
 else:raise AssertionError('posed source accepted an unbound frame')
 source_world,_=dual_cone_transport.source_placement(cone['resolved'],cone['numerics'],cone['source_spec'],placement=placed_transform,source_to_device=registration)
 assert source_world.from_frame_id==cone['source_spec']['frame_id'] and source_world.to_frame_id=='installed_lab'
+from msplatform import components as dual_components, assembly as dual_assembly
+from msplatform.exporters.step import assembly_geometry_members as dual_cad_members, step_member_names as dual_cad_names
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import geometry_members as dual_member_owner, assembly_interface as dual_port_owner
+for module in (dual_member_owner,dual_port_owner):
+    assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+dual_component=dual_components.resolve_component(dict(provider_id='dual_cone_tandem_quadrupole',design=cone['baseline']))
+assert dual_component.resolved_design==cone['resolved']
+dual_recipe=dict(schema_version=1,role='assembly_recipe',integration_id='instrument_assembly',recipe_id='installed_dual_cone_cad',assembly_frame_id='installed_lab',position_tolerance_mm=1e-9,angular_tolerance_rad=1e-12,instances=[dict(instance_id='interface',project_id=dual_component.assembly_interface['project_id'],transform=placed_transform.to_contract())],connections=[])
+dual_instrument=dual_assembly.assemble(dual_recipe,{'interface':dual_component})
+dual_snapshot=dict(composition_plan=dual_instrument.composition_plan,components_resolved=dual_instrument.components_resolved,components_source=dual_instrument.components_source)
+dual_members=dual_cad_members(dual_snapshot)
+assert len(dual_members)==11 and len(dual_cad_names(dual_snapshot,dual_members))==11
+assert {row['electrode_group_id']for row in dual_members}=={row['electrode_group_id']for row in placed_model['native_drive_rows']}
+assert dual_component.port('axial_entry')['cross_section']['radius_mm']==1
+assert dual_component.port('axial_exit')['center_mm']==[0,0,110.72]
+
 rejected_c0=root/('cone-rejected-registration-'+sys.argv[2])
 try:
     dual_cone_transport.prepare_transport(rejected_c0,mode='c0_gem_smoke',

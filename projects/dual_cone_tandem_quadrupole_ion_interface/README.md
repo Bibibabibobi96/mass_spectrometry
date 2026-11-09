@@ -12,6 +12,9 @@ acceptance and remaining limits are recorded in [`PROJECT`](docs/PROJECT.md).
 Installed gas-flow operations and explicit deployment/profile usage are described in
 [`docs/COMSOL.md`](docs/COMSOL.md); project parameters remain explicit research inputs.
 
+Installed same-source declared CAD uses the `dual_cone_tandem_quadrupole` provider
+and the existing Assembly/STEP exporter; see [CAD usage and profile limits](docs/CAD.md).
+
 当前资格、参数解释与开放问题只以 [`docs/PROJECT.md`](docs/PROJECT.md) 为准。
 
 ## 固定阅读顺序
