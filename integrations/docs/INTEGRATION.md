@@ -336,7 +336,7 @@ composer读取，不代表物理磁盘流量或运行倍速。
 观察器明确报告直接原生根退出未知时保留该组临时输入，将精确目录附于原异常供owner处理；不执行
 输入清理，也不声称PowerShell退出后FileShare句柄仍然保持。
 
-局部OA与IP的穿面适配器直接消费[公共有界穿面内核](../../common/analysis/plane_crossings.py)，
+局部OA与IP的穿面适配器直接消费[公共有界穿面内核](../../src/msplatform/analysis/plane_crossings.py)，
 局部OA不再构造IP配置或调用IP穿面适配器。原生事件白名单、instance=1、寿命截断、同刻六维精确去重、
 脉冲后选择与原CSV／raw-log锚点仍由局部适配器保持；插值使用原mm／μs字段，z=0只取实测出口。
 公共内核只接受相邻记录夹持的正向事件，最大间隔为冻结采样间隔加最大步长，保留1e-12 μs既有判定余量。
@@ -349,7 +349,7 @@ composer读取，不代表物理磁盘流量或运行倍速。
 不借用IP显示插值，不由缺终态推断存活。legacy already_loss仅指非出口终态，实际图标为Non-exit terminal，
 不表示已证实撞壁。分类与出口比例保持完整原始母群及显式分母，缺观测不从分母移除。
 
-束宽、真角度发射度、时间相关与零场预测现直接调用[公共beam方法](../../common/analysis/beam_focus_diagnostics.py)，
+束宽、真角度发射度、时间相关与零场预测现直接调用[公共beam方法](../../src/msplatform/analysis/beam_focus_diagnostics.py)，
 不再从IP导入实现。局部源按现有生成合同显式全1权重；这不声明支持外来canonical非等权注入。
 固定出口群、各面缺测与全部原始ID保持；场内实际观测和出口后零场反事实继续分开，图只读prepared结果。
 图形保存复用[公共导出](../../src/msplatform/io/figure_export.py)，保持原PNG／SVG、190 DPI、白底和文件名，
@@ -870,3 +870,21 @@ semantics remain intact. These are software/recorded-analysis results, not new
 Fly/Refine, accuracy, image-byte equality or scientific qualification.
 Official CLOC 2.10, 982300b7 to this slice: total +136, production +54, tests +82,
 zero unclassified; full per-language counts and filter remain in task evidence.
+
+### Installed recorded-beam analysis
+
+Local/cooled recorded-beam adapters now consume the sole installed population,
+directed-crossing and beam/time-focus methods in `msplatform.analysis`. Frozen
+source and missing-kernel checks follow those same owners. Workflows still select
+the original mother, lifetime, clock and observation policy; this migration does
+not change trajectories or establish downstream focus qualification.
+
+All 53 original shared-kernel tests passed in the main checkout in 2.084 s.
+The three production files match the accepted checkpoint exactly, with all three
+old implementations absent. The integrated checkpoint passed 121 original
+algorithm/adapter/frozen-consumer tests in 91.966 s without skips, including actual
+IP frozen imports and missing-kernel rejection, and five combined ordinary-install
+tests in 258.968 s. Independent weighted/unknown/cohort/crossing comparisons retain
+the original scientific definitions; no native propagation was performed here.
+Official CLOC 2.10, e4fecc11 to this slice: total +2, production 0, tests +2,
+zero unclassified; full language counts/filter remain in task evidence.

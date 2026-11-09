@@ -78,7 +78,7 @@ class LocalFocusTests(unittest.TestCase):
         self.assertEqual({r["plane_z_mm"] for r in prepared["exit_time"]["plane_drift_predictions"]}, {0.})
 
     def test_public_beam_results_keep_explicit_equal_mother_weights(self):
-        from common.analysis import beam_focus_diagnostics as beam
+        from msplatform.analysis import beam_focus_diagnostics as beam
         from integrations.workflows.local_frontend import focus
         self.assertIs(focus.prepare_focus_diagnostics,beam.prepare_focus_diagnostics)
         prepared=self.prepare()

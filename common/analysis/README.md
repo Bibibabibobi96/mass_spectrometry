@@ -10,6 +10,11 @@
 本目录提供求解器无关的数值函数及已准备结果的图形导出，不读取项目配置或选择科学验收阈值。调用者负责母群、有效事件、
 单位、输入身份及资格；方法依据见[验证方法](../../docs/science/VALIDATION_METHODS.md)，项目结果归PROJECT或INTEGRATION。
 
+Recorded population moments, bounded directed plane crossings and beam/time-focus diagnostics now have
+sole installed owners `msplatform.analysis.population_moments`, `plane_crossings` and
+`beam_focus_diagnostics`. Their former common implementations are retired; callers retain selection,
+original identities, clock validation and qualification. No numerical policy or defaults changed.
+
 ## 安装后的时间峰形调用
 
 以下七点是软件示例，输入 TOF 使用 μs，输出时间宽度使用 ns；其共同钟与科学资格仍由调用方证明。
@@ -73,9 +78,9 @@ model、完整母群（含谱系）与原始钟；合法run-local路径不同不
 |---|---|---|
 | TOF直接峰宽、形状与bootstrap比较 | [peak_metrics.py](../../src/msplatform/analysis/peak_metrics.py)：`compute_time_peak_metrics`、`compute_peak_metrics`、`compare_peak_shapes`、`bootstrap_resolution_difference` | TOF用μs、质量用Da；至少3个有限、正值且有方差的到达时间；设置由调用方分析合同提供 |
 | 两份场样本完整配对、RMS差 | [field_comparison.py](field_comparison.py)：`merge_complete_samples`、`normalized_rms_difference_pct` | 键覆盖须一致且唯一；电场用V/m；近零参考的相对差可为null，不能当零误差 |
-| 多变量及二变量总体矩 | [population_moments.py](population_moments.py)：`population_moments`、`population_pair_moments` | 多变量输入为有限二维数组，行是已选择观测、列是变量；可显式传入严格正有限相对权重；ddof=0，不转换单位或筛选粒子；二变量接口仍为无权，常量相关系数为null |
-| 已选择束团的束宽、真角度发射度与零场预测 | [beam_focus_diagnostics.py](beam_focus_diagnostics.py)：`prepare_focus_diagnostics`、`prepare_time_focus_diagnostics`及prepared结果绘图 | 显式全母群ID→正相对权重；观察面及出口群由适配器确定；mm／μs、ddof=0；实际穿面与无场反事实分开 |
-| 有界定向穿面证据 | [plane_crossings.py](plane_crossings.py)：`iter_bounded_plane_crossings` | 复用已有`PhaseSpaceState/PlaneSurface`；位置mm、速度m/s、共同仪器时间μs；返回原anchor、夹持区间、alpha及观察到的穿越次数，不生成第二份状态表 |
+| 多变量及二变量总体矩 | [population_moments.py](../../src/msplatform/analysis/population_moments.py)：`population_moments`、`population_pair_moments` | 多变量输入为有限二维数组，行是已选择观测、列是变量；可显式传入严格正有限相对权重；ddof=0，不转换单位或筛选粒子；二变量接口仍为无权，常量相关系数为null |
+| 已选择束团的束宽、真角度发射度与零场预测 | [beam_focus_diagnostics.py](../../src/msplatform/analysis/beam_focus_diagnostics.py)：`prepare_focus_diagnostics`、`prepare_time_focus_diagnostics`及prepared结果绘图 | 显式全母群ID→正相对权重；观察面及出口群由适配器确定；mm／μs、ddof=0；实际穿面与无场反事实分开 |
+| 有界定向穿面证据 | [plane_crossings.py](../../src/msplatform/analysis/plane_crossings.py)：`iter_bounded_plane_crossings` | 复用已有`PhaseSpaceState/PlaneSurface`；位置mm、速度m/s、共同仪器时间μs；返回原anchor、夹持区间、alpha及观察到的穿越次数，不生成第二份状态表 |
 | 纵向多项式拟合与残差 | [longitudinal_fit.py](../../src/msplatform/analysis/longitudinal_fit.py)：`fit_longitudinal_polynomial` | z用mm、vz用mm/μs；调用方确认有限配对和可辨识阶数；残差sigma为ddof=1，不代表冷却或独立噪声 |
 | 按原粒子ID配对事件字段 | [particle_events.py](../../src/msplatform/analysis/particle_events.py)：`group_particle_events`、`iter_particle_event_fields` | 保留母群、事件顺序及数量差异；不生成ID、丢弃未知粒子或选择相等容差 |
 | 批量导出已准备图形 | [installed figure exporter](../../src/msplatform/io/figure_export.py)：`export_figures` | 调用者给定完整stem→figure、formats、dpi与facecolor；整批目的路径预检、独占新建，返回实际导出记录；不计算指标或创建图形 |

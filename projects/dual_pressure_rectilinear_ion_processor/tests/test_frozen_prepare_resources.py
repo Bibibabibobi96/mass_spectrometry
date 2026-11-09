@@ -48,10 +48,10 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             "projects.dual_pressure_rectilinear_ion_processor.analysis.batching",
             "projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget",
             "common.contracts.artifact_retention",
-            "common.analysis.population_moments",
-            "common.analysis.beam_focus_diagnostics",
+            "msplatform.analysis.population_moments",
+            "msplatform.analysis.beam_focus_diagnostics",
             "msplatform.io.figure_export",
-            "common.analysis.plane_crossings",
+            "msplatform.analysis.plane_crossings",
             "msplatform.analysis.particle_census",
         ):
             importlib.import_module(name)

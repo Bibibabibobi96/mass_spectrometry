@@ -820,6 +820,42 @@ for case in fixture['prepared_joint_diagnostics']:
             assert failed.returncode!=0 and not (pathlib.Path(str(output)+'-missing-trajectory')/'diagnostics_receipt.json').exists()
         finally:backup.rename(trajectory)
 
+# Exercise installed recorded-beam APIs over sparse IDs, unequal weights and unknown samples.
+from msplatform.analysis import population_moments as beam_moments, plane_crossings as beam_crossings, beam_focus_diagnostics as beam_focus
+from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
+for module in (beam_moments,beam_crossings,beam_focus):
+    assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+weighted=beam_moments.population_moments(np.array([[0.,1.],[2.,3.]]),np.array([1.,3.]))
+assert weighted.mean.tolist()==[1.5,2.5] and weighted.covariance.tolist()==[[.75,.75],[.75,.75]]
+assert weighted.weight_sum==4. and weighted.effective_sample_count==1.6
+samples=[beam_crossings.CrossingSample(7,'birth',PhaseSpaceState('f',(0.,0.,2.),(0.,0.,-1000.),10.)),
+         beam_crossings.CrossingSample(7,8,PhaseSpaceState('f',(2.,0.,0.),(0.,0.,-1000.),10.5))]
+brackets=list(beam_crossings.iter_bounded_plane_crossings(samples,particle_ids=[7,19],
+    planes={'exit':PlaneSurface('f',(0.,0.,1.),(0.,0.,-1.))},minimum_time_us=10.,maximum_gap_us=.5,gap_tolerance_us=0.,occurrence=None))
+assert len(brackets)==1 and brackets[0].particle_id==7 and brackets[0].interpolation_alpha==.5
+assert brackets[0].lower_anchor=='birth' and brackets[0].upper_anchor==8
+rows=[dict(particle_id=pid,plane_z_mm=0.,status='alive',t_us=time,x_mm=x,y_mm=0.,z_mm=0.,vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-1.)
+      for pid,time,x in ((7,1.,0.),(19,3.,2.))]
+case=dict(label='installed',sources={7:{},19:{},41:{}},exits={7:{},19:{}},particle_weights={7:1.,19:3.,41:2.},states=rows)
+prepared=beam_focus.prepare_focus_diagnostics([case],[0.],[7,19])
+row=next(row for row in prepared['plane_statistics'] if row['cohort']=='common_extracted_ids')
+assert row['available_ids']==[7,19] and row['mean_x_mm']==1.5 and row['weight_sum']==4.
+assert np.isclose(row['sigma_x_mm'],np.sqrt(.75))
+unknown=next(row for row in prepared['plane_statistics'] if row['cohort']=='all_available_alive')
+assert unknown['missing_ids']==[41] and unknown['cohort_count']==3
+focus=beam_focus.prepare_time_focus_diagnostics([case],[0.],[7,19],{'drift_lengths_mm':[0.,2.]})
+assert focus['metadata']['scientific_qualification']=='not_assessed'
+assert all(row['quantile_method']=='weighted_ecdf_left_inverse_v1' for row in focus['plane_time_statistics'])
+# Fresh interpreters cannot recover a missing installed dependency from author checkouts.
+for module in (beam_moments,beam_crossings,beam_focus):
+    original=pathlib.Path(module.__file__);hidden=original.with_suffix('.missing');original.rename(hidden)
+    try:
+        absent=subprocess.run([sys.executable,'-I','-B','-c',
+            'import '+module.__name__],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        assert absent.returncode!=0 and module.__name__.split('.')[-1] in absent.stderr, absent.stdout+absent.stderr
+    finally:hidden.rename(original)
+print('INSTALLED_RECORDED_BEAM=PASS')
+
 missing_rejected = []
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),

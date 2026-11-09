@@ -237,7 +237,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/beam_focus_diagnostics.py",
+          "exact": "src/msplatform/analysis/beam_focus_diagnostics.py",
           "reason": "shared_beam_focus_diagnostics_changed"
         },
         {
@@ -287,7 +287,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/plane_crossings.py",
+          "exact": "src/msplatform/analysis/plane_crossings.py",
           "reason": "shared_plane_crossings_changed"
         },
         {
@@ -312,7 +312,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "common/analysis/population_moments.py",
+          "exact": "src/msplatform/analysis/population_moments.py",
           "reason": "population_moments_changed"
         },
         {
@@ -1954,7 +1954,7 @@
           "reason": "orthogonal_accelerator_dependency_changed"
         },
         {
-          "exact": "common/analysis/population_moments.py",
+          "exact": "src/msplatform/analysis/population_moments.py",
           "reason": "shared_population_moments_changed"
         },
         {
@@ -2935,7 +2935,7 @@
           "reason": "ion_processor_changed"
         },
         {
-          "exact": "common/analysis/plane_crossings.py",
+          "exact": "src/msplatform/analysis/plane_crossings.py",
           "reason": "shared_plane_crossings_changed"
         },
         {
@@ -2955,7 +2955,7 @@
           "reason": "shared_rf_drive_changed"
         },
         {
-          "exact": "common/analysis/population_moments.py",
+          "exact": "src/msplatform/analysis/population_moments.py",
           "reason": "shared_population_moments_changed"
         },
         {
@@ -2967,7 +2967,7 @@
           "reason": "shared_particle_census_changed"
         },
         {
-          "exact": "common/analysis/beam_focus_diagnostics.py",
+          "exact": "src/msplatform/analysis/beam_focus_diagnostics.py",
           "reason": "shared_beam_focus_diagnostics_changed"
         },
         {

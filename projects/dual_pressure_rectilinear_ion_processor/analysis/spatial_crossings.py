@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import math
 
-from common.analysis.plane_crossings import CrossingSample, iter_bounded_plane_crossings
+from msplatform.analysis.plane_crossings import CrossingSample, iter_bounded_plane_crossings
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 

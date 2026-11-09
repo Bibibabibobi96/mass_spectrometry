@@ -17,8 +17,8 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
 
-from common.analysis.population_moments import population_pair_moments
-from common.analysis.plane_crossings import METHOD as CROSSING_METHOD, SCHEMA_VERSION as CROSSING_SCHEMA_VERSION
+from msplatform.analysis.population_moments import population_pair_moments
+from msplatform.analysis.plane_crossings import METHOD as CROSSING_METHOD, SCHEMA_VERSION as CROSSING_SCHEMA_VERSION
 
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from msplatform.contracts.particle_physics import kinetic_energy_ev

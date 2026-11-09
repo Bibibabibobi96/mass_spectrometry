@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from common.analysis.population_moments import population_moments, population_pair_moments
+from msplatform.analysis.population_moments import population_moments, population_pair_moments
 
 
 class PopulationMomentsTests(unittest.TestCase):

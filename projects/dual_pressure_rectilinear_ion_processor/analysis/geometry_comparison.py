@@ -18,11 +18,11 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
 
-from common.analysis.population_moments import population_pair_moments
+from msplatform.analysis.population_moments import population_pair_moments
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.analysis import beam_focus_diagnostics
+from msplatform.analysis import beam_focus_diagnostics
 from msplatform.io.figure_export import export_figures
 from projects.dual_pressure_rectilinear_ion_processor.analysis import aperture_acceptance_diagnostics
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (

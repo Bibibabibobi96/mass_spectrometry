@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from msplatform.io.figure_export import export_figures
-from common.analysis.population_moments import population_pair_moments
+from msplatform.analysis.population_moments import population_pair_moments
 
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev

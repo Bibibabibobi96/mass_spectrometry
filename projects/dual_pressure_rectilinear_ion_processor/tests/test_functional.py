@@ -390,7 +390,9 @@ class FunctionalContractTests(unittest.TestCase):
             # even when another test has not already imported the analysis.
             for name in ("population_moments", "plane_crossings", "particle_census",
                          "beam_focus_diagnostics", "figure_export"):
-                sys.modules.pop(f"common.analysis.{name}", None)
+                sys.modules.pop("msplatform.io.figure_export" if name == "figure_export" else
+                                f"msplatform.analysis.{name}" if name in {"population_moments", "plane_crossings", "beam_focus_diagnostics"}
+                                else f"common.analysis.{name}", None)
             functional.prepare(self.run, PROJECT, vendor)
         code = self.run / 'inputs/code'
         frozen = code / 'projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py'
@@ -401,15 +403,15 @@ class FunctionalContractTests(unittest.TestCase):
                          (PROJECT.parents[1] / 'src/msplatform/contracts/rigid_transform.py').read_bytes())
         population_program = (
             "import json, pathlib, sys; "
-            "sys.path.insert(0, sys.argv[1]); "
-            "from common.analysis import population_moments as m; "
+            "sys.path[:0]=[str(pathlib.Path(sys.argv[1])/'src'),sys.argv[1]]; "
+            "from msplatform.analysis import population_moments as m; "
             "assert pathlib.Path(m.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve()); "
             "print(json.dumps(m.population_pair_moments([0., 2.], [3., 1.])))"
         )
         figure_program = """
 import json, pathlib, sys
-sys.path.insert(0, sys.argv[1])
-from common.analysis import figure_export as export
+sys.path[:0]=[str(pathlib.Path(sys.argv[1])/'src'),sys.argv[1]]
+from msplatform.io import figure_export as export
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 assert pathlib.Path(export.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
@@ -425,8 +427,8 @@ print(json.dumps([row['format'] for row in records]))
         figure_output.mkdir()
         beam_program = """
 import json, math, pathlib, sys
-sys.path.insert(0, sys.argv[1])
-from common.analysis import beam_focus_diagnostics as beam
+sys.path[:0]=[str(pathlib.Path(sys.argv[1])/'src'),sys.argv[1]]
+from msplatform.analysis import beam_focus_diagnostics as beam
 assert pathlib.Path(beam.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 rows = [dict(particle_id=pid, plane_z_mm=0., status='alive', t_us=time,
              x_mm=x, y_mm=0., z_mm=0., vx_mm_us=0., vy_mm_us=0., vz_mm_us=-1.)
@@ -469,7 +471,7 @@ root = pathlib.Path(sys.argv[1]).resolve()
 sys.path[:0] = [str(root / 'src'), str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
-from common.analysis import plane_crossings as c
+from msplatform.analysis import plane_crossings as c
 from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 samples = [c.CrossingSample(7, 2, PhaseSpaceState('f', (0., 0., 2.), (0., 0., -1000.), 10.)),
@@ -497,8 +499,8 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         )
         for name, program, expected, extra_args in cases:
             with self.subTest(module=name):
-                relative = (f'src/msplatform/analysis/{name}.py' if name == 'particle_census'
-                            else f'common/analysis/{name}.py')
+                relative = ('src/msplatform/io/figure_export.py' if name == 'figure_export'
+                            else f'src/msplatform/analysis/{name}.py')
                 helper = code / relative
                 self.assertEqual(helper.read_bytes(), (PROJECT.parents[1] / relative).read_bytes())
                 # -I excludes cwd/PYTHONPATH, but installed editable hooks can remain.

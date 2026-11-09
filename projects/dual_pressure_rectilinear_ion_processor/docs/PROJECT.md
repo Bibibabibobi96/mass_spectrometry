@@ -224,7 +224,7 @@ loss_count／diagnostic_losses.csv语义明确为非出口终止，包含timeout
 
 ## 公共束流与图形诊断
 
-原`analysis/beam_focus_diagnostics.py`已迁到[公共束流模块](../../../common/analysis/beam_focus_diagnostics.py)，
+原`analysis/beam_focus_diagnostics.py`已迁到[公共束流模块](../../../src/msplatform/analysis/beam_focus_diagnostics.py)，
 项目位置退役且不保留转发包装。IP几何分析与局部OA直接复用schema 2的束宽、真角度发射度、
 时间／能量相关与零场反事实预测；观察面、脉冲、实际出口、固定粒子群和缺测政策仍由适配器确定。
 注入全母群相对权重仅从manifest-bound `injected_states.csv`经canonical loader一次读取，ID必须与source事件完整匹配；
@@ -381,3 +381,8 @@ The thin repository launcher requires explicit machine environment, workspace,
 engineering profile and Python. FullJoint forwards these explicitly and rejects
 a different host ledger, Python or unsupported custom artifact root. Old assets
 remain consumed by their explicit records, without relocation or rewriting.
+
+The shared recorded-beam moments, crossing and focus methods now come directly from installed
+`msplatform.analysis`; IP preparation freezes those same modules and its original detached consumer
+checks still reject missing dependencies. The original weighted/cohort/clock semantics remain; this
+source migration does not add native transport or scientific qualification.

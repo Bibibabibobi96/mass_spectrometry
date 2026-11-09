@@ -6,7 +6,7 @@ import math
 import unittest
 import weakref
 
-from common.analysis.plane_crossings import (
+from msplatform.analysis.plane_crossings import (
     CrossingBracket,
     CrossingSample,
     iter_bounded_plane_crossings,

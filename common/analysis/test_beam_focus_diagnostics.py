@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from common.analysis.beam_focus_diagnostics import (
+from msplatform.analysis.beam_focus_diagnostics import (
     prepare_focus_diagnostics, build_focus_figure, prepare_time_focus_diagnostics, build_time_focus_figure,
 )
 

@@ -840,7 +840,7 @@ Write-Output 'FROZEN_DEPENDENCIES=PASS'
             crossing_statement = """
 from pathlib import Path
 from integrations.workflows.local_frontend.focus import _local_crossings
-from common.analysis import plane_crossings
+from msplatform.analysis import plane_crossings
 assert Path(plane_crossings.__file__).is_relative_to(Path.cwd())
 rows = _local_crossings(
     [(4, dict(particle_id=7,t_us=1.,x_mm=1.,y_mm=2.,z_mm=2.,vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-1.)),
@@ -856,7 +856,7 @@ print('LOCAL_SNAPSHOT_CROSSING=PASS')
                                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(crossed.returncode, 0, crossed.stdout+crossed.stderr)
             self.assertIn("LOCAL_SNAPSHOT_CROSSING=PASS", crossed.stdout)
-            kernel = snapshot/"common/analysis/plane_crossings.py"
+            kernel = snapshot/"src/msplatform/analysis/plane_crossings.py"
             contents = kernel.read_bytes()
             kernel.unlink()
             try:

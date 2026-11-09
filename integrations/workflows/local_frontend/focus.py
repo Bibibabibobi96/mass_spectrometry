@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 
 from msplatform.io.figure_export import export_figures
-from common.analysis.population_moments import population_moments
-from common.analysis.plane_crossings import (
+from msplatform.analysis.population_moments import population_moments
+from msplatform.analysis.plane_crossings import (
     METHOD as CROSSING_METHOD,
     SCHEMA_VERSION as CROSSING_SCHEMA_VERSION,
     CrossingSample,
@@ -24,7 +24,7 @@ from common.analysis.plane_crossings import (
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import PhaseSpaceState, PlaneSurface
 
-from common.analysis.beam_focus_diagnostics import (
+from msplatform.analysis.beam_focus_diagnostics import (
     build_focus_figure,
     build_time_focus_figure,
     prepare_focus_diagnostics,

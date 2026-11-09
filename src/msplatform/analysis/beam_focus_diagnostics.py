@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 
-from common.analysis.population_moments import PopulationMoments, population_moments
+from msplatform.analysis.population_moments import PopulationMoments, population_moments
 
 COHORTS = ("all_available_alive", "own_extracted_ids", "common_extracted_ids")
 SCHEMA_VERSION = 2

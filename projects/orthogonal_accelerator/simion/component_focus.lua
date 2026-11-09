@@ -57,7 +57,7 @@ local function capture_focus(particle,focus,current)
  ion_splat=1
 end
 local function directed_crossing(previous,current,z)
- -- Same bounded endpoint semantics as common.analysis.plane_crossings:
+ -- Same bounded endpoint semantics as msplatform.analysis.plane_crossings:
  -- positive elapsed time, both velocities forward, no extrapolation.
  if current.t<=previous.t or previous.vz>=0 or current.vz>=0 or
     previous.z<z or current.z>z or current.z>=previous.z then return nil end
