@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 from msplatform.contracts.machine_contracts import load_json, sha256
 from common.contracts import write_run_manifest as terminal_publication
+from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
@@ -1350,7 +1351,7 @@ def execute_prepared_run(*args):
             )
             self.assertEqual(summary["status"], manifest["status"])
             self.assertFalse(
-                (run_root / terminal_publication.TERMINAL_JOURNAL_NAME).exists()
+                (run_root / TERMINAL_JOURNAL_NAME).exists()
             )
 
 

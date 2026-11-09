@@ -72,6 +72,12 @@ the actual root, analysis and I/O package initializers, fitting code and file-id
 The four publisher tests pass on Python 3.11, including frozen reader imports with a competing regular package,
 snapshot module-origin checks, and rejection when the frozen identity implementation is missing despite that package.
 This is bounded software evidence, not wheel/sdist, native solver or scientific qualification.
+The subsequent GitHub run exposed a test-only dependency-path assumption: a normal Python installation
+does not have a venv's `Scripts/python.exe` layout. The isolated publisher probe now receives the actual
+interpreter dependency directories, checks NumPy provenance, and runs with both the selected and base
+interpreter when distinct. Frozen-core origin checks, the competing-package control, missing-I/O
+rejection and the numerical fitting assertion remain. Candidate crash/replay verification also reads
+the journal constant from its canonical I/O owner; publication and recovery assertions are unchanged.
 项目粒子物理消费者及Candidate闭包直接使用`msplatform.contracts.particle_physics`，常量、公式和冻结身份边界不变。
 机器合同科学函数直接使用安装实现；真实checkout根从`common.paths.repository_root`取得，不进入可安装科学核心。
 

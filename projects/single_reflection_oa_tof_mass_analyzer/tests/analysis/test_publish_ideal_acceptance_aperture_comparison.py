@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import subprocess
 import sys
+import sysconfig
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -83,36 +84,50 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
                 target = installed / "msplatform" / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
+            import numpy as np
+
+            dependency_roots = list(dict.fromkeys(
+                str(Path(sysconfig.get_paths()[name]).resolve())
+                for name in ("purelib", "platlib")
+            ))
+            self.assertTrue(any(Path(np.__file__).resolve().is_relative_to(Path(path))
+                                for path in dependency_roots))
+            interpreters = list(dict.fromkeys((sys.executable, sys._base_executable)))
             command = (
                 [sys.executable, "-I", "-S", "-c",
-                 "import sys, sysconfig; from pathlib import Path; "
-                 "venv = Path(sys.executable).resolve().parent.parent; "
-                 "sys.path.append(sysconfig.get_paths(vars={'base': str(venv), 'platbase': str(venv)})['purelib']); "
+                 "import sys; from pathlib import Path; "
+                 "import json; dependencies = [Path(path) for path in json.loads(sys.argv[4])]; "
+                 "sys.path.extend(str(path) for path in dependencies); "
                  "sys.path[:0] = [sys.argv[2], sys.argv[1]]; "
                  "sys.path.insert(2, sys.argv[3]); "
                  "import msplatform.analysis.longitudinal_fit as fit; "
                  "from msplatform.io.file_identity import file_sha256; "
                  "from projects.single_reflection_oa_tof_mass_analyzer.analysis import analyze_ideal_acceptance_aperture_campaign as pre, analyze_ideal_acceptance_aperture_full_flight as full; "
                  "import numpy as np; "
+                 "assert any(Path(np.__file__).resolve().is_relative_to(path) for path in dependencies); "
                  "assert Path(fit.__file__).resolve() == Path(sys.argv[2]) / 'msplatform/analysis/longitudinal_fit.py'; "
                  "assert Path(file_sha256.__code__.co_filename).resolve() == Path(sys.argv[2]) / 'msplatform/io/file_identity.py'; "
                  "assert pre._sha256 is file_sha256 and full._sha256 is file_sha256; "
                  "assert all(Path(module.__file__).resolve().is_relative_to(Path(sys.argv[2])) for name, module in sys.modules.items() if name == 'msplatform' or name.startswith('msplatform.')); "
                  "assert 'msplatform.execution' not in sys.modules; "
                  "assert abs(fit.fit_longitudinal_polynomial(np.arange(3.), np.arange(3.), 1).metrics['k_per_us'] - 1) < 1e-12",
-                 str(snapshot), str(snapshot / "src"), str(installed)]
+                 str(snapshot), str(snapshot / "src"), str(installed), json.dumps(dependency_roots)]
             )
-            probe = subprocess.run(
-                command,
-                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
-            )
-            self.assertEqual(probe.returncode, 0, probe.stderr)
+            for interpreter in interpreters:
+                with self.subTest(interpreter=interpreter):
+                    probe = subprocess.run(
+                        [interpreter, *command[1:]],
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    )
+                    self.assertEqual(probe.returncode, 0, probe.stderr)
             dependency = snapshot / "src/msplatform/io/file_identity.py"
             dependency.unlink()
-            missing = subprocess.run(command, cwd=root, capture_output=True, text=True,
-                                     encoding="utf-8", timeout=30)
-            self.assertNotEqual(missing.returncode, 0)
-            self.assertIn("msplatform.io.file_identity", missing.stderr)
+            for interpreter in interpreters:
+                with self.subTest(interpreter=interpreter, missing_dependency=True):
+                    missing = subprocess.run([interpreter, *command[1:]], cwd=root,
+                                             capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    self.assertNotEqual(missing.returncode, 0)
+                    self.assertIn("msplatform.io.file_identity", missing.stderr)
 
         self.assertEqual(summary["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
         self.assertEqual(len(manifest["inputs"]), 17)
