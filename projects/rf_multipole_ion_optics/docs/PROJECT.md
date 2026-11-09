@@ -885,6 +885,40 @@ dispatch nodes, and all 143 original installed-probe assertions remain. Ordinary
 sdist-rebuilt-wheel acceptance passed five parents / 16 outcomes in 128.754 s, with both source
 trees blocked from the installed consumer. The first installation attempt failed because a new
 probe assertion lacked its explicit package import; that failed result remains preserved, and the
-fix changes no production semantics. No new SIMION field run has been executed. Tracking, safe native fractional-family reuse and scientific
-qualification remain pending actual evidence; the existing finite/interface/mass-filter project
-workflows and checkpoint consumers are retained.
+fix changes no production semantics.
+
+Native R1 on the accepted ordinary wheel produced the five-response fractional family in
+`20261109_191148__sim__simion__fields-8fe3401852da`. The materializer and two SIMION processes exited
+zero; cold readback checked 66 fractional witness cells, 60 nonnil axis offsets, twelve physical
+nodes and all five actual response ranges. The eight family files total 9,665,920 bytes. A second
+owner, `20261109_191238__sim__simion__fields-8334fbc09b7c`, also completed its write-protected native
+readback with identical original bytes, and both owners released their leases. Its public API then
+failed strictly: product data contained original-family records that were not individually bound
+as manifest inputs. This is an end-to-end reuse publication FAIL, not a native or scientific PASS;
+that terminal record and its positive process facts remain unchanged.
+
+The repair binds original family, witness and Refine-receipt records using the existing
+`session.add_input` protocol, without copying them or relaxing the artifact reader. The regression
+runs the actual source owner, materializer, process owner, guards, finalization and normal reader
+through first and second reuse. Only supplier behavior is replaced by explicitly inert Python;
+the guarded files reject writer opens, external data is input-bound, original bytes remain and
+capacity leases release. The targeted method passed in 67.333 s; the full fourteen-method RF
+module passed 34 outcomes in 68.808 s. The earlier in-memory publisher fixture now includes only
+owned outputs and actual session inputs, matching the normal owner so it cannot hide this defect.
+Two fixture-setup failures (missing dependency argument, then inherited outer GATE grant) remain
+recorded; the fixture now uses the existing token-isolation pattern with the same shared host
+ledger. Production admission, source protection and release validation are unchanged.
+
+The repaired ordinary wheel and sdist-rebuilt wheel passed five installation parents / sixteen
+outcomes in 150.126 s; both author epochs and main were blocked from the consumer. Focused Ruff
+passed. The distinct ordinary-wheel reuse-only run
+`20261109_193222__sim__simion__fields-dfb9ab40b3e3` passed the public API and a later separate
+read-only process. Its sole SIMION audit operation exited zero with an empty process drain;
+the host and capacity leases released. All 38 manifest records and ten external input bindings
+verified, with the eight original family files unchanged. The 66 surface cells, 60 nonnil offsets,
+12 physical witnesses and five response records matched the original R1 audit exactly.
+All 54 frozen acceptance inputs and 365 installed package files remained unchanged. No new
+Refine, family copy, Fly, source sampling or GUI occurred. This is native reuse/publication
+evidence for the declared quadrupole scope, not a solver-accuracy or broader-variant qualification.
+Tracking and scientific qualification remain open; finite/interface/mass-filter project workflows
+and checkpoint consumers are retained.

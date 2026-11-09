@@ -1,6 +1,9 @@
 """Independent RF field contracts; inert PA bytes never stand for native evidence."""
 import copy
 import json
+import os
+import shutil
+import sys
 import subprocess
 from pathlib import Path
 import tempfile
@@ -168,8 +171,8 @@ class RfFieldTests(unittest.TestCase):
         def publish(session,result):
             product=result['manifest_extra_fields']['products']['fields']
             manifest=dict(schema_version=2,role='simulation_run_manifest',run_id=session.run_dir.name,
-                project='software_fixture',mode='explicit_inert_RF_fields',status='success',inputs={},
-                outputs=list(product['data'].values()),products=dict(fields=product))
+                project='software_fixture',mode='explicit_inert_RF_fields',status='success',inputs=dict(session.inputs),
+                outputs=[row for row in product['data'].values() if Path(row['path']).is_relative_to(session.artifact_run_dir)],products=dict(fields=product))
             publish_terminal_state(session.run_dir,{'status':'success'},manifest)
             return dict(manifest=file_record(session.run_dir/'run_manifest.json'),product_id='fields')
         with tempfile.TemporaryDirectory() as directory:
@@ -320,6 +323,105 @@ class RfFieldTests(unittest.TestCase):
             self.assertEqual(call['expected_operation_ids'],('audit_fields',))
             self.assertIs(call['action'].func,field_execution.execute_fields)
             self.assertEqual(call['action'].keywords['reuse_fields_reference'],selected_reference)
+
+    @unittest.skipUnless(os.name=='nt' and shutil.which('pwsh'),'Windows process owner required')
+    def test_real_owner_and_normal_reader_bind_original_inputs_through_second_reuse(self):
+        from msplatform.execution import owner,run_session,capacity_admission
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.resources import resource_path
+        from msplatform.backends.simion import solve_fields
+        from msplatform.execution.capacity_protection import _lease_path
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            seeded=model_source(root/'seeded_inert_model')
+            policy=root/'fixture_capacity.json'
+            policy.write_text(json.dumps(dict(capacity_admission._capacity_policy(),target_gib=1,minimum_free_gib=0)))
+            budget=root/'fixture_budget.json';budget.write_text('{"bytes":16777216}')
+            retention=dict(policy_version=1,**{'class':'solver_review'},reason='Inert RF owner/reader external-input fixture; no native science')
+            stage=root/'stages.json'
+            stage.write_text(json.dumps(dict(schema_version=1,role='execution_stage_policy',stages=dict(solve_fields=dict(
+                limits=dict(wall_clock_seconds=120,transient_run_directory_bytes=16777216,process_tree_working_set_bytes=536870912,
+                    minimum_system_available_memory_bytes=1073741824,compact_final_retained_bytes=16777216,
+                    automatic_retry_count=0,reserved_run_payload_bytes=1048576),artifact_retention=retention)))))
+            context=ExecutionContext(workspace=root/'study',python_executable=Path(sys.executable),
+                powershell_executable=Path(shutil.which('pwsh')),tools=dict(simion=Path(sys.executable)),
+                host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
+                policy_path=resource_path('host_resource_policy.json'),capacity_policy_path=policy,stage_policy_path=stage)
+            def source_action(session):
+                records={}
+                for name,record in seeded.artifact.data_records.items():
+                    folder='clock' if name in {'clock_authority','instrument_epoch'} else 'inert_model'
+                    target=session.declare_file(session.input_dir/folder/Path(record['path']).name,record['retention_role'])
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    target.write_bytes(Path(record['path']).read_bytes())
+                    records[name]=file_record(session.canonical_path(target),record['retention_role'])
+                    session.add_input(name,records[name])
+                paths=[Path(row['path']) for row in records.values()]
+                return dict(status='success',summary=dict(fixture='INERT_ONLY'),output_paths=paths,
+                    required_output_paths=paths,retention_preserve_paths=[],manifest_extra_fields=dict(products=dict(model=dict(
+                        schema_version=1,kind='prepared_model',status='complete',metadata=seeded.artifact.metadata,data=records))))
+            result=owner.run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='inert_model_source',software=[]),
+                run_id='20261109_000001__test__python__inert-rf-model',payload={},committed_new_bytes=16777216,
+                commitment_inputs=[file_record(budget,'required_evidence')],retention=retention,expected_operation_ids=(),operation_dependencies={},
+                action=source_action,action_record=file_record(Path(__file__),'required_evidence'))
+            model_reference=dict(manifest=result['manifest'],product_id='model')
+            actual_process=run_session.run_observed_process
+            observed=[]
+            def inert_native(context,**options):
+                # Only vendor behavior is substituted. The real process/lease,
+                # immutable input guards, RunSession, owner and reader still run.
+                if options['role']!='SIMION':return actual_process(context,**options)
+                args=options['arguments'];spec=Path(args[-1])
+                name=spec.name
+                run=Path(options['working_directory'])
+                if name.endswith('_refine.lua'):
+                    domain=name.removesuffix('_refine.lua')
+                    raw=run/'simion/fields'/domain/(domain+'.pa#')
+                    model=json.loads((run/'inputs/compiled_model.json').read_text())
+                    labels=sorted(set(model['geometry']['frontend_geometry']['electrode_bindings'][domain].values()))
+                    outputs=[str(raw.with_suffix('.pa'+str(eid))) for eid in [0,*labels]]
+                    code="from pathlib import Path\nfor p in "+repr(outputs)+": Path(p).write_bytes(b'INERT_RESPONSE_NOT_NATIVE')\nprint('INDEPENDENT_RF_REFINE=PASS')"
+                else:
+                    model=json.loads((run/'inputs/compiled_model.json').read_text())
+                    domains=model['geometry']['frontend_geometry']['composition_plan']['scope']['instance_ids']
+                    report=dict(role='simion_rf_fractional_field_audit',status='success',checked_domains=domains,fixture='INERT_ONLY')
+                    paths=[record['path'] for record in options['immutable_input_records']]
+                    self.assertTrue(paths)
+                    observed.append(list(options['immutable_input_records']))
+                    code="from pathlib import Path;import json\nfor p in "+repr(paths)+":\n try:\n  stream=open(p,'ab');stream.close()\n except PermissionError: pass\n else: raise AssertionError('original source lacks immutable OS guard')\nPath("+repr(str(run/'results/rf_field_audit.json'))+").write_text("+repr(json.dumps(report))+")\nprint('INDEPENDENT_RF_FIELDS_READBACK=PASS')"
+                replaced=dict(options,executable=Path(sys.executable),arguments=['-I','-c',code],role='GATE',stage='inert_rf_field_native_observation')
+                return actual_process(context,**replaced)
+            private=dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
+                MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
+            with patch.dict(os.environ,private),patch.object(run_session,'run_observed_process',side_effect=inert_native):
+                first=solve_fields(model_reference,numerics=dict(refine_policy='vendor_default'),context=context)
+                original_paths={row['path'] for name,row in first.data_records.items() if '_family_' in name or name.endswith('_surface_witnesses')}
+                original_bytes={path:Path(path).read_bytes() for path in original_paths}
+                selected=first
+                for _ in range(2):
+                    current=solve_fields(model_reference,numerics=dict(refine_policy='vendor_default'),context=context,reuse_fields=selected)
+                    reread=open_artifact(current.reference,expected_kind='field_bundle')
+                    self.assertEqual(reread.metadata['family_producer_reference'],first.reference)
+                    self.assertEqual(reread.metadata['refine_calls'],0)
+                    manifest=json.loads(current.manifest_location.read_text())
+                    self.assertEqual({row['path'] for name,row in manifest['inputs'].items() if name.startswith('rf_reuse_')},
+                        original_paths|{first.data_records['field_native_receipts']['path']})
+                    self.assertTrue(all(not Path(row['path']).is_relative_to(current.manifest_location.parent)
+                        for name,row in manifest['inputs'].items() if name.startswith('rf_reuse_')))
+                    self.assertFalse((current.manifest_location.parent/'simion/fields').exists())
+                    for key,row in reread.data_records.items():
+                        if '_family_' in key:self.assertEqual(row,first.data_records[key])
+                    completion=json.loads((current.manifest_location.parent/'results/execution_completion.json').read_text())
+                    self.assertEqual([r['operation_id'] for r in completion['writer_completion']['operations']],['audit_fields'])
+                    result_path=root/'study/artifacts/projects/instrument_assembly/scratch/workflow_results'/current.manifest_location.parent.name/'result.json'
+                    final=json.loads(result_path.read_text());capacity=final['capacity_session']
+                    self.assertEqual((final['status'],final['stage'],capacity['status']),('success','complete','released'))
+                    self.assertFalse(_lease_path(Path(capacity['artifact_root']),capacity['lease_id']).exists())
+                    selected=reread
+                for path,before in original_bytes.items():self.assertEqual(Path(path).read_bytes(),before)
+                self.assertEqual(len(observed),3)
+                self.assertEqual({r['path'] for r in observed[1]},original_paths)
+                self.assertEqual({r['path'] for r in observed[2]},original_paths)
 
 
 if __name__=='__main__':unittest.main()

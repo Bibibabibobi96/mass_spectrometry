@@ -266,6 +266,11 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         relocation_qualification='not_assessed', requested_allow_asynchronous_io=allow_asynchronous_io)
     if producer is not None:
         metadata['family_producer_reference'] = producer.reference
+    # External members remain owned by the original producer. Bind them as
+    # consumed inputs so the normal artifact reader can verify every product row.
+    for name, record in records.items():
+        if not Path(record['path']).is_relative_to(session.artifact_run_dir):
+            session.add_input('rf_reuse_'+name, record)
     outputs = [Path(record['path']) for record in records.values() if Path(record['path']).is_relative_to(session.artifact_run_dir)]
     return dict(status='success', summary=metadata, output_paths=outputs, required_output_paths=outputs,
         retention_preserve_paths=[], manifest_extra_fields={'products':{'fields':dict(schema_version=1,
