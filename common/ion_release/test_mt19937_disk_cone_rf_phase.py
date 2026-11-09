@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-from common.ion_release.mt19937_disk_cone_rf_phase import (
+from msplatform.ion_release.mt19937_disk_cone_rf_phase import (
     IDEAL_TRANSPORT_STRATEGY,
     STRATEGY,
     _render,
@@ -15,7 +15,7 @@ from common.ion_release.mt19937_disk_cone_rf_phase import (
     validate_mt19937_disk_cone_rf_phase_release_spec,
     validate_mt19937_disk_sqrt_cone_rf_phase_release_spec,
 )
-from common.ion_release.release import (
+from msplatform.ion_release.release import (
     RELEASE_HANDLER_REGISTRY,
     generate_release_states,
     materialize_release,

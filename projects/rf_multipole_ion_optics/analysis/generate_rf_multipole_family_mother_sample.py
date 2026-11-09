@@ -8,10 +8,10 @@ import io
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256 as sha256
-from common.ion_release.mt19937_disk_cone_rf_phase import (
+from msplatform.ion_release.mt19937_disk_cone_rf_phase import (
     STRATEGY,
 )
-from common.ion_release.release import generate_release_states
+from msplatform.ion_release.release import generate_release_states
 
 
 SEED = 2026072801
@@ -44,7 +44,7 @@ def generate_rows(seed: int, total_count: int) -> list[dict[str, object]]:
 
     The historical CSV records use Python ``repr`` strings.  Keeping that
     conversion here preserves the frozen tables while the sampling algorithm
-    itself is owned by :mod:`common.ion_release`.
+    itself is owned by :mod:`msplatform.ion_release`.
     """
     if total_count < 1:
         raise ValueError("particle count must be positive")

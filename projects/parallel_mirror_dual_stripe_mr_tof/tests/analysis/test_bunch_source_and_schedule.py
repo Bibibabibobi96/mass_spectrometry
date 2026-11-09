@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from common.contracts.particle_count_policy import validate_prefix_particle_sources
-from common.ion_release.cylinder import generate_center_axis_pair_halton_cylinder_phase_space
+from msplatform.ion_release.cylinder import generate_center_axis_pair_halton_cylinder_phase_space
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     bunch_identity,
     derive_bunch_pulse_schedule,

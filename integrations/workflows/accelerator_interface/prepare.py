@@ -15,7 +15,7 @@ from common.contracts.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from common.contracts.verify_run_manifest import verify_record, verified_successful_run_reference
 from common.contracts.write_run_manifest import file_record
-from common.integration.resolve_assembly import derive_assembly_scope
+from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
     CONFIG, ION_PROCESSOR, REPO, verified_reference, validate_execution_contract,
 )

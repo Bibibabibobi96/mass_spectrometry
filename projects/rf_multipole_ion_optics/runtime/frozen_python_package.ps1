@@ -380,8 +380,7 @@ function New-RfPublishedDesignFreshnessPackage {
             'common/analysis',
             'projects/rf_multipole_ion_optics/analysis',
             'projects/rf_multipole_ion_optics/core',
-            'projects/rf_multipole_ion_optics/runtime',
-            'common/ion_release'
+            'projects/rf_multipole_ion_optics/runtime'
         ) -PythonModules @('common/paths/repository_root.py')
     # Ask the frozen original PROFILES authority; do not maintain another profile map.
     $sourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `

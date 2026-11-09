@@ -585,7 +585,7 @@
           "reason": "workspace_path_transport_changed"
         },
         {
-          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
+          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
           "reason": "installed_scientific_core_changed"
         },
         {
@@ -953,7 +953,7 @@
                 "reason": "optional_cad_dependency_lock_changed"
               },
               {
-                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/[^/]+\\.py|integration/(?:__init__|resolve_assembly)\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
+                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
                 "reason": "installed_scientific_core_changed"
               }
             ],
@@ -2937,14 +2937,6 @@
         {
           "exact": "src/msplatform/analysis/plane_crossings.py",
           "reason": "shared_plane_crossings_changed"
-        },
-        {
-          "exact": "common/ion_release/release.py",
-          "reason": "shared_release_changed"
-        },
-        {
-          "exact": "common/ion_release/cylinder.py",
-          "reason": "shared_cylinder_release_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/source.py",

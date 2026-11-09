@@ -749,7 +749,7 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         self.assertEqual(renamed,original)
 
     def test_unselected_parent_connection_before_native_edge_does_not_change_program(self):
-        from common.integration.resolve_assembly import compile_assembly_layout
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout
 
         original_metadata = {}
         original = self.build(build_metadata=original_metadata)

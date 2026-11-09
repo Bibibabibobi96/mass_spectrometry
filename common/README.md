@@ -407,6 +407,8 @@ Lua保留已冻结根的加载职责，均不是installed侧反向依赖作者�
 integration所有者负责组合入口、source/clock、程序与冻结资源声明同步。历史协议reader只读边界继续保留。
 性能与正式模型／科学资格、COMSOL后续迁移及P5新使用者验证不由桥清单关闭；阶段责任仍查[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
+Ion-release and assembly compatibility aliases have retired. Active imports, CLI calls and new frozen source declarations use `msplatform.ion_release` and `msplatform.assembly.resolve_assembly` directly. Repository test modules remain under `common/ion_release`; the following P1/P2 inventory is historical, not an active import contract.
+
 ### P1／P2 迁移时的旧入口索引
 
 下述为原迁移审查记录的有限调用索引，不作为P3当前消费者全集或运行证明；P3本轮路径与责任见上表。

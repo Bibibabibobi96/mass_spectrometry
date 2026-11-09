@@ -17,7 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
 from msplatform.io.manifest_records import record_path, verify_record as _verify_record
 from msplatform.execution.retention import classify_file
@@ -25,7 +25,7 @@ from functools import partial
 verify_record = partial(_verify_record, retention_classifier=classify_file)
 from msplatform.components.rf_multipole.source_validation import validate_source
 from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
-from common.ion_release import cylinder
+from msplatform.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS
 from msplatform.results.single_reflection_source import published_producer_input

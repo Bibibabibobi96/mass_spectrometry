@@ -10,7 +10,7 @@ import numpy as np
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from msplatform.execution.inputs import freeze_file
-from common.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
+from msplatform.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
 from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
     run_finite_length as MODULE,
 )

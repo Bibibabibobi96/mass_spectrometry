@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.ion_release.numpy_box_cone import (
+from msplatform.ion_release.numpy_box_cone import (
     BOX_CONE_FIELDS,
     sample_numpy_box_cone_phase_space,
 )

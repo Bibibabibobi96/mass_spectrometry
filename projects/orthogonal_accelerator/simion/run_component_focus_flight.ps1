@@ -56,7 +56,7 @@ function Initialize-FocusFrozenPython {
   $root=Split-Path -Parent $RunConfig
   $code=Join-Path $root 'inputs/code'
   $origins=Join-Path $root 'results/python_execution.json'
-  $groups=@('common/contracts','common/ion_release','common/simion','projects/orthogonal_accelerator/analysis')
+  $groups=@('common/contracts','common/simion','projects/orthogonal_accelerator/analysis')
   $enumerate=@'
 import json,sys
 from pathlib import Path

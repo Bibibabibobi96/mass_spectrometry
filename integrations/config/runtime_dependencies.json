@@ -258,18 +258,6 @@
           ]
         },
         {
-          "source_repo_path": "common/ion_release",
-          "consumers": [
-            "accelerator_interface",
-            "cooled_frontend",
-            "local_frontend",
-            "multipole_ip",
-            "oa_mr",
-            "prepared_joint",
-            "single_reflection_flight"
-          ]
-        },
-        {
           "source_repo_path": "common/paths",
           "consumers": [
             "accelerator_interface",

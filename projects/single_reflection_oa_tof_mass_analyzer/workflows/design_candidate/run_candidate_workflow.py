@@ -65,7 +65,7 @@ STAGE_SOURCE_PREFIXES = {
     ),
     "simion_candidate": (
         "projects/single_reflection_oa_tof_mass_analyzer/simion/",
-        "common/ion_release/dotnet_gaussian_box_ion11.py",
+        "src/msplatform/ion_release/dotnet_gaussian_box_ion11.py",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",

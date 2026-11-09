@@ -13,7 +13,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import validate_schema
-from common.integration.resolve_assembly import derive_assembly_scope
+from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
 from msplatform.contracts.rigid_transform import RigidTransform
 from common.contracts.verify_run_manifest import record_path, verify_record

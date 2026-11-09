@@ -98,7 +98,7 @@ def _l1_particles_from_release(
     source: dict[str, Any], particle_count: int, random_seed: int
 ) -> dict[str, np.ndarray]:
     """Project the common source release to the L1 integrator's SI state."""
-    from common.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
+    from msplatform.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
 
     release = sample_numpy_box_cone_phase_space(
         source=source,

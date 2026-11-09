@@ -33,7 +33,7 @@ Installed gas-flow operations and explicit deployment/profile usage are describe
 | COMSOL→SIMION 气体场接口 | [`config/gas_field_interface.json`](config/gas_field_interface.json) |
 | 均匀后端 400 Pa 原型场 | [`config/uniform_rear_gas_field.json`](config/uniform_rear_gas_field.json) |
 | SIMION 离子输运物理 | [`config/ion_transport_science.json`](config/ion_transport_science.json) |
-| N=100 圆柱离子释放 | [`config/cylindrical_ion_source.json`](config/cylindrical_ion_source.json)，由 `common.ion_release` 物化和签收 |
+| N=100 圆柱离子释放 | [`config/cylindrical_ion_source.json`](config/cylindrical_ion_source.json)，由 `msplatform.ion_release` 物化和签收 |
 | SIMION 数值 | [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
 | 已注册 COMSOL 计划级执行能力 | [`config/execution_profiles.json`](config/execution_profiles.json) |
 

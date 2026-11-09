@@ -27,12 +27,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_in
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometry import prepare_geometry
 
 
-# These routes are still imported by native geometry, OA timing and the IP
-# recorded-source readers used by this study. Retire with those imports by P4.
+# Installed scientific dependencies used by native geometry, OA timing and IP
+# recorded-source readers. Freeze canonical bytes; the constant name is historical.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "src/msplatform/contracts/particle_physics.py",
-    "common/integration/resolve_assembly.py",
-    "common/ion_release/release.py",
+    "src/msplatform/assembly/resolve_assembly.py",
+    "src/msplatform/ion_release/release.py",
     "src/msplatform/execution/simion_dispatch.py",
 )
 

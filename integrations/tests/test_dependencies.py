@@ -956,7 +956,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                              "src/msplatform/contracts/schemas/assembly_recipe.schema.json",
                              "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",
                              "src/msplatform/contracts/schemas/composition_plan.schema.json",
-                             "common/integration/resolve_assembly.py",
+                             "src/msplatform/assembly/resolve_assembly.py",
                              "projects/orthogonal_accelerator/analysis/assembly_interface.py",
                              "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py"):
                 with self.subTest(missing=relative):

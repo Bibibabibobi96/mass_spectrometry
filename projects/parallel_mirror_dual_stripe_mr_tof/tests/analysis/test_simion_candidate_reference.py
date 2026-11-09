@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from msplatform.contracts.rigid_transform import RigidTransform
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,

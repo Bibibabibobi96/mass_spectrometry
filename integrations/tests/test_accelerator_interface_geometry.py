@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 import copy
-from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from common.contracts.write_run_manifest import file_record
 from msplatform.contracts.rigid_transform import RigidTransform
 from integrations.workflows.accelerator_interface import geometry

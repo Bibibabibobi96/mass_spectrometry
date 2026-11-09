@@ -21,10 +21,10 @@ from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.contracts.rigid_transform import RigidTransform
-from common.integration.resolve_assembly import derive_assembly_scope
+from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from common.contracts.verify_run_manifest import record_path, verify_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from common.ion_release.release import validate_release_spec
+from msplatform.ion_release.release import validate_release_spec
 from integrations.runtime.single_flight_electrode_contract import render_pa_plus_solution_model
 from integrations.runtime.single_flight_frontend import compile_frontend
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS, transform_source_rows

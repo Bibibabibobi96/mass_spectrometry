@@ -304,7 +304,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                         self.assertEqual((batch_directory/'joint.operating_point.lua').read_bytes(),before_sidecar)
 
         self.assertEqual(original_path.read_bytes(), frozen_original)
-        from common.integration.resolve_assembly import compile_assembly_layout
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout
         plan_path = prepared / "inputs/composition_plan.json"
         request_path = prepared / "inputs/accelerator_request.json"
         plan_bytes, request_bytes = plan_path.read_bytes(), request_path.read_bytes()

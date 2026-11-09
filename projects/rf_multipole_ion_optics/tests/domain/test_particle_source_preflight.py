@@ -30,10 +30,10 @@ from msplatform.components.rf_multipole.source_validation import (
     validate_source,
 )
 from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
-from common.ion_release import mt19937_disk_cone_rf_phase as release_sampler
+from msplatform.ion_release import mt19937_disk_cone_rf_phase as release_sampler
 from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
 from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget
-from common.ion_release.release import materialize_release_from_file as materialize
+from msplatform.ion_release.release import materialize_release_from_file as materialize
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 
 
@@ -177,7 +177,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
         return path
 
     def test_release_materializes_once_and_full_and_batch_projection_keep_frozen_states(self) -> None:
-        from common.ion_release import mt19937_disk_cone_rf_phase as sampler
+        from msplatform.ion_release import mt19937_disk_cone_rf_phase as sampler
 
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -235,7 +235,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             frozen = Path(temporary) / "snapshot"
             for relative in (
-                "common/contracts", "common/simion", "common/ion_release",
+                "common/contracts", "common/simion",
                 "projects/rf_multipole_ion_optics/runtime", "src/msplatform",
             ):
                 shutil.copytree(
@@ -261,7 +261,7 @@ from pathlib import Path
 from unittest.mock import patch
 from msplatform.components.rf_multipole import source_validation as preflight
 from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
-from common.ion_release import mt19937_disk_cone_rf_phase as sampler
+from msplatform.ion_release import mt19937_disk_cone_rf_phase as sampler
 assert Path(preflight.__file__).resolve().is_relative_to(Path.cwd().resolve())
 source,receipt,spec,resolved=[Path('inputs')/n for n in ('source.csv','receipt.json','spec.json','resolved.json')]
 sys.argv=['preflight','--source',str(source),'--resolved-design',str(resolved),'--output','inputs/metadata.json',

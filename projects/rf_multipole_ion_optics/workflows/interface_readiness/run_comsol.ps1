@@ -75,7 +75,6 @@ $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $r
         'projects/rf_multipole_ion_optics/analysis',
         'projects/rf_multipole_ion_optics/core',
         'projects/rf_multipole_ion_optics/runtime',
-        'common/ion_release',
         'projects/rf_multipole_ion_optics/workflows/interface_readiness'
     ) `
     -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
@@ -610,8 +609,8 @@ try {
             'msplatform.contracts.particle_physics',
         'common.contracts.particle_count_policy',
         'common.contracts.file_identity',
-        'common.ion_release',
-        'common.ion_release.numpy_ion11_box',
+        'msplatform.ion_release',
+        'msplatform.ion_release.numpy_ion11_box',
         'projects.rf_multipole_ion_optics.core',
             'projects.rf_multipole_ion_optics.core.interface_geometry',
             'msplatform.components.rf_multipole.source_validation'

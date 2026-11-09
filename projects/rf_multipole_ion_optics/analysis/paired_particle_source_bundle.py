@@ -21,7 +21,7 @@ from common.contracts.particle_count_policy import (
     POLICY_PATH,
     load_particle_count_policy,
 )
-from common.ion_release.numpy_ion11_box import sample_numpy_ion11_box_latent
+from msplatform.ion_release.numpy_ion11_box import sample_numpy_ion11_box_latent
 from msplatform.components.rf_multipole.source_validation import COLUMNS, validate_source
 
 

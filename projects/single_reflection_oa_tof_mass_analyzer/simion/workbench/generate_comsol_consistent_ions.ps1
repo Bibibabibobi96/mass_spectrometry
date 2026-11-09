@@ -41,7 +41,7 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
   throw "ION generation requires the selected Python runtime: $python"
 }
 $arguments = @(
-  (Join-Path $projectRoot '..\..\common\ion_release\dotnet_gaussian_box_ion11.py')
+  '-m'; 'msplatform.ion_release.dotnet_gaussian_box_ion11'
   '--particle-count'; [string]$N
   '--mass-amu'; [string]$MassAmu
   '--charge'; [string]$Charge

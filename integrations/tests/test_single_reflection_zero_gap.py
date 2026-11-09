@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from common.contracts.write_run_manifest import file_record
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, reframe_parent
 from msplatform.backends.simion.geometry import compile_frontend_geometry
 from msplatform.workflows.single_reflection_flight.prepare import prepare

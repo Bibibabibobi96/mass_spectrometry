@@ -50,7 +50,6 @@ try {
         -PythonPackages @(
             'common/contracts',
             'common/analysis',
-            'common/ion_release',
             'projects/rf_multipole_ion_optics/analysis',
             'projects/rf_multipole_ion_optics/core',
             'projects/rf_multipole_ion_optics/runtime',

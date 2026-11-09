@@ -13,7 +13,7 @@ from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem, physical_electrode_view
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 # These fixtures exercise the explicitly retained request-v9/native-v1 reader.
 from projects.rf_multipole_ion_optics.simion.assembly_interface import build_legacy_assembly_interface as build_assembly_interface
 from msplatform.backends.simion.geometry import (
@@ -314,7 +314,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.kw = inputs(self.source, self.oatof)
 
     def compile(self):
-        from common.integration.resolve_assembly import compile_assembly_layout
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout
         from msplatform.backends.simion.frontend import native_frontend_instances
         plan = self.kw['composition_plan']
         self.kw['composition_plan'] = compile_assembly_layout(plan['recipe'], plan['components'], local_scope=plan.get('local_scope'))

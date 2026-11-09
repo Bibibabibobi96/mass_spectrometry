@@ -13,7 +13,7 @@ from unittest.mock import patch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import (
     resolve_accelerator_geometry, project_side_opening,
 )
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from msplatform.contracts.rigid_transform import RigidTransform
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.assembly_interface import resolve_assembly_interface
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture as three_zone_fixture, reframe_parent

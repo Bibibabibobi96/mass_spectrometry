@@ -508,7 +508,7 @@ $global:LASTEXITCODE=0
             )
             registry.write_text(json.dumps(document), encoding="utf-8")
             with patch(
-                "common.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
+                "msplatform.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
                 side_effect=AssertionError("resolution sampled"),
             ):
                 value = runtime_profile._resolve_particle_source(

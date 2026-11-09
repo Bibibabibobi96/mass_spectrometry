@@ -123,14 +123,14 @@ SHA 由项目 `particle_source_profiles.json` 绑定；粒子数等级由公共�
 `{"release_spec":"config/sources/<name>.json"}`，与现有CSV `path/sha256` 形式互斥。
 JSON使用公共 `repository_ion_release` 的disk／filled-cone／RF策略，显式声明native coordinate ID、
 完整母群N、质量／电荷、释放盘、能量、RF频率、锥角和种子；RF／几何不随质量隐式调整。
-runtime和预算只验证请求与声明N，不采样。SIMION runner先冻结该JSON及 `common/ion_release` 执行源码，
+runtime和预算只验证请求与声明N，不采样。SIMION runner先冻结该JSON及 `src/msplatform/ion_release` 执行源码，
 再由现有source preflight的 `--materialize-release --release-spec <frozen.json> --release-receipt <receipt.json>`
 一次生成run-local canonical CSV和receipt；输入均进入同一manifest。完整与分批投影只消费该CSV，
 核验冻结spec、receipt、质量／电荷和时钟，不重新采样。不得与family operating point、volume receipt、
 campaign相位／能量派生或外部CSV覆盖组合；COMSOL尚未接入该物化模式并明确拒绝。
 
 RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生时间由
-[`common/ion_release/mt19937_disk_cone_rf_phase.py`](../../../common/ion_release/mt19937_disk_cone_rf_phase.py)
+[`src/msplatform/ion_release/mt19937_disk_cone_rf_phase.py`](../../../src/msplatform/ion_release/mt19937_disk_cone_rf_phase.py)
 的受注册 disk 策略生成；本项目的 family builder 只选择冻结参数并发布既有的嵌套 CSV，不能再维护
 第二份随机采样实现。
 
@@ -142,7 +142,7 @@ RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生�
 取样序列和 `sqrt(u)` 圆锥角，因此不改变既有理想场对照的粒子序列。
 
 默认源仍必须位于唯一的规范释放面并满足设计的单能源模型。唯一受支持的例外是由
-[`common/ion_release/continuous_axial_volume.py`](../../../common/ion_release/continuous_axial_volume.py)生成、且其receipt与CSV
+[`src/msplatform/ion_release/continuous_axial_volume.py`](../../../src/msplatform/ion_release/continuous_axial_volume.py)生成、且其receipt与CSV
 哈希互相绑定的连续轴向体积快照：它表示离子源内部的一个同一时刻圆柱体状态，位置与三向速度独立采样，
 不预设`z-vz`相关；它不能被解释为已经通过多极杆后的出口束流。
 

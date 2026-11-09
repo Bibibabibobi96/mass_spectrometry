@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.machine_contracts import load_json
-from common.ion_release.release import validate_release_spec
+from msplatform.ion_release.release import validate_release_spec
 
 
 def resolve_execution_binding(repo_root: Path, project_id: str, bindings: dict[str, str],

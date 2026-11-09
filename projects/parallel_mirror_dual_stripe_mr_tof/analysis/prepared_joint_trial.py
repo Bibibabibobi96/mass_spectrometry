@@ -19,7 +19,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from common.contracts.verify_run_manifest import record_path, verify_record, verified_successful_run_reference
 from common.contracts.write_run_manifest import file_record
-from common.integration.resolve_assembly import derive_assembly_scope
+from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     RUNTIME_LUA, materialize_measured_source_slice, materialize_centroid_probe,
 )

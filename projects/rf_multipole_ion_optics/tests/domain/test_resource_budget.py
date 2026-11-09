@@ -283,7 +283,7 @@ class ResourceBudgetTests(unittest.TestCase):
             with (
                 mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile", return_value=runtime),
                 mock.patch(
-                    "common.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
+                    "msplatform.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
                     side_effect=AssertionError("budget sampled"),
                 ),
                 mock.patch(

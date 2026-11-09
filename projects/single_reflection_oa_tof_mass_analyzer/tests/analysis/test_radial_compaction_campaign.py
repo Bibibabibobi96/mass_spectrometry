@@ -1277,7 +1277,7 @@ def run(case_root, run_id, context, managed):
 
     @unittest.skipUnless(shutil.which("pwsh"), "Production ION generator requires PowerShell")
     def test_campaign_source_rebuilds_its_named_mother_population(self) -> None:
-        from common.ion_release.dotnet_gaussian_box_ion11 import generate_ion_source, _serialized_ion_source
+        from msplatform.ion_release.dotnet_gaussian_box_ion11 import generate_ion_source, _serialized_ion_source
 
         with tempfile.TemporaryDirectory(prefix="radial-source-identity-") as directory:
             root = Path(directory)

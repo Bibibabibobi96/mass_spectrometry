@@ -30,7 +30,7 @@ from common.contracts import capacity_ledger
 from msplatform.backends.simion import pa_family_cache
 from msplatform.execution.inputs import python_import_roots
 from common.contracts.write_run_manifest import file_record
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import export_cooled_buncher_assembly_interface
 
 

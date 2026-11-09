@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.ion_release.dotnet_gaussian_box_ion11 import (
+from msplatform.ion_release.dotnet_gaussian_box_ion11 import (
     DotNetFrameworkRandom,
     _serialized_ion_source,
     generate_ion_source,

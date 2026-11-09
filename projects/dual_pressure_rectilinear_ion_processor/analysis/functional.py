@@ -30,7 +30,7 @@ from common.contracts.particle_count_policy import (
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
-from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
+from msplatform.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
 from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
@@ -46,11 +46,11 @@ from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates i
     to_local_position, to_local_vector,
 )
 
-# Explicit legacy import routes used by this package and its shared consumers.
-# Retire with their direct imports by P4; all algorithms remain in msplatform.
+# Installed scientific dependencies required by this package and its shared consumers.
+# Freeze their canonical source bytes; the legacy constant name does not denote aliases.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "src/msplatform/contracts/particle_physics.py",
-    "common/ion_release/release.py",
+    "src/msplatform/ion_release/release.py",
 )
 # Actual runtime dependencies, independent of incidental imports in the author process.
 FROZEN_RUNTIME_MODULES = (

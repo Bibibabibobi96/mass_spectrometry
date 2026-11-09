@@ -10,7 +10,7 @@ from unittest.mock import patch
 from jsonschema import ValidationError
 
 import copy
-from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev

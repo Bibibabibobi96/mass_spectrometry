@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.write_run_manifest import file_record
-from common.integration.resolve_assembly import compile_assembly_layout
+from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from integrations.workflows.accelerator_interface import geometry as assembly_geometry
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection

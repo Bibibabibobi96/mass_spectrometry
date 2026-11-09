@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.ion_release.numpy_ion11_box import (
+from msplatform.ion_release.numpy_ion11_box import (
     LATENT_FIELDS,
     render_numpy_ion11_box_table,
     sample_numpy_ion11_box_latent,

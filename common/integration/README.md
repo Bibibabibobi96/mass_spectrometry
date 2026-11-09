@@ -1,6 +1,6 @@
 # 公共器件连接合同层
 
-纯布局计算的规范 API 已迁至 `msplatform.assembly.resolve_assembly`。本目录 `resolve_assembly` 是单向兼容桥，`resolve_connection` 文件适配器直接调用规范实现；文件身份、工作流与原生执行仍归仓库。迁移期限见[公共入口](../README.md#科学核心发行与旧入口)。
+The installed layout API is `msplatform.assembly.resolve_assembly`; its former repository alias has retired. The existing `resolve_connection` file adapter calls that canonical API directly and retains its explicit repository file-identity responsibilities. See the [public entry](../README.md#科学核心发行与旧入口) for the migration context.
 
 本目录实现[连接架构](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)中的求解器中立公共边界。项目拥有provided/required port；
 `integrations/`拥有具体装配和物理工作流；本目录只负责

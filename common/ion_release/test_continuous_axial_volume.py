@@ -6,13 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.ion_release.continuous_axial_volume import (
+from msplatform.ion_release.continuous_axial_volume import (
     CONTINUOUS_AXIAL_VOLUME_RELEASE_KEY,
     METHOD,
     ROLE,
     generate_continuous_axial_volume_states,
 )
-from common.ion_release.release import (
+from msplatform.ion_release.release import (
     RELEASE_HANDLER_REGISTRY,
     materialize_release_from_file,
     validate_materialized_release,

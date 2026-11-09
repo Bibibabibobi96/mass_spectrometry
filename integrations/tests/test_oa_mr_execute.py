@@ -247,7 +247,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         from msplatform.backends.comsol.static_field_binding import load_binding
         from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
         from common.contracts.verify_run_manifest import verify_record
-        from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
         from common.integration.test_resolve_assembly import direct_fixture
         recipe,components=direct_fixture()
         parent_assembly=compile_assembly_layout(recipe,components)

@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts.file_identity import file_sha256
-from common.ion_release.release import generate_release_states, validate_release_spec
+from msplatform.ion_release.release import generate_release_states, validate_release_spec
 from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
     render_gem,
@@ -232,7 +232,7 @@ class GasPreparationTests(unittest.TestCase):
         repo = PROJECT.parents[1]
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "snapshot"
-            for relative in ("common/contracts", "common/ion_release", "common/simion",
+            for relative in ("common/contracts", "common/simion",
                              "projects/" + PROJECT.name + "/config"):
                 shutil.copytree(repo / relative, snapshot / relative,
                     ignore=lambda folder, names: [name for name in names

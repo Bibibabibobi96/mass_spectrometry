@@ -10,7 +10,7 @@ from pathlib import Path
 
 from msplatform.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, kinetic_energy_ev
 
-from common.ion_release.cylinder import (
+from msplatform.ion_release.cylinder import (
     apply_controlled_slow_energy_pair,
     GAUSSIAN_STRATEGY,
     HALTON_STRATEGY,
@@ -22,7 +22,7 @@ from common.ion_release.cylinder import (
     generate_cylinder_release_states,
     validate_cylinder_release_spec,
 )
-from common.ion_release.release import (
+from msplatform.ion_release.release import (
     generate_release_states,
     materialize_release_from_file,
     validate_materialized_release,
