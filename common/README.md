@@ -316,6 +316,9 @@ provider／compiler／planner检验明确输入，不执行原生动作。规划
 缺真实输入返回`insufficient_request`，原validator异常保类型／原因返回`rejected`，未提供纯查询适配的动作
 返回`unsupported`，不据函数存在推定可启动。可选environment只接受调用者明确的版本1工具观测，
 不搜索PATH或探测许可；合同接受、环境声明、执行未评估及原生资格未授予分别返回。
+Tracking queries validate the actual whole-unit planner, including explicit ordinal partitions and
+declared reuse keys. They do not authenticate reuse evidence or grant native/checkpoint qualification;
+incomplete units are replayed whole rather than resuming a process state.
 
 ### P3 有限桥与局部适配件的退出责任
 

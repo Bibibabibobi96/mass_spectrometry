@@ -76,7 +76,14 @@ class PlatformCapabilitiesTests(unittest.TestCase):
                 self.assertTrue(result["execution_prerequisites"])
                 self.assertEqual(result["query_scope"], "compile_or_plan_only_not_execution_signature")
                 if operation == "track":
-                    self.assertIn("shared_dispatcher_and_four_unit_recovery_not_proved", result["limitations"])
+                    self.assertEqual(result["native_qualification"], "not_granted")
+                    self.assertIn("whole_unit", result["software_scope"])
+                    self.assertIn("incomplete_units_replay_whole_not_process_checkpoint_resume", result["limitations"])
+                    partitioned = self.query(operation, dict(arguments, unit_size=25,
+                        reused_unit_keys=["unit_0001"]))
+                    self.assertEqual(partitioned["contract_status"], "accepted", partitioned)
+                    self.assertEqual(partitioned["execution_readiness"], "not_assessed")
+                    self.assertEqual(partitioned["native_qualification"], "not_granted")
 
     def test_step_members_and_shared_options_validate_without_loading_cad_engine(self):
         result = self.query("export_cad", dict(assembly=self.assembly,format="step",options=self.case.cad_export))

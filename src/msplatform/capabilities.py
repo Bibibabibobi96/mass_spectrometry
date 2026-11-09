@@ -73,9 +73,9 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         result["execution_prerequisites"] = ["published_prepared_model", "verified_payload_records", "execution_owner_and_stage_policy", "explicit_SIMION"]
     elif operation == "track":
         from msplatform.backends.simion.tracking_execution import plan_tracking_execution
-        validator, scope = plan_tracking_execution, "one_complete_cohort_tracking_plan_not_Fly"
+        validator, scope = plan_tracking_execution, "whole_unit_tracking_plan_not_Fly"
         result["execution_prerequisites"] = ["published_FieldBundle", "verified_original_source_and_clock", "execution_owner_and_stage_policy", "explicit_SIMION"]
-        result["limitations"] = ["explicit_one_complete_cohort_unit_v1", "shared_dispatcher_and_four_unit_recovery_not_proved"]
+        result["limitations"] = ["incomplete_units_replay_whole_not_process_checkpoint_resume"]
     elif operation == "export_cad":
         validator, scope = step_projection, "complete_physical_STEP_member_projection_not_exported"
         result["execution_prerequisites"] = ["cad-step_optional_dependencies", "execution_owner_and_stage_policy", "actual_STEP_export_and_reopen"]
