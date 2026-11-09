@@ -147,6 +147,18 @@ ConvertTo-Json -InputObject $records -Compress
             from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
             copy_scientific_core(REPO, source)
+            # The normal CLI freezes the installed launcher, including its
+            # resolver; the inert process boundary must receive real argv.
+            launcher = source / "src/msplatform/backends/comsol/launcher"
+            launcher.mkdir(parents=True, exist_ok=True)
+            for original in (REPO / "src/msplatform/backends/comsol/launcher").glob("*.ps1"):
+                shutil.copyfile(original, launcher / original.name)
+            comsol_root = root / "TEST_ONLY_COMSOL"
+            executable = comsol_root / "bin/win64/comsolmphserver.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("TEST_ONLY_NEVER_EXECUTED", encoding="utf-8")
+            matlab_root = root / "TEST_ONLY_MATLAB"
+            matlab_root.mkdir()
             install_controlled_cpu_snapshot(REPO, source)
             policy = source/"src/msplatform/execution/resources/artifact_capacity_policy.json"
             policy_document = json.loads(policy.read_text(encoding="utf-8"))
@@ -195,6 +207,8 @@ function Invoke-ResourceBudgetedProcess {
                                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "exec"),
                                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"),
                                        P4_BOUNDARY_PATH=str(boundary))
+                    environment.update(COMSOL_64_ROOT=str(comsol_root),
+                                       MATLAB_R2025B_ROOT=str(matlab_root))
                     environment.pop("PYTHONPATH", None)
                     for name in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN",
                                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID",
