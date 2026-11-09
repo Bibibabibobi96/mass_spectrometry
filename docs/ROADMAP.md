@@ -107,8 +107,9 @@ V8.2 is the active P4 scope. Formal reusable implementations and workflows belon
 production tree. Existing completed slices are retained. Independent RF raw geometry/model,
 independent two-/three-zone OA geometry and Wehnelt build-only operations have source-bound
 ordinary-install/native evidence in their project status pages; these are not field/Fly or
-scientific qualifications. SFI preparation/pulse, collection, continuation planning and their source/result adapters are installed;
-native execution still requires migration. Explicit deployment
+scientific qualifications. SFI preparation/pulse, field planning, downstream publication,
+workbench runtime, collection, continuation planning and their source/result adapters are installed;
+remaining PowerShell native orchestration and legacy seed closure still require migration. Explicit deployment
 capacity policy and selected failed-output preservation use the existing owner and ledger.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
@@ -119,8 +120,12 @@ plus one loader error; 7,996 subtests (7,894 success, 59 failure, 43 error). Its
 elapsed time was 3,243.832287 seconds, not a separately retained external command wall.
 Overlapping private validation makes this a correctness diagnosis rather than a controlled
 performance baseline. Successor repairs and focused checks do not turn that failed run green.
-The current manifest-policy and frontend workflow migrations remain under validation;
-ordinary composed-source, final full regression and the original performance targets stay OPEN.
+Manifest/retention ownership, local frontend preparation/runtime, the initial-state CSV reader,
+SFI field planning/downstream/runtime and the explicit OA closed-focus plan have now been committed
+with scoped software validation. Their retired root bodies are absent. Runtime composition exposed
+an empty-package freeze declaration and a stale DAG node; those were corrected without relaxing
+source enumeration, and the failed run and successful targeted successor remain separate evidence.
+Final ordinary installation of the composed source, full regression and performance targets stay OPEN.
 
 
 | 当前对象／职责 | 规范所有者与活动消费者 | 本阶段退出条件 |
@@ -134,9 +139,11 @@ ordinary composed-source, final full regression and the original performance tar
 | STEP导出／冷读 | `exporters`；CAD和独立几何检查 | 与后端并列消费完整Assembly，无默认GUI |
 | 结果读取／分析／比较 | `results`组合中立I/O与纯`analysis`；离线消费者 | 无隐藏重算／owner，缺失和篡改失败关闭 |
 | Independent OA model/field/tracking | Installed SIMION model, field and shared tracking owners; explicit drive, source/clock and original protected family | Source and ordinary-install software slices delivered; actual OA native field/Fly and coupled-field qualification stay OPEN. Detailed evidence belongs to the OA project state. |
-| OA accelerator-only theory and closed-focus source | `components.orthogonal_accelerator.three_zone_ideal_theory` and `backends.simion.oa_focus_source`; actual contracts, CLI and frozen consumers | Old bodies retired with scientific definitions unchanged; current v2 authority refresh preserves historical v1 bytes/refusal. Closed-focus plan/analysis/workflow and native acceptance remain OPEN. |
+| OA accelerator-only theory and closed-focus source | `components.orthogonal_accelerator.three_zone_ideal_theory` and `backends.simion.oa_focus_source`; actual contracts, CLI and frozen consumers | Old bodies retired with scientific definitions unchanged; current v2 authority refresh preserves historical v1 bytes/refusal. The closed-focus plan and sole campaign validator are installed with explicit mesh and frozen consumers; analysis/FastAdjust, remaining orchestration and native acceptance stay OPEN. |
 | Paired RF source and sampled response | `ion_release.paired_mass_scan` and `analysis.mass_response`; actual RF preparation/evaluation and three frozen PS consumers | Both old bodies retired, explicit mass/input/criteria preserved; ordinary source epochs and main scoped checks delivered. Remaining root RF workflows and final composed-source acceptance remain OPEN. |
-| Named SFI preparation/pulse/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers | Installed slices delivered; remaining native execution and affected final acceptance stay OPEN |
+| Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Remaining PS orchestration, legacy seeds, composed installation and applicable native acceptance stay OPEN. |
+| Local frontend and initial-state CSV | `workflows.local_frontend` and `backends.simion.source.load_initial_state`; cooled and local consumers | Root local bodies retired; classified IOB policy and original particle/clock semantics retained. Final composed acceptance and remaining shared orchestration stay OPEN. |
+| Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
 | MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
 | Dual-cone SIMION input preparation | `backends.simion.dual_cone_transport` and canonical source serializers; Program resource/callers migrated, old preparation/source/Program copies retired | Ordinary installation and explicit observation cadence delivered; actual seven-electrode field/ion-flight integration stays OPEN |
 | 环境、恢复与原生查看 | `execution`／`applications`；运行owner与故障矩阵 | 一次部署、单一owner；历史action仅作数据语义读取 |
