@@ -55,7 +55,11 @@ metadata明确首个全局峰、最近半高交点及线性插值，质量轴仍
 现均直接使用`msplatform.analysis.peak_metrics`；旧活动桥已退役，冻结来源、数值、单位和资格语义保持。
 接受域纵向拟合及publisher冻结探针同样直接使用`msplatform.analysis.longitudinal_fit`，旧公共实现退役。
 publisher可将checkout外普通安装模块按`src/msplatform`规范目的路径冻结，并绑定实际加载字节；
-非仓库且非安装包的来源仍拒绝，开发checkout正例与冻结快照隔离读取保持。
+The aperture readers use the neutral `msplatform.io.file_identity` implementation. Their snapshot includes
+the actual root, analysis and I/O package initializers, fitting code and file-identity code, without loading execution.
+The four publisher tests pass on Python 3.11, including frozen reader imports with a competing regular package,
+snapshot module-origin checks, and rejection when the frozen identity implementation is missing despite that package.
+This is bounded software evidence, not wheel/sdist, native solver or scientific qualification.
 项目粒子物理消费者及Candidate闭包直接使用`msplatform.contracts.particle_physics`，常量、公式和冻结身份边界不变。
 机器合同科学函数直接使用安装实现；真实checkout根从`common.paths.repository_root`取得，不进入可安装科学核心。
 

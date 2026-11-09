@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import tempfile
 import subprocess
 import sys
@@ -64,26 +65,57 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             snapshot = run_dir / "inputs" / "repository_snapshot"
             for name, relative in (
                 ("longitudinal_fit_implementation", "src/msplatform/analysis/longitudinal_fit.py"),
-                ("file_identity_implementation", "common/contracts/file_identity.py"),
+                ("core_package_implementation", "src/msplatform/__init__.py"),
+                ("analysis_package_implementation", "src/msplatform/analysis/__init__.py"),
+                ("io_package_implementation", "src/msplatform/io/__init__.py"),
+                ("io_file_identity_implementation", "src/msplatform/io/file_identity.py"),
             ):
                 self.assertEqual(manifest["inputs"][name]["sha256"], _sha(snapshot / relative))
                 self.assertEqual((snapshot / relative).read_bytes(),
                                  (publisher.REPOSITORY_ROOT / relative).read_bytes())
-            # Isolated import proves the new dependency is present without the live repo.
-            probe = subprocess.run(
-                [sys.executable, "-I", "-c",
-                 "import sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[2]); "
-                 "from msplatform.analysis.longitudinal_fit import fit_longitudinal_polynomial; "
-                 "from common.contracts.file_identity import file_sha256; "
+            # A real regular package later on sys.path must neither override the
+            # frozen package nor fill a missing member. Editable-only environments
+            # cannot expose that namespace-package fallback.
+            installed = root / "installed-control"
+            for relative in ("__init__.py", "analysis/__init__.py", "analysis/longitudinal_fit.py",
+                             "io/__init__.py", "io/file_identity.py"):
+                source = publisher.REPOSITORY_ROOT / "src/msplatform" / relative
+                target = installed / "msplatform" / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+            command = (
+                [sys.executable, "-I", "-S", "-c",
+                 "import sys, sysconfig; from pathlib import Path; "
+                 "venv = Path(sys.executable).resolve().parent.parent; "
+                 "sys.path.append(sysconfig.get_paths(vars={'base': str(venv), 'platbase': str(venv)})['purelib']); "
+                 "sys.path[:0] = [sys.argv[2], sys.argv[1]]; "
+                 "sys.path.insert(2, sys.argv[3]); "
+                 "import msplatform.analysis.longitudinal_fit as fit; "
+                 "from msplatform.io.file_identity import file_sha256; "
+                 "from projects.single_reflection_oa_tof_mass_analyzer.analysis import analyze_ideal_acceptance_aperture_campaign as pre, analyze_ideal_acceptance_aperture_full_flight as full; "
                  "import numpy as np; "
-                 "assert abs(fit_longitudinal_polynomial(np.arange(3.), np.arange(3.), 1).metrics['k_per_us'] - 1) < 1e-12",
-                 str(snapshot), str(snapshot / "src")],
+                 "assert Path(fit.__file__).resolve() == Path(sys.argv[2]) / 'msplatform/analysis/longitudinal_fit.py'; "
+                 "assert Path(file_sha256.__code__.co_filename).resolve() == Path(sys.argv[2]) / 'msplatform/io/file_identity.py'; "
+                 "assert pre._sha256 is file_sha256 and full._sha256 is file_sha256; "
+                 "assert all(Path(module.__file__).resolve().is_relative_to(Path(sys.argv[2])) for name, module in sys.modules.items() if name == 'msplatform' or name.startswith('msplatform.')); "
+                 "assert 'msplatform.execution' not in sys.modules; "
+                 "assert abs(fit.fit_longitudinal_polynomial(np.arange(3.), np.arange(3.), 1).metrics['k_per_us'] - 1) < 1e-12",
+                 str(snapshot), str(snapshot / "src"), str(installed)]
+            )
+            probe = subprocess.run(
+                command,
                 cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
             self.assertEqual(probe.returncode, 0, probe.stderr)
+            dependency = snapshot / "src/msplatform/io/file_identity.py"
+            dependency.unlink()
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                     encoding="utf-8", timeout=30)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("msplatform.io.file_identity", missing.stderr)
 
         self.assertEqual(summary["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
-        self.assertEqual(len(manifest["inputs"]), 14)
+        self.assertEqual(len(manifest["inputs"]), 17)
         self.assertTrue(result_exists)
         self.assertFalse(manifest["formal_eligible"])
 
@@ -99,7 +131,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
                     mode="full-flight", workspace_root=root,
                 )
             manifest = json.loads((self._run_dir(root, "20260828_120100__analysis__python__aperture-full-flight") / "run_manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest["inputs"]), 22)
+        self.assertEqual(len(manifest["inputs"]), 25)
         self.assertIn("arm_01_single_flight_manifest", manifest["inputs"])
 
     def test_installed_module_outside_checkout_is_frozen_from_actual_bytes(self) -> None:

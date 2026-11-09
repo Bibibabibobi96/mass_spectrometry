@@ -21,6 +21,9 @@ import tempfile
 from typing import Any, Callable
 
 from msplatform.execution.artifact_naming import validate_run_id
+import msplatform
+from msplatform import analysis, io
+from msplatform.io import file_identity as io_file_identity
 from msplatform.analysis import longitudinal_fit
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import (
@@ -188,7 +191,10 @@ def publish_aperture_comparison(
         "pre_pulse_implementation": Path(pre_pulse.__file__).resolve(),
         "full_flight_implementation": Path(full_flight.__file__).resolve(),
         "longitudinal_fit_implementation": Path(longitudinal_fit.__file__).resolve(),
-        "file_identity_implementation": REPOSITORY_ROOT / "common/contracts/file_identity.py",
+        "core_package_implementation": Path(msplatform.__file__).resolve(),
+        "analysis_package_implementation": Path(analysis.__file__).resolve(),
+        "io_package_implementation": Path(io.__file__).resolve(),
+        "io_file_identity_implementation": Path(io_file_identity.__file__).resolve(),
     }
     source_hashes = {name: _sha256(path) for name, path in source_paths.items()}
     # Run the reader before creating any artifact directory: a rejected arm
