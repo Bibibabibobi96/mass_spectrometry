@@ -492,7 +492,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             statement = """
 import json,sys
 from pathlib import Path
-from common.integration import resolve_assembly
+from msplatform.assembly import resolve_assembly
 assert Path(resolve_assembly.__file__).is_relative_to(Path.cwd())
 parent=json.loads(Path(sys.argv[1]).read_text())
 local=resolve_assembly.derive_assembly_scope(parent,local_scope=dict(
@@ -756,7 +756,7 @@ if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight
                 "from pathlib import Path; "
                 "from integrations.workflows.cooled_frontend import prepare; "
                 "from integrations.workflows.cooled_frontend import reference, pulse, mesh_check; "
-                "from common.integration import resolve_assembly; "
+                "from msplatform.assembly import resolve_assembly; "
                 "from projects.orthogonal_accelerator.analysis import assembly_interface; "
                 "assert all(Path(module.__file__).is_relative_to(Path.cwd()) "
                 "for module in (prepare,reference,pulse,mesh_check,resolve_assembly,assembly_interface)); "
