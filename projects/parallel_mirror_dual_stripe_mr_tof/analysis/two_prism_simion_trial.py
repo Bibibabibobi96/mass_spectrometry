@@ -33,7 +33,7 @@ from msplatform.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
-from msplatform.analysis.oa_focus import (
+from msplatform.workflows.oa_focus_analysis import (
     _component_energy_per_charge_v,
     _target_axial_energy_per_charge_v,
 )

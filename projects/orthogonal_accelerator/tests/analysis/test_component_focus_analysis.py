@@ -10,7 +10,7 @@ from unittest.mock import patch
 from msplatform.contracts.particle_physics import kinetic_energy_ev, speed_m_s_from_kinetic_energy_ev
 from msplatform.ion_release.release import generate_release_states, materialize_release
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
-from msplatform.analysis.oa_focus import ComponentFocusError, _ideal_two_zone_contrast, analyze
+from msplatform.workflows.oa_focus_analysis import ComponentFocusError, _ideal_two_zone_contrast, analyze
 
 ROOT = Path(__file__).resolve().parents[2]
 CAMPAIGN = ROOT / "config" / "two_zone_component_focus_campaign.json"
@@ -222,7 +222,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
             if calls == 2:
                 raise ValueError("test-only no ideal crossing")
             return real(*args, **kwargs)
-        with patch("msplatform.analysis.oa_focus.time_to_fixed_plane_s", side_effect=propagate):
+        with patch("msplatform.workflows.oa_focus_analysis.time_to_fixed_plane_s", side_effect=propagate):
             result = analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())
         contrast = result["ideal_field_contrast"]
         self.assertEqual(contrast["status"], "incomplete_ideal_propagation")
@@ -299,7 +299,7 @@ Invoke-Expression $copies[0].Extent.Text | Out-Null
 
     def test_public_stream_reader_retains_header_contract_and_rejects_bad_rows(self) -> None:
         from msplatform.io.scientific_csv import iter_csv_rows
-        from msplatform.analysis import oa_focus as focus
+        from msplatform.workflows import oa_focus_analysis as focus
         events = self.write_events()
         with patch.object(focus, "iter_csv_rows", wraps=iter_csv_rows) as reader:
             result = focus._events(events)
@@ -341,7 +341,7 @@ $tables=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.HashtableA
 if($tables.Count-ne1){throw 'Expected one component summary identity boundary'}
 $pipeline=$tables[0];while($pipeline-isnot[Management.Automation.Language.PipelineAst]){$pipeline=$pipeline.Parent}
 $analysisCalls=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'-and
- @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'msplatform.analysis.oa_focus'}).Count},$true))
+ @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'msplatform.workflows.oa_focus_analysis'}).Count},$true))
 if($analysisCalls.Count-ne1){throw 'Expected one actual frozen analysis call'}
 $family=Join-Path $Root 'parent';$generation=Join-Path $Root 'generation';$controller=Join-Path $Root 'private controller.pa0'
 $summary=Join-Path $Root 'summary.json';$analysis=Join-Path $Root 'analysis.json'

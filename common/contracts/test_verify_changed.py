@@ -576,7 +576,7 @@ exit 0
                 self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", stages)
         self.assertTrue(downstream <= self.routed_stages(
             prefix + "analysis/component_focus_analysis.py").keys())
-        for installed in ("src/msplatform/analysis/oa_focus.py",
+        for installed in ("src/msplatform/workflows/oa_focus_analysis.py",
                           "src/msplatform/workflows/oa_focus_fast_adjust.py"):
             with self.subTest(installed=installed):
                 stages = self.routed_stages(installed)

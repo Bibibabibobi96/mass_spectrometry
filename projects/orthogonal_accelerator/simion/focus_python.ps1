@@ -23,7 +23,7 @@ try:
         sys.argv=[module,*arguments]
         runpy.run_module(module,run_name="__main__",alter_sys=True)
     else:
-        for name in ("msplatform.ion_release.cylinder","msplatform.backends.simion.oa_focus_source","msplatform.analysis.oa_focus"):
+        for name in ("msplatform.ion_release.cylinder","msplatform.backends.simion.oa_focus_source","msplatform.workflows.oa_focus_analysis"):
             importlib.import_module(name)
         campaign=json.loads(Path(arguments[0]).read_text(encoding="utf-8-sig"))
         from msplatform.components.orthogonal_accelerator.focus_campaign import validate_campaign

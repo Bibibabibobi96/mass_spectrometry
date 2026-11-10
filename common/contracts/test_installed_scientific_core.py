@@ -1280,6 +1280,38 @@ for module in (beam_moments,beam_crossings,beam_focus):
 print('INSTALLED_RECORDED_BEAM=PASS')
 
 missing_rejected = []
+
+# Provider-specific recorded analysis: actual explicit fixture and its unchanged protocol2 report.
+from msplatform.workflows import oa_focus_analysis as focus_analysis
+focus_fixture=fixture['oa_focus_analysis']
+focus_actual=focus_analysis.analyze(pathlib.Path(focus_fixture['events']),
+    pathlib.Path(focus_fixture['release_receipt']),pathlib.Path(focus_fixture['campaign']),
+    geometry_profile=focus_fixture['geometry_profile'])
+assert focus_actual==focus_fixture['expected']
+assert focus_actual['schema_version']==2 and focus_actual['focus_particle_count']==3
+focus_contract=root/('focus-contract-'+sys.argv[2]+'.json')
+focus_contract.write_text(json.dumps(focus_fixture['component_contract']),encoding='utf-8')
+focus_output=root/('focus-analysis-'+sys.argv[2]+'.json')
+focus_arguments=[sys.executable,'-I','-B','-m','msplatform.workflows.oa_focus_analysis',
+    '--events',focus_fixture['events'],'--release-receipt',focus_fixture['release_receipt'],
+    '--campaign',focus_fixture['campaign'],'--component-contract',str(focus_contract),'--output',str(focus_output)]
+focus_cli=subprocess.run(focus_arguments,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+assert focus_cli.returncode==0,focus_cli.stdout+focus_cli.stderr
+assert focus_output.read_bytes()==(json.dumps(focus_fixture['expected'],indent=2)+'\n').replace('\n',os.linesep).encode('utf-8')
+focus_module=pathlib.Path(focus_analysis.__file__)
+assert focus_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+focus_hidden=focus_module.with_name(focus_module.name+'.missing')
+focus_bytes=focus_module.read_bytes()
+focus_module.rename(focus_hidden)
+try:
+    focus_missing=subprocess.run([sys.executable,'-I','-B','-m',focus_analysis.__name__],cwd=root,
+        capture_output=True,text=True,encoding='utf-8',timeout=30)
+    assert focus_missing.returncode!=0 and 'focus_analysis' in focus_missing.stderr,focus_missing.stderr
+finally:focus_hidden.rename(focus_module)
+assert focus_module.read_bytes()==focus_bytes
+missing_rejected.append('oa_focus_analysis')
+print('INSTALLED_OA_FOCUS_ANALYSIS=PASS')
+
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
     ('ei_builder', comsol_resource_path('ms_stage1_ei_source.m'), lambda:comsol_resource_path('ms_stage1_ei_source.m')),
@@ -1536,6 +1568,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def test_actual_installed_comparison_probe_uses_manifest_bound_fixture(self) -> None:
         import ast
         import copy
+        import importlib
         from types import SimpleNamespace
         from unittest.mock import patch
         from msplatform.backends import simion as simion_api
@@ -1552,6 +1585,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 sys=SimpleNamespace(argv=['probe','fixture.json','0']),file_record=file_record,
                 publish_terminal_state=publish_terminal_state,json=json,copy=copy,pathlib=__import__('pathlib'),patch=patch,
                 simion_api=simion_api)
+            # The real probe initializes stats in its earlier peak-metrics checks.
+            # Preserve that prerequisite before guarding comparison execution.
+            importlib.import_module('scipy.stats')
             exec(code,namespace)
             self.assertEqual(namespace['described']['status'],'comparison_completed')
             self.assertTrue(all(type(pid) is int and pid==row['particle_id'] for pid,row in namespace['mother'].records.items()))
@@ -1726,6 +1762,19 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 provenance={name:provenance[name] for name in ('source_kind','population_policy','clock_epoch_id',
                     'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
         return cases
+
+    def oa_focus_analysis_probe_fixture(self) -> dict:
+        from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
+        from msplatform.workflows.oa_focus_analysis import analyze
+        case = fixtures.ComponentFocusAnalysisTests()
+        case.setUp()
+        self.addCleanup(case.tearDown)
+        events = case.write_events()
+        profile = fixtures._geometry_profile()
+        contract = json.loads((fixtures.ROOT / "config/component_contract.json").read_text(encoding="utf-8"))
+        return dict(events=str(events), release_receipt=str(case.receipt), campaign=str(case.campaign),
+                    geometry_profile=profile, component_contract=contract,
+                    expected=analyze(events, case.receipt, case.campaign, geometry_profile=profile))
 
     def comparison_probe_fixture(self) -> dict:
         from common.contracts import test_simion_trajectory_analysis as fixtures
@@ -2026,6 +2075,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
                                               prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
+                                              oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

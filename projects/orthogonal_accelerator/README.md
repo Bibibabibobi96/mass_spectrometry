@@ -33,7 +33,7 @@
 
 组件聚焦合同见[封闭二区 campaign](config/two_zone_component_focus_campaign.json)，自动入口为
 [`simion/run_component_focus_workflow.ps1`](simion/run_component_focus_workflow.ps1)；
-[`../../src/msplatform/analysis/oa_focus.py`](../../src/msplatform/analysis/oa_focus.py)只消费公共释放凭据和原生日志。
+[`../../src/msplatform/workflows/oa_focus_analysis.py`](../../src/msplatform/workflows/oa_focus_analysis.py)只消费公共释放凭据和原生日志。
 具体工作流、输入冻结与验收边界见[组件工作流与验收](docs/PROJECT.md#组件工作流与验收)。
 
 ## 所有权

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.analysis.oa_focus import _load_campaign
+from msplatform.workflows.oa_focus_analysis import _load_campaign
 from msplatform.components.orthogonal_accelerator.focus_campaign import geometry_profile_identity
 
 

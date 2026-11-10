@@ -1907,7 +1907,7 @@
           "reason": "canonical_local_frontend_workflow_changed"
         },
         {
-          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
         }
       ],
@@ -2165,7 +2165,7 @@
           "reason": "installed_oa_backend_changed"
         },
         {
-          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
         }
       ],
@@ -2229,7 +2229,7 @@
           "reason": "scientific_csv_reader_changed"
         },
         {
-          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
         }
       ],
@@ -2489,7 +2489,7 @@
           "reason": "installed_tof_backend_changed"
         },
         {
-          "regex": "^src/msplatform/(?:analysis/oa_focus|workflows/oa_focus_fast_adjust)\\.py$",
+          "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
         }
       ],

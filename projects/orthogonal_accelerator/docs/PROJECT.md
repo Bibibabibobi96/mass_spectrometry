@@ -1,6 +1,6 @@
 ## Installed recorded-focus analysis and bounded adjustment
 
-The sole recorded closed-two-zone focus analyzer is `msplatform.analysis.oa_focus`;
+The sole recorded closed-two-zone focus analyzer is `msplatform.workflows.oa_focus_analysis`;
 its bounded voltage-decision state machine is `msplatform.workflows.oa_focus_fast_adjust`.
 Current analyzer and controller-state records use protocol revision 2. Their
 validated profile-content SHA is a scientific authority bound at initialization and
@@ -468,3 +468,33 @@ consumers. In particular, `component_focus_pa_plan.derive` currently disallows t
 `mesh_mm_per_gu` projection key before reading it and consequently uses the fixed
 0.25/0.25/0.1 mm grid. Explicit mesh authority must be resolved in the P4 plan migration;
 this static constraint is not a reproduced native error and is not deferred to P5.
+
+
+### Recorded-analysis workflow boundary correction
+
+The sole recorded analyzer is `msplatform.workflows.oa_focus_analysis`, beside its
+existing bounded-adjustment workflow. Its full module bytes, formulas, protocol2
+result, explicit profile, mother cohort and instrument clock remain unchanged;
+current Python/CLI/frozen consumers and API2/API3 declarations use that owner.
+Historical frozen declarations and authority bytes are unchanged.
+
+On isolated4576 plus this correction, six original OA modules passed50 parents,
+three MR energy-consumer parents passed, and the public Changed routing parent passed.
+The unchanged full dependency assertion now reports only the separately tracked IP
+field-reference process edge; all seven OA reverse-import reports are resolved.
+The actual ordinary wheel/sdist parent passed240.708s: both installed arms execute
+the full recorded report and CLI and reject a physically missing canonical module.
+All436 package payloads join the source/direct/rebuilt wheels. The first new probe
+incorrectly expected LF instead of Windows text-output bytes; its original failure
+is retained and only that expected serialization was corrected. These are software
+and packaging checks, with no new native or scientific qualification.
+
+After composition with the IP verifier repair, the unchanged complete dependency
+boundary module and actual OA/MR consumers passed in a 63-parent batch (211 records,
+25.778 seconds). Both ordinary installed arms passed in the original build parent
+(216.730 seconds), with the IP and OA probes present together. The six-parent
+installation module retained one separate cold-comparison fixture failure: its
+extracted section omitted the real probe's earlier SciPy initialization. Restoring
+that prerequisite outside the unchanged process/write guards made the original
+failed parent pass in 1.270 seconds. Package and installed-probe bytes were unchanged
+by this fixture-only correction; the failed module epoch remains recorded.

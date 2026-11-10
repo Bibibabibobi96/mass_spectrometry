@@ -4,7 +4,7 @@ import json
 import unittest
 from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
 
-from msplatform.analysis import oa_focus as draft
+from msplatform.workflows import oa_focus_analysis as draft
 
 def _geometry_profile():
     import json
