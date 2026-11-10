@@ -30,6 +30,96 @@ def registration(values, translation=(0, 0, 0)):
 
 
 class DualConePlacementTests(unittest.TestCase):
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable; no native fallback')
+    def test_actual_program_repeat_run_resets_only_its_particle_bookkeeping(self):
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+
+        values = request()
+        harness = r"""local old=loadfile
+local config
+loadfile=function(path)
+ if path==arg[1] then return function()config=assert(old(path))();return config end end
+ return old(path)
+end
+local installs,seeds=0,{}
+local SDS={install=function()installs=installs+1 end}
+simion={workbench_program=function()segment={}end,import=function()return SDS end}
+os.getenv=function()return arg[1]end
+seed=function(value)seeds[#seeds+1]=value;print('SEED|'..value)end
+adj_elect={};ion_number=1;ion_time_of_flight=0;ion_time_step=1;ion_splat=0
+ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0
+local f=assert(io.open(arg[2],'rb'));local body=f:read('*a');f:close()
+assert(loadstring(body:gsub('adjustable%s+',''),'@'..arg[2]))()
+for cycle=1,tonumber(arg[4])do
+ config.trajectory_csv=arg[3]..'/trajectory-'..cycle..'.csv'
+ config.final_state_csv=arg[3]..'/final-'..cycle..'.csv'
+ segment.initialize_run()
+ for _,id in ipairs{1,7,101}do
+  ion_number=id;ion_time_of_flight=0;ion_splat=0
+  ion_px_mm=config.device_x_offset_mm;ion_py_mm=config.device_y_offset_mm
+  ion_pz_mm=config.device_z_offset_mm+10
+  if cycle==1 and arg[5]=='loss' and id==7 then ion_px_mm=ion_px_mm+100 end
+  local p=SDS.pressure(ion_px_mm,ion_py_mm,ion_pz_mm)
+  local t=SDS.temperature(ion_px_mm,ion_py_mm,ion_pz_mm)
+  local x,y,z=SDS.velocity(ion_px_mm,ion_py_mm,ion_pz_mm)
+  print(string.format('TRACE|%d|%d|%.17g|%.17g|%.17g|%.17g|%.17g',cycle,id,p,t,x,y,z))
+  segment.initialize()
+  if cycle==1 and arg[5]=='loss' and id==101 then ion_time_of_flight=config.maximum_time_us end
+  segment.other_actions();segment.terminate();segment.terminate()
+ end
+ segment.terminate_run()
+end
+assert(installs==1,'SDS.install must remain once per Program load')
+assert(#seeds==tonumber(arg[4]),'seed must remain once per initialize_run')
+for _,value in ipairs(seeds)do assert(value==config.random_seed)end
+print('INSTALLS='..installs..' SEEDS='..#seeds)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            def run(name, cycles, first_loss):
+                output=root/name
+                solver=output/'solver/simion'
+                solver.mkdir(parents=True)
+                (output/'results').mkdir()
+                (solver/'simion_rf_drive.lua').write_bytes(native_resource_path('rf_drive.lua').read_bytes())
+                export_uniform_runtime(solver/'gas_field_runtime.lua', output/'manifest.json',
+                    spec_path=CONFIG/'uniform_rear_gas_field.json', interface_path=CONFIG/'gas_field_interface.json')
+                config=output/'config.lua'
+                config.write_text(_render_run_config(mode='gas_assisted_transport', science=values['science'],
+                    numerics=values['numerics'], resolved=values['resolved'], solver=solver), encoding='utf-8')
+                script=output/'actual-program.lua'
+                script.write_text(harness, encoding='utf-8')
+                child=subprocess.run([str(LUA),str(script),str(config),
+                    str(native_resource_path('dual_cone_gas_assisted_transport.lua')),str(output),str(cycles),
+                    'loss' if first_loss else 'supported'],cwd=output,capture_output=True,text=True,timeout=30)
+                self.assertEqual(child.returncode,0,child.stdout+child.stderr)
+                rows=[]
+                for cycle in range(1,cycles+1):
+                    with (output/f'final-{cycle}.csv').open(newline='') as stream:
+                        rows.append(list(csv.DictReader(stream)))
+                return output, rows, child.stdout
+
+            for losses in (False,True):
+                with self.subTest(first_cycle_coverage_loss=losses):
+                    first,control1,stdout1=run(f'control-first-{losses}',1,losses)
+                    second,control2,stdout2=run(f'control-second-{losses}',1,False)
+                    repeated,actual,stdout=run(f'repeated-{losses}',2,losses)
+                    self.assertEqual([[int(row['ion_number']) for row in rows] for rows in actual],[[1,7,101],[1,7,101]])
+                    self.assertEqual(actual,[control1[0],control2[0]])
+                    self.assertEqual([int(row['splat']) for row in actual[0]],[0,3,2] if losses else [0,0,0])
+                    self.assertEqual([int(row['splat']) for row in actual[1]],[0,0,0])
+                    for cycle,control in ((1,first),(2,second)):
+                        for prefix in ('final','trajectory'):
+                            self.assertEqual((repeated/f'{prefix}-{cycle}.csv').read_bytes(),(control/f'{prefix}-1.csv').read_bytes())
+                    self.assertEqual(stdout.count('SEED|'),2)
+                    self.assertEqual(stdout1.count('SEED|'),1)
+                    self.assertEqual(stdout2.count('SEED|'),1)
+                    self.assertIn('INSTALLS=1 SEEDS=2',stdout)
+                    traces=[line.split('|')[2:] for line in stdout.splitlines() if line.startswith('TRACE|')]
+                    controls=[line.split('|')[2:] for line in (stdout1+stdout2).splitlines() if line.startswith('TRACE|')]
+                    self.assertEqual(traces,controls)
+
     def test_single_array_pose_preserves_local_geometry_and_places_points_once(self):
         values = request()
         selected = pose(values)

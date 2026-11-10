@@ -93,6 +93,10 @@ function segment.tstep_adjust()
 end
 
 function segment.initialize_run()
+  next_sample_us = {}
+  terminal_code = {}
+  gas_support_lost = {}
+  final_recorded = {}
   -- Official SIMION callback coverage includes particles outside PA volumes.
   -- No efield_adjust/mfield_adjust is supplied: this defines no external field.
   sim_segment_global = 1

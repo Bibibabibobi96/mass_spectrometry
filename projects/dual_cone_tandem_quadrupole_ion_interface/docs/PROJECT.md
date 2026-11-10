@@ -1,5 +1,22 @@
 # 双锥串联四极杆离子传输接口项目状态
 
+## Program-owned state at repeated run initialization
+
+Plain-Lua execution of the actual Program reproduced a lifecycle defect: loading
+the Program once and calling initialize_run twice with sparse IDs [1,7,101]
+produced three final rows in the first run and none in the second. Independent
+fresh-load controls each produced all three rows. The Program now clears only
+its next-sample, terminal-code, coverage-loss and final-recorded tables at
+initialize_run. Existing callback order, once-per-run seed and once-per-load
+SDS installation remain unchanged; no supplier state or random stream is reset
+by this fix. The frozen Program source record is its implementation identity.
+
+The actual Program regression compares first/second final and trajectory bytes
+with fresh controls, including first-run coverage loss, terminal classification
+and duplicate terminate calls. This is software wiring/lifecycle evidence with
+an inert SDS interface, not actual repeated native Fly, supplier collision
+physics, arbitrary repartition equivalence or a collision checkpoint guarantee.
+
 ## Installed SIMION input preparation
 
 Masked gas-field samples now require NaN in every declared gas field; positive
