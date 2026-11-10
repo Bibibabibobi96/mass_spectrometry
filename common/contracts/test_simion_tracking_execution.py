@@ -15,6 +15,8 @@ from msplatform.backends.simion.tracking_execution import plan_tracking_executio
 def tracking_action_fixture(self, root):
     """One real model/field protocol fixture shared by pure and inert-owner tests."""
     import json
+    import shutil
+    import sys
     from pathlib import Path
     from types import SimpleNamespace
     from importlib.resources import files
@@ -23,6 +25,8 @@ def tracking_action_fixture(self, root):
     from msplatform.backends.simion.native_plans import plan_solve_fields
     from msplatform.results.artifacts import OpenedArtifact
     from msplatform.io.manifest_records import file_record,verify_record
+    native=root/'inert-native/simion.exe';native.parent.mkdir()
+    shutil.copyfile(sys.executable,native)  # Identity-only binary; Session.run_process never executes it.
     producer=root/'producer';producer.mkdir()
     records={}
     def put(key,name,*,value=None,raw=None):
@@ -62,7 +66,7 @@ def tracking_action_fixture(self, root):
         input_dir=run_dir/'inputs';result_dir=run_dir/'results';log_dir=run_dir/'logs'
         expected_operation_ids=('build_tracking_iob','verify_tracking_iob','track_fly')
         operation_dependencies=dict(verify_tracking_iob=['build_tracking_iob'],track_fly=['verify_tracking_iob'])
-        context=SimpleNamespace(tools={'simion':Path('C:/inert/simion.exe')})
+        context=SimpleNamespace(tools={'simion':native})
         inputs={};calls=[]
         def __init__(inner,run=None,fault=None):
             inner.run_dir=run or root/'run'
