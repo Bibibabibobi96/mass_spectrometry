@@ -140,3 +140,16 @@ Inert tests use explicitly marked synthetic files only; they do not establish CO
 High Mach license availability, convergence, grid adequacy, quantitative CFD or ion transmission.
 Official COMSOL 6.4 High Mach documentation was reviewed on 2026-11-09; this migration changes input
 transport/ownership and retains the existing physics/API expressions rather than substituting a new model.
+
+## Current joint gas runtime projection
+
+The existing validation CLI above remains the source-quality owner. Current
+SIMION preparation then uses component `gas_field.prepare_cfd_gas_field` and
+backend `gas_runtime.materialize_gas_runtime`; the PowerShell entry calls these
+same functions. Explicit CSV/metadata/three source records remain supported,
+without inventing a producer manifest. An optional actual published producer
+reference is retained and checked; malformed or mismatched explicit references
+do not fall back to direct data. Original CFD files, source EOS and raw axis
+values are preserved. The current compiled interface is version2 with one joint
+sample function and explicit per-source numerical policy; it does not reopen
+COMSOL or change the field producer's original qualification.

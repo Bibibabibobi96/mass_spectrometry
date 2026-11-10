@@ -123,10 +123,12 @@ class CylindricalDomain:
     minimum_z_mm: float
     maximum_z_mm: float
     maximum_radius_mm: float
+    minimum_radius_mm: float = 0.0
 
     def __post_init__(self) -> None:
         if (_finite(self.minimum_z_mm, "minimum_z_mm") >= _finite(self.maximum_z_mm, "maximum_z_mm")
-                or _finite(self.maximum_radius_mm, "maximum_radius_mm") <= 0):
+                or _finite(self.maximum_radius_mm, "maximum_radius_mm") <= 0
+                or not 0 <= _finite(self.minimum_radius_mm, "minimum_radius_mm") < self.maximum_radius_mm):
             raise ValueError("cylindrical bounds must be physical")
 
 
@@ -147,6 +149,48 @@ class GasRegion:
 
 
 @dataclass(frozen=True)
+class AxisymmetricGasValues:
+    """Constant cylindrical components; Cartesian radial direction is queried."""
+
+    status: Literal["gas", "vacuum"]
+    pressure_pa: float
+    temperature_k: float
+    radial_velocity_m_s: float
+    axial_velocity_m_s: float
+
+    def __post_init__(self) -> None:
+        if self.status not in {"gas", "vacuum"}:
+            raise ValueError("prescribed axisymmetric values require gas or explicit vacuum")
+        pressure = _finite(self.pressure_pa, "pressure_pa")
+        if (self.status == "gas" and pressure <= 0) or (self.status == "vacuum" and pressure != 0):
+            raise ValueError("gas pressure must be positive; explicit vacuum pressure must be zero")
+        if _finite(self.temperature_k, "temperature_k") <= 0:
+            raise ValueError("temperature_k must be positive")
+        _finite(self.radial_velocity_m_s, "radial_velocity_m_s")
+        _finite(self.axial_velocity_m_s, "axial_velocity_m_s")
+
+
+@dataclass(frozen=True)
+class AxisymmetricGasRegion:
+    region_id: str
+    minimum_z_mm: float
+    maximum_z_mm: float
+    lower_closed: bool
+    upper_closed: bool
+    values: AxisymmetricGasValues
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.region_id, str) or not self.region_id.strip():
+            raise ValueError("axisymmetric gas region needs its identity")
+        if _finite(self.minimum_z_mm, "minimum_z_mm") >= _finite(self.maximum_z_mm, "maximum_z_mm"):
+            raise ValueError("axisymmetric gas region bounds must increase")
+        if type(self.lower_closed) is not bool or type(self.upper_closed) is not bool:
+            raise ValueError("axisymmetric interval ownership must be explicit booleans")
+        if not isinstance(self.values, AxisymmetricGasValues):
+            raise ValueError("axisymmetric gas region requires cylindrical values")
+
+
+@dataclass(frozen=True)
 class AxisymmetricRZData:
     r_values_mm: tuple[float, ...]
     z_values_mm: tuple[float, ...]
@@ -155,10 +199,14 @@ class AxisymmetricRZData:
     temperature_k: tuple[float | None, ...]
     radial_velocity_m_s: tuple[float | None, ...]
     axial_velocity_m_s: tuple[float | None, ...]
+    axis_projection_policy: Literal["regular_axis_v1", "legacy_axis_projection_v1"] = "regular_axis_v1"
 
     def __post_init__(self) -> None:
         for name in self.__dataclass_fields__:
-            object.__setattr__(self, name, tuple(getattr(self, name)))
+            if name != "axis_projection_policy":
+                object.__setattr__(self, name, tuple(getattr(self, name)))
+        if self.axis_projection_policy not in {"regular_axis_v1", "legacy_axis_projection_v1"}:
+            raise ValueError("unsupported radial-axis projection policy")
         for name in ("r_values_mm", "z_values_mm"):
             values = getattr(self, name)
             if len(values) < 2 or any(not math.isfinite(_finite(v, name)) for v in values):
@@ -169,7 +217,7 @@ class AxisymmetricRZData:
         if self.r_values_mm[0] < 0:
             raise ValueError("radial coordinates cannot be negative")
         size = len(self.r_values_mm) * len(self.z_values_mm)
-        if any(len(getattr(self, name)) != size for name in self.__dataclass_fields__ if name not in {"r_values_mm", "z_values_mm"}):
+        if any(len(getattr(self, name)) != size for name in self.__dataclass_fields__ if name not in {"r_values_mm", "z_values_mm", "axis_projection_policy"}):
             raise ValueError("r-z arrays must match z-major/r-minor grid size")
         if any(type(mask) is not bool for mask in self.fluid_mask):
             raise ValueError("fluid mask must contain booleans")
@@ -186,7 +234,8 @@ class AxisymmetricRZData:
                     raise ValueError("fluid pressure and temperature must be positive")
                 # At the symmetry axis a finite radial vector has no unique direction.
                 # Do not silently discard inconsistent producer data or invent an epsilon.
-                if self.r_values_mm[0] == 0 and i % len(self.r_values_mm) == 0 and values[2] != 0:
+                if (self.axis_projection_policy == "regular_axis_v1" and self.r_values_mm[0] == 0
+                        and i % len(self.r_values_mm) == 0 and values[2] != 0):
                     raise ValueError("axisymmetric fluid data requires zero radial velocity at r=0")
 
 
@@ -194,7 +243,7 @@ class AxisymmetricRZData:
 class GasFieldSpec:
     field_id: str
     frame_id: str
-    representation: Literal["uniform", "piecewise_uniform", "axisymmetric_rz_grid"]
+    representation: Literal["uniform", "piecewise_uniform", "axisymmetric_rz_grid", "axisymmetric_piecewise_uniform"]
     composition_id: str
     composition: tuple[GasSpecies, ...]
     domain: BoxDomain | CylindricalDomain | UnboundedDomain
@@ -205,10 +254,18 @@ class GasFieldSpec:
     time_basis: str = "static"
     thermodynamic_closure: str = "ideal_gas_pressure_temperature"
     interpolation_policy: str | None = None
+    axisymmetric_regions: tuple[AxisymmetricGasRegion, ...] = ()
+    axisymmetric_background: AxisymmetricGasValues | None = None
+    sampling_profile: Literal["canonical_static_v1", "legacy_sqrt_v1"] = "canonical_static_v1"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "composition", tuple(self.composition))
         object.__setattr__(self, "regions", tuple(self.regions))
+        object.__setattr__(self, "axisymmetric_regions", tuple(self.axisymmetric_regions))
+        if self.sampling_profile not in {"canonical_static_v1", "legacy_sqrt_v1"}:
+            raise ValueError("unsupported gas sampling profile")
+        if self.representation != "axisymmetric_piecewise_uniform" and (self.axisymmetric_regions or self.axisymmetric_background is not None):
+            raise ValueError("axisymmetric prescribed values require their explicit representation")
         if not all(isinstance(v, str) and v.strip() == v and v for v in (self.field_id, self.frame_id, self.composition_id)):
             raise ValueError("gas identity/frame must be explicit")
         if not isinstance(self.source, GasSource):
@@ -234,6 +291,15 @@ class GasFieldSpec:
         elif self.representation == "axisymmetric_rz_grid":
             if self.uniform_state is not None or self.regions or self.background_state is not None or self.interpolation_policy != "bilinear_fluid_corner_weight_renormalization_v1":
                 raise ValueError("r-z gas requires its explicit legacy interpolation policy")
+        elif self.representation == "axisymmetric_piecewise_uniform":
+            if (not isinstance(self.domain, CylindricalDomain) or self.uniform_state is not None
+                    or self.regions or self.background_state is not None or self.interpolation_policy is not None
+                    or not self.axisymmetric_regions or not isinstance(self.axisymmetric_background, AxisymmetricGasValues)):
+                raise ValueError("axisymmetric piecewise gas requires cylindrical regions and background values")
+            if any(not isinstance(value, AxisymmetricGasRegion) for value in self.axisymmetric_regions):
+                raise ValueError("axisymmetric regions must be typed")
+            if len({value.region_id for value in self.axisymmetric_regions}) != len(self.axisymmetric_regions):
+                raise ValueError("axisymmetric regions must have unique identities")
         else:
             raise ValueError("unsupported gas representation")
 

@@ -25,12 +25,6 @@ def _load_validator():
     return gas_field
 
 
-def _load_exporter():
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_runtime
-
-    return gas_runtime
-
-
 def _contracts() -> tuple[dict, dict]:
     return (
         json.loads(SCIENCE_PATH.read_text(encoding="utf-8")),
@@ -283,7 +277,6 @@ class GasFlowContractTests(unittest.TestCase):
                 )
 
     def test_valid_field_compiles_to_hashed_self_contained_lua(self) -> None:
-        exporter = _load_exporter()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             csv_path, metadata_path = _write_fixture(root)
@@ -298,21 +291,22 @@ class GasFlowContractTests(unittest.TestCase):
             interface_path.write_text(json.dumps(interface), encoding="utf-8")
             lua_path = root / "gas_field_runtime.lua"
             manifest_path = root / "gas_field_manifest.json"
-            manifest = exporter.export_runtime(
-                csv_path,
-                metadata_path,
-                lua_path,
-                manifest_path,
-                SCIENCE_PATH,
-                NUMERICS_PATH,
-                GEOMETRY_PATH,
-                interface_path,
-            )
+            from msplatform.contracts.gas_field import read_gas_field_data
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+            from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+            from msplatform.io.manifest_records import file_record
+
+            paths = dict(field_csv=csv_path, field_metadata=metadata_path, science=SCIENCE_PATH,
+                         numerics=NUMERICS_PATH, geometry=GEOMETRY_PATH)
+            data = read_gas_field_data(csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+            field, metadata = prepare_cfd_gas_field(data, interface=interface,
+                source_records={name: file_record(path, "required_evidence") for name, path in paths.items()})
+            manifest = materialize_gas_runtime(field, lua_path, manifest_path, manifest_metadata=metadata)
             self.assertEqual(manifest["role"], "dual_cone_gas_field_export")
             self.assertRegex(manifest["runtime_lua"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertEqual(manifest["source"]["kind"], "validated_comsol_axisymmetric_rz")
             self.assertEqual(
-                manifest["source"]["field_csv"]["sha256"],
+                manifest["source"]["field_csv"]["sha256"].lower(),
                 hashlib.sha256(csv_path.read_bytes()).hexdigest(),
             )
             self.assertEqual(
@@ -320,10 +314,10 @@ class GasFlowContractTests(unittest.TestCase):
                 json.loads(metadata_path.read_text(encoding="utf-8"))["source_contract_sha256"],
             )
             source = lua_path.read_text(encoding="utf-8")
-            self.assertIn("local chunk_size=8192", source)
+            self.assertIn("math.floor((i-1)/8192)", source)
             self.assertIn("local function value(a,i)", source)
-            self.assertIn("field.pressure_pa = function", source)
-            self.assertIn("field.velocity_m_s = function", source)
+            self.assertIn("function field.sample(", source)
+            self.assertIn("bulk_velocity_m_s=velocity", source)
 
     def test_matlab_source_has_high_mach_and_fail_closed_contract(self) -> None:
         builder = BUILDER_PATH.read_text(encoding="utf-8")

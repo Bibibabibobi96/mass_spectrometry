@@ -25,6 +25,33 @@ def point(x, y=0, z=0, frame="local"):
 
 
 class GasSamplingTests(unittest.TestCase):
+    def test_explicit_annulus_legacy_axis_and_cylindrical_prescribed_values(self):
+        from msplatform.contracts.gas import AxisymmetricGasRegion, AxisymmetricGasValues
+
+        domain = CylindricalDomain(0, 2, 3, 1)
+        data = AxisymmetricRZData((1, 2, 3), (0, 1, 2), (True,)*9,
+            (100,)*9, (300,)*9, (-5,)*9, (10,)*9)
+        field = prepare_gas_field(spec('axisymmetric_rz_grid', domain=domain,
+            interpolation_policy='bilinear_fluid_corner_weight_renormalization_v1', sampling_profile='legacy_sqrt_v1'),data=data)
+        self.assertEqual(sample_gas(field,point(0,0,1)).state.status,'outside_domain')
+        self.assertEqual(sample_gas(field,point(1,0,2)).state.bulk_velocity_m_s,(-5,0,10))
+        with self.assertRaisesRegex(ValueError,'zero radial'):
+            AxisymmetricRZData((0,1),(0,1),(True,)*4,(100,)*4,(300,)*4,(1e-300,)*4,(10,)*4)
+        legacy = AxisymmetricRZData((0,1),(0,1),(True,)*4,(100,)*4,(300,)*4,(1e-300,)*4,(10,)*4,
+                                   axis_projection_policy='legacy_axis_projection_v1')
+        selected=prepare_gas_field(spec('axisymmetric_rz_grid',domain=CylindricalDomain(0,1,1),
+            interpolation_policy='bilinear_fluid_corner_weight_renormalization_v1',sampling_profile='legacy_sqrt_v1'),data=legacy)
+        self.assertEqual(selected.data.radial_velocity_m_s,(1e-300,)*4)
+        self.assertEqual(sample_gas(selected,point(0,0,.5)).state.bulk_velocity_m_s,(0,0,10))
+        prescribed=prepare_gas_field(spec('axisymmetric_piecewise_uniform',domain=CylindricalDomain(-5,120,23.5),
+            sampling_profile='legacy_sqrt_v1',axisymmetric_background=AxisymmetricGasValues('vacuum',0,300,0,0),
+            axisymmetric_regions=(AxisymmetricGasRegion('rear',3,120,True,True,AxisymmetricGasValues('gas',400,300,-5,100)),)))
+        self.assertEqual(sample_gas(prescribed,point(.3,.4,3)).state.bulk_velocity_m_s,(-3,-4,100))
+        self.assertEqual(sample_gas(prescribed,point(0,0,3)).state.bulk_velocity_m_s,(0,0,100))
+        self.assertEqual(sample_gas(prescribed,point(.3,.4,math.nextafter(3,-math.inf))).state.status,'vacuum')
+        with self.assertRaisesRegex(ValueError,'unique identities'):
+            prepare_gas_field(replace(prescribed.spec,axisymmetric_regions=prescribed.spec.axisymmetric_regions*2))
+
     def test_uniform_uses_explicit_domain_and_distinguishes_vacuum_from_outside(self):
         domain = BoxDomain((0, -2, -2), (10, 2, 2), (True,)*3, (False,)*3)
         field = prepare_gas_field(spec(domain=domain))

@@ -348,6 +348,25 @@ ConvertTo-Json -Compress -InputObject $paths
                 else:
                     self.assertEqual(modules, [path])
 
+    def test_joint_gas_runtime_selects_actual_dual_cone_consumers(self):
+        expected = {"common/contracts/test_" + name + ".py" for name in (
+            "dual_cone_transport_execution", "dual_cone_transport", "dual_cone_stages",
+            "dual_cone_iob", "dual_cone_placement", "dual_cone_native_guards", "dual_cone_managed_stages")}
+        paths = ("src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py",
+                 "src/msplatform/backends/simion/resources/collision_sds_binding.lua",
+                 "src/msplatform/backends/simion/gas_runtime.py", "src/msplatform/contracts/gas.py",
+                 "src/msplatform/gas/field.py")
+        for path in paths:
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                modules = [value for row in request["stages"] if row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertTrue(expected <= set(modules))
+                self.assertTrue(all(modules.count(name) == 1 for name in expected))
+                self.assertTrue(any(row["name"].startswith("dual_cone_tandem_quadrupole_ion_interface_static")
+                                    for row in request["stages"]))
+                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
+
     def test_recorded_gas_structure_policy_and_reader_select_actual_consumers(self):
         expected = {"common/contracts/test_comsol_gas_flow.py",
                     "common/contracts/test_dual_cone_stages.py",

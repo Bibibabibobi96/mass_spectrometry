@@ -21,9 +21,6 @@ from msplatform.backends.simion.dual_cone_transport import (
     SDS_FILES, prepare_transport, validate_runtime_manifest,
 )
 from msplatform.backends.simion.resources import native_resource_path
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import (
-    export_uniform_runtime,
-)
 from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.plot_simion_trajectory_projection import (
     axial_reach_profile,
     main as plot_trajectory_projection,
@@ -35,6 +32,23 @@ GAS_INTERFACE = PROJECT / "config" / "gas_field_interface.json"
 DEFAULT_RESOLVED = PROJECT / "config" / "resolved_geometry.json"
 DEFAULT_NUMERICS = PROJECT / "config" / "simion_solver_numerics.json"
 UNIFORM_SPEC = PROJECT / "config" / "uniform_rear_gas_field.json"
+
+
+def write_uniform_gas_fixture(output_lua, output_manifest, *, spec_path, interface_path):
+    """Actual current component projection/compiler over explicit research fixtures."""
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+    from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+    from msplatform.contracts.gas import GasSpecies
+    from msplatform.io.manifest_records import file_record
+
+    source_science = load(PROJECT / "config/gas_flow_science.json")
+    transport_science = load(PROJECT / "config/ion_transport_science.json")
+    composition = (GasSpecies(source_science["physics"]["gas_species"]["species_id"],
+        transport_science["gas"]["collision_gas_mass_amu"], 1.),)
+    field, metadata = prepare_uniform_rear_gas_field(load(spec_path), interface=load(interface_path),
+        composition=composition, spec_record=file_record(spec_path, "required_evidence"),
+        interface_record=file_record(interface_path, "required_evidence"))
+    return materialize_gas_runtime(field, output_lua, output_manifest, manifest_metadata=metadata)
 
 
 def prepare(output_dir, **kwargs):
@@ -162,7 +176,8 @@ class SimionGeometryTests(unittest.TestCase):
         )
         self.assertIn("loadfile(assert(config.rf_drive_kernel))", program)
         self.assertIn("simion.import(assert(config.collision_sds_lua), 'noinstall')", program)
-        self.assertIn("SDS.install()", program)
+        binding = native_resource_path("collision_sds_binding.lua").read_text(encoding="utf-8")
+        self.assertIn("SDS.install()", binding)
         self.assertNotIn("adj_electrode", program)
         self.assertIn("adj_elect[id] = voltage", program)
         self.assertIn("apply_at(ion_time_of_flight, set_electrode_voltage)", program)
@@ -170,9 +185,10 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertEqual(program.count("function segment.fast_adjust()"), 1)
         self.assertEqual(program.count("function segment.tstep_adjust()"), 1)
         self.assertEqual(program.count("function segment.terminate()"), 1)
-        self.assertIn("query_or_boundary_loss", program)
+        self.assertIn("binding.install(SDS,field", program)
         self.assertIn("terminal_code[ion_number] = 3", program)
-        self.assertIn("gas-field query has no fluid support", program)
+        self.assertIn("status=='no_data'", binding)
+        self.assertIn("options.on_coverage_lost()", binding)
         self.assertIn("ion_splat = 1", program)
         self.assertIn("emit_final(3)", program)
         self.assertLess(
@@ -185,8 +201,8 @@ class SimionGeometryTests(unittest.TestCase):
         compiler = (PROJECT / "workflows/gas_assisted_transport/build_gas_runtime.ps1").read_text(encoding="utf-8")
         self.assertIn("read_gas_field", compiler)
         self.assertIn("field = read_gas_field(reference)", compiler)
-        self.assertIn('paths["field_csv"]', compiler)
-        self.assertIn('paths["field_metadata"]', compiler)
+        self.assertIn("field.artifact.data_records", compiler)
+        self.assertIn("prepare_cfd_gas_field(field.data", compiler)
 
 
 class GasPreparationTests(unittest.TestCase):
@@ -251,12 +267,20 @@ class GasPreparationTests(unittest.TestCase):
             program_record = freeze_file(repo / program, snapshot / program)
             self.assertEqual(program_record["sha256"], file_sha256(repo / program))
             self.assertEqual((snapshot / program).read_bytes(), (repo / program).read_bytes())
+            binding = Path("src/msplatform/backends/simion/resources/collision_sds_binding.lua")
+            binding_record = freeze_file(repo / binding, snapshot / binding)
+            self.assertEqual(binding_record["sha256"], file_sha256(repo / binding))
+            self.assertEqual((snapshot / binding).read_bytes(), (repo / binding).read_bytes())
 
             code = r"""
 from pathlib import Path
 from msplatform.execution import inputs as frozen_inputs
 from msplatform.backends.simion import dual_cone_transport as p
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+from msplatform.contracts.gas import GasSpecies
+from msplatform.io.manifest_records import file_record
+import json
 assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
 assert Path(frozen_inputs.__file__).resolve().is_relative_to(Path.cwd())
 import sys
@@ -266,9 +290,13 @@ kwargs=dict(resolved_path=config/'resolved_geometry.json', numerics_path=config/
  science_path=config/'ion_transport_science.json',interface_path=config/'gas_field_interface.json',
  gas_science_path=config/'gas_flow_science.json',source_spec_path=config/'cylindrical_ion_source.json')
 c0 = p.prepare_transport(case / 'c0', mode='c0_gem_smoke',**kwargs)
-export_uniform_runtime((case / 'field.lua').resolve(), (case / 'manifest.json').resolve(),
-                       spec_path=Path.cwd() / 'projects/dual_cone_tandem_quadrupole_ion_interface/config/uniform_rear_gas_field.json',
-                       interface_path=kwargs["interface_path"])
+species=json.loads(kwargs['gas_science_path'].read_text())['physics']['gas_species']['species_id']
+mass=json.loads(kwargs['science_path'].read_text())['gas']['collision_gas_mass_amu']
+spec_path=config/'uniform_rear_gas_field.json'
+field,metadata=prepare_uniform_rear_gas_field(json.loads(spec_path.read_text()),
+    interface=json.loads(kwargs['interface_path'].read_text()),composition=(GasSpecies(species,mass,1.),),
+    spec_record=file_record(spec_path,'required_evidence'),interface_record=file_record(kwargs['interface_path'],'required_evidence'))
+materialize_gas_runtime(field,(case/'field.lua').resolve(),(case/'manifest.json').resolve(),manifest_metadata=metadata)
 sds = case / 'sds'; sds.mkdir()
 for name in p.SDS_FILES:
     (sds/name).write_text('inert fixture\n', encoding='utf-8')
@@ -322,33 +350,19 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runtime = root / "field.lua"
-            runtime.write_text(
-                "return {pressure_pa=function() return 400 end,"
-                "temperature_k=function() return 300 end,"
-                "velocity_m_s=function() return 0,0,0 end}\n",
-                encoding="utf-8",
-            )
-            manifest = {
-                "schema_version": 1,
-                "role": "dual_cone_gas_field_export",
-                "project_id": "dual_cone_tandem_quadrupole_ion_interface",
-                "source": {
-                    "kind": "prescribed_uniform_rear_gas",
-                    "spec_sha256": "1" * 64,
-                    "interface_sha256": "2" * 64,
-                },
-                "coordinate_frame": interface["runtime_artifact_contract"]["coordinate_frame"],
-                "domain": interface["runtime_artifact_contract"]["domain"],
-                "interpolation_policy": interface["runtime_artifact_contract"]["interpolation_policy"],
-                "runtime_lua": {"path": str(runtime), "sha256": "0" * 64},
-            }
             path = root / "manifest.json"
+            manifest = write_uniform_gas_fixture(runtime, path, spec_path=UNIFORM_SPEC, interface_path=GAS_INTERFACE)
+            manifest["runtime_lua"]["sha256"] = "0" * 64
             path.write_text(json.dumps(manifest), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "SHA-256 differs"):
                 validate_runtime_manifest(path, interface)
+            runtime.write_text("return {}", encoding="utf-8")
+            manifest["runtime_lua"]["sha256"] = file_sha256(runtime)
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "omits required function sample"):
+                validate_runtime_manifest(path, interface)
 
     def test_valid_gas_package_freezes_official_sds_closure_by_hash(self) -> None:
-        interface = load(GAS_INTERFACE)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             sds = root / "sds"
@@ -356,28 +370,8 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             for name in SDS_FILES:
                 (sds / name).write_text(f"fixture {name}\n", encoding="utf-8")
             runtime = root / "field.lua"
-            runtime.write_text(
-                "return {pressure_pa=function() return 400 end,"
-                "temperature_k=function() return 300 end,"
-                "velocity_m_s=function() return 0,0,0 end}\n",
-                encoding="utf-8",
-            )
-            manifest = {
-                "schema_version": 1,
-                "role": "dual_cone_gas_field_export",
-                "project_id": "dual_cone_tandem_quadrupole_ion_interface",
-                "source": {
-                    "kind": "prescribed_uniform_rear_gas",
-                    "spec_sha256": "1" * 64,
-                    "interface_sha256": "2" * 64,
-                },
-                "coordinate_frame": interface["runtime_artifact_contract"]["coordinate_frame"],
-                "domain": interface["runtime_artifact_contract"]["domain"],
-                "interpolation_policy": interface["runtime_artifact_contract"]["interpolation_policy"],
-                "runtime_lua": {"path": str(runtime), "sha256": file_sha256(runtime)},
-            }
             manifest_path = root / "manifest.json"
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            write_uniform_gas_fixture(runtime, manifest_path, spec_path=UNIFORM_SPEC, interface_path=GAS_INTERFACE)
             receipt = prepare(
                 root / "run",
                 mode="gas_assisted_transport",
@@ -405,7 +399,7 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             root = Path(directory)
             runtime = root / "field.lua"
             manifest_path = root / "manifest.json"
-            manifest = export_uniform_runtime(
+            manifest = write_uniform_gas_fixture(
                 runtime,
                 manifest_path,
                 spec_path=UNIFORM_SPEC,
@@ -414,10 +408,11 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             source = runtime.read_text(encoding="utf-8")
             self.assertEqual(manifest["role"], "dual_cone_gas_field_export")
             self.assertEqual(manifest["source"]["kind"], "prescribed_uniform_rear_gas")
-            self.assertIn("local p_rear, p_upstream = 400, 0", source)
-            self.assertIn("local z_rear = 3", source)
-            self.assertIn("local uz_rear, ur_rear = 100, 0", source)
-            self.assertIn("no fluid support outside declared envelope", source)
+            self.assertIn("pressure_pa=400", source)
+            self.assertIn("pressure_pa=0", source)
+            self.assertIn("lo=3", source)
+            self.assertIn("ur=0,uz=100", source)
+            self.assertEqual(manifest["sampling"]["outside_domain_policy"], "coverage_loss")
             validate_runtime_manifest(manifest_path, load(GAS_INTERFACE))
 
 

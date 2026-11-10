@@ -84,12 +84,27 @@ approximation below is unchanged and is not claimed shape-equivalent to that STE
 
 ## 气体场接口
 
-COMSOL CSV 先由 `msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime`（或 `build_gas_runtime.ps1`）在独立校验通过后编译。导出 manifest 必须严格满足 `config/gas_field_interface.json`，并指向一个带 SHA-256 的自包含 Lua
-只读场适配器。适配器在设备局部坐标中提供：
+The component `gas_field` module constructs explicit accepted CFD or cylindrical
+prescribed input; `msplatform.backends.simion.gas_runtime` is the single compiler
+and materializer. `build_gas_runtime.ps1` uses these same bodies. Current interface
+and compiled ABI version2 provides only `sample(x_mm,y_mm,z_mm,frame_id)`, returning
+status, Pa, K and Cartesian m/s velocity together. Both old component emitters
+and their scalar runtime APIs are retired; historical frozen bytes are unchanged.
 
-- `pressure_pa(x_mm,y_mm,z_mm)`：绝对压力 Pa；
-- `temperature_k(x_mm,y_mm,z_mm)`：K；
-- `velocity_m_s(x_mm,y_mm,z_mm)`：三分量 m/s。
+The explicit legacy CFD profile preserves `.9g` values, `.17g` axes/domain,
+8192-entry chunks, fluid-corner renormalization and raw radial values at axis
+nodes; only the queried Cartesian radial vector is zero at r=0. Strict G1 axis
+regularity remains the default. The named uniform control preserves signed ur,
+z=rear ownership and its 1e-6 mm padded envelope. Nonzero inner-radius uniform
+requests select the versioned annular successor: the old emitter ignored rmin.
+
+The ordinary `collision_sds_binding.lua` installs official SDS callbacks from
+joint samples without cross-callback caching. Program retains lexical SDS.init
+and import, run-level seed, PA coordinate/orientation conversion and terminal
+ownership. Velocity is m/s with rotation only; pressure uses760/101325 to Torr.
+No-data and uniform-envelope loss emit final code3 before safe fallback; strict
+CFD outside-domain remains an error. Code3 is gas coverage loss, not independently
+qualified wall-collision physics.
 
 禁止外推；整个 `z=-5..120 mm, r=0..23.5 mm` 域必须覆盖。圆四极杆在 `z=108.00 mm` 结束，孔板位于 `z=110.22..110.72 mm`，板后保留 `9.28 mm` 观察段；为防止 SDS 在终止步越过气体场，离子终止采样面设在 `z=119.75 mm`。后续飞行 Program 必须通过官方
 `collision_sds.lua` 注入这些函数，并通过共享 RF kernel 驱动电极；不得用 Python 阻尼积分器替代。
@@ -126,3 +141,11 @@ Software wiring and native qualification are separate. Native execution of this
 new path is pending its reviewed request and budget; independent stage publication,
 saved-field reuse, GUI and scientific qualification remain OPEN. See PROJECT for
 the numerical-cap correction and preserved historical results.
+
+The current compiled ABI2 also binds `_sample_sds`, an internal numeric channel
+projection used only by the ordinary SDS adapter. Public `sample` still returns
+the complete joint state. Both use one stencil/query implementation and retain
+all field, rotated-velocity and EOS validity checks on every actual callback.
+The projection avoids unused result/metadata allocations; the four-field CFD
+sum loop keeps the original per-field corner/product/sum order. No sample cache,
+channel-skipped validation, vendor reset or RNG/callback change is introduced.

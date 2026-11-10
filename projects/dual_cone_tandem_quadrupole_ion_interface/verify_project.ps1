@@ -61,8 +61,9 @@ try {
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\geometry.py',
       'src\msplatform\contracts\gas_field.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field_validation.py',
-      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_runtime.py',
-      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\uniform_gas_runtime.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field.py',
+      'src\msplatform\backends\simion\gas_runtime.py',
+      'src\msplatform\backends\simion\resources\collision_sds_binding.lua',
       'src\msplatform\backends\simion\dual_cone_geometry.py'
     )
     foreach ($relativePath in $requiredCoreFiles) {

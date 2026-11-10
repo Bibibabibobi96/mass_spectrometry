@@ -1268,6 +1268,11 @@
           },
           {
             "matches": [
+              {"exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py", "reason": "dual_cone_gas_projection_changed"},
+              {"exact": "src/msplatform/backends/simion/resources/collision_sds_binding.lua", "reason": "dual_cone_sds_binding_changed"},
+              {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "dual_cone_gas_compiler_changed"},
+              {"exact": "src/msplatform/contracts/gas.py", "reason": "dual_cone_gas_contract_changed"},
+              {"prefix": "src/msplatform/gas/", "reason": "dual_cone_gas_sampling_changed"},
               {
                 "exact": "src/msplatform/backends/simion/dual_cone_transport_execution.py",
                 "reason": "dual_cone_transport_operation_changed"
@@ -3462,6 +3467,10 @@
       "repository_integration_group": "regression",
       "project_id": "dual_cone_tandem_quadrupole_ion_interface",
       "matches": [
+        {"exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py", "reason": "dual_cone_gas_projection_changed"},
+        {"exact": "src/msplatform/backends/simion/resources/collision_sds_binding.lua", "reason": "dual_cone_sds_binding_changed"},
+        {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "dual_cone_gas_compiler_changed"},
+        {"prefix": "src/msplatform/gas/", "reason": "dual_cone_gas_sampling_changed"},
         {
           "exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py",
           "reason": "dual_cone_gas_source_quality_changed"

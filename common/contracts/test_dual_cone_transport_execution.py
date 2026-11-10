@@ -578,6 +578,7 @@ class ManagedTransportTests(unittest.TestCase):
                             "simion_rf_drive.lua",
                             "gas_field_runtime.lua",
                             "compiled_gas_field.lua",
+                            "collision_sds_binding.lua",
                             "gas_source_states.lua",
                             "cylindrical_ion_source.csv",
                             "collision_sds.lua",

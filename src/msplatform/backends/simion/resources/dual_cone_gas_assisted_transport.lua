@@ -156,9 +156,7 @@ end
 
 if config.mode == 'gas_assisted_transport' then
   local field = assert(loadfile(assert(config.gas_field_lua)))()
-  for _,name in ipairs{'pressure_pa','temperature_k','velocity_m_s'} do
-    assert(type(field[name]) == 'function', 'gas field omits ' .. name)
-  end
+  assert(type(field.sample)=='function','gas field omits joint sample')
   local function positive_parameter(value, name)
     assert(type(value) == 'number' and value == value and value > 0 and value < math.huge,
       name .. ' must be a positive finite number')
@@ -174,33 +172,24 @@ if config.mode == 'gas_assisted_transport' then
     adjustable SDS_collision_gas_diameter_nm = config.collision_gas_diameter_nm
     adjustable SDS_diffusion = config.diffusion_enabled
   end
-  local function query_or_boundary_loss(query, fallback, x, y, z)
-    if gas_support_lost[ion_number] then return unpack(fallback) end
-    local result = {pcall(query, device_position(x,y,z))}
-    if result[1] then return unpack(result, 2) end
-    if tostring(result[2]):find('gas-field query has no fluid support', 1, true) then
-      gas_support_lost[ion_number] = true
-      terminal_code[ion_number] = 3
-      -- A PA workbench-edge splat can occur before segment.terminate.
+  local binding=assert(loadfile(assert(config.collision_sds_binding_lua)))()
+  binding.install(SDS,field,{
+    frame_id=assert(config.gas_field_frame_id),
+    outside_domain_policy=assert(config.gas_outside_domain_policy),
+    position=device_position,
+    velocity=function(vx,vy,vz)
+      -- SDS receives m/s in workbench orientation, never PA-pitch scaling.
+      if config.device_placement then return pose_instance():pa_to_wb_orient(vx,vy,vz) end
+      return vx,vy,vz
+    end,
+    is_support_lost=function()return gas_support_lost[ion_number] end,
+    on_coverage_lost=function()
+      gas_support_lost[ion_number]=true
+      terminal_code[ion_number]=3
+      -- Preserve final-record publication before any safe supplier fallback.
       emit_final(3)
-      return unpack(fallback)
-    end
-    error(result[2])
-  end
-  SDS.pressure = function(x,y,z)
-    return query_or_boundary_loss(field.pressure_pa, {0}, x, y, z) * (760/101325)
-  end
-  SDS.temperature = function(x,y,z)
-    return query_or_boundary_loss(field.temperature_k, {300}, x, y, z)
-  end
-  SDS.velocity = function(x,y,z)
-    local vx,vy,vz=query_or_boundary_loss(field.velocity_m_s, {0,0,0}, x, y, z)
-    -- SDS function velocities are m/s in workbench orientation. Orientation
-    -- preserves magnitude; do not multiply velocity by PA pitch or translate it.
-    if config.device_placement then return pose_instance():pa_to_wb_orient(vx,vy,vz) end
-    return vx,vy,vz
-  end
-  SDS.install()
+    end,
+  })
 elseif config.mode ~= 'c0_gem_smoke' then
   error('unsupported SIMION mode: ' .. tostring(config.mode))
 end

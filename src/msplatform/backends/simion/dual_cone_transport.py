@@ -12,6 +12,8 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
+from msplatform.execution.retention import verify_record
+from msplatform.io.manifest_records import validate_file_record, record_path
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.ion_release.release import materialize_release_from_file
 from msplatform.backends.simion.source import render_standard_beams, render_source_states, lua_value, transform_source_rows
@@ -38,7 +40,8 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
     required = set(interface["runtime_artifact_contract"]["required_manifest_keys"])
     if set(manifest) != required:
         raise ValueError("gas-field manifest keys differ from the governed interface")
-    if manifest["schema_version"] != 1 or manifest["project_id"] != interface["project_id"]:
+    if (interface["schema_version"] != 2 or manifest["schema_version"] != 2
+            or manifest["project_id"] != interface["project_id"]):
         raise ValueError("gas-field manifest identity differs")
     source_record = manifest["source"]
     if not isinstance(source_record, dict):
@@ -47,18 +50,43 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
     if source_kind not in interface["runtime_artifact_contract"]["allowed_source_kinds"]:
         raise ValueError("gas-field source kind is not governed")
     if source_kind == "validated_comsol_axisymmetric_rz":
-        expected_source_keys = {"kind", "field_csv", "metadata", "source_contract_sha256"}
+        expected_source_keys = {"kind", "producer_reference", "field_csv", "metadata", "source_contract_sha256", "source_contract_records"}
         if set(source_record) != expected_source_keys:
             raise ValueError("COMSOL gas-field source record differs")
+        reference = source_record["producer_reference"]
+        source_base = None
+        if reference is not None:
+            if not isinstance(reference, dict) or set(reference) != {"manifest", "product_id"}:
+                raise ValueError("COMSOL gas source requires its explicit original product")
+            verify_record("gas source manifest", reference["manifest"])
+            source_base = Path(reference["manifest"]["path"]).parent
+            producer = json.loads(Path(reference["manifest"]["path"]).read_text(encoding="utf-8-sig"))
+            if producer.get("status") != "success":
+                raise ValueError("COMSOL gas source producer is not successful")
+            product = producer.get("products", {}).get(reference["product_id"])
+            if "products" in producer and (not isinstance(product, dict)
+                    or product.get("kind") != "gas_field" or product.get("status") != "complete"):
+                raise ValueError("COMSOL gas source differs from explicit producer")
+            if "products" not in producer and reference["product_id"] != "gas_field":
+                raise ValueError("COMSOL gas source differs from explicit producer")
+            for key, role in (("field_csv", "field_csv"), ("metadata", "field_metadata")):
+                if product is not None:
+                    if product.get("kind") != "gas_field" or product.get("data", {}).get(role) != source_record[key]:
+                        raise ValueError("COMSOL gas source differs from explicit producer")
+                elif source_record[key] not in producer.get("outputs", []):
+                    raise ValueError("COMSOL gas source differs from explicit producer")
         for role in ("field_csv", "metadata"):
-            source_file = source_record[role]
-            if not isinstance(source_file, dict) or set(source_file) != {"path", "sha256"}:
-                raise ValueError(f"COMSOL gas-field {role} identity differs")
-            source_path = Path(source_file["path"]).resolve()
-            if not source_path.is_file() or not SHA256.fullmatch(str(source_file["sha256"])):
-                raise ValueError(f"COMSOL gas-field {role} is missing or has invalid identity")
-            if file_sha256(source_path).upper() != str(source_file["sha256"]).upper():
-                raise ValueError(f"COMSOL gas-field {role} SHA-256 differs")
+            source_file = validate_file_record(source_record[role], "gas " + role)
+            if source_base is None and not Path(source_file["path"]).is_absolute():
+                raise ValueError("direct gas source records require explicit absolute locations")
+            verify_record("gas " + role, dict(source_file, path=str(record_path(source_file, base_dir=source_base))))
+        for name, source_name in (("science", "gas_flow_science"), ("numerics", "comsol_solver_numerics"), ("geometry", "resolved_geometry")):
+            record = validate_file_record(source_record["source_contract_records"][name], name)
+            if source_base is None and not Path(record["path"]).is_absolute():
+                raise ValueError("direct gas source records require explicit absolute locations")
+            verify_record("gas " + name, dict(record, path=str(record_path(record, base_dir=source_base))))
+            if record["sha256"].lower() != source_record["source_contract_sha256"][source_name]:
+                raise ValueError("COMSOL gas source-contract identity differs")
         hashes = source_record["source_contract_sha256"]
         if (
             not isinstance(hashes, dict)
@@ -72,16 +100,25 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
         ):
             raise ValueError("COMSOL gas-field source-contract identities differ")
     else:
-        if set(source_record) != {"kind", "spec_sha256", "interface_sha256"} or any(
-            not SHA256.fullmatch(str(source_record[key])) for key in ("spec_sha256", "interface_sha256")
-        ):
+        if set(source_record) != {"kind", "spec_record", "interface_record"}:
             raise ValueError("uniform gas-field source identities differ")
+        for name in ("spec_record", "interface_record"):
+            verify_record("uniform gas " + name, validate_file_record(source_record[name], name))
     if manifest["coordinate_frame"] != interface["runtime_artifact_contract"]["coordinate_frame"]:
         raise ValueError("gas-field coordinate frame differs")
     if manifest["domain"] != interface["runtime_artifact_contract"]["domain"]:
         raise ValueError("gas-field domain does not cover the governed transport domain exactly")
-    if manifest["interpolation_policy"] != interface["runtime_artifact_contract"]["interpolation_policy"]:
+    if manifest["interpolation_policy"] != interface["runtime_artifact_contract"]["sampling_policies"][source_kind]["interpolation_policy"]:
         raise ValueError("gas-field interpolation policy differs from the governed interface")
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import runtime_support_domain
+    support = runtime_support_domain(interface, source_kind)
+    expected_support = dict(minimum_z_mm=support.minimum_z_mm, maximum_z_mm=support.maximum_z_mm,
+        minimum_radius_mm=support.minimum_radius_mm, maximum_radius_mm=support.maximum_radius_mm)
+    if (manifest["sampling"] != interface["runtime_artifact_contract"]["sampling_policies"][source_kind]
+            or manifest["support_domain"] != expected_support):
+        raise ValueError("gas-field sampling policy or effective support differs")
+    if not isinstance(manifest["field_id"], str) or not manifest["field_id"].strip():
+        raise ValueError("gas-field identity must be explicit")
     record = manifest["runtime_lua"]
     if not isinstance(record, dict) or set(record) != {"path", "sha256"}:
         raise ValueError("gas-field runtime_lua record differs")
@@ -111,6 +148,7 @@ def _render_run_config(
     solver: Path,
     model_projection=None,
     placement=None,
+    gas_runtime_metadata=None,
 ) -> str:
     def stage_record(name: str) -> str:
         stage = science["electric_field"][name]
@@ -162,6 +200,11 @@ def _render_run_config(
             f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
             f"  collision_sds_lua={_lua_string(collision_lua)},",
             f"  gas_field_lua={_lua_string(gas_lua)},",
+            *([] if mode != "gas_assisted_transport" else [
+                f"  collision_sds_binding_lua={_lua_string(solver / 'collision_sds_binding.lua')},",
+                f"  gas_field_frame_id={_lua_string(gas_runtime_metadata['coordinate_frame']['frame_id'])},",
+                f"  gas_outside_domain_policy={_lua_string(gas_runtime_metadata['sampling']['outside_domain_policy'])},",
+            ]),
             f"  trajectory_csv={_lua_string(results / 'trajectory_samples.csv')},",
             f"  final_state_csv={_lua_string(results / 'particle_final_state.csv')},",
             f"  trajectory_sample_interval_us={trajectory['sample_interval_us']:.15g},",
@@ -493,20 +536,15 @@ def prepare_transport(
 
     if mode == "gas_assisted_transport":
         if producer is not None:
-            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_runtime import export_runtime
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+            from .gas_runtime import materialize_gas_runtime
 
             paths = producer.data_locations
+            field, metadata = prepare_cfd_gas_field(opened_gas.data, interface=interface,
+                producer_reference=producer.reference, source_records=producer.data_records)
             gas_field_manifest = frozen / "compiled_gas_field_manifest.json"
-            export_runtime(
-                paths["field_csv"],
-                paths["field_metadata"],
-                solver / "compiled_gas_field.lua",
-                gas_field_manifest,
-                paths["science"],
-                paths["numerics"],
-                paths["geometry"],
-                interface_path,
-            )
+            materialize_gas_runtime(field, solver / "compiled_gas_field.lua", gas_field_manifest,
+                                    manifest_metadata=metadata)
             validated_gas = validate_runtime_manifest(gas_field_manifest, interface)
             inputs["gas_producer_manifest"] = freeze_file(
                 Path(producer.reference["manifest"]["path"]), frozen / "gas_producer_manifest.json"
@@ -516,6 +554,9 @@ def prepare_transport(
         assert validated_gas is not None and validated_sds_root is not None
         assert gas_field_manifest is not None
         manifest, runtime = validated_gas
+        inputs["collision_sds_binding"] = freeze_file(
+            native_resource_path("collision_sds_binding.lua"), solver / "collision_sds_binding.lua"
+        )
         inputs["gas_field_manifest"] = freeze_file(gas_field_manifest, frozen / "gas_field_manifest.json")
         inputs["gas_field_runtime"] = freeze_file(
             runtime,
@@ -561,6 +602,7 @@ def prepare_transport(
             solver=solver,
             model_projection=model_projection,
             placement=placement,
+            gas_runtime_metadata=manifest if mode == "gas_assisted_transport" else None,
         ),
         encoding="utf-8",
     )

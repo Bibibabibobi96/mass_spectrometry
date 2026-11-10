@@ -8,12 +8,17 @@ from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, R
 from .thermodynamics import number_density_m3
 
 
-def _inside(domain, point):
+def _radius(x, y, profile):
+    return math.sqrt(x*x+y*y) if profile == "legacy_sqrt_v1" else math.hypot(x, y)
+
+
+def _inside(domain, point, profile="canonical_static_v1"):
     x, y, z = point
     if isinstance(domain, UnboundedDomain):
         return True
     if isinstance(domain, CylindricalDomain):
-        return domain.minimum_z_mm <= z <= domain.maximum_z_mm and math.hypot(x, y) <= domain.maximum_radius_mm
+        return (domain.minimum_z_mm <= z <= domain.maximum_z_mm
+                and domain.minimum_radius_mm <= _radius(x, y, profile) <= domain.maximum_radius_mm)
     return all((v > lo or (closed_lo and v == lo)) and (v < hi or (closed_hi and v == hi))
                for v, lo, hi, closed_lo, closed_hi in zip(point, domain.minimum_mm, domain.maximum_mm, domain.lower_closed, domain.upper_closed))
 
@@ -46,7 +51,7 @@ def prepare_gas_field(spec: GasFieldSpec, *, data: AxisymmetricRZData | None = N
         if isinstance(spec.domain, UnboundedDomain):
             raise ValueError("r-z data cannot claim unbounded coverage")
         if isinstance(spec.domain, CylindricalDomain):
-            if (data.r_values_mm[0] != 0 or spec.domain.maximum_radius_mm > data.r_values_mm[-1]
+            if (spec.domain.minimum_radius_mm < data.r_values_mm[0] or spec.domain.maximum_radius_mm > data.r_values_mm[-1]
                     or spec.domain.minimum_z_mm < data.z_values_mm[0] or spec.domain.maximum_z_mm > data.z_values_mm[-1]):
                 raise ValueError("r-z data does not cover the declared domain")
         else:
@@ -57,12 +62,19 @@ def prepare_gas_field(spec: GasFieldSpec, *, data: AxisymmetricRZData | None = N
         for b in spec.regions[i+1:]:
             if _overlap(a.domain, b.domain):
                 raise ValueError("gas regions overlap without a unique boundary owner")
+    for i, a in enumerate(spec.axisymmetric_regions):
+        for b in spec.axisymmetric_regions[i+1:]:
+            lo, hi = max(a.minimum_z_mm, b.minimum_z_mm), min(a.maximum_z_mm, b.maximum_z_mm)
+            owns_a = (lo != a.minimum_z_mm or a.lower_closed) and (lo != a.maximum_z_mm or a.upper_closed)
+            owns_b = (lo != b.minimum_z_mm or b.lower_closed) and (lo != b.maximum_z_mm or b.upper_closed)
+            if lo < hi or (lo == hi and owns_a and owns_b):
+                raise ValueError("gas regions overlap without a unique boundary owner")
     return GasField(spec, data)
 
 
-def _grid_state(data: AxisymmetricRZData, point) -> GasState:
+def _grid_state(data: AxisymmetricRZData, point, profile) -> GasState:
     x, y, z = point
-    r = math.hypot(x, y)
+    r = _radius(x, y, profile)
     nr, nz = len(data.r_values_mm), len(data.z_values_mm)
     xr = (r-data.r_values_mm[0])/(data.r_values_mm[1]-data.r_values_mm[0])
     xz = (z-data.z_values_mm[0])/(data.z_values_mm[1]-data.z_values_mm[0])
@@ -96,7 +108,7 @@ def sample_gas(field: GasField, position: FramedPosition, *, placement: RigidTra
             raise ValueError("placement must start in the gas field frame")
         local = placement.inverse().transform_position(position)
     region_id = None
-    if not _inside(spec.domain, local.coordinates_mm):
+    if not _inside(spec.domain, local.coordinates_mm, spec.sampling_profile):
         state = GasState("outside_domain")
     elif spec.representation == "uniform":
         state = spec.uniform_state
@@ -106,8 +118,20 @@ def sample_gas(field: GasField, position: FramedPosition, *, placement: RigidTra
             if _inside(region.domain, local.coordinates_mm):
                 state, region_id = region.state, region.region_id
                 break
+    elif spec.representation == "axisymmetric_piecewise_uniform":
+        values = spec.axisymmetric_background
+        x, y, z = local.coordinates_mm
+        for region in spec.axisymmetric_regions:
+            if ((z > region.minimum_z_mm or (region.lower_closed and z == region.minimum_z_mm))
+                    and (z < region.maximum_z_mm or (region.upper_closed and z == region.maximum_z_mm))):
+                values, region_id = region.values, region.region_id
+                break
+        r = _radius(x, y, spec.sampling_profile)
+        velocity = ((0., 0., values.axial_velocity_m_s) if r == 0 else
+                    (values.radial_velocity_m_s*x/r, values.radial_velocity_m_s*y/r, values.axial_velocity_m_s))
+        state = GasState(values.status, values.pressure_pa, values.temperature_k, velocity)
     else:
-        state = _grid_state(field.data, local.coordinates_mm)
+        state = _grid_state(field.data, local.coordinates_mm, spec.sampling_profile)
     if placement is not None and state.bulk_velocity_m_s is not None:
         velocity = placement.transform_vector(FramedVector(spec.frame_id, state.bulk_velocity_m_s)).components
         state = GasState(state.status, state.pressure_pa, state.temperature_k, velocity)

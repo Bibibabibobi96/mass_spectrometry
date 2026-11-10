@@ -25,7 +25,7 @@ DOMAIN_IMPORTS = {
     "gas": {"gas", "contracts", "io"},
     "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
-    "components": SCIENTIFIC_DOMAINS | {"components"},
+    "components": SCIENTIFIC_DOMAINS | {"gas", "components"},
     "backends": SCIENTIFIC_DOMAINS | {"gas", "components", "backends", "execution", "results"},
     "execution": SCIENTIFIC_DOMAINS | {"execution", "results"},
     "results": SCIENTIFIC_DOMAINS | {"results"},
@@ -280,6 +280,8 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_gas_layer_has_only_explicit_pure_dependencies(self):
+        self.assertEqual(core_boundary_errors("from msplatform.gas.field import prepare_gas_field",
+                         "msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field", dependencies=set()), [])
         self.assertEqual(core_boundary_errors("from msplatform.gas.field import GasField",
                          "msplatform.backends.simion.gas_runtime", dependencies=set()), [])
         self.assertEqual(core_boundary_errors("from msplatform.gas.field import prepare_gas_field",

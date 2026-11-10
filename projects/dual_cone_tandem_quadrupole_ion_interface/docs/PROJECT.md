@@ -605,3 +605,108 @@ observation returned identical quality summaries: 36.681/34.835 seconds and
 330,510,444/364,722,767 bytes of peak traced Python allocations. The new data
 result retains 16,828,452 bytes of numeric columns and mask. These are not RSS
 measurements; cache order, shared load and tracing overhead prevent a speedup claim.
+
+### One joint gas compiler and explicit SDS callback binding
+
+Current source construction belongs to component `gas_field`; actual Lua
+compilation/materialization belongs to backend `gas_runtime`. Both previous
+component emitters are retired with their live callers. The current interface
+and compiled manifest use version 2 and a joint `sample` ABI, with source-specific
+interpolation/outside-domain policy instead of the misleading common bilinear
+label for prescribed gas. No scalar API bridge or old compiled-source fallback
+is provided. Historical CSV/metadata and original compiled artifacts are not
+rewritten or completed from today's package.
+
+The typed `axisymmetric_piecewise_uniform` representation preserves constant
+cylindrical p/T/ur/uz and the actual rear discontinuity without a fake grid or
+Cartesian reinterpretation. Uniform source composition is supplied explicitly
+from existing selected science; CFD composition metadata derives from its
+recorded species/molar-mass convention. Actual SDS mass, diameter and diffusion
+remain the selected transport-science values. The named 400 Pa case remains a
+component restriction, not a universal gas restriction.
+
+Legacy CFD explicitly retains raw axis ur values and returns zero radial
+Cartesian vector only at the queried axis. Strict G 1 regularity remains the
+default. CFD and prescribed legacy profiles retain sqrt radius, actual valid
+corner support, `.9g`/`.17g` and 8192 chunks. Annular domains preserve CFD rmin.
+The original uniform rmin=0 control retains its 1e-6 mm envelope; honoring nonzero
+uniform rmin is a separately selected annular successor correction, because the
+old emitter ignored that parameter. No new epsilon, physical model or random
+policy is introduced.
+
+The ordinary SDS binding resource assigns the official pressure/temperature/
+velocity callbacks and installs once. It receives each actual callback's joint
+sample independently, never caches by time/particle, and converts Pa to Torr
+and local m/s to workbench orientation exactly once. Program keeps official
+import, lexical adjustable initialization, once/run seed and terminal/mother
+ownership. No-data and uniform outside coverage emit final code 3 before fallback;
+strict CFD outside coverage raises. Program-run bookkeeping reset is the
+separate lifecycle correction above, not evidence of a vendor hidden-state
+reset, native repeated Fly equality, repartition equivalence or checkpointing.
+
+Software, ordinary installation, lookup cost and actual native qualification
+remain separately evidenced. This section does not grant new CFD accuracy,
+successful current ion Fly, integrator crossing precision or Formal status.
+
+B/C software evidence is private source `208e1185` plus the separately accepted
+four-table lifecycle reset. The original 98-parent consumer round retained
+three failures (two incomplete harness configs and the original axial error
+message); only those three were rerun after repair and passed. Two additional
+source-lineage parents passed, including actual direct records and explicit
+malformed/missing/mismatched producer negatives. The selected 295236-row CFD
+raw scalar columns/mask and 194 nonzero radial-axis values were preserved.
+Archived/new emitted Lua agreed numerically at all selected CFD and signed
+uniform queries (zero ULP); two equal-valued textual zero spellings differed.
+Six annular CFD queries also agreed exactly. Uniform nonzero-rmin behavior is
+an explicitly selected correction, not a legacy-equivalence claim.
+
+Actual fixed-old/new Program inert-SDS harnesses produced byte-identical
+first/repeated-run trajectory and final CSVs for sparse IDs 1,7,101, with one
+install and one seed per run. This does not qualify vendor hidden state or
+native integration. Focused ordinary direct/sdist-built wheels each joined
+all 447 selected runtime files to source/site-packages, with physical missing
+component/binding negatives and both retired emitters absent (81.018 seconds).
+The earlier task-only negative harness failure is retained. This is not a
+complete installed-test or native qualification claim.
+
+A bounded ordered Lua CPU observation of 10000 loaded callback triplets found
+old/new CFD 0.038/0.440 seconds and uniform 0.092/0.217 seconds. The new joint
+state computes all fields/EOS independently per actual supplier callback;
+this added cost is explicit. It is not a controlled whole-run performance
+comparison. No cache, callback merging, RNG change or numerical shortcut was
+introduced. Current native Fly equivalence and the whole-software 15-minute
+budget remain open.
+
+The 81.018-second installation observation above is the pre-projection epoch,
+retained separately. A conservative successor removes transient result tables
+and fuses the same four CFD sums without changing per-field corner/product/sum
+order. Every callback still validates all four fields, velocity rotation and
+EOS; public joint sample output and all extreme-value failures remain checked.
+The final fused epoch passed a fresh focused direct/sdist installation in 89.699
+seconds, with 447 exact runtime payload joins in each arm and actual missing
+component/binding/vendor negatives. Original full consumer failures are retained:
+the optimized 46-parent round had 45 successes and one source-shape assertion
+using the previous local variable name; the exact corrected parent passed.
+A subsequent 48-parent gas/runtime/boundary round passed; these are distinct
+rounds, not a fabricated single all-green 98-parent rerun.
+
+The final actual fixed-old/current Program callback observation used 10000
+triplets and inert supplier installation: CFD 0.050/0.211 CPU seconds, uniform
+0.083/0.104. Checksums were identical. Allocation-only measurements 0.074/0.331
+and the earlier direct-sample measurements have different epochs/scopes and are
+not controlled speedup evidence. Remaining CFD cost is explicit: all four fields
+and runtime validity checks are computed for every actual supplier query. No
+skip, cache or error-semantic relaxation hides it. Native/vendor equivalence
+and whole-software budget remain open.
+
+The composed G3 B/C successor passed 132 software parents and 538 records in
+181.489 seconds, including the actual Changed route into the existing seven
+backend consumers and project owner. Fresh focused direct-wheel and rebuilt-
+sdist consumers passed in 95.245 seconds: all 457 runtime payloads joined source,
+actual build source, both distributions/installations and sdist. They exercised
+the actual preparation, emitted Lua and Program with inert SDS, source denial
+and missing-resource/module refusal; they did not execute SIMION or qualify SDS
+physics. The earlier complete installed-core acceptance predates this gas slice.
+The named 400 Pa constructor remains constrained here; general prescribed-study
+pressure freedom requires its separately validated successor. CFD callback cost,
+final combined installation, Repository and native acceptance remain open.

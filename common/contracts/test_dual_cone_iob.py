@@ -248,6 +248,7 @@ class DualConeIobTests(unittest.TestCase):
                     numerics=values["numerics"],
                     resolved=values["resolved"],
                     solver=root,
+                    gas_runtime_metadata={"coordinate_frame":{"frame_id":"dual_cone_interface_local"},"sampling":{"outside_domain_policy":"error"}},
                 )
             )
             script = root / "frame.lua"
@@ -258,9 +259,8 @@ local queries={}
 local function sample(kind,x,y,z)
  queries[#queries+1]={kind,x,y,z};return 123456,321
 end
-local field={pressure_pa=function(x,y,z)sample('pressure',x,y,z);return 123456 end,
- temperature_k=function(x,y,z)sample('temperature',x,y,z);return 321 end,
- velocity_m_s=function(x,y,z)sample('velocity',x,y,z);return 1.25,-2.5,30 end}
+local field={sample=function(x,y,z,frame)assert(frame=='dual_cone_interface_local');sample('joint',x,y,z);return {status='gas',pressure_pa=123456,temperature_k=321,bulk_velocity_m_s={1.25,-2.5,30}} end}
+function field._sample_sds(channel,...) local s=field.sample(...);if channel=='pressure' then return s.status,s.pressure_pa elseif channel=='temperature' then return s.status,s.temperature_k end;local u=s.bulk_velocity_m_s or {};return s.status,u[1],u[2],u[3] end
 loadfile=function(path)
  if path:match('gas_field_runtime.lua$')then return function()return field end end
  return original_loadfile(path)
@@ -293,6 +293,7 @@ print('DUAL_CONE_DECLARED_GAS_FRAME=PASS INVERSE=translation VELOCITY_ROTATION=i
             )
             # Actual shared RF module remains an explicit file, not a new kernel.
             (root / "simion_rf_drive.lua").write_bytes(native_resource_path("rf_drive.lua").read_bytes())
+            (root / "collision_sds_binding.lua").write_bytes(native_resource_path("collision_sds_binding.lua").read_bytes())
             result = subprocess.run([str(LUA), str(script)], cwd=root, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("VELOCITY_ROTATION=identity", result.stdout)
@@ -310,14 +311,16 @@ print('DUAL_CONE_DECLARED_GAS_FRAME=PASS INVERSE=translation VELOCITY_ROTATION=i
                 values = request()
                 config = root / "run.lua"
                 config.write_text(_render_run_config(mode=mode, science=values["science"],
-                    numerics=values["numerics"], resolved=values["resolved"], solver=solver))
+                    numerics=values["numerics"], resolved=values["resolved"], solver=solver,
+                    gas_runtime_metadata={"coordinate_frame":{"frame_id":"dual_cone_interface_local"},"sampling":{"outside_domain_policy":"error"}}))
                 (solver / "simion_rf_drive.lua").write_bytes(native_resource_path("rf_drive.lua").read_bytes())
+                (solver / "collision_sds_binding.lua").write_bytes(native_resource_path("collision_sds_binding.lua").read_bytes())
                 script = root / "outside.lua"
                 script.write_text(r"""local config_path=arg[1]
 local original_loadfile=loadfile
 local fail_query=false
-local field={pressure_pa=function()if fail_query then error('gas-field query has no fluid support')end;return 1 end,
- temperature_k=function()return 300 end,velocity_m_s=function()return 0,0,0 end}
+local field={sample=function()if fail_query then return {status='no_data'} end;return {status='gas',pressure_pa=1,temperature_k=300,bulk_velocity_m_s={0,0,0}} end}
+function field._sample_sds(channel,...) local s=field.sample(...);if channel=='pressure' then return s.status,s.pressure_pa elseif channel=='temperature' then return s.status,s.temperature_k end;local u=s.bulk_velocity_m_s or {};return s.status,u[1],u[2],u[3] end
 loadfile=function(path)if path:match('gas_field_runtime.lua$')then return function()return field end end;return original_loadfile(path)end
 local SDS={install=function()end}
 simion={workbench_program=function()segment={}end,import=function()return SDS end}

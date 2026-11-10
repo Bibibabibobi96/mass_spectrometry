@@ -334,6 +334,7 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         "gas_assisted_transport.lua",
         "compiled_gas_field.lua",
         "gas_field_runtime.lua",
+        "collision_sds_binding.lua",
         "gas_source.fly2",
         "gas_source_states.lua",
         "run_config.lua",

@@ -243,17 +243,31 @@ for project_id, documents in fixture['standalone_contracts'].items():
     assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
     origins[module_name] = str(origin)
 from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+from msplatform.contracts.gas import GasSpecies
 from msplatform.backends.simion.dual_cone_geometry import render_gem
 cone = fixture['dual_cone']
 assert resolve_geometry(cone['baseline']) == cone['resolved']
 assert render_gem(cone['resolved'], cone['numerics']) == cone['gem']
 for name in ('uniform_rear_gas_field', 'gas_field_interface'):
     (root/(name+'.json')).write_text(json.dumps(cone[name]), encoding='utf-8')
-manifest = export_uniform_runtime(root/'uniform.lua', root/'uniform-manifest.json',
-    spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
+field, runtime_metadata = prepare_uniform_rear_gas_field(cone['uniform_rear_gas_field'],
+    interface=cone['gas_field_interface'],
+    composition=(GasSpecies(cone['gas_flow_science']['physics']['gas_species']['species_id'],
+        cone['ion_transport_science']['gas']['collision_gas_mass_amu'],1.),),
+    spec_record=cone['uniform_source_records']['spec'], interface_record=cone['uniform_source_records']['interface'])
+manifest = materialize_gas_runtime(field,root/'uniform.lua',root/'uniform-manifest.json',manifest_metadata=runtime_metadata)
 assert manifest['role'] == 'dual_cone_gas_field_export'
 assert (root/'uniform.lua').read_bytes() == cone['uniform_lua'].encode()
+import msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field as cone_gas_module
+import msplatform.backends.simion.gas_runtime as joint_gas_module
+assert pathlib.Path(cone_gas_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+assert pathlib.Path(joint_gas_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+for retired in ('gas_runtime.py','uniform_gas_runtime.py'):
+    assert not pathlib.Path(cone_gas_module.__file__).with_name(retired).exists()
+assert 'sample' in cone['gas_field_interface']['runtime_artifact_contract']['runtime_lua_required_functions']
+
 from msplatform.backends.simion import dual_cone_transport
 assert pathlib.Path(dual_cone_transport.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
 cone_input = root / ('cone-input-' + sys.argv[2])
@@ -2522,7 +2536,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     for key, filename in (('baseline', 'baseline.json'), ('modes', 'numerical_modes.json'),
                                           ('expected', 'resolved_model.json'))}
             from msplatform.backends.simion.dual_cone_geometry import render_gem
-            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+            from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+            from msplatform.contracts.gas import GasSpecies
             cone_config = REPO_ROOT / 'projects/dual_cone_tandem_quadrupole_ion_interface/config'
             dual_cone = {name: json.loads((cone_config / filename).read_text(encoding='utf-8'))
                 for name, filename in (('baseline', 'baseline.json'), ('resolved', 'resolved_geometry.json'),
@@ -2532,8 +2548,17 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             dual_cone['gem'] = render_gem(dual_cone['resolved'], dual_cone['numerics'])
             for name in ('uniform_rear_gas_field', 'gas_field_interface'):
                 (root/(name+'.json')).write_text(json.dumps(dual_cone[name]), encoding='utf-8')
-            export_uniform_runtime(root/'fixture-uniform.lua', root/'fixture-uniform-manifest.json',
-                spec_path=root/'uniform_rear_gas_field.json', interface_path=root/'gas_field_interface.json')
+            from msplatform.io.manifest_records import file_record as gas_file_record
+            dual_cone['uniform_source_records'] = dict(
+                spec=gas_file_record(root/'uniform_rear_gas_field.json','required_evidence'),
+                interface=gas_file_record(root/'gas_field_interface.json','required_evidence'))
+            field, runtime_metadata = prepare_uniform_rear_gas_field(dual_cone['uniform_rear_gas_field'],
+                interface=dual_cone['gas_field_interface'],
+                composition=(GasSpecies(dual_cone['gas_flow_science']['physics']['gas_species']['species_id'],
+                    dual_cone['ion_transport_science']['gas']['collision_gas_mass_amu'],1.),),
+                spec_record=dual_cone['uniform_source_records']['spec'],
+                interface_record=dual_cone['uniform_source_records']['interface'])
+            materialize_gas_runtime(field,root/'fixture-uniform.lua',root/'fixture-uniform-manifest.json',manifest_metadata=runtime_metadata)
             dual_cone['uniform_lua'] = (root/'fixture-uniform.lua').read_text(encoding='utf-8')
             from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
             from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem

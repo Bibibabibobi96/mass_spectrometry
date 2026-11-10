@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "dual_cone_simion_gas_field_interface",
   "project_id": "dual_cone_tandem_quadrupole_ion_interface",
   "status": "implemented_with_uniform_rear_prototype_and_optional_comsol_upgrade",
@@ -10,8 +10,7 @@
   },
   "runtime_artifact_contract": {
     "manifest_role": "dual_cone_gas_field_export",
-    "manifest_schema_version": 1,
-    "lua_role": "dual_cone_simion_gas_field_runtime",
+    "manifest_schema_version": 2,
     "required_manifest_keys": [
       "schema_version",
       "role",
@@ -20,16 +19,18 @@
       "coordinate_frame",
       "domain",
       "interpolation_policy",
-      "runtime_lua"
+      "runtime_lua",
+      "sampling",
+      "support_domain",
+      "field_id"
     ],
     "allowed_source_kinds": [
       "validated_comsol_axisymmetric_rz",
       "prescribed_uniform_rear_gas"
     ],
     "runtime_lua_required_functions": [
-      "pressure_pa",
-      "temperature_k",
-      "velocity_m_s"
+      "sample",
+      "_sample_sds"
     ],
     "coordinate_frame": {
       "frame_id": "dual_cone_interface_local",
@@ -48,8 +49,22 @@
       "minimum_radius_mm": 0.0,
       "maximum_radius_mm": 23.5
     },
-    "out_of_domain_policy": "error",
-    "interpolation_policy": "bilinear_with_fluid_corner_weight_renormalization_in_cut_cells_no_domain_extrapolation"
+    "sampling_policies": {
+      "validated_comsol_axisymmetric_rz": {
+        "sampling_profile": "legacy_sqrt_v1",
+        "axis_projection_policy": "legacy_axis_projection_v1",
+        "envelope_policy": "strict_cylindrical_v1",
+        "outside_domain_policy": "error",
+        "interpolation_policy": "bilinear_fluid_corner_weight_renormalization_v1"
+      },
+      "prescribed_uniform_rear_gas": {
+        "sampling_profile": "legacy_sqrt_v1",
+        "envelope_policy": "legacy_uniform_padded_v1",
+        "boundary_padding_mm": 1e-06,
+        "outside_domain_policy": "coverage_loss",
+        "interpolation_policy": "piecewise_constant_cylindrical_components_v1"
+      }
+    }
   },
   "failure_policy": "gas_assisted_prepare_must_fail_before_simion_when_current_artifact_is_null_missing_or_hash_invalid"
 }

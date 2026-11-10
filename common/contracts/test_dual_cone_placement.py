@@ -33,7 +33,7 @@ class DualConePlacementTests(unittest.TestCase):
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable; no native fallback')
     def test_actual_program_repeat_run_resets_only_its_particle_bookkeeping(self):
-        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import export_uniform_runtime
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import write_uniform_gas_fixture
 
         values = request()
         harness = r"""local old=loadfile
@@ -83,11 +83,12 @@ print('INSTALLS='..installs..' SEEDS='..#seeds)
                 solver.mkdir(parents=True)
                 (output/'results').mkdir()
                 (solver/'simion_rf_drive.lua').write_bytes(native_resource_path('rf_drive.lua').read_bytes())
-                export_uniform_runtime(solver/'gas_field_runtime.lua', output/'manifest.json',
+                (solver/'collision_sds_binding.lua').write_bytes(native_resource_path('collision_sds_binding.lua').read_bytes())
+                manifest=write_uniform_gas_fixture(solver/'gas_field_runtime.lua', output/'manifest.json',
                     spec_path=CONFIG/'uniform_rear_gas_field.json', interface_path=CONFIG/'gas_field_interface.json')
                 config=output/'config.lua'
                 config.write_text(_render_run_config(mode='gas_assisted_transport', science=values['science'],
-                    numerics=values['numerics'], resolved=values['resolved'], solver=solver), encoding='utf-8')
+                    numerics=values['numerics'], resolved=values['resolved'], solver=solver, gas_runtime_metadata=manifest), encoding='utf-8')
                 script=output/'actual-program.lua'
                 script.write_text(harness, encoding='utf-8')
                 child=subprocess.run([str(LUA),str(script),str(config),
@@ -211,15 +212,16 @@ print('INSTALLS='..installs..' SEEDS='..#seeds)
             (root/'run/results').mkdir()
             config=root/'config.lua'
             config.write_text(_render_run_config(mode='gas_assisted_transport',science=values['science'],
-                numerics=values['numerics'],resolved=values['resolved'],solver=solver,placement=pose(values).to_contract()))
+                numerics=values['numerics'],resolved=values['resolved'],solver=solver,placement=pose(values).to_contract(),
+                gas_runtime_metadata={'coordinate_frame':{'frame_id':'dual_cone_interface_local'},'sampling':{'outside_domain_policy':'error'}}))
             (solver/'simion_rf_drive.lua').write_bytes(native_resource_path('rf_drive.lua').read_bytes())
+            (solver/'collision_sds_binding.lua').write_bytes(native_resource_path('collision_sds_binding.lua').read_bytes())
             script=root/'oracle.lua'
             script.write_text(r'''local old=loadfile
 local calls=0
 local function query(x,y,z)assert(math.abs(x-1)<1e-12 and math.abs(y-2)<1e-12 and math.abs(z-3)<1e-12);calls=calls+1 end
-local gas={pressure_pa=function(x,y,z)query(x,y,z);return 123456 end,
- temperature_k=function(x,y,z)query(x,y,z);return 321 end,
- velocity_m_s=function(x,y,z)query(x,y,z);return 1.25,-2.5,30 end}
+local gas={sample=function(x,y,z,frame)assert(frame=='dual_cone_interface_local');query(x,y,z);return {status='gas',pressure_pa=123456,temperature_k=321,bulk_velocity_m_s={1.25,-2.5,30}} end}
+function gas._sample_sds(channel,...) local s=gas.sample(...);if channel=='pressure' then return s.status,s.pressure_pa elseif channel=='temperature' then return s.status,s.temperature_k end;local u=s.bulk_velocity_m_s or {};return s.status,u[1],u[2],u[3] end
 loadfile=function(path)if path:match('gas_field_runtime.lua$')then return function()return gas end end;return old(path)end
 local SDS={install=function()end}
 local instance={}

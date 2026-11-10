@@ -3,54 +3,52 @@
 import subprocess
 import hashlib, json, tempfile, unittest
 from pathlib import Path
-from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import prepare, GAS_INTERFACE
+from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import GAS_INTERFACE
 
 
 class MismatchTests(unittest.TestCase):
     def test_original_prepare_rejects_other_producer_geometry(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_gas_flow_contract import (
+                _write_fixture, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH,
+            )
+            from msplatform.contracts.gas_field import read_gas_field_data
+            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+            from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+            from msplatform.io.manifest_records import file_record
+
             interface = json.loads(GAS_INTERFACE.read_text())
-            runtime = root / "field.lua"
-            runtime.write_text(
-                "return {pressure_pa=function() return 400 end,temperature_k=function() return 300 end,velocity_m_s=function() return 0,0,0 end}\n"
-            )
-            source_csv = root / "different.csv"
-            source_csv.write_text("EXPLICIT_INERT_NOT_CFD\n")
-            metadata = root / "different.json"
-            metadata.write_text("{}")
+            interface["runtime_artifact_contract"]["domain"] = dict(minimum_z_mm=0, maximum_z_mm=9,
+                minimum_radius_mm=0, maximum_radius_mm=9)
+            csv_path, metadata_path = _write_fixture(root)
             changed_geometry = root / "other_geometry.json"
-            changed_geometry.write_text('{"explicit":"different producer geometry"}')
-            sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
-            manifest = dict(
-                schema_version=1,
-                role="dual_cone_gas_field_export",
-                project_id="dual_cone_tandem_quadrupole_ion_interface",
-                source=dict(
-                    kind="validated_comsol_axisymmetric_rz",
-                    field_csv=dict(path=str(source_csv), sha256=sha(source_csv)),
-                    metadata=dict(path=str(metadata), sha256=sha(metadata)),
-                    source_contract_sha256=dict(
-                        gas_flow_science="1" * 64,
-                        comsol_solver_numerics="2" * 64,
-                        resolved_geometry=sha(changed_geometry),
-                    ),
-                ),
-                coordinate_frame=interface["runtime_artifact_contract"]["coordinate_frame"],
-                domain=interface["runtime_artifact_contract"]["domain"],
-                interpolation_policy=interface["runtime_artifact_contract"]["interpolation_policy"],
-                runtime_lua=dict(path=str(runtime), sha256=sha(runtime)),
-            )
+            changed_geometry.write_bytes(GEOMETRY_PATH.read_bytes() + b" ")
+            metadata = json.loads(metadata_path.read_text())
+            metadata["source_contract_sha256"]["resolved_geometry"] = hashlib.sha256(changed_geometry.read_bytes()).hexdigest()
+            metadata_path.write_text(json.dumps(metadata))
+            data = read_gas_field_data(csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, changed_geometry)
+            files = dict(field_csv=csv_path, field_metadata=metadata_path, science=SCIENCE_PATH,
+                         numerics=NUMERICS_PATH, geometry=changed_geometry)
+            field, manifest = prepare_cfd_gas_field(data, interface=interface,
+                source_records={name: file_record(path, "required_evidence") for name,path in files.items()})
             path = root / "manifest.json"
-            path.write_text(json.dumps(manifest))
+            materialize_gas_runtime(field, root/"field.lua", path, manifest_metadata=manifest)
+            selected_interface = root / "interface.json"
+            selected_interface.write_text(json.dumps(interface))
             sds = root / "sds"
             sds.mkdir()
             for name in ("collision_sds.lua", "mbmr.dat", "textfilelib.lua", "arraylib.lua", "m_defs.dat"):
                 (sds / name).write_text("INERT")
             with self.assertRaisesRegex(ValueError, "geometry"):
-                prepare(
-                    root / "prepared", mode="gas_assisted_transport", gas_field_manifest=path, collision_sds_dir=sds
-                )
+                from msplatform.backends.simion.dual_cone_transport import prepare_transport
+                from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import PROJECT
+                config = PROJECT / "config"
+                prepare_transport(root / "prepared", mode="gas_assisted_transport", gas_field_manifest=path,
+                    collision_sds_dir=sds, interface_path=selected_interface,
+                    resolved_path=config/"resolved_geometry.json", numerics_path=config/"simion_solver_numerics.json",
+                    science_path=config/"ion_transport_science.json", gas_science_path=config/"gas_flow_science.json",
+                    source_spec_path=config/"cylindrical_ion_source.json")
 
 
 SDS_HARNESS = r"""local vendor = assert(arg[1])
@@ -69,6 +67,7 @@ setmetatable(ver,{__call=function() return ver end,__lt=function() return false 
 simion={VERSION=ver,workbench_program=function() end,import=function(path,opt) return load_official(path,opt) end}
 
 local config={mode='gas_assisted_transport',rf_drive_kernel='RF',gas_field_lua='FIELD',collision_sds_lua=vendor..'/collision_sds.lua',
+collision_sds_binding_lua=assert(arg[4]),gas_field_frame_id='explicit_fixture',gas_outside_domain_policy='coverage_loss',
 trajectory_csv=assert(arg[3])..'/trajectory.csv',final_state_csv=arg[3]..'/final.csv',random_seed=7,
 collision_gas_mass_amu=28.0134,collision_gas_diameter_nm=.364,diffusion_enabled=0,
 stage_1={dc_amplitude_v=0},stage_2={dc_amplitude_v=0},rf_steps_per_period=80}
@@ -76,7 +75,7 @@ local old_loadfile=loadfile
 loadfile=function(path)
  if path=='CONFIG' then return function() return config end
  elseif path=='RF' then return function() return {new=function() return {apply_at=function()end,timestep_cap_us=1} end} end
- elseif path=='FIELD' then return function() return {pressure_pa=function()return 400 end,temperature_k=function()return 300 end,velocity_m_s=function()return 0,0,0 end} end
+ elseif path=='FIELD' then return function() return {_sample_sds=function(channel)if channel=='pressure' then return 'gas',400 elseif channel=='temperature' then return 'gas',300 end;return 'gas',0,0,0 end,sample=function()return {status='gas',pressure_pa=400,temperature_k=300,bulk_velocity_m_s={0,0,0}} end} end
  else return old_loadfile(path) end
 end
 os.getenv=function(name) assert(name=='DUAL_CONE_SIMION_RUN_CONFIG_LUA');return 'CONFIG' end
@@ -122,6 +121,7 @@ class OfficialSdsInitializationTests(unittest.TestCase):
                             str(vendor),
                             str(native_resource_path("dual_cone_gas_assisted_transport.lua")),
                             str(root),
+                            str(native_resource_path("collision_sds_binding.lua")),
                         ],
                         cwd=root,
                         capture_output=True,
@@ -225,13 +225,66 @@ class PublishedGasPreparationTests(unittest.TestCase):
             self.assertFalse((root / "negative").exists())
 
 
+    def test_current_runtime_keeps_direct_source_and_rejects_explicit_broken_producer(self):
+        from msplatform.backends.simion.dual_cone_transport import validate_runtime_manifest
+        from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+        from msplatform.contracts.gas_field import read_gas_field_data
+        from msplatform.io.manifest_records import file_record
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_gas_flow_contract import (
+            _write_fixture, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            csv_path, metadata_path = _write_fixture(root)
+            interface = json.loads(GAS_INTERFACE.read_text())
+            interface["runtime_artifact_contract"]["domain"] = dict(
+                minimum_z_mm=0., maximum_z_mm=9., minimum_radius_mm=0., maximum_radius_mm=9.)
+            data = read_gas_field_data(csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+            records = {name: file_record(path, "required_evidence") for name, path in dict(
+                field_csv=csv_path, field_metadata=metadata_path, science=SCIENCE_PATH,
+                numerics=NUMERICS_PATH, geometry=GEOMETRY_PATH).items()}
+            field, metadata = prepare_cfd_gas_field(data, interface=interface, source_records=records)
+            runtime, manifest_path = root / "direct.lua", root / "direct.json"
+            materialize_gas_runtime(field, runtime, manifest_path, manifest_metadata=metadata)
+            actual, actual_path = validate_runtime_manifest(manifest_path, interface)
+            self.assertIsNone(actual["source"]["producer_reference"])
+            self.assertEqual(actual_path, runtime.resolve())
+            self.assertEqual(actual["source"]["source_contract_records"]["geometry"], records["geometry"])
+            producer_path = root / "explicit-producer.json"
+            producer = dict(status="success", products=dict(gas_field=dict(kind="gas_field", status="complete",
+                data=records)))
+            producer_path.write_text(json.dumps(producer), encoding="utf8")
+            reference = dict(manifest=file_record(producer_path, "required_evidence"), product_id="gas_field")
+            for name, selected, message in (
+                ("malformed", {}, "explicit original product"),
+                ("missing_product", dict(reference, product_id="missing"), "differs from explicit producer"),
+            ):
+                with self.subTest(name=name):
+                    broken = json.loads(manifest_path.read_text())
+                    broken["source"]["producer_reference"] = selected
+                    selected_path = root / (name + ".json")
+                    selected_path.write_text(json.dumps(broken), encoding="utf8")
+                    with self.assertRaisesRegex(ValueError, message):
+                        validate_runtime_manifest(selected_path, interface)
+            bound = json.loads(manifest_path.read_text())
+            bound["source"]["producer_reference"] = reference
+            bound_path = root / "bound.json"
+            bound_path.write_text(json.dumps(bound), encoding="utf8")
+            self.assertEqual(validate_runtime_manifest(bound_path, interface)[1], runtime.resolve())
+            producer["products"]["gas_field"]["data"]["field_csv"] = records["field_metadata"]
+            producer_path.write_text(json.dumps(producer), encoding="utf8")
+            bound["source"]["producer_reference"]["manifest"] = file_record(producer_path, "required_evidence")
+            bound_path.write_text(json.dumps(bound), encoding="utf8")
+            with self.assertRaisesRegex(ValueError, "differs from explicit producer"):
+                validate_runtime_manifest(bound_path, interface)
+
+
 class LargeGasRuntimeFreezeTests(unittest.TestCase):
     def test_public_preparation_freezes_large_valid_runtime_with_original_receipt_shape(self):
         from msplatform.backends.simion.dual_cone_transport import prepare_transport, SDS_FILES
         from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import PROJECT
-        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.uniform_gas_runtime import (
-            export_uniform_runtime,
-        )
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import write_uniform_gas_fixture
         from msplatform.io.file_identity import file_sha256
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -239,7 +292,7 @@ class LargeGasRuntimeFreezeTests(unittest.TestCase):
             config = PROJECT / "config"
             runtime = root / "large-field.lua"
             manifest_path = root / "field.json"
-            export_uniform_runtime(
+            write_uniform_gas_fixture(
                 runtime,
                 manifest_path,
                 spec_path=config / "uniform_rear_gas_field.json",

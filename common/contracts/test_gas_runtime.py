@@ -18,6 +18,25 @@ from msplatform.gas.field import prepare_gas_field, sample_gas
 
 @unittest.skipUnless(LUA.is_file(), "installed standalone Lua 5.1 unavailable")
 class GasRuntimeTests(unittest.TestCase):
+    def test_actual_joint_cylindrical_and_legacy_annular_grid(self):
+        from msplatform.contracts.gas import AxisymmetricGasRegion, AxisymmetricGasValues
+
+        field=prepare_gas_field(fixtures.spec('axisymmetric_piecewise_uniform',domain=CylindricalDomain(-5,120,23.5),
+            sampling_profile='legacy_sqrt_v1',axisymmetric_background=AxisymmetricGasValues('vacuum',0,300,0,0),
+            axisymmetric_regions=(AxisymmetricGasRegion('rear',3,120,True,True,AxisymmetricGasValues('gas',400,300,-5,100)),)))
+        self.assert_matches(field,[(.3,.4,3),(0,0,3),(.3,.4,math.nextafter(3,-math.inf)),(0,0,120),(24,0,3)])
+        pose=RigidTransform('local','world',((0,0,1),(1,0,0),(0,1,0)),(10,20,30))
+        self.assert_matches(field,[(13,20.3,30.4)],placement=pose)
+        data=AxisymmetricRZData((1,2,3),(0,1,2),(True,)*9,(100,)*9,(300,)*9,(-5,)*9,(10,)*9)
+        annular=prepare_gas_field(fixtures.spec('axisymmetric_rz_grid',domain=CylindricalDomain(0,2,3,1),
+            interpolation_policy='bilinear_fluid_corner_weight_renormalization_v1',sampling_profile='legacy_sqrt_v1'),data=data)
+        self.assert_matches(annular,[(0,0,1),(1,0,0),(3,0,2),(math.nextafter(1,0),0,1),(2,0,1)])
+        axis=replace(data,r_values_mm=(0,1,2),radial_velocity_m_s=(1e-14,)*9,
+                     axis_projection_policy='legacy_axis_projection_v1')
+        legacy=prepare_gas_field(fixtures.spec('axisymmetric_rz_grid',domain=CylindricalDomain(0,2,2),
+            interpolation_policy='bilinear_fluid_corner_weight_renormalization_v1',sampling_profile='legacy_sqrt_v1'),data=axis)
+        self.assert_matches(legacy,[(0,0,1),(1,0,1)])
+
     def run_lookup(self, field, positions, *, placement=None, extra=""):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -63,10 +82,10 @@ class GasRuntimeTests(unittest.TestCase):
         self.assert_matches(field, [(13, 21, 32), (100, 100, 100)], placement=pose)
         extra = "assert(not pcall(f.sample,0,0,0,'wrong')); assert(not pcall(f.sample,0/0,0,0,'local'))"
         self.run_lookup(field, [(1, 1, 1)], extra=extra)
-        source = GasSource("prescribed_proxy", "explicit ]] source", ("省略碰撞—not measured vacuum",),
-            dict(path="C:/显式/source.json", exists=True, bytes=1, sha256="a"*64))
+        source = GasSource("prescribed_proxy", "explicit ]] source", ("鐪佺暐纰版挒鈥攏ot measured vacuum",),
+            dict(path="C:/鏄惧紡/source.json", exists=True, bytes=1, sha256="a"*64))
         vacuum = prepare_gas_field(fixtures.spec(source=source, uniform_state=GasState("vacuum", 0)))
-        self.run_lookup(vacuum, [(0, 0, 0)], extra="assert(f.source.kind=='prescribed_proxy'); assert(f.source.source_id=='explicit ]] source'); assert(f.source.reference.path=='C:/显式/source.json'); assert(f.source.assumptions[1]=='省略碰撞—not measured vacuum')")
+        self.run_lookup(vacuum, [(0, 0, 0)], extra="assert(f.source.kind=='prescribed_proxy'); assert(f.source.source_id=='explicit ]] source'); assert(f.source.reference.path=='C:/鏄惧紡/source.json'); assert(f.source.assumptions[1]=='鐪佺暐纰版挒鈥攏ot measured vacuum')")
         self.assert_matches(vacuum, [(0, 0, 0)])
         for status in ("solid", "no_data", "outside_domain"):
             self.assert_matches(prepare_gas_field(fixtures.spec(uniform_state=GasState(status))), [(0, 0, 0)])
@@ -151,3 +170,34 @@ class GasRuntimeTests(unittest.TestCase):
             sample_gas(field, fixtures.point(0, frame="world"), placement=pose)
         self.run_lookup(field, [], placement=pose,
             extra="local ok,err=pcall(f.sample,0,0,0,'world'); assert(not ok and string.find(err,'transformed gas velocity must be finite',1,true),tostring(err))")
+
+    def test_numeric_sds_projection_preserves_joint_values_and_all_query_failures(self):
+        for mask in ((True,)*4, (True,False,False,False), (False,)*4):
+            with self.subTest(mask=mask):
+                self.run_lookup(fixtures.GasSamplingTests().grid(mask), [], extra="""
+for _,point in ipairs{{0,0,0},{.5,0,.5},{1,0,1},{2,0,0}} do
+ local x,y,z=unpack(point);local s=f.sample(x,y,z,'local')
+ local a,p=f._sample_sds('pressure',x,y,z,'local')
+ local b,t=f._sample_sds('temperature',x,y,z,'local')
+ local c,vx,vy,vz=f._sample_sds('velocity',x,y,z,'local')
+ assert(a==s.status and b==s.status and c==s.status)
+ assert(p==s.pressure_pa and t==s.temperature_k)
+ local u=s.bulk_velocity_m_s or {};assert(vx==u[1] and vy==u[2] and vz==u[3])
+end
+""")
+        overflow = math.sqrt(.5)
+        cases = (
+            (fixtures.spec(uniform_state=GasState('gas',1e-300,1e300,(0,0,0))),None,(0,0,0),'gas number density must be positive'),
+            (fixtures.spec(uniform_state=GasState('gas',1e300,1e-300,(0,0,0))),None,(0,0,0),'ideal-gas density is not finite'),
+            (fixtures.spec(),RigidTransform('local','world',((1,0,0),(0,1,0),(0,0,1)),(-1e308,0,0)),(1e308,0,0),'transformed gas position must be finite'),
+            (fixtures.spec(uniform_state=GasState('gas',1,300,(1.7e308,1.7e308,0))),RigidTransform('local','world',((overflow,overflow,0),(-overflow,overflow,0),(0,0,1)),(0,0,0)),(0,0,0),'transformed gas velocity must be finite'),
+        )
+        for definition,placement,point,message in cases:
+            with self.subTest(message=message):
+                frame='local' if placement is None else 'world'
+                arguments=','.join(format(value,'.17g') for value in point)+','+lua_value(frame)
+                extra="""local ok,err=pcall(f.sample,ARGS);assert(not ok and string.find(err,MESSAGE,1,true),tostring(err))
+for _,channel in ipairs{'pressure','temperature','velocity'} do
+ local ok,err=pcall(f._sample_sds,channel,ARGS);assert(not ok and string.find(err,MESSAGE,1,true),tostring(err))
+end""".replace('ARGS',arguments).replace('MESSAGE',lua_value(message))
+                self.run_lookup(prepare_gas_field(definition),[],placement=placement,extra=extra)
