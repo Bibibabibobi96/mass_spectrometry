@@ -383,6 +383,47 @@ try:
     else: raise AssertionError('missing installed IP runtime was accepted')
     assert not list(ip_missing_output.iterdir())
 finally: hidden_ip_resource.rename(missing_ip_resource)
+# Actual canonical manifest-CLI projection of explicit inert owner records.
+from msplatform.workflows.ion_processor import field_reference
+ip_reference_child = root / ('ip-reference-child-' + sys.argv[2])
+for directory in ('inputs', 'simion'):
+    (ip_reference_child/directory).mkdir(parents=True, exist_ok=True)
+ip_reference_parent = pathlib.Path(ip['field_reference_parent'])
+shutil.copyfile(ip_reference_parent/'simion/processor.gem', ip_reference_child/'simion/processor.gem')
+ip_reference_model = copy.deepcopy(ip['field_reference_model'])
+reference_result = field_reference.bind_native_field(ip_reference_child, ip_reference_model, ip_reference_parent)
+assert reference_result['native_field_manifest'] == str(ip_reference_parent/'run_manifest.json')
+reference_receipt = json.loads((ip_reference_child/'inputs/native_field_consumption.json').read_text())
+assert len(reference_receipt['family_records']) == 18
+assert reference_receipt['payload_validation'] == 'launcher_immutable_source_guard_required_before_native_use'
+assert not list((ip_reference_child/'simion').glob('*.pa*'))
+(ip_reference_child/'inputs/resolved_model.json').write_text(json.dumps(ip['field_reference_model']), encoding='utf-8')
+(ip_reference_child/'run_config.json').write_text('{"inputs":{"existing":"keep"}}', encoding='utf-8')
+field_reference.adopt_native_field(ip_reference_child, ip_reference_parent)
+assert json.loads((ip_reference_child/'run_config.json').read_text())['inputs']['existing'] == 'keep'
+# The actual installed canonical verifier also rejects an incomplete owner publication.
+reference_journal = ip_reference_parent / '.run_terminal_publication.json'
+reference_journal_before = reference_journal.read_bytes() if reference_journal.exists() else None
+reference_journal.write_text('{}', encoding='utf-8')
+try:
+    import subprocess
+    try: field_reference.bind_native_field(ip_reference_child, copy.deepcopy(ip['field_reference_model']), ip_reference_parent)
+    except subprocess.CalledProcessError: pass
+    else: raise AssertionError('incomplete owner publication was accepted')
+finally:
+    if reference_journal_before is None: reference_journal.unlink()
+    else: reference_journal.write_bytes(reference_journal_before)
+# A missing canonical owner must not fall back to the retired repository body.
+reference_module_path = pathlib.Path(field_reference.__file__)
+hidden_reference_module = reference_module_path.with_name(reference_module_path.name+'.missing')
+reference_module_path.rename(hidden_reference_module)
+try:
+    import subprocess
+    missing_reference = subprocess.run([sys.executable,'-I','-c',
+        'from msplatform.workflows.ion_processor.field_reference import bind_native_field'],
+        cwd=root, capture_output=True, text=True, timeout=30)
+    assert missing_reference.returncode != 0 and 'field_reference' in missing_reference.stderr
+finally: hidden_reference_module.rename(reference_module_path)
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from importlib.resources import files
 from msplatform.backends.simion.resources import native_resource_path
@@ -1921,6 +1962,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             ip['hs1_input_bytes_hex'] = hs1_bytes.hex()
             ip['hs1_input_kind'] = 'explicit_vendor_source' if selected_hs1 else 'inert_unit_fixture'
             ip['hs1_input_sha256'] = hashlib.sha256(hs1_bytes).hexdigest()
+            from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import NativeFieldReferenceTests
+            field_parent, _, field_model, field_family = NativeFieldReferenceTests().make_family_fixture(root / 'inert-ip-field-reference')
+            ip['field_reference_parent'] = str(field_parent)
+            ip['field_reference_model'] = field_model
             ip['gem_sha256'] = hashlib.sha256(render_ip_gem(native_projection(ip['baseline'], ip['numerics'])).encode()).hexdigest()
             ip['native_drive'] = (REPO_ROOT/'src/msplatform/backends/simion/resources/native_drive.lua').read_text(encoding='utf-8')
             from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract

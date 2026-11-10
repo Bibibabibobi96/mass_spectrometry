@@ -374,3 +374,20 @@ remaining orchestration is explicit P4 work. Unsolved materialized inputs alone 
 permit IOB/Fly or bypass native-field/priority/frame guards. Installed software checks use
 real official HS1 source bytes without executing them; their results do not replace native
 Refine/Fly, collision verification, GUI or P11 placement acceptance.
+
+### Existing-field reference API
+
+[`field_reference.py`](../../../src/msplatform/workflows/ion_processor/field_reference.py)
+owns `bind_native_field(run, config, parent)` and `adopt_native_field(run, parent)`.
+The consumer must already contain its explicit GEM; the producer is an explicit terminal
+IP run. The existing metadata/Refine/projection checks bind the original producer manifest
+and exact family records without cloning PA payloads. No vendor installation, HS1 source,
+seed or new solver invocation is required for this metadata operation.
+
+The canonical verifier runs through the same selected Python interpreter and existing
+explicit native-policy CLI. Public native-use guards and source protection remain the
+launcher's responsibility; a successful reference is not permission to Fly or scientific
+field qualification. The root CLI's `adopt-native-field` action remains the same thin
+workflow consumer. Ordinary software proof covers actual CLI verification, adoption,
+incomplete-publication rejection, missing canonical owner rejection and installed origins;
+it uses inert PA-shaped test files and does not claim native PA readback.

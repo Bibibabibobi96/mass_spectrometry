@@ -8,6 +8,7 @@ from __future__ import annotations
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.workflows.ion_processor import preparation
+from msplatform.workflows.ion_processor import field_reference
 
 import msplatform.execution.manifest_publication as _canonical_manifest_publication
 import msplatform.execution.manifest_verification as _canonical_manifest_verification
@@ -923,33 +924,37 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
 
 
 class NativeFieldReferenceTests(unittest.TestCase):
+    def make_family_fixture(self, root: Path, status: str = "success") -> tuple:
+        parent = root / "20261029_120000__test__simion__field-owner-fixture"
+        child = root / "20261029_120001__test__simion__field-consumer-fixture"
+        model = {"native_projection": {"electrode_ids": list(range(1, 16))},
+                 "numerics": {"refine_convergence_v": 1e-5}}
+        for run in (parent, child):
+            for directory in ("inputs", "simion", "logs"):
+                (run / directory).mkdir(parents=True, exist_ok=True)
+            (run / "simion/processor.gem").write_text("inert geometry fixture\n", encoding="utf-8")
+        functional.write_json(parent / "inputs/resolved_model.json", model)
+        functional.write_json(parent / "inputs/numerics.json", model["numerics"])
+        (parent / "logs/refine.log").write_text("Fast adjust Refining completed\n", encoding="utf-8")
+        family = [parent / "simion" / ("processor.pa" + suffix)
+                  for suffix in ["#", *map(str, range(16)), "-surf"]]
+        for path in family:
+            path.write_bytes(b"inert native payload fixture")
+        functional.write_json(parent / "run_config.json", dict(run_id=parent.name, project=functional.PROJECT,
+            mode="native_electrode_functional", inputs={str(index): str(parent / relative) for index, relative in
+            enumerate(("inputs/resolved_model.json", "inputs/numerics.json", "simion/processor.gem"))}))
+        _canonical_manifest_publication.publish_run_manifest(parent / "run_config.json", status,
+            output_paths=[*family, parent / "logs/refine.log"], retention_api=_manifest_retention_api)
+        return parent, child, model, family
+
     def test_source_projection_and_child_publication_reference_owner_without_payload_rereads(self) -> None:
         from msplatform.io import manifest_records
         from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            parent = root / "20261029_120000__test__simion__field-owner-fixture"
-            child = root / "20261029_120001__test__simion__field-consumer-fixture"
-            model = {"native_projection": {"electrode_ids": list(range(1, 16))},
-                     "numerics": {"refine_convergence_v": 1e-5}}
-            for run in (parent, child):
-                for directory in ("inputs", "simion", "logs"):
-                    (run / directory).mkdir(parents=True, exist_ok=True)
-                (run / "simion/processor.gem").write_text("inert geometry fixture\n", encoding="utf-8")
-            functional.write_json(parent / "inputs/resolved_model.json", model)
-            functional.write_json(parent / "inputs/numerics.json", model["numerics"])
-            (parent / "logs/refine.log").write_text("Fast adjust Refining completed\n", encoding="utf-8")
-            family = [parent / "simion" / ("processor.pa" + suffix)
-                      for suffix in ["#", *map(str, range(16)), "-surf"]]
-            for path in family:
-                path.write_bytes(b"inert native payload fixture")
-            functional.write_json(parent / "run_config.json", dict(run_id=parent.name, project=functional.PROJECT,
-                mode="native_electrode_functional", inputs={str(index): str(parent / relative) for index, relative in
-                enumerate(("inputs/resolved_model.json", "inputs/numerics.json", "simion/processor.gem"))}))
-            _canonical_manifest_publication.publish_run_manifest(parent / "run_config.json", "success",
-                output_paths=[*family, parent / "logs/refine.log"], retention_api=_manifest_retention_api)
+            parent, child, model, family = self.make_family_fixture(root)
             actual_hash = manifest_records.file_sha256
-            actual_subprocess = functional.subprocess.run
+            actual_subprocess = field_reference.subprocess.run
 
             def no_payload_hash(path: Path) -> str:
                 self.assertNotIn(Path(path).resolve(), family, "PA identity was read outside its immutable owner guard")
@@ -957,12 +962,14 @@ class NativeFieldReferenceTests(unittest.TestCase):
 
             def projected_verifier(arguments: list[str], **options: object) -> subprocess.CompletedProcess:
                 self.assertFalse(any(str(path) in arguments for path in family), "projection reselected the guarded payload")
+                self.assertEqual(options["cwd"], child.resolve())
+                self.assertEqual(arguments[0], sys.executable)
                 return actual_subprocess(arguments, **options)
 
-            with patch.object(functional, "file_sha256", side_effect=no_payload_hash), \
-                 patch.object(functional.subprocess, "run", side_effect=projected_verifier), \
+            with patch.object(field_reference, "file_sha256", side_effect=no_payload_hash), \
+                 patch.object(field_reference.subprocess, "run", side_effect=projected_verifier), \
                  patch.object(manifest_records, "file_sha256", side_effect=no_payload_hash):
-                external = functional._native_field_binding(child, copy.deepcopy(model), parent, PROJECT.parents[1])
+                external = field_reference.bind_native_field(child, copy.deepcopy(model), parent)
                 self.assertEqual(set(external), {"native_field_manifest", "native_field_consumption"})
                 consumption = json.loads((child / "inputs/native_field_consumption.json").read_text())
                 self.assertEqual(len(consumption["family_records"]), len(family))
@@ -976,7 +983,7 @@ class NativeFieldReferenceTests(unittest.TestCase):
                     _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
             (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
             with self.assertRaises(subprocess.CalledProcessError):
-                functional._native_field_binding(child, copy.deepcopy(model), parent, PROJECT.parents[1])
+                field_reference.bind_native_field(child, copy.deepcopy(model), parent)
 
 
 if __name__ == "__main__":

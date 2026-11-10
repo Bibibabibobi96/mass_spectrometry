@@ -452,3 +452,29 @@ and passed targeted installed IP calls with exact 432-member source/wheel/two-in
 in 83.646 seconds. Scientific bodies were unchanged and vendor executions were zero. Initial incidental old-owner test mocks/imports and one pre-discovery edit error
 remain recorded separately from their corrected checks. This is input/identity/resource
 acceptance, not new HS1 trajectories, scientific qualification or full Repository acceptance.
+
+### P4 existing native-field references
+
+The existing producer-reference and field-adoption policy now has one installed owner,
+`msplatform.workflows.ion_processor.field_reference`. `bind_native_field(run, config, parent)`
+checks the same terminal IP manifest, geometry/grid/refine identity, completed-Refine log,
+GEM bytes and uniquely bound 18-member family (`pa#`, `pa0` through `pa15`, `pa-surf`).
+It uses the unchanged canonical manifest CLI with explicit native retention policy and the
+selected Python environment; its cwd is the explicit consumer run, with no repository-root
+lookup. `adopt_native_field(run, parent)` records that reference in the existing consumer
+configuration. The two old root bodies have exited; root preparation and the existing
+`adopt-native-field` CLI call the workflow directly.
+
+These are reference/adoption operations, not field construction or a FieldBundle publication.
+They neither copy/re-hash the external PA family nor authorize native use. The unchanged
+public launcher must still hold the existing immutable-source guards before any vendor
+consumer. Existing failed producers with completed field evidence retain their original
+permitted prefix-reuse semantics; incomplete terminal publication still fails closed.
+Historical owner labels, records and source hashes are not rewritten.
+
+Scoped software and two ordinary wheel/sdist-rebuilt installed consumers passed, using
+explicit inert owner records and the actual canonical manifest CLI. Final workflow-namespace
+acceptance took 83.518 seconds and joined 434 payload members in source, both wheels and both
+fresh installs; source family bytes stayed unchanged. Earlier backend-namespace acceptance
+and the corrected test-owner identifier error are retained separately, without retagging.
+No Refine, Fly, GUI, new HS1 trajectory/qualification or P11 placement acceptance occurred.
