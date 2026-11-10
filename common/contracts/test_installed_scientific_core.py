@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # This runs with -I in a clean installed environment, without repository imports.
 INSTALLED_PROBE = r'''
-import copy, csv, hashlib, importlib, importlib.metadata, json, math, os, pathlib, shutil, sys, sysconfig
+import copy, csv, hashlib, importlib, importlib.metadata, json, math, os, pathlib, shutil, subprocess, sys, sysconfig
 import numpy as np
 from urllib.parse import urljoin
 from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
@@ -416,13 +416,50 @@ for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_acceler
     assert text.startswith('function') and 'mfilename' not in text
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
+# COOLED_COMPILERS_INSTALLED_BEGIN
+from msplatform.backends.simion import cooled_frontend_geometry as cooled_geometry
+from msplatform.workflows.cooled_frontend import program as cooled_program
+cooled=fixture['cooled_compilers']
+for module in (cooled_geometry,cooled_program):
+    assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+for row in cooled['geometry']:
+    guide,connection,component,conditioner=row['inputs']
+    gem,frontend=cooled_geometry.compile_cooled_frontend(guide,connection,component,conditioner,
+        cell_mm_xyz=dict(x=.2,y=.2,z=.2),exit_gap_mm=1.)
+    assert gem==row['gem'] and frontend==row['frontend']
+    assert cooled_geometry.compile_field_plan(frontend,guide,row['drive'],
+        hp_rf_peak_amplitude_v=conditioner['drive']['rf_amplitude_v'],refine_convergence_v=1e-5)==row['plan']
+cooled_directory=root/('cooled-program-output-'+sys.argv[2])
+cooled_text=cooled_program.build_program(cooled['context'],cooled['phase'],[0.],[7],[[.1,.2,.3]],cooled_directory)
+assert cooled_text.replace(cooled_directory.as_posix(),'{COOLED_OUTPUT}')==cooled['program']
+assert {q.name:q.read_text(encoding='utf-8') for q in cooled_directory.iterdir()}==cooled['companions']
+assert 'single_flight_source_particle_id={7}' in cooled_text
+cooled_binding=cooled_program.native_resource_path('collision_hs1_gas.lua')
+cooled_hold=cooled_binding.with_suffix('.missing-test-held');cooled_binding.rename(cooled_hold)
+try:
+    missing_output=root/'cooled-required-resource-missing'
+    try:cooled_program.build_program(cooled['context'],cooled['phase'],[0.],[7],[[.1,.2,.3]],missing_output)
+    except FileNotFoundError as error:assert 'collision_hs1_gas.lua' in str(error)
+    else:raise AssertionError('missing required HS1 binding accepted')
+    assert not missing_output.exists()
+finally:cooled_hold.rename(cooled_binding)
+for module in (cooled_geometry,cooled_program):
+    module_path=pathlib.Path(module.__file__);held=module_path.with_suffix('.missing-test-held')
+    module_path.rename(held)
+    try:
+        absent=subprocess.run([sys.executable,'-I','-B','-c','import importlib;importlib.import_module('+repr(module.__name__)+')'],
+            cwd=root,capture_output=True,text=True,timeout=30,check=False)
+        assert absent.returncode!=0 and module.__name__ in absent.stderr,absent.stderr
+    finally:held.rename(module_path)
+# COOLED_COMPILERS_INSTALLED_END
+
 # COOLED_FIELD_ANALYSIS_INSTALLED_BEGIN
 from msplatform.workflows.cooled_frontend import field_analysis as cooled_analysis
 import pandas as pd
 import subprocess
 assert pathlib.Path(cooled_analysis.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
 cooled_fixture=fixture['cooled_field_analysis']
-cooled_run=root/'cooled-field-analysis'
+cooled_run=root/('cooled-field-analysis-'+sys.argv[2])
 cooled_inputs=cooled_run/'inputs';cooled_inputs.mkdir(parents=True)
 cooled_probes=cooled_run/'results/cooled_field_probe';cooled_probes.mkdir(parents=True)
 for name,value in cooled_fixture['inputs'].items():
@@ -439,7 +476,7 @@ cooled_result=json.loads((cooled_run/'results/cooled_field_design/voltage_design
 assert {key:cooled_result[key] for key in cooled_fixture['expected']}==cooled_fixture['expected']
 assert {path:path.read_bytes() for path in cooled_before}==cooled_before
 for status in ('success','failed'):
-    sealed=root/('cooled-sealed-'+status);sealed.mkdir();(sealed/'run_manifest.json').write_text(json.dumps(dict(status=status)),encoding='utf-8')
+    sealed=root/('cooled-sealed-'+status+'-'+sys.argv[2]);sealed.mkdir();(sealed/'run_manifest.json').write_text(json.dumps(dict(status=status)),encoding='utf-8')
     try:cooled_analysis.analyze_field_run(sealed)
     except ValueError as error:assert 'immutable owner' in str(error)
     else:raise AssertionError('sealed cooled owner modified')
@@ -1720,6 +1757,31 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             with self.assertRaises(FileExistsError):
                 exec(code, dict(root=root, sys=SimpleNamespace(argv=['probe', 'fixture.json', '0'])))
 
+        cooled_index = next(index for index, node in enumerate(statements)
+                            if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                                and target.id == 'cooled_run' for target in node.targets))
+        sealed_loop = next(node for node in statements if isinstance(node, ast.For)
+                           and isinstance(node.target, ast.Name) and node.target.id == 'status')
+        paths = ast.Module(body=[*statements[cooled_index:cooled_index + 5],
+            ast.For(target=sealed_loop.target, iter=sealed_loop.iter,
+                    body=sealed_loop.body[:3], orelse=[])], type_ignores=[])
+        code = compile(ast.fix_missing_locations(paths), '<actual-cooled-probe-paths>', 'exec')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            locations = []
+            for round_id in ('0', '1'):
+                namespace = dict(root=root, json=json,
+                                 sys=SimpleNamespace(argv=['probe', 'fixture.json', round_id]))
+                exec(code, namespace)
+                locations.append(namespace['cooled_run'])
+            self.assertNotEqual(*locations)
+            self.assertEqual(len(list(root.iterdir())), 6)
+            self.assertTrue(all((path / 'inputs').is_dir() and
+                                (path / 'results/cooled_field_probe').is_dir() for path in locations))
+            with self.assertRaises(FileExistsError):
+                exec(code, dict(root=root, json=json,
+                                sys=SimpleNamespace(argv=['probe', 'fixture.json', '0'])))
+
     def test_actual_installed_comparison_probe_uses_manifest_bound_fixture(self) -> None:
         import ast
         import copy
@@ -2033,6 +2095,56 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             expected_comparison=json.loads((source/'out/paired_pulse_comparison.json').read_text(encoding='utf-8')))
 
     @staticmethod
+    def cooled_compilers_probe_fixture() -> dict:
+        from integrations.tests.test_cooled_frontend import (
+            cooled_fixture, cooled_request_fixture, publish_inert_fields,
+        )
+        from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+        from integrations.workflows.cooled_frontend.runtime import fields
+        from msplatform.workflows.local_frontend.runtime import _context
+        from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend, compile_field_plan
+        from msplatform.workflows.cooled_frontend.program import build_program
+        from msplatform.backends.simion.resources import native_resource_path
+        import stat
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace=Path(temporary)
+            request_path,_=cooled_request_fixture(workspace)
+            run_id="20261022_120000__build__python__cooled-fixture"
+            run=workspace/"artifacts/projects/instrument_assembly/runs"/run_id
+            prepare_cooled_frontend(request_path,run,REPO_ROOT,workspace,run_id=run_id)
+            published=publish_inert_fields(run,workspace/"cache")
+            try:
+                context=_context(run,field_provider=fields)
+                inputs=run/"inputs"
+                context.update(conditioner=json.loads((inputs/"conditioner_contract.json").read_text()),
+                    cooled_drive=json.loads((inputs/"cooled_drive.json").read_text()),
+                    experiment=json.loads((inputs/"cooled_experiment.json").read_text()),
+                    voltage_calibration=dict(inner_correction_v=0.,release_hp_common_correction_v=0.),
+                    hs1_source="-- inert software-only explicit HS1 fixture; no native qualification\n",
+                    cooled_module_source=native_resource_path("cooled_frontend.lua").read_text())
+                keys=("numerics","conditioner","experiment","frontend","guide","cooled_drive",
+                      "flight_horizon_us","fields","sources","voltage_calibration","hs1_source","cooled_module_source")
+                context=json.loads(json.dumps({key:context[key] for key in keys},default=str))
+                phase=dict(pulse_time_us=110.,shared_times_us=[0.,20.,100.,110.,120.])
+                directory=workspace/"explicit-program-output"
+                program=build_program(context,phase,[0.],[7],[[.1,.2,.3]],directory)
+                geometry=[]
+                for variant in ("two_zone","three_zone"):
+                    guide,connection,component,conditioner,drive=cooled_fixture(variant)
+                    gem,frontend=compile_cooled_frontend(guide,connection,component,conditioner,
+                        cell_mm_xyz=dict(x=.2,y=.2,z=.2),exit_gap_mm=1.)
+                    plan=compile_field_plan(frontend,guide,drive,
+                        hp_rf_peak_amplitude_v=conditioner["drive"]["rf_amplitude_v"],refine_convergence_v=1e-5)
+                    geometry.append(dict(inputs=[guide,connection,component,conditioner],drive=drive,
+                        gem=gem,frontend=frontend,plan=plan))
+                return dict(geometry=geometry,context=context,phase=phase,
+                    program=program.replace(directory.as_posix(),"{COOLED_OUTPUT}"),
+                    companions={q.name:q.read_text(encoding="utf-8") for q in directory.iterdir()})
+            finally:
+                for row in published["working_points"]:
+                    Path(row["path"]).chmod(stat.S_IREAD|stat.S_IWRITE)
+
+    @staticmethod
     def cooled_field_analysis_probe_fixture() -> dict:
         from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments
         from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design import design_voltage_controls
@@ -2242,6 +2354,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
                                               cooled_field_analysis=self.cooled_field_analysis_probe_fixture(),
+                                              cooled_compilers=self.cooled_compilers_probe_fixture(),
                                               paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),

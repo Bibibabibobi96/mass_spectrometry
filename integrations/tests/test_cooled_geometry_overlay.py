@@ -11,7 +11,7 @@ import pandas as pd
 
 from integrations.analysis.plot_single_flight_spatial_six_panel import build_local_shared_time_figure
 from integrations.tests.test_cooled_frontend import cooled_fixture
-from integrations.workflows.cooled_frontend.geometry import compile_cooled_frontend
+from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend
 from integrations.workflows.cooled_frontend.plot_geometry import add_conditioner_section, prepare_conditioner_sections
 
 

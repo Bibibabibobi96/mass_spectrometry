@@ -391,6 +391,22 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                                      for row in request["stages"]))
 
+    def test_cooled_compilers_select_their_actual_consumers(self):
+        expected={"integrations.tests."+name for name in (
+            "test_cooled_frontend", "test_cooled_frontend_reference", "test_cooled_frontend_mesh_check",
+            "test_cooled_geometry_overlay", "test_cooled_frontend_execute")}
+        for path in ("src/msplatform/backends/simion/cooled_frontend_geometry.py",
+                     "src/msplatform/workflows/cooled_frontend/program.py"):
+            with self.subTest(path=path):
+                request,_=self.plan("-ChangedPath",path)
+                modules=[value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
+                         for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])]
+                common=[value for row in request["stages"] if row["name"].startswith("common_contracts")
+                        for value in row["command"].get("arguments",[])]
+                self.assertEqual(set(modules),expected)
+                self.assertIn("common/contracts/test_cooled_gas_regions.py",common)
+                self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
+
     def test_cooled_field_analysis_and_sampler_select_their_real_consumers(self):
         expected={"integrations.tests."+name for name in (
             "test_cooled_frontend_field_design","test_cooled_static_probe_reuse",

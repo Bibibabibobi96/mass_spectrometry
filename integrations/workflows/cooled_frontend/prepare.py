@@ -26,7 +26,7 @@ from msplatform.backends.simion.source import GLOBAL_COLUMNS, transform_source_r
 from msplatform.workflows.local_frontend.prepare import (
     SOURCE_CLOCK, SOURCE_NAMES, _csv_text, _keys, _load, _number, _registration, _source_inputs, _producer_clock,
 )
-from integrations.workflows.cooled_frontend.geometry import (
+from msplatform.backends.simion.cooled_frontend_geometry import (
     CONDITIONER_ELECTRODE_IDS, compile_cooled_frontend, compile_field_plan,
 )
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, prepare_buncher_probe_points, export_cooled_buncher_assembly_interface

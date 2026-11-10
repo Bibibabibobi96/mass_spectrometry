@@ -1116,4 +1116,23 @@ architecture and actual Changed selection. Independent review accepted the
 source/record guarantees and both private 449-payload installed CLI arms. That
 private source excludes G3; its retained builds and later clean client run remain
 their original evidence, not a new combined package acceptance. Final combined
-installation, Repository, performance and native qualification remain open.
+installation was still pending at that private epoch; the combined successor
+acceptance is recorded below. Repository, performance and native qualification
+remain open.
+
+
+Cooled frontend GEM and seven-point field compilation belong to
+`msplatform.backends.simion.cooled_frontend_geometry`; explicit cooled Program
+composition belongs to `msplatform.workflows.cooled_frontend.program`.
+These consume resolved inputs; the Program only materializes the existing Lua
+companions in the selected directory and does not Refine or Fly. Root prepare/runtime
+still own remaining provenance freezing, field cache and scheduling orchestration;
+this slice does not establish the complete ordinarily installed run workflow.
+
+The integrated compiler slice passed 66 affected tests / 133 records in 94.909
+seconds without skips. The complete original ordinary-install acceptance then
+passed in 262.626 seconds: direct wheel and sdist-rebuilt wheel consumers ran
+outside the checkout with author-tree reads denied, and all 452 runtime payloads
+matched source, actual build source and all three distributions. Mutable cooled
+probe directories are distinct for the two consumers; repeated creation within
+one consumer still fails. This is software/installation evidence, not native Fly.

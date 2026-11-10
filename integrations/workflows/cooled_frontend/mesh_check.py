@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from .geometry import compile_cooled_frontend, compile_field_plan
+from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend, compile_field_plan
 from .prepare import prepare_cooled_frontend
 from .runtime import fields
 from msplatform.workflows.cooled_frontend.field_analysis import _verified_small_record

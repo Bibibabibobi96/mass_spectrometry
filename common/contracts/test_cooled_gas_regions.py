@@ -7,8 +7,8 @@ from pathlib import Path
 import unittest
 
 from integrations.tests.test_cooled_frontend import LUA, cooled_fixture
-from integrations.workflows.cooled_frontend.geometry import compile_cooled_frontend
-from integrations.workflows.cooled_frontend.program import carrier_query_domain
+from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend
+from msplatform.workflows.cooled_frontend.program import carrier_query_domain
 from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import build_cooled_gas_field_spec
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 from msplatform.gas.field import prepare_gas_field, sample_gas

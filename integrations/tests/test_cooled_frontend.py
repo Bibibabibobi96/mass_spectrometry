@@ -17,12 +17,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.workflows.cooled_frontend.geometry import compile_cooled_frontend, compile_field_plan
+from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend, compile_field_plan
 from integrations.workflows.cooled_frontend.prepare import compile_probe_plan, prepare_cooled_frontend
 from integrations.workflows.cooled_frontend import prepare as cooled_prepare
 from integrations.workflows.cooled_frontend import runtime as cooled_runtime
 from integrations.workflows.cooled_frontend.runtime import fields
-from integrations.workflows.cooled_frontend.program import build_program
+from msplatform.workflows.cooled_frontend.program import build_program
 from msplatform.workflows.local_frontend import runtime as shared_runtime
 from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 from msplatform.backends.simion.tracking_program import _standalone_dynamic_field_lua
@@ -692,6 +692,11 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                                     cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(frozen.returncode, 0, frozen.stdout+frozen.stderr)
             snapshot = output/"inputs/runtime_snapshot"
+            for relative in ("src/msplatform/backends/simion/cooled_frontend_geometry.py",
+                             "src/msplatform/workflows/cooled_frontend/program.py"):
+                self.assertEqual((snapshot/relative).read_bytes(),(REPO/relative).read_bytes())
+            for retired in ("geometry.py","program.py"):
+                self.assertFalse((snapshot/"integrations/workflows/cooled_frontend"/retired).exists())
             import os
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
@@ -851,7 +856,7 @@ try{
                            voltage_calibration=dict(inner_correction_v=0.,release_hp_common_correction_v=0.),
                            hs1_source="-- pure test companion; no native collision claim\n",
                            cooled_module_source=native_resource_path("cooled_frontend.lua").read_text())
-                from integrations.workflows.cooled_frontend import program as cooled_program
+                from msplatform.workflows.cooled_frontend import program as cooled_program
                 missing=run/"not_created"
                 with patch.object(cooled_program,"native_resource_path",side_effect=FileNotFoundError("missing canonical HS1 gas binding")),self.assertRaisesRegex(FileNotFoundError,"canonical HS1"):
                     build_program(ctx,dict(pulse_time_us=110.,shared_times_us=[0.,110.]),[0.],[1],[(0.,0.,0.)],missing)

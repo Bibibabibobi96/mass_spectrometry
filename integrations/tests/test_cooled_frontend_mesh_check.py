@@ -8,7 +8,7 @@ from unittest.mock import patch
 from msplatform.backends.simion.aperture import resolve_rectangular_aperture_discretization
 from msplatform.backends.simion import bare_frontend_geometry as frontend_core
 from integrations.tests.test_cooled_frontend import cooled_fixture
-from integrations.workflows.cooled_frontend import geometry
+from msplatform.backends.simion import cooled_frontend_geometry as geometry
 from integrations.workflows.cooled_frontend.mesh_check import ROLE, sample_points, validate_request
 
 

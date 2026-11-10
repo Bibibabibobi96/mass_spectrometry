@@ -568,9 +568,9 @@ def context(run: Path, *, reference_phase: dict | None = None, shared_context: d
     if decision_record is not None:
         result["code_records"]["common_pulse_decision"]=dict(path=str(decision_path),exists=True,
             bytes=decision_record["bytes"],sha256=decision_record["sha256"])
-    for name in ("program.py","runtime.py"):
-        source=Path(__file__).resolve().with_name(name)
-        result["code_records"]["cooled_"+name]=file_record(source)
+    from msplatform.workflows.cooled_frontend import program
+    result["code_records"]["cooled_program.py"]=file_record(Path(program.__file__).resolve())
+    result["code_records"]["cooled_runtime.py"]=file_record(Path(__file__).resolve())
     for name in ("cooled_experiment.json","cooled_drive.json","conditioner_contract.json","cooled_field_plan.json"):
         result["code_records"][name]=file_record(inputs/name)
     return result
@@ -586,7 +586,7 @@ def prepare_dispatch_request(run: Path,phase: str,pulse: float,times: list[float
 
 
 def materialize_batches(run: Path,phase: str,plan: dict,pulse: float,times: list[float]) -> dict:
-    from integrations.workflows.cooled_frontend.program import build_program
+    from msplatform.workflows.cooled_frontend.program import build_program
     ctx=context(run)
     if pulse != ctx["decision"]["actual_pulse_time_us"]:
         raise ValueError("both pressure arms must use the exact common OA pulse clock")
@@ -613,7 +613,7 @@ def materialize_batches(run: Path,phase: str,plan: dict,pulse: float,times: list
 
 def materialize_reference_case(run: Path,ctx: dict,phase_input: dict) -> dict:
     """Build the already validated one-ID reference phase, never an N=100 cohort."""
-    from integrations.workflows.cooled_frontend.program import build_program
+    from msplatform.workflows.cooled_frontend.program import build_program
     run=shared._owner(run,"extraction")
     reference_rows=ctx["rows"]
     if len(reference_rows)!=1 or set(reference_rows[0])!=set(shared.GLOBAL_COLUMNS) or int(reference_rows[0]["particle_id"])!=1 or any(not math.isfinite(float(v)) for v in reference_rows[0].values()):

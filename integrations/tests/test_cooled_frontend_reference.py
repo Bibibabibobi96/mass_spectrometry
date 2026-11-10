@@ -295,7 +295,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
             self.assertTrue(Path(ctx["code_records"][name]["path"]).is_relative_to(REPO))
         before=(run/"inputs/release_global.csv").read_bytes()
         row={key:float(value) for key,value in ctx["rows"][0].items()};row.update(particle_id=1,instrument_time_us=release)
-        from integrations.workflows.cooled_frontend.program import build_program
+        from msplatform.workflows.cooled_frontend.program import build_program
         ctx["rows"]=[row]
         case_rows=[{key:format(float(value),".17g") for key,value in row.items()}]
         runtime_phase=dict(schema_version=1,role="rf_oatof_cooled_reference_runtime_phase",phase="held_off",

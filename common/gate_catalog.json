@@ -809,6 +809,8 @@
           {
             "matches": [
               {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "cooled_gas_regions_changed"},
+              {"exact": "src/msplatform/backends/simion/cooled_frontend_geometry.py", "reason": "cooled_geometry_changed"},
+              {"exact": "src/msplatform/workflows/cooled_frontend/program.py", "reason": "cooled_program_changed"},
               {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "cooled_gas_compiler_changed"},
               {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "cooled_hs1_gas_binding_changed"},
               {"exact": "src/msplatform/backends/simion/resources/cooled_frontend.lua", "reason": "cooled_gas_program_changed"}
@@ -2076,6 +2078,20 @@
         "scope": "integrations/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {"exact": "src/msplatform/backends/simion/cooled_frontend_geometry.py", "reason": "cooled_geometry_changed"},
+              {"exact": "src/msplatform/workflows/cooled_frontend/program.py", "reason": "cooled_program_changed"}
+            ],
+            "modules": [
+              "integrations/tests/test_cooled_frontend.py",
+              "integrations/tests/test_cooled_frontend_reference.py",
+              "integrations/tests/test_cooled_frontend_mesh_check.py",
+              "integrations/tests/test_cooled_geometry_overlay.py",
+              "integrations/tests/test_cooled_frontend_execute.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
