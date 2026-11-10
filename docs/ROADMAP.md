@@ -138,14 +138,14 @@ source, actual build source, direct wheel, sdist and rebuilt
 wheel, with both outside-checkout consumer arms successful. This is installation
 evidence for those source bytes, not native or whole-Repository acceptance. The
 tracking-fixture correction changes only tests, with no package payload changes.
-OA analysis,
-neutral gas sampling/compilation, IP/cooled gas binding and pure cooled voltage
-design, cooled geometry/Program compilation and explicit cooled input preparation
-now have canonical installed
-owners; their exact limits remain in project
-and integration status pages. Frontend field-producer migration, dual-cone gas/SDS
-ownership, remaining root workflows and final native/performance closure remain
-OPEN in this same goal. No stage is transferred to P5 to hide unfinished work.
+OA analysis, neutral gas sampling/compilation, retained IP/HS1 and dual-cone/SDS
+bindings have canonical owners. V8.5 withdraws the entire cooled feature, including
+its dedicated design, geometry, Program, preparation, tests and native obligations.
+This is a user scope change, not scientific failure or same-function optimization;
+original commits and run data remain interpretable. Retained local/checkpoint analysis,
+MR/IP neutral/backend boundaries, TOF roots/acceptance, RF finite-length kernels,
+remaining actual workflows, ordinary installation and final Repository/native/performance
+closure remain P4 work. No unfinished retained obligation moves to P5.
 
 The installed RF metric assembler and IP scientific input compiler now replace their root
 implementations. IP source compilation needs no vendor, seed or field; explicit unsolved
@@ -169,10 +169,10 @@ root native orchestration, current composed installation, complete regression or
 | OA accelerator-only theory and closed-focus source | `components.orthogonal_accelerator.three_zone_ideal_theory` and `backends.simion.oa_focus_source`; actual contracts, CLI and frozen consumers | Old bodies retired with scientific definitions unchanged; current v2 authority refresh preserves historical v1 bytes/refusal. The closed-focus plan, recorded analysis and protocol-2 FastAdjust decisions are installed with explicit mesh/profile authority and frozen consumers. Remaining native orchestration and native acceptance stay OPEN. |
 | Paired RF source and sampled response | `ion_release.paired_mass_scan` and `analysis.mass_response`; actual RF preparation/evaluation and three frozen PS consumers | Both old bodies retired, explicit mass/input/criteria preserved; ordinary source epochs and main scoped checks delivered. Remaining root RF workflows and final composed-source acceptance remain OPEN. |
 | RF finite-SIMION metrics | `analysis.rf_transport_metrics`; all four actual finite-transport CLI modes and frozen consumers | The complete old assembler is retired, with original denominators, handoff counting and UNQUALIFIED limits unchanged. Scoped software and ordinary-wheel evidence delivered; remaining RF algorithms/orchestration and composed acceptance stay OPEN. |
-| IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, cooled, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
+| IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
 | Native execution path projection/context | `execution.run_paths` and its selected installed/frozen PowerShell resource; actual native consumers | Root projection/context bodies retired; explicit execution roots, canonical identity, shared ledger and existing junction/writer guards retained. Repository DEV root discovery remains outside the package. No new native or general historical-path portability claim. |
 | Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration, composed installation and native seed/reopen acceptance stay OPEN. |
-| Local frontend and initial-state CSV | `workflows.local_frontend` and `backends.simion.source.load_initial_state`; cooled and local consumers | Root local bodies retired; classified IOB policy and original particle/clock semantics retained. Final composed acceptance and remaining shared orchestration stay OPEN. |
+| Local frontend and initial-state CSV | `workflows.local_frontend` and `backends.simion.source.load_initial_state`; local consumers | Root local bodies retired; classified IOB policy and original particle/clock semantics retained. Final composed acceptance and remaining shared orchestration stay OPEN. |
 | Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
 | MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
 | Dual-cone SIMION input preparation | `backends.simion.dual_cone_transport` and canonical source serializers; Program resource/callers migrated, old preparation/source/Program copies retired | Ordinary installation and explicit observation cadence delivered; actual seven-electrode field/ion-flight integration stays OPEN |
@@ -338,9 +338,9 @@ integration中的`single_flight_frontend_hook.lua`与`single_flight_pulse_hook.l
 保存模型读取器按manifest唯一绑定位置识别历史／新资源，23项保存复用与真实历史脉冲负例通过，未改写历史SHA。
 Formal静态资源枚举补入实际闭合接口生成器；其后稳定资产验收仍报告SIMION目录55文件／manifest54，
 不删文件或改计数，该项不作通过。
-IP裸导引与HP末端冷却组件的纯设计、源包络、终端阱／气体域和局部诊断已迁入component，GEM归backend；
-20项定向、364项IP Static及61项integration回归通过。标准wheel/sdist实际完成八杆、七电极与GEM片段调用；
-不授予实际场、Refine／Fly或冷却性能资格。
+IP bare-guide projection and shared CSG sections remain canonical component behavior;
+SIMION IP rendering remains in its backend. Dedicated cooled design and execution were
+withdrawn in V8.5; the earlier seven-electrode migration evidence is historical only.
 IP真实上游状态准入及schema已迁SIMION backend，保留原ID／母群／权重／出生到达钟与零出口／科学负结果；
 22项定向和IP Static通过，25项integration／边界与wheel/sdist验收通过。
 IP坐标映射与component_exit现已分迁component／SIMION backend，continuation保护归execution；155项定向、
@@ -480,7 +480,7 @@ P1已将科学实现迁至`src/msplatform/`规范核心根，保持单主发行�
    默认全部实例带来的成本由显式局部研究、数值分域与预算处理，不能自动删部件或改变源。
    核验解析、容量准入、资产选择和执行使用同一冻结计划，活动输入在准备期间变化不影响该run；
    覆盖源实例存在但必要观测器件、驱动或模型接受条件缺失的明确拒绝，不把源绑定有效当作研究可执行。
-5. 完成多极杆→OA→单反射TOF、OA→MR、IP→MR、冷却前端→OA及真实多极杆→IP→MR，
+5. 完成多极杆→OA→单反射TOF、OA→MR、IP→MR及真实多极杆→IP→MR，
    并完成所需分段与跨求解器验证；保留负结果，明确实现、数值与物理原因，不以替代源或布局成功关闭链路。
 6. 切换真实调用者后删除被替代的入口、实现、配置、注册和无价值测试；沿用公共冻结、缓存和生命周期机制，
    减少重复参数、哈希、复制与求场，报告真实代码量和复杂度变化。
@@ -497,7 +497,7 @@ P1已将科学实现迁至`src/msplatform/`规范核心根，保持单主发行�
 |---|---|---|
 | M0 规范冻结 | 明确目录、配方、工作流、组件接口、产物与参与方任务 | 唯一权威可检索，各侧登记任务；不宣称代码迁移 |
 | M1 接口与装配合同 | 盘点OA、IP及仪器真实消费者；扩展现有port／composition合同及薄适配 | 多实例、电极、驱动、坐标／时钟和连接模式有无求解器回归；不复制器件拓扑 |
-| M2 首条消费迁移 | M1后先迁现有局部多极杆→OA；冷却前端保持独立workflow | 冻结输入下几何、驱动、母群、时钟、默认回放及相称真实行为对照成立，当前在途依赖不受影响 |
+| M2 首条消费迁移 | M1后先迁现有局部多极杆→OA；cooled按V8.5用户决定完整退役 | 冻结输入下几何、驱动、母群、时钟、默认回放及相称真实行为对照成立，当前在途依赖不受影响 |
 | M3 第二消费者与整机覆盖 | 用IP→MR验证同一组装机制，并逐项覆盖OA→MR及原多极杆→单反射整机流程 | 保留各链物理模式和限制；共享机制不含器件专属决策，差异由配方／提供者表达 |
 | M4 入口与身份切换 | 对已完成验证且依赖允许切换的workflow分别实施 | 调用、注册、门禁、产物解析和文档同步切换；无在途依赖后退出旧生产副本，历史身份保持 |
 

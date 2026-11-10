@@ -1,11 +1,19 @@
 # 统一装配实施状态
 
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
-状态截至2026-11-05；原始输入和终态仍以各run的manifest为准。早期阶段见
+Current scope is P4 V8.5 (2026-11-10); historical evidence keeps its original version.
+原始输入和终态仍以各run的manifest为准。早期阶段见
 [迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
 
 ## 当前边界
+
+The user withdrew the complete cooled feature in V8.5. Its dedicated source,
+resources, requests and tests are retired rather than renamed or disabled. IP HP/LP,
+HS1, dual-cone/SDS, local guide/OA, paired and multipole-IP remain in scope.
+Original data and prior evidence are preserved; earlier cooled migrations are historical,
+not completion or scientific failure of the retained P4 scope. The exact previous text is
+[available at its original commit](https://github.com/Bibibabibobi96/mass_spectrometry/blob/574ae97437f5d27b4b7e3d6eb53845133158ca00/integrations/docs/INTEGRATION.md).
 
 P4 SIMION dispatch checks bind IOB seed bytes to the canonical packaged resource;
 the PA placeholder remains a repository fixture. Cold junction tests freeze their
@@ -316,10 +324,10 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 Local frontend scientific preparation and scheduler-owned phase materialization now live in
 `msplatform.workflows.local_frontend.prepare` and `.runtime`. The existing PowerShell workflow
 still owns admission, execution, protected fields, cleanup and publication; this slice introduces
-no second owner. Analysis/focus/replay and the remaining root orchestration are separate P4 work.
+no second owner. Analysis and focus use the installed local owners; remaining root orchestration/replay closure is P4 work.
 
-Each source-bearing local/cooled case explicitly references its verified ordinary carrier and
-actual response bank (three local or seven cooled field members). The sole canonical IOB writer
+Each source-bearing local case explicitly references its verified ordinary carrier and
+actual three-member response bank. The sole canonical IOB writer
 uses a case-local installed 20,856-byte structural container and creates/removes its owned neutral
 3x3x3 bootstrap; no published field or large historical placeholder is copied. Build and independent
 reopen are separate declared native operations, with original field/control identities rechecked.
@@ -330,17 +338,12 @@ placeholder remain open retirement work; neither that asset nor commercial softw
 
 The bare-guide/OA geometry compiler is installed as `msplatform.backends.simion.bare_frontend_geometry`.
 Two-zone callers explicitly provide `geometry_profile` content with its identity; the backend never loads
-a project profile or checkout. The stored cooled `two_zone_field_seed.json` is an independent,
-complete fixed study parameter set: its explicit profile was expanded without numerical changes from
-`projects/orthogonal_accelerator/config/component_contract.json` at baseline `bd1e4ae3`, profile
-`closed_two_zone_compact_mr_axial_r3_gap1_4mm`. It is not another current component default and does
-not auto-track that project profile. Interface validation and geometry compilation consume the same
-request profile body; frozen historical requests/plans remain unchanged.
+a project profile or checkout. Interface validation and geometry compilation consume the
+same explicit request profile body; frozen historical requests/plans remain unchanged.
 This compiler migration does not change field, pulse, mother-population, clock or native qualification.
 
 
-[裸导引入口](../workflows/local_frontend/execute.ps1)和[冷却入口](../workflows/cooled_frontend/execute.ps1)
-各自接收schema 3请求；冻结完整父plan，默认full或显式local，不复制组件内部几何。
+[裸导引入口](../workflows/local_frontend/execute.ps1)接收schema 3请求；冻结完整父plan，默认full或显式local，不复制组件内部几何。
 从仓库根替换路径运行；以下最后一条会启动商业求解，须有对应科学运行授权及显式预算：
 
 ```powershell
@@ -356,9 +359,7 @@ This compiler migration does not change field, pulse, mother-population, clock o
 三区[165815迁移对照](../../../artifacts/projects/instrument_assembly/runs/20261022_165815__sim__simion__local-bare-guide-oa/summary.json)
 已完成N=100、源与规范事件逐值对照、69出口／31损失及新进程默认回放，差异字段0。
 只证明冻结局部工况迁移一致，不授予MR接受、整机分辨率或Formal资格。
-冷却[220720运行](../../../artifacts/projects/instrument_assembly/runs/20261024_220720__sim__simion__cooled-frontend-population/summary.json)
-复用当前公共七场，原100 ID闭合为32出口、36 timeout、32未解析停止，实际峰值并发13；未Refine或复制PA。
-其`saved_controls_only`检查不包含第二次完整Fly，不能写为逐轨迹默认回放；未解析停止不归为碰撞实体。
+
 
 局部OA出口的九变量均值与中心协方差调用[公共总体矩](../../common/analysis/README.md)，与IP二变量统计
 共用`ddof=0`内核；当前出口群仍按每个原ID等权计算，保留全部出口及既有字段和单位。
@@ -641,27 +642,15 @@ run_artifact_workflow owner，保存实际原生完成／释放事实、run 外�
 
 既有小型SIMION路径探针`20261030_194622__sim__simion__cold-reopen-path-probexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`经正式IOB builder/core完成四个准备／保存／重开操作，原alias删除后由新表示冷开成功；首次收尾失败保留，修正公共收据运输后仅收尾6.223秒完成，零新增原生。该证据无Refine／Fly，不代替N100功能或科学资格。
 
-## Local/cooled 正常执行与独立场复用
+## Local normal execution and explicit field reuse
 
-两原CLI使用公共run_artifact_workflow owner和run外小Result；`-ResumeFinalization -ResultPath <原Result>`
-仅推进未完成收尾，未知writer／host release继续保留保护，原始与cleanup异常分别保留。
-正常科学Fly与保存工作台资格分开：默认不再附加第二轮全母群Fly；显式`verify_saved_workbench_replay=true`
-才执行相应确定性回放，随机碰撞仍验证saved controls，summary如实区分`not_requested`、controls与实际Fly。
-cooled七个普通Laplace工作场使用原缓存事务逐成员命名，受保护原成员可直接跨generation引用，不建聚合PA副本。
-固定geometry/operator/grid/solver仅改合法OA pulse工作电压，其余六场保持复用；有充分线性证据时pulse可按系数投影。
-GEM、真实边界、网格或数值改变仍使受影响成员失效；源母群、分析和显示不被误当场求解身份。
-同字段owner的小采样与引用式probe记录保留原manifest绑定及raw数据，analysis／reference沿真实比例读取，不改写原CSV。
-`cooled_member_execution_costs.json`与`cooled_static_probe_costs.json`分别报告实际Refine／native、聚合及probe运输；完整复用的`native_executed=false`只说明本轮没有原生操作，不否定所引用原生来源。
-seed／placeholder沿[公共小配套冻结](../../common/simion/README.md#共用工作台种子与独立场成员)复用，
-科学身份用单反射既有field_plan提供者；未新增万能runner、字段注册表或历史搜索。准备、软件接线与真实科学资格分别报告。
+The local CLI uses the public run_artifact_workflow owner and persistent Result.
+`-ResumeFinalization -ResultPath <original Result>` advances only unfinished finalization;
+unknown writers keep their guards and the original failure remains a failure.
+Normal Fly and saved-workbench replay are separate actions. Replay is requested explicitly
+with `verify_saved_workbench_replay=true`; source, geometry, operator, grid, drive and
+solver dependencies still determine legitimate field reuse. No cooled execution mode remains.
 
-既有正常field-only证据限定为开发网格0.5/0.5/0.2mm、准备N=100源而未Fly／GUI：
-[040843原生成员构建](../../../artifacts/projects/instrument_assembly/runs/20261031_040843__build__simion__cooled-frontend-fielddesign/summary.json)
-的Refine／导出／验证各7次、gem2pa一次；member阶段189.636秒，probe7次／258603408 B私有运输／18.443秒，聚合搬运0。
-[041904后继线性复用](../../../artifacts/projects/instrument_assembly/runs/20261031_041904__build__simion__cooled-frontend-fielddesign/summary.json)
-仅将OA向量减半，保留其余operator；Refine、原生operation和probe／聚合PA运输均0，七原generation及七原CSV直引，pulse绝对scale=0.5。
-它们只证明该冻结场构建、静态probe和受保护成员复用；不证明粒子冷却、N=100轨迹功能或整机科学资格。
-本提交新增的收尾参数拒绝与seed运输顺序由软件回归验证，没有重跑上述Refine，也不以fixture零native替代真实科学Fly。
 
 ### 同步已冻结的理想栅接口审计源码
 
@@ -674,9 +663,9 @@ b18源码尚未包含该部分。本次从当前同一core前向还原无路径t
 
 ### 前端原生路径与科学身份
 
-shared frontend IOB、Fly与回放在实际调用前消费Package最新native context，paired pulse／local／cooled／
-single_reflection同步接线。local和cooled的拓扑校验也运输实际PA与report环境路径，持久config／receipt仍用canonical位置。
-cooled和single_reflection取消强制短alias，正常纯准备可以先完成，首次实际原生计划再按长度准备；
+shared frontend IOB、Fly与回放在实际调用前消费Package最新native context，paired pulse／local／
+single_reflection同步接线。local的拓扑校验也运输实际PA与report环境路径，持久config／receipt仍用canonical位置。
+single_reflection取消强制短alias，正常纯准备可以先完成，首次实际原生计划再按长度准备；
 paired pulse在MATLAB／COMSOL前段迁移前保留early alias，不以此提交宣称所有路径均已自动化。
 生成Program的numeric controls与冻结路径实现分别保留并前向验证；旧IOB builder由当前同一core前向lower
 作完整文本对照，不能删历史代码片段或补今天默认值来宣布兼容。物理／源／ID／驱动变化仍须拒绝对应复用。
@@ -915,7 +904,7 @@ zero unclassified; full per-language counts and filter remain in task evidence.
 
 ### Installed recorded-beam analysis
 
-Local/cooled recorded-beam adapters now consume the sole installed population,
+Local recorded-beam adapters now consume the sole installed population,
 directed-crossing and beam/time-focus methods in `msplatform.analysis`. Frozen
 source and missing-kernel checks follow those same owners. Workflows still select
 the original mother, lifetime, clock and observation policy; this migration does
@@ -931,7 +920,7 @@ the original scientific definitions; no native propagation was performed here.
 Official CLOC 2.10, e4fecc11 to this slice: total +2, production 0, tests +2,
 zero unclassified; full language counts/filter remain in task evidence.
 
-Modern Program-based local/cooled and paired-pulse preparation/runtime now use the installed tracking quality validator; its documented range and CLI distinction are described in [public SIMION controls](../../common/simion/README.md#program-owned-trajectory-quality). Frozen defaults and other numerical/physics guards remain unchanged. Local frontend uses its bound Program as the sole quality authority instead of also passing a CLI quality flag. This update has plain-Lua/software evidence only and adds no native qualification.
+Modern Program-based local and paired-pulse preparation/runtime now use the installed tracking quality validator; its documented range and CLI distinction are described in [public SIMION controls](../../common/simion/README.md#program-owned-trajectory-quality). Frozen defaults and other numerical/physics guards remain unchanged. Local frontend uses its bound Program as the sole quality authority instead of also passing a CLI quality flag. This update has plain-Lua/software evidence only and adds no native qualification.
 
 
 ### Shared initial-state record reader
@@ -1009,7 +998,7 @@ Program receives its explicitly selected frozen native-path helper bytes.
 
 ### Standalone Lua discovery for frontend software checks
 
-The single-reflection, local and cooled frontend software fixtures try `lua`, then the pinned
+The single-reflection and local frontend software fixtures try `lua`, then the pinned
 `lua5.1` provider on PATH, before their unchanged vendor fallback. The provider keeps its original
 executable name and matching runtime manifests. This changes test interpreter discovery only;
 production supplier selection, callbacks, source/field identities and numerical policies are unchanged.
@@ -1020,57 +1009,6 @@ auditor error, then its three original modes passed after correcting only that
 external auditor. The original failed run remains recorded. Nine representative
 composed-main consumers, including that parent, passed 82 records in 7.847 seconds;
 this is not a new full eight-module, Repository or native acceptance.
-
-
-### Component-owned cooled-field voltage proposal
-
-Cooled frontend run analysis calls the sole pure measured-response/control design
-in `msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design`.
-The existing root adapter still owns selected run records, CSVs and pre-publication
-I/O; sealed-probe/sampler migration remains separate. Scientific assumptions and
-scoped46-parent/443-payload ordinary validation are recorded in the
-[IP project status](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#installed-pure-cooled-field-voltage-design).
-No new field solve, Fly or cooling/capture qualification is implied.
-
-
-### Canonical cooled HS1 gas input
-
-The finite cooled bath is defined by the component's
-`gas_regions.build_cooled_gas_field_spec` and materialized once by the SIMION
-`gas_runtime.compile_gas_runtime` compiler. The canonical backend resource
-`cooled_frontend.lua` consumes that generated field through the existing
-`collision_hs1_gas.lua` binding. The root workflow still performs its existing
-preparation, field ownership and execution; this slice does not install or
-retire that orchestration.
-
-The gas query domain is the inverse of the actual carrier PA bounds under the
-existing signed-permutation pose. It includes explicit modeled vacuum outside
-the finite bath; beyond carrier coverage is unavailable, not vacuum. This does
-not add arbitrary rotated cooled CSG geometry. Positions use the canonical
-inverse rigid transform, and HS1 gas velocity uses mm/us after one m/s conversion.
-Pressure controls remain explicit zero/one; release switching does not turn off
-the bath. The sampling policy remains `legacy_callback_sampling_v1`: no new
-boundary step cap, random draw, collision algorithm or callback/reset order.
-Seven electric member keys remain unchanged by pressure control under the
-existing one-way gas-to-ion model.
-
-Scoped software validation passed 46 parents / 104 records in 58.050 s; actual
-old/current module traces matched for scale zero/one, including 42 point queries
-each and reset/seed/termination order. The earlier pre-LF focused ordinary arms passed in 72.706 s. The final LF-only
-successor (two Python files, identical ASTs) passed fresh direct-wheel and
-sdist-rebuilt arms in 92.438 s, each with 445 exact source/wheel/site payload
-joins, author source denied and real resource/module negatives.
-This is the installed component/compiler/canonical module with inert HS1, not
-installation of the whole root cooled workflow. Earlier failed test/harness
-setup epochs remain in the delivery evidence. No native collision, stochastic
-trajectory equality or step-crossing qualification is granted; prior native
-results retain their original versions.
-On the composed successor, the complete affected cooled/reference modules,
-IP gas regressions and architecture checks passed 59 parents and 256 records
-in 48.472 seconds without skips. A separate actual Changed-plan regression
-passed its four dependency cases (one parent, five records, 10.843 seconds),
-selecting the new cooled contract once while retaining the existing integration
-consumers. Full installed-suite, Repository and native closure remain open.
 
 
 ### Remaining standalone Lua integration fixtures
@@ -1092,109 +1030,14 @@ The same six parents passed on the composed workspace in 4.493 seconds
 unchanged; no additional installation result is inferred from these tests.
 
 
-### Canonical cooled-field proposal and sealed probes
+### Recorded velocity population diagnostics
 
-`msplatform.workflows.cooled_frontend.field_analysis` owns the existing seven-member
-probe record reader, explicit probe reuse selection and unsealed-owner voltage proposal
-adapter. The existing root executor still acquires guards, invokes native operations and
-publishes the same run; no second owner/cache or automatic solve/Fly is added. The module's
-`--run` CLI writes the existing `results/cooled_field_design/voltage_design.json` only before
-terminal publication. Success/failed sealed caller owners reject before output.
-
-The unchanged native sampler is packaged as `sample_cooled_field.lua`; new frozen probe
-plans name its canonical backend source. Original manifest-bound legacy sampler paths
-are read only through their actual frozen probe plan/source records, with unchanged
-sampler bytes. Only that proven source-path relocation may differ; scientific/numerical
-plan fields, native arguments, exact points, solver/raw-generation bindings and completion
-logs remain required. Missing historical bytes are never supplied from today's package.
-Pulse scaling is still applied once in analysis without rewriting raw CSVs. These adapters
-remain a local quadratic/static-energy proposal, not a cooling trajectory or native
-qualification. Full root cooled orchestration remains separate migration work.
-On the composed G3 successor, all 93 selected parents and 321 records passed in
-127.236 seconds without skips, including complete affected cooled consumers,
-architecture and actual Changed selection. Independent review accepted the
-source/record guarantees and both private 449-payload installed CLI arms. That
-private source excludes G3; its retained builds and later clean client run remain
-their original evidence, not a new combined package acceptance. Final combined
-installation was still pending at that private epoch; the combined successor
-acceptance is recorded below. Repository, performance and native qualification
-remain open.
-
-
-Cooled frontend GEM and seven-point field compilation belong to
-`msplatform.backends.simion.cooled_frontend_geometry`; explicit cooled Program
-composition belongs to `msplatform.workflows.cooled_frontend.program`.
-These consume resolved inputs; the Program only materializes the existing Lua
-companions in the selected directory and does not Refine or Fly. Canonical preparation
-now freezes source/clock/parent inputs; root runtime still owns field cache and scheduling;
-this slice does not establish the complete ordinarily installed run workflow.
-
-The integrated compiler slice passed 66 affected tests / 133 records in 94.909
-seconds without skips. The complete original ordinary-install acceptance then
-passed in 262.626 seconds: direct wheel and sdist-rebuilt wheel consumers ran
-outside the checkout with author-tree reads denied, and all 452 runtime payloads
-matched source, actual build source and all three distributions. Mutable cooled
-probe directories are distinct for the two consumers; repeated creation within
-one consumer still fails. This is software/installation evidence, not native Fly.
-
-Reference-ray pulse proposal and frozen common-clock decisions now use
-`msplatform.workflows.cooled_frontend.pulse`. The source is byte-identical to the
-retired root module; actual PowerShell and cold-frozen consumers import the
-installed owner directly. Original calibration policy, evidence requirements,
-reported residual and refusal to extrapolate are unchanged. The 23 affected
-tests / 38 records passed in 52.916 seconds without skips. Focused ordinary wheel
-and sdist-rebuilt-wheel consumers passed in 33.969 seconds with all 453 payloads
-matching source/distributions/site-packages and missing-module refusal. That
-focused probe does not replace the complete installed-parent or native checks.
-
-
-
-Cooled request/source/clock and parent-input preparation is owned by
-`msplatform.workflows.cooled_frontend.prepare`. The installed API takes the explicit
-workspace and optionally a selected `field_source_authority_directory` for authored
-field envelopes; artifact sources keep their existing sealed-owner route. It does not
-look for a checkout, sample a new source, solve fields or launch a vendor. The root
-PowerShell owner transports its selected research directory. Remaining field-cache and
-flight orchestration are still separate root responsibilities.
-
-Independent review accepted the preparation source/caller closure and its explicit
-authored-directory boundary. The integrated 106 tests / 330 records passed in
-200.745 seconds without skips, including the actual cold snapshot, source/clock
-and rectangular-geometry consumers, architecture and isolated fixture lifetime.
-The complete original ordinary-install parent passed in 266.575 seconds with
-both consumers and all 454 source/build/distribution payload joins exact.
-The authored-envelope API/CLI positives and omitted/sibling-authority refusals
-preserve original input and owner bytes. Native and whole-Repository acceptance
-remain separate open requirements.
-
-
-### Recorded cooled population diagnostics
-
-`msplatform.analysis.cooling_diagnostics` describes caller-selected homogeneous
-mass/charge cohorts using the existing population moment implementation. The
-cooled analyzer retains its original active-only snapshots and separately records
-every declared clock, consecutive same-ID pairs and confirmed OA-exit-selected
-cohorts. Missing/ended states are never propagated. Current source weights remain
-explicitly unit test-particle weights; source mass/charge is not a chemical species ID.
-
-Laboratory energy and nominal-bath-reference energy are separate. The reference
-comes from the existing component gas provider and rigid vector transformation;
-it is not an actual gas sample at an outside/vacuum point. Velocity second-moment
-tensors include instantaneous RF motion and are not equilibrium/secular temperature,
-SDS microscopic temperature or collision counts. Root cooled/local parsing and
-figure orchestration remain separate migration work. No native or scientific
-qualification follows from pure diagnostics or installed-source availability.
-
-The integrated successor at `26c6982a` plus this slice passed 27 actual
-analysis/execution/architecture parents; the Changed selector passed separately
-(one initially mistyped class selector is retained as a command error). A fresh
-focused ordinary wheel and sdist-rebuilt-wheel check passed in 85.624 seconds,
-with all 455 runtime payloads joined to source, both installed trees and the
-sdist. It exercised the actual pure diagnostic and missing-module/complex-input
-negatives outside denied author roots, not the complete installed parent.
-The component-provided reference remains nominal rather than a gas sample.
-Observed old/new moment roundoff on the retained examples is not a general error
-bound. Full Repository, native cooling and the performance target remain open.
+`msplatform.analysis.cooling_diagnostics` describes explicitly selected homogeneous
+mass/charge cohorts through the existing population-moment kernel. Laboratory energy,
+reference-relative energy and velocity second-moment temperature are distinct. The caller
+supplies frame, sample kind, relative weights and reference velocity; an empty cohort keeps
+metadata and null moments. This is not an equilibrium, secular-temperature, SDS microscopic
+velocity or collision-count claim. No cooled workflow is retained to provide these statistics.
 
 
 ### Single-reflection frontend field producer boundary
@@ -1240,12 +1083,10 @@ seconds. Source/no-copy/release and tamper assertions remain in place. This
 test-only repair does not convert the preceding Changed failure into a pass.
 
 
-The cooled conditioner overlay now consumes exact IP sections from
-`msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`,
-including real cutouts and convex faces, rather than importing project plotting code.
-Its existing certified pose and contained circular-aperture winding are unchanged.
-Local/cooled recorded analyzers and their mixed figure workflow remain separate P4
-migration work; this pure component move does not make those root renderers installable.
+The retained local figures and IP diagnostics consume exact IP sections from
+`msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`.
+The user-withdrawn conditioner overlay is absent; its historical evidence is not a
+current feature or native qualification.
 
 The composed section-geometry successor passed 47 actual section, overlay, local
 analysis, route and architecture parents (197 records) in 56.235 seconds. Fresh
@@ -1254,3 +1095,17 @@ joining all 457 runtime payloads and the original section-output oracle. Missing
 canonical geometry fails in a fresh process; no project or Matplotlib fallback
 is supplied by this pure-geometry proof. Full installed-parent, Repository and
 native qualification are separate scopes.
+
+### Recorded local analysis ownership
+
+Recorded local guide-to-OA analysis, focus and geometry figures live in
+`msplatform.workflows.local_frontend`. The withdrawn cooled workflow is not
+retained under a conditioner overlay or alternate local mode.
+The shared RF/OA/TOF checkpoint protocol adapter is
+`msplatform.workflows.single_reflection_flight.checkpoint_diagnostics`; the mixed
+repository campaign plot calls it directly and retains its campaign responsibilities.
+These readers consume frozen sources and recorded logs without a solver or owner.
+The complete mother, native clocks, unresolved terminals and recorded-only snapshots
+are retained; a figure or nominal gas reference does not prove native propagation
+or actual gas coverage. Root execution/runtime/replay orchestration remains
+a separate migration responsibility.

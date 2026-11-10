@@ -796,33 +796,51 @@
         "dependencies": [
           {
             "matches": [
-              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "ip_gas_regions_changed"},
-              {"exact": "src/msplatform/workflows/ion_processor/preparation.py", "reason": "ip_gas_preparation_changed"},
-              {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "hs1_gas_binding_changed"},
-              {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "ip_gas_compiler_changed"},
-              {"exact": "src/msplatform/contracts/gas.py", "reason": "ip_gas_contract_changed"},
-              {"prefix": "src/msplatform/gas/", "reason": "ip_gas_sampler_changed"}
+              {
+                "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
+                "reason": "ip_gas_regions_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/ion_processor/preparation.py",
+                "reason": "ip_gas_preparation_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
+                "reason": "hs1_gas_binding_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/gas_runtime.py",
+                "reason": "ip_gas_compiler_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/gas.py",
+                "reason": "ip_gas_contract_changed"
+              },
+              {
+                "prefix": "src/msplatform/gas/",
+                "reason": "ip_gas_sampler_changed"
+              }
             ],
-            "modules": ["common/contracts/test_ip_gas_regions.py", "common/contracts/test_ip_preparation.py"],
+            "modules": [
+              "common/contracts/test_ip_gas_regions.py",
+              "common/contracts/test_ip_preparation.py"
+            ],
             "dependency_profile": "locked"
           },
           {
             "matches": [
-              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "cooled_gas_regions_changed"},
-              {"exact": "src/msplatform/backends/simion/cooled_frontend_geometry.py", "reason": "cooled_geometry_changed"},
-              {"exact": "src/msplatform/workflows/cooled_frontend/program.py", "reason": "cooled_program_changed"},
-              {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "cooled_gas_compiler_changed"},
-              {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "cooled_hs1_gas_binding_changed"},
-              {"exact": "src/msplatform/backends/simion/resources/cooled_frontend.lua", "reason": "cooled_gas_program_changed"}
-            ],
-            "modules": ["common/contracts/test_cooled_gas_regions.py"],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {"exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py", "reason": "dual_cone_gas_source_quality_changed"},
-              {"exact": "src/msplatform/contracts/gas_field.py", "reason": "recorded_gas_structure_changed"},
-              {"exact": "src/msplatform/results/gas_field.py", "reason": "published_gas_reader_changed"}
+              {
+                "exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py",
+                "reason": "dual_cone_gas_source_quality_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/gas_field.py",
+                "reason": "recorded_gas_structure_changed"
+              },
+              {
+                "exact": "src/msplatform/results/gas_field.py",
+                "reason": "published_gas_reader_changed"
+              }
             ],
             "modules": [
               "common/contracts/test_comsol_gas_flow.py",
@@ -1268,11 +1286,26 @@
           },
           {
             "matches": [
-              {"exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py", "reason": "dual_cone_gas_projection_changed"},
-              {"exact": "src/msplatform/backends/simion/resources/collision_sds_binding.lua", "reason": "dual_cone_sds_binding_changed"},
-              {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "dual_cone_gas_compiler_changed"},
-              {"exact": "src/msplatform/contracts/gas.py", "reason": "dual_cone_gas_contract_changed"},
-              {"prefix": "src/msplatform/gas/", "reason": "dual_cone_gas_sampling_changed"},
+              {
+                "exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py",
+                "reason": "dual_cone_gas_projection_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/collision_sds_binding.lua",
+                "reason": "dual_cone_sds_binding_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/gas_runtime.py",
+                "reason": "dual_cone_gas_compiler_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/gas.py",
+                "reason": "dual_cone_gas_contract_changed"
+              },
+              {
+                "prefix": "src/msplatform/gas/",
+                "reason": "dual_cone_gas_sampling_changed"
+              },
               {
                 "exact": "src/msplatform/backends/simion/dual_cone_transport_execution.py",
                 "reason": "dual_cone_transport_operation_changed"
@@ -1403,6 +1436,22 @@
             "modules": [
               "common/contracts/test_oa_tracking.py",
               "common/contracts/test_simion_rf_tracking.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/cooling_diagnostics.py",
+                "reason": "velocity_population_diagnostics_changed"
+              },
+              {
+                "exact": "src/msplatform/analysis/population_moments.py",
+                "reason": "velocity_population_moments_changed"
+              }
+            ],
+            "modules": [
+              "common/analysis/test_population_moments.py"
             ],
             "dependency_profile": "locked"
           }
@@ -1909,10 +1958,6 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/test_cooled_buncher.py",
-          "reason": "guide_shared_test_fixture_changed"
-        },
-        {
           "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/test_component_exit.py",
           "reason": "guide_shared_test_fixture_changed"
         },
@@ -2017,17 +2062,6 @@
           "test_accelerator_interface": 70.496786,
           "test_accelerator_interface_geometry": 15.129142,
           "test_comsol_prepulse_replay": 4.29526,
-          "test_cooled_field_member_reuse": 0.973851,
-          "test_cooled_frontend": 15.912397,
-          "test_cooled_frontend_analysis": 46.866764,
-          "test_cooled_frontend_execute": 55.199872,
-          "test_cooled_frontend_field_design": 0.523856,
-          "test_cooled_frontend_mesh_check": 0.191335,
-          "test_cooled_frontend_owner_recovery": 1.347259,
-          "test_cooled_frontend_pulse": 0.001013,
-          "test_cooled_frontend_reference": 15.616768,
-          "test_cooled_geometry_overlay": 1.31576,
-          "test_cooled_static_probe_reuse": 25.495522,
           "test_dependencies": 122.581679,
           "test_engineering_budget": 2.125866,
           "test_frontend_flight_continuation": 8.58285,
@@ -2085,89 +2119,41 @@
         "dependencies": [
           {
             "matches": [
-              {"exact": "src/msplatform/workflows/cooled_frontend/prepare.py", "reason": "cooled_preparation_changed"}
+              {
+                "exact": "src/msplatform/workflows/local_frontend/analyze.py",
+                "reason": "recorded_frontend_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/local_frontend/focus.py",
+                "reason": "recorded_frontend_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/local_frontend/figures.py",
+                "reason": "recorded_frontend_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/single_reflection_flight/checkpoint_diagnostics.py",
+                "reason": "recorded_frontend_analysis_changed"
+              }
             ],
             "modules": [
-              "integrations/tests/test_cooled_frontend.py",
-              "integrations/tests/test_cooled_frontend_reference.py",
-              "integrations/tests/test_cooled_field_member_reuse.py",
-              "integrations/tests/test_cooled_frontend_execute.py",
-              "integrations/tests/test_cooled_static_probe_reuse.py",
-              "integrations/tests/test_cooled_frontend_mesh_check.py",
-              "integrations/tests/test_saved_workbench_replay_policy.py",
+              "integrations/tests/test_local_frontend_analysis.py",
+              "integrations/tests/test_local_frontend_focus.py",
+              "integrations/tests/test_local_frontend_replay.py",
+              "integrations/tests/test_local_frontend_execute.py",
               "integrations/tests/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           },
           {
-            "matches": [{"exact": "src/msplatform/analysis/cooling_diagnostics.py", "reason": "cooled_recorded_diagnostics_changed"}],
-            "modules": ["integrations/tests/test_cooled_frontend_analysis.py", "integrations/tests/test_cooled_frontend_execute.py"],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {"exact": "src/msplatform/backends/simion/cooled_frontend_geometry.py", "reason": "cooled_geometry_changed"},
-              {"exact": "src/msplatform/workflows/cooled_frontend/program.py", "reason": "cooled_program_changed"}
-            ],
-            "modules": [
-              "integrations/tests/test_cooled_frontend.py",
-              "integrations/tests/test_cooled_frontend_reference.py",
-              "integrations/tests/test_cooled_frontend_mesh_check.py",
-              "integrations/tests/test_cooled_geometry_overlay.py",
-              "integrations/tests/test_cooled_frontend_execute.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {"exact": "src/msplatform/workflows/cooled_frontend/pulse.py", "reason": "cooled_pulse_changed"}
-            ],
-            "modules": [
-              "integrations/tests/test_cooled_frontend_pulse.py",
-              "integrations/tests/test_cooled_frontend_reference.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/cooled_frontend/field_analysis.py",
-                "reason": "cooled_field_analysis_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/resources/sample_cooled_field.lua",
-                "reason": "cooled_static_sampler_changed"
+                "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py",
+                "reason": "ip_section_geometry_changed"
               }
             ],
             "modules": [
-              "integrations/tests/test_cooled_frontend_field_design.py",
-              "integrations/tests/test_cooled_static_probe_reuse.py",
-              "integrations/tests/test_cooled_frontend_reference.py",
-              "integrations/tests/test_cooled_frontend.py",
-              "integrations/tests/test_cooled_field_member_reuse.py",
-              "integrations/tests/test_cooled_frontend_execute.py",
-              "integrations/tests/test_cooled_frontend_mesh_check.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py", "reason": "ip_section_geometry_changed"}
-            ],
-            "modules": [
-              "integrations/tests/test_cooled_geometry_overlay.py",
               "integrations/tests/test_local_frontend_analysis.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py", "reason": "cooled_field_design_component_changed"}
-            ],
-            "modules": [
-              "integrations/tests/test_cooled_frontend_field_design.py",
-              "integrations/tests/test_cooled_static_probe_reuse.py",
-              "integrations/tests/test_cooled_frontend_reference.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2183,8 +2169,6 @@
               "integrations/tests/test_local_frontend_field_support.py",
               "integrations/tests/test_local_frontend_runtime.py",
               "integrations/tests/test_local_frontend_analysis.py",
-              "integrations/tests/test_cooled_frontend.py",
-              "integrations/tests/test_cooled_geometry_overlay.py",
               "integrations/tests/test_single_reflection_geometry.py",
               "integrations/tests/test_dependencies.py"
             ],
@@ -2202,17 +2186,6 @@
               }
             ],
             "modules": [
-              "integrations/tests/test_cooled_field_member_reuse.py",
-              "integrations/tests/test_cooled_frontend.py",
-              "integrations/tests/test_cooled_frontend_analysis.py",
-              "integrations/tests/test_cooled_frontend_execute.py",
-              "integrations/tests/test_cooled_frontend_field_design.py",
-              "integrations/tests/test_cooled_frontend_mesh_check.py",
-              "integrations/tests/test_cooled_frontend_owner_recovery.py",
-              "integrations/tests/test_cooled_frontend_pulse.py",
-              "integrations/tests/test_cooled_frontend_reference.py",
-              "integrations/tests/test_cooled_geometry_overlay.py",
-              "integrations/tests/test_cooled_static_probe_reuse.py",
               "integrations/tests/test_dependencies.py",
               "integrations/tests/test_native_path_consumers.py",
               "integrations/tests/test_saved_workbench_replay_policy.py",
@@ -2264,6 +2237,18 @@
             "modules": [
               "integrations/tests/test_local_frontend_owner_recovery.py",
               "integrations/tests/test_single_reflection_owner_recovery.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/cooling_diagnostics.py",
+                "reason": "retained_velocity_diagnostics_snapshot_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3367,10 +3352,22 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
-        {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py", "reason": "ip_section_geometry_changed"},
-        {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "ip_gas_regions_changed"},
-        {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "hs1_gas_binding_changed"},
-        {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "ip_gas_compiler_changed"},
+        {
+          "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py",
+          "reason": "ip_section_geometry_changed"
+        },
+        {
+          "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
+          "reason": "ip_gas_regions_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
+          "reason": "hs1_gas_binding_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/gas_runtime.py",
+          "reason": "ip_gas_compiler_changed"
+        },
         {
           "prefix": "src/msplatform/workflows/ion_processor/",
           "reason": "ion_processor_preparation_changed"
@@ -3467,10 +3464,22 @@
       "repository_integration_group": "regression",
       "project_id": "dual_cone_tandem_quadrupole_ion_interface",
       "matches": [
-        {"exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py", "reason": "dual_cone_gas_projection_changed"},
-        {"exact": "src/msplatform/backends/simion/resources/collision_sds_binding.lua", "reason": "dual_cone_sds_binding_changed"},
-        {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "dual_cone_gas_compiler_changed"},
-        {"prefix": "src/msplatform/gas/", "reason": "dual_cone_gas_sampling_changed"},
+        {
+          "exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py",
+          "reason": "dual_cone_gas_projection_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/collision_sds_binding.lua",
+          "reason": "dual_cone_sds_binding_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/gas_runtime.py",
+          "reason": "dual_cone_gas_compiler_changed"
+        },
+        {
+          "prefix": "src/msplatform/gas/",
+          "reason": "dual_cone_gas_sampling_changed"
+        },
         {
           "exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py",
           "reason": "dual_cone_gas_source_quality_changed"

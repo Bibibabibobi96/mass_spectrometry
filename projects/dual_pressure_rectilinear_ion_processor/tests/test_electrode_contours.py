@@ -1,12 +1,15 @@
 """Analytic occupancy and variable-isolation checks for formed IP candidates."""
 import copy
 import json
+import math
 from pathlib import Path
 import unittest
 
+import numpy as np
+
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape, shape_bounds
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape, shape_bounds, convex_planes, convex_section
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -110,6 +113,22 @@ class ElectrodeContourTests(unittest.TestCase):
         self.c["outer_axial_bounds_mm"] = [132,189.5]
         explicit = native_projection(self.b,self.n)
         self.assertEqual(default["electrodes"],explicit["electrodes"])
+
+    def test_continuous_d_corner_tapers_keep_true_slanted_sections(self) -> None:
+        self.c.update(mode="formed_extraction_continuous_aux_parabolic_inner", inner_parabola_sag_mm=.1)
+        projection = native_projection(self.b, self.n)
+        electrode = projection["electrodes"][8]
+        self.assertEqual(len(electrode["solids"]), 4)
+        for solid in electrode["solids"]:
+            self.assertEqual(solid["shape"], "convex_polyhedron")
+            self.assertEqual(len(solid["vertices_mm"]), 8)
+            self.assertEqual(len(convex_planes(solid)), 6)
+            for x, radius in ((32., 2.), (80., 2.75), (128., 3.5)):
+                section = np.abs(np.asarray(convex_section(solid, 0, x))[:, 1:])
+                for axis in (0, 1):
+                    self.assertAlmostEqual(section[:, axis].min(), radius / math.sqrt(2))
+                    self.assertAlmostEqual(section[:, axis].max() - section[:, axis].min(), .4)
+        self.assertIn("half_space(", render_gem(projection))
 
     def test_symmetric_outer_bounds_change_only_e10(self) -> None:
         self.b["geometry"]["lp_length_mm"] = 61.5

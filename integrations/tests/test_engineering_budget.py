@@ -14,7 +14,7 @@ class EngineeringBudgetTests(unittest.TestCase):
         code = r"""param($RepoRoot,$Temporary)
 $ErrorActionPreference='Stop'
 $relative='integrations';$sharedRuntime='integrations/runtime'
-foreach($entry in @('integrations/workflows/local_frontend/execute.ps1','integrations/workflows/cooled_frontend/execute.ps1')){
+foreach($entry in @('integrations/workflows/local_frontend/execute.ps1')){
  Remove-Item Function:Initialize-IntegrationStageBudget -ErrorAction SilentlyContinue
  $tokens=$null;$errors=$null
  $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot $entry),[ref]$tokens,[ref]$errors)

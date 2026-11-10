@@ -104,16 +104,15 @@ MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包�
 提供者从同一native projection发布真实guide入口、E14出口屏蔽端面、截面、壁厚及具名电极集合。
 纯几何、轮廓、凸体算法与机械接口的唯一实现位于`msplatform.components.dual_pressure_rectilinear_ion_processor`，
 
-不依赖backend、execution或项目默认路径；裸导引源包络及冷却组件的HP实体复用、终端阱和局部场诊断也归该组件包。
-SIMION完整IP GEM渲染位于`msplatform.backends.simion.ip_geometry`，冷却组件GEM片段渲染位于
-`msplatform.backends.simion.ip_frontend_geometry`；原项目`analysis/guide_interface.py`和
-`analysis/cooled_buncher.py`已退役且无转发。
+The retained IP design and guide projection are solver-independent. SIMION rendering
+is owned by `msplatform.backends.simion.ip_geometry`. The dedicated cooled feature
+was withdrawn by the user in P4 V8.5; it is no longer an executable variant.
+Original IP HP/LP geometry, all fifteen electrodes, HS1 and historical run data remain.
 
 Exact plane sections, rectangle/convex cutout subtraction and section centroids are owned by
 `msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`. The
 fixed IP/project axis convention and existing curved-Boolean refusal remain explicit;
-this is not a general freely rotated section renderer. IP diagnostics and the cooled
-conditioner overlay consume this same geometry. The project `section_diagnostics`
+this is not a general freely rotated section renderer. IP diagnostics and the retained local guide/OA figures consume this same geometry. The project `section_diagnostics`
 continues to own its recorded-run rendering/export and producer record; its former
 pure geometry bodies and import aliases are absent. Software/cold-install evidence
 for this migration does not add native impact or field qualification.
@@ -446,7 +445,7 @@ only when explicitly supplied. Materialized inputs are not a PreparedModel or Fi
 no IOB, Refine, Fly or GUI readiness is implied.
 
 The HS1 lifecycle adapter has one installed owner, `msplatform.backends.simion.collision_hs1`.
-Its entire source is unchanged; both IP and cooled-frontend callers now select that owner.
+Its source and the retained IP caller remain unchanged by the cooled withdrawal.
 The four original IP Lua bodies are byte-identical installed `ip_*.lua` resources and are
 materialized under their original run filenames. NativeDrive, the 15 electrode IDs,
 thermal/pressure/PRNG/collision equations, positive-polarity scope and current placement
@@ -538,31 +537,6 @@ covering actual generated Lua/Program wiring, detached preparation, architecture
 and Changed selection. Combined full installation, native and Repository acceptance
 remain open; these checks do not prove collision physics or step resolution.
 
-
-### Installed pure cooled-field voltage design
-
-`msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design`
-owns the existing measured-response projection, composition and two-control voltage
-proposal. Explicit samples, species/RF/temperature, width/energy targets and reference
-names are unchanged. It calls the existing cooled_buncher curvature/barrier analyzers;
-no field is prescribed and no capture, cooling, native flight or scientific qualification
-is inferred. The run/receipt/CSV/proposal adapter and CLI now live in
-`msplatform.workflows.cooled_frontend.field_analysis`, alongside the original sealed-probe
-reader. The unchanged sampler is the canonical backend `sample_cooled_field.lua` resource.
-The two root implementation bodies are retired; pure component formulas remain unchanged.
-This is a field-based voltage proposal, not a collision, capture or flight qualification.
-
-The original field-design/static-probe/reference/IP-cooled modules passed46 parents
-in58.549seconds with no skips. Exact old/new harmonic/coupled full results and unstable
-case errors match, and all187 original assertions across the three migrated integration
-test files remain unchanged. A focused ordinary wheel/sdist-rebuilt API check passed
-in90.884seconds: both443-member payloads match source and fresh site-packages, explicit
-outside-tree data produces the exact full result, four author/build roots are denied,
-and physical removal of the canonical module fails in a fresh process. This is the
-pure API acceptance scope, not the full installed suite or a native run.
-The composed successor passed 57 parents and 219 records in 63.884 seconds,
-including the unchanged numerical consumers, complete architecture checks and
-the actual Changed plan selecting the three migrated integration consumers.
 
 
 ### Software-only Lua test discovery

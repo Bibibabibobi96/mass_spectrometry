@@ -90,7 +90,7 @@ function Invoke-LocalRecordedAnalysis {
  $code=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.local_frontend.analyze import analyze_local_frontend
+from msplatform.workflows.local_frontend.analyze import analyze_local_frontend
 run,logs,times=map(Path,sys.argv[1:4]);phase=sys.argv[4]
 print(json.dumps(analyze_local_frontend(run,[Path(p) for p in json.loads(logs.read_text())],phase=phase,shared_times_us=json.loads(times.read_text()),pulse_time_us=float(sys.argv[5]) if phase=='extraction' else None),allow_nan=False))
 '@

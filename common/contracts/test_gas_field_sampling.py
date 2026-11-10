@@ -145,14 +145,14 @@ class GasSamplingTests(unittest.TestCase):
         missing = self.grid((False,True,False,True))
         self.assertEqual(sample_gas(missing,point(0,0,.5)).state.status,"no_data")
 
-    def test_cooled_bath_half_open_strict_boundaries_and_explicit_zero_control(self):
+    def test_finite_bath_half_open_strict_boundaries_and_explicit_zero_control(self):
         bath = BoxDomain((30,-2,-2),(130,2,2),(True,False,False),(False,False,False))
         valid = BoxDomain((0,-5,-5),(250,5,5),(True,)*3,(True,)*3)
         full = prepare_gas_field(spec("piecewise_uniform", domain=valid,
-            regions=(GasRegion("cooled_bath",bath,GasState("gas",1,300,(0,0,0))),),
+            regions=(GasRegion("finite_bath",bath,GasState("gas",1,300,(0,0,0))),),
             background_state=GasState("vacuum",0)))
         zero = prepare_gas_field(spec("piecewise_uniform", domain=valid,
-            regions=(GasRegion("cooled_bath",bath,GasState("vacuum",0,300,(0,0,0))),),
+            regions=(GasRegion("finite_bath",bath,GasState("vacuum",0,300,(0,0,0))),),
             background_state=GasState("vacuum",0)))
         # Independent original finite-bath boundary vectors. Voltage release is not
         # a gas-field argument: the same static field remains present after release.

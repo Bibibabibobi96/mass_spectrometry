@@ -4,6 +4,7 @@ import unittest
 import numpy as np
 
 from msplatform.analysis.population_moments import population_moments, population_pair_moments
+from msplatform.contracts.particle_physics import AMU_KG
 
 
 class PopulationMomentsTests(unittest.TestCase):
@@ -111,6 +112,47 @@ class PopulationPairMomentsTests(unittest.TestCase):
         for first, second in (([1.], []), ([[1.]], [[2.]]), ([float("nan")], [0.]), ([0.], [float("inf")])):
             with self.subTest(first=first, second=second), self.assertRaises(ValueError):
                 population_pair_moments(np.asarray(first), np.asarray(second))
+
+
+class CoolingPopulationDiagnosticsTests(unittest.TestCase):
+    def test_complex_velocity_and_reference_reject_before_real_conversion(self):
+        import numpy as np
+        from msplatform.analysis.cooling_diagnostics import velocity_population_diagnostics
+        args=dict(mass_amu=100.,charge_state=1,reference_velocity_m_s=np.array([0.,0.,0.]),relative_weights=None,
+            frame_id="lab",sample_kind="time_snapshot",reference_label="explicit nominal reference")
+        for selected in ("velocity","reference"):
+            with self.subTest(complex_input=selected),self.assertRaisesRegex(ValueError,"real"):
+                velocity=np.array([[1.+2j,0.,0.]]) if selected=="velocity" else np.array([[1.,0.,0.]])
+                reference=np.array([0.+2j,0.,0.]) if selected=="reference" else args["reference_velocity_m_s"]
+                velocity_population_diagnostics(velocity,**dict(args,reference_velocity_m_s=reference))
+
+    def test_explicit_reference_weighting_and_velocity_tensor(self):
+        import numpy as np
+        from msplatform.analysis.cooling_diagnostics import velocity_population_diagnostics as describe
+        from msplatform.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K
+        args=dict(mass_amu=100.,charge_state=-1,reference_velocity_m_s=(100.,0.,0.),relative_weights=None,
+            frame_id="lab",sample_kind="time_snapshot",reference_label="explicit nominal reference")
+        drift=describe(np.array([[100.,0.,0.],[100.,0.,0.]]),**args)
+        self.assertGreater(drift["mean_laboratory_energy_ev"],0.)
+        self.assertEqual(drift["mean_reference_relative_energy_ev"],0.)
+        self.assertEqual(drift["effective_second_moment_tensor_k"],[[0.]*3]*3)
+        pair=describe(np.array([[90.,0.,0.],[110.,0.,0.]]),**args)
+        self.assertEqual(pair["mean_velocity_m_s"],[100.,0.,0.])
+        self.assertEqual(pair["velocity_covariance_m2_s2"][0][0],100.)
+        self.assertAlmostEqual(pair["effective_second_moment_tensor_k"][0][0],100.*AMU_KG*100./BOLTZMANN_CONSTANT_J_K)
+        weighted=describe(np.array([[90.,0.,0.],[110.,0.,0.]]),**dict(args,relative_weights=np.array([1.,3.])))
+        self.assertEqual(weighted["mean_velocity_m_s"],[105.,0.,0.])
+        self.assertEqual(weighted["velocity_covariance_m2_s2"][0][0],75.)
+        self.assertEqual(weighted["weighting"],"explicit_relative")
+        self.assertIn("not equilibrium",pair["interpretation"])
+        empty=describe(np.empty((0,3)),**args)
+        self.assertEqual(empty["sample_count"],0)
+        self.assertIsNone(empty["mean_laboratory_energy_ev"])
+        self.assertIsNone(empty["effective_second_moment_tensor_k"])
+        for changed in (dict(mass_amu=True),dict(charge_state=True),dict(reference_velocity_m_s=(float("nan"),0.,0.)),
+                        dict(relative_weights=np.array([1.,0.])),dict(frame_id=""),dict(sample_kind="SDS microscopic temperature")):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                describe(np.array([[90.,0.,0.],[110.,0.,0.]]),**dict(args,**changed))
 
 
 if __name__ == "__main__":

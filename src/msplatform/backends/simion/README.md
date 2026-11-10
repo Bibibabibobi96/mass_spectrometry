@@ -51,7 +51,7 @@ not silently applied to canonical fields.
 Actual emitted-Lua tests cover serialization, masks, endpoints, pose, source
 metadata, thin-region point sequences and Python/Lua finite-value failures.
 These T2 checks do not prove native step crossing or collision physics. Existing
-IP/cooled/SDS Program adoption and retirement of the old component generators
+IP/SDS Program adoption and retirement of the old component generators
 remain separate migration work; their callback/RNG ordering must be preserved.
 
 The composed gas tests and Changed routing passed; the initial architecture check

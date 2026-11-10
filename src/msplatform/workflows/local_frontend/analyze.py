@@ -8,6 +8,10 @@ from pathlib import Path
 import re
 from typing import Any
 
+from msplatform.workflows.single_reflection_flight.checkpoint_diagnostics import (
+    _checkpoint_distribution_summary, write_checkpoint_evolution_outputs,
+)
+
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -21,16 +25,12 @@ from msplatform.analysis.particle_census import (
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from msplatform.execution.retention import file_record
-from integrations.analysis.plot_single_flight_spatial_six_panel import (
-    _checkpoint_distribution_summary,
-    build_local_shared_time_figure,
-    write_checkpoint_evolution_outputs,
-)
+from msplatform.workflows.local_frontend import figures
 from msplatform.analysis.pulse_selection import (
     select_actual_occupancy_pulse,
 )
 
-from integrations.workflows.local_frontend.focus import (
+from msplatform.workflows.local_frontend.focus import (
     export_local_focus, prepare_local_focus,
 )
 
@@ -357,6 +357,8 @@ def analyze_local_frontend(
     inputs = run / "inputs"
     source = _source_rows(inputs / "release_global.csv")
     frontend = _read(inputs / "frontend_contract.json")
+    if frontend.get("conditioner_contract") is not None:
+        raise ValueError("conditioner/cooled analysis has been withdrawn")
     observer = RigidTransform.from_contract(_read(inputs / "registration.json")["observer_to_mr"])
     if frontend.get("native_frame_id") != "mrtof_global_cartesian" or frontend.get("slow_axis") != "y" or frontend.get("acceleration_direction") != -1:
         raise ValueError("local diagnostics require actual native MR coordinates with acceleration -z")
@@ -406,7 +408,7 @@ def analyze_local_frontend(
     _csv(output / "exit_states_mr.csv", mr_exits, list(events[0]) + ["frame_id"])
     display_counts = select_shared_time_display_counts(counts)
     frame = pd.DataFrame(active, columns=list(events[0]) + ["frame_id"])
-    figure, _ = build_local_shared_time_figure(
+    figure, _ = figures.build_local_shared_time_figure(
         frame, display_counts, frame_id=observer.to_frame_id, frontend_contract=frontend,
         terminal_rows=pd.DataFrame(terminals),
     )

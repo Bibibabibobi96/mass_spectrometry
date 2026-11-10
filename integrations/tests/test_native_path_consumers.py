@@ -469,7 +469,7 @@ try{
                 self.assertIn("NATIVE_FACT_BEFORE_SCIENCE=PASS", result.stdout)
 
 
-    def test_local_and_cooled_topology_project_environment_paths_before_actual_writer(self):
+    def test_local_topology_project_environment_paths_before_actual_writer(self):
         code=r"""param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
@@ -479,10 +479,6 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$topology.InvokeVerifier'},$true)
 Invoke-Expression ('$callback='+$node.Right.Extent.Text)
 $callbacks=@($callback)
-$source=Join-Path $Repo 'integrations/workflows/cooled_frontend/execute.ps1'
-$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$parameters.InvokeVerifier'},$true)
-Invoke-Expression ('$callback='+$node.Right.Extent.Text);$callbacks+=@($callback)
 $Limits=@{};$SimionExe='INERT';$NativeResourceReleaseId='owner'
 $run=Join-Path $Root ('persistent_'+('depth_'*40));New-Item -ItemType Directory -Path (Join-Path $run logs),(Join-Path $run inputs) -Force|Out-Null
 $package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;log_dir=(Join-Path $run logs);path_context=[pscustomobject]@{execution_root=(Join-Path $Root short);artifact_root=$Root;host_resource_state_path=(Join-Path $Root host.sqlite3)}}
@@ -501,11 +497,11 @@ function Invoke-ResourceBudgetedProcess {
 }
 try{
  foreach($callback in $callbacks){$result=&$callback $verifier}
- if($calls-ne2-or$nativeOperations.Count-ne2-or$result.exit_code-ne0){throw 'topology writer/fact wiring failed'}
+ if($calls-ne1-or$nativeOperations.Count-ne1-or$result.exit_code-ne0){throw 'topology writer/fact wiring failed'}
  if($env:SIMION_APERTURE_PA_PATH-ne(Join-Path $run 'inputs/field.pa')){throw 'persistent caller environment rewritten'}
  function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool);throw 'PREPARATION_FAILED_BEFORE_WRITER'}
  try{&$callback $verifier;throw 'missing preparation failure'}catch{if($_.Exception.Message-ne'PREPARATION_FAILED_BEFORE_WRITER'){throw}}
- if($calls-ne2-or$nativeOperations.Count-ne2){throw 'preparation failure created native operation'}
+ if($calls-ne1-or$nativeOperations.Count-ne1){throw 'preparation failure created native operation'}
  'LOCAL_TOPOLOGY_PATH_CONTEXT=PASS'
 }finally{Remove-RunPackageExecutionAlias -Package $package}
 """

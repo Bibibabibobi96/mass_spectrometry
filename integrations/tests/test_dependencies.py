@@ -236,7 +236,7 @@ $f.import_roots|ConvertTo-Json -Compress
             self.assertEqual(policy_entries[0]["provider_project"], "msplatform")
             self.assertEqual(policy_entries[0]["id"], "msplatform_contracts_particle_count_policy_json")
             self.assertEqual(policy_entries[0]["consumers"],
-                ["local_frontend", "prepared_joint", "accelerator_interface", "cooled_frontend", "oa_mr"])
+                ["local_frontend", "prepared_joint", "accelerator_interface", "oa_mr"])
             self.assertEqual((snapshot/policy_relative).read_bytes(), (REPO_ROOT/policy_relative).read_bytes())
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
@@ -418,7 +418,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["common/contracts/run_artifact_workflow.ps1"],
                          {"prepared_joint", "oa_mr", "paired_accelerator_static_field",
-                          "paired_accelerator_pulse", "local_frontend", "cooled_frontend",
+                          "paired_accelerator_pulse", "local_frontend",
                           "single_reflection_flight"})
         self.assertLessEqual(entries["common/contracts/run_artifact_workflow.ps1"],
                              entries["common/resource_budget_support.ps1"])
@@ -639,7 +639,7 @@ assert Path(native_completion.__file__).is_relative_to(Path.cwd())
 assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
 assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
 """
-                if consumer in ('accelerator_interface', 'cooled_frontend'):
+                if consumer == 'accelerator_interface':
                     statement += "\nfrom projects.dual_pressure_rectilinear_ion_processor.analysis import batching\n"
                     statement += "assert Path(batching.__file__).is_relative_to(Path.cwd())\n"
                 if consumer == 'accelerator_interface':
@@ -833,77 +833,6 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
             self.assertIn("FileNotFoundError: frozen SIMION GEM resource is missing: "
                           "oatof_reflectron_ideal_10_5.gem", refused.stderr)
 
-    def test_cooled_prepare_imports_shared_assembly_from_declared_snapshot(self) -> None:
-        # Exercise the actual freeze and the runtime-only reference imports;
-        # these are not discoverable from prepare.py's ordinary Python imports.
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory)
-            freeze = f"""
-. '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId cooled_frontend
-"""
-            result = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            snapshot = output / "runtime_snapshot"
-            environment = dict(os.environ)
-            environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
-            environment["PYTHONNOUSERSITE"] = "1"
-            helper = snapshot / "integrations/workflows/cooled_frontend/reference_support.ps1"
-            stage = f"""
-$ErrorActionPreference='Stop'
-. './integrations/runtime/frontend_flight_support.ps1'
-. './integrations/workflows/cooled_frontend/reference_support.ps1'
-$command=Get-Command Invoke-CooledReferenceCalibration
-if($command.ScriptBlock.File -cne '{helper}'){{throw 'Reference helper came from outside the frozen snapshot'}}
-if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight support is missing'}}
-'FROZEN_REFERENCE_HELPER=PASS'
-"""
-            result = subprocess.run([pwsh, "-NoProfile", "-Command", stage], cwd=snapshot,
-                                    env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            statement = (
-                "from pathlib import Path; "
-                "from msplatform.workflows.cooled_frontend import prepare; "
-                "from integrations.workflows.cooled_frontend import reference, mesh_check; "
-                "from msplatform.workflows.cooled_frontend import pulse; "
-                "from msplatform.assembly import resolve_assembly; "
-                "from projects.orthogonal_accelerator.analysis import assembly_interface; "
-                "assert all(Path(module.__file__).is_relative_to(Path.cwd()) "
-                "for module in (prepare,reference,pulse,mesh_check,resolve_assembly,assembly_interface)); "
-                "print('COOLED_SHARED_ASSEMBLY_IMPORT=PASS')"
-            )
-            result = subprocess.run([sys.executable, "-B", "-s", "-c", statement],
-                                    cwd=snapshot, env=environment, capture_output=True,
-                                    text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("COOLED_SHARED_ASSEMBLY_IMPORT=PASS", result.stdout)
-            result = subprocess.run([sys.executable, "-B", "-s", "-m",
-                "integrations.workflows.cooled_frontend.reference", "prepare-reference", "--help"],
-                cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("--run", result.stdout)
-            from integrations.tests.test_cooled_frontend import cooled_request_fixture
-            request_path, _ = cooled_request_fixture(Path(directory) / "scientific-input")
-            command = [sys.executable, "-B", "-s", "-m", "msplatform.workflows.cooled_frontend.prepare",
-                       "--request", str(request_path),
-                       "--workspace-root", str(Path(directory) / "scientific-input"), "--output-directory", str(Path(directory) / "prepared"),
-                       "--run-id", "20261101_000000__build__python__frozen-cooled"]
-            prepared = subprocess.run(command, cwd=snapshot, env=environment,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
-            self.assertEqual(json.loads(prepared.stdout)["particle_count"], 100)
-            self.assertTrue((Path(directory) / "prepared/inputs/frontend_contract.json").is_file())
-            # Missing snapshot modules must fail instead of falling back to the
-            # checkout from which this test was launched.
-            (snapshot / "integrations/workflows/cooled_frontend/reference.py").unlink()
-            result = subprocess.run([sys.executable, "-B", "-s", "-c", statement], cwd=snapshot,
-                env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("reference", result.stderr)
 
 
 
@@ -943,17 +872,50 @@ Write-Output 'FROZEN_DEPENDENCIES=PASS'
             env = dict(os.environ)
             env["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
             statement = ("from msplatform.workflows.local_frontend import prepare,runtime; "
-                         "from integrations.workflows.local_frontend import analyze; from integrations.runtime "
+                         "from msplatform.workflows.local_frontend import analyze; from integrations.runtime "
                          "import standalone_pa_family; from msplatform.execution import run_capacity_lifecycle;"
                          "assert prepare.ROLE=='instrument_assembly_local_frontend_request'; print('LOCAL_SNAPSHOT_IMPORT=PASS')")
             completed = subprocess.run([sys.executable, "-s", "-c", statement], cwd=snapshot, env=env,
                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            analyzer_statement = """
+from pathlib import Path
+import sys
+class RejectCooled:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "msplatform.workflows.cooled_frontend" or fullname.startswith("msplatform.workflows.cooled_frontend."):
+            raise AssertionError("retained analyzer imported withdrawn cooled owner: " + fullname)
+sys.meta_path.insert(0, RejectCooled())
+from msplatform.workflows.local_frontend import analyze, focus, figures
+from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
+for module in (analyze, focus, figures, checkpoint_diagnostics):
+    assert Path(module.__file__).resolve().is_relative_to(Path.cwd()/'src')
+print('RECORDED_ANALYSIS_ORIGINS=PASS')
+"""
+            analyzer_command = [sys.executable, "-B", "-s", "-c", analyzer_statement]
+            actual = subprocess.run(analyzer_command, cwd=snapshot, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+            self.assertIn("RECORDED_ANALYSIS_ORIGINS=PASS", actual.stdout)
+            for relative in ("local_frontend/analyze.py", "local_frontend/focus.py",
+                             "local_frontend/figures.py",
+                             "single_reflection_flight/checkpoint_diagnostics.py"):
+                with self.subTest(missing_owner=relative):
+                    owner = snapshot/"src/msplatform/workflows"/relative
+                    original = owner.read_bytes()
+                    owner.unlink()
+                    try:
+                        missing_owner = subprocess.run(analyzer_command, cwd=snapshot, env=env,
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                        self.assertNotEqual(missing_owner.returncode, 0)
+                        self.assertIn(Path(relative).stem, missing_owner.stderr)
+                    finally:
+                        owner.write_bytes(original)
             # Exercise the real local OA adapter inside the detached snapshot,
             # then remove its new public kernel and prove imports fail closed.
             crossing_statement = """
 from pathlib import Path
-from integrations.workflows.local_frontend.focus import _local_crossings
+from msplatform.workflows.local_frontend.focus import _local_crossings
 from msplatform.analysis import plane_crossings
 assert Path(plane_crossings.__file__).is_relative_to(Path.cwd())
 rows = _local_crossings(

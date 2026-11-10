@@ -230,7 +230,7 @@ def render_bare_frontend_body(upstream: dict, registration: dict, accelerator_bo
     """Render previously validated canonical guide/OA solids without PA bounds.
 
     A containing compiler owns validation, PA extent and boundary conditions.
-    This permits a real upstream conditioner in the same field solve without
+    This permits a real upstream guide in the same field solve without
     extracting GEM text or duplicating the existing provider geometry.
     """
     rotation, translation = registration["rotation_upstream_to_downstream"], registration["translation_mm"]

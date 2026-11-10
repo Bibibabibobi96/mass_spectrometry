@@ -6,7 +6,6 @@
     "local_frontend",
     "prepared_joint",
     "accelerator_interface",
-    "cooled_frontend",
     "oa_mr",
     "multipole_ip",
     "single_reflection_flight",
@@ -22,16 +21,14 @@
           "id": "common_simion_aperture_topology_support",
           "source_repo_path": "common/simion/aperture_topology_support.ps1",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
           "id": "common_simion_aperture_topology_verifier",
           "source_repo_path": "common/simion/verify_aperture_topology.lua",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
@@ -40,7 +37,6 @@
           "consumers": [
             "local_frontend",
             "prepared_joint",
-            "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -55,7 +51,6 @@
             "prepared_joint",
             "accelerator_interface",
             "multipole_ip",
-            "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -70,7 +65,6 @@
             "prepared_joint",
             "accelerator_interface",
             "multipole_ip",
-            "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -86,7 +80,6 @@
             "paired_accelerator_static_field",
             "paired_accelerator_pulse",
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight"
           ]
         },
@@ -98,7 +91,6 @@
             "prepared_joint",
             "accelerator_interface",
             "multipole_ip",
-            "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -113,7 +105,6 @@
             "prepared_joint",
             "accelerator_interface",
             "multipole_ip",
-            "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -133,8 +124,7 @@
           "id": "local_frontend_common_simion_compose_standalone_pa_lua",
           "source_repo_path": "common/simion/compose_standalone_pa.lua",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
@@ -142,7 +132,6 @@
           "source_repo_path": "common/simion/short_pa_path_support.ps1",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "oa_mr",
             "prepared_joint",
             "single_reflection_flight",
@@ -178,7 +167,6 @@
           "source_repo_path": "common/analysis",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "oa_mr",
@@ -192,7 +180,6 @@
           "source_repo_path": "common/contracts",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "oa_mr",
@@ -206,7 +193,6 @@
           "source_repo_path": "common/paths",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "oa_mr",
@@ -220,7 +206,6 @@
           "source_repo_path": "common/simion",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "oa_mr",
@@ -243,7 +228,6 @@
         {
           "source_repo_path": "common/host_resource_scheduler.py",
           "consumers": [
-            "cooled_frontend",
             "local_frontend",
             "paired_accelerator_pulse",
             "paired_accelerator_static_field",
@@ -260,24 +244,21 @@
           "id": "instrument_assembly_runtime_initialize_fast_adjust_pa_basis_lua",
           "source_repo_path": "integrations/runtime/initialize_fast_adjust_pa_basis.lua",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
           "id": "instrument_assembly_runtime_local_frontend_field_support_ps1",
           "source_repo_path": "integrations/runtime/local_frontend_field_support.ps1",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
           "id": "instrument_assembly_runtime_verify_local_frontend_fields_lua",
           "source_repo_path": "integrations/runtime/verify_local_frontend_fields.lua",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
@@ -285,7 +266,6 @@
           "source_repo_path": "integrations/runtime/frontend_flight_support.ps1",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight",
             "paired_accelerator_pulse"
           ]
@@ -297,7 +277,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "paired_accelerator_static_field",
@@ -311,7 +290,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip"
           ]
@@ -328,20 +306,6 @@
           "source_repo_path": "integrations/workflows/accelerator_interface/execute.ps1",
           "consumers": [
             "accelerator_interface"
-          ]
-        },
-        {
-          "id": "instrument_assembly_workflows_cooled_frontend_verify_cooled_fields_lua",
-          "source_repo_path": "integrations/workflows/cooled_frontend/verify_cooled_fields.lua",
-          "consumers": [
-            "cooled_frontend"
-          ]
-        },
-        {
-          "id": "instrument_assembly_workflows_cooled_frontend_execute_ps1",
-          "source_repo_path": "integrations/workflows/cooled_frontend/execute.ps1",
-          "consumers": [
-            "cooled_frontend"
           ]
         },
         {
@@ -363,15 +327,7 @@
           "source_repo_path": "integrations/runtime/engineering_budget.ps1",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "cooled_frontend_reference_support_ps1",
-          "source_repo_path": "integrations/workflows/cooled_frontend/reference_support.ps1",
-          "consumers": [
-            "cooled_frontend"
           ]
         },
         {
@@ -400,15 +356,12 @@
         {
           "source_repo_path": "integrations/analysis",
           "consumers": [
-            "cooled_frontend",
-            "local_frontend",
             "paired_accelerator_pulse"
           ]
         },
         {
           "source_repo_path": "integrations/runtime",
           "consumers": [
-            "cooled_frontend",
             "local_frontend",
             "paired_accelerator_pulse",
             "paired_accelerator_static_field",
@@ -424,15 +377,8 @@
           ]
         },
         {
-          "source_repo_path": "integrations/workflows/cooled_frontend",
-          "consumers": [
-            "cooled_frontend"
-          ]
-        },
-        {
           "source_repo_path": "integrations/workflows/local_frontend",
           "consumers": [
-            "cooled_frontend",
             "local_frontend"
           ]
         },
@@ -460,7 +406,6 @@
           "source_repo_path": "projects/orthogonal_accelerator/config/component_contract.json",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "oa_mr"
           ]
         }
@@ -470,7 +415,6 @@
           "source_repo_path": "projects/orthogonal_accelerator/analysis",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "oa_mr",
             "paired_accelerator_static_field",
@@ -497,7 +441,6 @@
         {
           "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis",
           "consumers": [
-            "cooled_frontend",
             "local_frontend",
             "paired_accelerator_static_field",
             "single_reflection_flight"
@@ -515,7 +458,6 @@
           "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "oa_mr",
@@ -642,7 +584,6 @@
           "source_repo_path": "projects/rf_multipole_ion_optics/analysis",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "prepared_joint"
           ]
@@ -651,7 +592,6 @@
           "source_repo_path": "projects/rf_multipole_ion_optics/core",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "oa_mr",
@@ -664,7 +604,6 @@
           "source_repo_path": "projects/rf_multipole_ion_optics/runtime",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "paired_accelerator_static_field",
@@ -675,7 +614,6 @@
           "source_repo_path": "projects/rf_multipole_ion_optics/simion",
           "consumers": [
             "accelerator_interface",
-            "cooled_frontend",
             "local_frontend",
             "multipole_ip",
             "paired_accelerator_static_field",
@@ -706,7 +644,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr"
           ]
         },
@@ -810,7 +747,6 @@
           "source_repo_path": "src/msplatform/execution/resources/payload_file_support.ps1",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "oa_mr",
             "prepared_joint",
             "single_reflection_flight",
@@ -863,7 +799,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -878,7 +813,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -893,7 +827,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -908,7 +841,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -942,8 +874,7 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/iob_core.lua",
           "consumers": [
             "single_reflection_flight",
-            "local_frontend",
-            "cooled_frontend"
+            "local_frontend"
           ]
         },
         {
@@ -974,7 +905,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -989,7 +919,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -1004,7 +933,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -1016,7 +944,6 @@
           "id": "msplatform_simion_build_dirichlet_patch_operating_pa_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua",
           "consumers": [
-            "cooled_frontend",
             "single_reflection_flight",
             "paired_accelerator_static_field"
           ]
@@ -1025,7 +952,6 @@
           "id": "msplatform_simion_export_detached_standalone_pa_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua",
           "consumers": [
-            "cooled_frontend",
             "single_reflection_flight",
             "paired_accelerator_static_field"
           ]
@@ -1035,7 +961,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight"
           ]
         },
@@ -1060,7 +985,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -1073,7 +997,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/rf_drive.lua",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight"
           ]
         },
@@ -1082,7 +1005,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight",
             "prepared_joint",
             "accelerator_interface",
@@ -1095,7 +1017,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight",
             "paired_accelerator_pulse"
           ]
@@ -1105,7 +1026,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/single_flight_frontend_hook.lua",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "single_reflection_flight"
           ]
         },
@@ -1116,7 +1036,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",
@@ -1130,7 +1049,6 @@
           "consumers": [
             "local_frontend",
             "prepared_joint",
-            "cooled_frontend",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -1149,7 +1067,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
           "consumers": [
             "local_frontend",
-            "cooled_frontend",
             "paired_accelerator_pulse"
           ]
         },
@@ -1203,29 +1120,7 @@
           "id": "msplatform_simion_build_tracking_iob_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/build_tracking_iob.lua",
           "consumers": [
-            "local_frontend",
-            "cooled_frontend"
-          ]
-        },
-        {
-          "id": "msplatform_simion_cooled_frontend_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/cooled_frontend.lua",
-          "consumers": [
-            "cooled_frontend"
-          ]
-        },
-        {
-          "id": "msplatform_simion_collision_hs1_gas_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
-          "consumers": [
-            "cooled_frontend"
-          ]
-        },
-        {
-          "id": "msplatform_simion_sample_cooled_field_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/sample_cooled_field.lua",
-          "consumers": [
-            "cooled_frontend"
+            "local_frontend"
           ]
         }
       ],
@@ -1236,7 +1131,6 @@
             "local_frontend",
             "prepared_joint",
             "accelerator_interface",
-            "cooled_frontend",
             "oa_mr",
             "multipole_ip",
             "single_reflection_flight",

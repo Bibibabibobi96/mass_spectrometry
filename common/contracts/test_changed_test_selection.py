@@ -1266,10 +1266,10 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
         # Missing ordinary test paths are classified without deleting real files.
         cases = [consumers, consumers + [ip + "tests/test_removed.py"],
                  consumers + [ip + "tests/nested/test_removed.py"]]
-        shared = ("analysis/cooled_buncher.py", "analysis/unknown_provider.py",
+        shared = ("analysis/retained_provider.py", "analysis/unknown_provider.py",
                   "tests/test_support/unknown_helper.py", "tests/test_support/test_helper.py",
                   "tests/nested/support/test_helper.py", "tests/__init__.py",
-                  "tests/test_cooled_buncher.py", "tests/test_component_exit.py",
+                  "tests/test_component_exit.py",
                   "tests/test_functional.py")
         cases.extend(consumers + [ip + path] for path in shared)
         selected = self.selections(REPO_ROOT, [

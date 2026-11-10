@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from msplatform.backends.simion.ip_geometry import render_gem
+from msplatform.backends.simion.ip_geometry import render_gem, render_projection_electrodes
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -65,6 +65,10 @@ class NativeGeometryTests(unittest.TestCase):
         self.assertEqual(sum(len(self.by_id[k]["solids"]) for k in (1, 2)), 8)
         self.assertEqual(len(self.by_id[9]["solids"]), 4 * self.numerics["native_aux_segments"])
         self.assertEqual(len(self.by_id[10]["solids"]), 2 * self.numerics["native_aux_segments"])
+
+    def test_shared_renderer_preserves_existing_ip_body(self) -> None:
+        fragment = render_projection_electrodes(self.p)
+        self.assertIn(fragment, render_gem(self.p))
 
     def test_baseline_pa_domain_and_grid(self) -> None:
         self.assertEqual(self.p["origin_mm"], [-2, -4, -4])

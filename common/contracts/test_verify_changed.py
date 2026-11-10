@@ -387,84 +387,43 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                                      for row in request["stages"]))
 
-    def test_cooled_gas_dependencies_keep_contract_and_existing_consumers(self):
-        paths = ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
-                 "src/msplatform/backends/simion/gas_runtime.py",
-                 "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
-                 "src/msplatform/backends/simion/resources/cooled_frontend.lua")
-        for index, path in enumerate(paths):
-            with self.subTest(path=path):
-                request, _ = self.plan("-ChangedPath", path)
-                modules = [value for row in request["stages"]
-                           if row["name"].startswith("common_contracts")
-                           for value in row["command"]["arguments"][2:]]
-                self.assertEqual(modules.count("common/contracts/test_cooled_gas_regions.py"), 1)
-                if index < 3:
-                    self.assertTrue({"common/contracts/test_ip_gas_regions.py",
-                                     "common/contracts/test_ip_preparation.py"} <= set(modules))
-                integration = [value for row in request["stages"]
-                               if row["name"].startswith("instrument_assembly_integration")
-                               for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
-                self.assertTrue({"integrations.tests.test_cooled_frontend",
-                                 "integrations.tests.test_cooled_frontend_reference"} <= set(integration))
-                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
-                                     for row in request["stages"]))
 
-    def test_cooled_preparation_selects_its_real_consumers(self):
-        request,_=self.plan("-ChangedPath","src/msplatform/workflows/cooled_frontend/prepare.py")
-        modules=[value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
-                 for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])]
-        self.assertEqual(set(modules),{"integrations.tests."+name for name in (
-            "test_cooled_frontend","test_cooled_frontend_reference","test_cooled_field_member_reuse",
-            "test_cooled_frontend_execute","test_cooled_static_probe_reuse","test_cooled_frontend_mesh_check",
-            "test_saved_workbench_replay_policy","test_dependencies")})
-        self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
 
 
     def test_recorded_cooling_helper_selects_the_actual_analysis_consumers(self):
         request,_=self.plan("-ChangedPath","src/msplatform/analysis/cooling_diagnostics.py")
         modules={value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
                  for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])}
-        self.assertEqual(modules,{"integrations.tests.test_cooled_frontend_analysis","integrations.tests.test_cooled_frontend_execute"})
+        self.assertEqual(modules, {"integrations.tests.test_dependencies"})
+        common = [value for row in request["stages"] if row["name"].startswith("common_contracts")
+                  for value in row["command"].get("arguments", [])]
+        self.assertIn("common/analysis/test_population_moments.py", common)
         self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
-    def test_cooled_compilers_select_their_actual_consumers(self):
-        expected={"integrations.tests."+name for name in (
-            "test_cooled_frontend", "test_cooled_frontend_reference", "test_cooled_frontend_mesh_check",
-            "test_cooled_geometry_overlay", "test_cooled_frontend_execute")}
-        for path in ("src/msplatform/backends/simion/cooled_frontend_geometry.py",
-                     "src/msplatform/workflows/cooled_frontend/program.py"):
-            with self.subTest(path=path):
-                request,_=self.plan("-ChangedPath",path)
-                modules=[value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
-                         for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])]
-                common=[value for row in request["stages"] if row["name"].startswith("common_contracts")
-                        for value in row["command"].get("arguments",[])]
-                self.assertEqual(set(modules),expected)
-                self.assertIn("common/contracts/test_cooled_gas_regions.py",common)
-                self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
 
-    def test_cooled_pulse_selects_its_calibration_consumers(self):
-        request, _ = self.plan("-ChangedPath", "src/msplatform/workflows/cooled_frontend/pulse.py")
-        modules = [value for row in request["stages"]
-                   if row["name"].startswith("instrument_assembly_integration")
-                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
-        self.assertEqual(set(modules), {"integrations.tests.test_cooled_frontend_pulse",
-                                       "integrations.tests.test_cooled_frontend_reference"})
-        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
+    def test_recorded_frontend_analysis_selects_actual_consumers(self):
+        expected = {"integrations.tests." + name for name in (
+            "test_local_frontend_analysis", "test_local_frontend_focus",
+            "test_local_frontend_replay", "test_local_frontend_execute", "test_dependencies")}
+        for relative in (
+            "local_frontend/analyze.py", "local_frontend/focus.py", "local_frontend/figures.py",
+            "single_reflection_flight/checkpoint_diagnostics.py"):
+            with self.subTest(relative=relative):
+                request, _ = self.plan("-ChangedPath", "src/msplatform/workflows/" + relative)
+                modules = {value for row in request["stages"]
+                           if row["name"].startswith("instrument_assembly_integration")
+                           for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
+                self.assertEqual(modules, expected)
+                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                                     for row in request["stages"]))
 
-    def test_cooled_field_analysis_and_sampler_select_their_real_consumers(self):
-        expected={"integrations.tests."+name for name in (
-            "test_cooled_frontend_field_design","test_cooled_static_probe_reuse",
-            "test_cooled_frontend_reference","test_cooled_frontend","test_cooled_field_member_reuse",
-            "test_cooled_frontend_execute","test_cooled_frontend_mesh_check")}
-        for path in ("src/msplatform/workflows/cooled_frontend/field_analysis.py",
-                     "src/msplatform/backends/simion/resources/sample_cooled_field.lua"):
-            with self.subTest(path=path):
-                request,_=self.plan("-ChangedPath",path)
-                modules=[value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
-                         for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])]
-                self.assertEqual(set(modules),expected)
-                self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
+        for retired in ("local_frontend/analyze.py", "local_frontend/focus.py"):
+            with self.subTest(retired=retired):
+                relative = "integrations/workflows/" + retired
+                self.assertFalse((REPO_ROOT / relative).exists())
+                self.assertTrue(any(name.startswith("instrument_assembly_integration")
+                                    for name in self.routed_stages(relative)))
+
+
 
     def test_ip_section_geometry_selects_actual_project_and_overlay_consumers(self):
         request, _ = self.plan("-ChangedPath",
@@ -473,21 +432,9 @@ ConvertTo-Json -Compress -InputObject $paths
         modules = [value for row in request["stages"]
                    if row["name"].startswith("instrument_assembly_integration")
                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
-        self.assertEqual(set(modules), {"integrations.tests.test_cooled_geometry_overlay",
-                                       "integrations.tests.test_local_frontend_analysis"})
+        self.assertEqual(set(modules), {"integrations.tests.test_local_frontend_analysis"})
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
-    def test_cooled_field_design_selects_its_actual_consumers(self):
-        request, _ = self.plan("-ChangedPath",
-            "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py")
-        modules = [value for row in request["stages"]
-                   if row["name"].startswith("instrument_assembly_integration")
-                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
-        self.assertEqual(set(modules), {"integrations.tests.test_cooled_frontend_field_design",
-                         "integrations.tests.test_cooled_static_probe_reuse",
-                         "integrations.tests.test_cooled_frontend_reference"})
-        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
-                             for row in request["stages"]))
 
     def test_ip_gas_dependencies_select_consumers_without_native_stages(self):
         for path in ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
@@ -779,10 +726,10 @@ exit 0
                 stages = self.routed_stages(prefix + relative)
                 self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
                 self.assertNotIn("instrument_assembly_integration", stages)
-        for relative in ("tests/test_cooled_buncher.py", "tests/test_component_exit.py",
+        for relative in ("tests/test_component_exit.py",
                          "tests/test_functional.py", "tests/__init__.py",
                          "tests/test_support/unknown_helper.py", "tests/test_support/test_helper.py",
-                         "tests/nested/support/test_helper.py", "analysis/cooled_buncher.py",
+                         "tests/nested/support/test_helper.py", "analysis/retained_provider.py",
                          "analysis/unknown_provider.py", "tests/run_future.ps1"):
             with self.subTest(relative=relative):
                 stages = self.routed_stages(prefix + relative)
@@ -1005,7 +952,7 @@ exit 0
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
         expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                     for path in (REPO_ROOT / 'integrations/tests').glob('test_*.py')
-                    if path.stem.startswith(('test_single_reflection_', 'test_cooled')) or
+                    if path.stem.startswith('test_single_reflection_') or
                     path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy')}
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                 for path in (REPO_ROOT / 'integrations/tests').rglob('test_*.py')}

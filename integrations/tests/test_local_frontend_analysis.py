@@ -4,9 +4,13 @@ import copy
 import csv
 import json
 import math
+import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
+from unittest.mock import patch
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -18,14 +22,14 @@ from integrations.tests.frontend_fixtures import (
     canonical_two_zone_frontend_contract,
     compile_direct_mr_frontend,
 )
-from integrations.workflows.local_frontend.analyze import (
+from msplatform.workflows.local_frontend.figures import build_local_shared_time_figure
+from msplatform.workflows.local_frontend.analyze import (
     _aperture_passages,
     _source_rows,
     _snapshot_census,
     _select_pulse,
     _validate_lifetimes,
     analyze_local_frontend,
-    build_local_shared_time_figure,
     parse_local_logs,
     select_shared_time_display_counts,
 )
@@ -45,6 +49,46 @@ def geometry_frontend(*, three_zone: bool = False) -> dict:
 
 
 class SharedTimeDisplaySelectionTests(unittest.TestCase):
+    def test_recorded_plot_owner_retains_original_headless_backend_selection(self):
+        # The original mixed-plot owner explicitly selected Agg on import.
+        # A fresh process makes this observable without changing this test's backend.
+        code = ("import sys; sys.path[:0]=" + repr([
+            str(Path(__file__).resolve().parents[2]/"src"), str(Path(pd.__file__).resolve().parents[1])]) +
+            "; import matplotlib; matplotlib.use('svg'); "
+            "from msplatform.workflows.local_frontend import analyze; "
+            "assert matplotlib.get_backend().lower() == 'agg', matplotlib.get_backend(); "
+            "from matplotlib import pyplot as plt; f=plt.figure(); f.savefig(sys.argv[1]); plt.close(f); "
+            "matplotlib.use('svg'); import importlib.util; "
+            "spec=importlib.util.spec_from_file_location('retained_campaign', " +
+            repr(str(Path(__file__).resolve().parents[2]/"integrations/analysis/plot_single_flight_spatial_six_panel.py")) +
+            "); campaign=importlib.util.module_from_spec(spec); spec.loader.exec_module(campaign); "
+            "assert matplotlib.get_backend().lower() == 'agg', matplotlib.get_backend(); "
+            "f=plt.figure(); f.savefig(sys.argv[1]+'.campaign.png'); plt.close(f); "
+            "print('RECORDED_HEADLESS_BACKEND=PASS')")
+        environment = dict(os.environ)
+        environment.pop("MPLBACKEND", None)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/"headless.png"
+            result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code, str(output)],
+                cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+                encoding="utf-8", timeout=30, env=environment)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("RECORDED_HEADLESS_BACKEND=PASS", result.stdout)
+            self.assertTrue(output.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+            self.assertTrue(Path(str(output)+".campaign.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_withdrawn_conditioner_figure_fails_before_creating_artists(self):
+        frontend = geometry_frontend()
+        frontend["conditioner_contract"] = {}
+        before = copy.deepcopy(frontend)
+        with patch("msplatform.workflows.local_frontend.figures.plt.subplots") as subplots:
+            with self.assertRaisesRegex(ValueError, "conditioner/cooled analysis has been withdrawn"):
+                build_local_shared_time_figure(pd.DataFrame(), [self.counts(0.)],
+                    frame_id="mrtof_global_cartesian", frontend_contract=frontend,
+                    terminal_rows=pd.DataFrame())
+        subplots.assert_not_called()
+        self.assertEqual(frontend, before)
+
     @staticmethod
     def counts(time, active=1, unsupported=0, not_born=0):
         return dict(instrument_time_us=float(time), mother_count=10, active=active,
@@ -277,8 +321,24 @@ def write_log(path: Path, events: list[dict]) -> None:
 
 
 class LocalFrontendAnalysisTests(unittest.TestCase):
+    def test_withdrawn_conditioner_analysis_fails_before_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log, _ = fixture(root)
+            contract = root / "inputs/frontend_contract.json"
+            frontend = json.loads(contract.read_text())
+            frontend["conditioner_contract"] = {}
+            contract.write_text(json.dumps(frontend), encoding="utf-8")
+            before = {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+            with patch("msplatform.workflows.local_frontend.figures.plt.subplots") as subplots:
+                with self.assertRaisesRegex(ValueError, "conditioner/cooled analysis has been withdrawn"):
+                    analyze_local_frontend(root, [log], phase="discovery", shared_times_us=_TIMES)
+            subplots.assert_not_called()
+            self.assertFalse((root / "results").exists())
+            self.assertEqual(before, {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()})
+
     def test_extracted_occupancy_preserves_legacy_checkpoint_moments_exactly(self):
-        from integrations.analysis.plot_single_flight_spatial_six_panel import _checkpoint_distribution_summary
+        from msplatform.workflows.single_reflection_flight.checkpoint_diagnostics import _checkpoint_distribution_summary
         from msplatform.analysis.pulse_selection import SELECTION_ORDER, pulse_candidate_concentration
 
         bounds = dict(x_min=99e6,x_max=101e6,y_min=-101e6,y_max=-99e6,z_min=20.,z_max=40.)

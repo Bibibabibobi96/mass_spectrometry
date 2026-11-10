@@ -31,7 +31,7 @@ class LocalFrontendOwnerRecoveryTests(unittest.TestCase):
             policy_path.write_text(json.dumps(policy),encoding='utf-8')
             (facade/'config').mkdir();shutil.copyfile(ROOT/'config/project_registry.json',facade/'config/project_registry.json')
             clis=[]
-            for consumer in ('local_frontend','cooled_frontend'):
+            for consumer in ('local_frontend',):
                 cli=facade/f'integrations/workflows/{consumer}/execute.ps1';cli.parent.mkdir(parents=True)
                 shutil.copyfile(ROOT/f'integrations/workflows/{consumer}/execute.ps1',cli);clis.append(cli)
             helper=owner_fixture.RunArtifactWorkflowFixture()
@@ -74,11 +74,11 @@ $ownerContext=@{run_directory=$canonical;execution_run_directory=$alias}
 $budget=@{frozen_budget=(Join-Path $alias 'inputs/budget.json')};$ExecutionBudgetPath='UNUSED'
 $budgetPaths=@();$stage='analysis';$scope='field';$populationFlightAttempted=$false
 function Write-RunJson {param($Path,$Value,$Depth);$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
-foreach($owner in @('local_frontend','cooled_frontend')){
+foreach($owner in @('local_frontend')){
  '{}'|Set-Content -LiteralPath $package.run_config
  '{"inputs":{}}'|Set-Content -LiteralPath $package.run_config
  $source=Join-Path $Repo ('integrations/workflows/'+$owner+'/execute.ps1')
- $name=if($owner-eq'local_frontend'){'Register-LocalInputs'}else{'Register-CooledInputs'}
+ $name='Register-LocalInputs'
  $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
  $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  . ([scriptblock]::Create($function.Extent.Text));& $name

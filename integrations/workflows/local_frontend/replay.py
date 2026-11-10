@@ -10,10 +10,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from msplatform.contracts.particle_state import binary64_serialization_close as _close
 from msplatform.analysis.particle_events import group_particle_events, iter_particle_event_fields
 from msplatform.execution.retention import file_record
-from integrations.workflows.local_frontend.analyze import (
-    _FLOATS, _close, _csv, _source_rows, _validate_lifetimes, parse_local_logs,
+from msplatform.workflows.local_frontend.analyze import (
+    _FLOATS, _csv, _source_rows, _validate_lifetimes, parse_local_logs,
 )
 
 

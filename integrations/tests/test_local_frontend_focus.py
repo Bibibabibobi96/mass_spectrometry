@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from integrations.workflows.local_frontend.focus import (
+from msplatform.workflows.local_frontend.focus import (
     export_local_focus,
     prepare_local_focus,
 )
@@ -79,7 +79,7 @@ class LocalFocusTests(unittest.TestCase):
 
     def test_public_beam_results_keep_explicit_equal_mother_weights(self):
         from msplatform.analysis import beam_focus_diagnostics as beam
-        from integrations.workflows.local_frontend import focus
+        from msplatform.workflows.local_frontend import focus
         self.assertIs(focus.prepare_focus_diagnostics,beam.prepare_focus_diagnostics)
         prepared=self.prepare()
         for row in prepared["focus"]["plane_statistics"]:
@@ -138,7 +138,7 @@ class LocalFocusTests(unittest.TestCase):
             output = Path(directory)
             original = output / "summary.json"
             original.write_text('{"phase":"extraction"}', encoding="utf-8")
-            from integrations.workflows.local_frontend import focus as consumer
+            from msplatform.workflows.local_frontend import focus as consumer
             from msplatform.io.figure_export import export_figures
             with patch.object(consumer,"export_figures",wraps=export_figures) as exported:
                 summary = export_local_focus(prepared, output)

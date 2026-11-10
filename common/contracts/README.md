@@ -212,7 +212,7 @@ retention_preserve_paths、manifest_extra_fields、writer_completion与原except
 `writer_completion.operations`只列实际启动的写操作，每项有唯一operation_id、真实
 `observation {exit_confirmed, returncode}`和resource_release_id；resource_releases以唯一release_id
 绑定实际公共资源owner的完整completion_receipt。一个pool release可以供多个操作引用。
-`Add-RunArtifactResourceRelease`由paired static/pulse与local/cooled实际消费；同一继承父token的多阶段只共享一份真实null收据，
+`Add-RunArtifactResourceRelease`由paired static/pulse与local实际消费；同一继承父token的多阶段只共享一份真实null收据，
 保留每次operation；冲突收据、非继承重复释放仍拒绝，不放宽最终完成验证。Python bridge
 事实与直接PS owner字段按其真实来源保留，不能为直接PS补造bridge字段。unknown、Python bridge继承、重复身份、
 冲突或未闭合引用均拒绝封存；单独exit0、任意writers_stopped布尔值或全pool释放不替代局部写进程证明。
@@ -1019,9 +1019,9 @@ paired static/pulse 的原 PowerShell 入口消费现有 Initialize/Complete own
 沿原输入冻结和持久 Result 恢复，不改父结果；未知完成保留保护。公共故障矩阵仍由本 owner 维护，
 paired 只验证实际参数、原始错误／载荷传递及入口恢复。
 
-### Local/cooled 消费者的公共收尾
+### Local 消费者的公共收尾
 
-local_frontend与cooled_frontend原入口接入同一PowerShell owner及`-ResumeFinalization -ResultPath <原Result>`。
+local_frontend入口接入同一PowerShell owner及`-ResumeFinalization -ResultPath <原Result>`。
 消费者运输真实进程／释放事实、原异常与原始结果，删除私有retention／manifest／seal收尾。
 普通未请求的保存工作台回放明确`not_requested`；这不改写科学Fly完成事实或其失败状态。
 消费者验证参数和错误传播，完整收尾故障矩阵继续只在公共owner维护。
