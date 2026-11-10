@@ -487,3 +487,81 @@ print('DUAL_CONE_EXISTING_MODEL_CONSUMER=PASS SOURCE=False FIELD=False')
             result = subprocess.run([str(lua), str(script)], cwd=root, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("SOURCE=False FIELD=False", result.stdout)
+
+
+class NamedTargetPlanningTests(unittest.TestCase):
+    def test_geometry_target_has_no_context_source_or_model_dependency_and_binds_request(self):
+        from unittest.mock import patch
+        from msplatform.workflows.dual_cone_stages import plan_to, run_to
+        values = request()
+        numerics = {key: values["numerics"][key] for key in ("schema_version", "role", "pa", "workbench")}
+        selected = dict(geometry=dict(resolved=values["resolved"], numerics=numerics))
+        with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+            plan = plan_to(target="geometry", request=selected)
+            self.assertEqual(plan["stages"], ["geometry"])
+            self.assertEqual(plan["request_authorities"], [])
+            self.assertEqual(plan["available"], {})
+            with self.assertRaisesRegex(ValueError, "execution context"):
+                run_to(plan)
+            changed = copy.deepcopy(plan)
+            changed["request"]["geometry"]["resolved"]["role"] = "CHANGED"
+            with self.assertRaisesRegex(ValueError, "modified"):
+                run_to(changed)
+            for target in ("model", "fields", "trajectory"):
+                with self.subTest(target=target), self.assertRaisesRegex(ValueError, "model request"):
+                    plan_to(target=target, request=selected)
+            for invalid in ([], "geometry"):
+                with self.assertRaises(ValueError):
+                    plan_to(target="geometry", request=invalid)
+            owner.assert_not_called()
+
+    def test_explicit_missing_or_conflicting_product_is_never_repaired(self):
+        from unittest.mock import patch
+        from msplatform.workflows.dual_cone_stages import plan_to
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fields, _identity = fields_fixture(root / "fields")
+            with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+                plan = plan_to(target="fields", available={"fields": fields})
+                self.assertEqual(plan["stages"], [])
+                values = request()
+                changed = copy.deepcopy(values["numerics"])
+                changed["pa"]["grid_points_xyz"]["x"] += 2
+                with self.assertRaisesRegex(ValueError, "conflicting geometry"):
+                    plan_to(target="fields", request={"geometry": dict(resolved=values["resolved"], numerics=changed)},
+                            available={"fields": fields})
+                altered = copy.deepcopy(fields)
+                altered["manifest"]["path"] = str(root / "missing.json")
+                with self.assertRaises((ValueError, AssertionError)):
+                    plan_to(target="fields", available={"fields": altered})
+                owner.assert_not_called()
+
+    def test_complete_trajectory_selection_requires_actual_terminal_data_not_upstream_files(self):
+        from msplatform.workflows.dual_cone_stages import plan_to, run_to
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = {name: record(root, name + ".txt")
+                    for name in ("final_state", "metrics", "preparation_receipt", "source_csv")}
+            metadata = dict(model="dual_cone_sds_gas_assisted_transport")
+            reference = publish(root, "trajectory_result", data, metadata)
+            plan = plan_to(target="trajectory", available={"trajectory": reference})
+            self.assertEqual(plan["stages"], [])
+            self.assertEqual(run_to(plan).reference, reference)
+            data.pop("final_state")
+            reference = publish(root, "trajectory_result", data, metadata)
+            with self.assertRaises((KeyError, ValueError)):
+                plan_to(target="trajectory", available={"trajectory": reference})
+
+    def test_saved_fields_do_not_ignore_explicit_geometry_world_placement(self):
+        from msplatform.workflows.dual_cone_stages import plan_to
+        from common.contracts.test_dual_cone_placement import pose
+        values = request()
+        with tempfile.TemporaryDirectory() as directory:
+            fields, _identity = fields_fixture(Path(directory) / "fields")
+            matching = stages.device_placement(values["resolved"], values["numerics"]).to_contract()
+            same = plan_to(target="fields", available={"fields": fields}, request={"geometry": dict(
+                resolved=values["resolved"], numerics=values["numerics"], placement=matching)})
+            self.assertEqual(same["stages"], [])
+            with self.assertRaisesRegex(ValueError, "placement.*model request"):
+                plan_to(target="fields", available={"fields": fields}, request={"geometry": dict(
+                    resolved=values["resolved"], numerics=values["numerics"], placement=pose(values))})

@@ -514,3 +514,32 @@ Callback completeness: the installed Program now explicitly enables official SIM
 ### Explicit PA grid authority
 
 Current numerical inputs explicitly select pa.grid_points_xyz and cell_mm_xyz. Actual spans are (N-1)*cell; numerical array embedding is independent of world placement. Symmetric margins and exact span/cell tiling are not required. Default103/103/245 preserves default GEM bytes. Full metal containment is checked; source/observation coverage belongs to consumption stages. Counts/cell/embedding bind geometry/model/basis identities, while source/cadence remain independent. Missing counts reject without supplementation. Historical inputs/results remain unchanged; no native qualification is inferred.
+
+### Explicit target composition
+
+`msplatform.workflows.dual_cone_stages.plan_to(target=..., request=..., available=...)`
+and `run_to(plan, context=...)` compose the existing geometry/model/fields/trajectory
+stages. Request groups use those same stage arguments without context or predecessor
+references. `available` explicitly selects published products; absent prerequisites
+are built only from supplied request groups, while missing, changed or conflicting
+references fail rather than selecting another run or silently recomputing fields.
+
+Geometry/model/fields do not require source, gas or SDS. A trajectory from saved
+fields calls only the existing tracking-model build/reopen and Fly; changed drive
+uses the existing model binding and explicit basis-reuse audit, whose actual tool
+compatibility is checked by the backend at execution. A plan is not native proof.
+Planning acquires no lease or tool; execution revalidates products and the selected
+small request-file authorities before invoking the unchanged stage owners.
+
+An explicitly supplied complete trajectory can be selected with no context or
+solver only when no competing new scientific request is supplied. This does not
+claim a general trajectory-compatibility comparator. Historical results are unchanged.
+The new software tests use inert outputs through the actual managed owners; the
+independent native multi-process chain and scientific qualification remain OPEN.
+
+The composed target/boundary modules passed 27 parents and 180 successful records
+in 95.039 seconds. The independently reviewed R3 private source also passed both
+ordinary wheel/sdist-rebuilt installation arms (96.094 seconds, 440 exact payloads,
+source-root denial and missing-module rejection). Main adds public type annotations
+with every delivered function body unchanged; that private package proof is not
+retagged as a combined successor installation or native result.

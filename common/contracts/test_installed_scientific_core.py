@@ -331,6 +331,15 @@ for module in (dual_managed_api,dual_managed_execution):
     assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
 for name in ('build_geometry','prepare_model','solve_fields','track_fields'):
     assert callable(getattr(dual_managed_api,name))
+# Named target planning uses the same installed stages, without owner or tools.
+assert callable(dual_managed_api.plan_to) and callable(dual_managed_api.run_to)
+dual_target_geometry=dual_managed_api.plan_to(target='geometry',request={
+    'geometry':dict(resolved=cone['resolved'],numerics=dual_stage_numbers)})
+assert dual_target_geometry['stages']==['geometry']
+assert dual_target_geometry['request_authorities']==[]
+try:dual_managed_api.run_to(dual_target_geometry)
+except ValueError as error:assert 'execution context' in str(error)
+else:raise AssertionError('native target accepted without execution context')
 # Ordinary installed source-only preparation: explicit uniform control and inert
 # external SDS files, never a vendor Fly or a claimed CFD/ion result.
 dual_sds=root/('inert-sds-'+sys.argv[2]);dual_sds.mkdir()

@@ -493,9 +493,9 @@ def require_fields_product(reference, *, expected_spatial_identity=None):
     return product, producer
 
 
-def plan_saved_field_fly(
+def plan_saved_fly_inputs(
+    model: Mapping,
     *,
-    fields_reference,
     gas_field_reference,
     source_spec: Mapping,
     numerics: Mapping,
@@ -504,14 +504,13 @@ def plan_saved_field_fly(
     placement=None,
     source_to_device=None,
 ) -> dict:
-    """Saved-field tracking graph has no materialize/build-geometry/Refine path."""
+    """Validate the same explicit Fly inputs before a future field publication."""
     from msplatform.ion_release.release import validate_release_spec
     from msplatform.results.gas_field import read_gas_field
     from .dual_cone_transport import SDS_FILES
 
-    fields, producer = require_fields_product(fields_reference)
+    model = require_model_projection(model)
     gas = read_gas_field(gas_field_reference)
-    model = json.loads(fields.data_path("compiled_model").read_text(encoding="utf-8-sig"))
     gas_geometry = json.loads(gas.data_path("geometry").read_text(encoding="utf-8-sig"))
     if gas_geometry != model["geometry"]["resolved"]:
         raise ValueError("gas producer geometry differs from selected saved fields")
@@ -545,8 +544,6 @@ def plan_saved_field_fly(
         **_graph(["build_tracking_model", "verify_tracking_model", "fly"]),
         **({"placement": placement} if placement is not None else {}),
         **({"source_to_device": registration.to_contract()} if source_to_device is not None else {}),
-        fields_reference=fields.reference,
-        family_producer_reference=producer.reference,
         gas_field_reference=gas.reference,
         source_count=source_spec["particle_count"],
         collision=collision,
@@ -556,3 +553,38 @@ def plan_saved_field_fly(
         source_status="explicit_preparation_required",
         protection_status="owner_acquisition_required",
     )
+
+
+def plan_saved_field_fly(
+    *,
+    fields_reference,
+    gas_field_reference,
+    source_spec: Mapping,
+    numerics: Mapping,
+    collision_science: Mapping,
+    collision_sds_records: Mapping,
+    placement=None,
+    source_to_device=None,
+) -> dict:
+    """Saved-field tracking graph has no materialize/build-geometry/Refine path."""
+    fields, producer = require_fields_product(fields_reference)
+    model = json.loads(fields.data_path("compiled_model").read_text(encoding="utf-8-sig"))
+    return dict(
+        **plan_saved_fly_inputs(model, gas_field_reference=gas_field_reference,
+            source_spec=source_spec, numerics=numerics, collision_science=collision_science,
+            collision_sds_records=collision_sds_records, placement=placement,
+            source_to_device=source_to_device),
+        fields_reference=fields.reference, family_producer_reference=producer.reference,
+    )
+
+
+def require_trajectory_product(reference: Mapping | OpenedArtifact) -> OpenedArtifact:
+    """Read only the actual published dual-cone terminal data, not old fields/code."""
+    product = open_artifact(reference.reference if isinstance(reference, OpenedArtifact) else reference,
+                            expected_kind="trajectory_result")
+    if (product.metadata.get("backend") != "simion"
+            or product.metadata.get("model") != "dual_cone_sds_gas_assisted_transport"):
+        raise ValueError("trajectory product does not belong to dual-cone SIMION transport")
+    for name in ("final_state", "metrics", "preparation_receipt", "source_csv"):
+        product.data_path(name)
+    return product

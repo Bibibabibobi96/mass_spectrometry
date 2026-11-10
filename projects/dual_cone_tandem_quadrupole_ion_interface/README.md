@@ -77,3 +77,8 @@ dual_cone_tandem_quadrupole_ion_interface/
 ## History索引
 
 [历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+
+Named target planning and explicit saved-product continuation use
+`msplatform.workflows.dual_cone_stages.plan_to` / `run_to`; request groups call the
+same four existing stages. See [PROJECT](docs/PROJECT.md#explicit-target-composition)
+for dependency, read-only selection, reuse and validation limits.

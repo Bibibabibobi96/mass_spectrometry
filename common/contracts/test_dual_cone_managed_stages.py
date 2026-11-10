@@ -21,9 +21,36 @@ class ManagedIndependentStagesTests(unittest.TestCase):
     def test_proper_placement_reuses_local_basis_and_preserves_source_frame_binding(self):
         self._exercise_independent_stages(placed=True)
 
-    def _exercise_independent_stages(self, *, placed=False):
+    def test_named_targets_call_existing_managed_stages_and_read_complete_trajectory_without_tools(self):
+        self._exercise_independent_stages(targeted=True)
+
+    def _exercise_independent_stages(self, *, placed=False, targeted=False):
         from common.contracts.test_execution_runtime import NormalOwnerTests
         from msplatform.workflows.dual_cone_stages import build_geometry, prepare_model, solve_fields, track_fields
+        if targeted:
+            from msplatform.workflows.dual_cone_stages import plan_to, run_to
+
+            def build_geometry(**arguments):
+                context = arguments.pop("context")
+                return run_to(plan_to(target="geometry", request={"geometry": arguments}), context=context)
+
+            def prepare_model(reference, **arguments):
+                context = arguments.pop("context")
+                return run_to(plan_to(target="model", request={"model": arguments},
+                    available={"geometry": reference}), context=context)
+
+            def solve_fields(reference, **arguments):
+                context = arguments.pop("context")
+                prior = arguments.pop("reuse_fields_reference", None)
+                available = {"model": reference}
+                if prior is not None:
+                    available["fields"] = prior
+                return run_to(plan_to(target="fields", request={"fields": arguments}, available=available), context=context)
+
+            def track_fields(reference, **arguments):
+                context = arguments.pop("context")
+                return run_to(plan_to(target="trajectory", request={"trajectory": arguments},
+                    available={"fields": reference}), context=context)
         from msplatform.execution.capacity_ledger import initialize_capacity_ledger
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
 
@@ -255,6 +282,50 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     source_to_device=source_registration,
                     context=context,
                 )
+            if targeted:
+                full_request = dict(
+                    geometry=dict(resolved=values["resolved"], numerics=numerics),
+                    model=dict(electric_field=changed_drive, clock=CLOCK, physics=RF_PHYSICS,
+                               clock_authority_reference=clockrows),
+                    fields=dict(numerics=numerics),
+                    trajectory=dict(gas_field_reference=gas_reference,
+                        source_spec_path=ROOT / "projects/dual_cone_tandem_quadrupole_ion_interface/config/cylindrical_ion_source.json",
+                        numerics_path=ROOT / "projects/dual_cone_tandem_quadrupole_ion_interface/config/simion_solver_numerics.json",
+                        interface_path=ROOT / "projects/dual_cone_tandem_quadrupole_ion_interface/config/gas_field_interface.json",
+                        collision_science=values["science"]["gas"], collision_sds_dir=sds))
+                full_plan = plan_to(target="trajectory", request=full_request)
+                self.assertEqual(full_plan["stages"], ["geometry", "model", "fields", "trajectory"])
+                mutable_source = root / "mutable-source.json"
+                mutable_source.write_bytes(Path(full_request["trajectory"]["source_spec_path"]).read_bytes())
+                import copy
+                mutable_request = copy.deepcopy(full_request)
+                mutable_request["trajectory"]["source_spec_path"] = mutable_source
+                selected_plan = plan_to(target="trajectory", request=mutable_request)
+                changed_spec = json.loads(mutable_source.read_text())
+                changed_spec["sampling"]["seed"] += 1
+                mutable_source.write_text(json.dumps(changed_spec))
+                with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as no_changed_owner:
+                    with self.assertRaisesRegex(ValueError, "authority changed"):
+                        run_to(selected_plan, context=context)
+                    no_changed_owner.assert_not_called()
+                rebound = plan_to(target="fields", request={"model": full_request["model"], "fields": full_request["fields"]},
+                                  available={"geometry": geometry, "fields": fields})
+                self.assertEqual(rebound["stages"], ["model", "fields"])
+                before = len(calls)
+                with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as no_owner:
+                    existing = plan_to(target="trajectory", available={"trajectory": trajectory})
+                    self.assertEqual(existing["stages"], [])
+                    self.assertEqual(run_to(existing).reference, trajectory.reference)
+                    with self.assertRaisesRegex(ValueError, "new scientific request"):
+                        plan_to(target="trajectory", request={"trajectory": {"source_spec_path": "changed"}},
+                                available={"trajectory": trajectory})
+                    import copy
+                    tampered = copy.deepcopy(existing)
+                    tampered["stages"] = ["trajectory"]
+                    with self.assertRaisesRegex(ValueError, "modified"):
+                        run_to(tampered)
+                    no_owner.assert_not_called()
+                self.assertEqual(len(calls), before)
             self.assertEqual(len(calls), 16)
             self.assertEqual(sum("refine_rf_field_family.lua" in " ".join(args) for args in calls), 1)
             self.assertEqual(trajectory.metadata["refine_calls"], 0)
@@ -309,6 +380,38 @@ class ManagedIndependentStagesTests(unittest.TestCase):
             self.assertEqual(load_capacity_protection_leases(artifacts)["audit"], [])
             for path, original in original_records.items():
                 self.assertEqual(file_record(path, "required_evidence"), original)
+
+            if targeted:
+                before = len(calls)
+                from msplatform.workflows import dual_cone_stages as target_workflow
+                actual_solve = target_workflow.solve_fields
+                previous_family_paths = original_family_paths
+
+                def capture_fresh_fields(*args, **kwargs):
+                    nonlocal original_family_paths
+                    published = actual_solve(*args, **kwargs)
+                    original_family_paths = {published.data_path(name) for name in (
+                        "family_raw", "family_surface", "family_carrier", "surface_witnesses",
+                        *["response_" + str(eid) for eid in (1, 2, 3, 11, 12, 21, 22)])}
+                    return published
+
+                try:
+                    with patch("msplatform.execution.run_session.run_observed_process", side_effect=observed), patch.object(
+                            target_workflow, "solve_fields", side_effect=capture_fresh_fields):
+                        fresh_target = run_to(full_plan, context=context)
+                finally:
+                    original_family_paths = previous_family_paths
+                self.assertEqual(len(calls) - before, 12)
+                self.assertEqual(fresh_target.metadata["execution_count"], 100)
+                self.assertEqual(fresh_target.metadata["mother_count"], 100)
+                self.assertEqual(load_capacity_protection_leases(artifacts)["audit"], [])
+                for path, original in original_records.items():
+                    self.assertEqual(file_record(path, "required_evidence"), original)
+                print("TARGET_COMPOSITION_INERT_PROOF=" + json.dumps(dict(
+                    native_qualification=False, geometry_calls=3, model_calls=3, fields_calls=3,
+                    drive_rebind_model_and_audit_calls=4, saved_fly_calls=3, changed_source_fly_calls=3,
+                    complete_trajectory_calls=0, fresh_full_target_calls=len(calls)-before,
+                    fresh_stages=full_plan["stages"], mother_count=100)))
 
     def _gas_source(self, context):
         import csv, hashlib
