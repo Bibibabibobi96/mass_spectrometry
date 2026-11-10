@@ -10,7 +10,7 @@ import unittest
 
 
 RUNNER = Path(__file__).resolve().parents[2] / "analysis/run_ip_prism_distance_study.ps1"
-LUA = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+LUA = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
 
 
 @unittest.skipUnless(Path(LUA).is_file(), "Plain Lua interpreter required; never launches SIMION")

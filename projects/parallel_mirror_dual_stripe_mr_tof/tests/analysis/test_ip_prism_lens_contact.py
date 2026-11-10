@@ -13,7 +13,7 @@ import unittest
 
 
 KERNEL = Path(__file__).resolve().parents[2] / "simion/ip_prism_lens_contact.lua"
-LUA = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+LUA = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
 HARNESS = r'''
 local kernel=assert(dofile(arg[1]))
 local function rod(id,a,b,r)

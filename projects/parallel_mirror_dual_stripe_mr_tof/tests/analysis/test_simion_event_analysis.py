@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -310,7 +311,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
     def test_single_particle_program_emits_the_required_topology_events(self):
         from msplatform.io.scientific_csv import iter_csv_rows
 
-        lua = Path("C:/Program Files/SIMION-2020/lua.exe")
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
         if not lua.is_file():
             self.skipTest("Lua runtime unavailable")
         source = PROGRAM.read_text(encoding="utf-8-sig")

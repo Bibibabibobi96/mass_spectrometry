@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -55,7 +56,7 @@ class ScientificEventIoTests(unittest.TestCase):
 
     def test_actual_mr_emitter_keeps_underscored_event_kind_and_requires_locator(self):
         import subprocess
-        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
         source = (ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
@@ -77,7 +78,7 @@ class ScientificEventIoTests(unittest.TestCase):
 
     def test_actual_trajectory_callback_preserves_large_sparse_ids_and_sampling(self):
         import subprocess
-        lua=Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua=Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
         source=(ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
@@ -103,7 +104,7 @@ class ScientificEventIoTests(unittest.TestCase):
 
     def test_stopping_callback_does_not_record_an_unaccepted_trial_step(self):
         import subprocess
-        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
         source = (ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
@@ -358,7 +359,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         import subprocess
         import shutil
         pwsh = shutil.which('pwsh')
-        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not pwsh or not lua.is_file():
             self.skipTest('PowerShell/Lua unavailable')
         source = (ROOT / 'integrations/workflows/oa_mr/execute.ps1').read_text(encoding='utf-8')
@@ -416,7 +417,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
 
     def test_actual_typed_emitter_keeps_integer_ids_and_mixed_precision(self):
         import subprocess
-        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
         source = (ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')

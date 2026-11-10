@@ -16,7 +16,7 @@ import unittest
 
 
 PROGRAM = Path(__file__).resolve().parents[2]/"simion/ip_prism_local.lua"
-LUA = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+LUA = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
 
 
 HARNESS = r'''

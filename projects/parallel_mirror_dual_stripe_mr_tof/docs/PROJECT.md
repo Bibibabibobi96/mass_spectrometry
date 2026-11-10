@@ -709,3 +709,30 @@ projection. Voltage schedules, frozen resources and native qualification are unc
 All thirteen original joint-preparation parents passed on the composed successor
 in 5.074 seconds (45 successful records, no skips), including missing-interpreter
 and inert solver-name rejection. Final Repository acceptance remains open.
+
+
+### Software Lua kernel discovery
+
+The four IP-prism collision-fixture, distance-runner, finite-lens-contact and
+local-callback test modules now try PATH lua5.1 after lua and before their
+original local standalone fallback. The same selected global LUA still controls
+the original skip guard and subprocess. No solver executable or vendor-adjacent
+library is selected by this software-only change.
+
+All37 original parents passed without skips (8.460seconds unittest,
+9.475seconds harness), preserving110 assertion ASTs, five subprocess call ASTs
+and every test method. A transparent task-only process observer captured42 actual
+Lua calls, all to the pinned portable Lua5.1.5 executable with the recorded SHA.
+Twelve actual-selector priority cases and Python lint passed. Inert PA/workbench
+and callback fixtures, analytic contact vectors, original clocks and output
+checks remain unchanged. These are plain-Lua/preparation proofs, not native
+collision/trajectory/field results or scientific qualification.
+
+The measured-source, prepared-trial and scientific-event/trajectory software checks
+also discover `lua5.1` after `lua`, preserving the existing local vendor fallback.
+This changes test interpreter selection only; source/cohort/clock/event identities,
+historical-data skips and native qualification boundaries remain unchanged.
+The combined ten modules passed all 143 parents and 274 records on the composed
+successor in 71.140 seconds, with no skips. All 792 original assertions and test
+identities are retained; this is software evidence, not native execution or the
+complete MR/Repository gate.

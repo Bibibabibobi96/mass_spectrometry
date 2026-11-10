@@ -17,7 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_stud
 
 
 FIXTURE = Path(__file__).resolve().parents[1] / "simion/test_ip_prism_collision_fixture.lua"
-LUA = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+LUA = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
 
 
 def fixture_context(root: Path) -> dict:

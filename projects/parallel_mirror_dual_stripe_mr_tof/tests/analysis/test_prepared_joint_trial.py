@@ -264,7 +264,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                     self.assertEqual(batch["original_particle_ids"],selected_ids)
                     self.assertEqual((batch_directory/"native_run_path.lua").read_bytes(),
                                      (Path(result["frozen_runtime_directory"])/"native_run_path.lua").read_bytes())
-                    lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+                    lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
                     if Path(lua).is_file():
                         script = output/"check_sidecar.lua"
                         script.write_text("local t=assert(loadfile(arg[1]))();assert(t.maximum_step_us==.002 and t.trajectory_quality==3 and t.full_path_timeout_us==100);"
@@ -567,7 +567,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
         self.assertEqual(replay["expected_particle_ids"],selected_ids)
         for filename in ("component_particle_state.csv","source.fly2","source_states.lua","source_projection.lua","source_census.csv"):
             self.assertEqual((Path(replay["measured_source_directory"])/filename).read_bytes(),(source/filename).read_bytes())
-        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if Path(lua).is_file():
             check = root/"check_finalized_step.lua"
             check.write_text("local t=dofile(arg[1]);assert(t.maximum_step_us==.002 and t.trajectory_quality==3 and t.full_path_timeout_us==100)")
@@ -842,7 +842,7 @@ if($Mode-eq'create'){
         source = batch_dir / "measured_source/source.fly2"
         before = source.read_bytes()
         expected = file_record(source)
-        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).is_file():
             self.skipTest("Plain Lua unavailable; no solver fallback")
         script = root / "builder_save_overwrites.lua"
@@ -974,7 +974,7 @@ print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
         with (batch_dir / "measured_source/ordinal_source_map.csv").open(newline="") as handle:
             mapping = next(csv.DictReader(handle))
         self.assertEqual(int(mapping["simion_ordinal"]), 1)
-        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists():
             self.skipTest("Plain Lua interpreter is unavailable")
         launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"

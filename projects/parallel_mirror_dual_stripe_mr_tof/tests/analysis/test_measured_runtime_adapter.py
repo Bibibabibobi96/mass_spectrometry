@@ -16,7 +16,7 @@ class MeasuredRuntimeAdapterTest(unittest.TestCase):
     """Pure callbacks with FLY2-owned TOF and a read-only initialize clock."""
 
     def test_original_ids_clock_initialization_topology_and_timeout(self) -> None:
-        lua = shutil.which("lua")
+        lua = shutil.which("lua") or shutil.which("lua5.1")
         if lua is None:
             installed = Path("C:/Program Files/SIMION-2020/lua.exe")
             lua = str(installed) if installed.exists() else None

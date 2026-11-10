@@ -54,7 +54,7 @@ class TrajectoryRecordingTest(unittest.TestCase):
                 with self.assertRaises(ValueError):extract_trajectory_samples(log_path=log,output_path=csv,receipt_path=receipt,recording_config=policy)
 
     def test_fixed_interval_actual_lua_callbacks_keep_clock_identity_and_state(self):
-        lua=shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        lua=shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists() and shutil.which(lua) is None:self.skipTest("plain Lua unavailable")
         source=(PROJECT/"simion/mrtof_candidate.lua").read_text(encoding="utf-8")
         # Include the real writer, ID encoder and sampling closure together.
@@ -113,7 +113,7 @@ scientific_events:close();scientific_trajectory:close()
                     extract_trajectory_samples(log_path=log, output_path=csv, receipt_path=receipt)
 
     def test_real_lua_observation_is_off_by_default_and_does_not_mutate_state(self):
-        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists() and shutil.which(lua) is None:
             self.skipTest("plain Lua unavailable")
         source = (PROJECT / "simion/mrtof_candidate.lua").read_text(encoding="utf-8")

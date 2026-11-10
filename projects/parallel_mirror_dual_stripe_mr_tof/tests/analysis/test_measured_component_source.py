@@ -353,7 +353,7 @@ class MeasuredComponentSourceTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_runtime_initialize_obeys_read_only_engine_tof_and_fly2_birth_offsets(self) -> None:
-        lua = shutil.which("lua")
+        lua = shutil.which("lua") or shutil.which("lua5.1")
         if lua is None:
             installed = Path("C:/Program Files/SIMION-2020/lua.exe")
             lua = str(installed) if installed.exists() else None
