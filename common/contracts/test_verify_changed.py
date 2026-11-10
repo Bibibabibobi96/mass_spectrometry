@@ -443,6 +443,20 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                              for row in request["stages"]))
 
+    def test_mr_neutral_geometry_keeps_full_owner_and_actual_integration_consumers(self):
+        request, _ = self.plan(
+            "-ChangedPath",
+            "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py",
+        )
+        mr = [row for row in request["stages"]
+              if row["name"] == "parallel_mirror_dual_stripe_mr_tof_static"]
+        self.assertEqual(len(mr), 1)
+        self.assertNotIn("ChangedTestModules", mr[0]["command"].get("parameters", {}))
+        self.assertTrue(any(row["name"].startswith("instrument_assembly_integration")
+                            for row in request["stages"]))
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                             for row in request["stages"]))
+
     def test_mr_interface_selects_its_original_tests_and_real_composition_consumer(self):
         request, _ = self.plan("-ChangedPath",
             "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py")

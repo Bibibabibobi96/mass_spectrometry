@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+  [string]$AcceleratorComponentContractPath = '',
+  [string]$AcceleratorGeometryProfileId = '',
   [string]$MirrorRunManifest = '',
   [string]$ExactKRunManifest = '',
   [string]$FixedGridRunManifest = '',
@@ -114,6 +116,10 @@ try {
     $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
     $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_mirror_run_manifest.json')
   }
+  if (-not $authorityOnly) {
+    if (-not $AcceleratorComponentContractPath -or -not $AcceleratorGeometryProfileId) { throw 'Geometry construction requires explicit OA component contract and profile ID.' }
+    $frozenOaComponentContract = Copy-VerifiedRunInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $inputDir 'oa_component_contract.json')
+  }
   $sourceDir = Join-Path $inputDir 'source'
   New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
   $sourcePaths = @(
@@ -130,7 +136,13 @@ try {
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\resolved_geometry.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\resolved_geometry.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_component_requirements.py',
+    'src\msplatform\components\orthogonal_accelerator\two_zone_geometry.py',
+    'src\msplatform\components\orthogonal_accelerator\accelerator_time_focus.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\geometry_contract.py',
+    'src\msplatform\contracts\rigid_transform.py',
+    'src\msplatform\backends\simion\mr_geometry.py',
     'src\msplatform\backends\simion\two_zone_candidate.py',
     'src\msplatform\backends\simion\rectangular_accelerator.py',
     'src\msplatform\backends\simion\bare_three_zone_component.py',
@@ -160,6 +172,7 @@ try {
     $configuration.inputs.downstream_contract = $frozenContract
     $configuration.inputs.parent_mirror_run_manifest = $frozenParentManifest
   }
+  if (-not $authorityOnly) { $configuration.inputs.accelerator_component_contract = $frozenOaComponentContract }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
     lifecycle_stage = $runMode
@@ -201,6 +214,7 @@ try {
       '--output', $summary
     )
   }
+  if (-not $authorityOnly) { $pythonArguments += @('--accelerator-component-contract', $frozenOaComponentContract, '--accelerator-geometry-profile-id', $AcceleratorGeometryProfileId) }
   $theoryLease = $null
   try {
     if (-not $authorityOnly) {

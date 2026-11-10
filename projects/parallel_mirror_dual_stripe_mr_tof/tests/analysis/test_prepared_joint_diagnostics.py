@@ -1,5 +1,6 @@
 """Synthetic measured-source diagnostics: complete evidence and headless figures."""
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
 
 import csv
 import json
@@ -205,13 +206,14 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         fields.mkdir()
         helper = IonProcessorNativeBindingTest()
         descriptor, binding_path, owner = helper.fixture(fields, detector_box=[0,0,0,1,1,1])
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         # Real complete provider solids support the actual loss classifier. Only
         # this synthetic binding's frame label and IP placeholder are test-owned;
         # the tiny fields do not claim a solve of this full physical analyzer.
-        geometry = resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+        geometry = resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json")))
         geometry.pop("accelerator_component_layout", None)
+        geometry.pop("accelerator_component_geometry", None)
         geometry.update(frame_id="mr_frame.v2", ion_processor_electrodes=[])
         (fields / "assembly_geometry.json").write_text(json.dumps(geometry))
         receipt_path = fields / "replacement.json"

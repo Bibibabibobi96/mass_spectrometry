@@ -121,6 +121,7 @@ def resolve_ion_processor_design(source: dict, trajectory: dict, request: dict,
         "resolved_end_z_mm": new_end,
     }
     geometry.pop("accelerator_component_layout", None)
+    geometry.pop("accelerator_component_geometry", None)
     configs = {k: source[k] for k in ("source", "acceptance", "diagnostics", "field_diagnostics")}
     configs.update(
         baseline=baseline,

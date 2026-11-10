@@ -6,26 +6,25 @@ geometry that solver adapters must consume.  CAD evidence appears only as
 explicit constraints already frozen in the project contract.
 """
 from __future__ import annotations
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 import copy
+from collections.abc import Mapping
 import hashlib
 import json
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     validate_detector_return_path,
+    derive_two_zone_placement,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import (
-    build_two_zone_accelerator_requirements,
+from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
+    ClosedTwoZoneGeometry, resolve_closed_two_zone_geometry, validate_geometry_profile,
 )
-from msplatform.backends.simion.two_zone_candidate import (
-    resolve_closed_two_zone_layout,
-)
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.geometry_contract import CENTRAL_GROUND_ELECTRODE_ID
@@ -858,28 +857,24 @@ def _inherit_dual_stripe_topology(
 
 
 def _extend_prism_shield_to_accelerator_exit(
-    shield: dict[str, Any], extension: dict[str, Any], assembly: dict[str, Any] | None,
+    shield: dict[str, Any], extension: dict[str, Any], accelerator: ClosedTwoZoneGeometry,
+    placement: RigidTransform | None,
 ) -> None:
     """Extend the validated P1 section towards the frozen OA support, in mm."""
     if shield["station"] != "accelerator_exit" or set(extension) != {"clearance_mm"}:
         raise CandidateContractError("OA exit extension belongs only to P1 and requires clearance_mm")
     clearance = _number(extension["clearance_mm"], "P1 extension clearance_mm")
-    if clearance <= 0.0 or not isinstance(assembly, dict):
-        raise CandidateContractError("P1 extension requires positive clearance and frozen accelerator assembly")
-    try:
-        oa = assembly["accelerator_resolved_electrodes"]
-        if oa["acceleration_direction"] != "-z":
-            raise CandidateContractError("P1 extension requires the frozen -z OA exit")
-        translation = oa["local_to_pa_translation_mm"]
-        origin = assembly["accelerator_iob_origin_mm"]
-        if len(translation) != 3 or len(origin) != 3:
-            raise CandidateContractError("P1 extension requires three-dimensional OA translations")
-        z_offset = _number(translation[2], "OA local-to-PA z") + _number(origin[2], "OA IOB z")
-        # Consume actual support solids, not the PA safe-exit or ideal-sheet plane.
-        support = min(oa["grid_supports"], key=lambda item: item["frame_outer_box_mm"]["z_min_mm"])
-        exit_face = _number(support["frame_outer_box_mm"]["z_min_mm"], "OA exit support z_min_mm") + z_offset
-    except (KeyError, TypeError, ValueError) as exc:
-        raise CandidateContractError("P1 extension lacks resolved OA exit support/assembly fields") from exc
+    if clearance <= 0.0 or not isinstance(placement, RigidTransform):
+        raise CandidateContractError("P1 extension requires positive clearance and explicit accelerator placement")
+    identity = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    if (placement.from_frame_id != "orthogonal_accelerator_exit_origin_v1"
+            or placement.to_frame_id != "astral.xyz.reflection_z.drift_y.transverse_x.v2"
+            or any(not math.isclose(placement.rotation[i][j], identity[i][j], rel_tol=0.0, abs_tol=1e-12)
+                   for i in range(3) for j in range(3))):
+        raise CandidateContractError("P1 extension requires the supported OA-to-MR identity relative orientation")
+    support = min(accelerator.grid_supports, key=lambda item: float(item["front_z_mm"]))
+    exit_face = placement.transform_position(FramedPosition(
+        placement.from_frame_id, (0.0, 0.0, float(support["front_z_mm"])))).coordinates_mm[2]
     old_end = max(point[1] for point in shield["outer_polygon_yz_mm"])
     new_end = exit_face - clearance
     if new_end <= old_end:
@@ -895,7 +890,7 @@ def _extend_prism_shield_to_accelerator_exit(
         if slot[5] == old_end:
             slot[5] = new_end
     shield["extension_to_accelerator_exit"] = {
-        "clearance_mm": clearance, "exit_support_component_electrode_id": support["component_electrode_id"],
+        "clearance_mm": clearance, "exit_support_component_electrode_id": support["id"],
         "exit_support_downstream_z_mm": exit_face, "original_end_z_mm": old_end,
         "resolved_end_z_mm": new_end, "added_length_mm": new_end - old_end,
         "cad_body_topology_identity_scope": "unextended_baseline_source",
@@ -905,8 +900,11 @@ def _extend_prism_shield_to_accelerator_exit(
 def resolve_geometry(
     contract: dict[str, Any],
     *,
+    accelerator_requirements: dict[str, Any],
+    geometry_profile: dict[str, Any],
+    geometry_profile_id: str,
     inherited_dual_stripe_topology_contract: dict[str, Any] | None = None,
-    accelerator_assembly: dict[str, Any] | None = None,
+    accelerator_to_mr: RigidTransform | None = None,
 ) -> dict[str, Any]:
     """Return validated physical primitives for all electrodes.
 
@@ -1287,12 +1285,28 @@ def resolve_geometry(
         observed = min(point[1] for point in shield["outer_polygon_yz_mm"]) - cad_face
         if cad_gap != 2.0 or abs(observed - cad_gap) > 1e-9:
             raise CandidateContractError("accelerator-exit prism shield must retain the CAD 2-mm gap to the negative inner mirror face")
+    # OA mechanics are resolved from the same explicit authority, never PA offsets.
+    if not isinstance(geometry_profile_id, str) or not geometry_profile_id.strip() or geometry_profile_id != geometry_profile_id.strip():
+        raise CandidateContractError("accelerator geometry profile id must be an explicit nonempty trimmed string")
+    if not isinstance(accelerator_requirements, Mapping):
+        raise CandidateContractError("accelerator requirements must be an explicit object")
+    physical_requirements = {key: copy.deepcopy(value) for key, value in accelerator_requirements.items()
+                             if key != "local_pa"}
+    accelerator_model = resolve_closed_two_zone_geometry(
+        physical_requirements, geometry_profile_id=geometry_profile_id, geometry_profile=geometry_profile)
+    mr_placement = derive_two_zone_placement(contract)
+    requested_source = contract["accelerator"]["component_source_cylinder"]
+    if (physical_requirements["source_cylinder"] != {key: requested_source[key] for key in ("radius_mm", "height_mm")}
+            or physical_requirements["focus"]["focus_plane"] != contract["accelerator"]["focus_plane"]
+            or float(physical_requirements["placement"]["focus_y_mm"]) != mr_placement.focus_y_mm
+            or float(physical_requirements["placement"]["global_exit_z_mm"]) != mr_placement.exit_grid_z_mm):
+        raise CandidateContractError("explicit accelerator authority differs from MR source, focus or placement")
     for item, shield in zip(prism_contract["ground_shields"], prism_ground_shields, strict=True):
         if "extension_to_accelerator_exit" in item:
             extension = item["extension_to_accelerator_exit"]
             if not isinstance(extension, dict):
                 raise CandidateContractError("P1 extension must be an explicit clearance contract")
-            _extend_prism_shield_to_accelerator_exit(shield, extension, accelerator_assembly)
+            _extend_prism_shield_to_accelerator_exit(shield, extension, accelerator_model, accelerator_to_mr)
     detector_contract = contract.get("detector")
     if not isinstance(detector_contract, dict) or int(detector_contract.get("id", 0)) != 25:
         raise CandidateContractError("numerical detector requires stable ID 25")
@@ -1308,15 +1322,13 @@ def resolve_geometry(
     accelerator = contract.get("accelerator")
     if not isinstance(accelerator, dict) or accelerator.get("axis") != "z_negative":
         raise CandidateContractError("detector placement requires the -z two-zone accelerator")
-    accelerator_requirements = build_two_zone_accelerator_requirements(contract)
-    accelerator_layout = resolve_closed_two_zone_layout(accelerator_requirements, geometry_profile=_load_oa_geometry_profile('closed_two_zone_compact_mr_axial_r3_gap1_4mm')).to_dict()
     placement = accelerator_requirements["placement"]
     if not isinstance(placement, dict):
         raise CandidateContractError("accelerator provider placement request is invalid")
     accelerator_focus_y = _number(placement.get("focus_y_mm"), "accelerator provider focus_y_mm")
     accelerator_exit_z = _number(placement.get("global_exit_z_mm"), "accelerator provider global_exit_z_mm")
     central_shield_y_min = min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"])
-    accelerator_guard_y1 = accelerator_focus_y + float(accelerator_layout["static_minimum_y_extent_mm"]) / 2.0
+    accelerator_guard_y1 = accelerator_focus_y + 2.0 * accelerator_model.enclosure.guard_half_y_mm / 2.0
     accelerator_shield_clearance = central_shield_y_min - accelerator_guard_y1
     required_accelerator_shield_clearance = _number(
         accelerator.get("minimum_clearance_to_central_prism_ground_shield_y_mm"),
@@ -1338,7 +1350,7 @@ def resolve_geometry(
     )
     detector_z1 = positive_inner_faces[0] - clearance_z
     detector_z0 = detector_z1 - thickness_z
-    if detector_z0 <= accelerator_exit_z + float(accelerator_layout["static_axial_length_mm"]):
+    if detector_z0 <= accelerator_exit_z + (accelerator_model.enclosure.rear_cap_outer_z_mm - accelerator_model.local_exit_z_mm):
         raise CandidateContractError("detector overlaps the accelerator instead of occupying the grounded-mirror side")
     detector_y = accelerator_focus_y
     for shield in central_shields:
@@ -1391,7 +1403,7 @@ def resolve_geometry(
             raise CandidateContractError("converging mirror lacks its declared detector clearance")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "project_id": "parallel_mirror_dual_stripe_mr_tof",
         "status": "candidate_theory_derived_cad_constrained",
         "frame_id": frame["frame_id"],
@@ -1409,7 +1421,8 @@ def resolve_geometry(
         "prism_electrodes": prism_electrodes,
         "prism_ground_shields": prism_ground_shields,
         "two_prism_low_field_reference_section": low_field_reference_section,
-        "accelerator_component_layout": accelerator_layout,
+        "accelerator_component_geometry": {**asdict(accelerator_model),
+            "role": "orthogonal_accelerator_two_zone_geometry", "variant_id": "two_zone"},
         "detector": {"id": 25, "box": detector_box, "normal_project": "+z", "separate_pa": True},
         "metadata": {
             "mirror_slot_width_mm": slot_width,
@@ -1437,7 +1450,7 @@ def resolve_geometry(
             "detector_to_central_prism_ground_shield_clearance_y_mm": min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"]) - detector_box[4],
             "accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": accelerator_shield_clearance,
             "required_accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": required_accelerator_shield_clearance,
-            "accelerator_component_geometry_profile_id": accelerator_layout["geometry_profile_id"],
+            "accelerator_component_geometry_profile_id": accelerator_model.geometry_profile_id,
         },
     }
 
@@ -1453,13 +1466,15 @@ def geometry_fingerprint(resolved: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def geometry_receipt(contract: dict[str, Any]) -> dict[str, Any]:
+def geometry_receipt(contract: dict[str, Any], *, accelerator_requirements: dict[str, Any],
+                     geometry_profile: dict[str, Any], geometry_profile_id: str) -> dict[str, Any]:
     """Expose stable cross-solver geometry checks from one resolved contract."""
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_requirements=accelerator_requirements,
+                                geometry_profile=geometry_profile, geometry_profile_id=geometry_profile_id)
     mirror_ids = sorted(item["id"] for item in resolved["mirror_electrodes"])
     stripe_ids = sorted(item["id"] for item in resolved["stripe_electrodes"])
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "project_id": resolved["project_id"],
         "frame_id": resolved["frame_id"],
         "units": "mm",
@@ -1476,4 +1491,35 @@ def geometry_receipt(contract: dict[str, Any]) -> dict[str, Any]:
         "mirror_slot_box_mm": resolved["mirror_slot"],
         "mirror_inner_shield_slot_box_mm": resolved["mirror_inner_shield_slot"],
         "stripe_slot_box_mm": resolved["stripe_slot"],
+    }
+
+
+def build_two_zone_accelerator_requirements(contract: dict[str, Any], *, geometry_profile: dict[str, Any]) -> dict[str, object]:
+    """Return only source, focus, numerical-envelope and placement requirements."""
+    accelerator = contract["accelerator"]
+    mesh = contract["simion"]["component_mesh_mm_per_gu"]["accelerator"]
+    span = contract["simion"]["accelerator_pa_span_mm"]
+    if not isinstance(mesh, list) or not isinstance(span, list) or len(mesh) != 3 or len(span) != 3:
+        raise CandidateContractError("accelerator PA mesh and span must have three values")
+    margin_z = float(accelerator["pa_local_margin_z_mm"])
+    if margin_z <= 0.0:
+        raise CandidateContractError("accelerator.pa_local_margin_z_mm must be positive")
+    source = accelerator["component_source_cylinder"]
+    placement = derive_two_zone_placement(contract)
+    profile = validate_geometry_profile(geometry_profile)
+    provider_axial_length = float(profile["gap_1_mm"]) + float(profile["gap_2_mm"])
+    return {
+        "schema_version": 1,
+        "role": "orthogonal_accelerator_two_zone_requirements",
+        "variant_id": "two_zone",
+        "acceleration_direction": "-z",
+        "source_cylinder": {"radius_mm": source["radius_mm"], "height_mm": source["height_mm"]},
+        "focus": {"mode": "two_zone_time_focus", "focus_plane": accelerator["focus_plane"]},
+        "compaction": {"axes": ["y", "z"], "objective": "minimize_subject_to_focus"},
+        "local_pa": {"span_mm": span, "mesh_mm_per_gu": mesh, "exit_z_mm": margin_z, "margin_z_mm": margin_z},
+        "placement": {
+            "focus_y_mm": placement.focus_y_mm,
+            "global_repeller_z_mm": placement.exit_grid_z_mm + provider_axial_length,
+            "global_exit_z_mm": placement.exit_grid_z_mm,
+        },
     }

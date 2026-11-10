@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority, pure_geometry_inputs
 
 from decimal import Decimal, localcontext
 import json
@@ -39,7 +40,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
     dual_stripe_width_at_y_mm,
 )
@@ -124,11 +125,11 @@ class DualStripeL0MathTest(unittest.TestCase):
                 resolve_converging_prism_target(contract, resolved)
 
     def test_prism_scientific_target_does_not_change_resolved_geometry(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry, geometry_fingerprint
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry, geometry_fingerprint
         contract, _, _ = converging_prism_fixture()
-        first = resolve_geometry(contract)
+        first = resolve_geometry(contract, **pure_geometry_inputs(contract))
         del contract["prism_transport"]["handoff_target"]
-        second = resolve_geometry(contract)
+        second = resolve_geometry(contract, **pure_geometry_inputs(contract))
         self.assertEqual(first, second)
         self.assertEqual(geometry_fingerprint(first), geometry_fingerprint(second))
     def test_converging_single_stripe_seed_preserves_fixed_source_and_reference(self) -> None:
@@ -222,7 +223,7 @@ class DualStripeL0MathTest(unittest.TestCase):
             contract,
             (-40.0, 60.0),
             axial_energy_per_charge_v=4050.0,
-        )
+        accelerator_geometry_authority=geometry_authority(contract))
         self.assertEqual(result["energy_per_charge_v"], 4050.0)
         self.assertAlmostEqual(result["h_factors"][0], math.sqrt(4050.0 / 4090.0))
 
@@ -505,12 +506,12 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertEqual(assignment["set_2"], "user_confirmed_scaled_original_psi_m_linear_basis")
         self.assertTrue(assignment["termwise_original_paper_geometry_basis_identification"])
         self.assertEqual(
-            analyze_dual_stripe_l0(contract, (-40.0, 60.0))["model"],
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0), accelerator_geometry_authority=geometry_authority(contract))["model"],
             "dual_stripe_nominal_response_l0",
         )
         assignment["set_2"] = "unqualified"
         with self.assertRaisesRegex(CandidateContractError, "qualified theory-CAD mapping"):
-            analyze_dual_stripe_l0(contract, (-40.0, 60.0))
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0), accelerator_geometry_authority=geometry_authority(contract))
 
     def test_endpoint_regularization_recovers_linear_reference_integral(self) -> None:
         self.assertAlmostEqual(endpoint_regularized_kappa(lambda eta: eta), 2.0, places=8)

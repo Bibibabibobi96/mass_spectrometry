@@ -1,5 +1,6 @@
 """Small, solver-free production provider contract regressions."""
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 
 import copy
 import json
@@ -339,10 +340,11 @@ try {
         for key in ("coordinate_system", "accelerator", "detector"):
             self.contract[key] = {"identity": key}
         p.write_json(self.contract_path, self.contract)
-        self.geometry.update(frame_id="same_frame", detector={"id": 25, "box": [0, -1, -1, 1, 1, 1]},
+        self.geometry.update(schema_version=2, frame_id="same_frame", detector={"id": 25, "box": [0, -1, -1, 1, 1, 1]},
                              mirror_electrodes=[{"box": [-1, -1, -1, 1, 1, 1]}],
                              mirror_ground_shields=[], mirror_e_closures=[])
-        self.authority["assembly"] = {"detector": self.geometry["detector"]}
+        self.authority["assembly"] = {"detector": self.geometry["detector"],
+            "accelerator_geometry_authority": geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json")}
         collision = Path(self.source["instances"][1]["pa_path"])
         header = PaHeader(-2, 1, 100000, 3, 5, 5, 1, 1, 1, 1)
         collision.write_bytes(header.pack() + b"\0" * (header.node_count * 8))
@@ -544,7 +546,8 @@ try {
         self.assertEqual(plan["resolved_geometry"], updated)
         self.assertEqual(plan["operation"], "refine")
         self.assertEqual(plan["inputs"]["geometry_contract"], self.request["geometry_contract_path"])
-        resolver.assert_called_once_with(self.contract, accelerator_assembly=self.authority["assembly"])
+        resolver.assert_called_once_with(self.contract, accelerator_assembly=self.authority["assembly"],
+            accelerator_geometry_authority=self.authority["assembly"]["accelerator_geometry_authority"])
         self.assertEqual(self.source, old)
         run = self.root / "new_geometry_run"
         (run / "inputs").mkdir(parents=True)
@@ -1874,3 +1877,48 @@ if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable aft
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CurrentNeutralGeometryAuthorityTests(unittest.TestCase):
+    def test_real_schema2_mirror_change_preserves_nonmirror_geometry_and_legacy_bytes(self):
+        from msplatform.backends.simion.mr_geometry import resolve_mr_geometry
+        from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+
+        contract_path = Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"
+        contract = load_contract(contract_path)
+        authority = geometry_authority(contract)
+        electrodes = resolve_closed_two_zone_electrodes(
+            authority["accelerator_requirements"], geometry_profile_id=authority["geometry_profile_id"],
+            geometry_profile=authority["geometry_profile"],
+        ).to_dict()
+        assembly = {"accelerator_resolved_electrodes": electrodes,
+                    "accelerator_iob_origin_mm": [0.0, -72.25, -6.0],
+                    "accelerator_geometry_authority": authority}
+        original = resolve_mr_geometry(contract, accelerator_geometry_authority=authority,
+                                       accelerator_assembly=assembly)
+        assembly["detector"] = copy.deepcopy(original["detector"])
+        source = {"geometry": original, "authority": {"assembly": assembly}}
+        frozen = json.dumps(source, sort_keys=True)
+        changed = copy.deepcopy(contract)
+        changed["mirror"]["convergence_transform"] = {"angle_deg": 0.025688743, "pivot_y_mm": 0.0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "new_contract.json"
+            p.write_json(path, changed)
+            result = p._resolve_new_geometry(path, source, contract)
+            self.assertEqual(result["schema_version"], 2)
+            self.assertNotEqual(result["mirror_electrodes"], original["mirror_electrodes"])
+            for name in ("accelerator_component_geometry", "detector", "stripe_electrodes",
+                         "prism_ground_shields", "prism_electrodes"):
+                self.assertEqual(result[name], original[name])
+            self.assertEqual(json.dumps(source, sort_keys=True), frozen)
+            for mutation in ("legacy_schema", "missing_authority"):
+                historical = copy.deepcopy(source)
+                if mutation == "legacy_schema":
+                    historical["geometry"]["schema_version"] = 1
+                else:
+                    del historical["authority"]["assembly"]["accelerator_geometry_authority"]
+                before = json.dumps(historical, sort_keys=True)
+                with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "complete frozen OA geometry authority"):
+                    p._resolve_new_geometry(path, historical, contract)
+                self.assertEqual(json.dumps(historical, sort_keys=True), before)

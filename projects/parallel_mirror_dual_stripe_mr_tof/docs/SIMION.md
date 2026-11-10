@@ -48,10 +48,19 @@ IP采用`state_handoff`，继承实测状态与到达时刻，后段为RF为零�
 ### MR几何与OA提供者合同
 
 [候选合同](../config/simion_candidate_two_zone.json)提供 MR 物理输入和机械约束，
-[resolved_geometry.py](../analysis/resolved_geometry.py)生成求解器无关的毫米几何；
+[resolved_geometry.py](../../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py)生成求解器无关的毫米几何；
 [native_system_geometry.py](../analysis/native_system_geometry.py)及
 [native_corridor_geometry.py](../analysis/native_corridor_geometry.py)只派生 SIMION 副本。
 GEM、PA、IOB 和 GUI 不持有下一轮可调几何真值；旧 PA 不因源码修复自动恢复有效性。
+
+New physical geometry requires explicit OA requirements, physical profile and profile ID.
+The applicable native construction commands transport the selected authority through
+`-AcceleratorComponentContractPath` and `-AcceleratorGeometryProfileId`; condition contexts
+use schema 2 with `accelerator_component_contract_path` and `accelerator_geometry_profile_id`.
+Native PA/grid checks belong to the [SIMION geometry backend](../../../src/msplatform/backends/simion/mr_geometry.py).
+Prepared workbench operations keep their own parameter set and frozen geometry; unchanged
+field reads do not acquire these construction inputs. New geometry from a historical source
+without complete original OA authority fails explicitly rather than guessing a current profile.
 
 坐标固定为 `z` 快速反射、`y` 慢漂移、`x` 横向聚焦。`z=0` 是中央注入／第一时间焦点
 交接面，不代表最终质量焦点或必然的空间束腰。活动完整返回使用静态 P1/P2 和关于

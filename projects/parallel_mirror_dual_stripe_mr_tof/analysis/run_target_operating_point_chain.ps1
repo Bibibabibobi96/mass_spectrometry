@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory)][string]$AcceleratorComponentContractPath,
+  [Parameter(Mandatory)][string]$AcceleratorGeometryProfileId,
   [Parameter(Mandatory)][string]$MirrorRunManifest,
   [string]$ContractPath = '',
   [string]$ChainStamp = '',
@@ -49,6 +51,8 @@ if (-not (Test-Path -LiteralPath $exactManifest -PathType Leaf)) {
 }
 
 $stripeArguments = @{
+  AcceleratorComponentContractPath = $AcceleratorComponentContractPath
+  AcceleratorGeometryProfileId = $AcceleratorGeometryProfileId
   ExactKRunManifest = $exactManifest
   ContractPath = $contract
   RunId = $stripeRunId

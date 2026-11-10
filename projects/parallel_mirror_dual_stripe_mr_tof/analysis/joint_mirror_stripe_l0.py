@@ -22,7 +22,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     kappa_derivative_at_turn,
     tau_g_derivative_at_turn,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_edge_evaluators,
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,

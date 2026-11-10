@@ -5,6 +5,7 @@ execution lease. Temporary GEM/PA files are test fixtures, not field solutions
 or released review assets. The installed vendor Python PA reader is read-only.
 """
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
 
 import importlib.util
 import os
@@ -18,7 +19,7 @@ from msplatform.backends.simion.mr_geometry import (
     _prism_ground_shield_lines,
     _stripe_lines,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 
@@ -39,7 +40,7 @@ class NativeGemSlotTest(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         cls.pa_type = module.PA
-        cls.resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"))
+        cls.resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(PROJECT / "config/simion_candidate_two_zone.json")))
 
     def compile_shapes(self, lines: list[str], origin: tuple[float, float, float],
                        dimensions: tuple[int, int, int], mesh_mm: tuple[float, float, float] = (2.0, 2.0, 2.0)):

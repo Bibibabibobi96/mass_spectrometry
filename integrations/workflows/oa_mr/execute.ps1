@@ -9,6 +9,8 @@ Input sources, supported scope and complete normal examples: integrations/README
 #>
 [CmdletBinding(DefaultParameterSetName='Run')]
 param(
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$AcceleratorComponentContractPath,
+  [Parameter(Mandatory,ParameterSetName='Run')][string]$AcceleratorGeometryProfileId,
   [Parameter(Mandatory,ParameterSetName='Run')][string]$GeometryReviewRunPath,
   [Parameter(Mandatory,ParameterSetName='Run')][string]$MirrorRunPath,
   [Parameter(Mandatory,ParameterSetName='Run')][string]$StripeRunPath,
@@ -456,7 +458,9 @@ try{
   }
   $configuration=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
   if($configuration.project-ne$projectId-or$configuration.mode-ne'oa_mr'){throw 'OA-MR run owner or mode differs.'}
-  $configuration.inputs=[ordered]@{code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}
+  $oaComponentContractLocal=Copy-RequiredInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $runDir 'inputs/oa_component_contract.json') -Label 'OA component authority'
+  $configuration.parameters.accelerator_geometry_profile_id=$AcceleratorGeometryProfileId
+  $configuration.inputs=[ordered]@{accelerator_component_contract=$oaComponentContractLocal;code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}
   foreach($identity in $frozen.identities){$configuration.inputs[$identity.frozen_input_name]=$identity.snapshot_path}
   Write-RunJson -Path $runConfig -Depth 50 -Value $configuration
   if($null-ne$nativeRuntimeCheckpointPath){
@@ -554,6 +558,7 @@ try{
   $acceleratorInstance='3'
   $isBunchFlight=$null-ne$bunchSourceContract
   $materializeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','materialize',
+    '--accelerator-component-contract',$oaComponentContractLocal,'--accelerator-geometry-profile-id',$AcceleratorGeometryProfileId,
     '--contract',$contract,'--accelerator-geometry-contract',$acceleratorGeometry,'--trajectory-contract',$trajectoryContract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
     '--accelerator-receipt',$acceleratorLocal,'--prism-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism1VoltageV)),
     '--accelerator-provider-plan',$acceleratorProviderPlanLocal,'--accelerator-resolved-campaign',$acceleratorResolvedCampaignLocal,

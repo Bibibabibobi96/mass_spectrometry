@@ -107,8 +107,9 @@ geometry, native grid validation and ordinary-PA byte forecasts belong solely to
 `msplatform.backends.simion.mr_geometry`; their former component implementations
 are retired without aliases. Candidate permissions, binding/manifest checks and
 historical retention readers remain in the existing COMSOL backend boundary.
-The root physical resolver still requires its explicit OA-input migration; this
-backend move does not register an empty MR provider or qualify a new field/Fly.
+The neutral physical resolver consumes explicit OA authority in the MR component;
+native layout validation remains in the SIMION backend. Neither migration registers
+an empty MR provider or qualifies a new field/Fly.
 旧 `simion_candidate_reference.py`、`static_field_binding.py`、`mirror_geometry_parameters.py`、
 `analyzer_candidate_geometry.py` 已退役；所有活动消费者直接使用其新 owner，不保留转发。
 backend/component 均无 `projects.*` 或 `common.*` 依赖；
@@ -767,6 +768,27 @@ with the three RF/TOF modules: 38 parents and 87 successful records in 2.808 sec
 without skips. The other MR parents retain the private full-module evidence above;
 neither of the native opt-in checks was enabled by this run.
 
+### Explicit neutral MR geometry authority
+
+`msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry` owns the physical
+resolver and curve helpers. Geometry construction requires the selected complete OA requirements,
+physical profile and profile ID; it does not search the OA project or import a SIMION layout.
+The research input reader selects an explicit component-contract file and records its bytes.
+Native MR construction separately calls the existing OA layout validator through
+`msplatform.backends.simion.mr_geometry.resolve_mr_geometry`, retaining PA span, pitch, margin
+and mirrored-grid alignment checks before generating output. Resolved MR geometry now uses
+schema 2 and a physical OA view; its fingerprint intentionally differs from the former
+PA-translated layout snapshot.
+
+Current construction contexts use schema 2 and freeze the OA authority. Coverage transports that
+same authority to continuation; new workpoint/screening children consume their selected frozen
+record. Saved schema-1 data and unchanged fixed-field reads retain their original interpretation.
+New mirror geometry from schema-1 sources without complete original OA authority is rejected;
+no profile is guessed from old extents, and no historical record is rewritten or supplemented.
+The existing P1 extension uses canonical physical support solids and one explicit rigid transform;
+its supported relative rotation remains identity. This migration does not qualify new native
+fields, arbitrary rotations, old-source mirror upgrades, TE1 or fine-domain changes.
+
 ### Installed neutral MR assembly interface
 
 The complete resolved MR entry-face/electrode publisher is owned by
@@ -775,6 +797,7 @@ Accelerator-interface composition and the retained native-system geometry adapte
 that same pure implementation. It consumes explicit resolved physical geometry, retains
 the actual E18 rectangular slot, shared closure/ground identities and existing topology
 guards, and neither reads a project profile nor performs a native operation. The root
-interface body is retired without an alias. Full MR geometry resolution still has its
-separate project/OA-profile and PA-layout closure; this migration does not register an
-empty provider or establish complete installed MR geometry, field or flight support.
+interface body is retired without an alias. Current physical resolution uses the explicit
+OA authority described above; native PA validation remains a separate backend operation.
+Retained workflow, installation and native evidence remain separate closure obligations;
+the publisher does not register an empty provider or establish field or flight support.

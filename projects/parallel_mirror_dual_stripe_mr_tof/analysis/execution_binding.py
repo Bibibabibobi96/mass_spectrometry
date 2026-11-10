@@ -16,17 +16,20 @@ def resolve_execution_binding(repo_root: Path, project_id: str, bindings: dict[s
     context = load_json(context_path)
     if condition.get("schema_version") != 1 or condition.get("role") != "mrtof_native_candidate_campaign_condition":
         raise ValueError("Condition identity is invalid")
-    if context.get("schema_version") != 1 or context.get("role") != "mrtof_native_candidate_condition_context":
+    if context.get("schema_version") != 2 or context.get("role") != "mrtof_native_candidate_condition_context":
         raise ValueError("Condition context identity is invalid")
     for key in ("K", "accelerator_y"):
         if isinstance(condition.get(key), bool) or not math.isfinite(float(condition[key])):
             raise ValueError(f"Condition {key} must be finite")
+    profile_id = context.get("accelerator_geometry_profile_id")
+    if not isinstance(profile_id, str) or not profile_id.strip() or profile_id != profile_id.strip():
+        raise ValueError("Condition context requires an explicit OA geometry profile ID")
     records = []
     missing = []
     resolved = {}
     for key in ("contract_path", "fixed_grid_mirror_run_manifest", "geometry_review_run_path",
                 "native_corridor_bank_run_path", "native_system_runtime_bundle_path", "source_definition_path",
-                "oa_base_release_spec_path", "oa_request_path", "native_runtime_checkpoint_path"):
+                "oa_base_release_spec_path", "oa_request_path", "accelerator_component_contract_path", "native_runtime_checkpoint_path"):
         value = context.get(key)
         if key == "native_runtime_checkpoint_path" and not value:
             continue

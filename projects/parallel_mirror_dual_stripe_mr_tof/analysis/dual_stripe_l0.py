@@ -21,12 +21,8 @@ from scipy.special import roots_legendre
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
-    compile_dual_stripe_width_evaluator,
-    dual_stripe_total_path_scale,
-    dual_stripe_width_at_y_mm,
-    resolve_geometry,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (compile_dual_stripe_width_evaluator, dual_stripe_total_path_scale, dual_stripe_width_at_y_mm)
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
@@ -1452,12 +1448,7 @@ def audit_theory_function_origin_registration(contract: dict[str, Any]) -> dict[
     }
 
 
-def analyze_dual_stripe_l0(
-    contract: dict[str, Any],
-    biases_v: Sequence[float],
-    *,
-    axial_energy_per_charge_v: float | None = None,
-) -> dict[str, Any]:
+def analyze_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[float], *, accelerator_geometry_authority, axial_energy_per_charge_v: float | None=None) -> dict[str, Any]:
     """Check nominal dual-Stripe response independence and resolved widths.
 
     ``h_i=sqrt(w0/(w0-v_i))`` follows the project theory.  The matrix
@@ -1484,7 +1475,7 @@ def analyze_dual_stripe_l0(
     condition = _condition_number_2x2(1.0, 1.0, h1, h2)
     if determinant == 0.0 or not math.isfinite(condition):
         raise CandidateContractError("dual Stripe response matrix is singular")
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
     width_1 = _width_bounds(resolved["stripe_electrodes"][0])
     width_2 = _width_bounds(resolved["stripe_electrodes"][2])
     component_assignment = stripe["theory_profile"].get("component_basis_assignment")

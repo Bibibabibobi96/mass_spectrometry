@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory)][string]$AcceleratorComponentContractPath,
+  [Parameter(Mandatory)][string]$AcceleratorGeometryProfileId,
   [string]$ExactKRunManifest = '',
   [string]$StripeSeedRunManifest = '',
   [string]$FixedMirrorStripeRunManifest = '',
@@ -147,6 +149,7 @@ try {
   $frozenExit = Copy-VerifiedRunInput -Source $exitManifest -Destination (Join-Path $inputDir 'parent_accelerator_exit_run_manifest.json')
   $frozenObservation = Copy-VerifiedRunInput -Source $observation -Destination (Join-Path $inputDir 'accelerator_exit_observation.json')
   $frozenExitSourceReceipt = Copy-VerifiedRunInput -Source $exitSourceReceipt -Destination (Join-Path $inputDir 'accelerator_exit_source_receipt.json')
+  $frozenOaComponentContract = Copy-VerifiedRunInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $inputDir 'oa_component_contract.json')
   $sourceDir = Join-Path $inputDir 'source'; New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
   $sourcePaths = @(
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_segmented_coverage.py',
@@ -169,7 +172,13 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\native_stripe_shape_adapter.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\resolved_geometry.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\resolved_geometry.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_component_requirements.py',
+    'src\msplatform\components\orthogonal_accelerator\two_zone_geometry.py',
+    'src\msplatform\components\orthogonal_accelerator\accelerator_time_focus.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\geometry_contract.py',
+    'src\msplatform\contracts\rigid_transform.py',
+    'src\msplatform\backends\simion\mr_geometry.py',
     'src\msplatform\backends\simion\two_zone_candidate.py',
     'src\msplatform\backends\simion\rectangular_accelerator.py',
     'src\msplatform\backends\simion\bare_three_zone_component.py',
@@ -200,8 +209,10 @@ try {
     $configuration.inputs.parent_exact_k_run_manifest = $frozenExact
     $configuration.inputs.parent_stripe_seed_run_manifest = $frozenStripe
   }
+  $configuration.inputs.accelerator_component_contract = $frozenOaComponentContract
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
+    accelerator_geometry_profile_id=$AcceleratorGeometryProfileId
     accelerator_exit_consumer_projection='parent_identity_and_two_consumed_outputs__unconsumed_records_not_asserted'
     requested_p1_bounds_v=if ($explicitBoundCount -eq 4) { @($P1MinimumV,$P1MaximumV) } else { $null }
     requested_p2_bounds_v=if ($explicitBoundCount -eq 4) { @($P2MinimumV,$P2MaximumV) } else { $null }
@@ -221,6 +232,7 @@ try {
   $localP1 = ($LocalP1ValuesV | ForEach-Object { $_.ToString('R',$culture) }) -join ','
   $localP2 = ($LocalP2ValuesV | ForEach-Object { $_.ToString('R',$culture) }) -join ','
   $args = @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_coverage',
+    '--accelerator-component-contract',$frozenOaComponentContract,'--accelerator-geometry-profile-id',$AcceleratorGeometryProfileId,
     '--contract',$frozenContract,
     '--accelerator-exit-observation',$frozenObservation,'--expected-observation-sha256',$expectedObservationSha,
     '--accelerator-exit-source-receipt',$frozenExitSourceReceipt,

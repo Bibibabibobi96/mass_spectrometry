@@ -1,66 +1,32 @@
-"""MR's non-topological request projection for the accelerator provider."""
+"""Explicit research input reading for the canonical MR/OA geometry boundary."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
-    CandidateContractError,
-    derive_two_zone_placement,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import build_two_zone_accelerator_requirements as _build_two_zone_accelerator_requirements
+from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
+from msplatform.io.manifest_records import file_record
 
 
-def _provider_two_zone_axial_length_mm() -> float:
-    """Read the sealed two-zone length from the provider's active profile.
+def read_accelerator_geometry_authority(contract: dict[str, Any], *, component_contract_path: Path,
+                                        geometry_profile_id: str) -> dict[str, Any]:
+    """Read the explicitly selected provider profile; never search another checkout.
 
-    MR retains the global exit anchor, but it does not own the gap dimensions.
-    Reading the provider contract here keeps the static MR pose projection on
-    the same resolved repeller-to-exit distance as the provider GEM.
+    The complete file record accompanies new source inputs. It is not part of
+    the physical geometry fingerprint and does not rewrite a prior run.
     """
-    profile_path = (
-        Path(__file__).resolve().parents[2]
-        / "orthogonal_accelerator"
-        / "config"
-        / "component_contract.json"
-    )
+    path = Path(component_contract_path).resolve(strict=True)
+    provider = json.loads(path.read_text(encoding="utf-8"))
     try:
-        profile = json.loads(profile_path.read_text(encoding="utf-8"))["geometry_profiles"][
-            "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
-        ]
-        length = float(profile["gap_1_mm"]) + float(profile["gap_2_mm"])
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        raise CandidateContractError("provider active two-zone axial profile is unavailable") from error
-    if length <= 0.0:
-        raise CandidateContractError("provider active two-zone axial length must be positive")
-    return length
-
-
-def build_two_zone_accelerator_requirements(contract: dict[str, Any]) -> dict[str, object]:
-    """Return only source, focus, numerical-envelope and placement requirements."""
-    accelerator = contract["accelerator"]
-    mesh = contract["simion"]["component_mesh_mm_per_gu"]["accelerator"]
-    span = contract["simion"]["accelerator_pa_span_mm"]
-    if not isinstance(mesh, list) or not isinstance(span, list) or len(mesh) != 3 or len(span) != 3:
-        raise CandidateContractError("accelerator PA mesh and span must have three values")
-    margin_z = float(accelerator["pa_local_margin_z_mm"])
-    if margin_z <= 0.0:
-        raise CandidateContractError("accelerator.pa_local_margin_z_mm must be positive")
-    source = accelerator["component_source_cylinder"]
-    placement = derive_two_zone_placement(contract)
-    provider_axial_length = _provider_two_zone_axial_length_mm()
+        profile = dict(validate_geometry_profile(provider["geometry_profiles"][geometry_profile_id]))
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("explicit OA geometry profile authority is unavailable") from error
     return {
-        "schema_version": 1,
-        "role": "orthogonal_accelerator_two_zone_requirements",
-        "variant_id": "two_zone",
-        "acceleration_direction": "-z",
-        "source_cylinder": {"radius_mm": source["radius_mm"], "height_mm": source["height_mm"]},
-        "focus": {"mode": "two_zone_time_focus", "focus_plane": accelerator["focus_plane"]},
-        "compaction": {"axes": ["y", "z"], "objective": "minimize_subject_to_focus"},
-        "local_pa": {"span_mm": span, "mesh_mm_per_gu": mesh, "exit_z_mm": margin_z, "margin_z_mm": margin_z},
-        "placement": {
-            "focus_y_mm": placement.focus_y_mm,
-            "global_repeller_z_mm": placement.exit_grid_z_mm + provider_axial_length,
-            "global_exit_z_mm": placement.exit_grid_z_mm,
-        },
+        "accelerator_requirements": _build_two_zone_accelerator_requirements(contract, geometry_profile=profile),
+        "geometry_profile": profile,
+        "geometry_profile_id": geometry_profile_id,
+        "source_refs": [file_record(path)],
     }

@@ -1,6 +1,7 @@
 """Solver-free tests of real electrode preparation and scientific authority."""
 
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
 
 import copy
 from functools import lru_cache
@@ -17,7 +18,7 @@ from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geomet
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
 from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -26,7 +27,7 @@ IP_CONFIG = ROOT / "projects/dual_pressure_rectilinear_ion_processor/config"
 
 @lru_cache(maxsize=1)
 def complete_mr_geometry():
-    return resolve_geometry(load_contract(ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"))
+    return resolve_geometry(load_contract(ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json")))
 
 
 class AssemblyTests(unittest.TestCase):
@@ -173,6 +174,7 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(report["geometry_checks"]["after_shield_csg_interior_witnesses"], [])
         geometry = json.loads(Path(report["assembly_geometry_path"]).read_text())
         self.assertNotIn("accelerator_component_layout", geometry)
+        self.assertNotIn("accelerator_component_geometry", geometry)
         self.assertEqual(geometry["mirror_electrodes"], self.geometry["mirror_electrodes"])
         self.assertFalse(report["field_qualified"])
         self.assertFalse(report["historical_exit_state_matches_new_seed"])

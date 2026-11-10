@@ -285,3 +285,57 @@ def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contr
                 symmetry="x", pa_bytes=pa_bytes, committed_new_bytes=committed,
                 surface_allowance_bytes=pa_bytes, priority_probes=copy.deepcopy(probes), gem=gem,
                 refine_performed=False, fast_adjust_performed=False, refinable=False)
+
+
+def resolve_mr_geometry(contract: dict[str, Any], *, accelerator_geometry_authority: Mapping[str, Any],
+                        inherited_dual_stripe_topology_contract: dict[str, Any] | None = None,
+                        accelerator_to_mr=None, accelerator_assembly=None) -> dict[str, Any]:
+    """Validate the explicit OA PA envelope before resolving current MR mechanics.
+
+    This backend operation retains native span/mesh/margin/x-mirror guards.
+    The domain resolver itself remains independent of PA storage coordinates.
+    Source records are verified by their existing consuming workflow boundary.
+    """
+    from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_layout, resolve_closed_two_zone_electrodes
+    from msplatform.contracts.rigid_transform import RigidTransform
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
+
+    if not isinstance(accelerator_geometry_authority, Mapping):
+        raise CandidateContractError("new MR geometry requires complete explicit OA geometry authority")
+    try:
+        requirements = accelerator_geometry_authority["accelerator_requirements"]
+        profile = accelerator_geometry_authority["geometry_profile"]
+        profile_id = accelerator_geometry_authority["geometry_profile_id"]
+    except KeyError as error:
+        raise CandidateContractError("new MR geometry lacks complete frozen OA geometry authority") from error
+    resolve_closed_two_zone_layout(requirements, geometry_profile_id=profile_id, geometry_profile=profile)
+    if accelerator_assembly is not None:
+        if accelerator_to_mr is not None:
+            raise CandidateContractError("OA placement must have one explicit projection authority")
+        native = resolve_closed_two_zone_electrodes(
+            requirements, geometry_profile_id=profile_id, geometry_profile=profile).to_dict()
+        try:
+            actual = accelerator_assembly["accelerator_resolved_electrodes"]
+            supports = actual["grid_supports"]
+            if (actual["acceleration_direction"] != "-z"
+                    or sorted(supports, key=lambda item: item["component_electrode_id"])
+                    != sorted(native["grid_supports"], key=lambda item: item["component_electrode_id"])):
+                raise CandidateContractError("frozen OA support solids differ from explicit physical authority")
+            translation = actual["local_to_pa_translation_mm"]
+            origin = accelerator_assembly["accelerator_iob_origin_mm"]
+            if len(translation) != 3 or len(origin) != 3:
+                raise CandidateContractError("OA projection requires three-dimensional translations")
+            delta = tuple(float(translation[i]) + float(origin[i]) for i in range(3))
+            # The canonical mechanical exit is zero; native z carries its explicit storage margin.
+            delta = (delta[0], delta[1], delta[2] + float(requirements["local_pa"]["exit_z_mm"]))
+            accelerator_to_mr = RigidTransform(
+                "orthogonal_accelerator_exit_origin_v1",
+                "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+                ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), delta)
+        except (KeyError, TypeError, ValueError) as error:
+            raise CandidateContractError("P1 extension lacks complete matching OA support/placement authority") from error
+    return resolve_geometry(
+        contract, accelerator_requirements=requirements, geometry_profile=profile, geometry_profile_id=profile_id,
+        inherited_dual_stripe_topology_contract=inherited_dual_stripe_topology_contract,
+        accelerator_to_mr=accelerator_to_mr,
+    )

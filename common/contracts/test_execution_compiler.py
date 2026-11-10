@@ -94,12 +94,14 @@ class ExecutionCompilerTests(unittest.TestCase):
             small = root/"definition.json"
             small.write_text("{}", encoding="utf-8")
             context = root/"context.json"
-            body = dict(schema_version=1, role="mrtof_native_candidate_condition_context")
+            body = dict(schema_version=2, role="mrtof_native_candidate_condition_context")
             for key in ("contract_path", "fixed_grid_mirror_run_manifest", "geometry_review_run_path",
                         "native_corridor_bank_run_path", "native_system_runtime_bundle_path", "source_definition_path"):
                 body[key] = str(small)
             body.update(oa_base_release_spec_path=str(release),
-                        oa_request_path=str(source/"accelerator_component_request_n100.json"))
+                        oa_request_path=str(source/"accelerator_component_request_n100.json"),
+                        accelerator_component_contract_path=str(REPO_ROOT/"projects/orthogonal_accelerator/config/component_contract.json"),
+                        accelerator_geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm")
             context.write_text(json.dumps(body), encoding="utf-8")
             guards.enter_context(patch.object(two_zone_candidate, "compile_closed_two_zone_accelerator",
                                                side_effect=AssertionError("capability binding rendered GEM")))
@@ -128,6 +130,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                         self.assertIn(str((REPO_ROOT/"projects"/owner/"config/component_contract.json").resolve()), protected)
                     else:
                         self.assertIn(str(small.resolve()), protected)
+                        self.assertIn(str(Path(body["accelerator_component_contract_path"]).resolve()), protected)
                     request["operating_points"][0]["mass"]["value"] = 100
                     refused = self.compile_request(request, bindings)
                     self.assertEqual(refused["status"], "NEEDS_RUNTIME_INPUTS")

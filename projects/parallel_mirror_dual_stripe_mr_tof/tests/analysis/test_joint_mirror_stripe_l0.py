@@ -29,7 +29,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     time_platform_derivative_residuals,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design, reduced_period
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError

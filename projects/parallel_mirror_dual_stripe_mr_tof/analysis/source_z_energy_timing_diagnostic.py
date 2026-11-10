@@ -116,6 +116,15 @@ def _collision_loss_diagnostic(
         )
         geometry = trial.get("collision_geometry")
         if not isinstance(geometry, dict):
+            accelerator_geometry_authority = trial.get("accelerator_geometry_authority")
+            if not isinstance(accelerator_geometry_authority, dict):
+                return {
+                    "status": "unavailable__collision_geometry_not_frozen",
+                    "reason": "original collision geometry and complete frozen OA authority are unavailable",
+                    "collision_component_histogram": {}, "electrode_id_histogram": {},
+                    "collision_particles": [], "dominant_collision_component": None,
+                    "p2_collision_surface_histogram": {},
+                }
             reviewed = _load_object(
                 run_dir / "simion" / "simion_prototype_contract.json",
                 "reviewed geometry contract",
@@ -131,7 +140,8 @@ def _collision_loss_diagnostic(
             reviewed["accelerator"]["detector_return_path"] = trajectory["accelerator"][
                 "detector_return_path"
             ]
-            resolved = _resolve_trial_geometry(reviewed, trajectory, accelerator)
+            resolved = _resolve_trial_geometry(reviewed, trajectory, accelerator,
+                accelerator_geometry_authority=accelerator_geometry_authority)
             geometry = _collision_geometry_projection(resolved)
         result = collision_diagnostics(
             [event for matches in selected_events.values() for event in matches], geometry,

@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+  [string]$AcceleratorComponentContractPath='',
+  [string]$AcceleratorGeometryProfileId='',
   [string]$FrozenInputDirectory='',
   [string]$CoarseRawGenerationManifest='',
   [ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$TransactionCacheKey='',
@@ -126,9 +128,23 @@ function Get-FrozenInputGenerationManifests {
 function New-ManagedFrozenInputs {
   param([Parameter(Mandatory)]$Package,[string]$LegacyFrozenDirectory='',[string]$CoarseGenerationManifest='')
   $source=if($CoarseGenerationManifest){[pscustomobject]@{coarse_manifest=$CoarseGenerationManifest;source_freeze_manifest=$null}}else{Get-FrozenInputGenerationManifests -FrozenDirectory $LegacyFrozenDirectory}
+  if($LegacyFrozenDirectory){
+    $priorFreeze=Get-Content -LiteralPath (Join-Path $LegacyFrozenDirectory 'native_corridor_freeze_manifest.json') -Raw|ConvertFrom-Json -AsHashtable
+    $oaAuthority=$priorFreeze.inputs.accelerator_geometry_authority
+    if($oaAuthority-isnot[Collections.IDictionary]-or@($oaAuthority.source_refs).Count-ne1){throw 'New corridor construction requires complete frozen OA authority; old frozen data are not upgraded.'}
+    $oaRecord=$oaAuthority.source_refs[0]
+    Invoke-ProjectPython -Arguments @('-c','import json,sys;from msplatform.io.manifest_records import verify_record;verify_record("OA authority",json.loads(sys.argv[1]))',($oaRecord|ConvertTo-Json -Compress))|Out-Null
+    $oaSource=[string]$oaRecord.path;$oaProfile=[string]$oaAuthority.geometry_profile_id
+  }else{
+    if(-not$AcceleratorComponentContractPath-or-not$AcceleratorGeometryProfileId){throw 'New corridor construction requires explicit OA component contract and profile ID.'}
+    $oaSource=$AcceleratorComponentContractPath;$oaProfile=$AcceleratorGeometryProfileId
+  }
+  $script:oaComponentContractFrozen=Copy-VerifiedRunInput -Source $oaSource -Destination (Join-Path $Package.input_dir 'oa_component_contract.json')
+  $script:oaGeometryProfileId=$oaProfile
   $destination=Join-Path ([string]$Package.input_dir) 'native_corridor_freeze'
   Invoke-ProjectPython -Arguments @(
     '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_freeze',
+    '--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,
     '--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),
     '--coarse-generation-manifest',$source.coarse_manifest,
     '--simion-executable',$simion,'--simion-release','SIMION 2020',
@@ -257,7 +273,7 @@ function Build-RawGeometry {
     $gem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.gem'
     $mappedGem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.local.gem'
     $raw=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.pa#'
-    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
     # The generator reads the current contract only as a deterministic compiler;
     # the frozen package remains authoritative.  A changed contract must fail
     # here rather than silently create a bank under stale frozen identity.
@@ -266,7 +282,7 @@ function Build-RawGeometry {
     if($generatedGemHash-ne[string]$frozenIdentity.gem.sha256){throw 'Current corridor compiler output differs from the frozen native geometry identity.'}
     $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
     $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
-    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
     $lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine -RunId $RunId
     & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
     Move-NewMember -Source (Join-Path $ScratchDirectory 'mrtof_analyzer_corridor.pa#') -Destination $destination

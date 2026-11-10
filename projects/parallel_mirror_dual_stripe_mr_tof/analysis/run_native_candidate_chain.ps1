@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+  [string]$AcceleratorComponentContractPath='',
+  [string]$AcceleratorGeometryProfileId='',
   [string]$ContinuationRunManifest='',
   [string]$QualifiedWorkpointRunPath='',
   [string]$BaselineEnvelopeScreeningRunPath='',
@@ -141,7 +143,7 @@ function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments,[Collections.IDictionary]$Request)
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
-    $env:PYTHONPATH=$repoRoot
+    $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repoRoot)-join[IO.Path]::PathSeparator
     if($PSBoundParameters.ContainsKey('Request')){$Request|ConvertTo-Json -Depth 100 -Compress|& $python @Arguments}
     else{& $python @Arguments}
     if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
@@ -923,6 +925,9 @@ function Invoke-Te1WorkpointReclosure {
     }
     $arguments.CenterSourceReceiptPath=$CenterSourceReceiptPath
   }
+  if($null-eq$oaComponentContractFrozen){throw 'New workpoint construction requires explicit complete OA geometry authority.'}
+  $arguments.AcceleratorComponentContractPath=$oaComponentContractFrozen
+  $arguments.AcceleratorGeometryProfileId=$AcceleratorGeometryProfileId
   & $workpointRunner @arguments|Out-Host
   $childRun=Join-Path $artifactRoot "runs\$childId"
   $manifest=Assert-Manifest -RunPath $childRun -Status $(if($staticFieldMode){'success'}else{'checkpoint'}) -Mode downstream_fixed_grid_workpoint_iteration
@@ -1061,6 +1066,12 @@ try{
   Write-RunJson -Path $startup -Depth 20 -Value $capacitySession
 
   $failureStage='freeze_inputs'
+  $oaComponentContractFrozen=$null
+  if($AcceleratorComponentContractPath -or $AcceleratorGeometryProfileId){
+    if(-not$AcceleratorComponentContractPath-or-not$AcceleratorGeometryProfileId){throw 'OA component authority requires both contract path and profile ID.'}
+    $oaComponentContractFrozen=Copy-VerifiedRunInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $package.input_dir 'oa_component_contract.json')
+  }
+
   $sourceDefinition=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $SourceDefinitionPath).Path `
     -Destination (Join-Path $package.input_dir 'bunch_source_definition.json')
   $compositionPlan=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $CompositionPlanPath).Path `
@@ -1087,6 +1098,7 @@ try{
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $config.inputs=[ordered]@{bunch_source_definition=$sourceDefinition;composition_plan=$compositionPlan}
   if($null-ne$localScope){$config.inputs.local_scope=$localScope}
+  if($null-ne$oaComponentContractFrozen){$config.inputs.accelerator_component_contract=$oaComponentContractFrozen}
   if($staticFieldMode){
     $FieldProviderRequestPath=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $FieldProviderRequestPath).Path `
       -Destination (Join-Path $package.input_dir 'initial_field_provider_request.json')
@@ -1102,6 +1114,7 @@ try{
     $config.inputs.prism_controller_policy=$PrismControllerPolicyPath
   }
   $config.parameters=[ordered]@{
+    accelerator_geometry_profile_id=$AcceleratorGeometryProfileId
     trajectory_step_scale_override=$TrajectoryStepScaleOverride
     accelerator_y_anchor_mm=$AcceleratorYAnchorMm;cohort_particle_count=100
     accelerator_source_y_offset_mm=$sourceYOffsetMm
@@ -1142,6 +1155,9 @@ try{
       $arguments.FieldProviderRequestPath=$FieldProviderRequestPath
       $arguments.CenterSourceReceiptPath=$CenterSourceReceiptPath
     }
+    if($null-eq$oaComponentContractFrozen){throw 'New workpoint construction requires explicit complete OA geometry authority.'}
+    $arguments.AcceleratorComponentContractPath=$oaComponentContractFrozen
+    $arguments.AcceleratorGeometryProfileId=$AcceleratorGeometryProfileId
     & $workpointRunner @arguments
     $workpointRun=Join-Path $artifactRoot "runs\$workpointId"
   }

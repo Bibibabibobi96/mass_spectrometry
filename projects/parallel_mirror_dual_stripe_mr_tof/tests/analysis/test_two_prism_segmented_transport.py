@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 
 from copy import deepcopy
 import math
@@ -103,7 +104,7 @@ def build(contract=None):
         load_contract(CONTRACT) if contract is None else contract,
         prism_bias_v_by_electrode_id={16: 101.0, 17: -102.0},
         stripe_bias_v_by_set_name={"set_1": 11.0, "set_2": -12.0},
-    )
+    accelerator_geometry_authority=geometry_authority(load_contract(CONTRACT) if contract is None else contract))
 
 
 def transport_event(
@@ -291,7 +292,7 @@ class TwoPrismSegmentedTransportTests(unittest.TestCase):
                     trace.resulting_unit_direction_yz[0]
                     / trace.resulting_unit_direction_yz[1]
                 ),
-            )
+            accelerator_geometry_authority=geometry_authority(CONTRACT))
         self.assertAlmostEqual(prediction.predicted_prism_bias_v, bias, places=10)
         self.assertEqual((prediction.entry_edge_index, prediction.exit_edge_index), (0, 2))
 
@@ -335,7 +336,7 @@ class TwoPrismSegmentedTransportTests(unittest.TestCase):
                 numerics=NUMERICS,
                 stage_a_maximum_reduced_time_mm_per_sqrt_v=20.0,
                 stage_b_maximum_reduced_time_mm_per_sqrt_v=stage_b_end,
-            )
+            accelerator_geometry_authority=geometry_authority(contract))
         return result, propagate
 
     def test_voltage_pair_evaluator_preserves_signed_source_and_two_residuals(self) -> None:
@@ -681,13 +682,13 @@ class TwoPrismSegmentedTransportTests(unittest.TestCase):
                 contract,
                 prism_bias_v_by_electrode_id={16: 1.0},
                 stripe_bias_v_by_set_name={"set_1": 1.0, "set_2": 2.0},
-            )
+            accelerator_geometry_authority=geometry_authority(contract))
         with self.assertRaises(CandidateContractError):
             build_two_prism_segmented_potential_regions(
                 contract,
                 prism_bias_v_by_electrode_id={16: 1.0, 17: 2.0},
                 stripe_bias_v_by_set_name={"set_1": float("nan"), "set_2": 2.0},
-            )
+            accelerator_geometry_authority=geometry_authority(contract))
 
     def test_prism_facing_x_sections_must_share_one_triangle(self) -> None:
         contract = deepcopy(load_contract(CONTRACT))

@@ -1,5 +1,6 @@
 """Identity for the symmetric full-domain 1 mm analyzer raw PA."""
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 
 import argparse
 import json
@@ -15,7 +16,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 
-def derive(contract_path: Path, simion_executable: Path, simion_release: str) -> tuple[dict[str, Any], str]:
+def derive(contract_path: Path, simion_executable: Path, simion_release: str, *, accelerator_geometry_authority) -> tuple[dict[str, Any], str]:
     contract = load_contract(contract_path)
     simion = contract["simion"]
     mesh = [float(value) for value in simion["component_mesh_mm_per_gu"]["analyzer"]]
@@ -24,7 +25,7 @@ def derive(contract_path: Path, simion_executable: Path, simion_release: str) ->
     shape = [int(round(span[index] / mesh[index])) + 1 for index in range(3)]
     if mesh != [1.0, 1.0, 1.0] or origin != [-span[0] / 2.0, -162.0, -span[2] / 2.0]:
         raise ValueError("coarse analyzer must retain the full bilateral 1 mm domain")
-    gem = build_analyzer_gem(contract_path)
+    gem = build_analyzer_gem(contract_path, accelerator_geometry_authority=accelerator_geometry_authority)
     identity = {
         "geometry": {"role": "mrtof_symmetric_full_domain_coarse_raw", "grid_shape": shape},
         "gem": {"sha256": __import__("hashlib").sha256(gem.encode("utf-8")).hexdigest().upper()},
@@ -47,13 +48,20 @@ def derive(contract_path: Path, simion_executable: Path, simion_release: str) ->
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--accelerator-component-contract", type=Path, required=True)
+    parser.add_argument("--accelerator-geometry-profile-id", required=True)
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--simion-executable", type=Path, required=True)
     parser.add_argument("--simion-release", required=True)
     parser.add_argument("--identity-output", type=Path, required=True)
     parser.add_argument("--gem-output", type=Path, required=True)
     args = parser.parse_args()
-    identity, gem = derive(args.contract, args.simion_executable, args.simion_release)
+    accelerator_geometry_authority = read_accelerator_geometry_authority(
+        load_contract(args.contract),
+        component_contract_path=args.accelerator_component_contract,
+        geometry_profile_id=args.accelerator_geometry_profile_id,
+    )
+    identity, gem = derive(args.contract, args.simion_executable, args.simion_release, accelerator_geometry_authority=accelerator_geometry_authority)
     args.identity_output.parent.mkdir(parents=True, exist_ok=True)
     args.gem_output.parent.mkdir(parents=True, exist_ok=True)
     args.identity_output.write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -1,3 +1,4 @@
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
 """Complete MR electrode ownership and independent entry-face vectors."""
 import copy
 import unittest
@@ -7,13 +8,13 @@ from pathlib import Path
 from msplatform.contracts.machine_contracts import validate_schema
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
 
 @lru_cache(maxsize=1)
 def complete_geometry():
-    return resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"))
+    return resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json")))
 
 
 def geometry():

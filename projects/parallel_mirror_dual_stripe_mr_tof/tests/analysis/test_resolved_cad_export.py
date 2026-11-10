@@ -586,7 +586,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
             self.assertEqual((root/'cad/linear_stripe.step').read_bytes(),original.read_bytes())
 
     def frozen_pose_fixture(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import _apply_mirror_convergence
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import _apply_mirror_convergence
         g,a=fixture();g['frame_id']='project_xyz'
         g['mirror_electrodes']=[]
         for index in range(5):

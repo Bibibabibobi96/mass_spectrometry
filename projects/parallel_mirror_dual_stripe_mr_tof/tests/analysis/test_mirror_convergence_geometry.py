@@ -1,12 +1,13 @@
 """Pure tests of the authored symmetric mirror convergence candidate."""
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
 
 import copy
 import math
 from pathlib import Path
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     _converging_mirror_solid, resolve_geometry,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
@@ -25,15 +26,15 @@ class MirrorConvergenceGeometryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        cls.parallel = resolve_geometry(cls.contract)
+        cls.parallel = resolve_geometry(cls.contract, **pure_geometry_inputs(cls.contract))
         cls.authored = copy.deepcopy(cls.contract)
         cls.authored["mirror"]["convergence_transform"] = {"angle_deg": 0.025688743, "pivot_y_mm": 0.0}
-        cls.tilted = resolve_geometry(cls.authored)
+        cls.tilted = resolve_geometry(cls.authored, **pure_geometry_inputs(cls.authored))
 
     def test_zero_angle_preserves_complete_parallel_geometry_and_gem(self):
         contract = copy.deepcopy(self.contract)
         contract["mirror"]["convergence_transform"] = {"angle_deg": 0.0, "pivot_y_mm": 0.0}
-        resolved = resolve_geometry(contract)
+        resolved = resolve_geometry(contract, **pure_geometry_inputs(contract))
         self.assertEqual(resolved, self.parallel)
         self.assertEqual(_mirror_lines(resolved), _mirror_lines(self.parallel))
         self.assertEqual(_mirror_ground_shield_lines(resolved), _mirror_ground_shield_lines(self.parallel))
@@ -82,7 +83,7 @@ class MirrorConvergenceGeometryTest(unittest.TestCase):
             contract = copy.deepcopy(self.contract)
             contract["mirror"]["convergence_transform"] = transform
             with self.subTest(transform=transform), self.assertRaises(CandidateContractError):
-                resolve_geometry(contract)
+                resolve_geometry(contract, **pure_geometry_inputs(contract))
 
     def test_collision_uses_tilted_occupancy_and_x_bounded_hole(self):
         angle = math.radians(20)

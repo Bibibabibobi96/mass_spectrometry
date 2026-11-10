@@ -65,7 +65,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_ad
     build_native_stripe_shape_selection,
     load_native_stripe_shape_selection,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (

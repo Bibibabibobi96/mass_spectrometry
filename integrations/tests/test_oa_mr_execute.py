@@ -644,6 +644,8 @@ foreach($record in @($first,$second)){
         source = RUNNER.read_text(encoding="utf-8")
         start = source.index("  $failureStage='freeze_executable_dependencies'")
         freeze = source[start:source.index("  if($null-ne$nativeRuntimeCheckpointPath){", start)]
+        copy_start = source.index("function Copy-RequiredInput {")
+        copy_input = source[copy_start:source.index("function Format-InvariantNumber", copy_start)]
         materialize_start = source.index("  $acceleratorInstance='3'")
         materialize = source[materialize_start:source.index("  $trial=Get-Content", materialize_start)]
         copy_builder = next(line for line in source.splitlines()
@@ -659,7 +661,7 @@ foreach($staticFieldRequested in @($false,$true)){
  $solverDir=Join-Path $Root ($fieldKind+'_'+[string]$fixtureBunch)
  New-Item -ItemType Directory -Path $solverDir|Out-Null
  $providerSimionRoot=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
- $contract='contract';$acceleratorGeometry='geometry';$trajectoryContract='numerics';$reviewed='reviewed'
+ $contract=$trajectoryContractInput;$acceleratorGeometry='geometry';$trajectoryContract='numerics';$reviewed='reviewed'
  $mirrorLocal='mirror';$stripeLocal='stripe';$acceleratorLocal='accelerator'
  $acceleratorProviderPlanLocal='provider';$compositionPlanLocal='composition-plan';$localScopeLocal=$null;$acceleratorResolvedCampaignLocal='campaign'
  $Prism1VoltageV=190.;$Prism2VoltageV=-186.;$AcceleratorSourceYOffsetMm=0.
@@ -708,6 +710,15 @@ foreach($staticFieldRequested in @($false,$true)){
 """
         with TemporaryDirectory() as directory:
             root = Path(directory)
+            oa_contract = REPO / "projects/orthogonal_accelerator/config/component_contract.json"
+            oa_profile = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
+            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+            from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+            expected_authority = read_accelerator_geometry_authority(
+                load_contract(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"),
+                component_contract_path=oa_contract, geometry_profile_id=oa_profile,
+            )
+            (root / "expected_oa_authority.json").write_text(json.dumps(expected_authority), encoding="utf-8")
             fixture = root / "inert_materializer.py"
             fixture.write_text(r"""# Test-only inert physics stage, using the actual frozen parser/priority renderer.
 import json
@@ -715,6 +726,7 @@ from pathlib import Path
 import sys
 from unittest.mock import patch
 from msplatform.execution.retention import file_record
+from msplatform.io.manifest_records import file_record as source_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial as module
 assert Path(module.__file__).is_relative_to(Path.cwd())
 assert sys.argv[1:3] == ['-m', module.__name__]
@@ -722,6 +734,10 @@ sys.argv = [module.__name__, *sys.argv[3:]]
 def inert_materialize(**arguments):
     assert arguments['batch_scientific_event_locators'] is (arguments['bunch_source_receipt_path'] is not None)
     sidecar = arguments['sidecar_path']
+    expected = json.loads(Path(__file__).with_name('expected_oa_authority.json').read_text(encoding='utf-8'))
+    frozen_oa = sidecar.parent.parent / 'inputs/oa_component_contract.json'
+    expected['source_refs'] = [source_record(frozen_oa)]
+    assert arguments['accelerator_geometry_authority'] == expected
     manifest = arguments['native_corridor_cache_manifest_path']
     if arguments['field_binding_path'] is None:
         assert manifest == sidecar.parent / 'native_corridor_bank_cache_manifest.json'
@@ -741,16 +757,20 @@ with patch.object(module, 'materialize_trial', side_effect=inert_materialize):
     module.main()
 """, encoding="utf-8")
             script = root / "freeze.ps1"
-            script.write_text(r"""param($Repo,$Root,$Python,$Owner,$Fixture)
+            script.write_text(r"""param($Repo,$Root,$Python,$Owner,$Fixture,$OaContract,$OaProfile)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=$Repo;$runDir=$Root;$projectId='instrument_assembly';$ContractPath='';$continuationParent=$null
+$AcceleratorComponentContractPath=$OaContract;$AcceleratorGeometryProfileId=$OaProfile
 $runConfig=Join-Path $Root 'run_config.json'
-@{project=$Owner;mode='oa_mr';inputs=@{}}|ConvertTo-Json|Set-Content $runConfig
+@{project=$Owner;mode='oa_mr';inputs=@{};parameters=@{}}|ConvertTo-Json|Set-Content $runConfig
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
-""" + freeze + r"""
+""" + copy_input + freeze + r"""
 $config=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
 if($config.inputs.code_inventory-ne$frozen.code_inventory_path){throw 'Frozen code identity was lost'}
+if($config.inputs.accelerator_component_contract-ne$oaComponentContractLocal){throw 'Selected OA input identity was lost'}
+if($config.parameters.accelerator_geometry_profile_id-ne$OaProfile){throw 'Selected OA profile identity was lost'}
+if((Get-FileHash -LiteralPath $oaComponentContractLocal).Hash-ne(Get-FileHash -LiteralPath $OaContract).Hash){throw 'Selected OA source bytes changed'}
 $env:PYTHONPATH=(Join-Path $script:pythonRoot 'src')+[IO.Path]::PathSeparator+$script:pythonRoot
 Push-Location -LiteralPath $script:pythonRoot
 try{
@@ -758,7 +778,7 @@ try{
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
  & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}
- & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import build_two_zone_accelerator_requirements; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); assert build_two_zone_accelerator_requirements(c)['variant_id']=='two_zone'"
+ & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
  if($LASTEXITCODE-ne0){throw 'Detached source policy or physical provider requirements failed'}
 """ + stage_fixture + r"""
 }finally{Pop-Location}
@@ -769,7 +789,7 @@ try{
                     output = root / owner
                     output.mkdir()
                     result = subprocess.run(
-                        ["pwsh", "-NoProfile", "-File", str(script), str(REPO), str(output), sys.executable, owner, str(fixture)],
+                        ["pwsh", "-NoProfile", "-File", str(script), str(REPO), str(output), sys.executable, owner, str(fixture), str(oa_contract), oa_profile],
                         cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
                     )
                     if owner == "instrument_assembly":

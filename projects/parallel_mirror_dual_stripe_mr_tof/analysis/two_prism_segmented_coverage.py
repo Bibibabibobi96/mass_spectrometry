@@ -1,5 +1,7 @@
 """Deterministic branch coverage for the solver-neutral segmented P1/P2 model."""
 from __future__ import annotations
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 
 import argparse
 from collections import Counter, defaultdict
@@ -478,7 +480,7 @@ def _evaluate_detailed(pair: tuple[float, float]) -> dict[str, Any]:
             numerics=context["numerics"],
             stage_a_maximum_reduced_time_mm_per_sqrt_v=context["stage_a"],
             stage_b_maximum_reduced_time_mm_per_sqrt_v=context["stage_b"],
-        )
+         accelerator_geometry_authority=_WORKER_CONTEXT["accelerator_geometry_authority"])
     except CandidateContractError as error:
         return {"prism_voltages_v": list(pair), "status": "invalid_topology", "failure": str(error)}
     residual_map = dict(result.voltage_residuals)
@@ -544,10 +546,8 @@ def _summarize(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def run_coverage(
-    *, context: dict[str, Any], sobol_pairs: Sequence[tuple[float, float]],
-    local_pairs: Sequence[tuple[float, float]], worker_count: int,
-) -> dict[str, Any]:
+def run_coverage(*, accelerator_geometry_authority, context: dict[str, Any], sobol_pairs: Sequence[tuple[float, float]], local_pairs: Sequence[tuple[float, float]], worker_count: int) -> dict[str, Any]:
+    context = {**context, "accelerator_geometry_authority": accelerator_geometry_authority}
     workers = _positive_integer(worker_count, "worker count")
     tagged = [("sobol", pair) for pair in sobol_pairs] + [("local", pair) for pair in local_pairs]
     if workers == 1:
@@ -577,6 +577,8 @@ def main() -> None:
         role="GATE", stage="theory_compute",
     )
     parser = argparse.ArgumentParser()
+    parser.add_argument("--accelerator-component-contract", type=Path, required=True)
+    parser.add_argument("--accelerator-geometry-profile-id", required=True)
     parser.add_argument("--contract", type=Path, required=True)
     authority = parser.add_mutually_exclusive_group(required=True)
     authority.add_argument("--exact-k-manifest", type=Path)
@@ -607,6 +609,11 @@ def main() -> None:
     parser.add_argument("--stage-a-maximum-reduced-time", type=float, required=True)
     parser.add_argument("--stage-b-maximum-reduced-time", type=float, required=True)
     args = parser.parse_args()
+    accelerator_geometry_authority = read_accelerator_geometry_authority(
+        load_contract(args.contract),
+        component_contract_path=args.accelerator_component_contract,
+        geometry_profile_id=args.accelerator_geometry_profile_id,
+    )
 
     (
         managed, stripe_biases, source_energy, target_tangent_ratio,
@@ -707,7 +714,7 @@ def main() -> None:
     local_p1 = _csv_floats(args.local_p1_values_v, "local P1 voltage")
     local_p2 = _csv_floats(args.local_p2_values_v, "local P2 voltage")
     local_pairs = tuple((p1, p2) for p1 in local_p1 for p2 in local_p2)
-    coverage = run_coverage(context=context, sobol_pairs=sobol_pairs, local_pairs=local_pairs, worker_count=args.worker_count)
+    coverage = run_coverage(context=context, sobol_pairs=sobol_pairs, local_pairs=local_pairs, worker_count=args.worker_count, accelerator_geometry_authority=accelerator_geometry_authority)
     output = {
         "schema_version": 1,
         "role": "mrtof_two_prism_segmented_voltage_branch_coverage",
@@ -730,6 +737,7 @@ def main() -> None:
             "source_slow_energy_per_charge_v": source_energy, "stripe_biases_v": list(stripe_biases),
             "target_p2_reference_tangent_ratio": target_tangent_ratio,
             "source_observation_input": source_receipt["input"],
+            "accelerator_geometry_authority": accelerator_geometry_authority,
         },
         "controls": {
             "sobol": {"scramble": False, "sample_count": len(sobol_pairs), "p1_bounds_v": list(p1_bounds), "p2_bounds_v": list(p2_bounds), "voltage_domain_source": voltage_domain_source},

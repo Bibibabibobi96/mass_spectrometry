@@ -6,8 +6,10 @@ three files.  Large PA payloads are never hashed here: their already-published
 generation manifests supply the trusted byte counts and SHA-256 identities.
 """
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 
 import argparse
+import copy
 import json
 import os
 import shutil
@@ -29,7 +31,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geomet
     build_native_corridor_gem,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
-    CandidateContractError,
+    CandidateContractError, load_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_identity import (
     build_native_corridor_identity,
@@ -241,16 +243,7 @@ def _validate_governed_freeze_scope(
     return run_directory, configuration
 
 
-def freeze_native_corridor_inputs(
-    *,
-    contract_path: Path,
-    coarse_generation_manifest: Path,
-    simion_executable: Path,
-    simion_release: str,
-    output_directory: Path,
-    run_config_path: Path,
-    canonical_gem_path: Path | None = None,
-) -> dict[str, Any]:
+def freeze_native_corridor_inputs(*, accelerator_geometry_authority, contract_path: Path, coarse_generation_manifest: Path, simion_executable: Path, simion_release: str, output_directory: Path, run_config_path: Path, canonical_gem_path: Path | None=None) -> dict[str, Any]:
     """Atomically publish one deterministic four-file corridor freeze package.
 
     Existing identical output is a cache hit.  Existing non-identical output,
@@ -272,7 +265,7 @@ def freeze_native_corridor_inputs(
         tempfile.mkdtemp(prefix=f".{output_directory.name}.freeze-", dir=output_directory.parent)
     )
     try:
-        plan = derive_native_corridor_plan(contract_path)
+        plan = derive_native_corridor_plan(contract_path, accelerator_geometry_authority=accelerator_geometry_authority)
         recipe, coarse_raw_path, upstream = _derived_recipe(
             plan,
             coarse_generation_manifest,
@@ -285,7 +278,7 @@ def freeze_native_corridor_inputs(
         gem_path = stage / ".canonical_corridor.gem" if transient_gem else canonical_gem_path.resolve()
         if transient_gem:
             gem_path.write_text(
-                build_native_corridor_gem(contract_path), encoding="utf-8", newline="\n"
+                build_native_corridor_gem(contract_path, accelerator_geometry_authority=accelerator_geometry_authority), encoding="utf-8", newline="\n"
             )
         identity = build_native_corridor_identity(
             contract_path,
@@ -294,7 +287,7 @@ def freeze_native_corridor_inputs(
             simion_release,
             recipe_path,
             coarse_raw_path,
-        )
+         accelerator_geometry_authority=accelerator_geometry_authority)
         identity_path = stage / IDENTITY_NAME
         identity_path.write_bytes(_canonical_json(identity))
         if transient_gem:
@@ -317,6 +310,7 @@ def freeze_native_corridor_inputs(
                     "bytes": contract_path.stat().st_size,
                     "sha256": file_sha256(contract_path).lower(),
                 },
+                "accelerator_geometry_authority": copy.deepcopy(accelerator_geometry_authority),
                 "canonical_gem": identity["gem"],
                 "simion_identity": identity["simion_identity"],
                 **upstream,
@@ -358,6 +352,8 @@ def freeze_native_corridor_inputs(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--accelerator-component-contract", type=Path, required=True)
+    parser.add_argument("--accelerator-geometry-profile-id", required=True)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--coarse-generation-manifest", required=True, type=Path)
     parser.add_argument("--simion-executable", required=True, type=Path)
@@ -366,6 +362,11 @@ def main() -> int:
     parser.add_argument("--run-config", required=True, type=Path)
     parser.add_argument("--canonical-gem", type=Path)
     arguments = parser.parse_args()
+    accelerator_geometry_authority = read_accelerator_geometry_authority(
+        load_contract(arguments.contract),
+        component_contract_path=arguments.accelerator_component_contract,
+        geometry_profile_id=arguments.accelerator_geometry_profile_id,
+    )
     result = freeze_native_corridor_inputs(
         contract_path=arguments.contract,
         coarse_generation_manifest=arguments.coarse_generation_manifest,
@@ -374,7 +375,7 @@ def main() -> int:
         output_directory=arguments.output_directory,
         run_config_path=arguments.run_config,
         canonical_gem_path=arguments.canonical_gem,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 

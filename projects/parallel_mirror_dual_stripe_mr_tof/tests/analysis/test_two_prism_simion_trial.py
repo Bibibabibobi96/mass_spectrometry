@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
@@ -189,7 +190,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 accelerator_provider_plan_path=paths["provider"], composition_plan_path=paths["composition"],
                 accelerator_resolved_campaign_path=paths["campaign"],
                 field_binding_path=root / "binding.json" if mode else None,
-                native_corridor_cache_manifest_path=bank_path)
+                native_corridor_cache_manifest_path=bank_path, accelerator_geometry_authority=geometry_authority(paths["contract"]))
             self.assertEqual(loader.call_count, 1 if mode else 0)
             if parent_plan is None:
                 self.assertEqual(oa_resolver.call_count, 2 if mode is None and trajectory_anchor is not None else 1)
@@ -823,7 +824,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 charge_state=1, slow_energy_per_charge_v=5.3,
                 source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                 direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
-            )
+            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
         row = result["particle_rows"][0]
         self.assertEqual(result["source_frame_origin_project_mm"], [0.0, -55.0, 0.0])
         self.assertAlmostEqual(row["source_position_provider_mm"][1], -1.35182899425077)
@@ -845,7 +846,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 contract=actual_contract, provider_plan=actual_provider, resolved_campaign=campaign,
                 bunch_source=None, bunch_selection=selection, mass_th=524., charge_state=1,
                 slow_energy_per_charge_v=5.3, source_origin_project_mm=(0., -55., 32.),
-                composition_plan=plan, local_scope=None, direct_pose=direct)
+                composition_plan=plan, local_scope=None, direct_pose=direct, accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
             self.assertEqual(json.dumps(actual, sort_keys=True), json.dumps(result, sort_keys=True))
             self.assertEqual(selection, original_states)
             self.assertEqual(json.dumps(plan, sort_keys=True), before)
@@ -864,7 +865,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                 direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
                 validated_provider_origin=(0.0, -72.25, -6.0),
-            )
+            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
             self.assertEqual(reused, result)
             with self.assertRaisesRegex(CandidateContractError, "exit-plane mapping differs"):
                 _accelerator_geometric_exit_reference(
@@ -874,7 +875,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                     source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                     direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
                     validated_provider_origin=(0.0, -72.25, -5.0),
-                )
+                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -909,7 +910,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                     charge_state=1, slow_energy_per_charge_v=5.3,
                     source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                     direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
-                )
+                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
             self.assertEqual(full["expected_particle_ids"], list(range(1, 101)))
             self.assertAlmostEqual(
                 full["particle_rows"][0]["source_position_provider_mm"][1], -0.1,
@@ -1357,10 +1358,11 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             },
         }
         expected = {"resolved": True}
+        selected_authority = geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json")
         with patch.object(
             two_prism_simion_trial, "resolve_geometry", return_value=expected,
         ) as resolver:
-            self.assertIs(_resolve_trial_geometry(reviewed, current, accelerator), expected)
+            self.assertIs(_resolve_trial_geometry(reviewed, current, accelerator, accelerator_geometry_authority=selected_authority), expected)
         forwarded = resolver.call_args.args[0]
         self.assertEqual(forwarded["identity"], "reviewed-physical-geometry")
         self.assertEqual(forwarded["accelerator"]["reviewed_conductor"], "retained")
@@ -1376,7 +1378,8 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         self.assertNotIn("component_source_cylinder", reviewed["accelerator"])
         self.assertEqual(
             resolver.call_args.kwargs,
-            {"inherited_dual_stripe_topology_contract": current, "accelerator_assembly": None},
+            {"inherited_dual_stripe_topology_contract": current, "accelerator_assembly": None,
+             "accelerator_geometry_authority": selected_authority},
         )
 
     def test_trial_geometry_forwards_frozen_oa_assembly_to_real_p1_extension(self) -> None:
@@ -1384,16 +1387,24 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         contract = json.loads(path.read_text(encoding="utf-8"))
         contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
         original = copy.deepcopy(contract)
+        from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
+        selected_authority = geometry_authority(contract)
+        requirements = selected_authority["accelerator_requirements"]
+        physical = resolve_closed_two_zone_geometry(requirements,
+            geometry_profile_id=selected_authority["geometry_profile_id"], geometry_profile=selected_authority["geometry_profile"])
+        electrodes = resolve_closed_two_zone_electrodes(requirements,
+            geometry_profile_id=selected_authority["geometry_profile_id"], geometry_profile=selected_authority["geometry_profile"]).to_dict()
+        translation = electrodes["local_to_pa_translation_mm"]
+        front = min(item["front_z_mm"] for item in physical.grid_supports)
         assembly = {
-            "accelerator_resolved_electrodes": {
-                "acceleration_direction": "-z", "local_to_pa_translation_mm": [0., 0., 0.],
-                "grid_supports": [{"component_electrode_id": 4, "frame_outer_box_mm": {"z_min_mm": 0.}}],
-            },
-            "accelerator_iob_origin_mm": [0., 0., 0.],
+            "accelerator_resolved_electrodes": electrodes,
+            "accelerator_iob_origin_mm": [-translation[0], -translation[1],
+                -translation[2] - requirements["local_pa"]["exit_z_mm"] - front],
         }
-        with self.assertRaisesRegex(CandidateContractError, "frozen accelerator assembly"):
-            _resolve_trial_geometry(contract, contract, contract)
-        result = _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=assembly)
+        with self.assertRaisesRegex(CandidateContractError, "explicit accelerator placement"):
+            _resolve_trial_geometry(contract, contract, contract, accelerator_geometry_authority=geometry_authority(contract))
+        result = _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=assembly, accelerator_geometry_authority=geometry_authority(contract))
         shield = result["prism_ground_shields"][0]
         extension = shield["extension_to_accelerator_exit"]
         self.assertEqual(extension["resolved_end_z_mm"], -1.0)
@@ -1402,8 +1413,53 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         self.assertEqual(contract, original)
         invalid = copy.deepcopy(assembly)
         invalid["accelerator_resolved_electrodes"]["acceleration_direction"] = "+z"
-        with self.assertRaisesRegex(CandidateContractError, "resolved OA exit support/assembly"):
-            _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=invalid)
+        with self.assertRaisesRegex(CandidateContractError, "matching OA support/placement authority"):
+            _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=invalid, accelerator_geometry_authority=geometry_authority(contract))
+
+    def test_real_p1_extension_consumes_changed_profile_and_explicit_placement(self) -> None:
+        from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+
+        project = Path(__file__).resolve().parents[2]
+        contract = json.loads((project / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
+        authority = geometry_authority(contract)
+        requirements = authority["accelerator_requirements"]
+        physical = resolve_closed_two_zone_geometry(requirements,
+            geometry_profile_id=authority["geometry_profile_id"], geometry_profile=authority["geometry_profile"])
+        native = resolve_closed_two_zone_electrodes(requirements,
+            geometry_profile_id=authority["geometry_profile_id"], geometry_profile=authority["geometry_profile"]).to_dict()
+        translation = native["local_to_pa_translation_mm"]
+        front = min(item["front_z_mm"] for item in physical.grid_supports)
+        assembly = {"accelerator_resolved_electrodes": native,
+                    "accelerator_iob_origin_mm": [-translation[0], -translation[1],
+                        -translation[2] - requirements["local_pa"]["exit_z_mm"] - front]}
+        moved = copy.deepcopy(assembly)
+        moved["accelerator_iob_origin_mm"][2] += 2.0
+        result = _resolve_trial_geometry(contract, contract, contract,
+            accelerator_assembly=moved, accelerator_geometry_authority=authority)
+        extension = result["prism_ground_shields"][0]["extension_to_accelerator_exit"]
+        self.assertEqual(extension["exit_support_downstream_z_mm"], 2.0)
+        self.assertEqual(extension["resolved_end_z_mm"], 1.0)
+        provider = json.loads((project.parent / "orthogonal_accelerator/config/component_contract.json").read_text(encoding="utf-8"))
+        profile = provider["geometry_profiles"][authority["geometry_profile_id"]]
+        profile["ring_thickness_z_mm"] += 0.2
+        with tempfile.TemporaryDirectory() as directory:
+            selected = Path(directory) / "selected_provider.json"
+            selected.write_text(json.dumps(provider), encoding="utf-8")
+            changed_authority = read_accelerator_geometry_authority(contract,
+                component_contract_path=selected, geometry_profile_id=authority["geometry_profile_id"])
+            changed_assembly = copy.deepcopy(assembly)
+            changed_assembly["accelerator_resolved_electrodes"] = resolve_closed_two_zone_electrodes(
+                changed_authority["accelerator_requirements"], geometry_profile_id=changed_authority["geometry_profile_id"],
+                geometry_profile=changed_authority["geometry_profile"]).to_dict()
+            result = _resolve_trial_geometry(contract, contract, contract,
+                accelerator_assembly=changed_assembly, accelerator_geometry_authority=changed_authority)
+            extension = result["prism_ground_shields"][0]["extension_to_accelerator_exit"]
+            self.assertTrue(math.isclose(extension["exit_support_downstream_z_mm"], -0.1, rel_tol=0, abs_tol=1e-12))
+            self.assertTrue(math.isclose(extension["resolved_end_z_mm"], -1.1, rel_tol=0, abs_tol=1e-12))
+            self.assertEqual(changed_authority["source_refs"][0]["path"], str(selected.resolve()))
 
     @staticmethod
     def _analyze_with_handoff_events(

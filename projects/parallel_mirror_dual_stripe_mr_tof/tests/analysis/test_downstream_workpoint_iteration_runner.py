@@ -4182,6 +4182,7 @@ foreach($name in @('New-CenterTrialArguments','Invoke-WorkpointStencil','Save-Wo
 }
 $staticFieldMode=$false
 $GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe';$AcceleratorProviderReceiptPath='provider-receipt'
+$script:oaComponentContractFrozen='selected-fixture-authority';$AcceleratorGeometryProfileId='selected-fixture-profile'
 $NativeSystemRuntimeBundlePath='native-system-bundle.json';$TrajectoryStepScale=1.;$AcceleratorSourceYOffsetMm=-1.7
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
 $python=$FixturePython;$capacitySession=[pscustomobject]@{lease_id='owner'}
@@ -4196,7 +4197,7 @@ $script:flights=@();$script:audits=0;$script:failAt=0
 function Write-RunJson {param($Path,$Depth,$Value)}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) return @{passed=$true;reasons=@();observation_sha256='A';materialization_sha256='B';child_manifest_sha256='C';child_manifest=$Manifest}}
 function Invoke-MockTrial {
-  param($GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath)
+  param($AcceleratorComponentContractPath,$AcceleratorGeometryProfileId,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath)
   if($NativeCorridorBankRunPath-ne'native-bank'-or$NativeSystemRuntimeBundlePath-ne'native-system-bundle.json'-or$CapacityWorkflowSession.lease_id-ne'owner'){throw 'Lost field, native-system, or owner binding'}
   $script:flights+=,@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)
   if($script:failAt-eq$script:flights.Count){throw 'injected solver failure'}

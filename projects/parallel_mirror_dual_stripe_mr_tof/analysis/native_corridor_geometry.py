@@ -7,6 +7,7 @@ electrode IDs; the stream runner remaps those IDs to the dense native family
 namespace before creating ``pa#``/``pa0``.
 """
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 
 import argparse
 import re
@@ -18,22 +19,17 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan i
 )
 from msplatform.backends.simion.mr_geometry import _number
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )
 
 
-def build_native_corridor_gem(
-    contract_path: Path,
-    *,
-    physical_electrode_voltages_v: Mapping[int, float] | None = None,
-    physical_to_local_electrode_id: Mapping[int, int] | None = None,
-) -> str:
+def build_native_corridor_gem(contract_path: Path, *, accelerator_geometry_authority, physical_electrode_voltages_v: Mapping[int, float] | None=None, physical_to_local_electrode_id: Mapping[int, int] | None=None) -> str:
     """Return a corridor GEM clipped by SIMION's derived PA envelope."""
     contract = load_contract(contract_path)
-    plan = derive_native_corridor_plan(contract_path)
+    plan = derive_native_corridor_plan(contract_path, accelerator_geometry_authority=accelerator_geometry_authority)
     box = tuple(float(value) for value in plan["box_project_mm"])
     mesh = tuple(float(value) for value in plan["mesh_mm_per_gu"])
     surface_mode = str(plan["surface_mode"])
@@ -42,7 +38,7 @@ def build_native_corridor_gem(
         raise CandidateContractError("native corridor plan has an invalid box, mesh or shape")
     if any(value <= 0 for value in mesh) or any(value < 2 for value in shape):
         raise CandidateContractError("native corridor mesh and shape must be positive")
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
     mapping = plan["physical_to_local_electrode_id"]
     required = {str(identifier) for identifier in range(1, 21)}
     if set(mapping) != required:
@@ -94,12 +90,19 @@ def build_native_corridor_gem(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--accelerator-component-contract", type=Path, required=True)
+    parser.add_argument("--accelerator-geometry-profile-id", required=True)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--active-physical-ids", default="")
     parser.add_argument("--basis-voltage-v", type=float, default=10_000.0)
     parser.add_argument("--physical-to-local-map", default="")
     args = parser.parse_args()
+    accelerator_geometry_authority = read_accelerator_geometry_authority(
+        load_contract(args.contract),
+        component_contract_path=args.accelerator_component_contract,
+        geometry_profile_id=args.accelerator_geometry_profile_id,
+    )
     if args.active_physical_ids and args.physical_to_local_map:
         raise CandidateContractError("active physical IDs and local-ID map are mutually exclusive")
     voltages = None
@@ -120,7 +123,7 @@ def main() -> int:
         args.contract,
         physical_electrode_voltages_v=voltages,
         physical_to_local_electrode_id=local_mapping,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(text, encoding="utf-8", newline="\n")
     return 0

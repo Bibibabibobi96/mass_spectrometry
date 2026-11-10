@@ -227,7 +227,7 @@ function Invoke-NativeCorridorResponseMemberBuild {
     $sourceActive=@($record[0].physical_ids|ForEach-Object{[int]$_})-join','
     $lease=Enter-HostExecutionLease -Role SIMION -Stage dirichlet_response_refine -RunId $RunId
     $responseGem=Join-Path $memberScratch 'prebiased_response.gem'
-    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',$contract,'--output',$responseGem,'--active-physical-ids',$sourceActive,'--basis-voltage-v','10000')|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$responseGem,'--active-physical-ids',$sourceActive,'--basis-voltage-v','10000')|Out-Null
     $compiledMemberExecution=Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.pa#'
     & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion `
       -GemPath (Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.gem') `
@@ -357,9 +357,9 @@ function Invoke-NativeCorridorFamilyBuild {
       $gem=Join-Path $scratchDirectory 'mrtof_analyzer_corridor.gem'
       $mappedGem=Join-Path $scratchDirectory 'mrtof_analyzer_corridor.local.gem'
       $rawScratch=Join-Path $scratchExecution 'mrtof_analyzer_corridor.pa#'
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',$contract,'--output',$gem)|Out-Null
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$gem)|Out-Null
       $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',$contract,'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
       & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $rawScratch 2>&1|Set-Content -LiteralPath $buildLog
       Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $scratchDirectory 'mrtof_analyzer_corridor.pa#') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#')
     }
@@ -440,6 +440,14 @@ function Write-NativeCorridorFamilyVerificationEvidence {
   return (Resolve-Path -LiteralPath $EvidencePath).Path
 }
 
+$freezeAuthorityManifest=Get-Content -LiteralPath $freezeManifestPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+  $oaAuthority=$freezeAuthorityManifest.inputs.accelerator_geometry_authority
+  if($null-eq$oaAuthority-or@($oaAuthority.source_refs).Count-ne1){throw 'New corridor construction requires complete frozen OA authority; historical fixed data are not upgraded.'}
+  $oaRecord=$oaAuthority.source_refs[0]
+  Invoke-ProjectPython -Arguments @('-c','import json,sys;from msplatform.io.manifest_records import verify_record;verify_record("OA authority",json.loads(sys.argv[1]))',($oaRecord|ConvertTo-Json -Compress))|Out-Null
+  $script:oaComponentContractFrozen=[string]$oaRecord.path
+  $script:oaGeometryProfileId=[string]$oaAuthority.geometry_profile_id
+
 if($InternalResponseId-gt0){
   foreach($value in @($InternalBuildDirectory,$InternalScratchDirectory,$InternalCoarseRawGeometryPath,$InternalCoarseBasisDirectory,$InternalCoarseOrigin)){
     if([string]::IsNullOrWhiteSpace($value)){throw 'Internal response worker requires complete transaction paths and coarse origin.'}
@@ -469,6 +477,7 @@ $capacitySession=$null;$writerLock=$null;$terminalized=$false;$failureStage='fro
 try{
   $freezeManifest=Get-Content -LiteralPath $freezeManifestPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 20
   if([string]$freezeManifest.role-ne'mrtof_native_corridor_frozen_inputs'-or[string]$freezeManifest.status-ne'frozen'){throw 'Frozen native-corridor package differs.'}
+
   foreach($record in @($freezeManifest.files)){
     $path=Join-Path $frozenDirectory ([string]$record.name)
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)-or[int64](Get-Item -LiteralPath $path).Length-ne[int64]$record.bytes-or

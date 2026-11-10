@@ -1270,6 +1270,10 @@ def main() -> None:
         maximum_transport_evaluations=args.maximum_transport_evaluations,
         maximum_nodes_per_direction=args.maximum_nodes_per_direction,
     )
+    accelerator_geometry_authority = coverage.get("frozen_state", {}).get("accelerator_geometry_authority")
+    if not isinstance(accelerator_geometry_authority, dict):
+        raise CandidateContractError("new continuation geometry requires complete frozen OA authority in coverage")
+    context["accelerator_geometry_authority"] = accelerator_geometry_authority
     _initialize_worker(context)
     continuation = (
         continue_angle_zero_branch

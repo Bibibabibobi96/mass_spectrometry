@@ -24,7 +24,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     project_y_from_theory_drift_mm,
     solve_native_stripe_spatial_shape_branch,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (

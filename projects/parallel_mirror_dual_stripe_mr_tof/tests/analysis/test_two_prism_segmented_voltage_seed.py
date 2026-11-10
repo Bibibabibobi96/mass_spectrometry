@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -173,7 +174,7 @@ class TwoPrismSegmentedVoltageSeedTests(unittest.TestCase):
                 },
                 relative_singular_value_rank_tolerance=1e-10,
                 scaled_compatibility_tolerance=1e-10,
-            )
+            accelerator_geometry_authority=geometry_authority(self.contract))
         scales.assert_called_once_with(self.contract)
         return result
 

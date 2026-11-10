@@ -254,7 +254,7 @@ $context=Get-Content -LiteralPath $contextSource -Raw -Encoding UTF8|ConvertFrom
 if($condition.schema_version-ne1-or$condition.role-ne'mrtof_native_candidate_campaign_condition'){
   throw 'Condition identity is invalid.'
 }
-if($context.schema_version-ne1-or$context.role-ne'mrtof_native_candidate_condition_context'){
+if($context.schema_version-ne2-or$context.role-ne'mrtof_native_candidate_condition_context'){
   throw 'Condition context identity is invalid.'
 }
 $reuseArguments=@(@($StripeReuseRunManifest,$ContinuationReuseRunManifest)|Where-Object{-not[string]::IsNullOrWhiteSpace($_)})
@@ -295,6 +295,11 @@ $nativeRuntimeCheckpoint=if([string]::IsNullOrWhiteSpace([string]$context.native
 $sourceDefinition=Resolve-ContextPath -Value ([string]$context.source_definition_path)
 $oaBaseReleaseSpec=Resolve-ContextPath -Value ([string]$context.oa_base_release_spec_path)
 $oaRequest=Resolve-ContextPath -Value ([string]$context.oa_request_path)
+$oaComponentContract=Resolve-ContextPath -Value ([string]$context.accelerator_component_contract_path)
+$oaGeometryProfileId=[string]$context.accelerator_geometry_profile_id
+if([string]::IsNullOrWhiteSpace($oaGeometryProfileId)-or$oaGeometryProfileId-ne$oaGeometryProfileId.Trim()){
+  throw 'Current condition construction requires an explicit OA geometry profile ID.'
+}
 
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProject `
   -RunId $RunId -Project $project -Mode 'native_candidate_single_condition' `
@@ -304,6 +309,7 @@ $terminalized=$false;$failureStage='freeze_inputs'
 try{
   $frozenCondition=Copy-VerifiedRunInput -Source $conditionSource -Destination (Join-Path $package.input_dir 'condition.json')
   $frozenContext=Copy-VerifiedRunInput -Source $contextSource -Destination (Join-Path $package.input_dir 'context.json')
+  $frozenOaComponentContract=Copy-VerifiedRunInput -Source $oaComponentContract -Destination (Join-Path $package.input_dir 'oa_component_contract.json')
   $CompositionPlanPath=Copy-VerifiedRunInput -Source $compositionPlanSource -Destination (Join-Path $package.input_dir 'composition_plan.json')
   $LocalScopePath=if($localScopeSource){Copy-VerifiedRunInput -Source $localScopeSource -Destination (Join-Path $package.input_dir 'local_scope.json')}else{''}
   $conditionContract=Copy-VerifiedRunInput -Source $baseContract -Destination (Join-Path $package.input_dir 'condition_contract.json')
@@ -313,6 +319,7 @@ try{
   Write-RunJson -Path $conditionContract -Depth 100 -Value $contract
   $runConfig=Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $runConfig.inputs=[ordered]@{condition=$frozenCondition;context=$frozenContext;condition_contract=$conditionContract}
+  $runConfig.inputs.accelerator_component_contract=$frozenOaComponentContract
   $runConfig.inputs.composition_plan=$CompositionPlanPath
   if($LocalScopePath){$runConfig.inputs.local_scope=$LocalScopePath}
   $runConfig.parameters=[ordered]@{K=$k;accelerator_y_mm=$acceleratorY;execution='strict_serial_existing_runners'}
@@ -327,7 +334,7 @@ try{
   }else{
     $failureStage='fixed_grid_stripe_seed'
     $stripeId=$stamp+'__analysis__python__mrtof-condition-stripe'
-    $stripeArgs=@{FixedGridRunManifest=$fixedMirrorManifest;ContractPath=$conditionContract;RunId=$stripeId}
+    $stripeArgs=@{AcceleratorComponentContractPath=$frozenOaComponentContract;AcceleratorGeometryProfileId=$oaGeometryProfileId;FixedGridRunManifest=$fixedMirrorManifest;ContractPath=$conditionContract;RunId=$stripeId}
     if($PythonExe){$stripeArgs.PythonExe=$PythonExe}
     & (Join-Path $PSScriptRoot 'run_dual_stripe_operating_seed.ps1') @stripeArgs|Out-Host
     $stripeManifest=Get-RunManifest -ChildRunId $stripeId
@@ -423,6 +430,7 @@ try{
     $failureStage='accelerator_safe_exit'
     $safeExitId=$stamp+'__sim__simion__mrtof-condition-safe-exit'
     $safeExitArgs=@{
+      AcceleratorComponentContractPath=$frozenOaComponentContract;AcceleratorGeometryProfileId=$oaGeometryProfileId
       GeometryReviewRunPath=$geometryRun;MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun
       AcceleratorProviderReceiptPath=$acceleratorReceipt;NativeCorridorBankRunPath=$nativeBank
       CompositionPlanPath=$CompositionPlanPath
@@ -443,6 +451,8 @@ try{
     $coverageArgs=Copy-ArgumentMap -Source $context.coverage_arguments -Forbidden @(
       'ExactKRunManifest','StripeSeedRunManifest','FixedMirrorStripeRunManifest','AcceleratorExitRunManifest',
       'ContractPath','RunId','PythonExe')
+    $coverageArgs.AcceleratorComponentContractPath=$frozenOaComponentContract
+    $coverageArgs.AcceleratorGeometryProfileId=$oaGeometryProfileId
     $coverageArgs.FixedMirrorStripeRunManifest=$stripeManifest
     $coverageArgs.AcceleratorExitRunManifest=$safeExitManifest
     $coverageArgs.ContractPath=$conditionContract;$coverageArgs.RunId=$coverageId
@@ -517,6 +527,7 @@ try{
       $failureStage='n1_workpoint'
       $workpointId=$stamp+'__sim__simion__mrtof-condition-n1-workpoint'
       $workpointArgs=@{
+      AcceleratorComponentContractPath=$frozenOaComponentContract;AcceleratorGeometryProfileId=$oaGeometryProfileId
       NativeCorridorBankRunPath=$nativeBank
       GeometryReviewRunPath=$geometryRun;MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun
       AcceleratorProviderReceiptPath=$acceleratorReceipt;NativeSystemRuntimeBundlePath=$nativeBundle
@@ -565,6 +576,7 @@ try{
     $failureStage='native_candidate'
     $candidateId=$stamp+'__sim__simion__mrtof-condition-candidate'
     $candidateArgs=@{
+      AcceleratorComponentContractPath=$frozenOaComponentContract;AcceleratorGeometryProfileId=$oaGeometryProfileId
       QualifiedWorkpointRunPath=$workpointRun;GeometryReviewRunPath=$geometryRun
       MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun;AcceleratorProviderReceiptPath=$acceleratorReceipt
       NativeCorridorBankRunPath=$nativeBank;NativeSystemRuntimeBundlePath=$nativeBundle

@@ -63,8 +63,15 @@ try{
     $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'src/msplatform/backends/simion/mr_geometry.py');candidate_authority=(Join-Path $repo 'src/msplatform/backends/comsol/candidate_authority.py');binding_loader=(Join-Path $repo 'src/msplatform/backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/resource_budget_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
-        $copies.geometry_resolver=Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/resolved_geometry.py'
+        $copies.geometry_resolver=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py'
         $copies.geometry_contract_loader=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py'
+        $copies.oa_physical_geometry=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py'
+        $copies.oa_time_focus=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py'
+        $copies.mr_geometry_contract=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/geometry_contract.py'
+        $copies.rigid_transform=Join-Path $repo 'src/msplatform/contracts/rigid_transform.py'
+        $copies.oa_assembly_interface=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/assembly_interface.py'
+        $copies.oa_electrode_topology=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/electrode_topology.py'
+        $copies.oa_sectioned_geometry=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/sectioned_geometry.py'
     }
     $copies.crop_adapter=Join-Path $PSScriptRoot 'crop_native_static_field.lua'
     foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $repo ("src/msplatform/backends/simion/$name.py")}

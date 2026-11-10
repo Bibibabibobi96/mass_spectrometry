@@ -262,6 +262,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
             "$sourceReceipt='source';$CohortParticleCount=13;$workpointContract='contract';"
             "$voltages=@(-27,54,191,-190);$trajectoryStepScale=$null;$cohortRunId='cohort';$python='fixture';"
             "$staticFieldMode=$true;$FieldBindingPath='selected-actual-field';$providerReceipt='oa';$CompositionPlanPath='parent-plan';$LocalScopePath='';\n"
+            "$configuration=@{inputs=@{accelerator_component_contract='selected-fixture-authority'}};$oaGeometryProfileId='selected-fixture-profile';$oaComponentContract='selected-fixture-authority';\n"
             + source[start:end]
             + "$cohortArguments|ConvertTo-Json -Depth 5 -Compress"
         )
@@ -619,3 +620,66 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SelectedOaAuthorityInputTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_new_dispatch_verifies_exact_oa_input_and_historical_read_does_not_construct(self):
+        import hashlib
+        from msplatform.io.manifest_records import file_record
+
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("  $oaComponentContract=$null;$oaGeometryProfileId=$null")
+        block = source[start:source.index("\n  if($null-eq$mirrorVoltageVariation", start)]
+        start = source.index("function Invoke-ProjectPython {")
+        helper = source[start:source.index("\nfunction ", start + 1)]
+        transport = (REPO_ROOT / "common/contracts/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
+        start = transport.index("function Get-RunPythonImportRoots {")
+        roots = transport[start:transport.index("\nfunction ", start + 1)]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            authority = root / "oa.json"
+            original = (REPO_ROOT / "projects/orthogonal_accelerator/config/component_contract.json").read_bytes()
+            configuration = root / "run_config.json"
+            manifest = root / "run_manifest.json"
+            for case in ("new", "missing_record", "tampered", "historical"):
+                with self.subTest(case=case):
+                    authority.write_bytes(original)
+                    value = {"schema_version": 1, "run_id": "authority-fixture", "project": "instrument_assembly", "mode": "oa_mr",
+                             "inputs": {"accelerator_component_contract": str(authority)},
+                             "parameters": {"accelerator_geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm"}}
+                    configuration.write_text(json.dumps(value), encoding="utf-8")
+                    document = {"schema_version": 1, "status": "success", "run_id": value["run_id"],
+                                "project": value["project"], "mode": value["mode"], "run_config": file_record(configuration),
+                                "inputs": {"accelerator_component_contract": file_record(authority)}, "outputs": []}
+                    if case == "missing_record":
+                        document["inputs"].clear()
+                    if case == "historical":
+                        value["inputs"].clear()
+                        value["parameters"].clear()
+                        configuration.write_text(json.dumps(value), encoding="utf-8")
+                        document["run_config"] = file_record(configuration)
+                        document["inputs"].clear()
+                    manifest.write_text(json.dumps(document), encoding="utf-8")
+                    if case == "tampered":
+                        authority.write_bytes(original + b" ")
+                    script = root / "check.ps1"
+                    script.write_text(
+                        "param($Repo,$Python,$Root)\nSet-StrictMode -Version Latest;$ErrorActionPreference='Stop';"
+                        "$repoRoot=$Repo;$python=$Python;$staticFieldMode=$false;"
+                        + ("$initialCohortRun='historical';" if case == "historical" else "$initialCohortRun=$null;")
+                        + "$workpointConfig=Get-Content (Join-Path $Root 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable;"
+                        "$workpointManifest=Join-Path $Root 'run_manifest.json';\n" + roots + "\n" + helper + "\n" + block
+                        + "\n@{contract=$oaComponentContract;profile=$oaGeometryProfileId}|ConvertTo-Json -Compress\n",
+                        encoding="utf-8", newline="\n",
+                    )
+                    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(REPO_ROOT), sys.executable, str(root)],
+                                            cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
+                    self.assertEqual(result.returncode == 0, case in {"new", "historical"}, result.stdout + result.stderr)
+                    if case == "historical":
+                        self.assertEqual(json.loads(result.stdout), {"contract": None, "profile": None})
+                        self.assertNotIn("MANIFEST_VERIFY", result.stdout)
+                    elif case == "new":
+                        self.assertIn("SCOPE=consumer_projection", result.stdout)
+                        self.assertEqual(json.loads(result.stdout.splitlines()[-1])["contract"], str(authority))
+                    self.assertEqual(hashlib.sha256(authority.read_bytes()).hexdigest(), hashlib.sha256(original + (b" " if case == "tampered" else b"")).hexdigest())

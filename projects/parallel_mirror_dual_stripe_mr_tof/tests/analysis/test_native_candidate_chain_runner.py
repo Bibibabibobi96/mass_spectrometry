@@ -14,6 +14,12 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_native_candidate_chain.ps1"
 
 
+def _public_import_roots_function() -> str:
+    source = (REPO_ROOT / "common/contracts/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
+    start = source.index("function Get-RunPythonImportRoots {")
+    return source[start:source.index("\nfunction ", start + 1)] + "\n"
+
+
 class NativeCandidateChainRunnerTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_actual_root_feedback_keeps_one_request_and_matching_best_identity(self):
@@ -22,6 +28,7 @@ class NativeCandidateChainRunnerTests(unittest.TestCase):
         for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest", "Read-CenterWorkpointGate"):
             start = source.index("function " + name + " {")
             helpers += source[start:source.index("\nfunction ", start+1)] + "\n"
+        helpers = _public_import_roots_function() + helpers
         helpers = helpers.replace("  $output=@(Invoke-ProjectPython", "  $script:calls++;$output=@(Invoke-ProjectPython")
         start = source.index("    $candidateEnvelopeAvailable=[bool]$focused.envelope_available")
         block = source[start:source.index("    if(-not$candidateCenterGate.passed)", start)]
@@ -203,6 +210,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest"):
             start = source.index("function " + name + " {")
             helper += source[start:source.index("\nfunction ", start+1)]+"\n"
+        helper = _public_import_roots_function() + helper
         helper = ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
                   + "';$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n" + helper)
         names = ["P1_P2_positive_mirror_turn_y_mm", "P1_P2_P2_shield_low_field_angle_degrees",
@@ -371,6 +379,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest"):
             start = source.index("function " + name + " {")
             helpers += source[start:source.index("\nfunction ", start+1)]+"\n"
+        helpers = _public_import_roots_function() + helpers
         helpers += ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
                     + "';$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n")
         with TemporaryDirectory() as temporary:
@@ -847,10 +856,11 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                 + "$TrajectoryStepScaleOverride=$null; $staticFieldMode=$true; $staticFieldRepresentation='comsol_static_scalar_v'; $NativeCorridorBankRunPath=''; "
                 "$GeometryReviewRunPath='geometry'; $MirrorRunPath='mirror'; "
                 "$StripeRunPath='stripe'; $AcceleratorProviderReceiptPath='oa'; "
+                "$oaComponentContractFrozen='frozen-oa-contract.json';$AcceleratorGeometryProfileId='closed_two_zone_compact_mr_axial_r3_gap1_4mm'; "
                 "$NativeSystemRuntimeBundlePath=''; $AcceleratorYAnchorMm=-55; "
                 "$sourceYOffsetMm=-1; $python='python'; $SimionExe=''; "
                 "$FieldProviderRequestPath='request'; $CenterSourceReceiptPath='source';$PrismControllerPolicyPath=''\n"
-                + "$workpointRunner={param($TrajectoryProfileId,$TrajectoryStepScale,$SeedTrialManifest,$MirrorVoltageVariationPath,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$AcceleratorYAnchorMm,$AcceleratorSourceYOffsetMm,$ContractPath,$RunId,$PythonExe,$FieldProviderRequestPath,$CenterSourceReceiptPath,$PrismControllerPolicyPath) "
+                + "$workpointRunner={param($TrajectoryProfileId,$TrajectoryStepScale,$SeedTrialManifest,$MirrorVoltageVariationPath,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$AcceleratorYAnchorMm,$AcceleratorSourceYOffsetMm,$ContractPath,$RunId,$PythonExe,$FieldProviderRequestPath,$CenterSourceReceiptPath,$PrismControllerPolicyPath,$AcceleratorComponentContractPath,$AcceleratorGeometryProfileId) "
                 "$captured=@{profile=$TrajectoryProfileId;scale=$TrajectoryStepScale};if($PSBoundParameters.ContainsKey('PrismControllerPolicyPath')){$captured.policy=$PrismControllerPolicyPath};$captured|ConvertTo-Json -Compress; "
                 "throw 'fixture_runner_reached'}\n"
                 + f"try {{ Invoke-Te1WorkpointReclosure -Attempt 1 -SeedManifest '{manifest}' "
@@ -1272,8 +1282,9 @@ $config|ConvertTo-Json -Compress
                       "$NativeCorridorBankRunPath='';$NativeSystemRuntimeBundlePath='';"
                       "$GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe';"
                       "$AcceleratorProviderReceiptPath='oa';$AcceleratorYAnchorMm=-55;"
+                      "$oaComponentContractFrozen='frozen-oa-contract.json';$AcceleratorGeometryProfileId='closed_two_zone_compact_mr_axial_r3_gap1_4mm';"
                       f"$FieldProviderRequestPath='{request}';$CenterSourceReceiptPath='center-receipt';"
-                      "$workpointRunner={param($SeedTrialManifest,$MirrorVoltageVariationPath,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$AcceleratorYAnchorMm,$AcceleratorSourceYOffsetMm,$ContractPath,$RunId,$PythonExe,$FieldProviderRequestPath,$CenterSourceReceiptPath,$TrajectoryProfileId,$TrajectoryStepScale) $global:received=$PSBoundParameters};"
+                      "$workpointRunner={param($SeedTrialManifest,$MirrorVoltageVariationPath,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$AcceleratorYAnchorMm,$AcceleratorSourceYOffsetMm,$ContractPath,$RunId,$PythonExe,$FieldProviderRequestPath,$CenterSourceReceiptPath,$TrajectoryProfileId,$TrajectoryStepScale,$AcceleratorComponentContractPath,$AcceleratorGeometryProfileId) $global:received=$PSBoundParameters};"
                       f"Invoke-Te1WorkpointReclosure -Attempt 1 -SeedManifest selected-actual-child -Variation absolute-target -CurrentContractPath '{contract}' -RuntimeCheckpoint ''|Out-Null;"
                       "$received|ConvertTo-Json -Compress")
             completed = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -1292,6 +1303,8 @@ $config|ConvertTo-Json -Compress
             self.assertNotIn("run_id", actual_request)
             self.assertEqual(received["TrajectoryProfileId"], "center_screening")
             self.assertEqual(received["TrajectoryStepScale"], 0.25)
+            self.assertEqual(received["AcceleratorComponentContractPath"], "frozen-oa-contract.json")
+            self.assertEqual(received["AcceleratorGeometryProfileId"], "closed_two_zone_compact_mr_axial_r3_gap1_4mm")
             self.assertFalse(set(received) & {"NativeRuntimeCheckpoint", "InitialWorkpointManifest",
                                             "PriorPrismDecisionManifest", "StripeColumnTrialManifests"})
 
@@ -1738,3 +1751,48 @@ $config|ConvertTo-Json -Compress
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExplicitFrozenPythonTransportTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_actual_dispatch_helpers_use_selected_src_and_reject_missing_owner_with_foreign_host(self):
+        import os
+
+        transport = (REPO_ROOT / "common/contracts/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
+        start = transport.index("function Get-RunPythonImportRoots {")
+        import_roots = transport[start:transport.index("\nfunction ", start + 1)]
+        for name in ("run_native_candidate_chain.ps1", "run_native_corridor_bunch_screening.ps1"):
+            source = (RUNNER.parent / name).read_text(encoding="utf-8-sig")
+            start = source.index("function Invoke-ProjectPython {")
+            helper = source[start:source.index("\nfunction ", start + 1)]
+            with self.subTest(runner=name), TemporaryDirectory() as directory:
+                root = Path(directory)
+                selected = root / "selected"
+                foreign = root / "foreign"
+                shutil.copytree(REPO_ROOT / "src/msplatform", selected / "src/msplatform")
+                shutil.copytree(REPO_ROOT / "src/msplatform", foreign / "msplatform")
+                target = Path("src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py")
+                script = root / "transport.ps1"
+                script.write_text(
+                    "param($Repo,$Python)\nSet-StrictMode -Version Latest;$ErrorActionPreference='Stop';"
+                    "$repoRoot=$Repo;$python=$Python;\n" + import_roots + "\n" + helper
+                    + "\nInvoke-ProjectPython -Arguments @('-c','import msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry as m; print(m.__file__)')\n",
+                    encoding="utf-8", newline="\n",
+                )
+                env = dict(os.environ, PYTHONPATH=str(foreign))
+                command = [shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(selected), sys.executable]
+                actual = subprocess.run(command, cwd=root, env=env, capture_output=True,
+                                        text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
+                self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+                self.assertEqual(Path(actual.stdout.strip()).resolve(), (selected / target).resolve())
+                original = (selected / target).read_bytes()
+                (selected / target).unlink()
+                try:
+                    missing = subprocess.run(command, cwd=root, env=env, capture_output=True,
+                                             text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
+                    self.assertNotEqual(missing.returncode, 0)
+                    self.assertIn("ModuleNotFoundError", missing.stdout + missing.stderr)
+                    self.assertTrue((foreign / target.relative_to("src")).is_file())
+                finally:
+                    (selected / target).write_bytes(original)
+                self.assertEqual((selected / target).read_bytes(), original)

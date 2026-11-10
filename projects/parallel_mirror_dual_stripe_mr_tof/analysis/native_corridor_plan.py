@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
@@ -59,12 +59,12 @@ def _native_mapping(settings: Mapping[str, Any]) -> tuple[dict[str, int], list[i
     return mapping, fixed_ids
 
 
-def derive_native_corridor_plan(contract_path: Path) -> dict[str, Any]:
+def derive_native_corridor_plan(contract_path: Path, *, accelerator_geometry_authority) -> dict[str, Any]:
     """Return the direct, current native corridor plan without local patches."""
     contract = load_contract(contract_path)
     settings = _native_settings(contract)
     quantum = validate_generation_grid_pitch(contract, settings.get("mesh_mm_per_gu"))
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
     mesh = _numbers(settings.get("mesh_mm_per_gu"), "native corridor mesh", 3)
     surface_mode = settings.get("surface_mode")
     if surface_mode not in {"none", "fractional"}:

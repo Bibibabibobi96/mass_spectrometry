@@ -9,6 +9,8 @@ is owned by subsequent instrument TE1/TE2 calibration rather than v1/v2/L.
 """
 
 from __future__ import annotations
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 
 import argparse
 import copy
@@ -72,7 +74,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
     build_native_stripe_shape_selection,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,
 )
@@ -1362,7 +1364,7 @@ def _search_complete_fixed_hardware_consistency(
     }
 
 
-def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> dict[str, Any]:
+def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate, *, accelerator_geometry_authority) -> dict[str, Any]:
     """Search one qualified mirror root and publish native-geometry seed diagnostics."""
     contract = mirror.contract
     profile = _seed_profile(contract)
@@ -1468,7 +1470,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
             continue
         if not _bias_pair_is_nondegenerate(values, profile, energy):
             continue
-        response = analyze_dual_stripe_l0(contract, values)
+        response = analyze_dual_stripe_l0(contract, values, accelerator_geometry_authority=accelerator_geometry_authority)
         entry_y_mm = project_y_from_theory_drift_mm(contract, 0.0)
         periods = [
             coupled_reduced_period_mm_per_sqrt_v(
@@ -1644,7 +1646,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
     }
 
 
-def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path) -> dict[str, Any]:
+def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path, *, accelerator_geometry_authority) -> dict[str, Any]:
     """Search every managed gamma-target mirror root before downstream selection."""
     mirror = load_managed_mirror_candidate(mirror_manifest, downstream_contract)
     dimensionless_target = solve_dimensionless_paper_target(mirror.contract)
@@ -1674,7 +1676,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
                 "mirror_root_gamma_degrees": root.gamma_degrees,
                 "dual_stripe_l0_response": analyze_dual_stripe_l0(
                     mirror.contract, branch["stripe_biases_v"]
-                ),
+                , accelerator_geometry_authority=accelerator_geometry_authority),
             })
             analytic_family.append(branch)
         analytic_family.sort(key=lambda item: (
@@ -1752,7 +1754,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
             "complete_fixed_hardware_search": consistency,
         })
         try:
-            report = _build_operating_seed_report_for_mirror(branch)
+            report = _build_operating_seed_report_for_mirror(branch, accelerator_geometry_authority=accelerator_geometry_authority)
         except CandidateContractError as error:
             rejected.append({
                 "mirror_root_index": index,
@@ -1949,9 +1951,7 @@ def _evaluate_exact_k_seed_consistency(
     }
 
 
-def build_operating_seed_report_from_fixed_grid(
-    fixed_grid_manifest: Path, downstream_contract: Path,
-) -> dict[str, Any]:
+def build_operating_seed_report_from_fixed_grid(fixed_grid_manifest: Path, downstream_contract: Path, *, accelerator_geometry_authority) -> dict[str, Any]:
     """Apply the native spatial-return inverse to one verified 3-D mirror point.
 
     The fixed mirror point owns ``T0bar`` and remains unchanged.  The nominal
@@ -2024,7 +2024,7 @@ def build_operating_seed_report_from_fixed_grid(
         contract,
         seed["stripe_biases_v"],
         axial_energy_per_charge_v=mirror.nominal_energy_per_charge_v,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     dimensionless_target = solve_dimensionless_paper_target(contract)
     report = {
         "schema_version": 3,
@@ -2060,9 +2060,7 @@ def build_operating_seed_report_from_fixed_grid(
     return report
 
 
-def build_operating_seed_report_from_exact_k(
-    exact_k_manifest: Path, downstream_contract: Path,
-) -> dict[str, Any]:
+def build_operating_seed_report_from_exact_k(exact_k_manifest: Path, downstream_contract: Path, *, accelerator_geometry_authority) -> dict[str, Any]:
     """Materialize the upstream native shape at its mirror point and source energy."""
     exact_k = load_managed_exact_k_operating_point(exact_k_manifest, downstream_contract)
     source_slow_energy = _finite(
@@ -2090,7 +2088,7 @@ def build_operating_seed_report_from_exact_k(
         exact_k.contract,
         seed["stripe_biases_v"],
         axial_energy_per_charge_v=exact_k.axial_energy_per_charge_v,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     same_point_consistency = _evaluate_exact_k_seed_consistency(
         exact_k, seed["stripe_biases_v"],
     )
@@ -2154,6 +2152,8 @@ def build_operating_seed_report_from_exact_k(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--accelerator-component-contract", type=Path)
+    parser.add_argument("--accelerator-geometry-profile-id")
     parser.add_argument("--mirror-manifest", type=Path)
     parser.add_argument("--exact-k-manifest", type=Path)
     parser.add_argument("--fixed-grid-manifest", type=Path)
@@ -2174,18 +2174,25 @@ def main() -> int:
     else:
         if arguments.downstream_contract is None:
             parser.error("seed modes require --downstream-contract")
+        if arguments.accelerator_component_contract is None or arguments.accelerator_geometry_profile_id is None:
+            parser.error("seed modes require explicit OA component contract and geometry profile ID")
+        accelerator_geometry_authority = read_accelerator_geometry_authority(
+            load_contract(arguments.downstream_contract),
+            component_contract_path=arguments.accelerator_component_contract,
+            geometry_profile_id=arguments.accelerator_geometry_profile_id,
+        )
         if sum(value is not None for value in (arguments.mirror_manifest, arguments.exact_k_manifest, arguments.fixed_grid_manifest)) != 1:
             parser.error("specify exactly one mirror, exact-k, or fixed-grid manifest")
         if arguments.exact_k_manifest is not None:
             report = build_operating_seed_report_from_exact_k(
                 arguments.exact_k_manifest, arguments.downstream_contract,
-            )
+             accelerator_geometry_authority=accelerator_geometry_authority)
             marker = "MRTOF_DUAL_STRIPE_EXACT_K_OPERATING_SEED"
         elif arguments.fixed_grid_manifest is not None:
-            report = build_operating_seed_report_from_fixed_grid(arguments.fixed_grid_manifest, arguments.downstream_contract)
+            report = build_operating_seed_report_from_fixed_grid(arguments.fixed_grid_manifest, arguments.downstream_contract, accelerator_geometry_authority=accelerator_geometry_authority)
             marker = "MRTOF_DUAL_STRIPE_FIXED_GRID_OPERATING_SEED"
         else:
-            report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract)
+            report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract, accelerator_geometry_authority=accelerator_geometry_authority)
             marker = "MRTOF_DUAL_STRIPE_OPERATING_SEED"
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")

@@ -211,33 +211,7 @@ def two_prism_topology_signature(
     )
 
 
-def solve_two_prism_segmented_voltage_seed(
-    contract: dict[str, Any],
-    *,
-    source: ProjectPhaseSpaceState,
-    particle_mass_th: float,
-    charge_state: int,
-    mirror_design: MirrorL0Design,
-    selected_axial_energy_per_charge_v: float,
-    target_slow_kinetic_energy_per_charge_v: float,
-    target_p2_reference_tangent_ratio: float,
-    stripe_bias_v_by_set_name: Mapping[str, float],
-    numerics: TransportNumerics,
-    stage_a_maximum_reduced_time_mm_per_sqrt_v: float,
-    stage_b_maximum_reduced_time_mm_per_sqrt_v: float,
-    prism_voltage_bounds_v_by_electrode_id: Mapping[int, Sequence[float]],
-    initial_prism_voltage_pairs_v: Sequence[Sequence[float]],
-    central_difference_step_v_by_electrode_id: Mapping[int, float],
-    maximum_iterations: int,
-    maximum_transport_evaluations: int,
-    trust_step_v_by_electrode_id: Mapping[int, float],
-    maximum_backtracking_reductions: int,
-    backtracking_factor: float,
-    minimum_scaled_residual_norm_decrease: float,
-    physical_residual_tolerance_by_name: Mapping[str, float],
-    relative_singular_value_rank_tolerance: float,
-    scaled_compatibility_tolerance: float,
-) -> TwoPrismSegmentedVoltageSeedResult:
+def solve_two_prism_segmented_voltage_seed(contract: dict[str, Any], *, accelerator_geometry_authority, source: ProjectPhaseSpaceState, particle_mass_th: float, charge_state: int, mirror_design: MirrorL0Design, selected_axial_energy_per_charge_v: float, target_slow_kinetic_energy_per_charge_v: float, target_p2_reference_tangent_ratio: float, stripe_bias_v_by_set_name: Mapping[str, float], numerics: TransportNumerics, stage_a_maximum_reduced_time_mm_per_sqrt_v: float, stage_b_maximum_reduced_time_mm_per_sqrt_v: float, prism_voltage_bounds_v_by_electrode_id: Mapping[int, Sequence[float]], initial_prism_voltage_pairs_v: Sequence[Sequence[float]], central_difference_step_v_by_electrode_id: Mapping[int, float], maximum_iterations: int, maximum_transport_evaluations: int, trust_step_v_by_electrode_id: Mapping[int, float], maximum_backtracking_reductions: int, backtracking_factor: float, minimum_scaled_residual_norm_decrease: float, physical_residual_tolerance_by_name: Mapping[str, float], relative_singular_value_rank_tolerance: float, scaled_compatibility_tolerance: float) -> TwoPrismSegmentedVoltageSeedResult:
     """Search a bounded P1/P2 seed while preserving one legal topology.
 
     Every scientific and numerical control is an explicit caller input.  A
@@ -356,7 +330,7 @@ def solve_two_prism_segmented_voltage_seed(
                 numerics=numerics,
                 stage_a_maximum_reduced_time_mm_per_sqrt_v=stage_a_maximum_reduced_time_mm_per_sqrt_v,
                 stage_b_maximum_reduced_time_mm_per_sqrt_v=stage_b_maximum_reduced_time_mm_per_sqrt_v,
-            )
+             accelerator_geometry_authority=accelerator_geometry_authority)
             residual_by_name = dict(diagnostic.voltage_residuals)
             if set(residual_by_name) != set(RESIDUAL_NAMES):
                 raise CandidateContractError("transport returned a different residual system")

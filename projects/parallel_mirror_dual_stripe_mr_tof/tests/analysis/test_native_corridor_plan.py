@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 
 import json
 from pathlib import Path
@@ -51,10 +52,10 @@ class NativeCorridorPlanTest(unittest.TestCase):
                 path = Path(directory) / 'contract.json'
                 path.write_text(json.dumps(contract))
                 with self.assertRaisesRegex(CandidateContractError, message):
-                    derive_native_corridor_plan(path)
+                    derive_native_corridor_plan(path, accelerator_geometry_authority=geometry_authority(path))
 
     def test_native_corridor_is_derived_directly_from_resolved_geometry(self) -> None:
-        plan = derive_native_corridor_plan(CONTRACT)
+        plan = derive_native_corridor_plan(CONTRACT, accelerator_geometry_authority=geometry_authority(CONTRACT))
         self.assertEqual(plan['box_project_mm'], [0.0, -147.0, -330.0, 20.0, 463.0, 330.0])
         self.assertNotIn('source_plan', plan)
         self.assertNotIn('source_boxes', plan)
@@ -90,7 +91,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertNotIn('mrtof_analyzer_corridor.pa0', names)
 
     def test_corridor_gem_is_emitted_from_resolved_contract(self) -> None:
-        text = build_native_corridor_gem(CONTRACT)
+        text = build_native_corridor_gem(CONTRACT, accelerator_geometry_authority=geometry_authority(CONTRACT))
         self.assertIn('grid_shape=81,3051,3301', text)
         self.assertIn('pa_define(81,3051,3301,planar,x,', text)
         self.assertIn('locate(0,147,330)', text)
@@ -107,25 +108,25 @@ class NativeCorridorPlanTest(unittest.TestCase):
             path = Path(directory) / 'contract.json'
             path.write_text(json.dumps(contract), encoding='utf-8')
             with self.assertRaisesRegex(CandidateContractError, 'surface mode'):
-                derive_native_corridor_plan(path)
+                derive_native_corridor_plan(path, accelerator_geometry_authority=geometry_authority(path))
 
     def test_response_gem_biases_only_requested_physical_electrodes(self) -> None:
         text = build_native_corridor_gem(
             CONTRACT,
             physical_electrode_voltages_v={2: 10_000.0, 7: 10_000.0},
-        )
+        accelerator_geometry_authority=geometry_authority(CONTRACT))
         self.assertNotIn('e(2)', text)
         self.assertNotIn('e(7)', text)
         self.assertGreaterEqual(text.count('e(10000)'), 2)
         self.assertIn('e(0)', text)
 
     def test_runtime_gem_writes_local_ids_without_a_full_array_remap(self) -> None:
-        plan = derive_native_corridor_plan(CONTRACT)
+        plan = derive_native_corridor_plan(CONTRACT, accelerator_geometry_authority=geometry_authority(CONTRACT))
         mapping = {int(key): int(value) for key, value in plan['physical_to_local_electrode_id'].items()}
         text = build_native_corridor_gem(
             CONTRACT,
             physical_to_local_electrode_id=mapping,
-        )
+        accelerator_geometry_authority=geometry_authority(CONTRACT))
         for identifier in range(1, 9):
             self.assertIn(f'e({identifier})', text)
         self.assertNotIn('e(20)', text)

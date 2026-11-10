@@ -37,11 +37,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_analytic import 
     hard_boundary_bias_for_face_order_and_target_direction_v,
     trace_triangular_hard_boundary_prism,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
-    compile_dual_stripe_edge_evaluators,
-    dual_stripe_physical_instance_topology,
-    resolve_geometry,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (compile_dual_stripe_edge_evaluators, dual_stripe_physical_instance_topology)
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
@@ -280,12 +277,7 @@ def _reject_terminal_overlap(
                 )
 
 
-def build_two_prism_segmented_potential_regions(
-    contract: dict[str, Any],
-    *,
-    prism_bias_v_by_electrode_id: Mapping[int, float],
-    stripe_bias_v_by_set_name: Mapping[str, float],
-) -> tuple[PotentialRegion, ...]:
+def build_two_prism_segmented_potential_regions(contract: dict[str, Any], *, accelerator_geometry_authority, prism_bias_v_by_electrode_id: Mapping[int, float], stripe_bias_v_by_set_name: Mapping[str, float]) -> tuple[PotentialRegion, ...]:
     """Return P1/P2 and four physical Stripe regions in stable electrode order.
 
     The two x-separated solids of each prism must expose the same y-z
@@ -296,7 +288,7 @@ def build_two_prism_segmented_potential_regions(
     """
     prism_biases = _exact_bias_map(prism_bias_v_by_electrode_id, {16, 17}, "prism")
     stripe_biases = _exact_bias_map(stripe_bias_v_by_set_name, {"set_1", "set_2"}, "Stripe")
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
 
     prism_regions = []
     for record in sorted(resolved["prism_electrodes"], key=lambda item: item["id"]):
@@ -421,14 +413,7 @@ def _triangle_edge_index(event: TransportEvent, expected_region: str) -> int:
     return index
 
 
-def predict_p2_ideal_bias_for_reference_tangent_ratio(
-    contract: dict[str, Any],
-    diagnostic: TwoPrismSegmentedVoltagePairDiagnostic,
-    *,
-    mirror_design: MirrorL0Design,
-    charge_state: int,
-    target_reference_tangent_ratio: float,
-) -> P2IdealAngleVoltagePrediction:
+def predict_p2_ideal_bias_for_reference_tangent_ratio(contract: dict[str, Any], diagnostic: TwoPrismSegmentedVoltagePairDiagnostic, *, accelerator_geometry_authority, mirror_design: MirrorL0Design, charge_state: int, target_reference_tangent_ratio: float) -> P2IdealAngleVoltagePrediction:
     """Predict P2 from its actual pre-entry state and desired reference angle.
 
     P1 and the negative mirror determine the state immediately before P2, so
@@ -464,7 +449,7 @@ def predict_p2_ideal_bias_for_reference_tangent_ratio(
     if entry_edge == exit_edge:
         raise CandidateContractError("P2 entry and exit faces must differ")
 
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
     records = [
         item for item in resolved["prism_electrodes"]
         if int(item.get("id", -1)) == p2_id
@@ -952,22 +937,7 @@ def _propagate_to_first_complete_positive_stripe_pass(
     raise CandidateContractError("positive mirror turn is not followed by a positive-Stripe entry")
 
 
-def evaluate_two_prism_segmented_voltage_pair(
-    contract: dict[str, Any],
-    *,
-    source: ProjectPhaseSpaceState,
-    particle_mass_th: float,
-    charge_state: int,
-    mirror_design: MirrorL0Design,
-    selected_axial_energy_per_charge_v: float,
-    target_slow_kinetic_energy_per_charge_v: float,
-    target_p2_reference_tangent_ratio: float,
-    prism_bias_v_by_electrode_id: Mapping[int, float],
-    stripe_bias_v_by_set_name: Mapping[str, float],
-    numerics: TransportNumerics,
-    stage_a_maximum_reduced_time_mm_per_sqrt_v: float,
-    stage_b_maximum_reduced_time_mm_per_sqrt_v: float,
-) -> TwoPrismSegmentedVoltagePairDiagnostic:
+def evaluate_two_prism_segmented_voltage_pair(contract: dict[str, Any], *, accelerator_geometry_authority, source: ProjectPhaseSpaceState, particle_mass_th: float, charge_state: int, mirror_design: MirrorL0Design, selected_axial_energy_per_charge_v: float, target_slow_kinetic_energy_per_charge_v: float, target_p2_reference_tangent_ratio: float, prism_bias_v_by_electrode_id: Mapping[int, float], stripe_bias_v_by_set_name: Mapping[str, float], numerics: TransportNumerics, stage_a_maximum_reduced_time_mm_per_sqrt_v: float, stage_b_maximum_reduced_time_mm_per_sqrt_v: float) -> TwoPrismSegmentedVoltagePairDiagnostic:
     """Evaluate one explicit P1/P2 pair through the manufactured 2-D topology.
 
     Both maximum-reduced-time inputs are absolute terminal coordinates in the
@@ -1005,7 +975,7 @@ def evaluate_two_prism_segmented_voltage_pair(
         contract,
         prism_bias_v_by_electrode_id=prism_bias_v_by_electrode_id,
         stripe_bias_v_by_set_name=stripe_bias_v_by_set_name,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     source_regions = tuple(
         region.name for region in regions if region.contains(initial.y_mm, initial.z_mm)
     )

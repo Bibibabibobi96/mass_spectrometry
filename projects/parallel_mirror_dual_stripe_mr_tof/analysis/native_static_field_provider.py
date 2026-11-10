@@ -24,7 +24,7 @@ from msplatform.backends.comsol.candidate_authority import derive_candidate_auth
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 from msplatform.backends.simion.mr_geometry import _grid_shape, validate_generation_grid_pitch
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata, compile_response_coefficients
@@ -442,7 +442,11 @@ def _resolve_new_geometry(path: Path, source: dict[str, Any], numerical_contract
     for key in ("coordinate_system", "accelerator", "detector"):
         if contract.get(key) != numerical_contract.get(key):
             raise ValueError(f"geometry contract changes {key}; component/frame changes require a new assembly")
-    geometry = resolve_geometry(contract, accelerator_assembly=source["authority"]["assembly"])
+    accelerator_geometry_authority = source["authority"]["assembly"].get("accelerator_geometry_authority")
+    if source["geometry"].get("schema_version") != 2 or not isinstance(accelerator_geometry_authority, dict):
+        raise ValueError("new mirror geometry requires schema2 source with complete frozen OA geometry authority; legacy fixed-field read remains available")
+    geometry = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority,
+                                accelerator_assembly=source["authority"]["assembly"])
     mutable = {
         "mirror_electrodes",
         "mirror_ground_shields",

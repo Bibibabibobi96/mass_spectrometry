@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority, pure_geometry_inputs
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
 
 import copy
@@ -22,7 +23,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry
 )
 from msplatform.backends.simion.oa_focus_plan import derive as derive_oa_provider_plan
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_edge_evaluators,
     dual_stripe_width_at_y_mm,
     geometry_fingerprint,
@@ -192,6 +193,30 @@ def _contains_csg(sections, slots, point, triangle=None):
 
 
 class SimionCandidateReferenceTest(unittest.TestCase):
+    def test_neutral_oa_authority_is_explicit_and_backend_keeps_pa_guards(self) -> None:
+        from msplatform.backends.simion.mr_geometry import resolve_mr_geometry
+        contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        authority = geometry_authority(contract)
+        before = copy.deepcopy(authority)
+        physical = {key: authority[key] for key in ("accelerator_requirements", "geometry_profile", "geometry_profile_id")}
+        result = resolve_geometry(contract, **physical)
+        self.assertEqual(result["schema_version"], 2)
+        self.assertIn("accelerator_component_geometry", result)
+        self.assertNotIn("accelerator_component_layout", result)
+        self.assertEqual(authority, before)
+        with self.assertRaises(TypeError):
+            resolve_geometry(contract)
+        for key, value in (("geometry_profile", {}), ("geometry_profile_id", "")):
+            with self.subTest(input=key), self.assertRaises(ValueError):
+                resolve_geometry(contract, **{**physical, key: value})
+        for key, value in (("span_mm", [1, 1, 1]), ("mesh_mm_per_gu", [0, 1, 1]),
+                           ("margin_z_mm", 0), ("exit_z_mm", float("nan"))):
+            changed = copy.deepcopy(authority)
+            changed["accelerator_requirements"]["local_pa"][key] = value
+            with self.subTest(numerical_input=key), self.assertRaises(ValueError):
+                resolve_mr_geometry(contract, accelerator_geometry_authority=changed)
+        self.assertEqual(authority, before)
+
     def test_mr_delegates_accelerator_electrode_topology_to_component_owner(self) -> None:
         source = (PROJECT / "analysis" / "native_system_geometry.py").read_text(encoding="utf-8")
         self.assertIn("build_analyzer_gem", source)
@@ -203,15 +228,15 @@ class SimionCandidateReferenceTest(unittest.TestCase):
     def test_analyzer_gem_mesh_defaults_follow_contract_without_geometry_changes(self) -> None:
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         contract["simion"]["component_mesh_mm_per_gu"]["analyzer"] = [2, 2, 2]
-        before = geometry_fingerprint(resolve_geometry(contract))
+        before = geometry_fingerprint(resolve_geometry(contract, **pure_geometry_inputs(contract)))
         contract["simion"]["component_mesh_mm_per_gu"]["analyzer"] = [1, 1, 1]
         with TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
-            gem = build_analyzer_gem(path)
+            gem = build_analyzer_gem(path, accelerator_geometry_authority=geometry_authority(path))
         self.assertIn("# local contract_mmgu_x, contract_mmgu_y, contract_mmgu_z = 1, 1, 1", gem)
         self.assertIn("runtime mesh must equal frozen Candidate contract", gem)
-        self.assertEqual(before, geometry_fingerprint(resolve_geometry(contract)))
+        self.assertEqual(before, geometry_fingerprint(resolve_geometry(contract, **pure_geometry_inputs(contract))))
 
     def test_analyzer_x_slots_keep_cad_faces_at_active_grid_nodes(self) -> None:
         """A 30/4-mm mechanical channel must not render as 32/6 mm at 1 mm/gu."""
@@ -219,14 +244,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
             path.write_text(json.dumps(contract), encoding="utf-8")
-            gem = build_analyzer_gem(path)
+            gem = build_analyzer_gem(path, accelerator_geometry_authority=geometry_authority(path))
         # Official ``notin_inside`` retains grid nodes on the exact CAD faces.
         self.assertIn("notin_inside { box3D(-15,-132,106,15,448,163) }", gem)
         self.assertIn("notin_inside { box3D(-2,-132,-108,2,448,108) }", gem)
         self.assertIn("notin_inside { box3D(-2,0,-97.9962772744,2,385,97.9962772744) }", gem)
 
     def test_native_shield_sections_are_not_bounding_boxes_and_cross_is_a_union(self) -> None:
-        resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"))
+        resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(PROJECT / "config/simion_candidate_two_zone.json")))
         first, central = resolved["prism_ground_shields"]
         self.assertEqual(first["prism_clearance_polygon_yz_mm"], [[-40, -65], [-70, -95], [-70, -35]])
         self.assertEqual(central["prism_clearance_polygon_yz_mm"], [[0, 0], [-26, -26], [-26, 26]])
@@ -247,7 +272,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
                                                shield["prism_clearance_polygon_yz_mm"]), material)
 
     def test_all_foil_ends_are_native_whole_bodies_minus_rectangular_slots(self) -> None:
-        resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"))
+        resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(PROJECT / "config/simion_candidate_two_zone.json")))
         for record in resolved["stripe_electrodes"]:
             self.assertEqual(sorted({p[0] for p in record["terminal_polygon_yz_mm"]}), [-2, 0])
             self.assertEqual(max(p[0] for p in record["polygon_yz_mm"]), 390)
@@ -269,11 +294,11 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
             contract["prisms"]["ground_shields"][1].pop(field)
             with self.assertRaises(CandidateContractError):
-                resolve_geometry(contract)
+                resolve_geometry(contract, **pure_geometry_inputs(contract))
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         contract["prisms"]["ground_shields"][1]["cross_aperture"]["boolean_operation"] = "intersection"
         with self.assertRaises(CandidateContractError):
-            resolve_geometry(contract)
+            resolve_geometry(contract, **pure_geometry_inputs(contract))
 
     def test_reviewed_geometry_inherits_stable_topology_and_observation_authority(self) -> None:
         authority = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
@@ -285,15 +310,15 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         reviewed_injection = reviewed["prism_transport"]["two_prism_injection_l0"]
         reviewed_injection.pop("low_field_reference_section")
         reviewed_injection.pop("low_field_angle_and_positive_mirror_turn_authority")
-        expected = geometry_fingerprint(resolve_geometry(authority))
+        expected = geometry_fingerprint(resolve_geometry(authority, **pure_geometry_inputs(authority)))
         inherited = resolve_geometry(
             reviewed, inherited_dual_stripe_topology_contract=authority,
-        )
+        **pure_geometry_inputs(reviewed))
         self.assertEqual(geometry_fingerprint(inherited), expected)
         self.assertEqual(len(inherited["stripe_electrodes"]), 4)
         self.assertEqual(
             inherited["two_prism_low_field_reference_section"],
-            resolve_geometry(authority)["two_prism_low_field_reference_section"],
+            resolve_geometry(authority, **pure_geometry_inputs(authority))["two_prism_low_field_reference_section"],
         )
         with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_geometry",
                    side_effect=AssertionError("already resolved geometry must not be compiled again")):
@@ -310,13 +335,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaisesRegex(CandidateContractError, "unknown legacy"):
             resolve_geometry(
                 incompatible, inherited_dual_stripe_topology_contract=authority,
-            )
+            **pure_geometry_inputs(incompatible))
         conflicting = copy.deepcopy(authority)
         conflicting["dual_stripe"]["physical_electrode_count"] = 6
         with self.assertRaises(CandidateContractError):
             resolve_geometry(
                 reviewed, inherited_dual_stripe_topology_contract=conflicting,
-            )
+            **pure_geometry_inputs(reviewed))
         conflicting_observation = copy.deepcopy(reviewed)
         conflicting_observation["prism_transport"]["two_prism_injection_l0"][
             "low_field_reference_section"
@@ -325,11 +350,11 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             resolve_geometry(
                 conflicting_observation,
                 inherited_dual_stripe_topology_contract=authority,
-            )
+            **pure_geometry_inputs(conflicting_observation))
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         contract["dual_stripe"]["central_ground_profile"].pop("terminal_profile")
         with self.assertRaises(CandidateContractError):
-            resolve_geometry(contract)
+            resolve_geometry(contract, **pure_geometry_inputs(contract))
 
     def test_provider_local_accelerator_pose_uses_frozen_oa_mr_parent(self) -> None:
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
@@ -339,20 +364,21 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         composition_plan = json.loads((
             PROJECT.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
         ).read_text(encoding="utf-8"))
-        from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
+        from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
         with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_oa_assembly_interface",
                    wraps=resolve_assembly_interface) as publisher:
-            origin = resolve_accelerator_iob_origin(contract, provider_plan, composition_plan)
+            origin = resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, accelerator_geometry_authority=geometry_authority(contract))
         self.assertEqual(publisher.call_args.kwargs["schema_version"], 1)
         self.assertEqual(origin, (0.0, -72.25, -6.0))
-        resolved = resolve_geometry(contract)
+        resolved = resolve_geometry(contract, **pure_geometry_inputs(contract))
         prism2 = next(item for item in resolved["prism_ground_shields"] if item["station"] == "central_ground_left")
         self.assertGreaterEqual(min(point[0] for point in prism2["outer_polygon_yz_mm"]) - (-55.0 + 17.0), contract["accelerator"]["minimum_clearance_to_central_prism_ground_shield_y_mm"])
 
         frozen = json.dumps(composition_plan, sort_keys=True)
         direct = resolve_oa_mr_direct_pose(provider_plan, composition_plan)
         current_oa = resolve_assembly_interface(provider_plan["requirements"],
-            geometry_profile_id=provider_plan["layout"]["geometry_profile_id"])
+            geometry_profile_id=provider_plan["layout"]["geometry_profile_id"],
+            geometry_profile=geometry_authority(contract)["geometry_profile"])
         self.assertEqual(current_oa["schema_version"], 3)
         self.assertEqual(composition_plan["schema_version"], 3)
         self.assertEqual(composition_plan["components"][direct["oa_instance_id"]]["schema_version"], 1)
@@ -382,7 +408,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         legacy_bytes = json.dumps(legacy, sort_keys=True)
         with patch("msplatform.backends.simion.two_zone_candidate.render_closed_two_zone_local_pa",
                    side_effect=AssertionError("IOB pose query must not render a discarded GEM")):
-            self.assertEqual(resolve_accelerator_iob_origin(contract, provider_plan, legacy), origin)
+            self.assertEqual(resolve_accelerator_iob_origin(contract, provider_plan, legacy, accelerator_geometry_authority=geometry_authority(contract)), origin)
         self.assertEqual(json.dumps(legacy, sort_keys=True), legacy_bytes)
         unknown = copy.deepcopy(legacy)
         unknown["components"][direct["oa_instance_id"]]["local_frame_id"] = "unknown_oa_frame"
@@ -398,7 +424,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
                 moved = reframe_oa_mr_plan(composition_plan, rotation)
                 before = json.dumps(moved, sort_keys=True)
                 moved_direct = resolve_oa_mr_direct_pose(provider_plan, moved)
-                actual = resolve_accelerator_iob_origin(contract, provider_plan, moved)
+                actual = resolve_accelerator_iob_origin(contract, provider_plan, moved, accelerator_geometry_authority=geometry_authority(contract))
                 if rotation[0][0] in (0, 1):
                     self.assertEqual(actual, origin)
                     self.assertEqual(moved_direct["exit_project_mm"], direct["exit_project_mm"])
@@ -412,12 +438,12 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         rotated_recipe["instances"][0]["transform"]["rotation"] = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
         rotated = compile_assembly_layout(rotated_recipe, composition_plan["components"])
         with self.assertRaisesRegex(CandidateContractError, "identity relative rotation"):
-            resolve_accelerator_iob_origin(contract, provider_plan, rotated)
+            resolve_accelerator_iob_origin(contract, provider_plan, rotated, accelerator_geometry_authority=geometry_authority(contract))
 
         drifted_exit = copy.deepcopy(composition_plan)
         drifted_exit["components"]["oa_two_zone"]["ports"]["axial_exit"]["cross_section"]["width_mm"] += 1
         with self.assertRaisesRegex(CandidateContractError, "interfaces differ"):
-            resolve_accelerator_iob_origin(contract, provider_plan, drifted_exit)
+            resolve_accelerator_iob_origin(contract, provider_plan, drifted_exit, accelerator_geometry_authority=geometry_authority(contract))
 
 
 
@@ -447,7 +473,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         too_close = copy.deepcopy(contract)
         too_close["accelerator"]["focus_y_anchor"]["project_y_mm"] = -49.0
         with self.assertRaisesRegex(CandidateContractError, "clearance"):
-            resolve_geometry(too_close)
+            resolve_geometry(too_close, **pure_geometry_inputs(too_close))
         self.assertGreater(placement.repeller_z_mm, placement.grid_1_z_mm)
         self.assertGreater(placement.grid_1_z_mm, placement.exit_grid_z_mm)
         self.assertEqual(energy.net_gain_center_minimum_v, 3500.0)
@@ -576,13 +602,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         contract["dual_stripe"]["beam_slot_y_bridges_mm"]["from_min_y_mm"] = 0.0
         with self.assertRaises(CandidateContractError):
-            resolve_geometry(contract)
+            resolve_geometry(contract, **pure_geometry_inputs(contract))
 
     def test_dual_stripe_l0_has_independent_responses_and_positive_widths(self) -> None:
         result = analyze_dual_stripe_l0(
             load_contract(PROJECT / "config" / "simion_candidate_two_zone.json"),
             (-40.0, 60.0),
-        )
+        accelerator_geometry_authority=geometry_authority(load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")))
         self.assertNotEqual(result["response_matrix_determinant"], 0.0)
         self.assertTrue(math.isfinite(result["response_matrix_condition_number_2"]))
         self.assertGreater(result["physical_width_bounds_mm"]["set_1"][0], 0.0)
@@ -883,7 +909,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
 
     def test_resolved_geometry_has_real_curves_nonoverlapping_stripes_and_bounded_slots(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
-        resolved = resolve_geometry(contract)
+        resolved = resolve_geometry(contract, **pure_geometry_inputs(contract))
         self.assertEqual(resolved["metadata"]["mirror_slot_width_mm"], 30.0)
         self.assertEqual(resolved["metadata"]["ion_foil_slot_width_mm"], 4.0)
         self.assertEqual(resolved["metadata"]["ion_foil_slot_bridge_from_min_y_mm"], 2.0)
@@ -945,7 +971,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         contract["accelerator"]["focus_y_anchor"]["project_y_mm"] = -49.0
         with self.assertRaises(CandidateContractError):
-            resolve_geometry(contract)
+            resolve_geometry(contract, **pure_geometry_inputs(contract))
         self.assertNotIn("accelerator_stage_2_rings", resolved)
         self.assertNotIn("accelerator_stage_2_ring_pitch_mm", resolved["metadata"])
         self.assertEqual(
@@ -988,7 +1014,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         shifted = copy.deepcopy(contract)
         shifted["prisms"]["ground_shields"][1]["prism_clearance_polygon_yz_mm"][2][1] = 28.0
-        section = resolve_geometry(shifted)["two_prism_low_field_reference_section"]
+        section = resolve_geometry(shifted, **pure_geometry_inputs(shifted))["two_prism_low_field_reference_section"]
         self.assertEqual(section["open_project_z_interval_mm"], [28.0, 40.0])
         self.assertEqual(section["reference_plane_project_z_mm"], 34.0)
 
@@ -998,7 +1024,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         ]["pa_field_plateau_validation"]
         validation["status"] = "validated"
         with self.assertRaisesRegex(CandidateContractError, "user-owned threshold and nodes"):
-            resolve_geometry(missing_threshold_authority)
+            resolve_geometry(missing_threshold_authority, **pure_geometry_inputs(missing_threshold_authority))
 
     def test_native_stripe_edge_compiler_preserves_derivatives_width_and_z_mirror(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
@@ -1038,12 +1064,12 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         contract["dual_stripe"]["theory_profile"]["set_1"]["upper_edge"]["z_mm"] = 40.0
         with self.assertRaises(CandidateContractError):
-            resolve_geometry(contract)
+            resolve_geometry(contract, **pure_geometry_inputs(contract))
 
     def test_geometry_receipt_fingerprints_only_the_resolved_cross_solver_geometry(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
-        resolved = resolve_geometry(contract)
-        receipt = geometry_receipt(contract)
+        resolved = resolve_geometry(contract, **pure_geometry_inputs(contract))
+        receipt = geometry_receipt(contract, **pure_geometry_inputs(contract))
         self.assertEqual(receipt["resolved_geometry_sha256"], geometry_fingerprint(resolved))
         self.assertEqual(receipt["electrode_ids"]["mirrors"], list(range(1, 11)))
         self.assertEqual(receipt["electrode_ids"]["stripes"], [11, 12, 13, 14])

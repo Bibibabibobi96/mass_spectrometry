@@ -104,17 +104,14 @@ def _corridor_response_identity(response_recipe_path: Path, coarse_raw_path: Pat
     }
 
 
-def build_native_corridor_identity(
-    contract_path: Path, gem_path: Path, simion_executable: Path, simion_release: str,
-    response_recipe_path: Path, coarse_raw_path: Path,
-) -> dict[str, Any]:
+def build_native_corridor_identity(contract_path: Path, gem_path: Path, simion_executable: Path, simion_release: str, response_recipe_path: Path, coarse_raw_path: Path, *, accelerator_geometry_authority) -> dict[str, Any]:
     """Build the native corridor cache identity from its frozen inputs."""
 
     if not isinstance(simion_release, str) or not simion_release.strip():
         raise CandidateContractError("SIMION release label is required for PA cache identity")
     if not gem_path.is_file() or not simion_executable.is_file() or not response_recipe_path.is_file():
         raise CandidateContractError("native corridor identity requires existing GEM, recipe, and SIMION executable files")
-    plan = derive_native_corridor_plan(contract_path)
+    plan = derive_native_corridor_plan(contract_path, accelerator_geometry_authority=accelerator_geometry_authority)
     response_identity = _corridor_response_identity(
         response_recipe_path, coarse_raw_path
     )
@@ -134,7 +131,7 @@ def build_native_corridor_identity(
         raise CandidateContractError(
             "corridor response recipe physical groups differ from the corridor plan"
         )
-    canonical_gem = build_native_corridor_gem(contract_path).encode("utf-8")
+    canonical_gem = build_native_corridor_gem(contract_path, accelerator_geometry_authority=accelerator_geometry_authority).encode("utf-8")
     if gem_path.read_bytes() != canonical_gem:
         raise CandidateContractError("native corridor GEM differs from the canonical contract-derived GEM")
     project = Path(__file__).resolve().parents[1]

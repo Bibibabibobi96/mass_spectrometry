@@ -7,6 +7,7 @@ accelerator gap 1 with the mirror/Stripe-selected near-5-eV slow kinetic energy
 in +project-y; the accelerator field supplies the fast -project-z energy.
 """
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import argparse
@@ -58,7 +59,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_ad
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
     resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose, resolve_static_iob_origins,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CONVERGING_PRISM_ENERGY_RESIDUAL, converging_design_potential_delta_v,
     resolve_converging_prism_target,
@@ -304,16 +305,9 @@ def _source_transverse_reference(
     }
 
 
-def _accelerator_geometric_exit_reference(
-    *, contract: dict[str, Any], provider_plan: dict[str, Any],
-    resolved_campaign: dict[str, Any], bunch_source: dict[str, Any] | None,
-    bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int,
-    slow_energy_per_charge_v: float, source_origin_project_mm: tuple[float, float, float],
-    composition_plan: dict[str, Any], local_scope: dict[str, Any] | None,
-    direct_pose: dict[str, Any], validated_provider_origin: tuple[float, float, float] | None = None,
-) -> dict[str, Any]:
+def _accelerator_geometric_exit_reference(*, accelerator_geometry_authority, contract: dict[str, Any], provider_plan: dict[str, Any], resolved_campaign: dict[str, Any], bunch_source: dict[str, Any] | None, bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int, slow_energy_per_charge_v: float, source_origin_project_mm: tuple[float, float, float], composition_plan: dict[str, Any], local_scope: dict[str, Any] | None, direct_pose: dict[str, Any], validated_provider_origin: tuple[float, float, float] | None=None) -> dict[str, Any]:
     """Project the OA provider's per-particle geometric-exit targets into MR coordinates."""
-    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose)
+    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, accelerator_geometry_authority=accelerator_geometry_authority)
                        if validated_provider_origin is None else validated_provider_origin)
     domain = provider_plan["numerical_domain"]
     local_exit_z_mm = _finite(domain.get("local_exit_z_mm"), "provider local exit z")
@@ -571,12 +565,7 @@ def _accelerator_geometric_exit_validation(
     }
 
 
-def _resolve_trial_geometry(
-    reviewed_geometry_contract: dict[str, Any],
-    current_topology_contract: dict[str, Any],
-    accelerator_placement_contract: dict[str, Any],
-    *, accelerator_assembly: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+def _resolve_trial_geometry(reviewed_geometry_contract: dict[str, Any], current_topology_contract: dict[str, Any], accelerator_placement_contract: dict[str, Any], *, accelerator_geometry_authority, accelerator_assembly: dict[str, Any] | None=None) -> dict[str, Any]:
     """Resolve reviewed conductors with the two consumed accelerator overrides."""
     resolved_contract = copy.deepcopy(reviewed_geometry_contract)
     reviewed_accelerator = resolved_contract.get("accelerator")
@@ -594,7 +583,7 @@ def _resolve_trial_geometry(
         resolved_contract,
         inherited_dual_stripe_topology_contract=current_topology_contract,
         accelerator_assembly=accelerator_assembly,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
 
 
 def _schema5_native_source_state(
@@ -1572,42 +1561,7 @@ def native_corridor_priority_lua(cache_manifest: dict[str, Any] | None) -> str:
     )
 
 
-def materialize_trial(
-    *,
-    contract_path: Path,
-    accelerator_geometry_contract_path: Path,
-    trajectory_contract_path: Path,
-    reviewed_contract_path: Path,
-    mirror_summary_path: Path,
-    stripe_summary_path: Path,
-    fixed_mirror_stripe_authority_path: Path | None,
-    mirror_voltage_variation_path: Path | None = None,
-    accelerator_receipt_path: Path,
-    prism_1_v: float,
-    prism_2_v: float,
-    stripe_biases_override_v: tuple[float, float] | None,
-    runtime_fast_adjust_enable: bool,
-    pulse_accelerator_until_initial_exit: bool,
-    accelerator_safe_exit_only: bool,
-    accelerator_pulse_schedule_path: Path | None,
-    trajectory_profile_id: str | None,
-    fly2_path: Path,
-    sidecar_path: Path,
-    receipt_path: Path,
-    bunch_source_receipt_path: Path | None = None,
-    bunch_particle_id_min: int | None = None,
-    bunch_particle_id_max: int | None = None,
-    batch_scientific_event_locators: bool = False,
-    accelerator_instance: int = 3,
-    trajectory_step_scale: float = 1.0,
-    source_y_offset_mm: float = 0.0,
-    accelerator_provider_plan_path: Path,
-    composition_plan_path: Path,
-    local_scope_path: Path | None = None,
-    accelerator_resolved_campaign_path: Path | None = None,
-    field_binding_path: Path | None = None,
-    native_corridor_cache_manifest_path: Path | None = None,
-) -> dict[str, Any]:
+def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, accelerator_geometry_contract_path: Path, trajectory_contract_path: Path, reviewed_contract_path: Path, mirror_summary_path: Path, stripe_summary_path: Path, fixed_mirror_stripe_authority_path: Path | None, mirror_voltage_variation_path: Path | None=None, accelerator_receipt_path: Path, prism_1_v: float, prism_2_v: float, stripe_biases_override_v: tuple[float, float] | None, runtime_fast_adjust_enable: bool, pulse_accelerator_until_initial_exit: bool, accelerator_safe_exit_only: bool, accelerator_pulse_schedule_path: Path | None, trajectory_profile_id: str | None, fly2_path: Path, sidecar_path: Path, receipt_path: Path, bunch_source_receipt_path: Path | None=None, bunch_particle_id_min: int | None=None, bunch_particle_id_max: int | None=None, batch_scientific_event_locators: bool=False, accelerator_instance: int=3, trajectory_step_scale: float=1.0, source_y_offset_mm: float=0.0, accelerator_provider_plan_path: Path, composition_plan_path: Path, local_scope_path: Path | None=None, accelerator_resolved_campaign_path: Path | None=None, field_binding_path: Path | None=None, native_corridor_cache_manifest_path: Path | None=None) -> dict[str, Any]:
     if accelerator_instance != 3:
         raise CandidateContractError("workbench accelerator instance must be 3")
     trajectory_contract = load_contract(trajectory_contract_path)
@@ -1842,7 +1796,7 @@ def materialize_trial(
         trajectory_contract,
         accelerator_geometry_contract,
         accelerator_assembly=(field_binding["authority"].get("assembly") if field_binding is not None else None),
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     actual_oa_origin = None
     resolved_iob_pose = None
     if field_binding is not None:
@@ -1854,7 +1808,7 @@ def materialize_trial(
         resolved.update(copy.deepcopy(field_binding["geometry"]))
         actual_oa_origin = resolve_accelerator_iob_origin(
             contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, resolved_geometry=resolved,
-        )
+         accelerator_geometry_authority=accelerator_geometry_authority)
         if list(actual_oa_origin) != field_binding["instances"][2]["origin_mm"]:
             raise CandidateContractError("requested OA placement differs from the static field")
     if provider_plan is not None:
@@ -1868,14 +1822,14 @@ def materialize_trial(
             iob_geometry = resolved
             if any(accelerator_geometry_contract["accelerator"][key] != trajectory_contract["accelerator"][key]
                    for key in ("component_source_cylinder", "focus_y_anchor")):
-                iob_geometry = _resolve_trial_geometry(reviewed_contract, trajectory_contract, trajectory_contract)
+                iob_geometry = _resolve_trial_geometry(reviewed_contract, trajectory_contract, trajectory_contract, accelerator_geometry_authority=accelerator_geometry_authority)
             origins = resolve_static_iob_origins(reviewed_contract, resolved_geometry=iob_geometry)
             actual_oa_origin = resolve_accelerator_iob_origin(
                 contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose,
                 resolved_geometry=(resolved if contract == reviewed_contract == accelerator_geometry_contract == trajectory_contract else None),
-            )
+             accelerator_geometry_authority=accelerator_geometry_authority)
             origins["accelerator"] = (actual_oa_origin if contract == trajectory_contract else
-                                     resolve_accelerator_iob_origin(trajectory_contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose))
+                                     resolve_accelerator_iob_origin(trajectory_contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, accelerator_geometry_authority=accelerator_geometry_authority))
             analyzer_authority = "reviewed_analyzer_contract"
         resolved_iob_pose = {
             "origins_mm": {key: list(value) for key, value in origins.items()},
@@ -1966,7 +1920,7 @@ def materialize_trial(
         local_scope=local_scope,
         direct_pose=direct_pose,
         validated_provider_origin=actual_oa_origin,
-    )
+     accelerator_geometry_authority=accelerator_geometry_authority)
     exit_plane_lua = (
         "accelerator_exit_plane_project_z_mm = "
         f"{accelerator_geometric_exit_reference['exit_plane_project_z_mm']:.17g}, "
@@ -2193,6 +2147,7 @@ def materialize_trial(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),
         "collision_geometry": _mrtof_observations._collision_geometry_projection(resolved),
+        "accelerator_geometry_authority": copy.deepcopy(accelerator_geometry_authority),
         "native_corridor_priority_contract": {
             "path": str(priority_path.resolve()), "bytes": priority_path.stat().st_size,
             "sha256": file_sha256(priority_path).lower(),
@@ -2771,6 +2726,8 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     materialize = sub.add_parser("materialize")
     materialize.add_argument("--contract", required=True, type=Path)
+    materialize.add_argument("--accelerator-component-contract", type=Path, required=True)
+    materialize.add_argument("--accelerator-geometry-profile-id", required=True)
     materialize.add_argument("--accelerator-geometry-contract", required=True, type=Path)
     materialize.add_argument("--trajectory-contract", required=True, type=Path)
     materialize.add_argument("--reviewed-contract", required=True, type=Path)
@@ -2811,6 +2768,11 @@ def main() -> int:
     analyze.add_argument("--scientific-event-receipt", type=Path)
     args = parser.parse_args()
     if args.command == "materialize":
+        accelerator_geometry_authority = read_accelerator_geometry_authority(
+            load_contract(args.contract),
+            component_contract_path=args.accelerator_component_contract,
+            geometry_profile_id=args.accelerator_geometry_profile_id,
+        )
         stripe_override = None
         if (args.stripe_1_v is None) != (args.stripe_2_v is None):
             parser.error("--stripe-1-v and --stripe-2-v must be supplied together")
@@ -2850,7 +2812,7 @@ def main() -> int:
             receipt_path=args.receipt,
             field_binding_path=args.field_binding,
             native_corridor_cache_manifest_path=args.native_corridor_cache_manifest,
-        )
+         accelerator_geometry_authority=accelerator_geometry_authority)
         print(f"MRTOF_TWO_PRISM_TRIAL_MATERIALIZE=PASS P1={result['prism_voltages_v'][0]:.12g} P2={result['prism_voltages_v'][1]:.12g}")
     elif args.command == "analyze":
         result = analyze_trial(log_path=args.log, trial_receipt_path=args.trial_receipt, output_path=args.output, scientific_event_receipt=args.scientific_event_receipt)

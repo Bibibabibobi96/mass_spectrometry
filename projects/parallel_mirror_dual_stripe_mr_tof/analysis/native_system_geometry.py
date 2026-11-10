@@ -6,7 +6,7 @@ it does not derive a second accelerator geometry or a trajectory qualification.
 """
 
 from __future__ import annotations
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
 
 import argparse
 import math
@@ -18,12 +18,12 @@ from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from msplatform.backends.simion.mr_geometry import _box, _number
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface as resolve_mr_assembly_interface
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )
-from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface as resolve_oa_assembly_interface
+from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface as resolve_oa_assembly_interface
 from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
 
 
@@ -244,12 +244,12 @@ def _analyzer_origin(contract: dict[str, object], span: tuple[float, float, floa
     return origin
 
 
-def build_analyzer_gem(contract_path: Path) -> str:
+def build_analyzer_gem(contract_path: Path, *, accelerator_geometry_authority) -> str:
     """Build the non-accelerator PA with contract-owned component mesh defaults."""
     contract = load_contract(contract_path)
     _require_release(contract)
     mesh = contract["simion"]["component_mesh_mm_per_gu"]["analyzer"]
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
     span_x, span_y, span_z = _span(contract, "analyzer_pa_span_mm")
     origin_x, origin_y, origin_z = _analyzer_origin(contract, (span_x, span_y, span_z))
     lines = [
@@ -284,11 +284,11 @@ def _detector_origin(
     return tuple(center[index] - span[index] / 2.0 for index in range(3))
 
 
-def build_detector_gem(contract_path: Path) -> str:
+def build_detector_gem(contract_path: Path, *, accelerator_geometry_authority) -> str:
     """Build a detector-only PA so it cannot be confused with a prism shield."""
     contract = load_contract(contract_path)
     _require_release(contract)
-    resolved = resolve_geometry(contract)
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
     detector = resolved["detector"]
     if detector.get("separate_pa") is not True:
         raise CandidateContractError("detector must be emitted as a separate PA")
@@ -398,12 +398,7 @@ def resolve_oa_mr_direct_pose(
     }
 
 
-def resolve_accelerator_iob_origin(
-    contract: dict[str, object],
-    provider_plan: dict[str, object],
-    composition_plan: dict[str, object], *, local_scope: dict[str, object] | None = None,
-    direct_pose: dict[str, object] | None = None, resolved_geometry: dict[str, object] | None = None,
-) -> tuple[float, float, float]:
+def resolve_accelerator_iob_origin(contract: dict[str, object], provider_plan: dict[str, object], composition_plan: dict[str, object], *, accelerator_geometry_authority, local_scope: dict[str, object] | None=None, direct_pose: dict[str, object] | None=None, resolved_geometry: dict[str, object] | None=None) -> tuple[float, float, float]:
     """Project the provider PA through one frozen OA-to-MR direct pose."""
     if (
         provider_plan.get("role") != "orthogonal_accelerator_component_focus_pa_plan"
@@ -417,7 +412,7 @@ def resolve_accelerator_iob_origin(
         direct_pose = resolve_oa_mr_direct_pose(provider_plan, composition_plan, local_scope=local_scope)
     oa_translation = direct_pose["oa_translation_mm"]
 
-    resolved = resolve_geometry(contract) if resolved_geometry is None else resolved_geometry
+    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority) if resolved_geometry is None else resolved_geometry
     requirements = provider_plan.get("requirements")
     if not isinstance(requirements, dict):
         raise CandidateContractError("provider plan lacks compiled two-zone requirements")
@@ -425,6 +420,7 @@ def resolve_accelerator_iob_origin(
     # publisher's current scientific-group default.
     actual_oa = resolve_oa_assembly_interface(
         requirements, geometry_profile_id=layout.get("geometry_profile_id"), schema_version=1,
+        geometry_profile=accelerator_geometry_authority["geometry_profile"],
     )
     declared_frame = direct_pose["resolved_plan"]["components"][direct_pose["oa_instance_id"]]["local_frame_id"]
     if declared_frame == "accelerator_centered_transverse_local_z_mm":
@@ -466,21 +462,28 @@ def resolve_accelerator_iob_origin(
 
     local_to_pa = resolve_closed_two_zone_electrodes(
         requirements, geometry_profile_id=layout["geometry_profile_id"],
-     geometry_profile=_load_oa_geometry_profile(layout["geometry_profile_id"])).to_dict()["local_to_pa_translation_mm"]
+     geometry_profile=accelerator_geometry_authority["geometry_profile"]).to_dict()["local_to_pa_translation_mm"]
     return tuple(oa_translation[index] - float(local_to_pa[index]) for index in range(3))
 
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--accelerator-component-contract", type=Path, required=True)
+    parser.add_argument("--accelerator-geometry-profile-id", required=True)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--component", required=True, choices=("analyzer", "detector"))
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
+    accelerator_geometry_authority = read_accelerator_geometry_authority(
+        load_contract(arguments.contract),
+        component_contract_path=arguments.accelerator_component_contract,
+        geometry_profile_id=arguments.accelerator_geometry_profile_id,
+    )
     if arguments.component == "analyzer":
-        text = build_analyzer_gem(arguments.contract)
+        text = build_analyzer_gem(arguments.contract, accelerator_geometry_authority=accelerator_geometry_authority)
     else:
-        text = build_detector_gem(arguments.contract)
+        text = build_detector_gem(arguments.contract, accelerator_geometry_authority=accelerator_geometry_authority)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(text, encoding="utf-8", newline="\n")
     return 0

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 
 import json
 from pathlib import Path
@@ -47,8 +48,8 @@ def _identity(role: str) -> dict[str, object]:
 class NativeCorridorFreezeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.canonical_plan = derive_native_corridor_plan(CONTRACT)
-        cls.canonical_gem = build_native_corridor_gem(CONTRACT)
+        cls.canonical_plan = derive_native_corridor_plan(CONTRACT, accelerator_geometry_authority=geometry_authority(CONTRACT))
+        cls.canonical_gem = build_native_corridor_gem(CONTRACT, accelerator_geometry_authority=geometry_authority(CONTRACT))
 
     def setUp(self) -> None:
         self.temporary = TemporaryDirectory()
@@ -147,7 +148,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
                 output_directory=output,
                 run_config_path=run_config,
                 canonical_gem_path=self.gem,
-            )
+            accelerator_geometry_authority=geometry_authority(CONTRACT))
 
     def test_freeze_is_four_files_and_identical_rerun_is_hit(self) -> None:
         _, output = self._governed_output()
@@ -185,7 +186,12 @@ class NativeCorridorFreezeTest(unittest.TestCase):
                 "canonical_gem",
                 "simion_identity",
                 "coarse_raw_generation",
+                "accelerator_geometry_authority",
             },
+        )
+        self.assertEqual(
+            manifest["inputs"]["accelerator_geometry_authority"],
+            geometry_authority(CONTRACT),
         )
         identity = json.loads((output / FROZEN_NAMES[1]).read_text(encoding="utf-8"))
         self.assertIn(
@@ -264,7 +270,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
                 "SIMION fixture",
                 recipe_path,
                 self.coarse_raw,
-            )
+            accelerator_geometry_authority=geometry_authority(CONTRACT))
 
     def test_existing_nonidentical_freeze_fails_closed(self) -> None:
         _, output = self._governed_output()

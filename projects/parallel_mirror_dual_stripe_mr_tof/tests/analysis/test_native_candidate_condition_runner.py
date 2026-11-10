@@ -302,7 +302,9 @@ function Complete-FailedRun {
                     path.write_text("{}", encoding="utf-8")
                 context = root / "context.json"
                 context.write_text(json.dumps({
-                    "schema_version": 1, "role": "mrtof_native_candidate_condition_context",
+                    "schema_version": 2, "role": "mrtof_native_candidate_condition_context",
+                    "accelerator_component_contract_path": str(RUNNER.parents[2] / "orthogonal_accelerator/config/component_contract.json"),
+                    "accelerator_geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
                     "contract_path": str(contract),
                     "fixed_grid_mirror_run_manifest": str(mirror / "run_manifest.json"),
                     "geometry_review_run_path": str(root), "native_corridor_bank_run_path": str(root),

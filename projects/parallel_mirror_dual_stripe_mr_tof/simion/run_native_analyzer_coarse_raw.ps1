@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$RunId='',[string]$SimionExe='',[string]$PythonExe='')
+param([Parameter(Mandatory)][string]$AcceleratorComponentContractPath,[Parameter(Mandatory)][string]$AcceleratorGeometryProfileId,[string]$RunId='',[string]$SimionExe='',[string]$PythonExe='')
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -40,7 +40,11 @@ $summary=$package.summary;$runConfig=$package.run_config;$resultDir=$package.res
 $identity=Join-Path $resultDir 'coarse_raw_identity.json';$gem=Join-Path $resultDir 'mrtof_analyzer.gem';$verifyLog=Join-Path $resultDir 'coarse_raw_verify.log';$evidence=Join-Path $resultDir 'coarse_raw_verification.json'
 $fallbackIdentity=Join-Path $resultDir 'global_fallback_identity.json';$fallbackVerifyLog=Join-Path $resultDir 'global_fallback_verify.log';$fallbackEvidence=Join-Path $resultDir 'global_fallback_verification.json'
 try{
-  Invoke-RootPython @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_analyzer_coarse_raw','--contract',$contract,'--simion-executable',$simion,'--simion-release','SIMION 2020','--identity-output',$identity,'--gem-output',$gem)|Out-Null
+  $frozenOaComponentContract=Copy-VerifiedRunInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $package.input_dir 'oa_component_contract.json')
+  $configuration=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
+  $configuration.inputs.accelerator_component_contract=$frozenOaComponentContract
+  Write-RunJson -Path $runConfig -Depth 50 -Value $configuration
+  Invoke-RootPython @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_analyzer_coarse_raw','--accelerator-component-contract',$frozenOaComponentContract,'--accelerator-geometry-profile-id',$AcceleratorGeometryProfileId,'--contract',$contract,'--simion-executable',$simion,'--simion-release','SIMION 2020','--identity-output',$identity,'--gem-output',$gem)|Out-Null
   $probe=((@(Invoke-RootPython @('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,'--identity',$identity,'--filenames','mrtof_analyzer.pa#'))-join"`n")|ConvertFrom-Json -Depth 30)
   $plan=Get-Content $identity -Raw|ConvertFrom-Json -Depth 20
   [int64]$estimatedBytes=[int64]$plan.geometry.grid_shape[0]*[int64]$plan.geometry.grid_shape[1]*[int64]$plan.geometry.grid_shape[2]*8

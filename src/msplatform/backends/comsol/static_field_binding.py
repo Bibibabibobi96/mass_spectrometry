@@ -967,7 +967,8 @@ def _validate_ip_replacement(binding: dict[str, Any], base: dict[str, Any],
     if (binding.get("assembly_scope") != scope or assembly.get("assembly_scope") != scope
             or assembly.get("accelerator_provider") != provider
             or assembly.get("post_extraction_state") != "pulse_held_rf_zero"
-            or "accelerator_resolved_electrodes" in assembly or "accelerator_component_layout" in geometry):
+            or "accelerator_resolved_electrodes" in assembly or "accelerator_component_layout" in geometry
+            or "accelerator_component_geometry" in geometry):
         raise ValueError("IP binding requires fresh complete replacement without old OA assets")
     owner = Path(base["manifest"])
     for level in (base, *windows):

@@ -1,5 +1,7 @@
 [CmdletBinding(DefaultParameterSetName='Legacy')]
 param(
+  [Parameter(Mandatory,ParameterSetName='Legacy')][string]$AcceleratorComponentContractPath,
+  [Parameter(Mandatory,ParameterSetName='Legacy')][string]$AcceleratorGeometryProfileId,
   [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedJointWorkbenchRunPath,
   [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedPrism1ResponseBasisPath,
   [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedPrism2ResponseBasisPath,
@@ -448,6 +450,8 @@ function New-CenterTrialArguments {
   }
   if($Voltages){$arguments.Stripe1VoltageV=$Voltages[0];$arguments.Stripe2VoltageV=$Voltages[1]}
   if(Get-Variable -Name contract -Scope Script -ErrorAction SilentlyContinue){$arguments.ContractPath=$script:contract}
+  $arguments.AcceleratorComponentContractPath=$script:oaComponentContractFrozen
+  $arguments.AcceleratorGeometryProfileId=$AcceleratorGeometryProfileId
   $arguments.AcceleratorProviderReceiptPath=$AcceleratorProviderReceiptPath
   $arguments.CompositionPlanPath=$CompositionPlanPath
   if($LocalScopePath){$arguments.LocalScopePath=$LocalScopePath}
@@ -2155,6 +2159,7 @@ try {
   # accelerator rigid-body y anchor therefore rebuilds no PA and remains fully
   # visible in the frozen GUI-equivalent flight inputs.
   $script:contract=$frozenContract
+  $script:oaComponentContractFrozen=Copy-VerifiedRunInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $package.input_dir 'oa_component_contract.json')
   # The base bundle owns the already prepared MR fallback and detector PAs.
   # Replace only its obsolete accelerator record with the OA provider receipt;
   # this is a compact identity projection and never materializes a PA.
@@ -2180,6 +2185,8 @@ try {
       contract_sha256=(Get-FileHash -LiteralPath $frozenContract -Algorithm SHA256).Hash
       geometry=(Resolve-Path -LiteralPath $GeometryReviewRunPath).Path;mirror=(Resolve-Path -LiteralPath $MirrorRunPath).Path
       stripe=(Resolve-Path -LiteralPath $StripeRunPath).Path
+      accelerator_component_contract_sha256=(Get-FileHash -LiteralPath $script:oaComponentContractFrozen -Algorithm SHA256).Hash
+      accelerator_geometry_profile_id=$AcceleratorGeometryProfileId
       accelerator_provider_receipt=(Resolve-Path -LiteralPath $AcceleratorProviderReceiptPath).Path
       native_system_runtime_bundle=(Resolve-Path -LiteralPath $NativeSystemRuntimeBundlePath).Path
       trajectory_profile=$TrajectoryProfileId;trajectory_step_scale=$TrajectoryStepScale;source_y_offset_mm=$AcceleratorSourceYOffsetMm
@@ -2206,6 +2213,8 @@ try {
   # poses, trajectory settings and acceptance contracts are flight inputs,
   # not PA-producing identities, so they must not force a corridor rebuild.
   $earlyConfig=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
+  $earlyConfig.inputs.accelerator_component_contract=$script:oaComponentContractFrozen
+  $earlyConfig.parameters.accelerator_geometry_profile_id=$AcceleratorGeometryProfileId
   $earlyConfig.parameters.native_recovery_problem=$nativeRecoveryProblem
   if($frozenCompletedProviderManifest){
     $earlyConfig.inputs.completed_field_provider_manifest=$frozenCompletedProviderManifest

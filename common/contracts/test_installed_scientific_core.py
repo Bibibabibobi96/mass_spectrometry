@@ -1856,6 +1856,69 @@ assert pathlib.Path(sys.argv[1]).read_bytes() == mr_gem_input_before
 print('INSTALLED_MR_BACKEND_GEOMETRY=PASS cases=2')
 # MR_BACKEND_GEOMETRY_INSTALLED_END
 
+# MR_NEUTRAL_INSTALLED_BEGIN
+mr_neutral_code = r"""import copy,hashlib,importlib,importlib.abc,json,pathlib,sys,sysconfig
+purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+authors=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[2])]
+def deny_author(event,args):
+    if event=='open' and args and isinstance(args[0],str):
+        p=pathlib.Path(args[0]).resolve()
+        if any(p.is_relative_to(a) for a in authors):raise AssertionError('author read: '+str(p))
+sys.addaudithook(deny_author)
+class NeutralOnly(importlib.abc.MetaPathFinder):
+    def find_spec(self,fullname,path=None,target=None):
+        if any(fullname==p or fullname.startswith(p+'.') for p in ('common','projects','integrations','tools','msplatform.backends','msplatform.execution')):
+            raise AssertionError('non-neutral import: '+fullname)
+sys.meta_path.insert(0,NeutralOnly())
+m=importlib.import_module('msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry')
+assert pathlib.Path(m.__file__).resolve().is_relative_to(purelib)
+payload=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+for case in payload['cases']:
+    before=copy.deepcopy(case)
+    resolved=m.resolve_geometry(case['contract'],**case['authority'])
+    assert resolved.pop('schema_version')==2
+    oa=resolved.pop('accelerator_component_geometry')
+    assert 'accelerator_component_layout' not in resolved
+    assert oa['geometry_profile_id']==case['authority']['geometry_profile_id']
+    digest=hashlib.sha256(json.dumps(resolved,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode('utf-8')).hexdigest()
+    assert digest==case['expected_physical_sha256'],case['case']
+    for key in ('accelerator_requirements','geometry_profile','geometry_profile_id'):
+        missing=dict(case['authority']);missing.pop(key)
+        try:m.resolve_geometry(case['contract'],**missing)
+        except TypeError:pass
+        else:raise AssertionError('missing authority accepted: '+key)
+    assert case==before
+for name,module in tuple(sys.modules.items()):
+    if name.startswith('msplatform') and getattr(module,'__file__',None):
+        assert pathlib.Path(module.__file__).resolve().is_relative_to(purelib)
+print('INSTALLED_MR_NEUTRAL_RESOLVER=PASS cases=2')
+"""
+mr_neutral_input=root/('mr-neutral-'+sys.argv[2]+'.json')
+mr_neutral_input.write_text(json.dumps(fixture['mr_backend_geometry']),encoding='utf-8')
+mr_neutral_before=mr_neutral_input.read_bytes()
+mr_neutral_argv=[sys.executable,'-I','-B','-c',mr_neutral_code,str(mr_neutral_input),
+                 json.dumps([str(p) for p in blocked_source_roots])]
+mr_neutral_child=subprocess.run(mr_neutral_argv,cwd=root,capture_output=True,text=True,
+                                encoding='utf-8',timeout=60,check=False)
+assert mr_neutral_child.returncode==0,mr_neutral_child.stdout+mr_neutral_child.stderr
+assert 'INSTALLED_MR_NEUTRAL_RESOLVER=PASS cases=2' in mr_neutral_child.stdout
+import importlib.util as mr_neutral_util
+mr_neutral_path=pathlib.Path(mr_neutral_util.find_spec('msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry').origin)
+assert mr_neutral_path.resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+mr_neutral_original=mr_neutral_path.read_bytes()
+mr_neutral_held=mr_neutral_path.with_name(mr_neutral_path.name+'.missing-test-held')
+assert not mr_neutral_held.exists()
+mr_neutral_path.rename(mr_neutral_held)
+try:
+    mr_neutral_missing=subprocess.run(mr_neutral_argv,cwd=root,capture_output=True,text=True,
+                                      encoding='utf-8',timeout=30,check=False)
+    assert mr_neutral_missing.returncode!=0 and 'ModuleNotFoundError' in mr_neutral_missing.stderr and 'resolved_geometry' in mr_neutral_missing.stderr,mr_neutral_missing.stderr
+    missing_rejected.append('mr_neutral_geometry')
+finally:mr_neutral_held.rename(mr_neutral_path)
+assert mr_neutral_path.read_bytes()==mr_neutral_original
+assert mr_neutral_input.read_bytes()==mr_neutral_before
+# MR_NEUTRAL_INSTALLED_END
+
 
 # Provider-specific recorded analysis: actual explicit fixture and its unchanged protocol2 report.
 from msplatform.workflows import oa_focus_analysis as focus_analysis
@@ -2634,21 +2697,37 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def mr_backend_geometry_probe_fixture(self) -> dict:
         import copy
-        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_assembly_interface import complete_geometry
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+            resolve_geometry, build_two_zone_accelerator_requirements)
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         contract = load_contract(REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json")
+        provider_path = REPO_ROOT / "projects/orthogonal_accelerator/config/component_contract.json"
+        provider_bytes = provider_path.read_bytes()
+        profile_id = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
+        profile = dict(validate_geometry_profile(json.loads(provider_bytes)["geometry_profiles"][profile_id]))
         converging = copy.deepcopy(contract)
         converging["mirror"]["convergence_transform"] = {"angle_deg": 0.025688743, "pivot_y_mm": 0.0}
-        # Frozen original-owner full-output identities, not a current-emitter oracle.
-        return dict(numerical_contract=contract, cases=[
-            dict(case="parallel", geometry=copy.deepcopy(complete_geometry()),
-                 expected_gem_bytes=93548,
-                 expected_gem_sha256="10fbab197ef4bf2193a7f1b694606ad2c48b3749c3a7e2039d1b9ac948a505af"),
-            dict(case="converging", geometry=resolve_geometry(converging),
-                 expected_gem_bytes=97273,
-                 expected_gem_sha256="bf5d3cc84247bd59c85b1e4a2f1fa47436c47b6b06d9f3ea317a45a5706eae99"),
-        ])
+        cases = []
+        # PRE-MOVE MR16 physical outputs; canonical JSON after ONLY schema/old OA-view exclusion.
+        # Original/new OA view replacement is explicit; these are not full schema2 hashes.
+        for name, request, size, gem_sha, physical_sha in (
+            ("parallel", contract, 93548,
+             "10fbab197ef4bf2193a7f1b694606ad2c48b3749c3a7e2039d1b9ac948a505af",
+             "9e697a2ea3d2a209bffdb61080482cbf81ab11a8e2179434178004cb0f454b1b"),
+            ("converging", converging, 97273,
+             "bf5d3cc84247bd59c85b1e4a2f1fa47436c47b6b06d9f3ea317a45a5706eae99",
+             "58d1994f052a876cdaf6eb03c95f0579e48be2613eae031f4b6d8ea364fb59f6"),
+        ):
+            authority = dict(accelerator_requirements=build_two_zone_accelerator_requirements(
+                request, geometry_profile=profile), geometry_profile=copy.deepcopy(profile),
+                geometry_profile_id=profile_id)
+            cases.append(dict(case=name, contract=copy.deepcopy(request), authority=authority,
+                              geometry=resolve_geometry(request, **authority), expected_gem_bytes=size,
+                              expected_gem_sha256=gem_sha, expected_physical_sha256=physical_sha))
+        assert provider_path.read_bytes() == provider_bytes
+        return dict(numerical_contract=contract, cases=cases,
+                    profile_source=dict(bytes=len(provider_bytes), sha256=hashlib.sha256(provider_bytes).hexdigest()))
 
     def mr_interface_probe_fixture(self) -> list[dict]:
         # Original six-parent physical fixture; expected complete results were

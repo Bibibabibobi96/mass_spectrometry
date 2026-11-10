@@ -252,7 +252,7 @@ function Invoke-ProjectPython {
   Push-Location -LiteralPath $repoRoot
   $savedPythonPath=$env:PYTHONPATH
   try{
-    $env:PYTHONPATH=$repoRoot
+    $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repoRoot)-join[IO.Path]::PathSeparator
     & $python @Arguments
     if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
   }finally{
@@ -327,6 +327,26 @@ try{
   }else{$problem=$workpointConfig.parameters.native_recovery_problem}
   if($null-eq$problem){throw 'Workpoint has no native physical-problem identity.'}
   $mirrorInputs=if($staticFieldMode){$centerConfig.inputs}else{$workpointConfig.inputs}
+  $oaComponentContract=$null;$oaGeometryProfileId=$null
+  if($null-eq$initialCohortRun){
+    $geometryConfiguration=if($staticFieldMode){$centerConfig}else{$workpointConfig}
+    if(-not$geometryConfiguration.inputs.Contains('accelerator_component_contract')-or
+       -not$geometryConfiguration.parameters.Contains('accelerator_geometry_profile_id')){
+      throw 'New cohort construction requires complete frozen OA authority from the selected workpoint; legacy fixed evidence remains read-only.'
+    }
+    $oaComponentContract=(Resolve-Path -LiteralPath ([string]$geometryConfiguration.inputs.accelerator_component_contract)).Path
+    $oaGeometryProfileId=[string]$geometryConfiguration.parameters.accelerator_geometry_profile_id
+    if([string]::IsNullOrWhiteSpace($oaGeometryProfileId)){throw 'Selected workpoint lacks its OA geometry profile ID.'}
+    $oaAuthorityManifest=if($staticFieldMode){[string]$selected.manifest}else{$workpointManifest}
+    $oaAuthorityIdentity=Get-Content -LiteralPath $oaAuthorityManifest -Raw|ConvertFrom-Json -AsHashtable
+    Invoke-ProjectPython -Arguments @('-c',
+      'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
+      $oaAuthorityManifest,'--require-status',[string]$oaAuthorityIdentity.status,
+      '--require-project',[string]$oaAuthorityIdentity.project,'--require-mode',[string]$oaAuthorityIdentity.mode,
+      '--consumer-projection-id','mrtof_oa_geometry_authority_v1',
+      '--consumed-input','accelerator_component_contract',$oaComponentContract)
+  }
+
   if($null-eq$mirrorVoltageVariation-and$mirrorInputs.ContainsKey('terminal_time_mirror_voltage_variation')){
     $inheritedMirrorVariation=[string]$mirrorInputs.terminal_time_mirror_voltage_variation
     if(-not[string]::IsNullOrWhiteSpace($inheritedMirrorVariation)){
@@ -364,6 +384,7 @@ try{
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{}
   $smallInputs=[ordered]@{workpoint_manifest=$workpointManifest;workpoint_handoff=$handoff;contract=$workpointContract;source_receipt=$sourceReceipt;accelerator_provider_receipt=$providerReceipt;workflow_source=$PSCommandPath}
+  if($null-ne$oaComponentContract){$smallInputs.accelerator_component_contract=$oaComponentContract}
   if($mirrorVoltageVariation){$smallInputs.mirror_voltage_variation=$mirrorVoltageVariation}
   if($staticFieldMode){
     $smallInputs.selected_center_manifest=$selected.manifest
@@ -376,6 +397,7 @@ try{
   foreach($entry in $smallInputs.GetEnumerator()){
     $configuration.inputs[$entry.Key]=Copy-VerifiedRunInput -Source $entry.Value -Destination (Join-Path $package.input_dir ($entry.Key+[IO.Path]::GetExtension($entry.Value)))
   }
+  if($null-ne$oaComponentContract){$configuration.parameters.accelerator_geometry_profile_id=$oaGeometryProfileId}
   $configuration.parameters.diagnostic_purpose=$DiagnosticPurpose
   $configuration.parameters.cohort_particle_count=$CohortParticleCount
   Write-RunJson -Path $package.run_config -Depth 30 -Value $configuration
@@ -403,6 +425,10 @@ try{
     $cohortArguments.Remove('NativeCorridorBankRunPath')
     $cohortArguments.Remove('NativeSystemRuntimeBundlePath')
     $cohortArguments.FieldBindingPath=$FieldBindingPath
+  }
+  if($null-ne$oaComponentContract){
+    $cohortArguments.AcceleratorComponentContractPath=$configuration.inputs.accelerator_component_contract
+    $cohortArguments.AcceleratorGeometryProfileId=$oaGeometryProfileId
   }
   $cohortArguments.AcceleratorProviderReceiptPath=$providerReceipt
   $cohortArguments.CompositionPlanPath=$CompositionPlanPath
