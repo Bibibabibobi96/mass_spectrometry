@@ -309,7 +309,7 @@ try{
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8
   # Reuse the frozen-package verifier: neither installed core nor missing resources
   # may supply a dependency absent from this exact recorded source closure.
-  . (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+  . (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $codeRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
   $frozenPackage=[pscustomobject]@{
     code_root=$resolvedCodeRoot
     package_roots=@(Get-RunPythonImportRoots -RepoRoot $codeRoot)
@@ -323,6 +323,8 @@ try{
   $coreModules=@($inventory|Where-Object{$_.path-like'src/msplatform/*.py'}|ForEach-Object{
     ([string]$_.path).Substring(4).Replace('/','.').Replace('.__init__.py','').Replace('.py','')
   })
+  Assert-FrozenPythonPackage -Package $frozenPackage
+  . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
   Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
     -Arguments @('--help') -RequiredModuleNames $coreModules -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
 

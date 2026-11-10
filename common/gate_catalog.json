@@ -1779,6 +1779,18 @@
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/inputs.py",
+          "reason": "installed_frozen_python_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+          "reason": "installed_frozen_python_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/__init__.py",
+          "reason": "installed_frozen_python_executor_changed"
         }
       ],
       "command": {
@@ -1800,6 +1812,29 @@
         "support_paths": [
           "projects/rf_multipole_ion_optics/tests/test_support/",
           "projects/rf_multipole_ion_optics/tests/__init__.py"
+        ],
+        "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/execution/inputs.py",
+                "reason": "installed_frozen_python_executor_changed"
+              },
+              {
+                "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+                "reason": "installed_frozen_python_executor_changed"
+              },
+              {
+                "exact": "src/msplatform/execution/resources/__init__.py",
+                "reason": "installed_frozen_python_executor_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/domain/test_published_design_freshness.py",
+              "projects/rf_multipole_ion_optics/tests/domain/test_simion_runner_contract.py"
+            ],
+            "dependency_profile": "locked"
+          }
         ]
       },
       "owner": "rf_multipole_ion_optics"
@@ -2965,6 +3000,22 @@
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/rf_mass_filter/",
+          "reason": "installed_rf_mass_filter_science_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/inputs.py",
+          "reason": "installed_frozen_python_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+          "reason": "installed_frozen_python_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/__init__.py",
+          "reason": "installed_frozen_python_executor_changed"
         }
       ],
       "command": {
@@ -3097,6 +3148,54 @@
               "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_owner_finalization.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_owner_finalization_recovery.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_simion_powershell_owner.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/rf_multipole/mass_filter_theory.py",
+                "reason": "installed_rf_mass_filter_science_changed"
+              },
+              {
+                "exact": "src/msplatform/components/rf_multipole/finite_length_transport.py",
+                "reason": "installed_rf_mass_filter_science_changed"
+              },
+              {
+                "prefix": "src/msplatform/workflows/rf_mass_filter/",
+                "reason": "installed_rf_mass_filter_science_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_quadrupole_l0.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_mass_filter_l1.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_mass_filter_response_comparison.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_workflow_architecture_contract.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/execution/inputs.py",
+                "reason": "installed_frozen_python_executor_changed"
+              },
+              {
+                "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+                "reason": "installed_frozen_python_executor_changed"
+              },
+              {
+                "exact": "src/msplatform/execution/resources/__init__.py",
+                "reason": "installed_frozen_python_executor_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_compare_particle_state_evidence.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_matlab_closure.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_interface_postprocess_child.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_interface_public_owner.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py"
             ],
             "dependency_profile": "locked"
           }

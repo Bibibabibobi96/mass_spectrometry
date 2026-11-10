@@ -3,25 +3,82 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+import os
+import re
 import shutil
+import stat
 from typing import Any
 
 from msplatform.io.manifest_records import file_record, verify_record
 
 
-def freeze_file(source: Path, destination: Path, *, retention_classifier: Any = None) -> dict[str, Any]:
+def freeze_file(source: Path, destination: Path, *, retention_classifier: Any = None,
+                overwrite_existing: bool = False) -> dict[str, Any]:
     """Copy exact input bytes to a caller-selected, previously absent path.
 
-    The caller creates the parent. This is the existing small-input primitive;
+    The caller creates the parent. Explicit overwrite is for the caller's owned
+    staging destination; the default still refuses any existing destination.
+    This is the existing small-input primitive;
     solver-native payloads use their dedicated owner mechanisms.
     """
-    if destination.exists():
+    if type(overwrite_existing) is not bool:
+        raise ValueError("overwrite_existing requires an explicit boolean")
+    if destination.exists() and not overwrite_existing:
         raise FileExistsError(destination)
+    if overwrite_existing and not source.is_file():
+        raise FileNotFoundError(source)
     before = file_record(source.resolve(), retention_classifier=retention_classifier)
+    if overwrite_existing and destination.exists():
+        destination.chmod(destination.stat().st_mode | stat.S_IWRITE)
     shutil.copyfile(source, destination)
+    if overwrite_existing:
+        shutil.copystat(source, destination)
     verify_record("frozen input", {**before, "path": str(destination)},
                   retention_classifier=retention_classifier)
     return {**before, "path": str(destination.resolve()), "source_path": str(source.resolve())}
+
+
+def freeze_python_package(source_root: Path, code_root: Path, *,
+                          relative_paths: Sequence[str]) -> dict[str, Any]:
+    """Freeze an ordered explicit package using the existing verified-copy primitive.
+
+    This is the sole aggregate formerly owned by RF's New-FrozenPythonPackage.
+    It retains its schema1 inventory and uppercase hashes. Selection of scientific
+    packages/resources belongs to the caller. Existing files may be overwritten
+    only within this explicitly selected owned staging directory.
+    Explicit package sources are required evidence, including at the existing
+    large-file read boundary; this is not native-payload classification.
+    """
+    source_root = Path(os.path.abspath(source_root))
+    code_root = Path(os.path.abspath(code_root))
+    if isinstance(relative_paths, (str, bytes)) or not isinstance(relative_paths, Sequence):
+        raise ValueError("Frozen Python dependency paths must be an explicit sequence")
+    seen: set[str] = set()
+    inventory = []
+    source_role = lambda _path, **_options: 'required_evidence'
+    for relative in relative_paths:
+        if not isinstance(relative, str) or Path(relative).anchor or '..' in re.split(r'[/\\]', relative):
+            raise ValueError(f"Frozen Python dependency path is not relative: {relative}")
+        normalized = relative.replace('\\', '/')
+        if normalized.casefold() in seen:
+            raise ValueError(f"Frozen Python dependency path is duplicated: {relative}")
+        seen.add(normalized.casefold())
+        source = Path(os.path.abspath(source_root / normalized))
+        if not source.is_relative_to(source_root) or source == source_root:
+            raise ValueError(f"Frozen Python dependency escapes its source root: {relative}")
+        destination = code_root / normalized
+        # Preserve missing-source-before-destination changes and per-entry failure
+        # ordering. This creates no second copy or persistent identity cache.
+        if not source.is_file():
+            raise FileNotFoundError(f"Run input is missing: {source}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        record = freeze_file(source, destination, overwrite_existing=True, retention_classifier=source_role)
+        verify_record('frozen package source', {**record, 'path': str(source.resolve())},
+                      retention_classifier=source_role)
+        inventory.append(dict(relative_path=normalized, path=str(destination.absolute()),
+                              sha256=record['sha256'].upper()))
+    return dict(schema_version=1, code_root=str(code_root),
+                package_roots=python_import_roots(code_root), files=inventory)
 
 
 _PYTHON_EXCLUDED_PARTS = frozenset({

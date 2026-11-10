@@ -19,7 +19,7 @@ class PublishedDesignFreshnessTests(unittest.TestCase):
                 script.write_text(r'''param($Repo,$Python,$Root,$Profile)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $Repo 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $snapshot=Join-Path $Root 'snapshot'
 $facts=New-RfPublishedDesignFreshnessPackage -Python $Python -SourceRoot $Repo -SnapshotRoot $snapshot -Profile $Profile
 if($facts.profile-cne$Profile-or-not(Test-Path $facts.resolved_path)){throw 'Lost selected checked publication'}
@@ -34,8 +34,10 @@ foreach($entry in $facts.package.files){
 }
 # Reuse only the immutable selected inventory, not the checked package or mutable source.
 # Both checker executions and the separate good/stale snapshots remain real.
-$sourcePackage=New-FrozenPythonPackage -SourceRoot $source -CodeRoot (Join-Path $Root 'source_good') `
+$sourcePackage=New-FrozenPythonPackage -Python $python -SourceRoot $source -CodeRoot (Join-Path $Root 'source_good') `
  -RelativePaths @($facts.package.files.relative_path)
+Assert-FrozenPythonPackage -Package $sourcePackage
+. (Get-FrozenPythonPackageFile -Package $sourcePackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $sourceCheck=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $sourcePackage `
  -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
  -Arguments @('--profile',$Profile,'--check') -DistributionNames @('jsonschema','referencing') `

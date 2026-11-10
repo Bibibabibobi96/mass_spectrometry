@@ -375,12 +375,13 @@ RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及
 冻结旧非typed出口孔板设计曾因`axial-drive potential profile does not accelerate selected charge sign`
 被编译器拒绝。此负结果保留；内置孔板模式及其活动profile已退役，不能改物理符号或换成裸杆来制造通过。
 
-质量过滤L0参考实现仍在[专属workflow](../workflows/mass_filter_reference/theory.py)，其源由
+质量过滤L0数学实现归`msplatform.components.rf_multipole.mass_filter_theory`，具名参考政策归
+`msplatform.workflows.rf_mass_filter.reference`；[研究CLI](../workflows/mass_filter_reference/theory.py)只选择显式研究输入。其源由
 [official_particle_source.json](../variants/quadrupole/config/official_particle_source.json)声明，确定性采样由
 [公共ion_release](../../../common/ion_release/README.md)提供。旧150 mm碰撞脚本不是活动合同。
 旧矩形PA导出／比较三脚本已退役，不恢复硬编码0.2 mm基线的GEM文本替换链。
 
-质量响应的L1、SIMION、COMSOL及响应比较共用`core/mass_response.py`准备结果，再直接复用
+质量响应的L1、SIMION、COMSOL及响应比较共用`msplatform.analysis.mass_response`准备结果，再直接复用
 `msplatform.analysis.peak_metrics.half_height_width`计算`sampled_mass_response_linear_half_height_v1`；旧峰形桥已退役。旧
 `observed_half_maximum_band_Th`仍是全部半高样本的采样包络；新
 `interpolated_main_peak_fwhm_Th`只取首个全局最大值两侧最近半高交点的线性插值，单位Th。
@@ -1212,6 +1213,71 @@ The existing callback regression discovers standalone `lua`, then `lua5.1`, on P
 
 The three affected RF/TOF modules passed in one private public-GATE invocation: 15 parent tests in 3.135 seconds, with one unchanged optional historical-snapshot skip. The typed-argv observer recorded 18 calls to the pinned standalone Lua executable and no commercial SIMION invocation. Original tests, numerical assertions and loaded production resources remain unchanged. This is not native or full-Repository acceptance.
 
+## Installed ideal quadrupole mass-filter scientific owners
+
+The ideal quadrupole Mathieu functions belong to `components.rf_multipole.mass_filter_theory`,
+and the original finite-length velocity-Verlet kernel to `components.rf_multipole.finite_length_transport`.
+The explicit named L1 source projection, scan and response policy belong to `workflows.rf_mass_filter`.
+They retain original SciPy constants, positive singly charged scope, source RNG/phase order,
+hard-radius aperture and no-fringe ideal model. They differ from the high-order RK4 transport.
+Research JSON remains explicit; canonical APIs do not select project defaults.
+
+The root `run_finite_length.py` now selects the named research inputs and an explicit
+saved execution environment/profile/workspace, then delegates to the installed
+`finite_length.run`. The canonical workflow uses one existing managed owner and
+one immutable schema2 request/package for prepare, simulation and analysis. The
+parent never executes the live scan or CSV writer. Package aggregation has one
+neutral implementation in `execution.inputs`; existing RF PowerShell consumers
+delegate using their selected Python and selected implementation origin.
+
+Execution requires `--run-id`, `--workspace`, `--execution-environment` and
+`--engineering-profile`; `--check-contract` remains owner-free. A supplied
+`--artifact-project-root` must agree with that workspace's normal managed layout.
+An explicit alternate managed research workspace is supported; an arbitrary
+ungoverned output layout is rejected rather than silently redirected. The retired
+research CLI analysis flags have no active caller; the canonical worker's explicit
+simulation/analysis actions remain the sole module CLI.
+
+For new schema2 executions, engineering wall-clock values (including a selected
+120-second prepare/analysis setting) are warnings followed by natural managed
+family drain, replacing the former raw subprocess hard cutoffs. Simulation has no
+added cutoff or retry. Deployment limits must come from the selected saved policy;
+software acceptance's provisional TEST-owned limits are not production defaults.
+Infrastructure failure context is declared in `results/failure_context.json`,
+alongside the standard owner's summary/Result and original exception. A failed
+context write cannot replace that exception. Unknown writers retain the original
+owner's holds and cannot be resumed as completed finalization. Physical functional
+FAIL remains distinct from infrastructure failure. Old requests/runs are unchanged.
+The workflow selects the existing no-native-particle-batch completion policy;
+its sampled ions do not create the native batch-recovery products governed by
+that separate protocol. The existing owner still requires genuine operation
+lease acquisition/release, and rejects an inherited unconfirmed release binding.
+The software fixture scopes that ownership explicitly; this adds no production
+owner exception or arbitrary poisoned-host-environment support.
+
+The ideal science, +1 named-control scope, source/phase/RNG order and existing
+resolved-versus-baseline authority gap are unchanged. Scientific/helper body
+identity, original assertions, actual managed operations and failed-input recovery
+are checked separately. The old scientific scan-call poison control demonstrates
+that call boundary only; it is not a rerun of the entire legacy owner.
+
+Current RF and integration package selectors use the canonical analysis tree.
+They no longer request `common/analysis`, whose production implementations have
+retired. The strict empty-package and missing-code checks remain enabled; the
+existing all-eight-consumer freezer regression exercises this closure. The
+finite3D raw copier also omits that directory's unneeded test files from future
+inputs, so its copied inventory intentionally changes without dropping production
+code. Historical frozen inventories remain unchanged.
+
+Both the ordinary wheel and the sdist-rebuilt wheel have exercised the selected
+executor and real managed RF owner outside the checkout: the positive scan and
+analysis succeed, and changed/missing frozen inputs retain failed status through
+normal cleanup/finalization with released capacity. Original N=100 science,
+CSV/metrics, module origins and immutable request/package identities are checked.
+This installation acceptance remains distinct from finite3D/native solver
+qualification, complete research-campaign retirement, and the full
+Repository/performance targets.
+
 ## Installed neutral particle-state comparison
 
 The same-solver and cross-solver analyzers share the sole installed
@@ -1221,3 +1287,17 @@ comparison thresholds and source-binding policy remain in the research workflows
 Both frozen entrypoints select the canonical source package and use the existing
 isolated verifier; missing selected code fails without author-tree fallback.
 This ownership slice does not install the full finite-3D runner or grant native qualification.
+
+## Selected frozen Python execution resource
+
+The two neutral PowerShell operations, `Assert-FrozenPythonPackage` and
+`Invoke-IsolatedFrozenPythonModule`, have one implementation in the installed
+`msplatform.execution` resource `frozen_python_package.ps1`. The RF helper retains
+research source selection and package preparation; callers explicitly select the
+execution resource from the same original or frozen source topology. A missing
+selected resource fails without substituting a current host installation.
+Prepared execution uses the resource recorded in its own frozen inventory.
+The existing no-sink, probe, stdout-sink and failure identities are retained.
+The managed finite-length workflow above uses these operations through the same
+selected frozen resource. Source, ordinary-installation and native acceptance
+remain distinct; factoring the executor alone grants no scientific qualification.

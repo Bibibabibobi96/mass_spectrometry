@@ -458,7 +458,7 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
                 missing_schema.unlink()
                 guard_script = r"""
 . @@SUPPORT@@
-. @@HELPER@@
+. @@HELPER@@ -ExecutionResourcePath (Join-Path @@CODE@@ 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $codeRoot=@@CODE@@
 $inventory=(Get-Content -Raw @@INVENTORY@@|ConvertFrom-Json).files
 $package=[pscustomobject]@{code_root=$codeRoot;package_roots=@(Get-RunPythonImportRoots -RepoRoot $codeRoot);

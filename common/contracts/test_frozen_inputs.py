@@ -12,6 +12,54 @@ from msplatform.execution.retention import file_record
 
 
 class FrozenInputTests(unittest.TestCase):
+    def test_explicit_owned_staging_overwrite_and_original_default(self):
+        import stat
+        with tempfile.TemporaryDirectory() as directory:
+            source, target = (Path(directory) / name for name in ('source', 'target'))
+            source.write_bytes(b'original\r\nraw')
+            target.write_bytes(b'old')
+            target.chmod(target.stat().st_mode & ~stat.S_IWRITE)
+            try:
+                with self.assertRaises(FileExistsError):
+                    freeze_file(source, target)
+                self.assertEqual(target.read_bytes(), b'old')
+                actual = freeze_file(source, target, overwrite_existing=True)
+                self.assertEqual(target.read_bytes(), source.read_bytes())
+                self.assertEqual(actual['sha256'], file_record(source)['sha256'])
+                with self.assertRaises(FileNotFoundError):
+                    freeze_file(source.with_name('missing'), target, overwrite_existing=True)
+                self.assertEqual(target.read_bytes(), source.read_bytes())
+            finally:
+                target.chmod(target.stat().st_mode | stat.S_IWRITE)
+
+    def test_single_package_aggregate_preserves_order_identity_and_rejects_source_change(self):
+        from msplatform.execution.inputs import freeze_python_package
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, copied = root / 'source', root / 'copied'
+            source.mkdir()
+            (source / 'first.py').write_bytes(b'first = 1\r\n')
+            (source / 'second.py').write_bytes(b'second = 2\n')
+            actual = freeze_python_package(source, copied, relative_paths=['second.py', 'first.py'])
+            self.assertEqual(actual['schema_version'], 1)
+            self.assertEqual(actual['code_root'], str(copied))
+            self.assertEqual([row['relative_path'] for row in actual['files']], ['second.py', 'first.py'])
+            self.assertEqual(actual['package_roots'], [str(copied)])
+            self.assertEqual(actual['files'][0]['sha256'], file_record(source / 'second.py')['sha256'].upper())
+            self.assertEqual((copied / 'first.py').read_bytes(), (source / 'first.py').read_bytes())
+            with self.assertRaisesRegex(ValueError, 'duplicated'):
+                freeze_python_package(source, copied, relative_paths=['first.py', 'FIRST.py'])
+            with self.assertRaisesRegex(ValueError, 'not relative'):
+                freeze_python_package(source, copied, relative_paths=['../escape.py'])
+            original_copy = __import__('shutil').copyfile
+            def change_after_copy(incoming, outgoing):
+                result = original_copy(incoming, outgoing)
+                incoming.write_bytes(b'second = 3\n')
+                return result
+            with patch('msplatform.execution.inputs.shutil.copyfile', side_effect=change_after_copy):
+                with self.assertRaisesRegex(AssertionError, 'SHA-256 changed'):
+                    freeze_python_package(source, root / 'changed', relative_paths=['second.py'])
+
     def test_freezes_original_bytes_and_returns_destination_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source, target = (Path(directory)/name for name in ("source.json", "copy.json"))

@@ -306,7 +306,7 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
 $t=$null;$e=$null
 $entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/cross_solver/compare_cross_solver.ps1'
@@ -316,8 +316,10 @@ $frozen=New-CrossSolverFrozenPathSet -InputDir {literal(self.root / 'frozen-inpu
  -AnalyzerRelativePath 'projects/rf_multipole_ion_optics/workflows/cross_solver/evaluate.py' -ModeFilename 'mode.json'
 $selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'}},$true)
 Invoke-Expression $selection.Extent.Text
+Assert-FrozenPythonPackage -Package $frozenPackage
+. (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $arguments=@(Get-Content -Raw -LiteralPath {literal(args_path)}|ConvertFrom-Json)
-$parameters=@{{Python=$python;AnalyzerModule='{ANALYZER_MODULE}';ModuleRoot=$frozen.module_root;
+$parameters=@{{Python=$python;AnalyzerModule='{ANALYZER_MODULE}';
  Package=$frozenPackage;ForbiddenRoots=@($repoRoot);Arguments=$arguments;
  Stdout={literal(self.root / 'stdout.txt')};Stderr={literal(self.root / 'stderr.txt')};
  RequiredOutputs=@({literal(case / 'cold.json')},{literal(case / 'cold.csv')})}}
@@ -340,7 +342,8 @@ exit 0
     def test_cross_solver_failure_stdout_bytes_survive_isolated_exit(self) -> None:
         source = self.root / "source"
         for relative in ("src/msplatform/__init__.py", "src/msplatform/analysis/__init__.py",
-                         "src/msplatform/analysis/particle_state_comparison.py"):
+                         "src/msplatform/analysis/particle_state_comparison.py",
+                         "src/msplatform/execution/resources/frozen_python_package.ps1"):
             target = source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((REPO_ROOT / relative).read_bytes())
@@ -358,16 +361,18 @@ exit 0
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)};$root={literal(self.root)}
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
-$package=New-FrozenPythonPackage -SourceRoot {literal(source)} -CodeRoot (Join-Path $root 'frozen') `
- -RelativePaths @('owned_analyzer.py','src/msplatform/__init__.py','src/msplatform/analysis/__init__.py','src/msplatform/analysis/particle_state_comparison.py')
+$package=New-FrozenPythonPackage -Python $python -SourceRoot {literal(source)} -CodeRoot (Join-Path $root 'frozen') `
+ -RelativePaths @('owned_analyzer.py','src/msplatform/__init__.py','src/msplatform/analysis/__init__.py','src/msplatform/analysis/particle_state_comparison.py','src/msplatform/execution/resources/frozen_python_package.ps1')
+Assert-FrozenPythonPackage -Package $package
+. (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $before=@($package.files|ForEach-Object{{Get-RunFileSha256 -Path $_.path}})
 $rows=@()
 foreach($code in @(0,7)){{
  $stdout=Join-Path $root "$code.stdout";$stderr=Join-Path $root "$code.stderr";$origin=Join-Path $root "$code.origin"
  $threw=$false;$errorCode=$null;$message=''
- try{{Invoke-CrossSolverAnalyzer -Python $python -AnalyzerModule owned_analyzer -ModuleRoot $package.code_root `
+ try{{Invoke-CrossSolverAnalyzer -Python $python -AnalyzerModule owned_analyzer `
    -Package $package -ForbiddenRoots @($repoRoot,{literal(source)}) -Arguments @([string]$code,$origin) `
    -Stdout $stdout -Stderr $stderr -RequiredOutputs @($origin)}}
  catch{{$threw=$true;$errorCode=$_.Exception.Data['exit_code'];$message=$_.Exception.Message}}
@@ -393,6 +398,28 @@ exit 0
                 if row["code"]:
                     self.assertEqual(row["exit_code"], 7)
                     self.assertIn("exit code 7", row["message"])
+
+    def test_missing_selected_execution_resource_does_not_use_host_resource(self) -> None:
+        selected = self.root / "selected_execution_resource.ps1"
+        selected.write_bytes((REPO_ROOT / "src/msplatform/execution/resources/frozen_python_package.ps1").read_bytes())
+        literal = lambda value: "'" + str(value).replace("'", "''") + "'"
+        script = f"""
+$ErrorActionPreference='Stop'
+$helper={literal(REPO_ROOT / 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')}
+$selected={literal(selected)}
+. $helper -ExecutionResourcePath $selected
+if((Get-Command Invoke-IsolatedFrozenPythonModule).ScriptBlock.File-cne$selected){{throw 'Executor did not originate from selected resource'}}
+Remove-Item -LiteralPath $selected
+try{{. $helper -ExecutionResourcePath $selected;throw 'Missing selected resource accepted'}}
+catch{{if($_.Exception.Message-notlike'Selected frozen Python execution resource is missing:*'){{throw}}}}
+Write-Output 'MISSING_SELECTED_RESOURCE_REJECTED'
+exit 0
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                                cwd=self.root, timeout=120, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("MISSING_SELECTED_RESOURCE_REJECTED", result.stdout)
+        self.assertTrue((REPO_ROOT / "src/msplatform/execution/resources/frozen_python_package.ps1").is_file())
 
     def test_shared_core_has_no_claim_vocabulary(self) -> None:
         source = CORE.read_text(encoding="utf-8").lower()

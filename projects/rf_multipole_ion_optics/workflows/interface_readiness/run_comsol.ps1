@@ -67,11 +67,10 @@ $ResourceBudgets=@{}
 foreach($stage in @('prepare','solver','postprocess')){$ResourceBudgets[$stage]=(Get-HostResourceBudget -Role COMSOL -Stage $stage).Clone()}
 $ResourceBudgets.solver.memory_bytes=[long]$Limits.process_tree_working_set_bytes
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
     -PythonPackages @(
         'common/contracts',
-        'common/analysis',
         'projects/rf_multipole_ion_optics/analysis',
         'projects/rf_multipole_ion_optics/core',
         'projects/rf_multipole_ion_optics/runtime',
@@ -326,7 +325,7 @@ function Invoke-InterfacePostprocessChild {
         }
         $design=Get-Content $config.inputs.resolved_design -Raw -Encoding UTF8|ConvertFrom-Json
         $phase='freeze_analysis'
-        $frozen=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot (Join-Path $package.input_dir 'code') -RelativePaths $frozenPythonRelativePaths
+        $frozen=New-FrozenPythonPackage -Python $python -SourceRoot $repoRoot -CodeRoot (Join-Path $package.input_dir 'code') -RelativePaths $frozenPythonRelativePaths
         Assert-FrozenPythonPackage $frozen
         $child=Get-Content $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
         $child.inputs.native_execution_limits=$limitsFrozen;$child.inputs.native_host_budgets=$budgetPath
@@ -516,7 +515,7 @@ try {
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-    . $frozenPythonSupport
+    . $frozenPythonSupport -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
     $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
         -Python $python -SourceRoot $repoRoot `
         -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface
@@ -551,7 +550,7 @@ try {
         'projects/rf_multipole_ion_optics/comsol/interface_readiness/run_release_construction_gate.m'
     )
     $frozenCodeRoot = Join-Path $inputDir 'code'
-    $frozenPythonPackage = New-FrozenPythonPackage `
+    $frozenPythonPackage = New-FrozenPythonPackage -Python $python `
         -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths @($frozenPythonRelativePaths+$frozenMatlabRelativePaths)
     $frozenParticlePolicy = Get-FrozenPythonPackageFile `
         -Package $frozenPythonPackage -RelativePath `
@@ -591,6 +590,8 @@ try {
         $bundleIndex += 1
         $bundleInputPaths[("bundle_artifact_{0:D3}" -f $bundleIndex)] = $frozenArtifact
     }
+    Assert-FrozenPythonPackage -Package $frozenPythonPackage
+    . (Get-FrozenPythonPackageFile -Package $frozenPythonPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
     $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenPythonPackage `
         -Module `

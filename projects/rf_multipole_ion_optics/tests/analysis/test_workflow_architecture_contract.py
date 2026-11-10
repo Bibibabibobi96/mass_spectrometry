@@ -304,8 +304,8 @@ Get-Content $specification.stdout|Write-Output
         self.assertNotIn("evaluate_simion", comsol_evaluator)
         self.assertNotIn("theory_masses", comsol_evaluator)
         self.assertNotIn("simion", comsol_evaluator.lower())
-        self.assertIn(".theory import theory_masses", simion_evaluator)
-        self.assertIn(".theory import theory_masses", comparison_evaluator)
+        self.assertIn("msplatform.workflows.rf_mass_filter.reference import theory_masses", simion_evaluator)
+        self.assertIn("msplatform.workflows.rf_mass_filter.reference import theory_masses", comparison_evaluator)
         comparison_runner = _read(
             MASS_FILTER_WORKFLOW / "compare_responses.ps1"
         )

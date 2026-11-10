@@ -164,19 +164,6 @@
       ],
       "python_packages": [
         {
-          "source_repo_path": "common/analysis",
-          "consumers": [
-            "accelerator_interface",
-            "local_frontend",
-            "multipole_ip",
-            "oa_mr",
-            "paired_accelerator_pulse",
-            "paired_accelerator_static_field",
-            "prepared_joint",
-            "single_reflection_flight"
-          ]
-        },
-        {
           "source_repo_path": "common/contracts",
           "consumers": [
             "accelerator_interface",

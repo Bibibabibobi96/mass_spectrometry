@@ -49,11 +49,10 @@ $entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
 . (Join-Path $projectRoot 'runtime\simion_execution.ps1')
 . (Join-Path $projectRoot 'runtime\simion_field_checkpoint_support.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
     -PythonPackages @(
         'common/contracts',
-        'common/analysis',
         'projects/rf_multipole_ion_optics/analysis',
         'projects/rf_multipole_ion_optics/core',
         'projects/rf_multipole_ion_optics/runtime',
@@ -137,7 +136,7 @@ Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', 
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-    . $frozenPythonSupport
+    . $frozenPythonSupport -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
     $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
         -Python $python -SourceRoot $repoRoot `
         -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface
@@ -171,7 +170,7 @@ try {
 Copy-VerifiedRunInput -Source $sourceFamilyInput -Destination $frozenSourceFamily | Out-Null
 Copy-VerifiedRunInput -Source $distributionInput -Destination $frozenDistribution | Out-Null
 $frozenCodeRoot = Join-Path $inputDir 'code'
-$frozenPythonPackage = New-FrozenPythonPackage `
+$frozenPythonPackage = New-FrozenPythonPackage -Python $python `
     -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths $frozenPythonRelativePaths
 $bundleDocument = Get-Content -LiteralPath $bundleMetadataInput -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -193,6 +192,8 @@ foreach ($entry in $bundleDocument.artifacts) {
 $frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json'
 Copy-VerifiedRunInput -Source $bundleMetadataInput -Destination $frozenBundleMetadata |
     Out-Null
+Assert-FrozenPythonPackage -Package $frozenPythonPackage
+. (Get-FrozenPythonPackageFile -Package $frozenPythonPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
     -Python $python -Package $frozenPythonPackage `
     -Module `

@@ -1,6 +1,7 @@
 """Thin real-wrapper MATLAB closure transport; no commercial invocation."""
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -26,13 +27,13 @@ class FrozenMatlabClosureTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . RUN_CONTEXT
-. SUPPORT
+. SUPPORT -ExecutionResourcePath EXECUTOR_RESOURCE
 function Copy-VerifiedRunInput {param($Source,$Destination)
  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination)|Out-Null
  Copy-Item -LiteralPath $Source -Destination $Destination -ErrorAction Stop
 }
 function Get-RunFileSha256 {param($Path) (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash}
-$root=ROOT;$repoRoot=Join-Path $root 'active';$frozenCodeRoot=Join-Path $root 'inputs/code'
+$python=SELECTED_PYTHON;$root=ROOT;$repoRoot=Join-Path $root 'active';$frozenCodeRoot=Join-Path $root 'inputs/code'
 $inputDir=Join-Path $root 'inputs';$analysisFiles=@();$frozenPythonRelativePaths=@()
 $tokens=$null;$errors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile(RUNNER,[ref]$tokens,[ref]$errors)
@@ -70,7 +71,7 @@ $selected=if($name-eq'taskScript'){$taskScript}else{$massScanTask}
 if(-not$selected.StartsWith($package.code_root+[IO.Path]::DirectorySeparatorChar)-or-not(Test-Path -LiteralPath $selected -PathType Leaf)){throw 'native task escaped frozen closure'}
 Assert-FrozenPythonPackage -Package $package
 exit 0
-'''.replace('RUN_CONTEXT', ps(REPO / 'common/contracts/run_artifact_support.ps1')).replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
+'''.replace('SELECTED_PYTHON', ps(sys.executable)).replace('RUN_CONTEXT', ps(REPO / 'common/contracts/run_artifact_support.ps1')).replace('EXECUTOR_RESOURCE', ps(REPO / 'src/msplatform/execution/resources/frozen_python_package.ps1')).replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
 .replace('REPO', ps(REPO)).replace('PROJECT', ps(PROJECT)).replace('MISSING_DEPENDENCY', ps(missing_path) if missing_path else '$null')
 .replace('RELEASE_GATE', '$true' if release_gate else '$false').replace('WORKFLOW', ps(workflow)), encoding='utf-8', newline='\n')
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script)], cwd=root,

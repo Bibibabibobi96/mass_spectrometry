@@ -1,5 +1,11 @@
+param([Parameter(Mandatory)][string]$ExecutionResourcePath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not [IO.Path]::IsPathFullyQualified($ExecutionResourcePath) -or
+    -not (Test-Path -LiteralPath $ExecutionResourcePath -PathType Leaf)) {
+    throw "Selected frozen Python execution resource is missing: $ExecutionResourcePath"
+}
+. $ExecutionResourcePath
 
 function Get-FrozenPythonPackageExecutionPaths {
     [CmdletBinding()]
@@ -9,49 +15,79 @@ function Get-FrozenPythonPackageExecutionPaths {
     })
 }
 
+function Invoke-FrozenPythonInputs {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][hashtable]$Request)
+    # The explicit executor identifies the SAME selected installed/frozen provider.
+    $resource = (Get-Command Assert-FrozenPythonPackage).ScriptBlock.File
+    if (-not $resource) {throw 'Selected frozen Python execution resource has no source identity.'}
+    $Request.inputs_module = Join-Path (Split-Path -Parent (Split-Path -Parent $resource)) 'inputs.py'
+    if (-not (Test-Path -LiteralPath $Request.inputs_module -PathType Leaf)) {
+        throw "Selected Python inputs implementation is missing: $($Request.inputs_module)"
+    }
+    $command = @'
+import json, pathlib, sys, traceback
+try:
+    request = json.load(sys.stdin)
+    selected = pathlib.Path(request['inputs_module']).resolve(strict=True)
+    sys.path.insert(0, str(selected.parents[2]))
+    from msplatform.execution import inputs
+    if pathlib.Path(inputs.__file__).resolve() != selected:
+        raise RuntimeError('Python package builder escaped its explicitly selected implementation')
+    if request['action'] == 'enumerate':
+        root = pathlib.Path(request['source_root']).resolve(strict=True)
+        selected_paths = set()
+        for selection in request['selections']:
+            selected_paths.update(inputs.enumerate_python_sources(root, **selection))
+        for relative in request['required_resources']:
+            resource = root / relative
+            if not resource.is_file() or not resource.resolve().is_relative_to(root):
+                raise FileNotFoundError('Selected frozen Python execution resource is missing: ' + str(resource))
+            selected_paths.add(relative)
+        result = sorted(selected_paths)
+    elif request['action'] == 'freeze':
+        result = inputs.freeze_python_package(pathlib.Path(request['source_root']), pathlib.Path(request['code_root']),
+                                             relative_paths=request['relative_paths'])
+    else:
+        raise ValueError('Unsupported internal Python inputs operation')
+    print(json.dumps({'ok': True, 'value': result}))
+except Exception as error:
+    print(json.dumps({'ok': False, 'error': {'type': type(error).__name__, 'message': str(error), 'traceback': traceback.format_exc()}}))
+    raise SystemExit(1)
+'@
+    $savedOutputEncoding=$OutputEncoding
+    try {
+        $OutputEncoding=[Text.UTF8Encoding]::new($false)
+        $text=($Request|ConvertTo-Json -Depth 12 -Compress)| & $Python -X utf8 -I -B -c $command | Out-String
+        $exitCode=$LASTEXITCODE
+    } finally {$OutputEncoding=$savedOutputEncoding}
+    $result=$text|ConvertFrom-Json
+    if($exitCode-ne0-or-not$result.ok){
+        throw "Selected frozen Python inputs operation failed: $($result.error.message)`n$($result.error.traceback)"
+    }
+    return $result.value
+}
+
 function Get-FrozenPythonPackageRelativePaths {
-    <# Expand Python groups through the common pure selector once before copying. #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)][string]$Python,
-        [string[]]$PythonPackages = @(),
-        [string[]]$PythonModules = @(),
-        [string[]]$RelativePaths = @()
+        [string[]]$PythonPackages=@(),[string[]]$PythonModules=@(),[string[]]$RelativePaths=@()
     )
-    $selection = @()
-    if ($PythonPackages.Count -or $PythonModules.Count) {
-        $request = @{source_root=[IO.Path]::GetFullPath($SourceRoot);
-            package_roots=@($PythonPackages);module_paths=@($PythonModules)}
-        $enumerate = @'
-import json, pathlib, sys
-request = json.load(sys.stdin)
-root = pathlib.Path(request["source_root"]).resolve()
-sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
-from msplatform.execution import inputs as frozen_inputs
-if pathlib.Path(frozen_inputs.__file__).resolve() != root / "src/msplatform/execution/inputs.py":
-    raise RuntimeError("Frozen Python source selector escaped the selected source root")
-paths = frozen_inputs.enumerate_python_sources(
-    root, package_roots=request["package_roots"], module_paths=request["module_paths"])
-if (root / "src/msplatform").is_dir():
-    paths = sorted(set(paths) | set(frozen_inputs.enumerate_python_sources(
-        root, package_roots=["src/msplatform"], provider_root="src/msplatform",
-        resource_suffixes=(".schema.json",))))
-print(json.dumps(paths))
-'@
-        $savedOutputEncoding = $OutputEncoding
-        try {
-            $OutputEncoding = [Text.UTF8Encoding]::new($false)
-            $text = ($request | ConvertTo-Json -Depth 8 -Compress) |
-                & $Python -X utf8 -I -B -c $enumerate | Out-String
-            $selectionExitCode = $LASTEXITCODE
-        } finally {
-            $OutputEncoding = $savedOutputEncoding
+    $selection=@()
+    if($PythonPackages.Count-or$PythonModules.Count){
+        $selections=@(@{package_roots=@($PythonPackages);module_paths=@($PythonModules)})
+        $resources=@()
+        if(Test-Path -LiteralPath (Join-Path $SourceRoot 'src/msplatform') -PathType Container){
+            $selections+=@{package_roots=@('src/msplatform');provider_root='src/msplatform';resource_suffixes=@('.schema.json')}
+            $resources=@('src/msplatform/execution/resources/frozen_python_package.ps1')
         }
-        if ($selectionExitCode -ne 0) {throw 'Frozen Python package/module selection failed.'}
-        $selection = @($text | ConvertFrom-Json)
+        $selection=@(Invoke-FrozenPythonInputs -Python $Python -Request @{
+            action='enumerate';source_root=[IO.Path]::GetFullPath($SourceRoot);
+            selections=@($selections);required_resources=@($resources)})
     }
-    return @($selection) + @($RelativePaths)
+    return @($selection)+@($RelativePaths)
 }
 
 function New-FrozenPythonPackage {
@@ -59,83 +95,16 @@ function New-FrozenPythonPackage {
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)][string]$CodeRoot,
-        [string[]]$RelativePaths = @(),
-        [string[]]$PythonPackages = @(),
-        [string[]]$PythonModules = @(),
-        [string]$Python = ''
+        [string[]]$RelativePaths=@(),[string[]]$PythonPackages=@(),[string[]]$PythonModules=@(),
+        [Parameter(Mandatory)][string]$Python
     )
-    if ($PythonPackages.Count -or $PythonModules.Count) {
-        if (-not $Python) {throw 'Python package/module selection requires the selected Python executable.'}
-        $RelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
+    if($PythonPackages.Count-or$PythonModules.Count){
+        $RelativePaths=Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
             -PythonPackages $PythonPackages -PythonModules $PythonModules -RelativePaths $RelativePaths
     }
-    $resolvedSourceRoot = [IO.Path]::GetFullPath($SourceRoot)
-    $resolvedCodeRoot = [IO.Path]::GetFullPath($CodeRoot)
-    $seen = [Collections.Generic.HashSet[string]]::new(
-        [StringComparer]::OrdinalIgnoreCase)
-    $inventory = @()
-    foreach ($relativePath in $RelativePaths) {
-        if ([IO.Path]::IsPathRooted($relativePath) -or
-            $relativePath -split '[/\\]' -contains '..') {
-            throw "Frozen Python dependency path is not relative: $relativePath"
-        }
-        $normalized = $relativePath -replace '/', '\'
-        if (-not $seen.Add($normalized)) {
-            throw "Frozen Python dependency path is duplicated: $relativePath"
-        }
-        $source = [IO.Path]::GetFullPath((Join-Path $resolvedSourceRoot $normalized))
-        if (-not $source.StartsWith(
-            $resolvedSourceRoot + [IO.Path]::DirectorySeparatorChar,
-            [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Frozen Python dependency escapes its source root: $relativePath"
-        }
-        $destination = Join-Path $resolvedCodeRoot $normalized
-        Copy-VerifiedRunInput -Source $source -Destination $destination | Out-Null
-        $inventory += [ordered]@{
-            relative_path = $normalized -replace '\\', '/'
-            path = [IO.Path]::GetFullPath($destination)
-            sha256 = Get-RunFileSha256 -Path $destination
-        }
-    }
-    [pscustomobject]@{
-        schema_version = 1
-        code_root = $resolvedCodeRoot
-        package_roots = @(Get-RunPythonImportRoots -RepoRoot $resolvedCodeRoot)
-        files = $inventory
-    }
-}
-
-function Assert-FrozenPythonPackage {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)]$Package)
-    $codeRoot = [IO.Path]::GetFullPath([string]$Package.code_root)
-    $expectedPaths = [Collections.Generic.HashSet[string]]::new(
-        [StringComparer]::OrdinalIgnoreCase)
-    foreach ($entry in @($Package.files)) {
-        $path = [IO.Path]::GetFullPath([string]$entry.path)
-        if (-not $path.StartsWith(
-            $codeRoot + [IO.Path]::DirectorySeparatorChar,
-            [StringComparison]::OrdinalIgnoreCase) -or
-            -not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Frozen Python dependency is missing or outside its code root: $path"
-        }
-        if ((Get-RunFileSha256 -Path $path) -cne [string]$entry.sha256) {
-            throw "Frozen Python dependency hash differs: $path"
-        }
-        if (-not $expectedPaths.Add($path)) {
-            throw "Frozen Python inventory contains a duplicate path: $path"
-        }
-    }
-    $actualPaths = @(Get-ChildItem -LiteralPath $codeRoot -Recurse -File |
-        ForEach-Object { [IO.Path]::GetFullPath($_.FullName) })
-    foreach ($path in $actualPaths) {
-        if (-not $expectedPaths.Contains($path)) {
-            throw "Frozen Python code root contains an untracked file: $path"
-        }
-    }
-    if ($actualPaths.Count -ne $expectedPaths.Count) {
-        throw 'Frozen Python code root inventory count differs.'
-    }
+    Invoke-FrozenPythonInputs -Python $Python -Request @{
+        action='freeze';source_root=[IO.Path]::GetFullPath($SourceRoot);code_root=[IO.Path]::GetFullPath($CodeRoot);
+        relative_paths=@($RelativePaths)}
 }
 
 function Get-FrozenPythonPackageFile {
@@ -154,227 +123,6 @@ function Get-FrozenPythonPackageFile {
     [string]$matches[0].path
 }
 
-function Invoke-IsolatedFrozenPythonModule {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Python,
-        [Parameter(Mandatory)]$Package,
-        [Parameter(Mandatory)][string]$Module,
-        [Parameter(Mandatory)][string[]]$Arguments,
-        [string[]]$DistributionNames = @(),
-        [string[]]$RequiredModuleNames = @(),
-        [string[]]$ForbiddenRoots = @(),
-        [string]$StdoutPath = '',
-        [switch]$ProbeOnly
-    )
-    Assert-FrozenPythonPackage -Package $Package
-    $packageRoots = @($Package.package_roots | ForEach-Object {
-        [IO.Path]::GetFullPath([string]$_)
-    })
-    if(@($Package.files | Where-Object {[string]$_.relative_path -like 'src/msplatform/*'}).Count){
-        $RequiredModuleNames=@($RequiredModuleNames)+@('msplatform') | Select-Object -Unique
-    }
-    if ($packageRoots.Count -eq 0) {
-        throw 'Frozen Python package roots must not be empty.'
-    }
-    foreach ($packageRoot in $packageRoots) {
-        if (-not (Test-Path -LiteralPath $packageRoot -PathType Container)) {
-            throw "Frozen Python package root is missing: $packageRoot"
-        }
-        foreach ($forbiddenRoot in $ForbiddenRoots) {
-            $forbidden = [IO.Path]::GetFullPath($forbiddenRoot)
-            if ($packageRoot.Equals(
-                $forbidden,[StringComparison]::OrdinalIgnoreCase) -or
-                $packageRoot.StartsWith(
-                    $forbidden + [IO.Path]::DirectorySeparatorChar,
-                    [StringComparison]::OrdinalIgnoreCase)) {
-                throw "Frozen Python package root overlaps a forbidden live root: $packageRoot"
-            }
-        }
-    }
-    $savedPythonPath = $env:PYTHONPATH
-    $savedNoUserSite = $env:PYTHONNOUSERSITE
-    $savedNoBytecode = $env:PYTHONDONTWRITEBYTECODE
-    try {
-        $env:PYTHONPATH = $packageRoots -join [IO.Path]::PathSeparator
-        $env:PYTHONNOUSERSITE = '1'
-        $env:PYTHONDONTWRITEBYTECODE = '1'
-        Push-Location -LiteralPath ([string]$Package.code_root)
-        try {
-            $isolate = @'
-import pathlib, sys
-root_count = int(sys.argv[1])
-package_roots = [pathlib.Path(value).resolve() for value in sys.argv[2:2 + root_count]]
-offset = 2 + root_count
-forbidden_count = int(sys.argv[offset])
-forbidden_roots = [pathlib.Path(value).resolve() for value in sys.argv[offset + 1:offset + 1 + forbidden_count]]
-prefix = pathlib.Path(sys.prefix).resolve()
-sys.path = [str(root) for root in package_roots] + [value for value in sys.path
-    if value and (pathlib.Path(value).resolve().is_relative_to(prefix)
-        or not any(pathlib.Path(value).resolve().is_relative_to(root) for root in forbidden_roots))]
-sys.meta_path = [finder for finder in sys.meta_path
-    if not getattr(finder, '__module__', '').startswith('__editable__')]
-sys.argv = [sys.argv[0], *sys.argv[offset + 1 + forbidden_count:]]
-'@
-            $probe = $isolate + "`n" + @'
-import importlib.metadata
-import importlib.util
-import json
-import pathlib
-import site
-import sys
-
-distribution_count = int(sys.argv[1])
-distribution_names = sys.argv[2:2 + distribution_count]
-module_names = sys.argv[2 + distribution_count:]
-distributions = []
-modules = []
-user_site = pathlib.Path(site.getusersitepackages()).resolve()
-for name in distribution_names:
-    distribution = importlib.metadata.distribution(name)
-    root = pathlib.Path(distribution.locate_file("")).resolve()
-    spec = importlib.util.find_spec(name)
-    module_path = pathlib.Path(spec.origin).resolve() if spec and spec.origin else None
-    if root == user_site or user_site in root.parents:
-        raise RuntimeError(f"distribution resolved from user site: {name} -> {root}")
-    if module_path is None or not (
-        module_path == root or root in module_path.parents
-    ):
-        raise RuntimeError(
-            f"distribution module escaped its recorded installation root: "
-            f"{name} -> {module_path}"
-        )
-    distributions.append({
-        "name": name,
-        "version": distribution.version,
-        "distribution_root": str(root),
-        "module_path": str(module_path) if module_path else None,
-    })
-for name in module_names:
-    spec = importlib.util.find_spec(name)
-    if spec is None or spec.origin is None:
-        raise RuntimeError(f"required frozen module has no file origin: {name}")
-    origin = pathlib.Path(spec.origin).resolve()
-    if not any(origin == root or root in origin.parents for root in package_roots):
-        raise RuntimeError(f"required module escaped frozen roots: {name} -> {origin}")
-    modules.append({"name": name, "origin": str(origin)})
-print(json.dumps({
-    "python_executable": sys.executable,
-    "python_prefix": sys.prefix,
-    "pythonpath": sys.path,
-    "python_no_user_site": not site.ENABLE_USER_SITE,
-    "distributions": distributions,
-    "modules": modules,
-}))
-'@
-            $isolationArguments = @([string]$packageRoots.Count) + $packageRoots +
-                @([string]$ForbiddenRoots.Count) + $ForbiddenRoots
-            $probeArguments = $isolationArguments +
-                @([string]$DistributionNames.Count) + $DistributionNames +
-                $RequiredModuleNames
-            $probeText = (& $Python -I -B -c $probe @probeArguments | Out-String).Trim()
-            if ($LASTEXITCODE -ne 0) {
-                throw 'Frozen Python third-party dependency probe failed.'
-            }
-            $environment = $probeText | ConvertFrom-Json
-            if (-not [bool]$environment.python_no_user_site) {
-                throw 'Frozen Python execution did not disable the user site.'
-            }
-            $pythonPrefix = [IO.Path]::GetFullPath(
-                [string]$environment.python_prefix)
-            foreach ($searchPath in @($environment.pythonpath)) {
-                if ([string]::IsNullOrWhiteSpace([string]$searchPath)) {
-                    continue
-                }
-                $resolvedSearchPath = [IO.Path]::GetFullPath([string]$searchPath)
-                foreach ($forbiddenRoot in $ForbiddenRoots) {
-                    $forbidden = [IO.Path]::GetFullPath($forbiddenRoot)
-                    $underForbidden = $resolvedSearchPath.Equals(
-                        $forbidden,[StringComparison]::OrdinalIgnoreCase) -or
-                        $resolvedSearchPath.StartsWith(
-                            $forbidden + [IO.Path]::DirectorySeparatorChar,
-                            [StringComparison]::OrdinalIgnoreCase)
-                    $underPythonPrefix = $resolvedSearchPath.Equals(
-                        $pythonPrefix,[StringComparison]::OrdinalIgnoreCase) -or
-                        $resolvedSearchPath.StartsWith(
-                            $pythonPrefix + [IO.Path]::DirectorySeparatorChar,
-                            [StringComparison]::OrdinalIgnoreCase)
-                    if ($underForbidden -and -not $underPythonPrefix) {
-                        throw "Python search path includes a forbidden live root: $resolvedSearchPath"
-                    }
-                }
-            }
-            $moduleOutput = ''
-            if (-not $ProbeOnly) {
-                $execute = $isolate + "`n" + @'
-import importlib.util, runpy
-module = sys.argv[1]
-spec = importlib.util.find_spec(module)
-if spec is None or spec.origin is None or not any(
-    pathlib.Path(spec.origin).resolve().is_relative_to(root) for root in package_roots
-):
-    raise RuntimeError('entry module escaped frozen roots: ' + module)
-sys.argv = [module, *sys.argv[2:]]
-failure = None
-try:
-    runpy.run_module(module, run_name='__main__', alter_sys=True)
-except BaseException as error:
-    failure = error
-    raise
-finally:
-    for name, loaded in tuple(sys.modules.items()):
-        if name.split('.')[0] in ('common', 'projects', 'msplatform') and getattr(loaded, '__file__', None):
-            if not any(pathlib.Path(loaded.__file__).resolve().is_relative_to(root) for root in package_roots):
-                detail = 'module escaped frozen roots: ' + name
-                if failure is None:
-                    raise RuntimeError(detail)
-                failure.add_note(detail)
-'@
-                if ($StdoutPath) {
-                    & $Python -I -B -c $execute @isolationArguments $Module @Arguments 1> $StdoutPath
-                    $moduleExitCode = $LASTEXITCODE
-                    if ($moduleExitCode -eq 0) {
-                        $moduleOutput = [IO.File]::ReadAllText($StdoutPath).Trim()
-                    }
-                } else {
-                    $moduleOutput = (& $Python -I -B -c $execute @isolationArguments $Module @Arguments |
-                        Out-String).Trim()
-                    $moduleExitCode = $LASTEXITCODE
-                }
-                if ($moduleExitCode -ne 0) {
-                    $failure = [InvalidOperationException]::new(
-                        "Frozen Python module failed with exit code $moduleExitCode.")
-                    $failure.Data['exit_code'] = [int]$moduleExitCode
-                    throw $failure
-                }
-            }
-        } finally {
-            Pop-Location
-        }
-    } finally {
-        $env:PYTHONPATH = $savedPythonPath
-        $env:PYTHONNOUSERSITE = $savedNoUserSite
-        $env:PYTHONDONTWRITEBYTECODE = $savedNoBytecode
-    }
-    Assert-FrozenPythonPackage -Package $Package
-    [pscustomobject]@{
-        schema_version = 1
-        module = $Module
-        module_invoked = -not [bool]$ProbeOnly
-        working_directory = [string]$Package.code_root
-        package_roots = $packageRoots
-        python_path = $packageRoots -join [IO.Path]::PathSeparator
-        python_no_user_site = $true
-        python_no_bytecode = $true
-        third_party = @($environment.distributions)
-        frozen_modules = @($environment.modules)
-        python_search_path = @($environment.pythonpath)
-        python_executable = [string]$environment.python_executable
-        python_prefix = [string]$environment.python_prefix
-        module_stdout = $moduleOutput
-    }
-}
-
 function New-RfPublishedDesignFreshnessPackage {
     <# Check only the requested fixed publication using frozen governance and its original checker. #>
     [CmdletBinding()]
@@ -387,13 +135,12 @@ function New-RfPublishedDesignFreshnessPackage {
     $sourceFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
         -PythonPackages @(
             'common/contracts',
-            'common/analysis',
             'projects/rf_multipole_ion_optics/analysis',
             'projects/rf_multipole_ion_optics/core',
             'projects/rf_multipole_ion_optics/runtime'
         ) -PythonModules @('common/paths/repository_root.py')
     # Ask the frozen original PROFILES authority; do not maintain another profile map.
-    $sourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `
+    $sourcePackage = New-FrozenPythonPackage -Python $Python -SourceRoot $SourceRoot `
         -CodeRoot $SnapshotRoot -RelativePaths $sourceFiles
     $selectionScript = @'
 import json, pathlib, sys
@@ -411,10 +158,12 @@ print(json.dumps({key: path.relative_to(root).as_posix() for key, path in profil
         'src/msplatform/components/rf_multipole/family_contract.json'
     )
     # The scientific-core package selection already owns its schema resources.
-    $resourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `
+    $resourcePackage = New-FrozenPythonPackage -Python $Python -SourceRoot $SourceRoot `
         -CodeRoot $SnapshotRoot -RelativePaths @($resources | Sort-Object -Unique)
     $package = $sourcePackage
     $package.files = @($sourcePackage.files) + @($resourcePackage.files)
+    Assert-FrozenPythonPackage -Package $package
+    . (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
     $check = Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package `
         -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
         -Arguments @('--profile',$Profile,'--check') `

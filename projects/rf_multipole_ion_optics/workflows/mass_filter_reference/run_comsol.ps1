@@ -14,7 +14,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-scan'
@@ -65,12 +65,11 @@ try {
   $frozenPythonSupport = Copy-VerifiedRunInput `
       -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
       -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-  . $frozenPythonSupport
+  . $frozenPythonSupport -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
   $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_comsol'
   $analysisFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
       -PythonPackages @(
           'common/contracts',
-          'common/analysis',
           'projects/rf_multipole_ion_optics/analysis',
           'projects/rf_multipole_ion_optics/core',
           'projects/rf_multipole_ion_optics/runtime',
@@ -89,7 +88,7 @@ try {
         'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m',
       'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
   )
-  $frozenAnalysisPackage = New-FrozenPythonPackage `
+  $frozenAnalysisPackage = New-FrozenPythonPackage -Python $python `
       -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
       -RelativePaths @($analysisFiles+$frozenMatlabRelativePaths)
   $analysisRequiredModules = @($analysisModule,
@@ -97,6 +96,8 @@ try {
       'msplatform.ion_release.paired_mass_scan',
       'msplatform.io.file_identity','msplatform.analysis.peak_metrics')
   $analysisDistributions = @('matplotlib','numpy','scipy')
+  Assert-FrozenPythonPackage -Package $frozenAnalysisPackage
+  . (Get-FrozenPythonPackageFile -Package $frozenAnalysisPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
   $frozenAnalysisEnvironment = Invoke-IsolatedFrozenPythonModule `
       -Python $python -Package $frozenAnalysisPackage -Module $analysisModule `
       -Arguments @('--help') -DistributionNames $analysisDistributions `

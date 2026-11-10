@@ -20,7 +20,7 @@ $python = if ($PythonExe) {
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\analysis_run_lifecycle.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
@@ -207,7 +207,6 @@ try {
     $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
         -PythonPackages @(
             'common/contracts',
-            'common/analysis',
             'projects/rf_multipole_ion_optics/analysis',
             'projects/rf_multipole_ion_optics/core',
             'projects/rf_multipole_ion_optics/runtime',
@@ -216,7 +215,7 @@ try {
         -RelativePaths @(
             'src/msplatform/components/rf_multipole/family_contract.json'
         )
-    $frozenPythonPackage = New-FrozenPythonPackage `
+    $frozenPythonPackage = New-FrozenPythonPackage -Python $python `
         -SourceRoot $repoRoot -CodeRoot $runtimeRoot `
         -RelativePaths $runtimeFiles
     $inputs = [ordered]@{
@@ -242,7 +241,7 @@ try {
         'projects.rf_multipole_ion_optics.workflows',
         'projects.rf_multipole_ion_optics.workflows.mass_filter_reference',
         $module,
-        'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.theory',
+        'msplatform.workflows.rf_mass_filter.reference',
         'projects.rf_multipole_ion_optics.core',
         'msplatform.components.rf_multipole.family_contract',
         'msplatform.analysis.mass_response',
@@ -251,6 +250,8 @@ try {
         'msplatform.analysis.peak_metrics'
     )
     $distributions = @('matplotlib','numpy','scipy')
+    Assert-FrozenPythonPackage -Package $frozenPythonPackage
+    . (Get-FrozenPythonPackageFile -Package $frozenPythonPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
     $frozenPythonEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenPythonPackage -Module $module `
         -Arguments @('--help') -DistributionNames $distributions `

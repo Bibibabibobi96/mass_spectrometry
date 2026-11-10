@@ -818,14 +818,16 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null
 $entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e)
 if($e.Count){{throw 'Actual comparison runner did not parse'}}
 $selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$runtimeFiles'}},$true)
 Invoke-Expression $selection.Extent.Text
-$package=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot {literal(root / 'frozen')} -RelativePaths $runtimeFiles
+$package=New-FrozenPythonPackage -Python $python -SourceRoot $repoRoot -CodeRoot {literal(root / 'frozen')} -RelativePaths $runtimeFiles
+Assert-FrozenPythonPackage -Package $package
+. (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $arguments=@(Get-Content -Raw -LiteralPath {literal(arguments_path)}|ConvertFrom-Json)
 $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
  -Module 'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate' `

@@ -139,7 +139,6 @@ function Invoke-CrossSolverAnalyzer {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$AnalyzerModule,
-        [Parameter(Mandatory)][string]$ModuleRoot,
         [Parameter(Mandatory)]$Package,[string[]]$ForbiddenRoots=@(),
         [Parameter(Mandatory)][string[]]$Arguments,[Parameter(Mandatory)][string]$Stdout,
         [Parameter(Mandatory)][string]$Stderr,[Parameter(Mandatory)][string[]]$RequiredOutputs

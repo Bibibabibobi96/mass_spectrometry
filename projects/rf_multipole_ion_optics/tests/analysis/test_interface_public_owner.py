@@ -134,11 +134,11 @@ foreach($ignored in @('ReleaseConstructionGate','NumericalExperimentId','Startup
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=REPO;$python=PYTHON
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $list=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPythonRelativePaths'},$true)
 Invoke-Expression $list.Extent.Text
-$frozenPythonPackage=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot (Join-Path ROOT 'frozen') -RelativePaths $frozenPythonRelativePaths
+$frozenPythonPackage=New-FrozenPythonPackage -Python $python -SourceRoot $repoRoot -CodeRoot (Join-Path ROOT 'frozen') -RelativePaths $frozenPythonRelativePaths
 $rawMetadataPath=Join-Path ROOT 'raw.json';$particleStatePath=Join-Path ROOT 'state.csv';$summaryPath=Join-Path ROOT 'metrics.json'
 $particleTable=Join-Path ROOT 'ions.ion';$stateContractReport=Join-Path ROOT 'contract.json';$frozenInterface=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/variants/quadrupole/config/interface_contract.json'
 $resolved=@{drive=@{frequency_Hz=1100000.;phase_rad=0.}}

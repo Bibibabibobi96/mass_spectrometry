@@ -984,6 +984,43 @@ $results|ConvertTo-Json -Depth 8 -Compress
                                   [f'{owner}.tests.test_same_name', f'{owner}.tests.new_area.test_unknown'])
             self.assertCountEqual([group['seconds'] for group in groups], [100 if owner == 'first' else 10, 7])
 
+    def test_installed_rf_science_and_executor_select_their_actual_consumers(self) -> None:
+        science = {f"{RF}/tests/analysis/{name}.py" for name in (
+            "test_quadrupole_l0", "test_mass_filter_l1",
+            "test_mass_filter_response_comparison", "test_workflow_architecture_contract")}
+        executor = {f"{RF}/tests/analysis/{name}.py" for name in (
+            "test_compare_particle_state_evidence", "test_frozen_matlab_closure",
+            "test_frozen_particle_policy_package", "test_interface_postprocess_child",
+            "test_interface_public_owner", "test_same_solver_numerical_convergence")}
+        domain = {f"{RF}/tests/domain/{name}.py" for name in (
+            "test_published_design_freshness", "test_simion_runner_contract")}
+        cases = [("src/msplatform/components/rf_multipole/" + name + ".py", science)
+                 for name in ("mass_filter_theory", "finite_length_transport")]
+        cases += [("src/msplatform/workflows/rf_mass_filter/" + name + ".py", science)
+                  for name in ("__init__", "reference", "finite_length")]
+        cases += [("src/msplatform/execution/" + name, executor) for name in (
+            "inputs.py", "resources/__init__.py", "resources/frozen_python_package.ps1")]
+        with tempfile.TemporaryDirectory(prefix="installed_rf_consumer_plans_") as directory:
+            for index, (path, expected) in enumerate(cases):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    parameters = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
+                    self.assertEqual(parameters["Level"], "Core")
+                    self.assertCountEqual(parameters["ChangedTestModules"],
+                        [name[:-3].replace("/", ".") for name in expected])
+                    if expected == executor:
+                        arguments = stages["rf_multipole_domain_tests"]["command"]["arguments"]
+                        self.assertEqual(arguments[:2], ["-m", "common.gate_unittest"])
+                        self.assertCountEqual(arguments[2:], domain)
+                        common = stages["common_contracts"]["command"]["arguments"]
+                        self.assertIn("common/contracts/test_installed_scientific_core.py", common)
+                        self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
+                        if path.endswith("/inputs.py"):
+                            self.assertIn("common/contracts/test_frozen_inputs.py", common)
+
     def test_changed_mixed_deleted_and_shared_inputs_preserve_original_core_contract(self) -> None:
         mr_test = f"{MR}/tests/analysis/test_mirror_fixed_grid_voltage_correction.py"
         rf_test = f"{RF}/tests/analysis/test_mass_filter_l1.py"

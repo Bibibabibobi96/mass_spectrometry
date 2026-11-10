@@ -5,9 +5,9 @@ import json
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
-    theory as MODULE,
-)
+from msplatform.components.rf_multipole import mass_filter_theory as MODULE
+from msplatform.workflows.rf_mass_filter import reference as REFERENCE
+
 
 PROJECT_ROOT = Path(__file__).parents[2]
 
@@ -56,7 +56,7 @@ class MassFilterReferenceContractTests(unittest.TestCase):
 
     def test_frozen_reference_uses_explicit_voltage_semantics(self) -> None:
         self.assertEqual(self.mode["schema_version"], 3)
-        result = MODULE.validate_mass_filter_reference(self.baseline, self.mode)
+        result = REFERENCE.validate_mass_filter_reference(self.baseline, self.mode)
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["mode_status"], "n100_dual_solver_revalidation_pending")
         self.assertAlmostEqual(result["q_at_tune_mass"], 0.7060233, delta=1e-7)
@@ -68,13 +68,13 @@ class MassFilterReferenceContractTests(unittest.TestCase):
         changed = copy.deepcopy(self.mode)
         changed["theory_contract"]["voltage"]["reference"] = "unspecified"
         with self.assertRaisesRegex(ValueError, "voltage.reference"):
-            MODULE.validate_mass_filter_reference(self.baseline, changed)
+            REFERENCE.validate_mass_filter_reference(self.baseline, changed)
 
     def test_dc_value_cannot_be_mislabeled_as_differential(self) -> None:
         changed = copy.deepcopy(self.mode)
         changed["rf"]["dc_amplitude_V_per_group"] *= 2.0
         with self.assertRaisesRegex(ValueError, "DC amplitude"):
-            MODULE.validate_mass_filter_reference(self.baseline, changed)
+            REFERENCE.validate_mass_filter_reference(self.baseline, changed)
 
 
 if __name__ == "__main__":

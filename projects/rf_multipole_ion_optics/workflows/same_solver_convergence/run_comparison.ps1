@@ -21,7 +21,7 @@ $python = if ($PythonExe) {
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\analysis_run_lifecycle.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
@@ -49,7 +49,6 @@ try {
     $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
         -PythonPackages @(
             'common/contracts',
-            'common/analysis',
             'projects/rf_multipole_ion_optics/analysis',
             'projects/rf_multipole_ion_optics/core',
             'projects/rf_multipole_ion_optics/runtime',
@@ -62,7 +61,7 @@ try {
     $frozenPythonSupport = Copy-VerifiedRunInput `
         -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-    $frozenPythonPackage = New-FrozenPythonPackage `
+    $frozenPythonPackage = New-FrozenPythonPackage -Python $python `
         -SourceRoot $repoRoot -CodeRoot $runtimeRoot `
         -RelativePaths $runtimeFiles
     $runtimeInputs = [ordered]@{}
@@ -215,6 +214,8 @@ try {
     $comparison = Join-Path $resultDir `
         'same_solver_numerical_convergence.json'
     $census = Join-Path $resultDir 'particle_event_census.csv'
+    Assert-FrozenPythonPackage -Package $frozenPythonPackage
+    . (Get-FrozenPythonPackageFile -Package $frozenPythonPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
     $frozenPythonEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenPythonPackage `
         -Module `

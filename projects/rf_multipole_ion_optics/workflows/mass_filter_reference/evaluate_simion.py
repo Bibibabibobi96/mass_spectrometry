@@ -16,7 +16,7 @@ from msplatform.analysis.mass_response import (
     write_response,
 )
 
-from .theory import theory_masses
+from msplatform.workflows.rf_mass_filter.reference import theory_masses
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

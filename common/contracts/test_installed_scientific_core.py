@@ -2196,6 +2196,292 @@ if(-not(Test-Path -LiteralPath $file)){throw 'Installed path cleanup removed inp
     finally: hidden_python_path.rename(python_path_resource)
     missing_rejected.append('run_paths_python')
 
+# FROZEN_EXECUTOR_INSTALLED_BEGIN
+# Initial installed bootstrap is trusted; only the subsequent selected copy is
+# verified before dot-source by the existing public package assertion.
+frozen_executor=execution_resource_path('frozen_python_package.ps1')
+assert frozen_executor.resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+frozen_executor_original=frozen_executor.read_bytes()
+frozen_executor_hidden=frozen_executor.with_name(frozen_executor.name+'.missing-test-held')
+assert not frozen_executor_hidden.exists()
+frozen_executor.rename(frozen_executor_hidden)
+try:
+    try:execution_resource_path('frozen_python_package.ps1')
+    except FileNotFoundError:missing_rejected.append('frozen_executor_resource')
+    else:raise AssertionError('missing installed frozen executor supplemented')
+finally:
+    frozen_executor_hidden.rename(frozen_executor)
+assert frozen_executor.read_bytes()==frozen_executor_original
+if os.name=='nt':
+    frozen_root=root/('selected-executor-'+sys.argv[2])
+    frozen_root.mkdir()
+    frozen_code=frozen_root/'code'
+    frozen_code.mkdir()
+    # Real installed canonical core, selected/frozen by existing public primitives.
+    # Keep src/msplatform inventory topology and its automatic required-origin guard.
+    from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+    frozen_purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    frozen_sources=enumerate_python_sources(frozen_purelib,package_roots=['msplatform'],
+        resource_suffixes=['.json','.ps1','.lua','.gem','.m','.iob','.pa0','.pa'])
+    assert 'msplatform/__init__.py' in frozen_sources
+    assert 'msplatform/execution/resources/frozen_python_package.ps1' in frozen_sources
+    frozen_records=[]
+    for frozen_relative in frozen_sources:
+        frozen_target=frozen_code/'src'/frozen_relative
+        frozen_target.parent.mkdir(parents=True,exist_ok=True)
+        frozen_record=freeze_file(frozen_purelib/frozen_relative,frozen_target)
+        frozen_records.append(dict(path=frozen_record['path'],
+            relative_path='src/'+frozen_relative,sha256=frozen_record['sha256'].upper()))
+    frozen_selected=frozen_code/'src/msplatform/execution/resources/frozen_python_package.ps1'
+    assert frozen_selected.read_bytes()==frozen_executor_original
+    frozen_expected='OWNED_STDOUT_MARKER\n\n\u4e2d\u6587 trailing  \n\n'.encode('utf-8')
+    frozen_analyzer=frozen_code/'owned_analyzer.py'
+    frozen_analyzer.write_text(
+        "import pathlib,sys\n"
+        "sys.stdout.buffer.write(bytes.fromhex("+repr(frozen_expected.hex())+"))\n"
+        "sys.stdout.flush()\n"
+        "print('OWNED_STDERR_MARKER',file=sys.stderr,flush=True)\n"
+        "pathlib.Path(sys.argv[2]).write_text(str(pathlib.Path(__file__).resolve()),encoding='utf-8')\n"
+        "raise SystemExit(int(sys.argv[1]))\n",encoding='utf-8')
+    frozen_records.append(dict(path=str(frozen_analyzer),relative_path='owned_analyzer.py',
+        sha256=hashlib.sha256(frozen_analyzer.read_bytes()).hexdigest().upper()))
+    frozen_package=dict(code_root=str(frozen_code),
+        package_roots=[str(frozen_code/'src'),str(frozen_code)],files=frozen_records)
+    frozen_package_path=frozen_root/'package.json'
+    frozen_package_path.write_text(json.dumps(frozen_package),encoding='utf-8')
+    frozen_report=frozen_root/'report.json'
+    frozen_driver=frozen_root/'driver.ps1'
+    frozen_driver.write_text(r"""param($Bootstrap,$Selected,$PackagePath,$Python,$Root,$Report,$ForbiddenJson)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+# Explicit installed bootstrap is trusted, not represented as prehashed execution.
+. $Bootstrap
+$package=Get-Content -LiteralPath $PackagePath -Raw|ConvertFrom-Json
+Assert-FrozenPythonPackage -Package $package
+. $Selected
+foreach($name in @('Assert-FrozenPythonPackage','Invoke-IsolatedFrozenPythonModule')){
+ if((Get-Command $name).ScriptBlock.File-cne$Selected){throw 'Selected executor origin differs'}
+}
+$forbidden=@($ForbiddenJson|ConvertFrom-Json)
+$origin=Join-Path $Root 'probe.origin'
+$probe=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package -Module owned_analyzer -Arguments @('0',$origin) -RequiredModuleNames @('owned_analyzer') -ForbiddenRoots $forbidden -ProbeOnly
+if($probe.module_invoked-or(Test-Path -LiteralPath $origin)){throw 'Probe executed analyzer'}
+if(-not$probe.python_no_user_site){throw 'User site enabled'}
+$rows=@()
+foreach($code in @(0,7)){
+ $stdout=Join-Path $Root "$code.stdout";$origin=Join-Path $Root "$code.origin"
+ $threw=$false;$exitCode=$null;$message='';$trim=$null
+ try{
+  $r=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package -Module owned_analyzer -Arguments @([string]$code,$origin) -RequiredModuleNames @('owned_analyzer') -ForbiddenRoots $forbidden -StdoutPath $stdout
+  $trim=$r.module_stdout
+ }catch{$threw=$true;$exitCode=$_.Exception.Data['exit_code'];$message=$_.Exception.Message}
+ Assert-FrozenPythonPackage -Package $package
+ $rows+=@{code=$code;threw=$threw;exit_code=$exitCode;message=$message;trim=$trim;origin=[IO.File]::ReadAllText($origin);stdout_hex=[Convert]::ToHexString([IO.File]::ReadAllBytes($stdout))}
+}
+$defaultOrigin=Join-Path $Root 'default.origin'
+$default=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package -Module owned_analyzer -Arguments @('0',$defaultOrigin) -RequiredModuleNames @('owned_analyzer') -ForbiddenRoots $forbidden
+$analyzer=Join-Path $package.code_root 'owned_analyzer.py';$original=[IO.File]::ReadAllBytes($analyzer)
+$tamperOrigin=Join-Path $Root 'tamper.origin';$tamperRejected=$false
+try{
+ [IO.File]::AppendAllText($analyzer,"`n# changed")
+ try{Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package -Module owned_analyzer -Arguments @('0',$tamperOrigin) -ForbiddenRoots $forbidden|Out-Null}
+ catch{if($_.Exception.Message-like'Frozen Python dependency hash differs:*'){$tamperRejected=$true}else{throw}}
+}finally{[IO.File]::WriteAllBytes($analyzer,$original)}
+if(-not$tamperRejected-or(Test-Path -LiteralPath $tamperOrigin)){throw 'Tampered package executed'}
+Assert-FrozenPythonPackage -Package $package
+@{rows=$rows;default_trim=$default.module_stdout;probe_modules=$probe.frozen_modules;tamper_rejected=$tamperRejected}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $Report -Encoding utf8NoBOM
+""",encoding='utf-8')
+    frozen_pwsh=pathlib.Path(fixture['native_path_powershell'])
+    frozen_result=subprocess.run([str(frozen_pwsh),'-NoProfile','-NonInteractive','-File',str(frozen_driver),
+        str(frozen_executor),str(frozen_selected),str(frozen_package_path),sys.executable,str(frozen_root),
+        str(frozen_report),json.dumps([str(p) for p in blocked_source_roots])],cwd=root,
+        capture_output=True,text=True,encoding='utf-8',timeout=120,check=False)
+    assert frozen_result.returncode==0,frozen_result.stdout+frozen_result.stderr
+    frozen_proof=json.loads(frozen_report.read_text(encoding='utf-8-sig'))
+    assert frozen_proof['tamper_rejected'] is True
+    # PowerShell's no-sink Out-String uses platform newlines; raw sinks stay byte-exact.
+    frozen_default_expected=frozen_expected.decode('utf-8').strip().replace('\n',os.linesep)
+    assert frozen_proof['default_trim']==frozen_default_expected, (repr(frozen_proof['default_trim']),repr(frozen_default_expected))
+    frozen_probe_origins={row['name']:pathlib.Path(row['origin']).resolve()
+                          for row in frozen_proof['probe_modules']}
+    assert frozen_probe_origins['owned_analyzer']==frozen_analyzer.resolve()
+    assert frozen_probe_origins['msplatform']==(frozen_code/'src/msplatform/__init__.py').resolve()
+    for frozen_row in frozen_proof['rows']:
+        assert bytes.fromhex(frozen_row['stdout_hex'])==frozen_expected
+        assert pathlib.Path(frozen_row['origin'])==frozen_analyzer
+        assert frozen_row['threw']==(frozen_row['code']!=0)
+        if frozen_row['code']==7:
+            assert frozen_row['exit_code']==7 and 'exit code 7' in frozen_row['message']
+        else:assert frozen_row['trim']==frozen_expected.decode('utf-8').strip()
+    assert 'OWNED_STDERR_MARKER' in frozen_result.stderr
+    frozen_missing_driver=frozen_root/'missing.ps1'
+    frozen_missing_driver.write_text(r"""param($Selected)
+$ErrorActionPreference='Stop'
+if(-not(Test-Path -LiteralPath $Selected -PathType Leaf)){throw "Selected frozen Python execution resource is missing: $Selected"}
+. $Selected
+throw 'Missing selected resource accepted'
+""",encoding='utf-8')
+    frozen_selected_hidden=frozen_selected.with_name(frozen_selected.name+'.held')
+    frozen_selected.rename(frozen_selected_hidden)
+    try:
+        frozen_missing=subprocess.run([str(frozen_pwsh),'-NoProfile','-NonInteractive','-File',
+            str(frozen_missing_driver),str(frozen_selected)],cwd=root,capture_output=True,text=True,
+            encoding='utf-8',timeout=30,check=False)
+        assert frozen_executor.is_file()
+        assert frozen_missing.returncode!=0 and 'Selected frozen Python execution resource is missing' in frozen_missing.stderr,frozen_missing.stderr
+    finally:frozen_selected_hidden.rename(frozen_selected)
+    for frozen_entry in frozen_package['files']:
+        assert hashlib.sha256(pathlib.Path(frozen_entry['path']).read_bytes()).hexdigest().upper()==frozen_entry['sha256']
+    missing_rejected.append('selected_frozen_executor')
+print('INSTALLED_SELECTED_FROZEN_EXECUTOR=PASS')
+# FROZEN_EXECUTOR_INSTALLED_END
+
+# RF_MANAGED_L1_INSTALLED_BEGIN
+from unittest.mock import patch as rf_l1_patch
+from msplatform.workflows.rf_mass_filter import finite_length as rf_l1
+from msplatform.components.rf_multipole import finite_length_transport as rf_l1_kernel
+from msplatform.execution.context import load_environment as rf_l1_load_environment
+from msplatform.execution.capacity_protection import load_capacity_protection_leases as rf_l1_capacity
+from msplatform.execution.completion import no_particle_batch_completion_api as rf_l1_completion
+from msplatform.execution.owner import resume_finalization as rf_l1_resume
+from msplatform.io.manifest_records import verify_record as rf_l1_verify
+for rf_l1_module in (rf_l1,rf_l1_kernel):
+    assert pathlib.Path(rf_l1_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+rf_l1_fixture=fixture['rf_l1_managed']
+assert hashlib.sha256(pathlib.Path(rf_l1.__file__).read_bytes()).hexdigest()==rf_l1_fixture['oracle_module_sha256']
+rf_l1_science=root/('rf-l1-science-'+sys.argv[2]);rf_l1_science.mkdir()
+rf_l1_paths={}
+for rf_l1_name,rf_l1_record in rf_l1_fixture['inputs'].items():
+    rf_l1_bytes=bytes.fromhex(rf_l1_record['bytes_hex'])
+    assert len(rf_l1_bytes)==rf_l1_record['bytes'] and hashlib.sha256(rf_l1_bytes).hexdigest()==rf_l1_record['sha256']
+    rf_l1_path=rf_l1_science/(rf_l1_name+'.json');rf_l1_path.write_bytes(rf_l1_bytes);rf_l1_paths[rf_l1_name]=rf_l1_path
+rf_l1_policy=rf_l1_science/'host-policy.json';rf_l1_policy.write_bytes(bytes.fromhex(rf_l1_fixture['host_policy_hex']))
+assert hashlib.sha256(rf_l1_policy.read_bytes()).hexdigest()==rf_l1_fixture['host_policy_sha256']
+rf_l1_competing=root/('rf-competing-'+sys.argv[2]);(rf_l1_competing/'msplatform').mkdir(parents=True)
+(rf_l1_competing/'msplatform/__init__.py').write_text("raise RuntimeError('COMPETING_WORKER_PACKAGE_USED')\n",encoding='utf-8')
+rf_l1_original_invoke=rf_l1._invoke_frozen_stage
+rf_l1_cases=[]
+rf_l1_inherited={key:os.environ.get(key) for key in ('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',
+    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE')}
+try:
+    for rf_l1_key in rf_l1_inherited:os.environ[rf_l1_key]=''
+    for rf_l1_case in ('positive','changed','missing'):
+        rf_l1_workspace=root/('rf-l1-'+sys.argv[2]+'-'+rf_l1_case)
+        rf_l1_stages=rf_l1_science/('stages-'+rf_l1_case+'.json')
+        rf_l1_stages.write_text(json.dumps(dict(schema_version=1,role='execution_stage_policy',stages={
+            'rf_mass_filter_l1':dict(limits=dict(wall_clock_seconds=120,transient_run_directory_bytes=268435456,
+                process_tree_working_set_bytes=2147483648,minimum_system_available_memory_bytes=1073741824,
+                compact_final_retained_bytes=67108864,automatic_retry_count=0),
+                artifact_retention={'policy_version':1,'class':'compact','reason':None})})),encoding='utf-8')
+        rf_l1_machine=rf_l1_science/('environment-'+rf_l1_case+'.json')
+        rf_l1_machine.write_text(json.dumps(dict(schema_version=1,role='execution_environment',
+            tools=dict(python=sys.executable,powershell=rf_l1_fixture['powershell']),
+            policy=dict(host_state_path=rf_l1_fixture['host_state_path'],policy_path=str(rf_l1_policy)),
+            profiles={'rf_l1_test_only':dict(stage_policy_path=str(rf_l1_stages))})),encoding='utf-8')
+        rf_l1_context=rf_l1_load_environment(rf_l1_machine,workspace=rf_l1_workspace,profile='rf_l1_test_only')
+        rf_l1_id='20261111_120000__test__python__installed-l1-'+sys.argv[2]+'-'+rf_l1_case
+        rf_l1_seen={}
+        def rf_l1_observe(session,request,stage,guards,limits):
+            package_path=session.input_dir/'analysis_package.json'
+            if not rf_l1_seen:
+                rf_l1_seen.update(session=session,request=request.read_bytes(),package=package_path.read_bytes())
+            assert request.read_bytes()==rf_l1_seen['request'] and package_path.read_bytes()==rf_l1_seen['package']
+            if stage=='simulation' and rf_l1_case!='positive':
+                package=json.loads(package_path.read_text(encoding='utf-8'))['package']
+                row=next(row for row in package['files'] if row['relative_path'].endswith('/analysis/peak_metrics.py'))
+                target=pathlib.Path(row['path']);raw=target.read_bytes()
+                assert hashlib.sha256(raw).hexdigest().upper()==row['sha256']
+                rf_l1_seen.update(target=target,original=raw,record=row)
+                if rf_l1_case=='changed':target.write_bytes(raw+b'\n# changed frozen input\n')
+                else:target.unlink()
+            process=session.run_process
+            def rf_l1_worker(*args,**kwargs):
+                kwargs['environment']={**kwargs.get('environment',{}),'PYTHONPATH':str(rf_l1_competing)}
+                arguments=list(kwargs['arguments']);arguments[-1]="[Console]::Out.WriteLine('INSTALLED_RF_WORKER=' + $env:PYTHONPATH)\n"+arguments[-1]
+                kwargs['arguments']=arguments
+                return process(*args,**kwargs)
+            with rf_l1_patch.object(session,'run_process',side_effect=rf_l1_worker):
+                receipt=rf_l1_original_invoke(session,request,stage,guards,limits)
+            ordinal=session.expected_operation_ids.index(stage)+1
+            assert 'INSTALLED_RF_WORKER='+str(rf_l1_competing) in (session.log_dir/f'operation_{ordinal:04d}.stdout.log').read_text(encoding='utf-8')
+            assert request.read_bytes()==rf_l1_seen['request'] and package_path.read_bytes()==rf_l1_seen['package']
+            return receipt
+        rf_l1_error=None
+        try:
+            with rf_l1_patch.object(rf_l1,'_invoke_frozen_stage',side_effect=rf_l1_observe),\
+                 rf_l1_patch.object(rf_l1_kernel,'simulate_mass',side_effect=RuntimeError('INSTALLED_LIVE_PARENT_KERNEL_USED')):
+                rf_l1.run(rf_l1_context,baseline_path=rf_l1_paths['baseline'],resolved_path=rf_l1_paths['resolved'],
+                    mode_path=rf_l1_paths['mode'],source_path=rf_l1_paths['source'],run_id=rf_l1_id)
+        except RuntimeError as error:
+            rf_l1_error=error
+        session=rf_l1_seen['session'];project=rf_l1_workspace/'artifacts/projects/rf_multipole_ion_optics'
+        result_path=project/'scratch/workflow_results'/rf_l1_id/'result.json'
+        result=json.loads(result_path.read_text(encoding='utf-8'))
+        assert result['writers_confirmed'] is True
+        assert (session.input_dir/'analysis_request.json').read_bytes()==rf_l1_seen['request']
+        assert (session.input_dir/'analysis_package.json').read_bytes()==rf_l1_seen['package']
+        if rf_l1_case=='positive':
+            assert rf_l1_error is None,str(rf_l1_error)
+            assert result['status']=='success' and result['resume_action'] is None
+            assert [op['operation_id'] for op in session.operations]==['prepare','simulation','analysis']
+            for op in session.operations:
+                observation=op['observation']
+                assert observation['exit_confirmed'] and observation['returncode']==0
+                assert observation['process_id']>0 and observation['process_started_at_utc_ticks']>0
+            assert (session.result_dir/'mass-response__finite-length.csv').read_bytes()==bytes.fromhex(rf_l1_fixture['expected_csv_hex'])
+            rf_l1_metrics=json.loads((session.result_dir/'mass-filter__functional-metrics.json').read_text(encoding='utf-8'))
+            for key,value in rf_l1_fixture['expected_metrics'].items():assert rf_l1_metrics[key]==value,key
+            package=json.loads(rf_l1_seen['package'])['package']
+            for row in package['files']:
+                assert hashlib.sha256(pathlib.Path(row['path']).read_bytes()).hexdigest().upper()==row['sha256']
+            assert any(row['relative_path']=='msplatform/execution/resources/frozen_python_package.ps1' for row in package['files'])
+            request=json.loads(rf_l1_seen['request'])
+            assert request['schema_version']==2
+            assert pathlib.Path(request['forbidden_roots'][0]).resolve()==pathlib.Path(rf_l1.__file__).resolve().parents[2]
+            rf_l1_verify('installed RF manifest',result['manifest'])
+            manifest=json.loads(pathlib.Path(result['manifest']['path']).read_text(encoding='utf-8'))
+            for row in manifest['outputs']:rf_l1_verify('installed RF output',row)
+            releases={row['release_id']:row['completion_receipt']['host_release'] for row in session.resource_releases}
+            for op in session.operations:
+                release=releases[op['resource_release_id']]
+                assert release['inherited'] is False and release['error'] is None
+                assert release['result']=={'status':'released','token':release['token']}
+            for stage in ('simulation','analysis'):
+                receipt=json.loads((session.result_dir/(stage+'_execution.json')).read_text(encoding='utf-8'))
+                assert receipt['schema_version']==2 and receipt['status']=='success'
+                rf_l1_module_origins={row['name']:pathlib.Path(row['origin']) for row in receipt['environment']['frozen_modules']}
+                assert 'msplatform.workflows.rf_mass_filter.finite_length' in rf_l1_module_origins
+                assert 'msplatform.components.rf_multipole.finite_length_transport' in rf_l1_module_origins
+                for row in receipt['environment']['frozen_modules']:
+                    assert pathlib.Path(row['origin']).is_relative_to(session.input_dir/'analysis_code')
+        else:
+            assert rf_l1_error is not None and ('hash differs' if rf_l1_case=='changed' else 'missing') in str(rf_l1_error),str(rf_l1_error)
+            assert result['status']=='failed' and [op['operation_id'] for op in session.operations]==['prepare']
+            assert not (session.result_dir/'simulation_execution.json').exists()
+            failure=session.result_dir/'failure_context.json';failure_before=failure.read_bytes()
+            target=rf_l1_seen['target'];raw=rf_l1_seen['original'];record=rf_l1_seen['record']
+            if rf_l1_case=='missing':
+                assert not target.exists() and result['resume_action']=='resume_finalization'
+                assert hashlib.sha256(raw).hexdigest().upper()==record['sha256']
+                with target.open('xb') as stream:stream.write(raw)
+                assert target.stat().st_size==len(raw)
+                result=rf_l1_resume(rf_l1_context,result_path,completion_api=rf_l1_completion)
+            else:target.write_bytes(raw)
+            assert result['status']=='failed' and result['resume_action'] is None
+            assert failure.read_bytes()==failure_before
+            assert [op['operation_id'] for op in session.operations]==['prepare']
+        assert result['capacity_session']['status']=='released'
+        assert rf_l1_capacity(rf_l1_workspace/'artifacts')['audit']==[]
+        rf_l1_cases.append(dict(case=rf_l1_case,status=result['status'],operations=len(session.operations)))
+finally:
+    for rf_l1_key,rf_l1_value in rf_l1_inherited.items():
+        if rf_l1_value is None:os.environ.pop(rf_l1_key,None)
+        else:os.environ[rf_l1_key]=rf_l1_value
+for rf_l1_name,rf_l1_path in rf_l1_paths.items():
+    assert hashlib.sha256(rf_l1_path.read_bytes()).hexdigest()==rf_l1_fixture['inputs'][rf_l1_name]['sha256']
+assert len(rf_l1_cases)==3
+print('INSTALLED_RF_MANAGED_L1=PASS '+json.dumps(rf_l1_cases))
+# RF_MANAGED_L1_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -2808,6 +3094,32 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             source_acceptance=dict(spec=asdict(acceptance_case.spec),
                 point=asdict(acceptance_case.point), golden=acceptance_golden))
 
+    def rf_l1_managed_probe_fixture(self, root: Path) -> dict:
+        from msplatform.workflows.rf_mass_filter import finite_length
+        project = REPO_ROOT / "projects/rf_multipole_ion_optics"
+        selected = dict(baseline=project / "variants/quadrupole/config/baseline.json",
+                        resolved=project / "variants/quadrupole/config/resolved_design_mass_filter.json",
+                        mode=project / "config/modes/quadrupole_mass_filter_reference.json",
+                        source=project / "variants/quadrupole/config/official_particle_source.json")
+        records = {}
+        for name, path in selected.items():
+            raw = path.read_bytes()
+            records[name] = dict(bytes_hex=raw.hex(), bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+        values = {name: json.loads(bytes.fromhex(row["bytes_hex"])) for name, row in records.items()}
+        rows = finite_length.scan_response(values["baseline"], values["resolved"], values["mode"], values["source"])
+        assert len(rows) == 29 and all(row["particles"] == 100 for row in rows)
+        expected = root / "rf-l1-original-science.csv"
+        finite_length.write_response_csv(expected, rows)
+        derived = finite_length.validate_l1_contract(values["baseline"], values["mode"], values["source"])
+        host = json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"])
+        policy = Path(host["policy_path"]).read_bytes()
+        return dict(inputs=records, expected_csv_hex=expected.read_bytes().hex(),
+                    expected_metrics=finite_length.evaluate_response(rows, derived, values["mode"]),
+                    host_policy_hex=policy.hex(), host_policy_sha256=hashlib.sha256(policy).hexdigest(),
+                    oracle_module_sha256=hashlib.sha256(Path(finite_length.__file__).read_bytes()).hexdigest(),
+                    host_state_path=os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"],
+                    powershell=shutil.which("pwsh"))
+
     def tof_budget_probe_fixture(self) -> dict:
         # Original planning tests and the three pre-move documented CLI oracles.
         return dict(api=dict(flight_time_s=2.0, reference_resolution=10.0,
@@ -3375,6 +3687,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               mr_interface=self.mr_interface_probe_fixture(),
                                               mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),
                                               tof_budget=self.tof_budget_probe_fixture(),
+                                              rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
@@ -3393,8 +3706,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                   *replacement, '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
                                  cwd=root, environment=environment, timeout=300)
                 probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
+                # SOFTWARE client only: prior ~61 s client + original ~110 s negative
+                # parent + real three-stage owner/executor and shared-admission margin.
+                # This 900 s harness bound does not change the stage's 120 s warning.
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
-                                          cwd=root, environment=probe_environment)
+                                          cwd=root, environment=probe_environment, timeout=900)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
             if retained:
                 files = []

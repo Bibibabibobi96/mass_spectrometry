@@ -16,7 +16,7 @@ from matplotlib import pyplot as plt  # noqa: E402
 
 from msplatform.analysis.mass_response import prepare_response_analysis
 
-from .theory import theory_masses
+from msplatform.workflows.rf_mass_filter.reference import theory_masses
 
 
 def read_response(path: Path) -> dict[float, dict[str, str]]:
