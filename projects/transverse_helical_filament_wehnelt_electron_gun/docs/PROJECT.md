@@ -28,6 +28,12 @@ machine contracts和recorded removal；回归按实际目的路径拒绝任何�
 The retired naming/input adapters now come only from the canonical package selector. Bootstrap
 identity checks use their exact frozen relative paths, without duplicate manifest entries; the
 existing real-selector test and changed-bootstrap negative test retain these guarantees.
+Manifest publication and verification are likewise frozen only by the canonical
+package selector. Their separate live-bootstrap identities and frozen-path hash
+checks remain; duplicate common-table entries are removed. The unchanged full
+MATLAB contract-binding module passed 27 parents (157 records) in 29.724 seconds,
+including the real-selector duplicate-destination regression. This is software
+freezing evidence, with no MATLAB or COMSOL execution or new model qualification.
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 
