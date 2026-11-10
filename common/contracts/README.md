@@ -217,6 +217,15 @@ retention_preserve_paths、manifest_extra_fields、writer_completion与原except
 事实与直接PS owner字段按其真实来源保留，不能为直接PS补造bridge字段。unknown、Python bridge继承、重复身份、
 冲突或未闭合引用均拒绝封存；单独exit0、任意writers_stopped布尔值或全pool释放不替代局部写进程证明。
 
+The direct PowerShell owner's synchronous completion supplies its actual in-memory
+PID/birth pair to the existing finalizer. The persisted wait and that current process
+must match exactly; this is not a new persisted field or CLI option. Historical
+finalization recovery checks the persisted full process identity: a recycled PID
+with a different birth does not identify the original active owner. A live foreign
+owner with the matching birth still blocks recovery; same-process owner retries
+remain supported. Native-writer/resource receipts and sealed file identities are
+validated unchanged, and recovery never rewrites a wait receipt to mimic PID reuse.
+
 owner还须独立确认实际prepared worker已退出且日志停止写入；Windows启动器shim退出不是这一事实。
 全部完成证据通过后才由公共owner给最终summary加`writers_stopped=true`。required_output_paths在保留前后
 都必须存在；它不自动获得保留豁免。retention_preserve_paths仅透传既有retention API，由原边界检查

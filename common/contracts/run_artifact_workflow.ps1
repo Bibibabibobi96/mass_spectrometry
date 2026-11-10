@@ -173,8 +173,9 @@ function Complete-RunArtifactPowerShellOwner {
   $summaryDocument.run_id=$config.run_id;$summaryDocument.status=$Status
   $waitPath=Join-Path $root 'logs/prepared_wait.json'
   $completionPath=Join-Path $root 'results/execution_completion.json'
+  $synchronousOwnerIdentity=@{owner_pid=$PID;owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks}
   Write-RunJson -Atomic -Path $waitPath -Value @{schema_version=1;role='run_artifact_powershell_owner_wait';owner_pid=$PID;
-    owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks;
+    owner_start_utc_ticks=$synchronousOwnerIdentity.owner_start_utc_ticks;
     native_writers_confirmed=$true;exception=$exception;observation_error=$null} -Depth 64
   $completion=[ordered]@{schema_version=1;role='run_artifact_workflow_completion';run_id=$config.run_id;project=$config.project;
     execution_request=(New-WorkflowOwnerFileRecord $Context.request_path);run_config=(New-WorkflowOwnerFileRecord $configPath);
@@ -201,7 +202,7 @@ function Complete-RunArtifactPowerShellOwner {
     stage='completion';run_directory=$root;execution_request=$Context.request_path;writers_confirmed=$true;
     exception=$exception;resume_action='resume_finalization'} -Depth 64
   $Context.finalization_started=$true
-  $outcome=Invoke-RunArtifactWorkflow -RequestPath $Context.request_path -ResultPath $Context.result_path -ResumeFinalization
+  $outcome=Invoke-RunArtifactWorkflow -RequestPath $Context.request_path -ResultPath $Context.result_path -ResumeFinalization -SynchronousPowerShellOwnerIdentity $synchronousOwnerIdentity
   $Context.finalized=$true;$Context.finalization_started=$false
   return $outcome
 }
@@ -444,9 +445,31 @@ print(json.dumps({"entry": entries[0], "lease_status": audit["status"] if audit 
   }
 }
 
+function Assert-WorkflowPowerShellOwnerIdentity {
+  <# Compare current in-memory ownership separately from historical process liveness. #>
+  param([Parameter(Mandatory)][Collections.IDictionary]$Wait,
+    [Collections.IDictionary]$SynchronousIdentity=$null)
+  if($null-ne$SynchronousIdentity){
+    Assert-WorkflowFields $SynchronousIdentity @('owner_pid','owner_start_utc_ticks') 'Synchronous PowerShell owner'
+    $currentStart=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
+    if([int]$Wait.owner_pid-ne$PID-or[int]$SynchronousIdentity.owner_pid-ne$PID-or
+       [long]$Wait.owner_start_utc_ticks-ne$currentStart-or
+       [long]$SynchronousIdentity.owner_start_utc_ticks-ne$currentStart){
+      throw 'PowerShell owner start identity differs.'
+    }
+    return
+  }
+  # A recovery process may reuse the old PID. Only its full PID/birth pair
+  # identifies a still-active historical owner; current same-owner retries stay valid.
+  $owner=Get-Process -Id ([int]$Wait.owner_pid) -ErrorAction SilentlyContinue
+  if($null-ne$owner-and$owner.StartTime.ToUniversalTime().Ticks-eq[long]$Wait.owner_start_utc_ticks-and
+     [int]$Wait.owner_pid-ne$PID){throw 'PowerShell owner is still active.'}
+}
+
 function Invoke-RunArtifactWorkflow {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$RequestPath,[Parameter(Mandatory)][string]$ResultPath,[switch]$ResumeFinalization)
+  param([Parameter(Mandatory)][string]$RequestPath,[Parameter(Mandatory)][string]$ResultPath,[switch]$ResumeFinalization,
+    [Collections.IDictionary]$SynchronousPowerShellOwnerIdentity=$null)
   $contextEnvironmentNames=@('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_ARTIFACT_ROOT',
     'MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
   $callerEnvironment=Save-RunEnvironment -Names $contextEnvironmentNames
@@ -669,12 +692,7 @@ function Invoke-RunArtifactWorkflow {
          $wait.owner_pid-isnot[int]-and$wait.owner_pid-isnot[long]-or$wait.owner_start_utc_ticks-isnot[long]-and$wait.owner_start_utc_ticks-isnot[int]){
         throw 'PowerShell native writer completion is unconfirmed.'
       }
-      if([int]$wait.owner_pid-eq$PID){
-        if((Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks-ne[long]$wait.owner_start_utc_ticks){throw 'PowerShell owner start identity differs.'}
-      }else{
-        $owner=Get-Process -Id ([int]$wait.owner_pid) -ErrorAction SilentlyContinue
-        if($null-ne$owner-and$owner.StartTime.ToUniversalTime().Ticks-eq[long]$wait.owner_start_utc_ticks){throw 'PowerShell owner is still active.'}
-      }
+      Assert-WorkflowPowerShellOwnerIdentity -Wait $wait -SynchronousIdentity $SynchronousPowerShellOwnerIdentity
     }else{
       $process=$wait.managed_process
       if($wait.role-cne'run_artifact_prepared_wait'-or$null-ne$wait.observation_error-or

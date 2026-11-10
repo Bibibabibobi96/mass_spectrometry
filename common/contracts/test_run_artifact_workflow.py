@@ -20,6 +20,35 @@ from common.contracts.test_support.run_artifact_workflow import OWNER, PROJECT, 
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
 class RunArtifactWorkflowTests(fixture.RunArtifactWorkflowFixture):
+    def test_powershell_owner_identity_separates_current_context_and_historical_pid_reuse(self):
+        # Synthetic historical PID reuse; no claim that the OS recycled a PID here.
+        with tempfile.TemporaryDirectory(prefix="workflow-owner-identity-") as directory:
+            root = Path(directory)
+            result = self.run_ps(root, f""". '{OWNER}'
+$current=@{{owner_pid=$PID;owner_start_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks}}
+Assert-WorkflowPowerShellOwnerIdentity -Wait $current -SynchronousIdentity $current
+$changed=@{{owner_pid=$PID;owner_start_utc_ticks=([long]$current.owner_start_utc_ticks+1)}}
+foreach($pair in @(@($changed,$current),@($current,$changed))){{
+ $caught=$false
+ try{{Assert-WorkflowPowerShellOwnerIdentity -Wait $pair[0] -SynchronousIdentity $pair[1]}}catch{{
+  if($_.Exception.Message-ne'PowerShell owner start identity differs.'){{throw}};$caught=$true
+ }}
+ if(-not$caught){{throw 'Fresh synchronous owner accepted mismatching birth'}}
+}}
+Assert-WorkflowPowerShellOwnerIdentity -Wait $changed
+Assert-WorkflowPowerShellOwnerIdentity -Wait $current
+$parent=Get-Process -Id {os.getpid()}
+$active=@{{owner_pid=$parent.Id;owner_start_utc_ticks=$parent.StartTime.ToUniversalTime().Ticks}}
+$caught=$false
+try{{Assert-WorkflowPowerShellOwnerIdentity -Wait $active}}catch{{
+ if($_.Exception.Message-ne'PowerShell owner is still active.'){{throw}};$caught=$true
+}}
+if(-not$caught){{throw 'Live foreign original owner accepted'}}
+'OWNER_IDENTITY_CURRENT_AND_HISTORICAL=PASS'
+""")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("OWNER_IDENTITY_CURRENT_AND_HISTORICAL=PASS", result.stdout)
+
     def test_default_script_route_owns_pipe_holding_child_and_preserves_timeout(self):
         from common.contracts.test_support import fixture_process
 
