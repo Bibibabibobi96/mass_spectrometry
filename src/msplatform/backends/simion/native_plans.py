@@ -345,10 +345,11 @@ def operating_member_identity(plan: dict, *, domain_id: str, member_id: str,
 
 
 def plan_operating_member(plan: dict, *, domain_id: str, member_id: str,
-                          tool_identity: dict, raw_geometry_record: dict,
+                          tool_identity: dict, raw_geometry_record: dict | None,
                           working_directory: Path, payload_directory: Path,
                           resource_paths: Mapping[str, Path],
-                          published_parent: dict | None = None) -> tuple[NativeStagePlan, dict]:
+                          published_parent: dict | None = None,
+                          raw_geometry_path: Path | None = None) -> tuple[NativeStagePlan, dict]:
     """Plan one real cache-miss member in the existing transaction's directories.
 
     Resource paths and admitted tool identities are explicit. This does not
@@ -360,10 +361,19 @@ def plan_operating_member(plan: dict, *, domain_id: str, member_id: str,
     if set(resource_paths) != {"operating_builder","exporter","verifier"}:
         raise ValueError("the original operating builder, exporter and native verifier are required")
     resources={key:_native_ascii(value) for key,value in resource_paths.items()}
-    raw=_native_ascii(Path(raw_geometry_record["path"]))
-    if not str(raw).lower().endswith(".pa#") or type(raw_geometry_record.get("bytes")) is not int or raw_geometry_record["bytes"]<=0:
-        raise ValueError("actual raw geometry record is required")
-    _require_sha256(raw_geometry_record.get("sha256"),"raw geometry")
+    if raw_geometry_record is None:
+        if raw_geometry_path is None:
+            raise ValueError("an actual raw record or explicit future raw path is required")
+        raw = _native_ascii(raw_geometry_path)
+        if not str(raw).lower().endswith(".pa#"):
+            raise ValueError("future raw geometry requires its declared .pa# path")
+    else:
+        if raw_geometry_path is not None:
+            raise ValueError("raw record and future geometry path are mutually exclusive")
+        raw=_native_ascii(Path(raw_geometry_record["path"]))
+        if not str(raw).lower().endswith(".pa#") or type(raw_geometry_record.get("bytes")) is not int or raw_geometry_record["bytes"]<=0:
+            raise ValueError("actual raw geometry record is required")
+        _require_sha256(raw_geometry_record.get("sha256"),"raw geometry")
     scratch,payload=_native_ascii(working_directory),_native_ascii(payload_directory)
     domain=next(row for row in plan["field_design"]["domains"] if row["domain_id"]==domain_id)
     point=next(row for row in plan["field_design"]["working_points"] if working_point_member_id(row)==member_id)

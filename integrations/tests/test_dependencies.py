@@ -455,6 +455,12 @@ with tempfile.TemporaryDirectory() as request_directory:
         paths["msplatform.backends.simion.tracking_collection"] = REPO_ROOT/"src/msplatform/backends/simion/tracking_collection.py"
         paths["msplatform.results.single_reflection_continuation"] = REPO_ROOT/"src/msplatform/results/single_reflection_continuation.py"
         paths["msplatform.workflows.single_reflection_flight.continuation"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/continuation.py"
+        for suffix in ('frontend_fields', 'field_plan'):
+            paths['msplatform.workflows.single_reflection_flight.' + suffix] = (
+                REPO_ROOT / 'src/msplatform/workflows/single_reflection_flight' / (suffix + '.py'))
+        for suffix in ('field_worker', 'native_plans'):
+            paths['msplatform.backends.simion.' + suffix] = (
+                REPO_ROOT / 'src/msplatform/backends/simion' / (suffix + '.py'))
         graph = {}
         for name, source in paths.items():
             graph[name] = {
@@ -767,7 +773,9 @@ sys.meta_path.remove(guard)
 from msplatform.workflows.single_reflection_flight import prepare
 from msplatform.workflows.single_reflection_flight import runtime
 from msplatform.workflows.single_reflection_flight import collect
-assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census,continuation,pulse))
+from msplatform.workflows.single_reflection_flight import frontend_fields
+from msplatform.backends.simion import field_worker, native_plans
+assert all(Path(m.__file__).is_relative_to(Path.cwd()) for m in (prepare,downstream_fields,runtime,collect,census,continuation,pulse,frontend_fields,field_worker,native_plans))
 assert not any('rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' in name for name in sys.modules)
 assert not (Path.cwd()/'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer').exists()
 request,run=map(Path,sys.argv[1:])
@@ -784,6 +792,12 @@ assert 'composition_plan' not in preparation['outputs']
 assert (run/'inputs/composition_plan.json').exists()
 assert json.loads(Path(preparation['outputs']['frontend_geometry']['path']).read_text())['composition_plan']['scope']['kind']=='full'
 (run/'preparation_for_dependency_test.json').write_text(json.dumps(preparation),encoding='utf-8')
+stage=frontend_fields.prepare_stage(run/'inputs',Path(sys.executable),run)
+parent=frontend_fields.domain_members(stage,0,[])
+assert parent['domain_id']=='parent' and parent['members']
+assert all(Path(record['path']).is_relative_to(run/'inputs') for record in stage['resources'].values())
+assert not (run/'simion').exists()
+
 result=downstream_fields.plan_downstream_fields(preparation,run,snapshot_root=Path.cwd())
 assert len(result['steps'])==5
 assert all(Path(step['argv'][3]).is_relative_to(Path.cwd()) for step in result['steps'])
@@ -793,6 +807,18 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
             self.assertEqual(json.loads(planned.stdout)["status"], "FROZEN_DOWNSTREAM_PLAN_PASS")
+            producer_module = snapshot / 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
+            original_module = producer_module.read_bytes()
+            producer_module.unlink()
+            try:
+                missing = subprocess.run([sys.executable, '-B', '-s', '-c',
+                    'from msplatform.workflows.single_reflection_flight import frontend_fields'],
+                    cwd=snapshot, env=environment, capture_output=True, text=True,
+                    encoding='utf-8', errors='replace', timeout=30)
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn('frontend_fields', missing.stderr)
+            finally:
+                producer_module.write_bytes(original_module)
             # Remove a non-Python provider resource. A new detached process
             # must fail before execution instead of searching the live tree.
             resource = snapshot / "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem"

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -86,9 +87,6 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/runtime/local_frontend_field_support.ps1'),[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-LocalFieldNative'},$true)
 Invoke-Expression $node.Extent.Text
-$memberAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/field_stage.ps1'),[ref]$null,[ref]$null)
-$memberNode=$memberAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FrontendFieldNative'},$true)
-Invoke-Expression $memberNode.Extent.Text
 New-Item -ItemType Directory -Path (Join-Path $Root inputs),(Join-Path $Root logs) -Force|Out-Null
 $Package=[pscustomobject]@{python=$Python;artifact_run_dir=$Root;run_dir=$Root;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
 $run=$Root;$log=Join-Path $Root logs;$logs=$log;$StageElapsed=$null;$Limits=@{};$SimionExe='INERT_NOT_A_SOLVER'
@@ -120,12 +118,11 @@ function Invoke-FrontendRuntimePython {
  }
  throw 'Unexpected runtime call'
 }
-foreach($boundary in @('field','member','replay')){foreach($mode in @('nonzero','unknown','analysis_failure')){
+foreach($boundary in @('field','replay')){foreach($mode in @('nonzero','unknown','analysis_failure')){
  $NativeOperations=[Collections.Generic.List[object]]::new();$caught=$null;$before=$nativeCalls
  try{
-  if($boundary-in@('field','member')){
-   if($boundary-eq'field'){Invoke-LocalFieldNative -Arguments @('--nogui') -Directory $Root -Name field_test}
-   else{Invoke-FrontendFieldNative -Arguments @('--nogui') -Directory $Root -Name member_test}
+  if($boundary-eq'field'){
+   Invoke-LocalFieldNative -Arguments @('--nogui') -Directory $Root -Name field_test
    if($NativeOperations.Count-ne1){throw 'Field completion was not recorded before analysis'}
    throw 'ORIGINAL_COMPARISON_FAILURE'
   }else{
@@ -148,6 +145,64 @@ foreach($boundary in @('field','member','replay')){foreach($mode in @('nonzero',
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO), sys.executable, temporary],
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self._check_canonical_member_native_facts(Path(temporary))
+
+    def _check_canonical_member_native_facts(self, root):
+        from msplatform.backends.simion import field_worker
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.processes import ProcessExecutionError
+        self.assertEqual(Path(field_worker.__file__).resolve(),
+                         (REPO / 'src/msplatform/backends/simion/field_worker.py').resolve())
+        context = ExecutionContext(workspace=root, python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which('pwsh')), tools={},
+            host_state_path=root/'host.json', policy_path=root/'policy.json')
+        for mode in ('nonzero', 'unknown', 'analysis_failure'):
+            with self.subTest(boundary='member', mode=mode):
+                logs = root / mode
+                logs.mkdir()
+                (logs/'member.stdout.log').write_text('', encoding='utf-8')
+                observation = dict(root_process_id=701, root_process_started_at_utc_ticks=801,
+                                   exit_code=None if mode == 'unknown' else 7 if mode == 'nonzero' else 0)
+                receipt = dict(observation=observation,
+                               host_release=dict(inherited=True, token='actual-test-grant'))
+                failure = ProcessExecutionError('ORIGINAL_NATIVE_OBSERVATION_FAILURE'
+                    if mode == 'unknown' else 'native nonzero', receipt)
+                observations = []
+                with patch.object(field_worker, 'run_observed_process',
+                        side_effect=failure if mode != 'analysis_failure' else None,
+                        return_value=receipt) as native, patch.object(
+                        field_worker, 'inherited_host_token', return_value='actual-test-grant'):
+                    caught = None
+                    try:
+                        field_worker._native_operation(context,
+                            dict(operation_id='member', stage='prepare', arguments=['--nogui'],
+                                 success_marker='', outputs=[]), executable=Path(sys.executable),
+                            run_directory=root, directory=root, logs=logs, limits={},
+                            observations=observations)
+                        self.assertEqual(len(observations), 1)
+                        raise RuntimeError('ORIGINAL_COMPARISON_FAILURE')
+                    except RuntimeError as error:
+                        caught = error
+                self.assertEqual(native.call_count, 1)
+                self.assertEqual(len(observations), 1)
+                self.assertIs(observations[0]['receipt'], receipt)
+                self.assertEqual(receipt['host_release']['token'], 'actual-test-grant')
+                self.assertEqual(observation['root_process_id'], 701)
+                self.assertEqual(observation['root_process_started_at_utc_ticks'], 801)
+                if mode == 'unknown':
+                    self.assertIsNone(observation['exit_code'])
+                    self.assertIs(caught, failure)
+                    self.assertFalse(caught.observed_process_exit_confirmed)
+                    self.assertIsNone(caught.observed_process_returncode)
+                    self.assertEqual(str(caught), 'ORIGINAL_NATIVE_OBSERVATION_FAILURE')
+                elif mode == 'nonzero':
+                    self.assertEqual(observation['exit_code'], 7)
+                    self.assertIs(caught, failure)
+                    self.assertTrue(caught.observed_process_exit_confirmed)
+                    self.assertEqual(caught.observed_process_returncode, 7)
+                else:
+                    self.assertEqual(observation['exit_code'], 0)
+                    self.assertEqual(str(caught), 'ORIGINAL_COMPARISON_FAILURE')
 
     def test_phase_completion_captures_scientific_callback_before_owner_parameter_scope(self):
         code = r"""param($Source,$Root)

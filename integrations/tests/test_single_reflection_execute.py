@@ -19,5 +19,7 @@ class SingleReflectionExecuteTests(SingleReflectionExecuteFixture):
         # Generic missing-stage/invalid-budget rejection belongs to
         # test_engineering_budget.test_shared_budget_and_actual_entry_loaders;
         # retain the real workbench success/failure wiring and cohort check here.
+        self.assertFalse((EXECUTE.parent/'field_stage.ps1').exists())
+        self.assertTrue((REPO/'src/msplatform/workflows/single_reflection_flight/frontend_fields.py').is_file())
         self._check_public_cases(('none','native','population','downstream','elapsed','planning','disk_floor','ram_floor',
             'workbench','missing_flight','workbench_build','workbench_verify','workbench_drift','field_drift','publication_pin'))

@@ -382,13 +382,6 @@
           ]
         },
         {
-          "id": "assembly_integrations_workflows_single_reflection_flight_field_stage_ps1",
-          "source_repo_path": "integrations/workflows/single_reflection_flight/field_stage.ps1",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "integrations_workflows_paired_accelerator_static_field_execute_ps1",
           "source_repo_path": "integrations/workflows/paired_accelerator_static_field/execute.ps1",
           "consumers": [

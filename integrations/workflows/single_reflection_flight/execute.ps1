@@ -115,7 +115,157 @@ if($PrepareOnly){
 . (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $frozen.execution_root 'integrations/runtime/frontend_flight_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
-. (Join-Path $frozen.execution_root 'integrations/workflows/single_reflection_flight/field_stage.ps1')
+function Invoke-SingleReflectionFrontendFieldStage {
+  <# Existing owner retains capacity admission/recovery; installed code owns science. #>
+  [CmdletBinding()]
+  param($Package,[string]$Python,[string]$RepoRoot,[string]$RunDirectory,[string]$PreparedDirectory,
+    [string]$SimionExe,[ref]$HostLease,[ref]$CapacitySession,$Limits,[long]$ReservedRunPayloadBytes,
+    [Parameter(Mandatory)][string]$CacheRoot,[Diagnostics.Stopwatch]$StageElapsed=$null,
+    $NativeOperations=$null,[string]$NativeResourceReleaseId='simion')
+  $run=[IO.Path]::GetFullPath($RunDirectory)
+  $fieldInvocation=[guid]::NewGuid().ToString('N')
+  if($null-eq$HostLease.Value-or$null-eq$CapacitySession.Value){throw 'Active original host/capacity sessions required.'}
+  function Get-FrontendImplementationRecord([string]$Relative){
+    $path=Join-Path $RepoRoot $Relative
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Frozen frontend implementation missing: $Relative"}
+    return @{path=$path;exists=$true;bytes=(Get-Item -LiteralPath $path).Length;sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
+  }
+  $implementation=Get-FrontendImplementationRecord 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
+  $workerImplementations=@{worker=(Get-FrontendImplementationRecord 'src/msplatform/backends/simion/field_worker.py');
+    native_plans=(Get-FrontendImplementationRecord 'src/msplatform/backends/simion/native_plans.py')}
+  function Invoke-FrontendProjection([string]$Action,$Payload,[string]$Name){
+    $Name=$Name+'_'+$fieldInvocation
+    $Payload.implementation_record=$implementation
+    $request=Join-Path $run ('inputs/'+$Name+'.request.json')
+    Write-RunJson -Path $request -Depth 100 -Value $Payload
+    $stdout=Join-Path $run ('logs/'+$Name+'.stdout.json');$stderr=Join-Path $run ('logs/'+$Name+'.stderr.log')
+    Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+      &$Python -B -X utf8 -m msplatform.workflows.single_reflection_flight.frontend_fields $Action $request 1>$stdout 2>$stderr
+      if($LASTEXITCODE-ne0){
+        $detail=Get-Content -LiteralPath $stderr -Tail 1
+        $projectionFailure=[InvalidOperationException]::new("Frontend scientific projection failed: $Name; $detail (see $stderr)")
+        $projectionFailure.Data['frontend_projection_stderr']=$stderr
+        throw $projectionFailure
+      }
+    }
+    return Get-Content -LiteralPath $stdout -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+  }
+  $stage=Invoke-FrontendProjection prepare @{prepared=(Join-Path $PreparedDirectory inputs);executable=$SimionExe;run_directory=$run} frontend_working_plan
+  $ownerConfig=Get-Content -LiteralPath (Join-Path $run 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+  if(-not$ownerConfig.ContainsKey('inputs')){$ownerConfig.inputs=@{}}
+  foreach($name in $stage.resources.Keys){$ownerConfig.inputs['frontend_field_resource_'+$name]=$stage.resources[$name].path}
+  Write-RunJson -Path (Join-Path $run 'run_config.json') -Depth 100 -Value $ownerConfig
+  $domains=@();$warned=$false
+  foreach($index in 0..($stage.bundle.domains.Count-1)){
+    $domain=Invoke-FrontendProjection domain @{stage=$stage;domain_index=$index;completed_domains=$domains} ('frontend_domain_'+$index)
+    $records=@();$rawRecord=$null;$domainScratch=Join-Path $run ('simion/frontend_working_fields/'+$domain.domain_id+'_audit_geometry')
+    $workerFacts=[Collections.Generic.List[object]]::new()
+    $nativeFacts=[Collections.Generic.List[object]]::new()
+    $workerReceipts=[Collections.Generic.List[object]]::new()
+    $workerAttempts=0
+    $domainFailure=$null
+    try {
+      foreach($member in $domain.members){
+        $prefix=[string]$domain.domain_id+'_'+[string]$member.member_id
+        $source=if($member.ContainsKey('frozen_field_source')){$member.frozen_field_source}else{$null}
+        $key=if($null-ne$source){[string]$source.cache_key}else{[string]$member.cache_key}
+        if($null-eq$source){
+          $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @($key)
+          $CapacitySession.Value=$scope.session
+        }
+        $assessment=Invoke-FrontendProjection assess @{stage=$stage;member=$member;cache_root=$CacheRoot} ($prefix+'_assessment')
+        $member=$assessment.member
+        [long]$memberCommitment=$ReservedRunPayloadBytes+[long]$assessment.required_extra_bytes
+        if([long]$CapacitySession.Value.committed_new_bytes-lt$memberCommitment){
+          $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -RemainingCommittedNewBytes $memberCommitment
+          $CapacitySession.Value=$scope.session
+        }
+        $nativePaths=@($assessment.native_paths)
+        $execution=Get-RunNativeExecutionContext -Package $Package -Paths $nativePaths -Tool SIMION
+        $parameters=Invoke-FrontendProjection parameters @{stage=$stage;assessment=$assessment;cache_root=$CacheRoot;
+          capacity_session=$CapacitySession.Value;reserved_run_payload_bytes=$ReservedRunPayloadBytes;
+          native_path_projection=@{artifact_run_dir=$Package.artifact_run_dir;run_dir=$execution.run_dir};
+          raw_geometry_record=$rawRecord} ($prefix+'_parameters')
+        $parameters.limits=$Limits
+        $hostContext=$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON|ConvertFrom-Json -AsHashtable
+        $context=@{workspace=$hostContext.workspace;python_executable=$Python;powershell_executable=(Get-Process -Id $PID).Path;
+          host_state_path=$hostContext.host_state_path;policy_path=$hostContext.policy_path;tools=@{simion=$SimionExe}}
+        $workerName=[IO.Path]::GetFileNameWithoutExtension([string]$parameters.receipt_path)
+        $request=Join-Path $run ('inputs/'+$workerName+'_worker.request.json')
+        Write-RunJson -Path $request -Depth 100 -Value @{schema_version=1;context=$context;parameters=$parameters;implementation_records=$workerImplementations}
+        $report=$null;$workerFailure=$null
+        try {
+          if($null-ne$StageElapsed-and$StageElapsed.Elapsed.TotalSeconds-gt[double]$Limits.wall_clock_seconds-and-not$warned){
+            $warned=$true;Write-Warning ('RESOURCE_BUDGET_WARNING=wall_clock_seconds STAGE=instrument_field_design MEASURED_SECONDS={0:N3} LIMIT_SECONDS={1}' -f $StageElapsed.Elapsed.TotalSeconds,$Limits.wall_clock_seconds)
+          }
+          $workerStage=[string]$assessment.resource_stage
+          $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage $workerStage -Budget (Get-HostResourceBudget -Role SIMION -Stage $workerStage) -RetainedMemoryBytes 0
+          $workerAttempts++
+          Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+            $observed=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $run -FilePath $Python -WorkingDirectory $execution.run_dir `
+              -ArgumentList @('-B','-X','utf8','-m','msplatform.backends.simion.field_worker',$request) `
+              -RequireImmutableInputDrain -UsagePath (Join-Path $run ('logs/'+$workerName+'_worker.resource_usage.json')) `
+              -RedirectStandardOutput (Join-Path $run ('logs/'+$workerName+'_worker.stdout.log')) `
+              -RedirectStandardError (Join-Path $run ('logs/'+$workerName+'_worker.stderr.log'))
+            # Local Python drain evidence is never published as a SIMION operation.
+            Add-FrontendNativeOperation -NativeOperations $workerFacts -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $workerName -ProcessRecord $observed
+            if($observed.resource_budget_exceeded-or$observed.exit_code-ne0){throw "Frontend field worker failed: $prefix"}
+          }
+        } catch {
+          $workerFailure=$_
+          try{Add-FrontendNativeOperation -NativeOperations $workerFacts -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $workerName -ExceptionData $workerFailure.Exception.Data}catch{$workerFailure.Exception.Data['worker_completion_evidence_error']=$_}
+          $workerFailure.Exception.Data['frontend_worker_receipt']=$parameters.receipt_path
+          throw $workerFailure
+        } finally {
+          try {
+            $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage prepare -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+            if(-not(Test-Path -LiteralPath $parameters.receipt_path)){throw 'Frontend worker accounting receipt unavailable after launch'}
+            $report=Get-Content -LiteralPath $parameters.receipt_path -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+            foreach($operation in $report.native_operations){
+              Add-FrontendNativeOperation -NativeOperations $nativeFacts -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $operation.operation_id -ProcessRecord $operation.receipt.observation
+              if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId $operation.operation_id -ProcessRecord $operation.receipt.observation}
+            }
+            $workerReceipts.Add($report)|Out-Null
+            if($report.accounting_deferred){$CapacitySession.Value|Add-Member -NotePropertyName defer_capacity_finalization -NotePropertyValue $report.accounting_error -Force}
+          } catch {
+            $CapacitySession.Value|Add-Member -NotePropertyName defer_capacity_finalization -NotePropertyValue $_.Exception.Message -Force
+            if($null-eq$workerFailure){throw}
+            $workerFailure.Exception.Data['frontend_worker_evidence_error']=$_
+          }
+        }
+        $record=Invoke-FrontendProjection record @{member=$member;report=$report} ($prefix+'_record')
+        $records+=@($record)
+        if($report.ContainsKey('raw_geometry_record')){$rawRecord=$report.raw_geometry_record}
+        if([long]$report.newly_accounted_cache_bytes-gt0){
+          [long]$remaining=[long]$CapacitySession.Value.committed_new_bytes-[long]$report.newly_accounted_cache_bytes
+          if($remaining-lt$ReservedRunPayloadBytes){throw 'Workflow commitment cannot cover actual published cache plus reserved run payload.'}
+          $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -ProtectedCacheKeys @($key) -RemainingCommittedNewBytes $remaining
+          $CapacitySession.Value=$scope.session
+        }
+      }
+      $domains+=@(@{domain_id=$domain.domain_id;working_points=$records})
+    } catch {$domainFailure=$_;throw} finally {
+      # A drained Python child cannot override an unknown native writer receipt.
+      # Missing accounting/native facts retain the owned scratch for original-owner recovery.
+      if($workerFacts.Count-eq$workerAttempts-and$workerReceipts.Count-eq$workerAttempts-and
+         @($workerFacts|Where-Object {-not$_.observation.exit_confirmed}).Count-eq0-and
+         @($nativeFacts|Where-Object {-not$_.observation.exit_confirmed}).Count-eq0-and
+         @($workerReceipts|Where-Object {$_.status-ne'success'-and$_.native_operations.Count-eq0}).Count-eq0){
+        foreach($name in @('frontend.pa#','frontend.gem')){
+          $temporary=Join-Path $domainScratch $name
+          if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}
+        }
+      }elseif($null-ne$domainFailure){
+        $domainFailure.Exception.Data['simion_wave_writer_completion_confirmed']=$false
+      }
+    }
+  }
+  $result=Invoke-FrontendProjection finish @{stage=$stage;domains=$domains} frontend_working_finish
+  $scope=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacitySession.Value -RemainingCommittedNewBytes $ReservedRunPayloadBytes
+  $CapacitySession.Value=$scope.session
+  return [pscustomobject]$result
+}
+
 $artifacts=[string]$pathContext.artifact_root
 $failure=$null;$lease=$null;$capacity=$WorkflowCapacitySession;$ownsCapacity=($null-eq$WorkflowCapacitySession);$okay=$false;$stageElapsed=$null;$writerUnknown=$false
 $downstreamExecution=@()
@@ -796,6 +946,9 @@ try {
     foreach($row in $allWorkbenchExecution){$evidence+=@($row.stdout_path,$row.stderr_path,$row.usage_path)}
     $evidence+=@($flightEvidencePath)
     $evidence+=@(Get-ChildItem -LiteralPath (Join-Path $OutputDirectory 'logs') -File|ForEach-Object{$_.FullName})
+    foreach($workerLogs in Get-ChildItem -LiteralPath (Join-Path $OutputDirectory 'logs') -Directory -Filter 'frontend_*'){
+      $evidence+=@(Get-ChildItem -LiteralPath $workerLogs.FullName -Recurse -File|ForEach-Object{$_.FullName})
+    }
     $evidence+=@(Get-ChildItem -LiteralPath (Join-Path $OutputDirectory 'results') -File|ForEach-Object{$_.FullName})
     if(Test-Path -LiteralPath (Join-Path $OutputDirectory 'simion')){
       foreach($caseReceipt in Get-ChildItem -LiteralPath (Join-Path $OutputDirectory 'simion') -Filter workbench.json -Recurse -File){

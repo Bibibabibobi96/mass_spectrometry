@@ -39,6 +39,18 @@ def declared_dependency_paths(repo, contract, consumer):
     return paths
 
 
+def _replace_frontend_stage_boundary(execute, boundary):
+    """Replace only the actual field producer boundary in the controlled snapshot."""
+    text = execute.read_text(encoding='utf-8-sig')
+    start = 'function Invoke-SingleReflectionFrontendFieldStage {'
+    end = '\n$artifacts=[string]$pathContext.artifact_root'
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise AssertionError('actual frontend stage boundary must be unique')
+    before, rest = text.split(start, 1)
+    _, after = rest.split(end, 1)
+    execute.write_text(before + boundary + end + after, encoding='utf-8', newline='\n')
+
+
 class SingleReflectionExecuteFixture(unittest.TestCase):
     def _assert_pa_guard_lifecycle(self, run, events, *, local, refinement=False, borrowed_downstream=False):
         """Every actual PA has one guard and release, including saved-IOB carriers.
@@ -106,11 +118,11 @@ class SingleReflectionExecuteFixture(unittest.TestCase):
             target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(REPO/relative,target)
         # Only the isolated test repository's solver/capacity boundary is inert.
-        support=repo/'integrations/workflows/single_reflection_flight/field_stage.ps1'
-        support.write_text(r'''
+        support=repo/'integrations/workflows/single_reflection_flight/execute.ps1'
+        _replace_frontend_stage_boundary(support, r'''
 if($env:TEST_FIELD_FAILURE-eq'planning'){
  # Deliberately corrupt only this inert fixture's already-frozen closure.
- $snapshot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+ $snapshot=[string]$frozen.execution_root
  Remove-Item -LiteralPath (Join-Path $snapshot 'src/msplatform/backends/simion/resources/oatof_detector_ground.gem')
 }
 function Enter-ArtifactWorkflowCapacitySession { param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths)
@@ -385,7 +397,7 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
  }
  return @{scope='INERT_NATIVE_BOUNDARY_ONLY';fly_performed=$false}
 }
-''',encoding='utf-8',newline='\n')
+''')
         if os.environ.get('SIMULATION_TEST_FIXTURE_TIMING')=='1':
             print(f'SOURCE_FIXTURE files={len(paths)} copies={len(paths)} wall_seconds={time.perf_counter()-source_started:.9f}',flush=True)
         return repo

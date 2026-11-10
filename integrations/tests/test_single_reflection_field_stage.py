@@ -31,6 +31,193 @@ WORKFLOW = ROOT / 'integrations/workflows/single_reflection_flight'
 LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
 
 
+_FRONTEND_WORKER_DOUBLE = r'''
+"""TEST ONLY: inert file producers around the actual selected canonical worker."""
+import json,sys
+from pathlib import Path
+from msplatform.backends.simion import field_worker as worker
+
+request_path,state_path=map(Path,sys.argv[1:3])
+sys.argv=['field_worker',str(request_path)]
+state=json.loads(state_path.read_text(encoding='utf-8-sig'))
+request=json.loads(request_path.read_text(encoding='utf-8-sig'))
+parameters=request['parameters']
+worker.inherited_host_token=lambda *args,**kwargs:'INERT_NATIVE_TRANSPORT_ONLY'
+
+def save():
+    state_path.write_text(json.dumps(state),encoding='utf-8')
+
+actual_advance=worker.cache.advance_pa_family_cache_transaction
+
+def advance(*args,**kwargs):
+    if kwargs.get('record_stage_only'):
+        state['stage_accounting']+=1;save()
+        if state['accounting_failure']:
+            raise OSError('INERT accounting write failed')
+    handoff=kwargs.get('producer_handoff')
+    if handoff is not None:
+        assert parameters['member_id']=='pulse_delta' and parameters['domain_id']=='parent'
+        assert set(handoff)=={'schema_version','transaction_record','predecessor_manifest','stopped_receipt','capacity_lease_id','capacity_lease_owner'}
+        assert handoff['capacity_lease_id']==parameters['capacity_lease_id']
+        assert handoff['capacity_lease_owner']==parameters['capacity_lease_owner']
+        assert all(Path(handoff[name]['path']).is_relative_to(Path(parameters['run_directory'])/'inputs')
+                   for name in ('transaction_record','predecessor_manifest','stopped_receipt'))
+        state['handoff_seen']+=1;save()
+        if state['handoff_conflict']:
+            raise ValueError('PA producer handoff has another active consumer')
+        # These records are deliberately inert. The original governed handoff
+        # state machine has separate real tests; this checks exact transport.
+        kwargs.pop('producer_handoff')
+    result=actual_advance(*args,**kwargs)
+    return result
+worker.cache.advance_pa_family_cache_transaction=advance
+
+def inert(context,operation,**kwargs):
+    arguments=operation['arguments']
+    state['native'].append(arguments)
+    kwargs['observations'].append(dict(operation_id=operation['operation_id'],stage=operation['stage'],
+        receipt=dict(fixture='CONTROLLED_PROCESS_FACTS_NOT_NATIVE_EVIDENCE',
+            observation=dict(completed=True,exit_code=0,root_process_id=700+len(state['native']),
+                             root_process_started_at_utc_ticks=801))))
+    save()
+    output=[Path(value) for value in operation['outputs']]
+    for path in output:path.parent.mkdir(parents=True,exist_ok=True)
+    name=operation['operation_id']
+    if name.startswith('gem2pa_'):
+        domain=next(row for row in parameters['field_plan']['field_design']['domains']
+                    if row['domain_id']==parameters['domain_id'])
+        size=8
+        for axis in 'xyz':size*=domain['dimensions']['n'+axis]
+        assert parameters['capacity_session']['committed_new_bytes']>=parameters['reserved_run_payload_bytes']+size
+        output[0].write_text('INERT_RAW_NOT_PA')
+    elif name.startswith('refine_'):
+        assert state['stages'][-1]=='pa_refine'
+        if arguments[6]!='zero_neumann':
+            assert Path(arguments[6]).name.startswith('frontend.')
+            assert 'generations' in Path(arguments[6]).parts and Path(arguments[6]).exists()
+            design=parameters['field_plan']['field_design']
+            origins=[','.join(format(row['instance_origin_mm'][axis],'.17g') for axis in 'xyz')
+                     for row in design['domains'][:2]]
+            assert arguments[7:9]==origins
+        output[0].write_text('INERT_WORKING:'+arguments[9])
+    elif name.startswith('export_'):
+        filename=output[0].name
+        target=('frontend.pulse_delta.pa' if state['last_member_only'] else
+                'frontend_entrance_refinement.rf_reference.pa' if state['fine'] else 'frontend.rf_reference.pa')
+        if state['recovery'] and not state['injected_failure'] and filename==target:
+            state['injected_failure']=True;save()
+            output[0].write_text('PARTIAL_EXPORT')
+            raise RuntimeError('INERT native export failed: '+name)
+        output[0].write_bytes(Path(arguments[4]).read_bytes())
+    elif name.startswith('audit_'):
+        if state['prepared_audit_failure']:
+            raise RuntimeError('INERT native audit failed: '+name)
+        output[0].write_text(json.dumps(dict(status='pass',fixture='NOT_NATIVE_EVIDENCE')))
+    else:raise AssertionError('unexpected native operation: '+name)
+
+worker._native_operation=inert
+try:worker.main()
+finally:save()
+'''
+
+
+def _legacy_frontend_source_fixture(producer: Path, consumer: Path, cache_root: Path, session_path: Path) -> None:
+    """Construct the same old schema2 data through a real governed transaction."""
+    from msplatform.backends.simion import pa_family_cache as cache
+    from msplatform.backends.simion.resources import native_resource_path
+    from msplatform.execution.capacity_session import renew_capacity_session
+    from msplatform.io.manifest_records import file_record
+    from msplatform.io.file_identity import file_sha256
+    receipt = json.loads((producer / 'inputs/frontend_working_field_stage_receipt.json').read_text())
+    points = receipt['domains'][0]['working_points']
+    design_path = consumer / 'inputs/frontend_field_design.json'
+    design = json.loads(design_path.read_text())
+    identities = [json.loads(Path(point['cache_identity_record']['path']).read_text(encoding='utf-8-sig')) for point in points]
+    assert all(item['geometry'] == identities[0]['geometry'] and item['gem'] == identities[0]['gem'] for item in identities)
+    identity = dict(identities[0], working_points=[item['working_points'][0] for item in identities],
+                    rf_reference_voltage_v=identities[1]['rf_reference_voltage_v'])
+    identity['geometry'] = dict(identity['geometry'], physical_samples=design['domains'][0]['physical_samples'])
+    identity['builder_identity'] = dict(identity['builder_identity'], audit='A'*64, field_plan='B'*64, field_stage='C'*64)
+    filenames = [*[Path(point['path']).name for point in points], 'frontend_working_fields_audit.json']
+    key = cache.canonical_pa_family_cache_key(identity)
+    session = json.loads(session_path.read_text(encoding='utf-8-sig'))
+    renew_capacity_session(session, protected_cache_keys=[key])
+    session_path.write_text(json.dumps(session))
+    arguments = dict(owner=producer.name, producer_run_config=producer / 'run_config.json', recovery_policy='none',
+        published_pin_reason='Retain standalone frontend fields required by saved instrument workbenches.')
+    transaction = cache.advance_pa_family_cache_transaction(cache_root, identity, filenames, **arguments)
+    for point in points:
+        # Every copied byte is explicitly inert fixture data, never a real PA.
+        shutil.copyfile(point['path'], transaction.build_directory / Path(point['path']).name)
+    audit_text = json.dumps(dict(status='pass', fixture='legacy_native_boundary_is_inert'))
+    (transaction.build_directory / filenames[-1]).write_text(audit_text)
+    durable_audit = producer / 'inputs/legacy_fixture_audit.json'
+    durable_audit.write_text(audit_text)
+    transaction = cache.advance_pa_family_cache_transaction(cache_root, identity, filenames, **arguments)
+    verifier = native_resource_path('audit_frontend_working_fields.lua')
+    evidence = dict(schema_version=1, role='simion_pa_family_verification', status='pass', cache_key=key,
+        inventory_sha256=transaction.inventory_sha256, solver_release='SIMION 2020', verifier_path=str(verifier),
+        verifier_sha256=file_sha256(verifier), verification_output_path=str(durable_audit),
+        verification_output_sha256=file_sha256(durable_audit))
+    publication = cache.advance_pa_family_cache_transaction(cache_root, identity, filenames, verification_evidence=evidence, **arguments)
+    original_identity = producer / 'inputs/original_legacy_field_identity.json'
+    original_identity.write_text(json.dumps(identity))
+    frozen_identity = consumer / 'inputs/frontend_field_source_parent_identity.json'
+    frozen_identity.write_bytes(original_identity.read_bytes())
+    old = dict(schema_version=2, role='single_reflection_frontend_working_fields', status='success',
+        rf_reference_voltage_v=identity['rf_reference_voltage_v'], domains=[dict(domain_id='parent', cache_key=key,
+        generation_directory=str(publication.generation_directory), cache_identity_record=file_record(original_identity),
+        working_points=[{key: point[key] for key in ('path','kind','bytes','sha256','read_only')} for point in points])])
+    (consumer / 'inputs/frontend_field_source_receipt.json').write_text(json.dumps(old))
+    request_path = consumer / 'inputs/request.json'
+    request = json.loads(request_path.read_text(encoding='utf-8-sig'))
+    request['providers']['frontend_field_reuse_members'] = ['carrier_off', 'rf_reference']
+    request_path.write_text(json.dumps(request))
+    design['working_points'][2]['electrode_voltages_v']['17'] += 1e-12
+    design['domains'][0]['physical_samples'][0]['label'] += '_new_audit'
+    design_path.write_text(json.dumps(design))
+
+
+def _seal_frontend_source_fixture(producer: Path, consumer: Path) -> None:
+    """Publish real small source-owner metadata for explicitly inert PA fixtures."""
+    from msplatform.io.manifest_records import file_record
+    from msplatform.execution.terminal_publication import publish_terminal_state
+    receipt_path = consumer / 'inputs/frontend_field_source_receipt.json'
+    receipt = json.loads(receipt_path.read_text(encoding='utf-8-sig'))
+    records = {path.name: file_record(path) for path in (producer / 'inputs').iterdir() if path.is_file()}
+    for identity in (consumer / 'inputs').glob('frontend_field_source_*_identity.json'):
+        original = producer / 'inputs' / ('original_' + identity.name)
+        original.write_bytes(identity.read_bytes())
+        records[original.name] = file_record(original)
+    original_receipt = producer / 'inputs/selected_frontend_source_receipt.json'
+    original_receipt.write_bytes(receipt_path.read_bytes())
+    records[original_receipt.name] = file_record(original_receipt)
+    outputs = []
+    for domain in receipt['domains']:
+        for member in domain['working_points']:
+            generation = Path((member if receipt['schema_version'] == 3 else domain)['generation_directory'])
+            outputs.append(file_record(generation / Path(member['path']).name, 'solver_native_binary'))
+            if 'audit_record' in member:
+                outputs.append(file_record(Path(member['audit_record']['path']), 'required_evidence'))
+        if receipt['schema_version'] == 2:
+            outputs.append(file_record(Path(domain['generation_directory']) / 'frontend_working_fields_audit.json'))
+    for path in (producer / 'logs').rglob('audit.json'):
+        records['audit_' + str(len(records))] = file_record(path)
+    config = json.loads((producer / 'run_config.json').read_text(encoding='utf-8-sig'))
+    manifest = dict(schema_version=2, role='simulation_run_manifest', status='success',
+        run_id=producer.name, project=config['project'], mode=config['mode'],
+        run_config=file_record(producer / 'run_config.json'), inputs=records, outputs=outputs,
+        formal_eligible=False, validation_scope='inert_publication_fixture_only')
+    publish_terminal_state(producer, dict(status='success', run_id=producer.name), manifest)
+    frozen = consumer / 'inputs/frontend_field_source_manifest.json'
+    frozen.write_bytes((producer / 'run_manifest.json').read_bytes())
+    provenance_path = consumer / 'inputs/source_provenance.json'
+    provenance = json.loads(provenance_path.read_text(encoding='utf-8-sig'))
+    provenance['input_records']['frontend_fields_manifest'] = dict(file_record(frozen),
+        source_path=str(producer / 'run_manifest.json'))
+    provenance_path.write_text(json.dumps(provenance), encoding='utf-8')
+
+
 def prepared(root: Path, *, source=None, entrance_refinement=False, local=False) -> tuple[Path, dict]:
     if local:
         request, run, _, _ = release_fixture(root, local=True)
@@ -680,7 +867,7 @@ if($script:renewals.Count-ne1){throw 'sufficient commitment was renewed again'}
 [pscustomobject]@{shortfall=$shortfall;committed=$session.committed_new_bytes;updates=$script:renewals.Count}|ConvertTo-Json
 ''', encoding='utf-8', newline='\n')
             result = subprocess.run(
-                ['pwsh', '-NoProfile', '-File', str(script), str(WORKFLOW / 'field_stage.ps1')],
+                ['pwsh', '-NoProfile', '-File', str(script), str(WORKFLOW / 'execute.ps1')],
                 cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout), dict(shortfall=6233, committed=15885106426, updates=1))
@@ -739,16 +926,64 @@ if($script:renewals.Count-ne1){throw 'sufficient commitment was renewed again'}
     def test_zero_private_reservation_publishes_common_fields(self):
         self.run_stage_fixture(recovery=False, fine=True, reserve_failure=True)
 
+    def test_unknown_or_missing_native_receipt_retains_owned_geometry_and_primary_failure(self):
+        for fault in ('unknown', 'missing'):
+            with self.subTest(completion_fault=fault):
+                self.run_stage_fixture(recovery=False, completion_fault=fault)
+
     def run_stage_fixture(self, *, recovery, prepared_resume=False, fine=False, fine_change=False,
                           budget_failure=False, reserve_failure=False, private_damage=False, local=False,
                           frozen_source=False, legacy_partial=False, audit_refresh=False, producer_handoff=False,
                           handoff_conflict=False, accounting_failure=False, prepared_audit_failure=False,
-                          last_member_only=False):
+                          last_member_only=False, completion_fault=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run, _ = prepared(root, entrance_refinement=fine, local=local)
             (run / 'logs').mkdir(exist_ok=True)
-            (run / 'run_config.json').write_text('{}')
+            from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+            from msplatform.execution.capacity_ledger import initialize_capacity_ledger, record_capacity_object
+            from msplatform.execution.capacity_session import create_capacity_session
+            artifact_root = root / 'artifacts'
+            destination = artifact_root / 'projects/instrument_assembly/runs/20261110_120000__test__python__frontend-first'
+            destination.parent.mkdir(parents=True)
+            shutil.move(run, destination)
+            run = destination
+            cache_root = artifact_root / 'common/simion/pa_family_cache'
+            initialize_capacity_ledger(artifact_root, objects=[])
+            config = dict(schema_version=2, project='instrument_assembly', run_id=run.name, mode='inert_frontend',
+                capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(artifact_root),
+                                               light_evidence_budget_bytes=1048576))
+            (run / 'run_config.json').write_text(json.dumps(config))
+            record_capacity_object(artifact_root, path=run, object_class='rebuildable_payload', bytes_count=0,
+                status='writing', owner='current-workflow-owner', review_deadline='2099-12-31', recovery_reason='Controlled inert frontend fixture')
+            session = create_capacity_session(artifact_root, run, owner='current-workflow-owner', committed_new_bytes=1024**4)
+            (root / 'capacity.json').write_text(json.dumps(session))
+            snapshot = run / 'inputs/runtime_snapshot'
+            for relative in enumerate_python_sources(ROOT, package_roots=['src/msplatform'],
+                    resource_suffixes=['.json','.ps1','.lua','.gem','.m','.iob','.pa0','.pa']):
+                target = snapshot / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                freeze_file(ROOT / relative, target)
+            bootstrap = "import sys\nfrom pathlib import Path\nsys.path.insert(0,sys.argv.pop(3))\n"
+            (root / 'inert_frontend_worker.py').write_text(bootstrap + _FRONTEND_WORKER_DOUBLE, encoding='utf-8')
+            import inspect
+            source_bootstrap = "import sys,json\nfrom pathlib import Path\nsys.path.insert(0,sys.argv.pop(3))\n"
+            (root / 'seal_source_fixture.py').write_text(source_bootstrap + inspect.getsource(_seal_frontend_source_fixture)
+                + "\n_seal_frontend_source_fixture(Path(sys.argv[1]),Path(sys.argv[2]))\n", encoding='utf-8')
+            legacy_bootstrap = "import sys,json,shutil\nfrom pathlib import Path\nsys.path.insert(0,sys.argv.pop(5))\n"
+            (root / 'legacy_source_fixture.py').write_text(legacy_bootstrap + inspect.getsource(_legacy_frontend_source_fixture)
+                + "\n_legacy_frontend_source_fixture(*map(Path,sys.argv[1:5]))\n", encoding='utf-8')
+            if prepared_audit_failure:
+                from msplatform.execution.capacity_session import renew_capacity_session
+                plan = build_field_plan(run / 'inputs', Path(sys.executable))['domains'][0]['members'][0]
+                renew_capacity_session(session, protected_cache_keys=[plan['cache_key']])
+                arguments = dict(owner=run.name, producer_run_config=run / 'run_config.json', recovery_policy='none',
+                    published_pin_reason='Retain standalone frontend fields required by saved instrument workbenches.')
+                transaction = pa_family_cache.advance_pa_family_cache_transaction(cache_root, plan['identity'], plan['filenames'], **arguments)
+                (transaction.build_directory / plan['filenames'][0]).write_text('INERT_ALREADY_ACCOUNTED_PAYLOAD')
+                transaction = pa_family_cache.advance_pa_family_cache_transaction(cache_root, plan['identity'], plan['filenames'], **arguments)
+                self.assertEqual((transaction.status, transaction.action_required), ('building', 'verify'))
+                (root / 'capacity.json').write_text(json.dumps(session))
             if producer_handoff:
                 request_path = run / 'inputs/request.json'
                 request = json.loads(request_path.read_text())
@@ -764,135 +999,114 @@ if($script:renewals.Count-ne1){throw 'sufficient commitment was renewed again'}
                 provenance_path.write_text(json.dumps(provenance))
             script = root / 'stage.ps1'
             script.write_text(r'''
-param($Repo,$Python,$Run,$Cache,$Recovery,$PreparedResume,$FineChange,$BudgetFailure,$Fine,$PrivateDamage,$FrozenSource,$LegacyPartial,$AuditRefresh,$ProducerHandoff,$AccountingFailure,$PreparedAuditFailure,$LastMemberOnly)
+param($Repo,$Python,$Run,$Cache,$Recovery,$PreparedResume,$FineChange,$BudgetFailure,$Fine,$PrivateDamage,$FrozenSource,$LegacyPartial,$AuditRefresh,$ProducerHandoff,$AccountingFailure,$PreparedAuditFailure,$LastMemberOnly,$FixtureRoot,$Snapshot,$CompletionFault)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
-. (Join-Path $Repo 'integrations/workflows/single_reflection_flight/field_stage.ps1')
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1'),[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$function=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SingleReflectionFrontendFieldStage'},$true))
+if($function.Count-ne1){throw 'Actual frontend owner boundary is not unique'}
+Invoke-Expression $function[0].Extent.Text
+$factAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1'),[ref]$null,[ref]$null)
+$factNode=$factAst.Find({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Add-FrontendNativeOperation'},$true)
+Invoke-Expression $factNode.Extent.Text
+$Repo=$Snapshot
+$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON=(@{workspace=$FixtureRoot;host_state_path=(Join-Path $FixtureRoot 'not-used.sqlite3');policy_path=(Join-Path $Repo 'src/msplatform/execution/resources/host_resource_policy.json')}|ConvertTo-Json -Compress)
 # This fixture owns field transactions; real transport is covered separately.
-function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Run;projected_paths=@($Paths);environment=@{}}}
+function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Package.artifact_run_dir;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
 
-$script:native=@();$script:stages=@();$script:scopes=@();$script:injectedFailure=$false;$script:handoffSeen=0;$script:stageAccounting=0
+$script:native=@();$script:stages=@();$script:scopes=@();$script:workerFiles=@();$script:injectedFailure=$false;$script:handoffSeen=0;$script:stageAccounting=0
 $WarningPreference='SilentlyContinue'
 function Invoke-RunToolRootContext {
  param($RepoRoot,$Operation)
- if($PreparedAuditFailure-eq'1'-and$Name-eq'parent_carrier_off_begin'){
-   Push-Location $RepoRoot
-   try { &$Operation } finally { Pop-Location }
-   $prepared=Get-Content -LiteralPath $stdout -Raw|ConvertFrom-Json
-   $prepared.status='prepared';$prepared.action_required='verify'
-   [IO.File]::WriteAllText((Join-Path $prepared.build_directory 'frontend.carrier_off.pa'),'INERT_ALREADY_ACCOUNTED_PAYLOAD')
-   [IO.File]::WriteAllText($stdout,($prepared|ConvertTo-Json -Depth 100))
-   return
- }
- if($Arguments -contains '--record-stage-only'){
-   $script:stageAccounting++
-   if($AccountingFailure-eq'1'){
-     [IO.File]::WriteAllText($stderr,'INERT accounting write failed')
-     throw "Frontend field Python stage failed: $Name (see $stderr)"
-   }
-   # Transaction accounting itself is exercised with a real governed ledger in
-   # common tests; this non-governed native double checks failure transport.
-   [IO.File]::WriteAllText($stdout,'{"status":"building","action_required":"build"}')
-   return
- }
- $handoffIndex=[array]::IndexOf($Arguments,'--producer-handoff')
- if($handoffIndex-ge0){
-   if($ProducerHandoff-notin@('1','2')-or$Name-ne'parent_pulse_delta_begin'){throw 'handoff repeated outside selected first begin'}
-   $handoff=Get-Content -LiteralPath $Arguments[$handoffIndex+1] -Raw|ConvertFrom-Json -AsHashtable
-   $expected=@('schema_version','transaction_record','predecessor_manifest','stopped_receipt','capacity_lease_id','capacity_lease_owner')
-   if($handoff.Count-ne6-or@($handoff.Keys|Where-Object{$_-notin$expected}).Count){throw 'handoff must have six transport keys'}
-   if($handoff.schema_version-ne1-or$handoff.capacity_lease_id-ne$capacity.lease_id-or$handoff.capacity_lease_owner-ne$capacity.owner){throw 'handoff current lease differs'}
-   if($key-notin$capacity.protected_cache_keys){throw 'handoff precedes current key protection'}
-   if($Arguments[([array]::IndexOf($Arguments,'--owner'))+1]-ne[IO.Path]::GetFileName($Run)-or$Arguments[([array]::IndexOf($Arguments,'--producer-run-config'))+1]-ne(Join-Path $Run 'run_config.json')){throw 'handoff new producer differs'}
-   foreach($record in @($handoff.transaction_record,$handoff.predecessor_manifest,$handoff.stopped_receipt)){
-     if(-not([IO.Path]::GetFullPath($record.path).StartsWith((Join-Path $Run 'inputs')))){throw 'handoff evidence is not frozen input'}
-   }
-   $script:handoffSeen++
-   if($ProducerHandoff-eq'2'){
-     [IO.File]::WriteAllText($stderr,'PA producer handoff has another active consumer')
-     throw "Frontend field Python stage failed: $Name (see $stderr)"
-   }
-   # The governed common handoff state machine has its own real transaction tests.
-   # This inert native-stage fixture checks CLI transport, then uses its ordinary fixture cache.
-   $plain=@($Arguments[0..($handoffIndex-1)])
-   Push-Location $RepoRoot
-   try { &$Python -B @plain 1>$stdout 2>$stderr; if($LASTEXITCODE-ne0){throw 'ordinary fixture begin failed'} }
-   finally {Pop-Location}
-   return
- }
- if($script:sourceOnly-and$Name-match'_(probe|begin|seal|publish)$'){throw 'explicit source reached cache discovery or transaction'}
- if($script:resumePrepared-and$Name-eq'parent_carrier_off_probe'){
-   [IO.File]::WriteAllText($stdout,'{"disposition":"miss"}');return
- }
- if($script:resumePrepared-and$Name-eq'parent_carrier_off_begin'){
-   [IO.File]::WriteAllText($stdout,(@{status='published';action_required='complete';generation_directory=$script:completedGeneration}|ConvertTo-Json));return
- }
- Push-Location $RepoRoot;try{&$Operation}finally{Pop-Location}
+ $previous=$env:PYTHONPATH
+ $env:PYTHONPATH=(Join-Path $RepoRoot src)+[IO.Path]::PathSeparator+$RepoRoot
+ Push-Location $RepoRoot
+ try { &$Operation } finally { Pop-Location; $env:PYTHONPATH=$previous }
 }
 function Write-RunJson {param($Path,$Value,$Depth) [IO.File]::WriteAllText($Path,($Value|ConvertTo-Json -Depth $Depth),[Text.UTF8Encoding]::new($false))}
 function Update-ArtifactWorkflowCapacitySession {
  param($Python,$RepoRoot,$Session,$ProtectedCacheKeys,$RemainingCommittedNewBytes)
  if($script:sourceOnly-and@($ProtectedCacheKeys|Where-Object{$_}).Count){throw 'explicit source cache was incorrectly pinned at target owner'}
- $Session.protected_cache_keys=@(@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique)
- $script:scopes+=,@($Session.protected_cache_keys)
+ $script:scopes+=,@(@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique)
  if($BudgetFailure-eq'1'-and$PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')-and$RemainingCommittedNewBytes-gt$Session.committed_new_bytes){throw 'INERT public capacity admission rejected'}
  if($PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')-and$RemainingCommittedNewBytes-lt$requiredReserve){throw 'cache handoff consumed reserved downstream/private payload'}
- if($PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')){$Session.committed_new_bytes=$RemainingCommittedNewBytes}
- [pscustomobject]@{session=$Session}
+ $packet=Join-Path $FixtureRoot 'capacity-update.json'
+ Write-RunJson -Path $packet -Depth 100 -Value @{session=$Session;keys=@($ProtectedCacheKeys|Where-Object{$_});remaining=$(if($PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')){$RemainingCommittedNewBytes}else{$null})}
+ $code=@'
+import json,sys
+from pathlib import Path
+from msplatform.execution.capacity_session import renew_capacity_session
+value=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'));session=value['session']
+# Controlled admission double only; the production PS pressure route is unchanged.
+renew_capacity_session(session,protected_cache_keys=value['keys'],remaining_committed_new_bytes=value['remaining'],admission=lambda _current:dict(satisfied=True))
+print(json.dumps(session))
+'@
+ $updated=Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {&$Python -B -c $code $packet;if($LASTEXITCODE-ne0){throw 'controlled public session renewal failed'}}
+ $current=$updated|ConvertFrom-Json -Depth 100
+ Write-RunJson -Path (Join-Path $FixtureRoot 'capacity.json') -Depth 100 -Value $current
+ [pscustomobject]@{session=$current}
 }
 function Get-HostResourceBudget {param($Role,$Stage) @{} }
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) $script:stages+=$Stage;return $Lease}
 function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
- $script:native+=,@($ArgumentList)
- if($PreparedAuditFailure-eq'1'-and$ArgumentList[3]-like'*audit_frontend_working_fields.lua'){
-   return [pscustomobject]@{exit_code=1;resource_budget_exceeded=$false}
+ param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError,[switch]$RequireImmutableInputDrain)
+ if(-not$RequireImmutableInputDrain){throw 'worker boundary omitted actual descendant drain request'}
+ if($ArgumentList[-2]-ne'msplatform.backends.simion.field_worker'){throw 'unexpected worker transport'}
+ $statePath=Join-Path $FixtureRoot 'worker-state.json'
+ $state=@{native=$script:native;stages=$script:stages;injected_failure=$script:injectedFailure;
+   handoff_seen=$script:handoffSeen;stage_accounting=$script:stageAccounting;
+   recovery=($Recovery-eq'1');fine=($Fine-eq'1');last_member_only=($LastMemberOnly-eq'1');
+   accounting_failure=($AccountingFailure-eq'1');prepared_audit_failure=($PreparedAuditFailure-eq'1');handoff_conflict=($ProducerHandoff-eq'2')}
+ Write-RunJson -Path $statePath -Depth 100 -Value $state
+ &$Python -B -X utf8 (Join-Path $FixtureRoot 'inert_frontend_worker.py') $ArgumentList[-1] $statePath (Join-Path $Repo src) 1>$RedirectStandardOutput 2>$RedirectStandardError
+ $code=$LASTEXITCODE
+ $updated=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+ $script:native=@($updated.native);$script:injectedFailure=$updated.injected_failure
+ $script:handoffSeen=$updated.handoff_seen;$script:stageAccounting=$updated.stage_accounting
+ $packet=Get-Content -LiteralPath $ArgumentList[-1] -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+ $bound=@{}
+ foreach($item in @{request=$ArgumentList[-1];receipt=$packet.parameters.receipt_path}.GetEnumerator()){
+   if(Test-Path -LiteralPath $item.Value){$bound[$item.Key]=@{path=$item.Value;bytes=(Get-Item -LiteralPath $item.Value).Length;sha256=(Get-FileHash -LiteralPath $item.Value -Algorithm SHA256).Hash}}
  }
- if($ArgumentList[2]-eq'gem2pa'){
-   $currentPlan=Get-Content -LiteralPath (Join-Path $Run 'inputs/frontend_field_design.json') -Raw|ConvertFrom-Json -Depth 100
-   $domainId=if($WorkingDirectory-like'*entrance_refinement*'){'entrance_refinement'}else{'parent'}
-   $dimensions=@($currentPlan.domains|Where-Object{$_.domain_id-eq$domainId})[0].dimensions
-   [long]$rawBytes=[long]$dimensions.nx*[long]$dimensions.ny*[long]$dimensions.nz*8
-   if($capacity.committed_new_bytes-lt($requiredReserve+$rawBytes)){throw 'uncommitted raw PA write'}
-   [IO.File]::WriteAllText($ArgumentList[4],'INERT_RAW')
+ $script:workerFiles+=@($bound)
+ if($CompletionFault-eq'unknown'){
+  $controlled=Get-Content -LiteralPath $packet.parameters.receipt_path -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+  $controlled.native_operations[0].receipt.observation.completed=$false
+  $controlled.native_operations[0].receipt.observation.exit_code=$null
+  Write-RunJson -Path $packet.parameters.receipt_path -Value $controlled -Depth 100
+  $code=1
+ }elseif($CompletionFault-eq'missing'){
+  Move-Item -LiteralPath $packet.parameters.receipt_path -Destination ($packet.parameters.receipt_path+'.inert-evidence')
+  $code=1
  }
- elseif($ArgumentList[3].EndsWith('build_dirichlet_patch_operating_pa.lua')){
-   if($ArgumentList[6]-ne'zero_neumann'){
-     $parentName=[IO.Path]::GetFileName($ArgumentList[6])
-     if($parentName-notmatch'^frontend\..+\.pa$'){throw 'fine must consume same-member parent'}
-     if($ArgumentList[6]-notlike'*generations*'){throw 'fine must consume canonical standalone parent'}
-     if(-not(Test-Path -LiteralPath $ArgumentList[6])){throw 'private parent absent'}
-     $design=Get-Content -LiteralPath (Join-Path $Run 'inputs/frontend_field_design.json') -Raw|ConvertFrom-Json -Depth 100
-     for($i=0;$i-lt2;$i++){
-       $origin=(@('x','y','z')|ForEach-Object{([double]$design.domains[$i].instance_origin_mm.$_).ToString('G17',[Globalization.CultureInfo]::InvariantCulture)})-join','
-       if($ArgumentList[7+$i]-ne$origin){throw 'parent/patch actual origin changed'}
-     }
-   }
-   if($script:stages[-1]-ne'pa_refine'){throw 'refine lacks heavy stage'}
-   [IO.File]::WriteAllText($ArgumentList[5],('INERT_WORKING:'+ $ArgumentList[9]))
- }
- elseif($ArgumentList[3].EndsWith('export_detached_standalone_pa.lua')){
-   $failureName=if($LastMemberOnly-eq'1'){'frontend.pulse_delta.pa'}elseif($Fine-eq'1'){'frontend_entrance_refinement.rf_reference.pa'}else{'frontend.rf_reference.pa'}
-   if($Recovery-eq'1'-and-not$script:injectedFailure-and$ArgumentList[5].EndsWith($failureName)){
-     $script:injectedFailure=$true
-     [IO.File]::WriteAllText($ArgumentList[5],'PARTIAL_EXPORT')
-     return [pscustomobject]@{resource_budget_exceeded=$false;exit_code=1}
-   }
-   [IO.File]::Copy($ArgumentList[4],$ArgumentList[5])
- }
- elseif($ArgumentList[3].EndsWith('audit_frontend_working_fields.lua')){
-   [IO.File]::WriteAllText($ArgumentList[5],'{"status":"pass","fixture":"not native evidence"}')
- }else{throw 'unexpected native invocation'}
- [pscustomobject]@{resource_budget_exceeded=$false;exit_code=0}
+ # Explicit controlled facts for the inert unit boundary, not vendor observations.
+ return [pscustomobject]@{exit_code=$code;root_process_id=901+$script:workerFiles.Count;root_process_started_at_utc_ticks=1001L;resource_budget_exceeded=$false}
 }
-$hostLease=[pscustomobject]@{id='inert'};$capacity=[pscustomobject]@{committed_new_bytes=1TB;protected_cache_keys=@();lease_id='current-workflow-lease';owner='current-workflow-owner'}
+$hostLease=[pscustomobject]@{id='inert'}
+$capacity=Get-Content -LiteralPath (Join-Path $FixtureRoot 'capacity.json') -Raw|ConvertFrom-Json -Depth 100
 $limits=[pscustomobject]@{wall_clock_seconds=120}
 $script:resumePrepared=$false
 $script:sourceOnly=$false
 $elapsed=[Diagnostics.Stopwatch]::StartNew()
 $failed=$false;$payloadAfterFailure=@();$nativeAfterFailure=@()
 $requiredReserve=if($BudgetFailure-eq'2'){[long]0}else{[long](100GB)}
+if($CompletionFault){
+ $operations=[Collections.Generic.List[object]]::new();$caught=$null
+ try{
+  $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -NativeOperations $operations -NativeResourceReleaseId controlled-owner
+ }catch{$caught=$_}
+ if($null-eq$caught-or$caught.Exception.Message-notlike'Frontend field worker failed:*'){throw 'Original worker failure was replaced'}
+ if(-not$caught.Exception.Data.Contains('simion_wave_writer_completion_confirmed')-or$caught.Exception.Data['simion_wave_writer_completion_confirmed']-ne$false){throw 'Unknown native writer lost original owner lease-retention fact'}
+ $owned=Join-Path $Run 'simion/frontend_working_fields/parent_audit_geometry'
+ foreach($name in @('frontend.pa#','frontend.gem')){if(-not(Test-Path -LiteralPath (Join-Path $owned $name))){throw 'Unknown or missing writer evidence lost owned scratch'}}
+ if($CompletionFault-eq'unknown'-and@($operations|Where-Object {-not$_.observation.exit_confirmed}).Count-ne1){throw 'Unknown native fact was overridden by outer drain'}
+ if($CompletionFault-eq'missing'-and-not$capacity.PSObject.Properties['defer_capacity_finalization']){throw 'Missing receipt released accounting'}
+ [pscustomobject]@{scratch_retained=$true;primary=$caught.Exception.Message;lease_id=$capacity.lease_id}|ConvertTo-Json
+ exit 0
+}
 if($BudgetFailure-eq'1'){
  $capacity.committed_new_bytes=100GB
  try{
@@ -912,7 +1126,9 @@ if($PreparedAuditFailure-eq'1'){
   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
   throw 'expected prepared audit rejection'
  } catch {
-  if($_.Exception.Message-notlike'*native stage failed: parent_carrier_off_audit'){throw}
+  if($_.Exception.Message-notlike'*Frontend field worker failed: parent_carrier_off'){throw}
+  $failedReport=Get-Content -LiteralPath $_.Exception.Data['frontend_worker_receipt'] -Raw|ConvertFrom-Json -AsHashtable
+  if($failedReport.exception.message-notlike'*INERT native audit failed:*'){throw 'original audit failure cause lost'}
   if($script:stageAccounting-ne0-or$capacity.PSObject.Properties['defer_capacity_finalization']){throw 'prepared audit repeated stage accounting'}
   [pscustomobject]@{prepared_audit_rejected=$true;stage_accounting=$script:stageAccounting}|ConvertTo-Json
   exit 0
@@ -922,12 +1138,14 @@ if($Recovery-eq'1'){
  try{
    $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
  }catch{
-   $expectedExport=if($LastMemberOnly-eq'1'){'*export_frontend.pulse_delta.pa*'}else{'*export_frontend*.rf_reference.pa*'}
-   if($_.Exception.Message-notlike$expectedExport){throw}
+   if($_.Exception.Message-notlike'*Frontend field worker failed:*'){throw}
+   $failedReport=Get-Content -LiteralPath $_.Exception.Data['frontend_worker_receipt'] -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+   $expectedExport=if($LastMemberOnly-eq'1'){'*export_parent_pulse_delta'}elseif($Fine-eq'1'){'*export_entrance_refinement_rf_reference'}else{'*export_parent_rf_reference'}
+   if($failedReport.exception.message-notlike$expectedExport){throw 'original export failure cause lost'}
    $failed=$true
    if($AccountingFailure-eq'1'){
      if(-not$capacity.defer_capacity_finalization){throw 'accounting failure did not defer finalization'}
-     [pscustomobject]@{deferred=$true;primary_error=$_.Exception.Message;stage_accounting=$script:stageAccounting;committed_bytes=$capacity.committed_new_bytes}|ConvertTo-Json
+     [pscustomobject]@{deferred=$true;primary_error=$failedReport.exception.message;stage_accounting=$script:stageAccounting;committed_bytes=$capacity.committed_new_bytes}|ConvertTo-Json
      exit 0
    }
    $payloadAfterFailure=@(Get-ChildItem -LiteralPath (Join-Path $Cache '.transactions') -Recurse -Filter '*.pa'|Where-Object{$_.Directory.Name-eq'payload'}|ForEach-Object{$_.Name})
@@ -956,8 +1174,8 @@ if($ProducerHandoff-eq'2'){
    $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
    throw 'expected handoff rejection'
  }catch{
-   if($_.Exception.Message-notlike'*Frontend field Python stage failed: parent_pulse_delta_begin*'){throw}
-   $diagnostic=Get-Content -LiteralPath (Join-Path $Run 'logs/parent_pulse_delta_begin.stderr.log') -Raw
+   if($_.Exception.Message-notlike'*Frontend field worker failed: parent_pulse_delta'){throw}
+   $diagnostic=(Get-Content -LiteralPath $_.Exception.Data['frontend_worker_receipt'] -Raw|ConvertFrom-Json -AsHashtable -Depth 100).exception.message
    if($diagnostic-notlike'*another active consumer*'){throw 'original handoff cause lost'}
  }
  [pscustomobject]@{handoff_conflict_retained=$true;empty_domain_exists=(Test-Path -LiteralPath (Join-Path $Run 'simion/frontend_working_fields/parent_audit_geometry'))}|ConvertTo-Json
@@ -965,19 +1183,38 @@ if($ProducerHandoff-eq'2'){
 }
 $one=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $Run -PreparedDirectory $Run -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache -StageElapsed $elapsed
 $firstCount=$script:native.Count
-$secondRun=Join-Path (Split-Path $Run) 'hit'
+$secondRun=Join-Path (Split-Path $Run) '20261110_120000__test__python__frontend-hit'
+if($PreparedResume-eq'1'){$secondRun=$Run}
+if($PreparedResume-ne'1'){
 New-Item -ItemType Directory -Path (Join-Path $secondRun 'inputs'),(Join-Path $secondRun 'logs')|Out-Null
-[IO.File]::WriteAllText((Join-Path $secondRun 'run_config.json'),'{}')
+Copy-Item -LiteralPath (Join-Path $Run inputs) -Destination $secondRun -Recurse -Force
+$registerCode=@'
+import json,sys
+from pathlib import Path
+from msplatform.execution.capacity_ledger import record_capacity_object
+run,original=map(Path,sys.argv[1:3]);config=json.loads((original/'run_config.json').read_text());config['run_id']=run.name
+(run/'run_config.json').write_text(json.dumps(config))
+root=Path(config['capacity_ledger_lifecycle']['artifact_root'])
+record_capacity_object(root,path=run,object_class='rebuildable_payload',bytes_count=0,status='writing',owner='current-workflow-owner',review_deadline='2099-12-31',recovery_reason='Controlled inert frontend fixture')
+from msplatform.execution.capacity_session import renew_capacity_session
+session_path=Path(sys.argv[3]);session=json.loads(session_path.read_text())
+renew_capacity_session(session,protected_paths=[run])
+session_path.write_text(json.dumps(session))
+'@
+$null=Invoke-RunToolRootContext -RepoRoot $Repo -Operation {&$Python -B -c $registerCode $secondRun $Run (Join-Path $FixtureRoot 'capacity.json');if($LASTEXITCODE-ne0){throw 'second controlled run registration failed'}}
+$Repo=Join-Path $secondRun 'inputs/runtime_snapshot'
+$capacity=Get-Content -LiteralPath (Join-Path $FixtureRoot 'capacity.json') -Raw|ConvertFrom-Json -Depth 100
+}
 $oneReceipt=Get-Content -LiteralPath $one.cache_receipt -Raw|ConvertFrom-Json -Depth 80
 $oneDomain=$oneReceipt.domains[0].working_points[0]
 $script:completedGeneration=$oneDomain.generation_directory
 $script:resumePrepared=($PreparedResume-eq'1')
-$secondPrepared=$Run
+if($PreparedResume-eq'1'){Remove-Item -LiteralPath (Join-Path (Join-Path $Cache $oneDomain.cache_key) 'current_generation.json')}
+$secondPrepared=$secondRun
 if($FrozenSource-eq'1'){
  Get-ChildItem -LiteralPath (Join-Path $Run 'inputs') -File|ForEach-Object{
   Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $secondRun 'inputs')
  }
- Copy-Item -LiteralPath (Join-Path $Run 'inputs/components') -Destination (Join-Path $secondRun 'inputs/components') -Recurse
  foreach($domain in $oneReceipt.domains){
   foreach($record in $domain.working_points){
    $member=if($record.PSObject.Properties.Name-contains'working_point_id'){$record.working_point_id}else{$record.kind}
@@ -999,43 +1236,15 @@ if($FrozenSource-eq'1'){
  $secondPrepared=$secondRun
  $script:sourceOnly=$LegacyPartial-ne'1'
  if($LegacyPartial-eq'1'){
-  $legacyCode=@'
-import json,sys,shutil
-from pathlib import Path
-from msplatform.execution.retention import file_record
-from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
-run,prepared,cache=map(Path,sys.argv[1:])
-receipt=json.loads((run/'inputs/frontend_working_field_stage_receipt.json').read_text(encoding='utf-8-sig'))
-design=json.loads((prepared/'inputs/frontend_field_design.json').read_text(encoding='utf-8-sig'))
-domain=receipt['domains'][0];points=domain['working_points']
-identities=[json.loads(Path(point['cache_identity_record']['path']).read_text(encoding='utf-8-sig')) for point in points]
-# Only the receipt shape is historical: every member keeps this same current
-# bare GEM and physical geometry; no old shell field is imported or relabeled.
-assert all(item['geometry']==identities[0]['geometry'] and item['gem']==identities[0]['gem'] for item in identities)
-identity=dict(identities[0],working_points=[item['working_points'][0] for item in identities],
-              rf_reference_voltage_v=identities[1]['rf_reference_voltage_v'])
-identity['geometry']=dict(identity['geometry'],physical_samples=design['domains'][0]['physical_samples'])
-identity['builder_identity']=dict(identity['builder_identity'],audit='A'*64,field_plan='B'*64,field_stage='C'*64)
-payload=prepared/'legacy_fixture_payload';payload.mkdir()
-for point in points: shutil.copyfile(point['path'],payload/Path(point['path']).name)
-(payload/'frontend_working_fields_audit.json').write_text(json.dumps(dict(status='pass',fixture='legacy_native_boundary_is_inert')))
-publication=publish_pa_family_cache(cache,identity,payload,
-    [*[Path(point['path']).name for point in points],'frontend_working_fields_audit.json'],recovery_policy='none')
-path=prepared/'inputs/frontend_field_source_parent_identity.json';path.write_text(json.dumps(identity))
-old=dict(schema_version=2,role='single_reflection_frontend_working_fields',status='success',
-    rf_reference_voltage_v=identity['rf_reference_voltage_v'],domains=[dict(domain_id='parent',
-    cache_key=publication.manifest['cache_key'],generation_directory=str(publication.generation_directory),
-    cache_identity_record=file_record(path),working_points=[{key:point[key] for key in ('path','kind','bytes','sha256','read_only')} for point in points])])
-(prepared/'inputs/frontend_field_source_receipt.json').write_text(json.dumps(old))
-request_path=prepared/'inputs/request.json';request=json.loads(request_path.read_text(encoding='utf-8-sig'))
-request['providers']['frontend_field_reuse_members']=['carrier_off','rf_reference'];request_path.write_text(json.dumps(request))
-design['working_points'][2]['electrode_voltages_v']['17']+=1e-12
-design['domains'][0]['physical_samples'][0]['label']+='_new_audit'
-(prepared/'inputs/frontend_field_design.json').write_text(json.dumps(design))
-'@
-  $null=& $Python -c $legacyCode $Run $secondRun $Cache
-  if($LASTEXITCODE-ne0){throw 'legacy pure fixture construction failed'}
+  $null=Invoke-RunToolRootContext -RepoRoot $Repo -Operation {
+    &$Python -B (Join-Path $FixtureRoot 'legacy_source_fixture.py') $Run $secondRun $Cache (Join-Path $FixtureRoot 'capacity.json') (Join-Path $Repo src)
+    if($LASTEXITCODE-ne0){throw 'legacy governed fixture construction failed'}
+  }
+  $capacity=Get-Content -LiteralPath (Join-Path $FixtureRoot 'capacity.json') -Raw|ConvertFrom-Json -Depth 100
  }
+}
+if($FrozenSource-eq'1'){
+ $null=Invoke-RunToolRootContext -RepoRoot $Repo -Operation {&$Python -B (Join-Path $FixtureRoot 'seal_source_fixture.py') $Run $secondRun (Join-Path $Repo src);if($LASTEXITCODE-ne0){throw 'controlled source terminal publication failed'}}
 }
 if($AuditRefresh-eq'1'){
  $designPath=Join-Path $secondRun 'inputs/frontend_field_design.json'
@@ -1047,7 +1256,6 @@ if($FineChange-eq'1'){
  foreach($name in @('frontend_field_design.json','frontend_geometry.json','frontend.gem','frontend_entrance_refinement.gem')){
   Copy-Item -LiteralPath (Join-Path (Join-Path $Run 'inputs') $name) -Destination (Join-Path (Join-Path $secondRun 'inputs') $name)
  }
- Copy-Item -LiteralPath (Join-Path $Run 'inputs/components') -Destination (Join-Path $secondRun 'inputs/components') -Recurse
  $secondPrepared=$secondRun
  $designPath=Join-Path $secondRun 'inputs/frontend_field_design.json'
  $design=Get-Content -LiteralPath $designPath -Raw|ConvertFrom-Json -Depth 100
@@ -1057,7 +1265,49 @@ if($FineChange-eq'1'){
 if($FineChange-eq'1'-or$LegacyPartial-eq'1'-or$PreparedResume-eq'1'){$capacity.committed_new_bytes=1TB}
 $commitmentBefore=$capacity.committed_new_bytes
 $copiesBeforeSecond=$global:MassSpectrometryShortPaCopies.Count
-$two=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+$sourceLeaseRejections=0
+if($FrozenSource-eq'1'-and$LegacyPartial-ne'1'-and$AuditRefresh-ne'1'){
+ $originalCapacity=$capacity
+ foreach($binding in @('missing','unrelated')){
+  $leaseCode=@'
+import json,sys
+from pathlib import Path
+from msplatform.execution.capacity_session import create_capacity_session
+value=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
+if sys.argv[3]=='missing':
+    value['lease_id']='missing-original-source-lease'
+else:
+    value=create_capacity_session(Path(value['artifact_root']),Path(sys.argv[2]),owner=value['owner'],
+        committed_new_bytes=value['committed_new_bytes'],protected_cache_keys=value['protected_cache_keys'])
+print(json.dumps(value))
+'@
+  Write-RunJson -Path (Join-Path $FixtureRoot 'source-original-session.json') -Depth 100 -Value $originalCapacity
+  $bad=Invoke-RunToolRootContext -RepoRoot $Repo -Operation {&$Python -B -c $leaseCode (Join-Path $FixtureRoot 'source-original-session.json') $secondRun $binding;if($LASTEXITCODE-ne0){throw 'controlled source lease construction failed'}}
+  $capacity=$bad|ConvertFrom-Json -Depth 100
+  $before=$script:native.Count
+  try{
+   try{
+    $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$secondRun;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+    throw 'wrong original source protection binding accepted'
+   }catch{
+    if(-not$_.Exception.Data.Contains('frontend_worker_receipt')){throw}
+    $rejected=Get-Content -LiteralPath $_.Exception.Data['frontend_worker_receipt'] -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+    if($rejected.exception.message-notlike'*original-session source protection binding*'){throw 'wrong source lease rejection cause'}
+    if($script:native.Count-ne$before-or$rejected.native_count-ne0){throw 'invalid source lease reached native action'}
+    $sourceLeaseRejections++
+   }
+  }finally{
+   if($binding-eq'unrelated'){
+    Write-RunJson -Path (Join-Path $FixtureRoot 'unrelated-source-session.json') -Depth 100 -Value $capacity
+    $close='import json,sys;from pathlib import Path;from msplatform.execution.capacity_session import exit_capacity_session;exit_capacity_session(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")))'
+    $null=Invoke-RunToolRootContext -RepoRoot $Repo -Operation {&$Python -B -c $close (Join-Path $FixtureRoot 'unrelated-source-session.json');if($LASTEXITCODE-ne0){throw 'controlled unrelated lease cleanup failed'}}
+   }
+   $capacity=$originalCapacity
+  }
+ }
+}
+$stagesBeforeSecond=$script:stages.Count
+$two=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$secondRun;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
 $copiesAfterSecond=$global:MassSpectrometryShortPaCopies.Count
 $sourceMissingRejected=$false
 if($FrozenSource-eq'1'-and$LegacyPartial-ne'1'-and$AuditRefresh-ne'1'){
@@ -1066,11 +1316,11 @@ if($FrozenSource-eq'1'-and$LegacyPartial-ne'1'-and$AuditRefresh-ne'1'){
  Move-Item -LiteralPath $manifestPath -Destination $hiddenManifest
  try{
   try{
-   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$Run;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
+   $null=Invoke-SingleReflectionFrontendFieldStage -Package ([pscustomobject]@{artifact_run_dir=$secondRun;python=$Python}) -Python $Python -RepoRoot $Repo -RunDirectory $secondRun -PreparedDirectory $secondPrepared -SimionExe $Python -HostLease ([ref]$hostLease) -CapacitySession ([ref]$capacity) -Limits $limits -ReservedRunPayloadBytes $requiredReserve -CacheRoot $Cache
    throw 'missing explicit generation was accepted'
   }catch{
-   if($_.Exception.Message-notmatch'Python stage failed: frontend_working_(source_generation|plan)'){throw}
-   $failure=Get-Content -LiteralPath (Join-Path $secondRun 'logs/frontend_working_plan.stderr.log') -Raw
+   if($_.Exception.Message-notlike'Frontend scientific projection failed: frontend_working_plan_*'){throw}
+   $failure=Get-Content -LiteralPath $_.Exception.Data['frontend_projection_stderr'] -Raw
    if($failure-notlike'*PA cache manifest is missing*'){throw 'wrong source failure'}
    $sourceMissingRejected=$true
   }
@@ -1080,17 +1330,22 @@ $transactions=@(Get-ChildItem -LiteralPath (Join-Path $Cache '.transactions') -R
 $transaction=Get-Content -LiteralPath $transactions[0].FullName -Raw|ConvertFrom-Json -Depth 80
 $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'cache_manifest.json') -Raw|ConvertFrom-Json -Depth 80
 [pscustomobject]@{first=$one;second=$two;native=$script:native;first_count=$firstCount;second_native_count=($script:native.Count-$firstCount);
- stages=$script:stages;scopes=$script:scopes;transaction=$transaction;manifest=$manifest;failed=$failed;payload_after_failure=$payloadAfterFailure;native_after_failure=$nativeAfterFailure;handoff_seen=$script:handoffSeen;stage_accounting=$script:stageAccounting;
- protected_keys=$capacity.protected_cache_keys;commitment_before_second=$commitmentBefore;commitment_after_second=$capacity.committed_new_bytes;
- source_missing_rejected=$sourceMissingRejected;copies_before_second=$copiesBeforeSecond;copies_after_second=$copiesAfterSecond;disposable_copies=$global:MassSpectrometryShortPaCopies.Count;guards=$global:MassSpectrometryShortPaSourceGuards.Count}|ConvertTo-Json -Depth 100
+ stages_after_second=@($script:stages|Select-Object -Skip $stagesBeforeSecond);stages=$script:stages;scopes=$script:scopes;transaction=$transaction;manifest=$manifest;failed=$failed;payload_after_failure=$payloadAfterFailure;native_after_failure=$nativeAfterFailure;handoff_seen=$script:handoffSeen;stage_accounting=$script:stageAccounting;
+ worker_files=$script:workerFiles;protected_keys=$capacity.protected_cache_keys;commitment_before_second=$commitmentBefore;commitment_after_second=$capacity.committed_new_bytes;
+ source_lease_rejections=$sourceLeaseRejections;source_missing_rejected=$sourceMissingRejected;copies_before_second=$copiesBeforeSecond;copies_after_second=$copiesAfterSecond;disposable_copies=$global:MassSpectrometryShortPaCopies.Count;guards=$global:MassSpectrometryShortPaSourceGuards.Count}|ConvertTo-Json -Depth 100
 ''', encoding='utf-8', newline='\n')
             result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(ROOT), sys.executable,
-                str(run), str(root / 'cache'), '1' if recovery else '0', '1' if prepared_resume else '0', '1' if fine_change else '0', '2' if reserve_failure else ('1' if budget_failure else '0'), '1' if fine else '0', '1' if private_damage else '0', '1' if frozen_source else '0', '1' if legacy_partial else '0', '1' if audit_refresh else '0', '2' if handoff_conflict else ('1' if producer_handoff else '0'), '1' if accounting_failure else '0', '1' if prepared_audit_failure else '0', '1' if last_member_only else '0'], cwd=ROOT, capture_output=True, text=True,
+                str(run), str(cache_root), '1' if recovery else '0', '1' if prepared_resume else '0', '1' if fine_change else '0', '2' if reserve_failure else ('1' if budget_failure else '0'), '1' if fine else '0', '1' if private_damage else '0', '1' if frozen_source else '0', '1' if legacy_partial else '0', '1' if audit_refresh else '0', '2' if handoff_conflict else ('1' if producer_handoff else '0'), '1' if accounting_failure else '0', '1' if prepared_audit_failure else '0', '1' if last_member_only else '0', str(root), str(snapshot), completion_fault or ''], cwd=ROOT, capture_output=True, text=True,
                 encoding='utf-8', timeout=180, check=False)
             diagnostics = '\n'.join(path.read_text(encoding='utf-8-sig', errors='replace')
                 for path in root.rglob('*.stderr.log')) if result.returncode else ''
             self.assertEqual(result.returncode, 0, result.stdout+'\n'+result.stderr+'\n'+diagnostics)
             data = json.loads(result.stdout)
+            if completion_fault:
+                self.assertTrue(data['scratch_retained'])
+                self.assertIn('Frontend field worker failed:', data['primary'])
+                self.assertEqual(data['lease_id'], session['lease_id'])
+                return
             if prepared_audit_failure:
                 self.assertTrue(data['prepared_audit_rejected'])
                 self.assertEqual(data['stage_accounting'], 0)
@@ -1099,7 +1354,7 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                 self.assertTrue(data['deferred'])
                 self.assertEqual(data['stage_accounting'], 1)
                 self.assertGreater(data['committed_bytes'], 0)
-                self.assertIn('export_frontend.rf_reference.pa', data['primary_error'])
+                self.assertIn('export_parent_rf_reference', data['primary_error'])
                 return
             if handoff_conflict:
                 self.assertTrue(data['handoff_conflict_retained'])
@@ -1126,11 +1381,14 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                 self.assertEqual(len(retries), 1 if last_member_only else 2)
             self.assertEqual(data['copies_before_second'], data['copies_after_second'])
             self.assertEqual(data['second_native_count'], 6 if legacy_partial else 4 if fine_change or audit_refresh else 0)
+            if not prepared_resume and (data['second_native_count'] == 0 or audit_refresh):
+                self.assertNotIn('pa_refine', data['stages_after_second'])
             if frozen_source and not legacy_partial and not audit_refresh:
                 self.assertTrue(data['source_missing_rejected'])
+                self.assertEqual(data['source_lease_rejections'], 2)
             self.assertEqual(data['commitment_after_second'], 0 if reserve_failure else 100*1024**3)
             if prepared_resume:
-                self.assertEqual(len(list((root/'cache'/data['manifest']['cache_key']/'generations').iterdir())), 1)
+                self.assertEqual(len(list((cache_root/data['manifest']['cache_key']/'generations').iterdir())), 1)
             if fine_change:
                 first = json.loads(Path(data['first']['cache_receipt']).read_text())
                 second = json.loads(Path(data['second']['cache_receipt']).read_text())
@@ -1152,7 +1410,7 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                 second_native = data['native'][data['first_count']:]
                 refinements = [args for args in second_native if len(args)>9 and args[3].endswith('build_dirichlet_patch_operating_pa.lua')]
                 self.assertEqual(len(refinements), 1)
-                frozen_design = json.loads((root/'hit/inputs/frontend_field_design.json').read_text())
+                frozen_design = json.loads(((run.parent/'20261110_120000__test__python__frontend-hit/inputs/frontend_field_design.json')).read_text())
                 pulse_voltages = frozen_design['working_points'][2]['electrode_voltages_v']
                 # Native voltage vectors span numeric IDs, including unbound holes;
                 # zero entries for missing IDs do not create physical electrodes.
@@ -1165,10 +1423,20 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                 self.assertFalse(any(len(args)>9 and args[3].endswith('build_dirichlet_patch_operating_pa.lua') for args in second_native))
             elif not prepared_resume:
                 self.assertEqual(data['commitment_before_second']-data['commitment_after_second'], 0)
+            self.assertEqual(len({row['request']['path'] for row in data['worker_files']}), len(data['worker_files']))
+            self.assertEqual(len({row['receipt']['path'] for row in data['worker_files']}), len(data['worker_files']))
+            for invocation in data['worker_files']:
+                for record in invocation.values():
+                    self.assertEqual(Path(record['path']).stat().st_size, record['bytes'])
+                    self.assertEqual(file_sha256(record['path']).upper(), record['sha256'].upper())
+                worker_report = json.loads(Path(invocation['receipt']['path']).read_text())
+                self.assertEqual(Path(worker_report['request']['path']), Path(invocation['request']['path']))
+                self.assertEqual(worker_report['request']['sha256'].upper(), invocation['request']['sha256'].upper())
             self.assertEqual(data['disposable_copies'], 0)
             self.assertEqual(data['guards'], 0)
             self.assertEqual(len(data['manifest']['files']), 1)
-            self.assertIsNotNone(data['transaction']['published_pin_reason'])
+            self.assertEqual(data['transaction']['published_pin_reason'],
+                             'Retain standalone frontend fields required by saved instrument workbenches.')
             for case in ('first', 'second'):
                 receipt = json.loads(Path(data[case]['cache_receipt']).read_text())
                 self.assertEqual(receipt['role'], 'single_reflection_frontend_working_fields')
@@ -1189,7 +1457,7 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
                             self.assertEqual(len(identity['working_points']), 1)
                             self.assertNotIn('physical_samples', identity['geometry'])
                 from msplatform.workflows.single_reflection_flight.field_evidence import _frontend_fields
-                actual_design = json.loads((root/('hit' if fine_change or legacy_partial or audit_refresh else 'run')/'inputs/frontend_field_design.json').read_text())
+                actual_design = json.loads(((run.parent/'20261110_120000__test__python__frontend-hit' if fine_change or legacy_partial or audit_refresh else run)/'inputs/frontend_field_design.json').read_text())
                 if case == 'first':
                     actual_design = json.loads((run/'inputs/frontend_field_design.json').read_text())
                 _frontend_fields(Path(data[case]['cache_receipt']), actual_design)
@@ -1199,3 +1467,64 @@ $manifest=Get-Content -LiteralPath (Join-Path $oneDomain.generation_directory 'c
 
 if __name__ == '__main__':
     unittest.main()
+
+class FrontendProducerProjectionTests(unittest.TestCase):
+    def test_canonical_projection_keeps_original_plan_and_source_free_member_authority(self):
+        from msplatform.workflows.single_reflection_flight.frontend_fields import prepare_stage, domain_members
+        with tempfile.TemporaryDirectory() as directory:
+            run, original = prepared(Path(directory), entrance_refinement=True)
+            (run / 'run_config.json').write_text('{}')
+            before = build_field_plan(run / 'inputs', Path(sys.executable))
+            from msplatform.workflows.single_reflection_flight.prepare import FROZEN_NAMES
+            self.assertTrue((run / 'inputs/projected_source.csv').is_file())
+            source_keys = ('particle_source', 'metadata', 'release_spec', 'release_receipt',
+                           'pre_pulse_collection', 'pulse_decision', 'producer_manifest',
+                           'pre_pulse_source_geometry', 'pre_pulse_source_states',
+                           'pre_pulse_source_provenance', 'clock_authority', 'instrument_epoch')
+            for name in [*(FROZEN_NAMES[key] for key in source_keys), 'projected_source.csv',
+                         'source_states.csv', 'source_provenance.json', 'request.json']:
+                (run / 'inputs' / name).unlink(missing_ok=True)
+            stage = prepare_stage(run / 'inputs', Path(sys.executable), run)
+            self.assertEqual(stage['bundle'], before)
+            projected = domain_members(stage, 0, [])
+            self.assertEqual(projected['domain_id'], 'parent')
+            self.assertEqual(len(projected['members']), len(original['members']))
+            with self.assertRaisesRegex(ValueError, 'completed predecessor'):
+                domain_members(stage, 1, [])
+            with self.assertRaisesRegex(ValueError, 'every actual same-member parent'):
+                domain_members(stage, 1, [dict(domain_id='parent', working_points=[])])
+            for actual, member in zip(projected['members'], original['members'], strict=True):
+                self.assertEqual(actual['identity'], member['identity'])
+                self.assertEqual(actual['cache_key'], member['cache_key'])
+                self.assertEqual(actual['working_points'], member['working_points'])
+            for name, record in stage['resources'].items():
+                self.assertTrue(Path(record['path']).is_relative_to(run / 'inputs'))
+                self.assertEqual(file_sha256(record['path']), file_sha256(ROOT / 'src/msplatform/backends/simion/resources' / Path(record['path']).name))
+            design = run / 'inputs/frontend_field_design.json'
+            design.write_text(design.read_text() + ' ')
+            with self.assertRaisesRegex((ValueError, AssertionError), 'byte|identity|size|changed'):
+                domain_members(stage, 0, [])
+
+    def test_actual_manager_selection_is_revalidated_without_second_probe_or_raw_work(self):
+        from msplatform.workflows.single_reflection_flight.frontend_fields import prepare_stage, domain_members, assess_member
+        from msplatform.backends.simion.field_worker import _selected_cache_probe
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = prepared(root)
+            (run / 'run_config.json').write_text('{}')
+            stage = prepare_stage(run / 'inputs', Path(sys.executable), run)
+            member = domain_members(stage, 0, [])['members'][0]
+            cache_root = root / 'artifacts/common/simion/pa_family_cache'
+            assessment = assess_member(stage, member, cache_root)
+            self.assertEqual(assessment['selection']['probe']['disposition'], 'miss')
+            self.assertEqual(assessment['required_extra_bytes'], member['grid'][0]*member['grid'][1]*member['grid'][2]*24)
+            self.assertFalse((run / 'simion').exists())
+            with patch.object(pa_family_cache, 'probe_pa_family_cache', side_effect=AssertionError('second policy decision')):
+                actual = _selected_cache_probe(cache_root, member['identity'], member['filenames'][0], assessment['selection'])
+                self.assertEqual(actual.disposition.value, 'miss')
+                pointer = cache_root / member['cache_key'] / pa_family_cache.POINTER_NAME
+                pointer.parent.mkdir(parents=True)
+                pointer.write_text('{}')
+                with self.assertRaisesRegex(ValueError, 'changed after selection.*replan'):
+                    _selected_cache_probe(cache_root, member['identity'], member['filenames'][0], assessment['selection'])
+            self.assertFalse((run / 'simion').exists())

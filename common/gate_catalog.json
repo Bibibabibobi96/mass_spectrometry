@@ -2180,6 +2180,10 @@
               {
                 "exact": "src/msplatform/workflows/single_reflection_flight/field_plan.py",
                 "reason": "single_reflection_shared_field_plan_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/single_reflection_flight/frontend_fields.py",
+                "reason": "single_reflection_frontend_producer_changed"
               }
             ],
             "modules": [

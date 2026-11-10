@@ -779,6 +779,14 @@ foreach($scope in @('Owner','Repository')){
             self.assertIn("common/contracts/test_dual_cone_managed_stages.py", result["Modules"])
         self.assertEqual(selected[-1]["Modules"], ["common/simion/test_analyze_terminal_plane.py"])
 
+    def test_single_reflection_frontend_producer_selects_actual_owner_consumers(self) -> None:
+        path = 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
+        result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration', paths=[path])])
+        for module in ('test_single_reflection_field_stage', 'test_single_reflection_execute',
+                       'test_dependencies', 'test_native_path_consumers'):
+            self.assertIn('integrations/tests/' + module + '.py', result['Modules'])
+        self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
+
     def test_unmapped_simion_source_preserves_native_exclusions(self) -> None:
         paths = ["src/msplatform/execution/recovery.py",
                  "src/msplatform/backends/simion/gem_primitives.py",

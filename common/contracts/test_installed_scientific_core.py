@@ -1421,8 +1421,28 @@ for case in fixture['single_reflection_workflow']:
     provenance = json.loads((prepared_run/'inputs/source_provenance.json').read_text(encoding='utf-8'))
     assert {name:provenance[name] for name in case['provenance']} == case['provenance']
     assert json.loads((prepared_run/'inputs/request.json').read_text(encoding='utf-8'))['schema_version'] == case['version']
+    from msplatform.workflows.single_reflection_flight import frontend_fields
+    assert pathlib.Path(frontend_fields.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+    (prepared_run/'run_config.json').write_text('{}',encoding='utf-8')
+    producer_stage=frontend_fields.prepare_stage(prepared_run/'inputs',pathlib.Path(sys.executable),prepared_run)
+    producer_domain=frontend_fields.domain_members(producer_stage,0,[])
+    assert producer_domain['domain_id']=='parent' and producer_domain['members']
+    assert all(pathlib.Path(row['path']).is_relative_to(prepared_run/'inputs')
+               for row in producer_stage['resources'].values())
+    assert not (prepared_run/'simion').exists()
+    assert hashlib.sha256(projected.read_bytes()).hexdigest()==case['projected_sha256']
     workflow_modes.append(case['kind'])
 assert workflow_modes == ['recorded_birth','release_spec','recorded_pre_pulse_state']
+producer_path=pathlib.Path(frontend_fields.__file__)
+producer_backup=producer_path.with_suffix('.absent')
+producer_path.rename(producer_backup)
+try:
+    missing_producer=subprocess.run([sys.executable,'-I','-c',
+        'from msplatform.workflows.single_reflection_flight import frontend_fields'],
+        cwd=root,capture_output=True,timeout=30)
+    assert missing_producer.returncode!=0 and b'frontend_fields' in missing_producer.stderr
+finally:
+    producer_backup.rename(producer_path)
 
 # Consume an explicit external native-log fixture through the actual installed CLI.
 import subprocess

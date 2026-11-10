@@ -1195,3 +1195,39 @@ negatives outside denied author roots, not the complete installed parent.
 The component-provided reference remains nominal rather than a gas sample.
 Observed old/new moment roundoff on the retained examples is not a general error
 bound. Full Repository, native cooling and the performance target remain open.
+
+
+### Single-reflection frontend field producer boundary
+
+`msplatform.workflows.single_reflection_flight.frontend_fields` owns the scientific
+member/domain projection and actual cache selection. It uses the existing SIMION
+field worker, cache manager and audit implementations. The former root
+`single_reflection_flight/field_stage.ps1` implementation is retired; the existing
+`execute.ps1` retains only ordered dispatch and the original capacity admission,
+pressure recovery, observations and receipt collection. That outer PowerShell
+owner orchestration remains an open P4 migration responsibility.
+
+A verified published source uses its original producer inventory and source
+protection lease in the same capacity session. A cache HIT performs no native
+work when its audit is reusable; audit-only entries keep their original zero raw
+reservation. Fine-domain members bind the corresponding completed parent member
+through the canonical field-plan projection. Changed selected cache generations
+fail for the original owner to replan. No new owner, cache policy, scientific
+threshold, automatic retry or field-family copy is introduced.
+
+Worker export first remains in the existing transaction scratch directory; only
+observed successful completion adopts the payload. Audit failure on a pre-existing
+sealed payload does not repeatedly account bytes; new build/publication failures
+retain conservative accounting. These software fixes do not grant native or
+scientific qualification. Source/clock/particle and native Lua semantics are
+unchanged by this migration.
+
+Current-main integration passed 43 scoped plan/source/worker/owner/boundary parents
+(328 records, 398.475 seconds), plus the actual cold downstream freezer in
+18.060 seconds. The complete ordinary installed-core parent passed on its fresh
+second run in 243.683 seconds: all 456 runtime payloads matched current source,
+actual build source, wheel, sdist and rebuilt wheel. The first complete run
+failed on an undefined installation-probe variable; the corrected assertion
+resolves the real site-packages path directly, and that failure remains recorded.
+No production package byte changed for the probe correction. These results do
+not close native field qualification, Repository or the performance target.

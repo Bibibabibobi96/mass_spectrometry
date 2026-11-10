@@ -957,3 +957,29 @@ error remains recorded. Ordinary direct-wheel and sdist-rebuilt-wheel acceptance
 in 233.590 seconds, exercising the installed gas probe and original consumers with source
 access denied. All 440 package payloads match the current source, sdist and both wheels.
 These results cover this pure input slice; final Repository and native gas acceptance remain open.
+
+
+### Installed single-reflection frontend field production
+
+`msplatform.workflows.single_reflection_flight.frontend_fields` owns the scientific
+member/domain projection and actual cache selection. It uses the existing SIMION
+field worker, cache manager and audit implementations. The former root
+`single_reflection_flight/field_stage.ps1` implementation is retired; the existing
+`execute.ps1` retains only ordered dispatch and the original capacity admission,
+pressure recovery, observations and receipt collection. That outer PowerShell
+owner orchestration remains an open P4 migration responsibility.
+
+A verified published source uses its original producer inventory and source
+protection lease in the same capacity session. A cache HIT performs no native
+work when its audit is reusable; audit-only entries keep their original zero raw
+reservation. Fine-domain members bind the corresponding completed parent member
+through the canonical field-plan projection. Changed selected cache generations
+fail for the original owner to replan. No new owner, cache policy, scientific
+threshold, automatic retry or field-family copy is introduced.
+
+Worker export first remains in the existing transaction scratch directory; only
+observed successful completion adopts the payload. Audit failure on a pre-existing
+sealed payload does not repeatedly account bytes; new build/publication failures
+retain conservative accounting. These software fixes do not grant native or
+scientific qualification. Source/clock/particle and native Lua semantics are
+unchanged by this migration.
