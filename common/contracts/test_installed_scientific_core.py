@@ -408,11 +408,27 @@ reference_journal.write_text('{}', encoding='utf-8')
 try:
     import subprocess
     try: field_reference.bind_native_field(ip_reference_child, copy.deepcopy(ip['field_reference_model']), ip_reference_parent)
-    except subprocess.CalledProcessError: pass
+    except ValueError as error:
+        assert str(error) == 'run terminal publication is incomplete; replay its journal'
     else: raise AssertionError('incomplete owner publication was accepted')
 finally:
     if reference_journal_before is None: reference_journal.unlink()
     else: reference_journal.write_bytes(reference_journal_before)
+# Verify the actual typed verifier is installed and is the workflow's sole implementation.
+from msplatform.execution import manifest_verification
+assert field_reference.verify_run_manifest is manifest_verification.verify_run_manifest
+assert reference_receipt['verification'].startswith('RUN_MANIFEST_VERIFY=PASS SCOPE=consumer_projection ')
+assert reference_receipt['verification'].endswith('\n')
+verifier_path = pathlib.Path(manifest_verification.__file__).resolve()
+hidden_verifier = verifier_path.with_name(verifier_path.name+'.missing')
+verifier_path.rename(hidden_verifier)
+try:
+    import subprocess
+    missing_verifier = subprocess.run([sys.executable,'-I','-B','-c',
+        'from msplatform.workflows.ion_processor.field_reference import bind_native_field'],
+        cwd=root, capture_output=True, text=True, timeout=30)
+    assert missing_verifier.returncode != 0 and 'manifest_verification' in missing_verifier.stderr
+finally: hidden_verifier.rename(verifier_path)
 # A missing canonical owner must not fall back to the retired repository body.
 reference_module_path = pathlib.Path(field_reference.__file__)
 hidden_reference_module = reference_module_path.with_name(reference_module_path.name+'.missing')

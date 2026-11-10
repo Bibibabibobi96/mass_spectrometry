@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-import subprocess
 import sys
 from unittest.mock import patch
 import tempfile
@@ -69,9 +68,9 @@ class IpFieldReferenceTests(unittest.TestCase):
                     reference.bind_native_field(child, model, parent)
                 self.assertFalse((child / "inputs/native_field_consumption.json").exists())
 
-    def test_incomplete_terminal_publication_is_rejected_by_actual_canonical_cli(self) -> None:
+    def test_incomplete_terminal_publication_propagates_actual_verifier_error(self) -> None:
         parent, child, model, _ = self.fixture()
         (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
-        with self.assertRaises(subprocess.CalledProcessError):
+        with self.assertRaisesRegex(ValueError, "run terminal publication is incomplete; replay its journal"):
             reference.bind_native_field(child, model, parent)
         self.assertFalse((child / "inputs/native_field_consumption.json").exists())

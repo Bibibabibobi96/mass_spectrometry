@@ -954,20 +954,26 @@ class NativeFieldReferenceTests(unittest.TestCase):
             root = Path(temporary)
             parent, child, model, family = self.make_family_fixture(root)
             actual_hash = manifest_records.file_sha256
-            actual_subprocess = field_reference.subprocess.run
+            actual_verifier = field_reference.verify_run_manifest
 
             def no_payload_hash(path: Path) -> str:
                 self.assertNotIn(Path(path).resolve(), family, "PA identity was read outside its immutable owner guard")
                 return actual_hash(path)
 
-            def projected_verifier(arguments: list[str], **options: object) -> subprocess.CompletedProcess:
-                self.assertFalse(any(str(path) in arguments for path in family), "projection reselected the guarded payload")
-                self.assertEqual(options["cwd"], child.resolve())
-                self.assertEqual(arguments[0], sys.executable)
-                return actual_subprocess(arguments, **options)
+            def projected_verifier(manifest_path: Path, **options: object) -> dict:
+                selected_paths = [path for _, path in options["consumed_inputs"]]
+                selected_paths.extend(options["consumed_outputs"])
+                self.assertFalse(any(Path(path).resolve() in family for path in selected_paths),
+                                 "projection reselected the guarded payload")
+                self.assertEqual(manifest_path, parent / "run_manifest.json")
+                self.assertEqual(options["consumer_projection_id"], "ion_processor_native_field_v1")
+                self.assertIs(actual_verifier, _canonical_manifest_verification.verify_run_manifest)
+                self.assertEqual(Path(actual_verifier.__code__.co_filename).resolve(),
+                                 Path(_canonical_manifest_verification.__file__).resolve())
+                return actual_verifier(manifest_path, **options)
 
             with patch.object(field_reference, "file_sha256", side_effect=no_payload_hash), \
-                 patch.object(field_reference.subprocess, "run", side_effect=projected_verifier), \
+                 patch.object(field_reference, "verify_run_manifest", side_effect=projected_verifier), \
                  patch.object(manifest_records, "file_sha256", side_effect=no_payload_hash):
                 external = field_reference.bind_native_field(child, copy.deepcopy(model), parent)
                 self.assertEqual(set(external), {"native_field_manifest", "native_field_consumption"})
@@ -982,7 +988,7 @@ class NativeFieldReferenceTests(unittest.TestCase):
                         "--require-status", "success", "--require-project", functional.PROJECT]):
                     _canonical_manifest_verification.main(retention_api=_manifest_retention_api)
             (parent / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
-            with self.assertRaises(subprocess.CalledProcessError):
+            with self.assertRaisesRegex(ValueError, "run terminal publication is incomplete; replay its journal"):
                 field_reference.bind_native_field(child, copy.deepcopy(model), parent)
 
 

@@ -640,6 +640,41 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
             timeout=30,
         )
 
+    def test_structured_api_full_and_projection_preserve_cli_diagnostic(self) -> None:
+        full = _canonical_manifest_verification.verify_run_manifest(self.manifest)
+        self.assertEqual(full["status"], "PASS")
+        self.assertEqual(full["scope"], "full")
+        self.assertEqual(full["output_count"], 2)
+        self.assertEqual(full["diagnostic"] + "\n", self._verify().stdout)
+        self.unconsumed_input.write_bytes(b"corrupt")
+        self.unconsumed_output.write_bytes(b"corrupt")
+        projected = _canonical_manifest_verification.verify_run_manifest(
+            self.manifest, consumer_projection_id="api_projection_v1",
+            consumed_inputs=(("consumed_contract", self.consumed_input),),
+            consumed_outputs=(self.consumed_output,))
+        cli = self._verify("--consumer-projection-id", "api_projection_v1",
+                           "--consumed-input", "consumed_contract", str(self.consumed_input),
+                           "--consumed-output", str(self.consumed_output))
+        self.assertEqual(cli.returncode, 0, cli.stderr)
+        self.assertEqual(projected["diagnostic"] + "\n", cli.stdout)
+        self.assertEqual(projected["consumed_input_count"], 1)
+        self.assertEqual(projected["consumed_output_count"], 1)
+
+    def test_structured_api_keeps_direct_integrity_and_argument_errors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "consumed record selectors require"):
+            _canonical_manifest_verification.verify_run_manifest(
+                self.manifest, consumed_outputs=(self.consumed_output,))
+        self.consumed_input.write_text('{"stable": truf}\n', encoding="utf-8")
+        with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+            _canonical_manifest_verification.verify_run_manifest(self.manifest)
+
+    def test_structured_api_rejects_pending_terminal_publication_before_reads(self) -> None:
+        (self.run / ".run_terminal_publication.json").write_text("{}", encoding="utf-8")
+        with patch.object(_canonical_manifest_verification, "verify_record",
+                          side_effect=AssertionError("must not read records")):
+            with self.assertRaisesRegex(ValueError, "run terminal publication is incomplete; replay its journal"):
+                _canonical_manifest_verification.verify_run_manifest(self.manifest)
+
     def test_reference_constraints_accept_matching_fixture(self) -> None:
         result = self._verify()
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -478,3 +478,18 @@ acceptance took 83.518 seconds and joined 434 payload members in source, both wh
 fresh installs; source family bytes stayed unchanged. Earlier backend-namespace acceptance
 and the corrected test-owner identifier error are retained separately, without retagging.
 No Refine, Fly, GUI, new HS1 trajectory/qualification or P11 placement acceptance occurred.
+
+### Canonical manifest verification API
+
+Existing-field metadata adoption calls `execution.manifest_verification.verify_run_manifest`
+directly with the explicit SIMION retention factory. The existing CLI delegates to the same
+checks and diagnostic; the consumption receipt retains that line and its newline. This removes
+the metadata-only child process, 120-second child timeout/isolation and CalledProcessError
+transport; actual integrity errors now propagate directly. The original eighteen PA records
+remain metadata-only here, with native source guards still required before payload use.
+The integrated verifier/field-reference suite passed 39 parents (101 records) in 28.559 seconds.
+Twenty original-versus-current CLI parity cases passed separately. Fresh direct-wheel and
+sdist-rebuilt-wheel acceptance passed with all 436 package payloads matching source and both
+installations, including the actual API origin and missing-verifier refusal. These results
+remain separate from the preceding ordinary-installation epoch and do not add a native
+operation or scientific qualification.

@@ -384,8 +384,10 @@ IP run. The existing metadata/Refine/projection checks bind the original produce
 and exact family records without cloning PA payloads. No vendor installation, HS1 source,
 seed or new solver invocation is required for this metadata operation.
 
-The canonical verifier runs through the same selected Python interpreter and existing
-explicit native-policy CLI. Public native-use guards and source protection remain the
+The workflow calls the canonical structured `verify_run_manifest` API directly with its
+explicit backend retention policy. This metadata-only verification no longer starts a child
+interpreter or has a separate 120-second process timeout/isolation/CalledProcessError wrapper;
+actual integrity exceptions propagate directly. The existing verifier CLI delegates to the same API. Public native-use guards and source protection remain the
 launcher's responsibility; a successful reference is not permission to Fly or scientific
 field qualification. The root CLI's `adopt-native-field` action remains the same thin
 workflow consumer. Ordinary software proof covers actual CLI verification, adoption,

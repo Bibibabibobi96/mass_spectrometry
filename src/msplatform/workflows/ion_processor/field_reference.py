@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
+from msplatform.execution.manifest_verification import verify_run_manifest
+from msplatform.backends.simion.native_completion import retention_api
 from msplatform.workflows.ion_processor import preparation
 
 PROJECT = "dual_pressure_rectilinear_ion_processor"
@@ -48,14 +48,14 @@ def bind_native_field(run: Path, config: dict, parent: Path) -> dict:
     if "Fast adjust Refining completed" not in (parent/"logs/refine.log").read_text(encoding="utf-8-sig"):
         raise ValueError("native field source lacks completed Refine evidence")
     family = [parent/"simion"/("processor.pa"+suffix) for suffix in ["#", *map(str, range(16)), "-surf"]]
-    arguments = [sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)", str(manifest_path), "--require-project", PROJECT, "--require-status", manifest["status"], "--consumer-projection-id", "ion_processor_native_field_v1"]
+    consumed_inputs = []
     required_inputs = {(parent/relative).resolve() for relative in
                        ("simion/processor.gem", "inputs/numerics.json", "inputs/resolved_model.json")}
     selected_inputs = set()
     for key, record in manifest["inputs"].items():
         if record_path(record, base_dir=parent) in required_inputs:
             selected_inputs.add(record_path(record, base_dir=parent))
-            arguments.extend(["--consumed-input", key, str(record_path(record, base_dir=parent))])
+            consumed_inputs.append((key, record_path(record, base_dir=parent)))
     if selected_inputs != required_inputs:
         raise ValueError("native field source does not bind its frozen geometry/numerics")
     records = []
@@ -71,11 +71,13 @@ def bind_native_field(run: Path, config: dict, parent: Path) -> dict:
                 or not path.is_file() or path.stat().st_size != record["bytes"]):
             raise ValueError("native field member metadata differs from its owner")
         records.append(dict(path=str(path.resolve()), bytes=record["bytes"], sha256=digest.upper()))
-    for path in [parent/"logs/refine.log"]:
-        arguments.extend(["--consumed-output", str(path)])
-    verification = subprocess.run(arguments, cwd=run, timeout=120, capture_output=True, text=True, encoding="utf-8", check=True)
+    verification = verify_run_manifest(
+        manifest_path, require_project=PROJECT, require_status=manifest["status"],
+        consumer_projection_id="ion_processor_native_field_v1",
+        consumed_inputs=tuple(consumed_inputs), consumed_outputs=(parent/"logs/refine.log",),
+        retention_api=retention_api)
     config["native_field"] = {"directory": str(parent/"simion"), "source_manifest": str(manifest_path), "source_manifest_sha256": file_sha256(manifest_path), "consumer_projection_id": "ion_processor_native_field_v1"}
-    write_json(inputs/"native_field_consumption.json", {**config["native_field"], "verification": verification.stdout,
+    write_json(inputs/"native_field_consumption.json", {**config["native_field"], "verification": verification["diagnostic"] + "\n",
         "payload_validation": "launcher_immutable_source_guard_required_before_native_use", "family_records": records})
     # The source owner retains its PA byte authority. The child binds that
     # small manifest and this consumption projection, rather than publishing
