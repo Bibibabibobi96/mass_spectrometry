@@ -29,7 +29,7 @@ from scipy.optimize import least_squares
 from common.contracts.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (

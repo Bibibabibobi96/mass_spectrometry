@@ -111,7 +111,7 @@ try {
     'src\msplatform\execution\resources\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',

@@ -2678,6 +2678,87 @@ assert scalar_executable.read_bytes()==scalar_executable_bytes
 print('INSTALLED_SCALAR_ADAPTER_TRANSPORT=PASS')
 # SCALAR_ADAPTER_INSTALLED_END
 
+# MR_PRISM_PHASE_INSTALLED_BEGIN
+# Ideal/reference scientific APIs only; finite-field calibration remains separate.
+import unittest as prism_unittest
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import prism_l0 as prism_l0_api
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import prism_analytic as prism_analytic_api
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import drift_phase_contract as prism_phase_api
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError as prism_contract_error
+prism_fixture=fixture['mr_prism_phase']
+prism_purelib=pathlib.Path(sysconfig.get_paths()['purelib']).resolve()
+for prism_name,prism_module in (('prism_l0',prism_l0_api),('prism_analytic',prism_analytic_api),('drift_phase_contract',prism_phase_api)):
+    prism_path=pathlib.Path(prism_module.__file__).resolve()
+    assert prism_path==prism_purelib/'msplatform/components/parallel_mirror_dual_stripe_mr_tof'/(prism_name+'.py')
+    prism_content=prism_path.read_bytes()
+    assert len(prism_content)==prism_fixture['sources'][prism_name]['bytes']
+    assert hashlib.sha256(prism_content).hexdigest()==prism_fixture['sources'][prism_name]['sha256']
+    try:importlib.import_module('projects.parallel_mirror_dual_stripe_mr_tof.analysis.'+prism_name)
+    except AssertionError as prism_error:
+        assert 'installed action imported a repository owner' in str(prism_error)
+    else:raise AssertionError('installed MR reference accepted a repository import')
+prism_check=prism_unittest.TestCase()
+prism_contract=copy.deepcopy(prism_fixture['contract'])
+prism_result=prism_l0_api.derive_first_prism_l0(prism_contract)
+assert (prism_result.total_kinetic_energy_ev,prism_result.drift_kinetic_energy_ev,prism_result.fast_kinetic_energy_ev)==(4005.,5.,4000.)
+assert prism_result.entry_position_project_mm==(0.,-45.,0.)
+assert prism_result.entry_unit_direction_project==(0.,0.,-1.)
+assert prism_result.triangle_entry_project_mm==(0.,-45.,-62.828)
+assert prism_result.triangle_exit_project_mm==(0.,-45.,-67.172)
+assert prism_result.target_plane_z_mm==-101.
+assert prism_result.target_plane_y_acceptance_mm==(-75.,-35.)
+assert prism_result.second_prism_status=='low_field_angle_and_positive_mirror_turn_calibration_pending'
+prism_check.assertAlmostEqual(prism_result.drift_angle_degrees,2.0248682972773406)
+prism_check.assertAlmostEqual(prism_result.hard_boundary_seed_voltage_v,20000.**.5)
+prism_parameterized=copy.deepcopy(prism_contract)
+prism_parameterized['prism_transport']['energy_partition'].update(total_kinetic_energy_ev=4006,drift_kinetic_energy_ev=6,fast_reflection_kinetic_energy_ev=4000)
+prism_parameterized['prism_transport']['first_prism']['target_interface']['coordinate_mm']=-100.5
+prism_parameterized_result=prism_l0_api.derive_first_prism_l0(prism_parameterized)
+assert (prism_parameterized_result.total_kinetic_energy_ev,prism_parameterized_result.drift_kinetic_energy_ev,prism_parameterized_result.fast_kinetic_energy_ev,prism_parameterized_result.target_plane_z_mm)==(4006.,6.,4000.,-100.5)
+prism_check.assertAlmostEqual(prism_parameterized_result.hard_boundary_seed_voltage_v,(6.*4000.)**.5)
+prism_bad_energy=copy.deepcopy(prism_contract)
+prism_bad_energy['prism_transport']['energy_partition']['total_kinetic_energy_ev']=4000
+with prism_check.assertRaises(prism_l0_api.PrismL0Error):prism_l0_api.derive_first_prism_l0(prism_bad_energy)
+prism_bad_slot=copy.deepcopy(prism_contract)
+prism_bad_slot['prism_transport']['first_prism']['target_interface']['ground_shield_id']=20
+with prism_check.assertRaises(prism_l0_api.PrismL0Error):prism_l0_api.derive_first_prism_l0(prism_bad_slot)
+prism_analytic=prism_fixture['analytic']
+prism_bias=prism_analytic_api.hard_boundary_bias_v(prism_analytic['energy'],prism_analytic['alpha'],prism_analytic['beta'])
+prism_check.assertAlmostEqual(prism_bias,-152.76516286150414)
+prism_check.assertAlmostEqual(prism_analytic_api.hard_boundary_exit_angle_deg(4000.,4.,prism_bias),1.8)
+prism_trace=prism_analytic_api.trace_triangular_hard_boundary_prism(prism_analytic['triangle'],prism_analytic['origin'],prism_analytic['direction'],prism_analytic['energy'],prism_bias,charge_sign=1)
+assert (prism_trace.status,prism_trace.entry_edge_index,prism_trace.exit_edge_index)==('transmitted',0,2)
+prism_check.assertAlmostEqual(prism_trace.resulting_kinetic_energy_per_charge_v,4000.)
+prism_check.assertAlmostEqual(prism_trace.hamiltonian_residual_per_charge_v,0.)
+prism_check.assertAlmostEqual(45.-math.degrees(math.acos(-prism_trace.resulting_unit_direction_yz[0])),prism_analytic['beta'],places=11)
+prism_negative=prism_analytic_api.trace_triangular_hard_boundary_prism(prism_analytic['triangle'],prism_analytic['origin'],prism_analytic['direction'],prism_analytic['energy'],-prism_bias,charge_sign=-1)
+assert prism_negative.status=='transmitted'
+assert prism_negative.inside_kinetic_energy_per_charge_v==prism_trace.inside_kinetic_energy_per_charge_v
+for prism_actual,prism_expected in zip(prism_negative.resulting_unit_direction_yz,prism_trace.resulting_unit_direction_yz):
+    prism_check.assertAlmostEqual(prism_actual,prism_expected,places=12)
+for prism_sign in (1,-1):
+    prism_recovered=prism_analytic_api.hard_boundary_bias_for_face_order_and_target_direction_v(prism_analytic['triangle'],prism_analytic['direction'],prism_trace.resulting_unit_direction_yz,4000.,entry_edge_index=0,exit_edge_index=2,charge_sign=prism_sign)
+    prism_check.assertAlmostEqual(prism_recovered,prism_sign*prism_bias,places=11)
+with prism_check.assertRaisesRegex(prism_analytic_api.PrismAnalyticError,'does not leave'):
+    prism_analytic_api.hard_boundary_bias_for_face_order_and_target_direction_v(prism_analytic['triangle'],prism_analytic['direction'],tuple(-prism_value for prism_value in prism_trace.resulting_unit_direction_yz),4000.,entry_edge_index=0,exit_edge_index=2,charge_sign=1)
+with prism_check.assertRaisesRegex(prism_analytic_api.PrismAnalyticError,'charge_sign'):
+    prism_analytic_api.trace_triangular_hard_boundary_prism(prism_analytic['triangle'],(.2,-1.),(0.,1.),10.,0.,charge_sign=0)
+with prism_check.assertRaises(prism_analytic_api.PrismAnalyticError):prism_analytic_api.hard_boundary_bias_correction_v(0.,3.,2.)
+for prism_phase_input,prism_ratio,prism_half in zip(prism_fixture['phases'],(25.5,31.5),(51,63)):
+    prism_phase=prism_phase_api.resolve_drift_phase_contract(prism_phase_input)
+    assert prism_phase.target_period_ratio==prism_ratio
+    assert prism_phase.target_half_oscillation_count==prism_half
+    assert (prism_phase.origin_mirror_side,prism_phase.return_mirror_side)==(1,-1)
+assert prism_phase_api.resolve_drift_phase_contract(prism_fixture['phases'][0]).complete_oscillation_count==25
+prism_integer_phase=copy.deepcopy(prism_fixture['phases'][0])
+prism_integer_phase['nominal']['target_drift_period_ratio']=25
+with prism_check.assertRaisesRegex(prism_contract_error,'half-integer'):prism_phase_api.resolve_drift_phase_contract(prism_integer_phase)
+prism_bad_phase=copy.deepcopy(prism_fixture['phases'][0])
+prism_bad_phase['nominal']['fast_path_symmetry']='same_positive_mirror_turn'
+with prism_check.assertRaises(prism_contract_error):prism_phase_api.resolve_drift_phase_contract(prism_bad_phase)
+print('INSTALLED_MR_PRISM_PHASE=PASS')
+# MR_PRISM_PHASE_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -2701,6 +2782,28 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
 
 
 class InstalledScientificCoreTests(unittest.TestCase):
+    @staticmethod
+    def prism_phase_probe_fixture():
+        """Transport explicit original MR reference inputs, never author paths to clients."""
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract as prism_load_contract
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prism_analytic import PrismAnalyticTest as prism_reference
+        prism_contract = prism_load_contract(REPO_ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
+        prism_contract['accelerator']['focus_y_anchor']['project_y_mm'] = -45.0
+        prism_trace, prism_direction, prism_beta = prism_reference._right_angle_trace()
+        assert prism_trace.status == 'transmitted'
+        prism_sources = {}
+        for prism_name in ('prism_l0', 'prism_analytic', 'drift_phase_contract'):
+            prism_content = (REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof'/(prism_name+'.py')).read_bytes()
+            prism_sources[prism_name] = dict(bytes=len(prism_content),sha256=hashlib.sha256(prism_content).hexdigest())
+        return dict(contract=prism_contract,sources=prism_sources,
+                    analytic=dict(triangle=[[0.,0.],[1.,0.],[0.,1.]],
+                        direction=list(prism_direction),
+                        origin=[.2-prism_direction[0],-prism_direction[1]],
+                        energy=4000.,alpha=4.,beta=prism_beta),
+                    phases=[dict(nominal=dict(target_drift_period_ratio=prism_ratio,
+                        fast_path_symmetry='opposite_mirror_turn__z_reflected_nonoverlapping'))
+                        for prism_ratio in (25.5,31.5)])
+
     @staticmethod
     def scalar_adapter_probe_fixture():
         """Pin an explicit standalone Lua software provider and selected source bytes."""
@@ -3967,6 +4070,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               scalar_adapter=self.scalar_adapter_probe_fixture(),
+                                              mr_prism_phase=self.prism_phase_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'

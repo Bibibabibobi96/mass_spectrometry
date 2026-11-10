@@ -4,7 +4,7 @@ import copy
 import math
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_analytic import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_analytic import (
     PrismAnalyticError,
     contract_nominal_stripe_injection_angle_deg,
     derive_two_prism_hard_boundary_seed,

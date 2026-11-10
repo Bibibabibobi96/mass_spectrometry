@@ -4,7 +4,7 @@ import math
 import unittest
 from dataclasses import replace
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_analytic import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_analytic import (
     trace_triangular_hard_boundary_prism,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (

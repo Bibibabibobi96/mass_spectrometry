@@ -535,7 +535,7 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
 def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contract: dict[str, Any]) -> dict[str, Any]:
     """Bind only original field geometry/voltage/grid authors; never open old PA."""
     from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import resolve_trajectory_profile
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import resolve_drift_phase_contract
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import resolve_drift_phase_contract
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _full_path_timeout_us
 
     materialization_path = verified_reference(reference_run, "results/two_prism_trial_materialization.json")

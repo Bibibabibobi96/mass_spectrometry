@@ -212,7 +212,7 @@ print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
     def test_reference_json_binds_real_compiler_and_derives_timeout_without_lua_numerics(self):
         import copy
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _full_path_timeout_us
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import OPPOSITE_MIRROR_TURN
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import OPPOSITE_MIRROR_TURN
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference = root / "reference"

@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_tr
     _propagate_to_first_complete_positive_stripe_pass,
     _propagate_to_first_positive_mirror_turn,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_analytic import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_analytic import (
     hard_boundary_bias_v,
     trace_triangular_hard_boundary_prism,
 )

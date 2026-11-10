@@ -157,7 +157,7 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_segmented_voltage_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_exit_transport_source.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_operating_point.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\prism_mirror_transport.py',
@@ -191,7 +191,9 @@ try {
     'common\host_execution_lease.ps1',
     'common\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_two_prism_segmented_coverage.ps1'
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_two_prism_segmented_coverage.ps1',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\prism_analytic.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\prism_l0.py'
   )
   $sourceInputs = [ordered]@{}
   $sourceChecks = @()

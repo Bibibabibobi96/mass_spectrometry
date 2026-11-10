@@ -12,7 +12,7 @@ from statistics import mean, median
 from typing import Any
 
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 

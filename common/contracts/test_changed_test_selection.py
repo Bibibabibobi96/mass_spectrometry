@@ -965,6 +965,117 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertCountEqual(modules, [name[:-3].replace('/', '.') for name in case['modules']])
                     self.assertEqual(len(modules), len(set(modules)))
 
+    def test_installed_mr_prism_phase_sources_augment_core_with_actual_consumers(self) -> None:
+        stage = 'parallel_mirror_dual_stripe_mr_tof_static'
+        canonical = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/'
+        dependencies = {
+            'drift_phase_contract': [
+                'test_downstream_fixed_grid_workpoint',
+                'test_drift_phase_contract',
+                'test_dual_stripe_l0_math',
+                'test_fixed_grid_mirror_stripe_handoff',
+                'test_ip_prism_distance_study',
+                'test_joint_flight_preparation',
+                'test_joint_mirror_stripe_l0',
+                'test_mirror_exact_k_operating_point',
+                'test_mirror_l0_l1_runner',
+                'test_prepared_joint_trial',
+                'test_prism_analytic',
+                'test_prism_mirror_transport',
+                'test_prism_runner_contract_matrix',
+                'test_simion_candidate_reference',
+                'test_simion_event_analysis',
+                'test_static_field_binding',
+                'test_static_workpoint_iteration',
+                'test_two_prism_segmented_coverage',
+                'test_two_prism_segmented_transport',
+                'test_two_prism_segmented_voltage_continuation',
+                'test_two_prism_segmented_voltage_seed',
+                'test_two_prism_simion_trial',
+            ],
+            'prism_analytic': [
+                'test_mirror_l0_l1_runner',
+                'test_prism_analytic',
+                'test_prism_mirror_transport',
+                'test_prism_runner_contract_matrix',
+                'test_two_prism_segmented_coverage',
+                'test_two_prism_segmented_transport',
+                'test_two_prism_segmented_voltage_continuation',
+                'test_two_prism_segmented_voltage_seed',
+            ],
+            'prism_l0': [
+                'test_mirror_l0_l1_runner',
+                'test_prism_analytic',
+                'test_prism_l0',
+                'test_prism_mirror_transport',
+                'test_prism_runner_contract_matrix',
+                'test_two_prism_segmented_coverage',
+                'test_two_prism_segmented_transport',
+                'test_two_prism_segmented_voltage_continuation',
+                'test_two_prism_segmented_voltage_seed',
+            ],
+        }
+        cases = [dict(stage=stage, paths=[canonical + name + '.py'],
+                      modules=sorted(f"{MR}/tests/analysis/{module}.py" for module in modules))
+                 for name, modules in dependencies.items()]
+        cases.append(dict(stage=stage, paths=[path for case in cases for path in case['paths']],
+                          modules=sorted({module for case in cases for module in case['modules']})))
+        consumers = {
+            'dual_stripe_l0': [
+                'test_dual_stripe_l0_math',
+                'test_fixed_grid_mirror_stripe_handoff',
+                'test_joint_mirror_stripe_l0',
+                'test_simion_candidate_reference',
+            ],
+            'dual_stripe_operating_seed': [
+                'test_dual_stripe_l0_math',
+                'test_fixed_grid_mirror_stripe_handoff',
+                'test_mirror_l0_l1_runner',
+                'test_prism_runner_contract_matrix',
+            ],
+            'joint_flight_preparation': [
+                'test_ip_prism_distance_study',
+                'test_joint_flight_preparation',
+                'test_prepared_joint_trial',
+            ],
+            'mirror_exact_k_operating_point': [
+                'test_mirror_exact_k_operating_point',
+                'test_mirror_l0_l1_runner',
+                'test_prism_runner_contract_matrix',
+            ],
+            'simion_event_analysis': [
+                'test_simion_candidate_reference',
+                'test_simion_event_analysis',
+            ],
+            'two_prism_segmented_transport': [
+                'test_two_prism_segmented_coverage',
+                'test_two_prism_segmented_transport',
+                'test_two_prism_segmented_voltage_continuation',
+                'test_two_prism_segmented_voltage_seed',
+            ],
+            'two_prism_simion_trial': [
+                'test_downstream_fixed_grid_workpoint',
+                'test_prepared_joint_trial',
+                'test_static_field_binding',
+                'test_static_workpoint_iteration',
+                'test_two_prism_simion_trial',
+            ],
+        }
+        cases.extend(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"],
+                          modules=sorted(f"{MR}/tests/analysis/{module}.py" for module in modules))
+                     for name, modules in consumers.items())
+        for name in dependencies:
+            cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"], modules=None))
+        for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
+            with self.subTest(paths=case['paths']):
+                if case['modules'] is None:
+                    self.assertIsNone(selected)
+                else:
+                    self.assertCountEqual(selected['Modules'], case['modules'])
+                    self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
+                    self.assertFalse(selected['CompleteOwner'])
+                    self.assertFalse(selected['OnlyTestModules'])
+
     def test_weighted_partitions_cover_each_actual_owner_scope_once(self) -> None:
         script = r"""
 . __SUPPORT__

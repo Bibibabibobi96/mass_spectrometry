@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport
     polygon_potential_region,
     propagate_segmented_hamiltonian,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_analytic import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_analytic import (
     PrismAnalyticError,
     hard_boundary_bias_for_face_order_and_target_direction_v,
     trace_triangular_hard_boundary_prism,

@@ -4,7 +4,7 @@ import copy
 import unittest
 from pathlib import Path
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_l0 import (
     PrismL0Error,
     derive_first_prism_l0,
     ray_segment_intersection_yz,

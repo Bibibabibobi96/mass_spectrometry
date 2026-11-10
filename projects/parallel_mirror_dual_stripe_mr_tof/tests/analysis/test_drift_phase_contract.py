@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     OPPOSITE_MIRROR_TURN,
     resolve_drift_phase_contract,
 )

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -198,6 +203,78 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
         final_release = source.index("Exit-ArtifactWorkflowCapacitySession", manifest)
         self.assertLess(terminal, manifest)
         self.assertLess(manifest, final_release)
+
+
+    def test_segmented_declared_sources_copy_the_exact_prism_triad(self) -> None:
+        """Exercise actual source-list/Copy-VerifiedRunInput transport, not a solver."""
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        expected_runner_names = ("run_two_prism_segmented_coverage.ps1",
+                                 "run_two_prism_segmented_continuation.ps1")
+        repository = PROJECT.parents[1]
+        harness = r"""param($Repository,$Output)
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'common/contracts/run_artifact_support.ps1'),[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Public input-copy source parse failed'}
+$copy=@($support.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true))
+if($copy.Count-ne1){throw 'Public input-copy function must be unique'}
+. ([scriptblock]::Create($copy[0].Extent.Text))
+$reports=@()
+foreach($name in @('run_two_prism_segmented_coverage.ps1','run_two_prism_segmented_continuation.ps1')){
+ $tokens=$null;$errors=$null
+ $tree=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository ('projects/parallel_mirror_dual_stripe_mr_tof/analysis/'+$name)),[ref]$tokens,[ref]$errors)
+ if($errors.Count){throw 'Actual runner parse failed'}
+ $lists=@($tree.FindAll({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$sourcePaths'},$true))
+ $copies=@($tree.FindAll({param($n)$n-is[Management.Automation.Language.ForStatementAst]-and$n.Extent.Text.Contains('Copy-VerifiedRunInput -Source $source -Destination $destination')},$true))
+ if($lists.Count-ne1-or$copies.Count-ne1){throw 'Actual source declaration/copy boundary must be unique'}
+ . ([scriptblock]::Create($lists[0].Extent.Text))
+ $repoRoot=$Repository;$sourceDir=Join-Path $Output $name
+ New-Item -ItemType Directory -Path $sourceDir|Out-Null
+ $sourceInputs=[ordered]@{};$sourceChecks=@()
+ . ([scriptblock]::Create($copies[0].Extent.Text))
+ $rows=@()
+ for($index=0;$index-lt$sourcePaths.Count;$index++){
+  $key='analytic_source_{0:D2}'-f($index+1)
+  $rows+=@{relative=$sourcePaths[$index];key=$key;frozen=$sourceInputs[$key];source=$sourceChecks[$index].source;checked_frozen=$sourceChecks[$index].frozen;sha256=(Get-FileHash -LiteralPath $sourceInputs[$key] -Algorithm SHA256).Hash}
+ }
+ $reports+=@{runner=$name;paths=@($sourcePaths);input_count=$sourceInputs.Count;check_count=$sourceChecks.Count;rows=$rows}
+}
+ConvertTo-Json -InputObject @($reports) -Depth 8 -Compress
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "actual-source-copy.ps1"
+            script.write_text(harness, encoding="utf-8")
+            completed = subprocess.run([powershell, "-NoProfile", "-File", str(script),
+                str(repository), str(root)], cwd=repository, capture_output=True,
+                text=True, encoding="utf-8", timeout=30, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            reports = json.loads(completed.stdout)
+            self.assertEqual({row["runner"] for row in reports}, set(expected_runner_names))
+            for report in reports:
+                with self.subTest(runner=report["runner"]):
+                    paths = report["paths"]
+                    self.assertEqual(paths[-2:], [
+                        "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\prism_analytic.py",
+                        "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\prism_l0.py"])
+                    self.assertEqual(report["input_count"], len(paths))
+                    self.assertEqual(report["check_count"], len(paths))
+                    self.assertEqual(len(report["rows"]), len(paths))
+                    for index, row in enumerate(report["rows"], 1):
+                        source = repository / row["relative"]
+                        frozen = Path(row["frozen"])
+                        self.assertEqual(row["key"], f"analytic_source_{index:02d}")
+                        self.assertEqual(Path(row["source"]), source)
+                        self.assertEqual(row["checked_frozen"], row["frozen"])
+                        self.assertEqual(frozen.name, f"source_{index:02d}" + source.suffix)
+                        self.assertEqual(frozen.read_bytes(), source.read_bytes())
+                        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), row["sha256"].lower())
+                    for name in ("prism_l0", "prism_analytic", "drift_phase_contract"):
+                        selected = "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\" + name + ".py"
+                        self.assertEqual(paths.count(selected), 1)
+
 
 
 if __name__ == "__main__":

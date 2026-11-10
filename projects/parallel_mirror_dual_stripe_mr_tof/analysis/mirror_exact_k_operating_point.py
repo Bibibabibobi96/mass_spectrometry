@@ -28,7 +28,7 @@ from common.contracts.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from common.host_resource_python import ensure_heavy_entry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (

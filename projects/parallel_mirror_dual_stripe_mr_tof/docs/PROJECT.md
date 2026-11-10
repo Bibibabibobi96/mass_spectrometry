@@ -110,6 +110,15 @@ historical retention readers remain in the existing COMSOL backend boundary.
 The neutral physical resolver consumes explicit OA authority in the MR component;
 native layout validation remains in the SIMION backend. Neither migration registers
 an empty MR provider or qualifies a new field/Fly.
+The ideal first-prism contract, hard-boundary prism mathematics and drift-phase
+contract are owned by the installed MR component modules `prism_l0`,
+`prism_analytic` and `drift_phase_contract`. Research consumers and source
+freezers select these sole implementations; the original reference-only,
+face-order, charge and return-phase restrictions remain unchanged.
+This ownership move does not qualify finite fields, native transport or full MR.
+The segmented prism runners record the complete prism/phase triad in their audited
+source inputs. Their existing live-code execution mode remains unchanged; those
+audit copies do not constitute execution from a frozen source tree.
 The scalar field consumer Lua belongs to `msplatform.backends.simion.resources`;
 sampling and the existing source freezers select that same installed body. Its
 run-owned companion filenames and sealed record roles remain unchanged. The MR

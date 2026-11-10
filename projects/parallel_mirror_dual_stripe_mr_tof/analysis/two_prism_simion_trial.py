@@ -38,7 +38,7 @@ from msplatform.workflows.oa_focus_analysis import (
     _component_energy_per_charge_v,
     _target_axial_energy_per_charge_v,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
