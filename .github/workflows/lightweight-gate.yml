@@ -42,8 +42,9 @@ jobs:
   changed_scope:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.comparison_base != '' && inputs.owner == '')
     runs-on: windows-latest
-    # The selected software scope may contain integration behavior suites.
-    timeout-minutes: 60
+    # Finite CI evidence-collection allowance, not the P4 15-minute feedback target.
+    # The previous 60-minute cap canceled still-running suites; keep their scope intact.
+    timeout-minutes: 180
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
