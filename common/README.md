@@ -983,3 +983,16 @@ sealed payload does not repeatedly account bytes; new build/publication failures
 retain conservative accounting. These software fixes do not grant native or
 scientific qualification. Source/clock/particle and native Lua semantics are
 unchanged by this migration.
+
+### Member-worker fault-test boundaries
+
+The worker contract test retains real managed cold/HIT, missing native receipt,
+accounting-hold and publication-hold processes, including inherited tokens,
+PID/drain and distinct ledger assertions. Corrupt-cache, known export failure
+and known audit failure exercise the actual request/main/cache/report boundary
+with real files, key protection and the enclosing software GATE identity. Their
+inert transport supplies no OS completion facts; the report verifies their
+absence. All five fault identities remain. The production observer policy and
+the original large-tool preflight test are unchanged. This reduces repeated
+process plumbing without treating controlled state-machine facts as native or
+OS evidence; it does not close the full software performance target.

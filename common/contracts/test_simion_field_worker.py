@@ -305,6 +305,67 @@ field_worker.main()
                             _require_published_parent(cache_root, changed, "carrier_off", **kwargs)
                 return dict(status="success", summary=dict(fixture="INERT_ONLY"), output_paths=[],
                     required_output_paths=[], retention_preserve_paths=[], manifest_extra_fields={})
+            gate_environment = {name: os.environ.get(name, "") for name in (
+                "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH")}
+            if not all(gate_environment.values()):
+                raise ValueError("Direct state-machine fixtures require their actual enclosing software GATE")
+
+            def direct_failure(stage, selected_plan, selected_key):
+                """Actual worker/cache/files/lease; inert transport, NO OS completion facts."""
+                from dataclasses import replace
+                from msplatform.execution.capacity_session import create_capacity_session, exit_capacity_session
+                from msplatform.execution.capacity_admission import capture_capacity_policy
+                from msplatform.execution.run_capacity_lifecycle import register_writing_range
+                artifact_root = context.workspace / "artifacts"
+                run = artifact_root / "projects/instrument_assembly/runs" / ("20261104_120000__test__python__direct-" + stage)
+                run.mkdir(parents=True)
+                register_writing_range(artifact_root, run)
+                for name in ("inputs", "results", "logs"):
+                    (run / name).mkdir()
+                config = run / "run_config.json"
+                config.write_text(json.dumps(dict(capacity_ledger_lifecycle=dict(schema_version=1, enabled=True,
+                    artifact_root=str(artifact_root), light_evidence_budget_bytes=10485760))), encoding="utf-8")
+                capacity = create_capacity_session(artifact_root, run, owner=run.name,
+                    committed_new_bytes=10485760, protected_cache_keys=[selected_key], capacity_policy=capture_capacity_policy())
+                direct_context = replace(context, host_state_path=Path(gate_environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]))
+                request = run / "inputs/member.json"
+                parameters = dict(field_plan=selected_plan, domain_id="parent", member_id="carrier_off", tool_identity=tool,
+                    raw_geometry_record=file_record(raw, "solver_native_binary"), resources={k:str(v) for k,v in resources.items()},
+                    cache_root=str(cache_root), producer_run_config=str(config), capacity_lease_id=capacity["lease_id"],
+                    capacity_lease_owner=capacity["owner"], run_directory=str(run), log_directory=str(run / "logs/member"),
+                    limits={}, receipt_path=str(run / "results/member.json"))
+                selected_context = {name:str(getattr(direct_context,name)) for name in (
+                    "workspace", "python_executable", "powershell_executable", "host_state_path", "policy_path", "execution_root")}
+                selected_context["tools"] = {name:str(value) for name,value in direct_context.tools.items()}
+                request.write_text(json.dumps(dict(schema_version=1, context=selected_context, parameters=parameters)), encoding="utf-8")
+                def inert_native(_context, operation, **kwargs):
+                    # Controlled operation facts only: no PID, release or exit receipt invented.
+                    name = operation["operation_id"]
+                    failed = name.startswith(stage + "_")
+                    text = ("PARTIAL_EXPORT_NOT_PA" if failed and stage == "export" else
+                            json.dumps(dict(status="pass", fixture="INERT_NOT_SCIENTIFIC_EVIDENCE")) if name.startswith("audit_") else "INERT_NOT_PA")
+                    if not failed or stage == "export":
+                        for value in operation["outputs"]:
+                            target = Path(value); target.parent.mkdir(parents=True, exist_ok=True)
+                            target.write_text(text, encoding="utf-8")
+                    else:
+                        self.assertTrue(all(not Path(value).exists() for value in operation["outputs"]))
+                    kwargs["observations"].append(dict(operation_id=name, fixture="CONTROLLED_IN_PROCESS_NOT_OS_EVIDENCE"))
+                    if failed:
+                        raise ValueError("INERT_FAULT")
+                try:
+                    with patch.dict(os.environ, gate_environment), patch.object(sys,"argv",["field_worker",str(request)]), patch.object(
+                            field_worker,"_native_operation",side_effect=inert_native):
+                        expected = "cache is not reusable" if stage == "corrupt" else "INERT_FAULT"
+                        with self.assertRaisesRegex(ValueError, expected):
+                            field_worker.main()
+                    report = json.loads((run / "results/member.json").read_text())
+                    self.assertEqual(report["request"], file_record(request,"required_evidence"))
+                    self.assertFalse(any("receipt" in row for row in report["native_operations"]))
+                    return run, report
+                finally:
+                    exit_capacity_session(capacity)
+
             with patch.dict(os.environ, environment), patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy), patch.object(
                     RunSession, "run_process", new=inert_transport):
@@ -337,17 +398,7 @@ field_worker.main()
                     broken = json.loads(original_pointer)
                     broken["generation_sha256"] = "F" * 64
                     pointer.write_text(json.dumps(broken), encoding="utf-8")
-                    with self.assertRaises(ProcessExecutionError):
-                        owner.run_managed_stage(context,
-                            descriptor=dict(project="instrument_assembly", mode="inert_field_transport", software=[]),
-                            run_id="20261104_120000__test__python__field-corrupt", payload={},
-                            committed_new_bytes=10485760, commitment_inputs=[file_record(budget, "required_evidence")],
-                            retention=dict(policy_version=1, **{"class":"solver_review"}, reason="inert corrupt cache fixture"),
-                            expected_operation_ids=["member"], operation_dependencies={}, protected_cache_keys=[key],
-                            action=action, action_record=file_record(Path(__file__), "required_evidence"),
-                            completion_api=lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set()))
-                    corrupt_run = context.workspace / "artifacts/projects/instrument_assembly/runs/20261104_120000__test__python__field-corrupt"
-                    report = json.loads((corrupt_run/"results/member.json").read_text())
+                    corrupt_run, report = direct_failure("corrupt", plan, key)
                     self.assertEqual(report["native_count"], 0)
                     self.assertIn("cache is not reusable", report["exception"]["message"])
                     self.assertFalse(report["accounting_deferred"])
@@ -366,17 +417,20 @@ field_worker.main()
                             domain_id="parent", member_id="carrier_off", tool_identity=tool))
                         current.update(script=fault_script, plan=fault_plan)
                         fault_run_id = "20261104_120000__test__python__field-" + stage
-                        with self.assertRaisesRegex(ProcessExecutionError, "Observed process failed with exit 1"):
-                            owner.run_managed_stage(context,
-                                descriptor=dict(project="instrument_assembly", mode="inert_field_transport", software=[]),
-                                run_id=fault_run_id, payload={}, committed_new_bytes=10485760,
-                                commitment_inputs=[file_record(budget, "required_evidence")],
-                                retention=dict(policy_version=1, **{"class":"solver_review"}, reason="inert worker fault"),
-                                expected_operation_ids=["member"], operation_dependencies={}, protected_cache_keys=[fault_key],
-                                action=action, action_record=file_record(Path(__file__), "required_evidence"),
-                                completion_api=lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set()))
-                        run = context.workspace / "artifacts/projects/instrument_assembly/runs" / fault_run_id
-                        report = json.loads((run/"results/member.json").read_text())
+                        if stage in {"export", "audit"}:
+                            run, report = direct_failure(stage, fault_plan, fault_key)
+                        else:
+                            with self.assertRaisesRegex(ProcessExecutionError, "Observed process failed with exit 1"):
+                                owner.run_managed_stage(context,
+                                    descriptor=dict(project="instrument_assembly", mode="inert_field_transport", software=[]),
+                                    run_id=fault_run_id, payload={}, committed_new_bytes=10485760,
+                                    commitment_inputs=[file_record(budget, "required_evidence")],
+                                    retention=dict(policy_version=1, **{"class":"solver_review"}, reason="inert worker fault"),
+                                    expected_operation_ids=["member"], operation_dependencies={}, protected_cache_keys=[fault_key],
+                                    action=action, action_record=file_record(Path(__file__), "required_evidence"),
+                                    completion_api=lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set()))
+                            run = context.workspace / "artifacts/projects/instrument_assembly/runs" / fault_run_id
+                            report = json.loads((run/"results/member.json").read_text())
                         self.assertEqual(report["status"], "failed")
                         self.assertEqual(report["native_count"], 3 if stage in {"audit","publication"} else 2)
                         self.assertEqual(report["accounting_deferred"], stage in {"accounting","publication"})
@@ -390,28 +444,31 @@ field_worker.main()
                         if stage == "receipt":
                             self.assertEqual(report["native_operations"][-1]["receipt"], {})
                             self.assertIn("INJECTED_MISSING_NATIVE_COMPLETION_RECEIPT", report["exception"]["message"])
-                        result_path = context.workspace / "artifacts/projects/instrument_assembly/scratch/workflow_results" / fault_run_id / "result.json"
-                        failed = json.loads(result_path.read_text())
-                        self.assertTrue(failed["writers_confirmed"])
-                        self.assertEqual(failed["exception"]["message"], "Observed process failed with exit 1")
-                        if stage in {"accounting","publication"}:
-                            self.assertEqual(failed["resume_action"], "return_to_capacity_accounting_owner")
-                            self.assertFalse(failed["lease_released"])
-                            if stage == "accounting":
-                                self.assertIn("INJECTED_STOPPED_ACCOUNTING_FAILURE", report["accounting_error"])
-                            else:
-                                self.assertIn("INJECTED_PUBLICATION_FINALIZATION_FAILURE", report["exception"]["message"])
-                                from msplatform.execution.capacity_ledger import load_capacity_ledger
-                                ledger = load_capacity_ledger(context.workspace/'artifacts')
-                                entry = next(row for row in ledger['objects'] if row.get('class') == 'published_cache'
-                                             and row.get('identity') == cache.load_pa_family_cache_transaction(cache_root,fault_key)['generation_sha256'])
-                                self.assertEqual(entry['status'], 'writing')
-                                self.assertEqual(entry['bytes'], cache._key_root_bytes(cache_root/fault_key))
-                                self.assertNotIn('newly_accounted_cache_bytes', report)
-                            self.assertFalse((run/"retention_actions.json").exists())
-                        else:
-                            self.assertEqual(failed["stage"], "complete")
+                        if stage in {"export", "audit"}:
                             self.assertEqual(report["stopped_stage_accounting"]["status"], "building")
+                        if stage not in {"export", "audit"}:
+                            result_path = context.workspace / "artifacts/projects/instrument_assembly/scratch/workflow_results" / fault_run_id / "result.json"
+                            failed = json.loads(result_path.read_text())
+                            self.assertTrue(failed["writers_confirmed"])
+                            self.assertEqual(failed["exception"]["message"], "Observed process failed with exit 1")
+                            if stage in {"accounting","publication"}:
+                                self.assertEqual(failed["resume_action"], "return_to_capacity_accounting_owner")
+                                self.assertFalse(failed["lease_released"])
+                                if stage == "accounting":
+                                    self.assertIn("INJECTED_STOPPED_ACCOUNTING_FAILURE", report["accounting_error"])
+                                else:
+                                    self.assertIn("INJECTED_PUBLICATION_FINALIZATION_FAILURE", report["exception"]["message"])
+                                    from msplatform.execution.capacity_ledger import load_capacity_ledger
+                                    ledger = load_capacity_ledger(context.workspace/'artifacts')
+                                    entry = next(row for row in ledger['objects'] if row.get('class') == 'published_cache'
+                                                 and row.get('identity') == cache.load_pa_family_cache_transaction(cache_root,fault_key)['generation_sha256'])
+                                    self.assertEqual(entry['status'], 'writing')
+                                    self.assertEqual(entry['bytes'], cache._key_root_bytes(cache_root/fault_key))
+                                    self.assertNotIn('newly_accounted_cache_bytes', report)
+                                self.assertFalse((run/"retention_actions.json").exists())
+                            else:
+                                self.assertEqual(failed["stage"], "complete")
+                                self.assertEqual(report["stopped_stage_accounting"]["status"], "building")
             self.assertEqual([row["native_count"] for row in reports], [3, 0])
             self.assertGreater(reports[0]['newly_accounted_cache_bytes'], 0)
             self.assertEqual(reports[0]['newly_accounted_cache_bytes'],
