@@ -235,18 +235,20 @@ MATLAB 原生输出的写入授权现复用公共真实路径身份解析：现�
 
 The current executable three-zone funnel is v2. Its active authoring contract is refreshed
 through the existing `run_theory --refresh-authorities` compiler when repository-source imports change;
-strict authority byte/SHA checks remain in force. The P4 artifact-naming import migration changed
-the CLI source without updating this binding, so software verification correctly rejected it.
-The v2 refresh changes only that CLI source record, preserving all scientific fields and other authorities.
+strict authority byte/SHA checks remain in force. The deferred SciPy stats import in peak metrics
+and the canonical manifest-publication import in the CLI changed their source identities without
+updating this binding, so software verification correctly rejected it. The v2 refresh updates only
+those two source records, preserving all scientific fields and the other authorities.
 
 V1 is retained as historical input under the C3/J3 contract and is not refreshed for current execution.
 Its current file bytes are preserved; strict loading rejects its stale source binding. Earlier maintenance
 (including the 2026-10-31 geometry refresh and later source migrations) had already updated this repository
 copy, so it must not be described as the original historical freeze. Original run/receipt snapshots retain
 their own identities. This correction does not execute scientific stages, commercial solvers or native
-SIMION, and does not confer scientific qualification. The original theory-experiment and T5 compiler
-modules passed 26 of 27 parent tests (16.965 seconds); one existing optional T5 receipt test skipped
-because `OATOF_THREE_ZONE_T5_RECEIPT` is unconfigured. Both executed subtests passed. The public
+SIMION, and does not confer scientific qualification. On the composed P4 successor, the original
+theory-experiment, C3/J3 mapping and T5 compiler modules passed 31 of 32 parent tests (21.031 seconds);
+one existing optional T5 receipt test skipped because `OATOF_THREE_ZONE_T5_RECEIPT` is unconfigured.
+All seven executed subtests passed. The public
 refresh and validate commands passed, the refresh is idempotent, and non-authority fields are unchanged.
 
 Candidate source freezing selects the canonical particle-count module through the existing complete
