@@ -1594,6 +1594,10 @@
           "reason": "installed_paired_mass_response_changed"
         },
         {
+          "exact": "src/msplatform/analysis/rf_transport_metrics.py",
+          "reason": "installed_rf_transport_metrics_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },

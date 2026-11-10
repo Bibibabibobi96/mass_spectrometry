@@ -1460,7 +1460,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-        & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind rf_off_energy_control `
+        & $python -m msplatform.analysis.rf_transport_metrics --metric-kind rf_off_energy_control `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
           --primary-state (Join-Path $resultDir "particle_states__$primaryName.csv") `
@@ -1473,7 +1473,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-        & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind primary `
+        & $python -m msplatform.analysis.rf_transport_metrics --metric-kind primary `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
           --primary-state (Join-Path $resultDir "particle_states__$primaryName.csv") --output $metrics
@@ -1489,7 +1489,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-        & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind base_paired `
+        & $python -m msplatform.analysis.rf_transport_metrics --metric-kind base_paired `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
           --control-case-id $controlName --control-summary (Join-Path $resultDir "simion_summary__$controlName.json") `
@@ -1500,7 +1500,7 @@ output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-        & $python -m projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics --metric-kind base_primary `
+        & $python -m msplatform.analysis.rf_transport_metrics --metric-kind base_primary `
           --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
           --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") --output $metrics
         if($LASTEXITCODE-ne 0){throw 'SIMION primary transport metrics analysis failed.'}

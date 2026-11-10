@@ -1311,10 +1311,10 @@ exit 0
 
     def test_raw_and_paired_transmission_cannot_diverge(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        metrics = (REPO_ROOT / "projects/rf_multipole_ion_optics/analysis/analyze_simion_transport_metrics.py").read_text(
+        metrics = (REPO_ROOT / "src/msplatform/analysis/rf_transport_metrics.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics", source)
+        self.assertIn("msplatform.analysis.rf_transport_metrics", source)
         self.assertIn("def _handoff_transmission", metrics)
         self.assertIn('row["event"] == "handoff"', metrics)
         self.assertNotIn("Import-Csv", source)
@@ -1379,7 +1379,7 @@ exit 0
         self.assertIn("$qualification='UNQUALIFIED'", source)
         self.assertIn("evaluate_transport_evidence", source)
         self.assertIn("analyze_simion_axial_acceleration", source)
-        self.assertIn("projects.rf_multipole_ion_optics.analysis.analyze_simion_transport_metrics", source)
+        self.assertIn("msplatform.analysis.rf_transport_metrics", source)
         self.assertNotIn("function ConvertTo-TransportMetricCase", source)
         self.assertNotIn("MinimumRfTransmission", source)
         self.assertNotIn("MinimumImprovementOverZeroRf", source)

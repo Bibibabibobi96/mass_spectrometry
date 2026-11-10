@@ -1148,3 +1148,11 @@ bounded successor build reused a copied old build directory; strict inventory re
 retired files. That failed wheel is retained, and the corrected clean build/fresh consumer confirms
 those files are absent. No native solver, complete Repository acceptance, convergence or broader
 RF-variant qualification follows.
+
+## Installed finite-SIMION transport metrics
+
+`msplatform.analysis.rf_transport_metrics` owns the existing four metric modes
+and their CLI. The finite-3D runner calls the installed owner directly; the old
+project implementation is retired. Original summary-particle denominators and
+canonical handoff-only counts, controls and UNQUALIFIED limits are unchanged.
+This is offline analysis, not new native transport or field qualification.

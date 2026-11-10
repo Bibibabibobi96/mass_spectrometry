@@ -32,6 +32,10 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_installed_rf_transport_metrics_selects_original_domain_owner(self):
+        self.assertIn("rf_multipole_domain_tests",
+                      self.routed_stages("src/msplatform/analysis/rf_transport_metrics.py"))
+
     def test_installed_connection_inputs_selects_existing_contract_owner(self):
         for path in ("src/msplatform/workflows/connection_inputs.py", "src/msplatform/io/file_identity.py"):
             with self.subTest(path=path):
