@@ -330,3 +330,19 @@ The 2026-10-20 switch audit found a roughly −62 m/s z impulse consistent with 
 The existing `functional.analyze` → `export_diagnostics` path exports the English structure/section atlas (including E9), timed section clouds, extraction section clouds, three population/energy/phase-space panels, and the combined post-extraction packet/axis-energy figure. Both producer modules are imported before `prepare` captures the Python source closure; each fresh run freezes the implementation it uses. No separate manual plotting command is required.
 
 The post-extraction common time is selected from recorded crossings and sampling support, with bounded interpolation and no extrapolation. Missing extracted ions or insufficient common-time support produce explicit availability metadata, header-only tables where appropriate, and explanatory panels; these diagnostic states do not upgrade the measured physical `functional_status`. Source paths, timings, cohort counts and electrode dimensions come from the run's frozen inputs and recorded data. Existing evidence is never overwritten; historical sealed runs retain their frozen diagnostic implementation.
+
+### Frozen GUI replay dependencies
+
+`analysis/gui_replay.py` uses the existing run-owned workbench pair freezer. Its resolved
+`workbench_seed_path`, seed records and replay-plan records refer to the same
+`simion/iob_seed/1_instance_seed.iob` and adjacent placeholder. A redundant IOB copy outside
+that pair is no longer produced.
+
+When the verified frozen `build_workbench.lua` or declared `probe_native_field.lua`
+loads `native_run_path.lua`, preparation verifies the existing baseline manifest record
+for that helper and copies its exact bytes beside those consumers. Missing or tampered
+required helpers fail before replay outputs/vendor launch; no current-source fallback
+is used. A historical control that does not load the locator gains no new dependency.
+Software tests run the unchanged builder with inert APIs and a real relative seed-pair
+lookup; they do not establish new SIMION/GUI or pose qualification. Current acceptance
+and the P11 placement gap are recorded in PROJECT.

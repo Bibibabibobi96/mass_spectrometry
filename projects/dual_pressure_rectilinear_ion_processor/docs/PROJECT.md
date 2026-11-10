@@ -386,3 +386,29 @@ The shared recorded-beam moments, crossing and focus methods now come directly f
 `msplatform.analysis`; IP preparation freezes those same modules and its original detached consumer
 checks still reject missing dependencies. The original weighted/cohort/clock semantics remain; this
 source migration does not add native transport or scientific qualification.
+
+### P4 GUI replay seed and frozen-locator closure
+
+GUI preparation now freezes the existing official one-instance IOB/placeholder pair into
+its own `simion/iob_seed/` through the unchanged public pair freezer. The resolved
+configuration, plan and run inputs bind that actual pair; the unused extra IOB copy
+has been removed. Baseline PA families are neither copied nor vendor-opened by this repair.
+
+Two software defects were reproduced: the old configuration selected the canonical source
+IOB instead of the owned pair, and an actual frozen builder could not load its omitted
+`native_run_path.lua`. Preparation now selects that helper only when an already verified,
+manifest-bound builder or field probe refers to it. The exact baseline helper must itself
+be bound and intact before any GUI output is written; current installed/workspace code
+never supplements an incomplete historical snapshot. Controls without the dependency
+retain their original closure.
+
+The affected software modules passed 55 parents (61 successful records, 20.257 seconds),
+including unchanged Lua builder execution with inert APIs after the original test-only
+seed source became unavailable, relative-placeholder rejection, helper absence/tampering,
+and historical controls. Earlier wrong-binding RED and first nine-parent run (seven
+successes, exception-expectation mismatch plus missing locator) remain retained in the P4
+handoff evidence. This is software path/identity evidence: no Refine, Fly, GUI confirmation,
+HS1 validation or scientific qualification was performed. The 15-electrode drive, mother
+cohort, clock and collision semantics are unchanged. Arbitrary proper IP native placement
+remains P11 OPEN; the existing supported placement restriction is an adaptation boundary,
+not a claim of physical impossibility.

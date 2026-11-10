@@ -81,6 +81,8 @@ class GuiReplayPlanTests(unittest.TestCase):
         for name in ("frozen_config.lua", "collision_hs1.lua", "source_states.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "processor.fly2", "processor.lua", "processor.gem", "probe_native_field.lua"):
             (self.baseline / "simion" / name).write_text("-- synthetic frozen input", encoding="utf-8")
         shutil.copyfile(Path(__file__).resolve().parents[1] / "simion/build_workbench.lua", self.baseline / "simion/build_workbench.lua")
+        from msplatform.execution.resources import resource_path
+        shutil.copyfile(resource_path("native_run_path.lua"), self.baseline / "simion/native_run_path.lua")
         config = {"source_profile": "functional", "native_projection": {"origin_mm": [-1, -4, -4], "electrode_ids": list(range(1, 16))}, "numerics": {"seed": 42, "trajectory_quality": 0}}
         config["native_timing"] = {"policy":"synthetic_frozen_timing", "primary_quench_us":.25, "pulse_start_us":.75}
         (self.baseline / "inputs/native_timing.json").write_text(json.dumps(config["native_timing"]), encoding="utf-8")
@@ -92,6 +94,22 @@ class GuiReplayPlanTests(unittest.TestCase):
             (self.baseline / relative).write_text(table, encoding="utf-8")
         (self.baseline / "simion/samples.csv").write_text("particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n1,0,1,0,0,1,0,0\n1,1,2,0,0,1,0,0\n", encoding="utf-8")
         self.publish_manifest()
+        # Real public pair freezing, but its source PA is explicit inert test
+        # data. No checkout-local 16 MB seed or scientific PA is required.
+        from common.simion.workbench_seed import freeze_workbench_seed as freeze_pair
+        from msplatform.backends.simion.resources import structural_seed_path
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import gui_replay
+        self.seed_repository = root / "explicit_seed_source"
+        public_seed = self.seed_repository / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
+        public_seed.parent.mkdir(parents=True)
+        shutil.copyfile(structural_seed_path(1), public_seed)
+        public_placeholder = self.seed_repository / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"
+        public_placeholder.parent.mkdir(parents=True)
+        public_placeholder.write_bytes(b"INERT_STRUCTURE_ONLY_NOT_A_SCIENTIFIC_PA")
+        selected_seed = patch.object(gui_replay, "freeze_workbench_seed",
+            side_effect=lambda run, repo: freeze_pair(run, self.seed_repository))
+        selected_seed.start()
+        self.addCleanup(selected_seed.stop)
 
     def publish_manifest(self) -> None:
         records = [file_record(p) for p in self.baseline.rglob("*") if p.is_file() and p.name != "run_manifest.json"]
@@ -120,6 +138,93 @@ class GuiReplayPlanTests(unittest.TestCase):
         (self.baseline / "simion/native_potential_audit.csv").write_text(
             "t_us,x_mm,y_mm,z_mm,potential_v\n750,170,0,0,1\n", encoding="utf-8")
         self.publish_manifest()
+
+    def test_gui_seed_pair_is_owned_and_bound_without_altering_source(self) -> None:
+        before = {path.relative_to(self.baseline): path.read_bytes()
+                  for path in self.baseline.rglob("*") if path.is_file()}
+        seed_before = {path.relative_to(self.seed_repository): path.read_bytes()
+                       for path in self.seed_repository.rglob("*") if path.is_file()}
+        plan = prepare_replay(self.run, self.baseline)
+        config = json.loads((self.run / "inputs/resolved_model.json").read_text(encoding="utf-8"))
+        seed = self.run / "simion/iob_seed/1_instance_seed.iob"
+        placeholder = seed.parent / "iob_seed_placeholder_01.pa0"
+        self.assertEqual(Path(config["workbench_seed_path"]), seed)
+        self.assertEqual(plan["workbench_seed_record"], file_record(seed))
+        self.assertEqual(plan["workbench_seed_placeholder_record"], file_record(placeholder))
+        self.assertTrue(seed.is_file() and placeholder.is_file())
+        self.assertFalse((self.run / "simion/1_instance_seed.iob").exists())
+        run_config = json.loads((self.run / "run_config.json").read_text(encoding="utf-8"))
+        self.assertEqual(Path(run_config["inputs"]["public_workbench_seed"]), seed)
+        self.assertEqual(Path(run_config["inputs"]["public_seed_placeholder"]), placeholder)
+        self.assertEqual({path.relative_to(self.baseline): path.read_bytes()
+                          for path in self.baseline.rglob("*") if path.is_file()}, before)
+        self.assertEqual({path.relative_to(self.seed_repository): path.read_bytes()
+                          for path in self.seed_repository.rglob("*") if path.is_file()}, seed_before)
+        for role, path in (("seed", seed), ("placeholder", placeholder)):
+            self.assertEqual(config["workbench_seed_records"][role]["frozen"], file_record(path))
+            self.assertEqual(Path(config["workbench_seed_records"][role]["source"]["path"]).read_bytes(), path.read_bytes())
+
+    def test_modified_run_owned_seed_pair_rejected_by_existing_freezer(self) -> None:
+        prepare_replay(self.run, self.baseline)
+        placeholder = self.run / "simion/iob_seed/iob_seed_placeholder_01.pa0"
+        placeholder.write_bytes(b"ALTERED_OWNED_STRUCTURAL_FIXTURE")
+        source_before = {path.relative_to(self.seed_repository): path.read_bytes()
+                         for path in self.seed_repository.rglob("*") if path.is_file()}
+        with self.assertRaisesRegex(AssertionError, "official frozen IOB seed byte count changed"):
+            prepare_replay(self.run, self.baseline)
+        self.assertEqual({path.relative_to(self.seed_repository): path.read_bytes()
+                          for path in self.seed_repository.rglob("*") if path.is_file()}, source_before)
+        self.assertFalse((self.run / "simion/processor.iob").exists())
+
+    def test_frozen_locator_is_selected_and_copied_from_its_bound_consumer(self) -> None:
+        plan = prepare_replay(self.run, self.baseline)
+        original = self.baseline / "simion/native_run_path.lua"
+        copied = self.run / "simion/native_run_path.lua"
+        self.assertEqual(copied.read_bytes(), original.read_bytes())
+        records = [record for record in plan["frozen_control_records"] if Path(record["path"]) == copied]
+        self.assertEqual(records, [file_record(copied)])
+
+    def test_frozen_probe_alone_selects_its_bound_locator(self) -> None:
+        self.add_native_field_diagnostics()
+        (self.baseline / "simion/build_workbench.lua").write_text(
+            "-- INERT FROZEN LEGACY BUILDER WITHOUT LOCATOR\n", encoding="utf-8")
+        probe = Path(__file__).resolve().parents[1] / "simion/probe_native_field.lua"
+        shutil.copyfile(probe, self.baseline / "simion/probe_native_field.lua")
+        self.publish_manifest()
+        plan = prepare_replay(self.run, self.baseline)
+        copied = self.run / "simion/native_run_path.lua"
+        self.assertEqual(copied.read_bytes(), (self.baseline / "simion/native_run_path.lua").read_bytes())
+        self.assertEqual([record for record in plan["frozen_control_records"]
+                          if Path(record["path"]) == copied], [file_record(copied)])
+
+    def test_missing_or_tampered_bound_locator_rejects_before_gui_output(self) -> None:
+        helper = self.baseline / "simion/native_run_path.lua"
+        original = helper.read_bytes()
+        before = {path.relative_to(self.run): path.read_bytes() for path in self.run.rglob("*") if path.is_file()}
+        for mode in ("missing", "same_length_tamper"):
+            with self.subTest(mode=mode):
+                if mode == "missing":
+                    helper.unlink()
+                else:
+                    helper.write_bytes(b"x" * len(original))
+                try:
+                    with self.assertRaises(AssertionError) as caught:
+                        prepare_replay(self.run, self.baseline)
+                    self.assertIn("native_run_path.lua", str(caught.exception))
+                    self.assertEqual({path.relative_to(self.run): path.read_bytes()
+                                      for path in self.run.rglob("*") if path.is_file()}, before)
+                finally:
+                    helper.write_bytes(original)
+
+    def test_historical_frozen_controls_without_locator_do_not_gain_current_helper(self) -> None:
+        builder = self.baseline / "simion/build_workbench.lua"
+        builder.write_text("-- INERT FROZEN LEGACY CONTROL WITHOUT LOCATOR\n", encoding="utf-8")
+        (self.baseline / "simion/native_run_path.lua").unlink()
+        self.publish_manifest()
+        plan = prepare_replay(self.run, self.baseline)
+        self.assertFalse((self.run / "simion/native_run_path.lua").exists())
+        self.assertFalse(any(Path(record["path"]).name == "native_run_path.lua" for record in plan["frozen_control_records"]))
+        self.assertEqual((self.run / "simion/build_gui_workbench.lua").read_bytes(), builder.read_bytes())
 
     def test_gui_preparation_consumes_frozen_controls_bound_only_as_inputs(self) -> None:
         manifest_path = self.baseline/"run_manifest.json"

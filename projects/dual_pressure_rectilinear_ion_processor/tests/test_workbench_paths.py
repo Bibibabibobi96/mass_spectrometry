@@ -74,6 +74,10 @@ local wb={instances={instance}}
 function wb:load(path)
   check('seed',path)
   local f=assert(io.open(path,'r'));f:close()
+  local parent=assert(path:match('^(.*[/\\])'))
+  local placeholder=assert(io.open(parent..'iob_seed_placeholder_01.pa0','rb'),
+    'seed relative placeholder missing')
+  placeholder:close()
   -- Model SIMION's documented/observed CWD side effect without changing the
   -- OS process directory. Every later path is required to resolve absolutely.
   virtual_cwd='public_seed_directory'
@@ -127,6 +131,7 @@ class WorkbenchPathTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
             seed = seed_dir / "1_instance_seed.iob"
             seed.write_text("INERT SEED COPY FIXTURE\n", encoding="utf-8")
+            (seed_dir / "iob_seed_placeholder_01.pa0").write_bytes(b"INERT_STRUCTURE_ONLY_NOT_A_PA")
             (field / "processor.pa0").write_text("INERT PA PATH FIXTURE\n", encoding="utf-8")
             (solver / "processor.fly2").write_text("INERT PARTICLE PATH FIXTURE\n", encoding="utf-8")
             config = {"workbench_seed_path": str(seed), "native_field": {"directory": str(field)},
@@ -148,6 +153,52 @@ class WorkbenchPathTests(unittest.TestCase):
             self.assertFalse((seed_dir / "processor.iob").exists())
             self.assertFalse((unrelated / "processor.iob").exists())
             self.assertEqual(seed.read_text(encoding="utf-8"), "INERT SEED COPY FIXTURE\n")
+
+    def test_gui_builder_uses_owned_relative_pair_after_original_source_is_unavailable(self) -> None:
+        import json
+        from projects.dual_pressure_rectilinear_ion_processor.tests.test_gui_replay_plan import GuiReplayPlanTests
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import prepare_replay
+        case = GuiReplayPlanTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        config_path = case.baseline / "inputs/resolved_model.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["native_projection"]["grid_mm"] = .1
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        case.publish_manifest()
+        plan = prepare_replay(case.run, case.baseline)
+        solver = case.run / "simion"
+        (solver / "processor.pa0").write_bytes(b"INERT_NEW_PRIVATE_PA_NOT_A_SOLVED_FIELD")
+        seed = Path(plan["workbench_seed_record"]["path"])
+        placeholder = Path(plan["workbench_seed_placeholder_record"]["path"])
+        self.assertEqual(seed.parent, solver / "iob_seed")
+        frozen_pair = (seed.read_bytes(), placeholder.read_bytes())
+        original = case.seed_repository
+        hidden = original.with_name(original.name + "_unavailable")
+        original.rename(hidden)
+        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua")
+        if executable is None:
+            executable = str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
+        if not Path(executable).is_file():
+            self.skipTest("Standalone Lua unavailable for inert builder readback")
+        harness = case.run / "owned_pair_readback.lua"
+        harness.write_text(LUA_HARNESS, encoding="utf-8")
+        builder = solver / "build_gui_workbench.lua"
+        result = subprocess.run([executable, str(harness), str(builder)], cwd=case.run,
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("WORKBENCH_PATHS_PASS", result.stdout)
+        self.assertEqual((seed.read_bytes(), placeholder.read_bytes()), frozen_pair)
+        self.assertFalse(original.exists())
+        self.assertEqual((hidden / "src/msplatform/backends/simion/resources/1_instance_seed.iob").read_bytes(), frozen_pair[0])
+        self.assertEqual((hidden / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0").read_bytes(), frozen_pair[1])
+        (solver / "processor.iob").unlink()
+        placeholder.unlink()
+        refused = subprocess.run([executable, str(harness), str(builder)], cwd=case.run,
+                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("seed relative placeholder missing", refused.stderr)
+        self.assertFalse((solver / "processor.iob").exists())
 
     def test_builder_keeps_local_field_and_output_paths_absolute(self) -> None:
         self.run_path_fixture(external_native_field=False)
