@@ -277,7 +277,7 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
         "build_native_corridor_iob.lua": "build_workbench.lua",
     }.items():
         freeze_file(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/simion" / source_name, runtime / target_name)
-    freeze_file(REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua",
+    freeze_file(REPO / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
                 runtime / "mrtof_candidate.scalar_field_adapter.lua")
     freeze_file(REPO / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", runtime / "mrtof_candidate.voltage_waveforms.lua")
     shutil.copyfile(output_directory / "measured_source/source_runtime.lua", runtime / "mrtof_candidate.source_runtime.lua")

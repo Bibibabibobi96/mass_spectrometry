@@ -546,7 +546,7 @@ try{
   $staticFieldLocal=$null
   if($staticFieldRequested){
     $staticFieldLocal=Copy-RequiredInput $FieldBindingPath (Join-Path $solverDir 'static_field_binding.json') 'static COMSOL binding'
-    Copy-RequiredInput (Join-Path $script:pythonRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\resources\scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
+    Copy-RequiredInput (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
   }
   Copy-RequiredInput -Source (Join-Path $providerSimionRoot 'build_native_corridor_iob.lua') -Destination (Join-Path $solverDir 'build_native_corridor_iob.lua') -Label 'native corridor IOB builder'|Out-Null
   Copy-RequiredInput -Source (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\4_instance_seed.iob') -Destination (Join-Path $solverDir '4_instance_seed.iob') -Label 'native four-instance seed'|Out-Null

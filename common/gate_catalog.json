@@ -2449,6 +2449,14 @@
         {
           "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py",
           "reason": "installed_mr_physical_interface_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
+          "reason": "installed_mr_scalar_adapter_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources.py",
+          "reason": "installed_mr_scalar_resource_lookup_changed"
         }
       ],
       "command": {
@@ -2691,6 +2699,49 @@
             "modules": [
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mirror_l0_l1_runner.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prism_runner_contract_matrix.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
+                "reason": "installed_mr_scalar_adapter_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources.py",
+                "reason": "installed_mr_scalar_resource_lookup_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_memory_consumer_crop.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider_runner.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py",
+                "reason": "prepared_joint_scalar_freezer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1",
+                "reason": "native_scalar_provider_freezer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider_runner.py"
             ],
             "dependency_profile": "locked"
           }

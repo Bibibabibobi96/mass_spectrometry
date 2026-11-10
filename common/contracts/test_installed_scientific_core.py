@@ -2612,6 +2612,72 @@ for mr_l0_name,mr_l0_record in mr_l0_report['origins'].items():
 print('INSTALLED_MR_L0_DOMAIN_WORKFLOW=PASS')
 # MR_L0_INSTALLED_END
 
+# SCALAR_ADAPTER_INSTALLED_BEGIN
+# Software-only PA API fixture; production compiler/resource own serialization/routing.
+import msplatform.backends.comsol.static_field_binding as scalar_compiler
+import msplatform.backends.simion.resources as scalar_resources
+scalar_fixture=fixture['scalar_adapter']
+scalar_purelib=pathlib.Path(sysconfig.get_paths()['purelib']).resolve()
+scalar_module_path=pathlib.Path(scalar_compiler.__file__).resolve()
+scalar_resources_module_path=pathlib.Path(scalar_resources.__file__).resolve()
+scalar_resource_path=scalar_resources.native_resource_path('scalar_field_adapter.lua').resolve()
+assert scalar_module_path==scalar_purelib/'msplatform/backends/comsol/static_field_binding.py'
+assert scalar_resources_module_path==scalar_purelib/'msplatform/backends/simion/resources.py'
+assert scalar_resource_path==scalar_purelib/'msplatform/backends/simion/resources/scalar_field_adapter.lua'
+assert not (scalar_purelib/'msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua').exists()
+for scalar_relative,scalar_path in (('backends/comsol/static_field_binding.py',scalar_module_path),
+                                    ('backends/simion/resources.py',scalar_resources_module_path),
+                                    ('backends/simion/resources/scalar_field_adapter.lua',scalar_resource_path)):
+    scalar_content=scalar_path.read_bytes()
+    assert len(scalar_content)==scalar_fixture['sources'][scalar_relative]['bytes']
+    assert hashlib.sha256(scalar_content).hexdigest()==scalar_fixture['sources'][scalar_relative]['sha256']
+scalar_executable=pathlib.Path(scalar_fixture['executable']['path'])
+assert scalar_executable.is_absolute() and scalar_executable.is_file()
+scalar_executable_bytes=scalar_executable.read_bytes()
+assert len(scalar_executable_bytes)==scalar_fixture['executable']['bytes']
+assert hashlib.sha256(scalar_executable_bytes).hexdigest()==scalar_fixture['executable']['sha256']
+assert scalar_fixture['version_stdout'] or scalar_fixture['version_stderr']
+scalar_directory=root/('installed-scalar-adapter-'+analysis_round)
+scalar_directory.mkdir()
+scalar_base={'sources':{'scalar_pa':'base V.pa','valid_pa':'base mask.pa'},
+             'grid':{'origin_mm':[-4,-4,-4],'pitch_mm':[1,1,1]},'ideal_sheet_projection':[]}
+scalar_first={'name':'first','sources':{'scalar_pa':'first V.pa','valid_pa':'first mask.pa'},
+              'grid':{'origin_mm':[0,0,0],'pitch_mm':[.25,.125,.5]},
+              'ideal_sheet_projection':[],'active_box_mm':[[.5,1],[.25,.5],[1,2]]}
+scalar_second={'name':'second','sources':{'scalar_pa':'second V.pa','valid_pa':'second mask.pa'},
+               'grid':{'origin_mm':[-.125,-.25,-.5],'pitch_mm':[.125,.25,.25]},
+               'ideal_sheet_projection':[],'active_box_mm':[[.75,1.5],[.375,.75],[1.5,3]]}
+scalar_ordered=dict(scalar_base,refinement_windows=[scalar_first,scalar_second])
+scalar_reversed=dict(scalar_base,refinement_windows=[scalar_second,scalar_first])
+scalar_samples=scalar_directory/'samples.csv'
+scalar_samples.write_text('name,x_mm,y_mm,z_mm\nfirst_min,.5,.25,1\nfirst_max,1,.5,2\noverlap,.875,.4375,1.75\nsecond_max,1.5,.75,3\noutside,1.8,.8,3.2\nplain,.875,.4375,1.75\n',encoding='utf-8')
+scalar_request=scalar_directory/'ordered.lua'
+scalar_plain_request=scalar_directory/'plain.lua'
+scalar_request.write_text(scalar_compiler.compile_sampling_request(scalar_ordered,scalar_reversed,scalar_samples,scalar_directory/'ordered.csv'),encoding='utf-8')
+scalar_plain_request.write_text(scalar_compiler.compile_sampling_request(scalar_base,scalar_ordered,scalar_samples,scalar_directory/'plain.csv'),encoding='utf-8')
+scalar_lua_source=scalar_directory/'fixture.lua'
+scalar_lua_source.write_text("\nlocal unknown=false;local calls={base=0,first=0,second=0};local assets={}\nlocal specs={base={12,12,12,1,1,1},first={9,9,9,.25,.125,.5},second={17,9,17,.125,.25,.25}}\nfor name,s in pairs(specs) do\n local pa={name=name,symmetry='3dplanar',nx=s[1],ny=s[2],nz=s[3],dx_mm=s[4],dy_mm=s[5],dz_mm=s[6]}\n function pa:potential() return 2 end\n function pa:save() error('PA save forbidden') end\n local mask={symmetry=pa.symmetry,nx=pa.nx,ny=pa.ny,nz=pa.nz,dx_mm=pa.dx_mm,dy_mm=pa.dy_mm,dz_mm=pa.dz_mm}\n function mask:potential() return (name=='first' and unknown) and 0 or 1 end\n assets[name..' V.pa']=pa;assets[name..' mask.pa']=mask\nend\nsimion={early_access=function() end,pas={},experimental={}}\nfunction simion.pas:open(path) return assert(assets[path],'transported PA path differs') end\nfunction simion.experimental.field_array(t)\n assert(t.type=='V' and t.antimirror=='')\n return {efield=function(x,y,z)\n  calls[t.V.name]=calls[t.V.name]+1\n  -- Different origins/pitches survive transport; FA receives physical local mm.\n  if t.V.name=='base' then assert(x>=4 and y>=4 and z>=4);return 1,2,3\n  elseif t.V.name=='first' then assert(x>=.5 and x<=1 and y>=.25 and y<=.5 and z>=1 and z<=2);return 11,12,13\n  else assert(x>=.875 and x<=1.625 and y>=.625 and y<=1 and z>=2 and z<=3.5);return 21,22,23 end\n end}\nend\nfunction simion.experimental.make_efield_adjust(f) return f end\nlocal scalar_request=assert(loadfile(arg[1]))()\nlocal scalar_plain_request=assert(loadfile(arg[2]))()\nassert(scalar_request.schema_version==1 and scalar_plain_request.schema_version==1)\nassert(scalar_request.adapter==scalar_plain_request.adapter)\nassert(#scalar_request.samples==6 and #scalar_plain_request.samples==6)\nlocal apply=assert(loadfile(scalar_request.adapter))()\nlocal ordered_binding=scalar_request.a\nlocal reversed_binding=scalar_request.b\nlocal plain_binding=scalar_plain_request.a\n\nassert(ordered_binding.refinement_windows[1].name=='first' and ordered_binding.refinement_windows[2].name=='second')\nassert(ordered_binding.refinement_windows[1].pitch_mm[2]==.125 and ordered_binding.refinement_windows[2].pitch_mm[2]==.25)\nlocal function check(f,x,y,z,value)\n local ex,ey,ez=f(x,y,z);assert(ex==value and ey==value+1 and ez==value+2)\nend\ncheck(apply(plain_binding),.875,.4375,1.75,1)\nlocal field=apply(ordered_binding)\ncheck(field,.5,.25,1,11);check(field,1,.5,2,11) -- inclusive first-window corners\ncheck(field,.875,.4375,1.75,11) -- overlap goes to the first serialized window\ncheck(field,1.5,.75,3,21) -- inclusive second-window maximum with its own halo\ncheck(field,1.8,.8,3.2,1)\ncheck(apply(reversed_binding),.875,.4375,1.75,21)\nlocal beforeBase,beforeSecond=calls.base,calls.second\nunknown=true\nlocal ok,err=pcall(field,.875,.4375,1.75)\nassert(not ok and tostring(err):find('V_SUPPORT_UNKNOWN',1,true))\nassert(calls.base==beforeBase and calls.second==beforeSecond,'serialized window silently fell back')\nprint('GENERATED_SCALAR_TRANSPORT_FIXTURE_PASS')\n",encoding='utf-8')
+scalar_child=subprocess.run([str(scalar_executable),str(scalar_lua_source),str(scalar_request),str(scalar_plain_request)],
+                            cwd=scalar_directory,capture_output=True,text=True,encoding='utf-8',errors='strict',timeout=10,check=False)
+assert scalar_child.returncode==0,scalar_child.stdout+scalar_child.stderr
+assert 'GENERATED_SCALAR_TRANSPORT_FIXTURE_PASS' in scalar_child.stdout
+scalar_resource_bytes=scalar_resource_path.read_bytes()
+scalar_held=scalar_resource_path.with_name(scalar_resource_path.name+'.missing-test-held')
+assert not scalar_held.exists()
+scalar_resource_path.rename(scalar_held)
+try:
+    try:
+        scalar_compiler.compile_sampling_request(scalar_ordered,scalar_reversed,scalar_samples,scalar_directory/'missing.csv')
+    except FileNotFoundError as scalar_error:
+        assert 'scalar_field_adapter.lua' in str(scalar_error)
+        missing_rejected.append('scalar_field_adapter')
+    else:raise AssertionError('missing selected scalar resource was accepted')
+finally:scalar_held.rename(scalar_resource_path)
+assert scalar_resource_path.read_bytes()==scalar_resource_bytes
+assert scalar_executable.read_bytes()==scalar_executable_bytes
+print('INSTALLED_SCALAR_ADAPTER_TRANSPORT=PASS')
+# SCALAR_ADAPTER_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -2635,6 +2701,34 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
 
 
 class InstalledScientificCoreTests(unittest.TestCase):
+    @staticmethod
+    def scalar_adapter_probe_fixture():
+        """Pin an explicit standalone Lua software provider and selected source bytes."""
+        scalar_selected = os.environ.get('SIMION_LUA_EXE')
+        if not scalar_selected:
+            scalar_selected = shutil.which('lua') or shutil.which('lua5.1')
+        if not scalar_selected:
+            raise RuntimeError('scalar adapter software preflight requires SIMION_LUA_EXE or PATH lua/lua5.1')
+        scalar_executable = Path(scalar_selected).resolve(strict=True)
+        if not scalar_executable.is_file():
+            raise RuntimeError('selected scalar Lua provider is not a file')
+        scalar_provider_bytes = scalar_executable.read_bytes()
+        scalar_version = subprocess.run([str(scalar_executable), '-v'], cwd=REPO_ROOT,
+                                        capture_output=True, text=True, encoding='utf-8',
+                                        errors='replace', timeout=10, check=True)
+        scalar_provider_record = dict(path=str(scalar_executable), exists=True,
+                                      bytes=len(scalar_provider_bytes),
+                                      sha256=hashlib.sha256(scalar_provider_bytes).hexdigest())
+        scalar_source_records = {}
+        for scalar_relative in ('backends/comsol/static_field_binding.py', 'backends/simion/resources.py',
+                                'backends/simion/resources/scalar_field_adapter.lua'):
+            scalar_source_bytes = (REPO_ROOT/'src/msplatform'/scalar_relative).read_bytes()
+            scalar_source_records[scalar_relative] = dict(bytes=len(scalar_source_bytes),
+                sha256=hashlib.sha256(scalar_source_bytes).hexdigest())
+        return dict(executable=scalar_provider_record,
+                    version_stdout=scalar_version.stdout, version_stderr=scalar_version.stderr,
+                    sources=scalar_source_records)
+
     def run_command(self, arguments: list[str], *, cwd: Path, environment: dict[str, str],
                     timeout: int = 120) -> str:
         started = time.perf_counter()
@@ -3872,6 +3966,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
+                                              scalar_adapter=self.scalar_adapter_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'

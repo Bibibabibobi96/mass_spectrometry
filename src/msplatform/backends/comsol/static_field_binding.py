@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping
 from msplatform.io.manifest_records import verify_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import native_resource_path
+from msplatform.backends.simion.resources import native_resource_path as simion_native_resource_path
 
 
 _record_indexes: ContextVar[dict | None] = ContextVar("static_field_record_indexes", default=None)
@@ -2077,7 +2078,7 @@ def compile_sampling_request(binding_a: dict[str, Any], binding_b: dict[str, Any
     fields = ["{ " + _scalar_field_lua_fields(binding) + ", refinement_windows = "
               + _scalar_refinement_windows_lua(binding.get("refinement_windows", [])) + " }"
               for binding in (binding_a, binding_b)]
-    adapter = native_resource_path("scalar_field_adapter.lua")
+    adapter = simion_native_resource_path("scalar_field_adapter.lua")
     return ("return { schema_version = 1, adapter = " + json.dumps(adapter.as_posix())
             + ", output_csv = " + json.dumps(output_csv.resolve().as_posix())
             + ", a = " + fields[0] + ", b = " + fields[1]

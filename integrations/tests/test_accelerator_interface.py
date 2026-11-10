@@ -635,8 +635,8 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 scripts.mkdir(parents=True)
                 for name in ("mrtof_candidate.lua", "mirror_cycle_counter.lua", "build_native_corridor_iob.lua"):
                     (scripts/name).write_text("-- inert frozen script fixture")
-                scalar = snapshot/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
-                scalar.parent.mkdir(parents=True)
+                scalar = snapshot/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
+                scalar.parent.mkdir(parents=True, exist_ok=True)
                 scalar.write_text("-- inert frozen script fixture")
                 waveform = snapshot/"src/msplatform/backends/simion/resources/voltage_waveforms.lua"
                 waveform.parent.mkdir(parents=True, exist_ok=True)
@@ -779,6 +779,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                     result = bind_joint_workbench(design_run=design, field_run=fields, source_run=actual,
                         handoff_receipt=handoff, energy_comparison=comparison, output_directory=root/"bound")
                 runtime = root/"bound/runtime"
+                self.assertEqual((runtime/"mrtof_candidate.scalar_field_adapter.lua").read_bytes(), scalar.read_bytes())
                 self.assertEqual((runtime/"mrtof_candidate.voltage_waveforms.lua").read_bytes(), waveform.read_bytes())
                 self.assertEqual(Path(result["workbench_build_contract"]["seed"]), runtime/seed.name)
                 self.assertEqual((runtime/seed.name).read_bytes(), originals[seed])
@@ -789,7 +790,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 self.assertEqual({path: path.read_bytes() for path in originals}, originals)
                 self.assertEqual(sorted(path.name for path in assets.iterdir()), [payload.name])
                 self.assertEqual(sorted(path.name for path in seed.parent.iterdir()),
-                                 sorted([seed.name, waveform.name]))
+                                 sorted([seed.name, waveform.name, scalar.name]))
                 self.assertIn(module._lua(str(runtime/seed.name)), (runtime/"workbench_build.lua").read_text())
                 self.assertEqual(result["guard_paths"], sorted({item["pa_path"] for item in binding["instances"]} | {binding["sources"]["scalar_pa"]}))
 

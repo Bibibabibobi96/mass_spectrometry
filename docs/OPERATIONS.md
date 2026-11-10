@@ -112,6 +112,10 @@ standalone executable; two existing native-authorization skips remain. Other
 project/integration selectors and native qualification are separate work.
 This is a software-test dependency, not a commercial SIMION installation or native Fly/Refine
 qualification. A changed archive, missing closure or wrong runtime version fails the setup.
+The ordinary wheel/sdist acceptance also requires an explicit standalone Lua:
+`SIMION_LUA_EXE` selects its executable, otherwise `lua` then `lua5.1` on PATH.
+It records and checks that provider before running the installed scalar-adapter
+software fixture; absence fails preflight rather than skipping the check.
 Source: [LuaBinaries 5.1.5 official files](https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/),
 reviewed 2026-11-10. The pinned digest records observed archive bytes, not an independent vendor-published checksum.
 

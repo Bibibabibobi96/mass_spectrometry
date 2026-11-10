@@ -1843,6 +1843,32 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                                 self.assertEqual(sum(module.endswith("." + name) for module in modules), 1, module_line)
                             self.assertIn("Ran 6 tests", output)
 
+    def test_scalar_adapter_and_freezers_augment_core_with_actual_consumers(self) -> None:
+        stage = "parallel_mirror_dual_stripe_mr_tof_static"
+        adapter = "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
+        lookup = "src/msplatform/backends/simion/resources.py"
+        prepared = MR + "/analysis/prepared_joint_trial.py"
+        provider = MR + "/simion/run_native_static_field_provider.ps1"
+        consumers = [MR + "/tests/analysis/" + name + ".py" for name in (
+            "test_static_field_binding", "test_native_memory_consumer_crop",
+            "test_prepared_joint_trial", "test_native_static_field_provider_runner")]
+        cases = [
+            dict(stage=stage, paths=[adapter], modules=consumers),
+            dict(stage=stage, paths=[lookup], modules=consumers),
+            dict(stage=stage, paths=[prepared], modules=[consumers[2]]),
+            dict(stage=stage, paths=[provider], modules=[consumers[3]]),
+            dict(stage=stage, paths=[adapter, lookup, prepared, provider, consumers[1]],
+                 modules=consumers),
+        ]
+        for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
+            with self.subTest(paths=case["paths"]):
+                self.assertIsNotNone(selected)
+                self.assertCountEqual(selected["Modules"], case["modules"])
+                self.assertEqual(len(selected["Modules"]), len(set(selected["Modules"])))
+                self.assertFalse(selected["CompleteOwner"])
+                self.assertFalse(selected["OnlyTestModules"])
+
+
 
 
 if __name__ == "__main__":

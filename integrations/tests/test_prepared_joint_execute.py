@@ -759,7 +759,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         relative = Path("projects/parallel_mirror_dual_stripe_mr_tof/simion")
         for name in ("mrtof_candidate.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua"):
             self.assertEqual((snapshot / relative / name).read_bytes(), (REPO / relative / name).read_bytes())
-        scalar_relative = Path("src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua")
+        scalar_relative = Path("src/msplatform/backends/simion/resources/scalar_field_adapter.lua")
         self.assertEqual((snapshot/scalar_relative).read_bytes(), (REPO/scalar_relative).read_bytes())
         runtime = fixture.root / "runtime"
         runtime.mkdir()

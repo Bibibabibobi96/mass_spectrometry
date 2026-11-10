@@ -110,6 +110,11 @@ historical retention readers remain in the existing COMSOL backend boundary.
 The neutral physical resolver consumes explicit OA authority in the MR component;
 native layout validation remains in the SIMION backend. Neither migration registers
 an empty MR provider or qualifies a new field/Fly.
+The scalar field consumer Lua belongs to `msplatform.backends.simion.resources`;
+sampling and the existing source freezers select that same installed body. Its
+run-owned companion filenames and sealed record roles remain unchanged. The MR
+operating-PA identity and composer ownership are separate remaining work; this
+resource move changes neither field mathematics nor native qualification.
 旧 `simion_candidate_reference.py`、`static_field_binding.py`、`mirror_geometry_parameters.py`、
 `analyzer_candidate_geometry.py` 已退役；所有活动消费者直接使用其新 owner，不保留转发。
 backend/component 均无 `projects.*` 或 `common.*` 依赖；

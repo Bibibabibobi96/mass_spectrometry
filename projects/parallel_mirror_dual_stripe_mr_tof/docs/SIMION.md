@@ -345,7 +345,9 @@ if($LASTEXITCODE-ne0){throw 'Provider capacity sealing remains incomplete.'}
 [电场表示与数值资格](PROJECT.md#电场表示与数值资格)；旧mesh3试验不能替代会聚mesh1/mesh2资格。
 以下模块及runner接线随项目源码统一纳管；实际运行还须具备显式冻结的本机场资产。
 复用命令前按冻结候选确认资产、模块和实际参数，不从源码可用推定物理资格。
-component `static_field_binding` 解析已封存场，安装资源 `scalar_field_adapter.lua`只在有效支撑内查询。
+`msplatform.backends.comsol.static_field_binding` reads sealed fields; its sampling
+compiler selects `scalar_field_adapter.lua` from the installed SIMION backend.
+The adapter queries only within verified support.
 局窗按有序列表、包含边界、首个匹配窗口接管；必须保留梯度支撑 halo。
 窗内未知值不回退基场、不补零；覆盖越界、未知 mask 或非有限值是数值失败。
 

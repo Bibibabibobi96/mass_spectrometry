@@ -722,7 +722,7 @@
         },
         {
           "id": "msplatform_mr_scalar_field_adapter_lua",
-          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
           "consumers": [
             "prepared_joint",
             "accelerator_interface",

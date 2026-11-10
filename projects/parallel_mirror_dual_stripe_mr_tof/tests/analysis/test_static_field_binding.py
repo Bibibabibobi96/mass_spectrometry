@@ -30,6 +30,32 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
+class ScalarAdapterResourceTest(unittest.TestCase):
+    def test_actual_backend_resource_origin_and_missing_selected_resource(self):
+        from msplatform.backends.simion import resources
+
+        import sysconfig
+
+        selected = resources.native_resource_path("scalar_field_adapter.lua")
+        provider = Path(resources.__file__).resolve()
+        supported_providers = {
+            (REPO_ROOT / "src/msplatform/backends/simion/resources.py").resolve(),
+            (Path(sysconfig.get_path("purelib")) / "msplatform/backends/simion/resources.py").resolve(),
+        }
+        self.assertIn(provider, supported_providers)
+        self.assertEqual(selected.resolve(), provider.parent / "resources/scalar_field_adapter.lua")
+        authority = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
+        self.assertEqual(selected.read_bytes(), authority.read_bytes())
+        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "82ac976cbf8edbd639063fd6c4eb4ec89077dbdc3cac969571c1e72830ee109f")
+        self.assertFalse((REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua").exists())
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            (package / "resources").mkdir()
+            with patch.object(resources, "files", return_value=package):
+                with self.assertRaisesRegex(FileNotFoundError, "installed SIMION native resource is missing"):
+                    resources.native_resource_path("scalar_field_adapter.lua")
+
+
 class RecordLookupScopeTest(unittest.TestCase):
     def test_actual_joint_payloads_are_verified_once_and_conflicts_or_drift_rejected(self):
         from msplatform.execution.retention import file_record
@@ -933,7 +959,7 @@ class NativeStaticBindingTest(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens=0;local items={}
 local function make_pa(path)
@@ -998,7 +1024,7 @@ print('NATIVE_EXISTING_PA_REUSE_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens={}
 simion={pas={},early_access=function()end,experimental={make_efield_adjust=function(f)return f end}}
@@ -1077,7 +1103,7 @@ print('NATIVE_SHADOWED_WINDOWS_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens=0;local support_reads=0;local unknown=false;local bad_field=false
 simion={pas={},wb={instances={}},early_access=function()end,
@@ -1143,7 +1169,7 @@ print('NATIVE_PARENT_REUSE_PASS')
     def test_native_lua_routes_mirrored_axis_and_never_falls_back_on_invalid_local_support(self):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file(): self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local unknown=false;local opens=0
 simion={pas={},early_access=function()end,experimental={make_efield_adjust=function(f)return f end}}
@@ -1444,7 +1470,7 @@ class StaticFieldSamplingTest(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opened=0;local assets={}
 for name,value in pairs({a=2,b=4,mask=1}) do
@@ -1490,7 +1516,7 @@ print('ZERO_WEIGHT_QUERY_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local opens={};local reads={};local values={a=2,b=4,c=8,aw=20,bw=40,cw=80}
 local unknown=false;local nonfinite=nil;local mask_reads=0
@@ -1856,7 +1882,7 @@ class RefinementWindowTest(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local calls={base=0,first=0,second=0};local unknown=false;local assets={}
 for _,name in ipairs({'base','first','second'}) do
@@ -1917,7 +1943,7 @@ print('ORDERED_LOCAL_FIELD_FIXTURE_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         base = {"sources": {"scalar_pa": "base V.pa", "valid_pa": "base mask.pa"},
                 "grid": {"origin_mm": [-4, -4, -4], "pitch_mm": [1, 1, 1]},
                 "ideal_sheet_projection": []}
@@ -2243,7 +2269,7 @@ local ex,ey,ez=field(.5,.375,.5);assert(ex==2 and ey==4 and ez==6)
 assert(opens==2,'only nonzero term scalar and mask open')
 print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
 '''
-        adapter = REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "fixture.lua"
             source.write_text(fixture, encoding="utf-8")
@@ -2444,7 +2470,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         base = {"sources": {"scalar_pa": "base", "valid_pa": "mask"},
                 "grid": {"origin_mm": [0, 0, 0], "pitch_mm": [1, 1, 1]}, "ideal_sheet_projection": []}
         binding = copy.deepcopy(base)
@@ -2749,7 +2775,7 @@ class StaticFieldVoltageTest(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local calls={};local unknown=false;local nonfinite=false;local faCalls=0;local opens=0
 local pa={symmetry='3dplanar',nx=9,ny=9,nz=9,dx_mm=.25,dy_mm=.125,dz_mm=.5}
@@ -2874,7 +2900,7 @@ print('ANISOTROPIC_ADAPTER_FIXTURE_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
+        adapter = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local marks={};local potentialCalls=0
 local pa={symmetry='3dplanar',nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1,debug_max_voltage=1000}

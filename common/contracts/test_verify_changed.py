@@ -1982,6 +1982,33 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                 cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_scalar_adapter_selects_original_core_and_actual_consumers(self):
+        request, _ = self.plan(
+            "-ChangedPath", "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
+        )
+        mr_rows = [row for row in request["stages"]
+                   if row["name"] == "parallel_mirror_dual_stripe_mr_tof_static"]
+        self.assertEqual(len(mr_rows), 1)
+        command = mr_rows[0]["command"]
+        self.assertEqual(command["runner"], "powershell")
+        self.assertEqual(command["script"],
+                         "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1")
+        self.assertEqual(command["parameters"]["Level"], "Core")
+        self.assertNotIn("SelectedTestModules", command["parameters"])
+        modules = command["parameters"]["ChangedTestModules"]
+        self.assertCountEqual(modules, [
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis." + name
+            for name in ("test_static_field_binding", "test_native_memory_consumer_crop",
+                         "test_prepared_joint_trial", "test_native_static_field_provider_runner")])
+        self.assertEqual(len(modules), len(set(modules)))
+        self.assertTrue(any(row["name"].startswith("common_contracts")
+                            for row in request["stages"]))
+        self.assertTrue(any(row["name"].startswith("instrument_assembly_integration")
+                            for row in request["stages"]))
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                             for row in request["stages"]))
+
+
 
 
 
