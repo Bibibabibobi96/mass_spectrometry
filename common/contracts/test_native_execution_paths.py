@@ -12,6 +12,50 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell required")
 class NativeExecutionPathsTests(unittest.TestCase):
+    def test_selected_resource_projects_without_checkout_and_rejects_missing_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "selected/msplatform"
+            shutil.copytree(ROOT / "src/msplatform", package)
+            resource = package / "execution/resources/run_paths.ps1"
+            script = root / "resource.ps1"
+            script.write_text(r'''param($Resource,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Resource
+$deep=Join-Path (Join-Path (Join-Path $Root ('a'*90)) ('b'*90)) ('c'*90)
+$file=Join-Path $deep 'inputs/control.lua'
+New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force|Out-Null
+[IO.File]::WriteAllText($file,'original input')
+function Package { [pscustomobject]@{artifact_run_dir=$deep;run_dir=$deep;execution_alias=$null;execution_path_capacity=$null;python=$Python} }
+$missing=Package
+$caught=$false
+try{Get-RunNativeExecutionContext -Package $missing -Paths @($file)|Out-Null}catch{
+ if($_.Exception.Message-ne'Native execution alias requires an explicit execution root.'){throw};$caught=$true
+}
+if(-not$caught-or$null-ne$missing.execution_alias){throw 'Missing execution root was inferred'}
+$package=Package
+$package|Add-Member -NotePropertyName path_context -NotePropertyValue ([pscustomobject]@{execution_root=(Join-Path $Root 'exec');artifact_root=(Join-Path $Root 'payload');host_resource_state_path=(Join-Path $Root 'ledger.sqlite3')})
+$context=Get-RunNativeExecutionContext -Package $package -Paths @($file) -Tool fixture
+try{
+ if([IO.File]::ReadAllText($context.projected_paths[0])-cne'original input'){throw 'Selected resource changed input'}
+ if($context.environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH-cne$package.path_context.host_resource_state_path){throw 'Explicit ledger changed'}
+ $module=Join-Path (Split-Path -Parent (Split-Path -Parent $Resource)) 'run_paths.py'
+ $hidden=$module+'.missing';Move-Item -LiteralPath $module -Destination $hidden
+ try{
+  $caught=$false
+  try{Project-RunPath -Path $file -ArtifactRunDir $deep -RunDir $context.run_dir -Python $Python|Out-Null}catch{
+   if($_-notmatch'Selected run-path Python resource is missing'){throw};$caught=$true
+  }
+  if(-not$caught){throw 'Missing selected Python owner used active fallback'}
+ }finally{Move-Item -LiteralPath $hidden -Destination $module}
+}finally{Remove-ManagedExecutionAlias -ExecutionAlias $context.execution_alias -TargetDirectory $deep}
+if(-not(Test-Path -LiteralPath $file)-or(Test-Path -LiteralPath $context.run_dir)){throw 'Alias cleanup changed input'}
+''', encoding="utf-8", newline="\n")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(resource),
+                                     str(root), sys.executable], cwd=root, text=True,
+                                    encoding="utf-8", capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_host_release_restores_missing_and_explicit_empty_environment(self):
         source = r'''
 param($Repo)

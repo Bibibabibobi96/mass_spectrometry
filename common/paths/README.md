@@ -68,3 +68,23 @@ paired pulse为前段MATLAB／COMSOL保留其必要early alias；IP、prepared_j
 [集成状态](../../integrations/docs/INTEGRATION.md)及相应项目状态。冷重开会启动实际原生进程，
 零Refine／Fly／Compute不等于零原生调用；只恢复已持久完成事实的收尾则不启动计算。
 这些证据不承诺任意历史MPH／IOB的内部路径都可迁移，也不把重开当作科学资格。
+
+## Installed native execution paths
+
+`msplatform.execution.run_paths.project_run_path` and `project_native_run_path`
+are the sole Python lexical projection functions. The former root definitions
+are retired; `workspace_paths.py` retains only repository DEV root resolution.
+The installed `execution/resources/run_paths.ps1` owns `Project-RunPath` and
+`Get-RunNativeExecutionContext`, using the existing capacity/junction owner.
+Projection requires the caller's explicit Python executable and imports the
+Python owner from the same selected installed or frozen resource package.
+Missing selected resources fail instead of searching another active install.
+
+Native context construction creates an alias only when the actual run-local
+paths need one. Its execution root must then come from the explicit argument
+or the package's frozen `path_context`; no checkout, artifact or Python default
+is invented. Empty/no-native and short scopes keep their previous representation.
+Canonical input identity, custom host ledger and external inputs remain unchanged.
+This operation neither copies PA payloads nor replaces their existing owner and
+write/delete guards. Alias removal still uses the existing exact-target owner
+once its writer is stopped; unknown writers do not justify cleanup.

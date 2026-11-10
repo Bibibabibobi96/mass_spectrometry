@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 from functools import partial
 import re
-from common.paths.workspace_paths import project_native_run_path
+from msplatform.execution.run_paths import project_native_run_path
 
 from pathlib import Path
 from msplatform.execution.resources import resource_path

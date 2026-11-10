@@ -9,15 +9,36 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.paths.workspace_paths import project_native_run_path, project_run_path, resolve_workspace_paths
+from common.paths.workspace_paths import resolve_workspace_paths
+from msplatform.execution.run_paths import project_native_run_path, project_run_path
 
 PWSH = shutil.which("pwsh")
 
 
 class WorkspacePathsTests(unittest.TestCase):
+    def test_canonical_projection_is_stdlib_only_and_root_bodies_are_retired(self):
+        from common.paths import workspace_paths
+
+        for name in ("project_run_path", "project_native_run_path", "_absolute"):
+            self.assertFalse(hasattr(workspace_paths, name))
+        source = Path(__file__).resolve().parents[2] / "src"
+        code = """import sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from msplatform.execution import run_paths
+assert Path(run_paths.__file__).is_relative_to(Path(sys.argv[1]))
+root=Path(sys.argv[1]).parent
+assert run_paths.project_run_path(root/'run/input.lua',root/'run',root/'alias')==str(root/'alias/input.lua')
+assert not any(name.split('.')[0] in {'common','projects','integrations'} for name in sys.modules)
+"""
+        result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code, str(source)],
+                                cwd=source.parent, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_json_bridge_uses_utf8_for_both_pipe_directions(self):
         bridge = Path(__file__).with_name("workspace_paths.py")
-        environment = dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252")
+        environment = dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252",
+                           PYTHONPATH=str(Path(__file__).resolve().parents[2] / "src"))
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "中文路径"
             root.mkdir()
@@ -33,8 +54,10 @@ class WorkspacePathsTests(unittest.TestCase):
                 # Escaped input isolates stdout; literal UTF-8 also verifies stdin decoding.
                 for escaped in (True, False):
                     with self.subTest(operation=request["operation"], escaped=escaped):
+                        command = ([sys.executable, "-B", str(bridge)] if request["operation"] == "resolve" else
+                                   [sys.executable, "-B", "-c", "from msplatform.execution.run_paths import _stdin_project_paths; _stdin_project_paths()"])
                         result = subprocess.run(
-                            [sys.executable, "-B", str(bridge)],
+                            command,
                             input=json.dumps(request, ensure_ascii=escaped).encode("utf-8"),
                             cwd=root, env=environment, capture_output=True, timeout=30,
                         )
@@ -104,12 +127,14 @@ class WorkspacePathsTests(unittest.TestCase):
 
     def test_powershell_bridge_batches_projection_and_preserves_failure(self):
         bridge = Path(__file__).with_name("workspace_paths.ps1")
+        canonical = Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources/run_paths.ps1"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "中文路径"
             root.mkdir()
             script = root / "probe.ps1"
             script.write_text(r"""
 . $args[0]
+. $args[3]
 $python=$args[1];$root=$args[2]
 New-Item -ItemType Directory -Path (Join-Path $root 'source') | Out-Null
 $context=Resolve-WorkspacePaths -SourceRoot (Join-Path $root 'source') -ArtifactRoot (Join-Path $root 'payload') -Python $python
@@ -126,7 +151,7 @@ if($one-ne(Join-Path $alias 'two.pa0')){throw 'single projection differs'}
 try{Resolve-WorkspacePaths -SourceRoot relative -Python $python;throw 'missing rejection'}catch{if($_-notmatch'absolute path'){throw}}
 $frozen|ConvertTo-Json -Compress
 """, encoding="utf-8", newline="\n")
-            result = subprocess.run([PWSH, "-NoProfile", "-File", str(script), str(bridge), sys.executable, str(root)],
+            result = subprocess.run([PWSH, "-NoProfile", "-File", str(script), str(bridge), sys.executable, str(root), str(canonical)],
                                     cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                     env=dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252"))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -17,7 +17,7 @@ import hashlib
 import json
 import shutil
 import math
-from common.paths.workspace_paths import project_native_run_path
+from msplatform.execution.run_paths import project_native_run_path
 
 from pathlib import Path
 from typing import Any

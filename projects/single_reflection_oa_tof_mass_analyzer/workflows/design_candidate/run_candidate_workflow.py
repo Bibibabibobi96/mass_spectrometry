@@ -147,7 +147,7 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
         persistent = env.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
         execution = env.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
         if persistent and execution:
-            from common.paths.workspace_paths import project_run_path
+            from msplatform.execution.run_paths import project_run_path
             diagnostic_log = project_run_path(log_path, execution, persistent)
         raise RuntimeError(f"command failed with exit code {process.returncode}; log={diagnostic_log}")
 
@@ -162,7 +162,7 @@ def _run_managed_stage_command(
     """Carry actual native receipts and canonical persistent paths to the owner."""
     writer = plan.get("writer_completion")
     native_command, native_environment = _native_stage_execution_view(command, environment, plan)
-    from common.paths.workspace_paths import project_native_run_path
+    from msplatform.execution.run_paths import project_native_run_path
     native_log = Path(project_native_run_path(log_path))
     failure = None
     try:
@@ -1465,14 +1465,14 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
 def _native_stage_execution_view(command: list[str], environment: dict[str, str] | None,
                                  plan: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
     """Transport only this owner's actual native paths through its public view."""
-    from common.paths.workspace_paths import project_native_run_path
+    from msplatform.execution.run_paths import project_native_run_path
     persistent = os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
     if persistent and Path(persistent).resolve() != Path(plan["run_root"]).resolve():
         raise ValueError("Native stage does not belong to the active public run context")
     native_environment = {key: project_native_run_path(value) for key, value in (environment or {}).items()}
     # Only explicitly declared, admitted source inputs may acquire a source
     # execution spelling. External tools and unrelated paths are not searched.
-    from common.paths.workspace_paths import project_run_path
+    from msplatform.execution.run_paths import project_run_path
     context = plan.get("source_execution_context")
     for key in ("OATOF_CANDIDATE_MODEL_PATH", "OATOF_COMSOL_MODEL_PATH"):
         if key not in (environment or {}):
@@ -1505,7 +1505,7 @@ def _native_stage_execution_view(command: list[str], environment: dict[str, str]
 
 def _persist_native_json_paths(plan: dict[str, Any]) -> None:
     """Normalize stopped-writer JSON references, never a model or parent input."""
-    from common.paths.workspace_paths import project_run_path
+    from msplatform.execution.run_paths import project_run_path
     root = Path(plan["run_root"])
     execution = os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
     if not execution or execution == str(root):

@@ -358,7 +358,7 @@ for name, count, digest in (
     ('single_flight_pulse_hook.lua', 3913, 'e3ef5a0b08b73e23c566df23f84102052b9f2d45f0ada9ae768094cc6c287d37'),
     ('audit_frontend_working_fields.lua', 5910, 'a3c07078e53a22cf741f3c3d1a415373c7b261b39dc3b89f7c3a345e8a63845f'),
     ('audit_downstream_fields.lua', 2335, '39ea50b054868d6940552b3c049ec8e407f6bd4cbc9ebd6156c70c874c101cdd'),
-    ('build_iob.lua', 1154, '180ecea75537eecac2b081e3cca491254d578db005cf3b33461220a622ba27b9'),
+    ('build_iob.lua', 1260, 'ea609486410f5d8a388cc51a9df193625b8f00356b8a78ce354c222d9eff35d6'),
     ('build_dirichlet_patch_operating_pa.lua', 5359, 'ae69a4ebb153f21652d69a712cab9fe9a19fa4b70c03dfb343f8d169231ea7dd'),
     ('export_standalone_pa.lua', 2592, '2152afe2af738c9cf715518847617ce858fdaef2c874aa29f44fb1f5db93924b'),
     ('export_detached_standalone_pa.lua', 2813, '78985820fb41a696ad4097f973c5dd5888384683ad1551ba7b54bf9f66c9715b'),
@@ -1266,6 +1266,53 @@ try:
 finally:manifest_hidden.rename(manifest_module)
 missing_rejected.append('manifest_verification')
 
+# Actual installed run-path owner, independent of checkout defaults and PATH.
+from msplatform.execution.run_paths import project_run_path
+from msplatform.execution.resources import resource_path as execution_resource_path
+assert project_run_path(root/'run/input.lua', root/'run', root/'alias') == str(root/'alias/input.lua')
+assert project_run_path(root/'external.lua', root/'run', root/'alias') == str(root/'external.lua')
+path_resource = execution_resource_path('run_paths.ps1')
+assert path_resource.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+hidden_path_resource = path_resource.with_name(path_resource.name+'.missing')
+path_resource.rename(hidden_path_resource)
+try:
+    try: execution_resource_path('run_paths.ps1')
+    except FileNotFoundError: missing_rejected.append('run_paths_ps')
+    else: raise AssertionError('missing installed run-path resource supplemented')
+finally: hidden_path_resource.rename(path_resource)
+if os.name == 'nt':
+    path_pwsh = pathlib.Path(fixture['native_path_powershell'])
+    assert path_pwsh.is_absolute() and path_pwsh.is_file()
+    path_script = root/('installed-paths-'+sys.argv[2]+'.ps1')
+    path_script.write_text(r"""param($Resource,$Root,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. $Resource
+$deep=Join-Path (Join-Path (Join-Path $Root ('a'*90)) ('b'*90)) ('c'*90)
+$file=Join-Path $deep 'inputs/control.lua'
+New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force|Out-Null
+[IO.File]::WriteAllText($file,'installed control input')
+$package=[pscustomobject]@{artifact_run_dir=$deep;run_dir=$deep;execution_alias=$null;execution_path_capacity=$null;python=$Python;path_context=[pscustomobject]@{execution_root=(Join-Path $Root 'exec');artifact_root=(Join-Path $Root 'payload');host_resource_state_path=(Join-Path $Root 'unchanged-ledger.sqlite3')}}
+try{
+ $context=Get-RunNativeExecutionContext -Package $package -Paths @($file) -Tool 'installed fixture'
+ if([IO.File]::ReadAllText($context.projected_paths[0])-cne'installed control input'){throw 'Installed path input changed'}
+ if($context.environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH-cne$package.path_context.host_resource_state_path){throw 'Installed path ledger changed'}
+ if(Test-Path -LiteralPath $package.path_context.host_resource_state_path){throw 'Path projection created a ledger'}
+}finally{if($null-ne$package.execution_alias){Remove-ManagedExecutionAlias -ExecutionAlias $package.execution_alias -TargetDirectory $deep}}
+if(-not(Test-Path -LiteralPath $file)){throw 'Installed path cleanup removed input'}
+""", encoding='utf-8')
+    path_args=[str(path_pwsh),'-NoProfile','-File',str(path_script),str(path_resource),str(root/('path-study-'+sys.argv[2])),sys.executable]
+    actual_paths=subprocess.run(path_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+    assert actual_paths.returncode==0,actual_paths.stdout+actual_paths.stderr
+    from msplatform.execution import run_paths as installed_paths
+    python_path_resource=pathlib.Path(installed_paths.__file__)
+    hidden_python_path=python_path_resource.with_name(python_path_resource.name+'.missing')
+    python_path_resource.rename(hidden_python_path)
+    try:
+        missing_paths=subprocess.run(path_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        assert missing_paths.returncode!=0 and 'Selected run-path Python resource is missing' in missing_paths.stderr,missing_paths.stdout+missing_paths.stderr
+    finally: hidden_python_path.rename(python_path_resource)
+    missing_rejected.append('run_paths_python')
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -1868,7 +1915,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
                                               prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
-                                              additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')))), encoding='utf-8')
+                                              additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
+                                              native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'
             probe_path.write_text(INSTALLED_PROBE, encoding='utf-8')

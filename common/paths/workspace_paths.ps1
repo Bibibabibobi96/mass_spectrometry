@@ -17,7 +17,7 @@ function Invoke-WorkspacePathRequest {
   $start.StandardInputEncoding=[Text.UTF8Encoding]::new($false)
   $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
   $start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
-  foreach($argument in @('-B',(Join-Path $PSScriptRoot 'workspace_paths.py'))){$start.ArgumentList.Add($argument)}
+  foreach($argument in @('-B','-c','import sys,runpy;from pathlib import Path;p=Path(sys.argv[1]);sys.path.insert(0,str(p.parents[2]/''src''));runpy.run_path(str(p),run_name=''__main__'')',(Join-Path $PSScriptRoot 'workspace_paths.py'))){$start.ArgumentList.Add($argument)}
   $process=[Diagnostics.Process]::Start($start)
   try{
     $outputTask=$process.StandardOutput.ReadToEndAsync();$errorTask=$process.StandardError.ReadToEndAsync()
@@ -39,17 +39,4 @@ function Resolve-WorkspacePaths {
   if($PSBoundParameters.ContainsKey('HostResourceStatePath')){$arguments.host_resource_state_path=$HostResourceStatePath}
   if($null-ne$FrozenContext){$arguments.frozen_context=$FrozenContext}
   Invoke-WorkspacePathRequest -Request @{operation='resolve';arguments=$arguments} -Python $Python
-}
-
-function Project-RunPath {
-  [CmdletBinding(DefaultParameterSetName='Single')]
-  param([Parameter(Mandatory,ParameterSetName='Single')][string]$Path,
-    [Parameter(Mandatory,ParameterSetName='Many')][AllowEmptyCollection()][string[]]$Paths,
-    [Parameter(Mandatory)][string]$ArtifactRunDir,[Parameter(Mandatory)][string]$RunDir,[string]$Python='')
-  $selected=@($Path)
-  if($PSCmdlet.ParameterSetName-eq'Many'){$selected=@($Paths)}
-  $result=Invoke-WorkspacePathRequest -Request @{operation='project';arguments=@{
-    paths=@($selected);artifact_run_dir=$ArtifactRunDir;run_dir=$RunDir}} -Python $Python
-  if($PSCmdlet.ParameterSetName-eq'Single'){return $result[0]}
-  return ,@($result)
 }

@@ -46,7 +46,7 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
         raise RuntimeError("candidate source closure is required")
     _verify_frozen_cad_python(closure, logs / "cad_python_preflight.log")
     build_report = execute_comsol_native_build(stage, plan, runtime=runtime)
-    from common.paths.workspace_paths import project_run_path
+    from msplatform.execution.run_paths import project_run_path
     analysis_request = Path(project_run_path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"),
         os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root), run_root))
     if not analysis_request.is_file():
@@ -208,7 +208,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
     import csv
     import json
     import os
-    from common.paths.workspace_paths import project_run_path
+    from msplatform.execution.run_paths import project_run_path
     from .candidate_stage_execution import _powershell, _require_pass_report
     output = root / "results"
     output.mkdir(exist_ok=True)

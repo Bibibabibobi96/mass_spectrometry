@@ -160,6 +160,14 @@
         {
           "prefix": "common/paths/",
           "reason": "workspace_paths_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/run_paths.py",
+          "reason": "canonical_native_path_projection_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/run_paths.ps1",
+          "reason": "canonical_native_path_projection_changed"
         }
       ],
       "command": {

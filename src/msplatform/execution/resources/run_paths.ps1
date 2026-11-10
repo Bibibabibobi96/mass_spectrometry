@@ -1,6 +1,53 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+function Project-RunPath {
+  [CmdletBinding(DefaultParameterSetName='Single')]
+  param([Parameter(Mandatory,ParameterSetName='Single')][string]$Path,
+    [Parameter(Mandatory,ParameterSetName='Many')][AllowEmptyCollection()][string[]]$Paths,
+    [Parameter(Mandatory)][string]$ArtifactRunDir,[Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$Python)
+  if(-not[IO.Path]::IsPathFullyQualified($Python)-or-not(Test-Path -LiteralPath $Python -PathType Leaf)){
+    throw 'Run path projection requires an explicit absolute Python executable.'
+  }
+  $selected=@($Path)
+  if($PSCmdlet.ParameterSetName-eq'Many'){$selected=@($Paths)}
+  $request=@{operation='project';arguments=@{paths=@($selected);artifact_run_dir=$ArtifactRunDir;run_dir=$RunDir}}
+  # This resource belongs to either the selected frozen src tree or ordinary
+  # site-packages. Bind its sibling Python owner, never another active install.
+  $packageRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+  $bootstrap=@'
+import sys
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+selected=root/'msplatform/execution/run_paths.py'
+if not selected.is_file():raise FileNotFoundError('Selected run-path Python resource is missing: '+str(selected))
+sys.path.insert(0,str(root))
+from msplatform.execution import run_paths
+if Path(run_paths.__file__).resolve()!=selected.resolve():raise ImportError('Run-path Python owner is outside its selected resource package')
+run_paths._stdin_project_paths()
+'@
+  $start=[Diagnostics.ProcessStartInfo]::new()
+  $start.FileName=$Python;$start.WorkingDirectory=$PSScriptRoot
+  $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+  $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+  $start.StandardInputEncoding=[Text.UTF8Encoding]::new($false)
+  $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
+  $start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
+  foreach($argument in @('-I','-B','-c',$bootstrap,$packageRoot)){$start.ArgumentList.Add($argument)}
+  $process=[Diagnostics.Process]::Start($start)
+  try{
+    $outputTask=$process.StandardOutput.ReadToEndAsync();$errorTask=$process.StandardError.ReadToEndAsync()
+    $process.StandardInput.WriteLine(($request|ConvertTo-Json -Depth 12 -Compress));$process.StandardInput.Close()
+    $process.WaitForExit()
+    $output=$outputTask.GetAwaiter().GetResult();$errorText=$errorTask.GetAwaiter().GetResult()
+    if($process.ExitCode-ne0){throw "Run path projection failed: $errorText"}
+    $result=$output|ConvertFrom-Json -Depth 12 -NoEnumerate
+    if($PSCmdlet.ParameterSetName-eq'Single'){return $result[0]}
+    return ,@($result)
+  }finally{$process.Dispose()}
+}
+
 function Get-ExecutionPathCapacity {
   [CmdletBinding()]
   param(
@@ -110,4 +157,66 @@ function Remove-ManagedExecutionAlias {
     throw "Execution alias target differs from expected target: $alias"
   }
   [IO.Directory]::Delete($alias)
+}
+
+
+function Get-RunNativeExecutionContext {
+  <# Inspect only the actual native plan; keep persistent identity canonical. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][pscustomobject]$Package,
+    [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Paths,
+    [string]$ExecutionRoot='',[string]$Tool='native tool')
+  $watch=[Diagnostics.Stopwatch]::StartNew()
+  $persistent=[IO.Path]::GetFullPath([string]$Package.artifact_run_dir).TrimEnd('\','/')
+  if($null-ne$Package.execution_alias-and-not(Test-Path -LiteralPath ([string]$Package.execution_alias) -PathType Container)){
+    # A persisted package may outlive its disposable execution representation.
+    # Re-evaluate this native plan from its unchanged persistent identity.
+    $Package.run_dir=$persistent;$Package.execution_alias=$null;$Package.execution_path_capacity=$null
+  }
+  $execution=[string]$Package.run_dir
+  $relativePaths=@();$external=@()
+  foreach($path in $Paths){
+    if(-not[IO.Path]::IsPathFullyQualified($path)){throw "Native plan path must be absolute: $path"}
+    $full=[IO.Path]::GetFullPath($path)
+    if($full.Equals($persistent,[StringComparison]::OrdinalIgnoreCase)){$relativePaths+='.'}
+    elseif($full.StartsWith($persistent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+      $relativePaths+=[IO.Path]::GetRelativePath($persistent,$full)
+    }elseif($full.StartsWith($execution.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+      $relativePaths+=[IO.Path]::GetRelativePath($execution,$full)
+    }else{
+      $external+=$full
+    }
+  }
+  $capacity=Get-ExecutionPathCapacity -RunDirectory $execution -ExpectedExecutionRelativePaths $relativePaths
+  foreach($path in $external){
+    if($path.Length-gt$capacity.legacy_windows_path_limit){
+      throw ("NATIVE_PATH_PREPARATION=FAIL TOOL={0} PATH={1} LENGTH={2} REASON=external_input_requires_its_existing_owner_transport REMEDIATION=prepare_the_explicit_input_with_its_supported_private_copy_or_companion_boundary ELAPSED_SECONDS={3}" -f $Tool,$path,$path.Length,$watch.Elapsed.TotalSeconds)
+    }
+  }
+  if($Paths.Count-and-not$capacity.legacy_windows_compatible){
+    if($null-ne$Package.execution_alias){$null=Assert-ExecutionPathCapacity -Report $capacity}
+    if(-not$ExecutionRoot-and$null-ne$Package.PSObject.Properties['path_context']){$ExecutionRoot=[string]$Package.path_context.execution_root}
+    if([string]::IsNullOrWhiteSpace($ExecutionRoot)){throw 'Native execution alias requires an explicit execution root.'}
+    $alias=New-ManagedExecutionAlias -TargetDirectory $persistent -ExecutionRoot $ExecutionRoot -ExpectedExecutionRelativePaths $relativePaths
+    $execution=[string]$alias.execution_alias
+    $Package.run_dir=$execution;$Package.execution_alias=$execution
+    $capacity=$alias.execution_path_capacity
+  }
+  $Package.execution_path_capacity=$capacity
+  $projected=if($Paths.Count){Project-RunPath -Paths $Paths -ArtifactRunDir $persistent -RunDir $execution -Python $Package.python}else{@()}
+  $environment=@{MASS_SPECTROMETRY_RUN_DIRECTORY=$persistent;MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$execution}
+  if($null-ne$Package.PSObject.Properties['path_context']){
+    $environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$Package.path_context.host_resource_state_path
+    $environment.MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$Package.path_context.artifact_root
+    $environment.MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$Package.path_context.execution_root
+  }
+  $elapsed=$watch.Elapsed.TotalSeconds
+  if($null-eq$Package.PSObject.Properties['native_path_preparation']){
+    $Package|Add-Member -NotePropertyName native_path_preparation -NotePropertyValue @{calls=0;elapsed_seconds=0.0;transport_bytes=0L}
+  }
+  $Package.native_path_preparation.calls++
+  $Package.native_path_preparation.elapsed_seconds+=$elapsed
+  return [pscustomobject]@{artifact_run_dir=$persistent;run_dir=$execution;execution_alias=$Package.execution_alias;
+    projected_paths=@($projected);environment=$environment;execution_path_capacity=$capacity;
+    preparation_elapsed_seconds=$elapsed;transport_bytes=0;tool=$Tool}
 }

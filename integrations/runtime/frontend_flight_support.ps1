@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'common/paths/workspace_paths.ps1')
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'src/msplatform/execution/resources/run_paths.ps1')
 
 function Add-FrontendNativeOperation {
   <# Transport the public process owner's facts before scientific callbacks. #>

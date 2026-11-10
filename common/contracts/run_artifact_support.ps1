@@ -952,66 +952,6 @@ function Remove-RunSourceExecutionContext {
 }
 
 
-function Get-RunNativeExecutionContext {
-  <# Inspect only the actual native plan; keep persistent identity canonical. #>
-  [CmdletBinding()]
-  param([Parameter(Mandatory)][pscustomobject]$Package,
-    [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Paths,
-    [string]$ExecutionRoot='',[string]$Tool='native tool')
-  $watch=[Diagnostics.Stopwatch]::StartNew()
-  . (Join-Path (Split-Path -Parent $PSScriptRoot) 'paths/workspace_paths.ps1')
-  $persistent=[IO.Path]::GetFullPath([string]$Package.artifact_run_dir).TrimEnd('\','/')
-  if($null-ne$Package.execution_alias-and-not(Test-Path -LiteralPath ([string]$Package.execution_alias) -PathType Container)){
-    # A persisted package may outlive its disposable execution representation.
-    # Re-evaluate this native plan from its unchanged persistent identity.
-    $Package.run_dir=$persistent;$Package.execution_alias=$null;$Package.execution_path_capacity=$null
-  }
-  $execution=[string]$Package.run_dir
-  $relativePaths=@();$external=@()
-  foreach($path in $Paths){
-    if(-not[IO.Path]::IsPathFullyQualified($path)){throw "Native plan path must be absolute: $path"}
-    $full=[IO.Path]::GetFullPath($path)
-    if($full.Equals($persistent,[StringComparison]::OrdinalIgnoreCase)){$relativePaths+='.'}
-    elseif($full.StartsWith($persistent+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
-      $relativePaths+=[IO.Path]::GetRelativePath($persistent,$full)
-    }elseif($full.StartsWith($execution.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
-      $relativePaths+=[IO.Path]::GetRelativePath($execution,$full)
-    }else{
-      $external+=$full
-    }
-  }
-  $capacity=Get-RunPackagePathCapacity -RunDirectory $execution -ExpectedExecutionRelativePaths $relativePaths
-  foreach($path in $external){
-    if($path.Length-gt$capacity.legacy_windows_path_limit){
-      throw ("NATIVE_PATH_PREPARATION=FAIL TOOL={0} PATH={1} LENGTH={2} REASON=external_input_requires_its_existing_owner_transport REMEDIATION=prepare_the_explicit_input_with_its_supported_private_copy_or_companion_boundary ELAPSED_SECONDS={3}" -f $Tool,$path,$path.Length,$watch.Elapsed.TotalSeconds)
-    }
-  }
-  if($Paths.Count-and-not$capacity.legacy_windows_compatible){
-    if($null-ne$Package.execution_alias){$null=Assert-RunPackagePathCapacity -Report $capacity}
-    if(-not$ExecutionRoot-and$null-ne$Package.PSObject.Properties['path_context']){$ExecutionRoot=[string]$Package.path_context.execution_root}
-    $alias=New-RunExecutionAlias -TargetDirectory $persistent -ExecutionRoot $ExecutionRoot -ExpectedExecutionRelativePaths $relativePaths
-    $execution=[string]$alias.execution_alias
-    $Package.run_dir=$execution;$Package.execution_alias=$execution
-    $capacity=$alias.execution_path_capacity
-  }
-  $Package.execution_path_capacity=$capacity
-  $projected=if($Paths.Count){Project-RunPath -Paths $Paths -ArtifactRunDir $persistent -RunDir $execution -Python $Package.python}else{@()}
-  $environment=@{MASS_SPECTROMETRY_RUN_DIRECTORY=$persistent;MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$execution}
-  if($null-ne$Package.PSObject.Properties['path_context']){
-    $environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$Package.path_context.host_resource_state_path
-    $environment.MASS_SPECTROMETRY_ARTIFACT_ROOT=[string]$Package.path_context.artifact_root
-    $environment.MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$Package.path_context.execution_root
-  }
-  $elapsed=$watch.Elapsed.TotalSeconds
-  if($null-eq$Package.PSObject.Properties['native_path_preparation']){
-    $Package|Add-Member -NotePropertyName native_path_preparation -NotePropertyValue @{calls=0;elapsed_seconds=0.0;transport_bytes=0L}
-  }
-  $Package.native_path_preparation.calls++
-  $Package.native_path_preparation.elapsed_seconds+=$elapsed
-  return [pscustomobject]@{artifact_run_dir=$persistent;run_dir=$execution;execution_alias=$Package.execution_alias;
-    projected_paths=@($projected);environment=$environment;execution_path_capacity=$capacity;
-    preparation_elapsed_seconds=$elapsed;transport_bytes=0;tool=$Tool}
-}
 
 function New-RunPackage {
   [CmdletBinding()]

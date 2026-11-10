@@ -1,6 +1,8 @@
-"""Explicit transport to the original path-capacity and junction owner."""
+"""Canonical lexical projection and transport to the existing junction owner."""
 from __future__ import annotations
 import json
+import os
+import sys
 from pathlib import Path
 import subprocess
 from typing import Any, Sequence
@@ -49,3 +51,63 @@ def create_execution_alias(context: ExecutionContext, run_directory: Path, *,
 
 def remove_execution_alias(context: ExecutionContext, alias: Path, run_directory: Path) -> None:
     _path_operation(context, dict(action="remove", run_directory=str(run_directory), execution_alias=str(alias)))
+
+
+def _absolute(value: str | os.PathLike[str], name: str) -> Path:
+    if not isinstance(value, (str, os.PathLike)) or not str(value).strip():
+        raise ValueError(f"{name} requires a nonempty absolute path")
+    path = Path(value)
+    if not path.is_absolute():
+        raise ValueError(f"{name} requires an absolute path: {value}")
+    return path
+
+
+def project_run_path(
+    path: str | os.PathLike[str], artifact_run_dir: str | os.PathLike[str], run_dir: str | os.PathLike[str],
+) -> str:
+    """Map only a lexical canonical-run descendant into its execution spelling.
+
+    Do not resolve execution junctions: doing so would restore the long native
+    path. External read-only inputs and paths already in the execution view stay
+    unchanged. This projection is never a substitute for canonical identity.
+    """
+    original = os.fspath(path)
+    persistent = _absolute(artifact_run_dir, "artifact_run_dir")
+    execution = _absolute(run_dir, "run_dir")
+    candidate = Path(original)
+    try:
+        relative = candidate.relative_to(persistent)
+    except ValueError:
+        return original
+    if ".." in relative.parts:
+        raise ValueError("run path projection requires a normalized path without '..'")
+    return str(execution / relative)
+
+
+def project_native_run_path(path: str | os.PathLike[str]) -> str:
+    """Project explicit native-consumer paths using the current process context.
+
+    Read on every call: modules can be imported before the owner establishes a
+    native execution view. These ephemeral spellings never enter file identity.
+    """
+    persistent = os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
+    execution = os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
+    if persistent is None and execution is None:
+        return os.fspath(path)
+    if not persistent or not execution:
+        raise ValueError("native run projection requires both canonical and execution directories")
+    return project_run_path(path, persistent, execution)
+
+
+
+def _stdin_project_paths() -> None:
+    """Original private project request transport; no new public CLI."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
+    request = json.load(sys.stdin)
+    if request.get("operation") != "project":
+        raise ValueError("unknown workspace path bridge operation")
+    arguments = request["arguments"]
+    result = [project_run_path(path, arguments["artifact_run_dir"], arguments["run_dir"])
+              for path in arguments["paths"]]
+    json.dump(result, sys.stdout, ensure_ascii=False)
