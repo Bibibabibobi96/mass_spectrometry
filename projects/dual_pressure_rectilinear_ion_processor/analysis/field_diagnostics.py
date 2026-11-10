@@ -204,7 +204,7 @@ def section_metal_rectangles(electrode: dict, x_mm: float) -> list[tuple[float, 
 
 def section_metal_parts(electrode: dict, x_mm: float) -> list[tuple[str, tuple]]:
     """Return shared CSG sections in local (y,z), preserving actual polygons."""
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import parts
     result = []
     for kind,p in parts(electrode,"cross",x_mm,0):
         if kind == "rect":
@@ -219,7 +219,7 @@ def section_metal_parts(electrode: dict, x_mm: float) -> list[tuple[str, tuple]]
 def add_electrode_outlines(ax: Any, projection: dict, x_mm: float, transform_config: dict | None = None) -> None:
     """Overlay actual CSG section outlines and electrode ID labels."""
     from matplotlib.patches import Rectangle, Polygon, Circle
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import section_centroid
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import section_centroid
     for electrode in projection["electrodes"]:
         for kind,p in section_metal_parts(electrode,x_mm):
             style = dict(fill=False,edgecolor="black",linewidth=.7)

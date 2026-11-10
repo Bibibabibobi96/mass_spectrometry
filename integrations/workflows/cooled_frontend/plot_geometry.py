@@ -13,7 +13,7 @@ from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 from matplotlib.transforms import Affine2D
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts, section
+from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import parts, section
 
 
 _STYLES = {

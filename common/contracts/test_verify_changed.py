@@ -447,6 +447,17 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertEqual(set(modules),expected)
                 self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
 
+    def test_ip_section_geometry_selects_actual_project_and_overlay_consumers(self):
+        request, _ = self.plan("-ChangedPath",
+            "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py")
+        self.assertIn("dual_pressure_rectilinear_ion_processor_static", {row["name"] for row in request["stages"]})
+        modules = [value for row in request["stages"]
+                   if row["name"].startswith("instrument_assembly_integration")
+                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
+        self.assertEqual(set(modules), {"integrations.tests.test_cooled_geometry_overlay",
+                                       "integrations.tests.test_local_frontend_analysis"})
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
+
     def test_cooled_field_design_selects_its_actual_consumers(self):
         request, _ = self.plan("-ChangedPath",
             "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py")

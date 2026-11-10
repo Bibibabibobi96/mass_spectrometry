@@ -1,8 +1,14 @@
 """Independent plane-intersection checks for auxiliary-electrode axial views."""
 import unittest
-from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import (
-    section, subtract, parts, section_centroid, SectionDiagnostics, world_bounds,
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import (
+    section, subtract, parts, section_centroid, world_bounds,
 )
+from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import SectionDiagnostics
 
 
 def wedge():
@@ -99,5 +105,46 @@ class EquatorialSectionTests(unittest.TestCase):
         self.assertAlmostEqual(sum(area(p.get_xy()) for p in ax.patches),1.125)
         self.assertEqual(len(ax.texts),len(ax.patches))
         figure.canvas.draw();plt.close(figure)
+
+class FrozenSectionGeometryTests(unittest.TestCase):
+    def test_actual_ip_prepare_freezes_sections_and_missing_owner_fails_cold(self):
+        from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import FunctionalContractTests, PROJECT
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+        from msplatform.execution.inputs import python_import_roots
+        fixture = FunctionalContractTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        project, vendor = fixture.make_prepare_fixture()
+        shutil.copyfile(PROJECT / "config/coordinate_transform.json", project / "config/coordinate_transform.json")
+        functional.prepare(fixture.run, project, vendor, configuration_directory=project / "config")
+        closure = fixture.run / "inputs/code"
+        owner = closure / "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py"
+        from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry
+        self.assertEqual(owner.read_bytes(), Path(section_geometry.__file__).read_bytes())
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import section_diagnostics as renderer
+        self.assertFalse(hasattr(renderer, 'parts'))
+        self.assertFalse(hasattr(renderer, 'section'))
+        code = """from pathlib import Path
+import sys
+from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry as s
+assert Path(s.__file__).resolve().is_relative_to(Path.cwd())
+assert 'matplotlib' not in sys.modules
+assert s.subtract((0,0,10,10),(3,2,7,8)) == [(0,0,3,10),(7,0,10,10),(3,0,7,2),(3,8,7,10)]
+"""
+        environment = {**os.environ, 'PYTHONPATH': os.pathsep.join(python_import_roots(closure)),
+                       'PYTHONNOUSERSITE': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
+        result = subprocess.run([sys.executable,'-B','-s','-c',code],cwd=closure,env=environment,
+                                capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        saved = owner.with_suffix('.required-source-held')
+        owner.rename(saved)
+        try:
+            negative = subprocess.run([sys.executable,'-B','-s','-c',code],cwd=closure,env=environment,
+                                     capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+            self.assertNotEqual(negative.returncode,0)
+            self.assertIn('section_geometry',negative.stderr)
+        finally:
+            saved.rename(owner)
+
 
 if __name__=='__main__':unittest.main()

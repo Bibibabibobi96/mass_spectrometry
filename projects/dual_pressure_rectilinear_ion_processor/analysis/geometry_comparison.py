@@ -31,7 +31,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_
 )
 from msplatform.workflows.ion_processor.preparation import validate_numerical_boundaries
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts, section_centroid
+from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import parts, section_centroid
 
 MODES = {"flat", "formed_extraction", "formed_extraction_continuous_aux"}
 PARABOLIC_MODE = "formed_extraction_continuous_aux_parabolic_inner"
@@ -325,7 +325,7 @@ def build_electrode_comparison_figures(cases: list[dict]) -> tuple[dict, dict]:
     """Compare equal-scale LP cuts and explicitly cropped auxiliary profiles."""
     if not cases:
         raise ValueError("electrode comparison requires at least one declared case")
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import world_bounds
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import world_bounds
     names = {5:"Pull",6:"Push",7:"Upper side",8:"Lower side",10:"Outer auxiliary",11:"Inner auxiliary",14:"LP shield"}
     cross, cross_axes = plt.subplots(1,len(cases),figsize=(5*len(cases),5),squeeze=False,constrained_layout=True)
     auxiliary, aux_axes = plt.subplots(len(cases),2,figsize=(13,3.3*len(cases)),squeeze=False,constrained_layout=True)

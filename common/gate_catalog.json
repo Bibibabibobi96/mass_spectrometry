@@ -2147,6 +2147,16 @@
           },
           {
             "matches": [
+              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py", "reason": "ip_section_geometry_changed"}
+            ],
+            "modules": [
+              "integrations/tests/test_cooled_geometry_overlay.py",
+              "integrations/tests/test_local_frontend_analysis.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py", "reason": "cooled_field_design_component_changed"}
             ],
             "modules": [
@@ -3352,6 +3362,7 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
+        {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py", "reason": "ip_section_geometry_changed"},
         {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "ip_gas_regions_changed"},
         {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "hs1_gas_binding_changed"},
         {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "ip_gas_compiler_changed"},

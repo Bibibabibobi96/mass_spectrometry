@@ -1238,3 +1238,19 @@ The hosted-install origin failure is reproduced separately; the corrected
 current-main reference module passed all 16 parents (22 records) in 25.243
 seconds. Source/no-copy/release and tamper assertions remain in place. This
 test-only repair does not convert the preceding Changed failure into a pass.
+
+
+The cooled conditioner overlay now consumes exact IP sections from
+`msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`,
+including real cutouts and convex faces, rather than importing project plotting code.
+Its existing certified pose and contained circular-aperture winding are unchanged.
+Local/cooled recorded analyzers and their mixed figure workflow remain separate P4
+migration work; this pure component move does not make those root renderers installable.
+
+The composed section-geometry successor passed 47 actual section, overlay, local
+analysis, route and architecture parents (197 records) in 56.235 seconds. Fresh
+focused ordinary wheel and sdist-rebuilt consumers passed in 92.012 seconds,
+joining all 457 runtime payloads and the original section-output oracle. Missing
+canonical geometry fails in a fresh process; no project or Matplotlib fallback
+is supplied by this pure-geometry proof. Full installed-parent, Repository and
+native qualification are separate scopes.

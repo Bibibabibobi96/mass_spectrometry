@@ -92,6 +92,38 @@ class RejectRepositoryImports(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'common','projects','integrations'}:
             raise AssertionError('installed action imported a repository owner: ' + fullname)
 sys.meta_path.insert(0, RejectRepositoryImports())
+# IP exact CSG sections: pure installed geometry, not a renderer or native PA.
+from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry as ip_sections
+assert pathlib.Path(ip_sections.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+ip_wedge = dict(shape='convex_polyhedron',vertices_mm=[[x,y,z] for x in (0,10) for y,z in ((0,0),(2,0),(0,2))])
+ip_cut_metal = dict(solids=[dict(shape='box',min_mm=[0,-2,-2],max_mm=[10,2,2])],
+                    cutouts=[dict(shape='box',min_mm=[3,-1,-3],max_mm=[7,1,3])])
+ip_section_results = dict(
+    bounds=ip_sections.world_bounds(ip_wedge,0),
+    wedge=ip_sections.section(ip_wedge,'cross',5,0),
+    centroid=ip_sections.section_centroid(*ip_sections.section(ip_wedge,'cross',5,0)),
+    metal=ip_sections.parts(ip_cut_metal,'long',0,0),
+    cylinder=ip_sections.section(dict(shape='cylinder_x',x_min_mm=0,x_max_mm=29,
+        center_y_mm=0,center_z_mm=2.5,radius_mm=.5),'top',0,0),
+    subtract=ip_sections.subtract((0,0,10,10),(3,2,7,8)))
+assert ip_section_results['bounds'] == ([-2,0,-2],[0,10,0])
+assert ip_section_results['centroid'] == (-2/3,-2/3)
+assert sum((c-a)*(d-b) for kind,(a,b,c,d) in ip_section_results['metal']) == 32
+assert ip_section_results['cylinder'] == ('rect',(0,-3.,29,-2.))
+assert ip_section_results['subtract'] == [(0,0,3,10),(7,0,10,10),(3,0,7,2),(3,8,7,10)]
+assert ip_sections.section(ip_wedge,'cross',11,0) is None
+ip_module_path=pathlib.Path(ip_sections.__file__)
+ip_module_hold=ip_module_path.with_suffix('.missing-test-held')
+ip_module_path.rename(ip_module_hold)
+try:
+    ip_section_missing=subprocess.run([sys.executable,'-I','-B','-c',
+        'from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry'],
+        cwd=root,capture_output=True,text=True,timeout=30,check=False)
+    assert ip_section_missing.returncode!=0 and 'section_geometry' in ip_section_missing.stderr
+finally:
+    ip_module_hold.rename(ip_module_path)
+# End installed IP CSG sections.
+
 # G1 pure static gas: explicit inputs, actual installed API, no supplier/owner.
 from dataclasses import replace as replace_gas
 from msplatform.contracts.gas import (AxisymmetricRZData, BoxDomain, CylindricalDomain,
