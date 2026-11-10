@@ -570,14 +570,17 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     analysis_names += ("common/contracts/file_identity.py",prefix+"config/analysis_contract.json")
     sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
                   prefix+"load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
+    import ast
+    identifier = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+    tree = ast.parse(candidate_frozen_source_text(closure)[identifier])
     return {"native": {"sources": records(native_names),
                         "implementation": project_comsol_native_implementation(closure),
-                        "dispatch": project_comsol_dispatch(closure,"native"),
+                        "dispatch": _comsol_dispatch_from_tree(tree,"native"),
                         "entrypoint": project_comsol_named_entry(closure),
                         "task_invocation": project_comsol_build_invocation(closure)},
             "export": {"sources": records(export_names)},
             "analysis": {"sources": records(analysis_names)},
-            "sync": {"sources": records(sync_names),"dispatch": project_comsol_dispatch(closure,"sync")}}
+            "sync": {"sources": records(sync_names),"dispatch": _comsol_dispatch_from_tree(tree,"sync")}}
 
 
 
@@ -589,7 +592,12 @@ def project_comsol_dispatch(closure: dict[str, Any], phase: str) -> str:
         raise ValueError("COMSOL dispatch needs native or sync")
     identifier = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
     source = candidate_frozen_source_text(closure)[identifier]
-    tree = ast.parse(source)
+    return _comsol_dispatch_from_tree(ast.parse(source), phase)
+
+
+def _comsol_dispatch_from_tree(tree: Any, phase: str) -> str:
+    """Project one unchanged task identity from this operation's parsed source."""
+    import ast
     functions = {node.name:node for node in tree.body if isinstance(node,ast.FunctionDef)}
     name = "comsol_native_inputs" if phase == "native" else "comsol_sync_inputs"
     if sum(isinstance(node,ast.FunctionDef) and node.name == name for node in tree.body) != 1:

@@ -547,6 +547,31 @@ def execute_prepared_run(*args):
                 self.assertEqual(before[phase], after[phase])
 
 
+    def test_comsol_phase_projection_uses_one_fresh_verified_snapshot_per_operation(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            closure = freeze_candidate_source_closure(root/"code", root/"artifacts",
+                resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
+                analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
+            expected = {phase: source.project_comsol_dispatch(closure, phase) for phase in ("native", "sync")}
+            with mock.patch.object(source, "candidate_frozen_source_text", wraps=source.candidate_frozen_source_text) as read:
+                first = source.candidate_comsol_source_phases(closure)
+                self.assertEqual(read.call_count, 1)
+                second = source.candidate_comsol_source_phases(closure)
+                self.assertEqual(read.call_count, 2)
+            self.assertEqual(first, second)
+            for phase in ("native", "sync"):
+                self.assertEqual(first[phase]["dispatch"], expected[phase])
+            unrelated = Path(closure["code_root"])/"src/msplatform/__init__.py"
+            unrelated.write_bytes(unrelated.read_bytes()+b"\n# tampered between independent projections\n")
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                source.candidate_comsol_source_phases(closure)
+            for phase in ("native", "sync"):
+                with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                    source.project_comsol_dispatch(closure, phase)
+
+
     def test_execution_resource_declaration_rejects_missing_patterns_and_package_escape(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

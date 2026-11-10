@@ -1016,3 +1016,30 @@ Active batching callers now consume the sole installed
 `msplatform.backends.simion.particle_batching` implementation. Existing batch
 plans, ID rebasing, emission ordering and project-owned scientific checks are
 unchanged. This migration provides no new native or scientific qualification.
+
+
+### Candidate COMSOL phase source projection
+
+The native/sync task identities now come from one freshly verified source-text
+snapshot and one parse within each synchronous `candidate_comsol_source_phases`
+operation. The independent `project_comsol_dispatch` call still validates its own
+current closure; no result is cached across operations, copies, stages or runs.
+All original source/interpreter hashes, full-member containment, missing/extra
+checks and before/after materialization/success checks remain. Actual task AST
+identity serialization is unchanged; this implementation has a new source epoch.
+
+Private software validation on `8e504715` plus this change retained all original
+methods and assertions. Five actual focused parents passed in the initial round,
+including the unchanged five-variant parent (81.547 seconds), current peak-source
+projection and start/stage/finalization tamper negatives; one wrong-class test
+selector produced a loader error and is retained separately. Only that original
+causal-phase parent was then rerun using its correct class and passed. The added
+regression confirms identical native/sync identities, one fresh snapshot per
+operation, and rejection of unrelated-member tampering by both public projection
+paths. These are software fixtures, not COMSOL execution or scientific qualification.
+The earlier 100.450-second diagnostic used profiling and a different pinned epoch;
+no controlled speedup or whole-Repository budget result is claimed.
+On the composed successor, all six intended parents passed together in 124.961
+seconds (eight successful records), with the original reuse/identity and
+start/stage/finalization tamper controls retained. This is validation of the
+single-operation simplification, not a controlled performance comparison.
