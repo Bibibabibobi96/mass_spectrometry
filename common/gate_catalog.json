@@ -801,6 +801,14 @@
                 "reason": "pure_gas_dependency_changed"
               },
               {
+                "exact": "src/msplatform/backends/simion/gas_runtime.py",
+                "reason": "generated_gas_runtime_changed"
+              },
+              {
+                "exact": "common/contracts/test_gas_field_sampling.py",
+                "reason": "generated_gas_runtime_fixture_changed"
+              },
+              {
                 "exact": "src/msplatform/contracts/rigid_transform.py",
                 "reason": "pure_gas_dependency_changed"
               },
@@ -819,7 +827,8 @@
             ],
             "modules": [
               "common/contracts/test_gas.py",
-              "common/contracts/test_gas_field_sampling.py"
+              "common/contracts/test_gas_field_sampling.py",
+              "common/contracts/test_gas_runtime.py"
             ],
             "dependency_profile": "stdlib"
           },

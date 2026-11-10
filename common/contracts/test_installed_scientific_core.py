@@ -135,6 +135,18 @@ r_z = gas_field_api.prepare_gas_field(grid_spec,data=grid)
 assert gas_field_api.sample_gas(r_z,FramedPosition('gas_local',(.5,0,.5))).state.pressure_pa == 200
 assert gas_field_api.sample_gas(r_z,FramedPosition('gas_local',(1,0,1))).state.status == 'no_data'
 assert gas_field_api.sample_gas(r_z,FramedPosition('gas_local',(0,0,.5))).state.bulk_velocity_m_s == (0,0,100)
+from msplatform.backends.simion import gas_runtime as gas_runtime_api
+generated_gas = gas_runtime_api.compile_gas_runtime(r_z)
+assert "local nr,nz=2,2" in generated_gas and "geometry_support_not_separately_proved" in generated_gas
+assert "function field.sample" in gas_runtime_api.compile_gas_runtime(uniform,placement=placement)
+assert "local regions=" in gas_runtime_api.compile_gas_runtime(piecewise)
+assert pathlib.Path(gas_runtime_api.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+from msplatform.components.rf_multipole.ideal_transport import rf_waveform_voltage_array, electric_field_xy
+from msplatform.components.rf_multipole.family_contract import VoltageDrive
+for waveform, expected in (('sine',0.),('cosine',83.)):
+    assert float(rf_waveform_voltage_array(VoltageDrive(waveform,83.,0.,0.,1.2e6,0.),np.array([0.]))[0]) == expected
+assert electric_field_xy(3,.002,0.,.0001,.0002) == (0.,0.)
+assert pathlib.Path(sys.modules['msplatform.components.rf_multipole.ideal_transport'].__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 try: replace_gas(grid,radial_velocity_m_s=(10,10,0,None))
 except ValueError as error: assert 'zero radial velocity at r=0' in str(error)
 else: raise AssertionError('inconsistent axis data silently accepted')
