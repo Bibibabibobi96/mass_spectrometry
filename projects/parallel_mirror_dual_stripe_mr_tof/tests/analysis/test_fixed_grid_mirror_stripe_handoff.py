@@ -53,6 +53,65 @@ CURRENT_CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class FixedHardwareMirrorPointContractTests(unittest.TestCase):
+    def test_exact_k_provenance_declares_current_retention_closure(self) -> None:
+        runner = PROJECT / "analysis/run_mirror_exact_k_operating_point.ps1"
+        script = r"""
+param($Source)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left-is[Management.Automation.Language.VariableExpressionAst]-and$n.Left.VariablePath.UserPath-eq'sourcePaths'},$true)
+if(-not$node){throw 'Exact-K provenance source table is absent'}
+$paths=Invoke-Expression $node.Right.Extent.Text
+ConvertTo-Json -InputObject @($paths) -Compress
+"""
+        with tempfile.TemporaryDirectory() as script_directory:
+            selector_script = Path(script_directory) / "select.ps1"
+            selector_script.write_text(script, encoding="utf-8")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(selector_script), str(runner)],
+                                    cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        selected = [value.replace("\\", "/") for value in json.loads(result.stdout)]
+        required = {
+            "src/msplatform/__init__.py", "src/msplatform/io/__init__.py",
+            "src/msplatform/execution/__init__.py", "src/msplatform/io/file_identity.py",
+            "src/msplatform/io/manifest_records.py", "src/msplatform/execution/retention.py",
+            "src/msplatform/execution/artifact_retention.py", "src/msplatform/execution/manifest_publication.py",
+            "src/msplatform/execution/context.py",
+            "src/msplatform/execution/recovery.py",
+            "src/msplatform/contracts/__init__.py",
+            "src/msplatform/contracts/machine_contracts.py",
+            "src/msplatform/execution/recorded_file_removal.py", "src/msplatform/execution/file_lock.py",
+            "src/msplatform/execution/terminal_publication.py", "src/msplatform/execution/artifact_naming.py",
+            "src/msplatform/execution/resources/__init__.py",
+            "src/msplatform/execution/resources/artifact_retention.json",
+        }
+        self.assertTrue(required <= set(selected), sorted(required - set(selected)))
+        self.assertEqual(len(selected), len(set(selected)))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in selected:
+                if relative.startswith("src/"):
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(REPOSITORY / relative, target)
+            code = """import pathlib,sys
+sys.path.insert(0,sys.argv[1])
+from msplatform.execution.retention import verify_record, POLICY_PATH
+assert POLICY_PATH.is_relative_to(pathlib.Path(sys.argv[1]))
+for name,module in tuple(sys.modules.items()):
+    if name=='msplatform' or name.startswith('msplatform.'):
+        assert pathlib.Path(module.__file__).is_relative_to(pathlib.Path(sys.argv[1]))
+print('EXACT_K_RETENTION_PROVENANCE=PASS')
+"""
+            arguments = [sys.executable, "-I", "-B", "-c", code, str(root / "src")]
+            positive = subprocess.run(arguments, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(positive.returncode, 0, positive.stdout + positive.stderr)
+            self.assertIn("EXACT_K_RETENTION_PROVENANCE=PASS", positive.stdout)
+            (root / "src/msplatform/execution/resources/artifact_retention.json").unlink()
+            negative = subprocess.run(arguments, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertNotEqual(negative.returncode, 0)
+            self.assertIn("artifact_retention.json", negative.stderr)
+
     def test_exact_k_and_seed_import_detached_without_fixed_grid_loader(self) -> None:
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mirror_exact_k_operating_point
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import dual_stripe_operating_seed

@@ -682,3 +682,19 @@ in the normal Windows process context. On the composed P4 successor, the five or
 passed again in 24.460 seconds (29 successful records). A prior restricted-context cleanup failure remains
 a separate failed run. These checks add no native Fly, field, GUI or Formal qualification; final Repository
 acceptance remains open.
+
+### Exact-K record-validation provenance
+
+The Exact-K research runner records the actual canonical retention/manifest-record
+validation closure and its single `artifact_retention.json` policy alongside the
+existing analytic source inventory. It compares current sources with their
+run-owned copies before and after computation and publishes those copies as
+manifest inputs. This is provenance capture, not execution from a frozen tree:
+the runner still uses its explicitly selected current Python environment and
+research source root. Historical snapshots remain unchanged. Retention-policy
+and audit-source identities do not become numerical Refine/Fly cache keys.
+The complete fixed-grid handoff module passed all 18 parents (39 successful records, no skips)
+on the composed successor in 7.214 seconds, including actual source-table extraction, isolated
+canonical module origins and the missing-policy negative. The private checkout's earlier 14
+historical-evidence skips remain a separate run; no native solver or new scientific qualification
+was exercised by this repair.
