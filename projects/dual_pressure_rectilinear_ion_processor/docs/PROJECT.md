@@ -535,9 +535,11 @@ owns the existing measured-response projection, composition and two-control volt
 proposal. Explicit samples, species/RF/temperature, width/energy targets and reference
 names are unchanged. It calls the existing cooled_buncher curvature/barrier analyzers;
 no field is prescribed and no capture, cooling, native flight or scientific qualification
-is inferred. The root cooled_frontend field_design module retains its meaningful
-run/receipt/CSV/publication adapter and CLI, using qualified component calls with no
-old pure-body aliases. Sealed-probe reader and sampler ownership remain separate work.
+is inferred. The run/receipt/CSV/proposal adapter and CLI now live in
+`msplatform.workflows.cooled_frontend.field_analysis`, alongside the original sealed-probe
+reader. The unchanged sampler is the canonical backend `sample_cooled_field.lua` resource.
+The two root implementation bodies are retired; pure component formulas remain unchanged.
+This is a field-based voltage proposal, not a collision, capture or flight qualification.
 
 The original field-design/static-probe/reference/IP-cooled modules passed46 parents
 in58.549seconds with no skips. Exact old/new harmonic/coupled full results and unstable

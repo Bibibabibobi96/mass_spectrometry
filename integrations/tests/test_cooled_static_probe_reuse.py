@@ -1,6 +1,9 @@
 """Analytic CSV/native-boundary fixtures only; never real field/native evidence."""
 from __future__ import annotations
 
+from msplatform.workflows.cooled_frontend import field_analysis
+from msplatform.backends.simion.resources import native_resource_path
+
 import copy
 import json
 from pathlib import Path
@@ -17,7 +20,7 @@ from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from integrations.tests import test_cooled_frontend_reference as reference_fixture
 from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments
-from integrations.workflows.cooled_frontend import runtime, field_design, reference
+from integrations.workflows.cooled_frontend import runtime, reference
 from msplatform.components.dual_pressure_rectilinear_ion_processor import cooled_field_design
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 
@@ -45,9 +48,9 @@ class StaticProbeReuseTests(unittest.TestCase):
         self.responses = responses
         points = responses['carrier_off'][['name', 'x_mm', 'y_mm', 'z_mm']]
         points.to_csv(self.source/'inputs/cooled_probe_points.csv', index=False)
-        sampler = self.source/'inputs/code/integrations/workflows/cooled_frontend/sample_field.lua'
+        sampler = self.source/'inputs/code/src/msplatform/backends/simion/resources/sample_cooled_field.lua'
         sampler.parent.mkdir(parents=True)
-        shutil.copyfile(Path(runtime.__file__).with_name('sample_field.lua'), sampler)
+        shutil.copyfile(native_resource_path('sample_cooled_field.lua'), sampler)
         identity = json.loads(Path(self.rows[0]['cache_identity_record']['path']).read_text())['simion_identity']
         native = self.source/'inputs/native_discovery.json'
         write(native, dict(bytes=identity['executable_bytes'], sha256=identity['executable_sha256'], file_version=identity['file_version']))
@@ -57,7 +60,7 @@ class StaticProbeReuseTests(unittest.TestCase):
             probe_points_record=file_record(self.source/'inputs/cooled_probe_points.csv'), native_discovery_record=file_record(native)))
         records = {}
         logs = []
-        for kind in runtime.KINDS:
+        for kind in field_analysis.KINDS:
             path = self.source/'results/cooled_field_probe'/(kind+'.csv')
             path.parent.mkdir(parents=True, exist_ok=True)
             responses[kind].to_csv(path, index=False)
@@ -90,22 +93,22 @@ class StaticProbeReuseTests(unittest.TestCase):
         self.before = (self.source/'run_manifest.json').read_bytes()
 
     def plan(self):
-        original = runtime.file_sha256
+        original = field_analysis.file_sha256
         def checked(path):
             if Path(path).suffix.lower() == '.pa':
                 raise AssertionError('protected PA was rehashed')
             return original(path)
-        with patch.object(runtime, 'file_sha256', side_effect=checked):
-            return runtime.static_probe_reuse_plan(self.run)
+        with patch.object(field_analysis, 'file_sha256', side_effect=checked):
+            return field_analysis.static_probe_reuse_plan(self.run)
 
     def test_all_reuse_and_single_missing_keep_original_records_and_parent(self):
         selected = self.plan()
         self.assertEqual(selected['missing_members'], [])
-        self.assertEqual(set(selected['native_probe_records']), set(runtime.KINDS))
-        result = runtime.complete_static_probe_records(self.run, selected)
+        self.assertEqual(set(selected['native_probe_records']), set(field_analysis.KINDS))
+        result = field_analysis.complete_static_probe_records(self.run, selected)
         self.assertEqual(result['native_probe_records'], selected['native_probe_records'])
         self.assertFalse((self.run/'results/cooled_field_probe').exists())
-        refs = runtime.static_probe_source_references(self.run)
+        refs = field_analysis.static_probe_source_references(self.run)
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0]['manifest_record'], self.source_manifest)
         self.assertEqual(len(refs[0]['protected_paths']), 7)
@@ -146,7 +149,7 @@ class StaticProbeReuseTests(unittest.TestCase):
         self.assertEqual(actual['missing_members'], [])
         self.assertEqual(actual['native_probe_records'], selected['native_probe_records'])
         self.assertTrue(all(owner == self.source_manifest for owner in actual['probe_owner_manifest_records'].values()))
-        references = runtime.static_probe_source_references(self.run)
+        references = field_analysis.static_probe_source_references(self.run)
         self.assertEqual(len(references), 1)
         self.assertEqual(references[0]['manifest_record'], self.source_manifest)
         self.assertEqual((self.source/'run_manifest.json').read_bytes(), self.before)
@@ -157,7 +160,7 @@ class StaticProbeReuseTests(unittest.TestCase):
             with self.subTest(mutation=mutation):
                 stage_path = self.run/'inputs/cooled_frontend_field_stage_receipt.json'
                 points_path = self.run/'inputs/cooled_probe_points.csv'
-                sampler = self.source/'inputs/code/integrations/workflows/cooled_frontend/sample_field.lua'
+                sampler = self.source/'inputs/code/src/msplatform/backends/simion/resources/sample_cooled_field.lua'
                 originals = {p: p.read_bytes() for p in (stage_path, points_path, sampler)}
                 if mutation == 'points':
                     points_path.write_text(points_path.read_text()+'\n', encoding='utf-8')
@@ -169,14 +172,14 @@ class StaticProbeReuseTests(unittest.TestCase):
                 else:
                     write(self.source/TERMINAL_JOURNAL_NAME, {'test_only': True})
                 result = self.plan()
-                self.assertEqual(result['missing_members'], ['pulse_delta'] if mutation == 'generation' else list(runtime.KINDS))
+                self.assertEqual(result['missing_members'], ['pulse_delta'] if mutation == 'generation' else list(field_analysis.KINDS))
                 for path, content in originals.items():
                     path.write_bytes(content)
                 (self.source/TERMINAL_JOURNAL_NAME).unlink(missing_ok=True)
 
     def test_real_analysis_references_raw_once_and_rejects_unbound_csv(self):
         selected = self.plan()
-        metadata = runtime.complete_static_probe_records(self.run, selected)
+        metadata = field_analysis.complete_static_probe_records(self.run, selected)
         write(self.run/'results/cooled_static_probe_costs.json', metadata)
         # Analytic physics is the same actual analysis consumer used by the runner.
         write(self.run/'inputs/conditioner_contract.json', dict(geometry=dict(trap_center_mr_mm=[0.,28.,32.]), gas=dict(parameters=dict(temperature_k=300.))))
@@ -189,7 +192,7 @@ class StaticProbeReuseTests(unittest.TestCase):
                 rows = copy.deepcopy(self.rows);rows[4]['field_scale'] = scale
                 write(self.run/'inputs/cooled_frontend_field_stage_receipt.json', dict(working_points=rows))
                 with patch.object(cooled_field_design, 'project_member_samples', wraps=cooled_field_design.project_member_samples) as projected:
-                    result = field_design.analyze_field_run(self.run)
+                    result = field_analysis.analyze_field_run(self.run)
                 pulse_calls = [call for call in projected.call_args_list if call.args[1] == 'pulse_delta']
                 self.assertEqual(len(pulse_calls), 1)
                 self.assertEqual(pulse_calls[0].args[2], scale)
@@ -202,7 +205,7 @@ class StaticProbeReuseTests(unittest.TestCase):
         bad['probe_owner_manifest_records'].pop('pulse_delta')
         write(self.run/'results/cooled_static_probe_costs.json', bad)
         with self.assertRaises((KeyError, ValueError)):
-            field_design.analyze_field_run(self.run)
+            field_analysis.analyze_field_run(self.run)
         self.assertEqual((self.source/'run_manifest.json').read_bytes(), self.before)
 
     def test_reference_consumer_requires_bound_original_owner(self):
@@ -214,7 +217,7 @@ class StaticProbeReuseTests(unittest.TestCase):
         design.update(design_status='proposal_computed', native_probe_records=selected['native_probe_records'],
                       target_record=file_record(self.run/'inputs/cooled_design_targets.json'),
                       response_projections={kind: dict(probe_owner_manifest_record=self.source_manifest)
-                                            for kind in runtime.KINDS})
+                                            for kind in field_analysis.KINDS})
         design_path = intermediate/'results/cooled_field_design/voltage_design.json'
         write(design_path, design)
         manifest = intermediate/'run_manifest.json'
@@ -244,6 +247,49 @@ class StaticProbeReuseTests(unittest.TestCase):
         write(experiment_path, experiment)
         with patch.object(runtime, 'fields', return_value=context), self.assertRaisesRegex(ValueError, 'not bound'):
             reference.prepare_reference(self.run)
+
+    def test_bound_historical_sampler_path_preserves_bytes_and_rejects_missing_or_unknown(self):
+        canonical=self.source/'inputs/code/src/msplatform/backends/simion/resources/sample_cooled_field.lua'
+        historical=self.source/'inputs/code/integrations/workflows/cooled_frontend/sample_field.lua'
+        historical.parent.mkdir(parents=True)
+        canonical.rename(historical)
+        plan_path=self.source/'inputs/cooled_probe_plan.json'
+        profile_path=self.source/'inputs/cooled_field_design_profile.json'
+        manifest_path=self.source/'run_manifest.json'
+        experiment_path=self.run/'inputs/cooled_experiment.json'
+        experiment=json.loads(experiment_path.read_text())
+        envelope_path=Path(experiment['field_source']['path'])
+        source_plan=json.loads(plan_path.read_text())
+        source_plan['sampler_repository_path']='integrations/workflows/cooled_frontend/sample_field.lua'
+        def bind_original(plan):
+            write(plan_path,plan)
+            profile=json.loads(profile_path.read_text());profile['probe_plan_record']=file_record(plan_path);write(profile_path,profile)
+            owner=json.loads(manifest_path.read_text())
+            owner['inputs'].update(profile=file_record(profile_path),probe_plan=file_record(plan_path),sampler=file_record(historical))
+            write(manifest_path,owner)
+            envelope=json.loads(envelope_path.read_text());envelope['source_owner_manifest_record']=file_record(manifest_path);write(envelope_path,envelope)
+            experiment['field_source']=file_record(envelope_path);write(experiment_path,experiment)
+        bind_original(source_plan)
+        before={path:path.read_bytes() for path in (plan_path,profile_path,manifest_path,historical)}
+        selected=self.plan()
+        self.assertEqual(selected['missing_members'],[])
+        self.assertEqual(len(selected['native_probe_records']),7)
+        self.assertEqual({path:path.read_bytes() for path in before},before)
+        for mutation in ('missing','tampered','unknown_path','native_arguments'):
+            with self.subTest(mutation=mutation):
+                if mutation=='missing': historical.unlink()
+                elif mutation=='tampered':historical.write_bytes(before[historical]+b'\n')
+                else:
+                    changed=copy.deepcopy(source_plan)
+                    if mutation=='unknown_path':changed['sampler_repository_path']='other/sample_field.lua'
+                    else:changed['sampler_arguments'][1]='different-origin'
+                    bind_original(changed)
+                with self.assertRaises((ValueError,KeyError,OSError)):
+                    field_analysis.analyze_field_run(self.run)
+                self.assertFalse((self.run/'results/cooled_field_design').exists())
+                historical.write_bytes(before[historical])
+                bind_original(source_plan)
+        self.assertEqual({path:path.read_bytes() for path in before},before)
 
     def test_actual_powershell_consumer_zero_one_and_unknown_writer(self):
         (self.run/'logs').mkdir(exist_ok=True)

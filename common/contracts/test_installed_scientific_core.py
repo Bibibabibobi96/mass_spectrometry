@@ -416,6 +416,49 @@ for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_acceler
     assert text.startswith('function') and 'mfilename' not in text
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
+# COOLED_FIELD_ANALYSIS_INSTALLED_BEGIN
+from msplatform.workflows.cooled_frontend import field_analysis as cooled_analysis
+import pandas as pd
+import subprocess
+assert pathlib.Path(cooled_analysis.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+cooled_fixture=fixture['cooled_field_analysis']
+cooled_run=root/'cooled-field-analysis'
+cooled_inputs=cooled_run/'inputs';cooled_inputs.mkdir(parents=True)
+cooled_probes=cooled_run/'results/cooled_field_probe';cooled_probes.mkdir(parents=True)
+for name,value in cooled_fixture['inputs'].items():
+    (cooled_inputs/name).write_text(json.dumps(value),encoding='utf-8')
+pd.DataFrame([dict(particle_id=7,mass_amu=524.,charge_state=1)]).to_csv(cooled_inputs/'release_global.csv',index=False)
+for kind,rows in cooled_fixture['responses'].items():
+    pd.DataFrame(rows).to_csv(cooled_probes/(kind+'.csv'),index=False)
+cooled_manifest=cooled_run/'run_manifest.json';cooled_manifest.write_text(json.dumps(dict(status='checkpoint')),encoding='utf-8')
+cooled_before={path:path.read_bytes() for path in [cooled_manifest,*cooled_inputs.iterdir(),*cooled_probes.iterdir()]}
+cooled_cli=subprocess.run([sys.executable,'-I','-B','-m','msplatform.workflows.cooled_frontend.field_analysis','--run',str(cooled_run)],cwd=root,timeout=30,capture_output=True,text=True,encoding='utf-8',check=False)
+assert cooled_cli.returncode==0,cooled_cli.stdout+cooled_cli.stderr
+assert json.loads(cooled_cli.stdout)['design_status']=='proposal_computed'
+cooled_result=json.loads((cooled_run/'results/cooled_field_design/voltage_design.json').read_text())
+assert {key:cooled_result[key] for key in cooled_fixture['expected']}==cooled_fixture['expected']
+assert {path:path.read_bytes() for path in cooled_before}==cooled_before
+for status in ('success','failed'):
+    sealed=root/('cooled-sealed-'+status);sealed.mkdir();(sealed/'run_manifest.json').write_text(json.dumps(dict(status=status)),encoding='utf-8')
+    try:cooled_analysis.analyze_field_run(sealed)
+    except ValueError as error:assert 'immutable owner' in str(error)
+    else:raise AssertionError('sealed cooled owner modified')
+    assert {path.name for path in sealed.iterdir()}=={'run_manifest.json'}
+from msplatform.backends.simion.resources import native_resource_path as cooled_resource
+cooled_sampler=cooled_resource('sample_cooled_field.lua');cooled_hold=cooled_sampler.with_suffix('.test-held')
+assert not cooled_hold.exists();cooled_sampler.rename(cooled_hold)
+try:
+    try:cooled_resource('sample_cooled_field.lua')
+    except FileNotFoundError as error:assert 'sample_cooled_field.lua' in str(error)
+    else:raise AssertionError('missing canonical cooled sampler accepted')
+finally:cooled_hold.rename(cooled_sampler)
+cooled_module=pathlib.Path(cooled_analysis.__file__);cooled_hold=cooled_module.with_suffix('.test-held');assert not cooled_hold.exists();cooled_module.rename(cooled_hold)
+try:
+    missing=subprocess.run([sys.executable,'-I','-B','-m','msplatform.workflows.cooled_frontend.field_analysis','--help'],cwd=root,timeout=30,capture_output=True,text=True,encoding='utf-8',check=False)
+    assert missing.returncode!=0 and 'msplatform.workflows.cooled_frontend.field_analysis' in missing.stderr,missing.stderr
+finally:cooled_hold.rename(cooled_module)
+# COOLED_FIELD_ANALYSIS_INSTALLED_END
+
 ip = fixture['ip']
 projection = native_projection(ip['baseline'], ip['numerics'])
 assert len(projection['electrodes']) == 15
@@ -1989,6 +2032,26 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             expected_differences=(source/'out/paired_pulse_differences.csv').read_text(encoding='utf-8'),
             expected_comparison=json.loads((source/'out/paired_pulse_comparison.json').read_text(encoding='utf-8')))
 
+    @staticmethod
+    def cooled_field_analysis_probe_fixture() -> dict:
+        from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design import design_voltage_controls
+        from msplatform.workflows.cooled_frontend.field_analysis import KINDS
+        responses=harmonic_response_fixture()
+        responses['pulse_delta']=responses['hp_common_unit'].copy()
+        for frame in responses.values():
+            frame['name']=frame['name'].replace({'well_center':'well_62','oa_entry':'oa_side_entry'})
+        arguments=dict(design_arguments(),release_reference_name='well_62',oa_entry_reference_name='oa_side_entry')
+        import io
+        import pandas as pd
+        serialized={kind:pd.read_csv(io.StringIO(frame.to_csv(index=False))) for kind,frame in responses.items()}
+        return dict(responses={kind:frame.to_dict('records') for kind,frame in responses.items()},
+            inputs={'cooled_design_targets.json':dict(thermal_sigma_y_mm=.4,static_release_energy_gain_ev=5.),
+                'conditioner_contract.json':dict(geometry=dict(trap_center_mr_mm=[0.,28.,32.]),gas=dict(parameters=dict(temperature_k=300.))),
+                'guide_contract.json':dict(drive=dict(frequency_hz=3.7e6,rf_amplitude_v=500.)),
+                'cooled_frontend_field_stage_receipt.json':dict(working_points=[dict(kind=kind,field_scale=1.) for kind in KINDS])},
+            expected=design_voltage_controls(serialized,**arguments))
+
     def test_wheel_and_sdist_install_and_compute_outside_worktree(self) -> None:
         self.assertEqual(sys.version_info[:2], (3, 11), 'Python 3.11 is required')
         config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
@@ -2178,6 +2241,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_oa_layout=rf_oa_layout, neutral_state=neutral_state,
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
+                                              cooled_field_analysis=self.cooled_field_analysis_probe_fixture(),
                                               paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),

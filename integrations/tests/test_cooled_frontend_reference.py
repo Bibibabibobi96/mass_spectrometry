@@ -1,6 +1,8 @@
 """Pure reference preparation and sealed-field identity regressions; no Fly."""
 from __future__ import annotations
 
+from msplatform.workflows.cooled_frontend import field_analysis
+
 import json
 import itertools
 import math
@@ -20,7 +22,8 @@ from msplatform.execution.retention import file_record
 from integrations.tests.test_cooled_frontend import cooled_request_fixture, publish_inert_fields
 from integrations.tests.test_local_frontend_workflow import REPO
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
-from integrations.workflows.cooled_frontend.runtime import _verified_small_record, fields
+from integrations.workflows.cooled_frontend.runtime import fields
+from msplatform.workflows.cooled_frontend.field_analysis import _verified_small_record
 from integrations.workflows.cooled_frontend import reference, runtime
 from msplatform.workflows.local_frontend import runtime as shared
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
@@ -38,7 +41,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         # Recreate the documented schema2 shape using one real public cache
         # transaction with INERT bytes. No historical artifact is rewritten.
         rows, _ = runtime.published_members(self.owner)
-        members = [rows[kind] for kind in runtime.KINDS]
+        members = [rows[kind] for kind in field_analysis.KINDS]
         first = members[0]["raw_identity"]
         identity = dict(first, geometry=dict(dimensions=first["geometry"]["dimensions"]),
             working_points=[dict(row["raw_identity"]["working_points"][0],
@@ -63,7 +66,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         status = pa_family_cache.advance_pa_family_cache_transaction(cache,identity,names,verification_evidence=evidence)
         generation = pa_family_cache.validate_pa_family_cache_generation(status.generation_directory,verify_payload=False)
         native_rows = [dict(row,path=str(status.generation_directory/row["name"]),kind=kind,read_only=True)
-                       for kind,row in zip(runtime.KINDS, sorted(generation["files"],key=lambda row:names.index(row["name"])))]
+                       for kind,row in zip(field_analysis.KINDS, sorted(generation["files"],key=lambda row:names.index(row["name"])))]
         identity_path = self.owner/"inputs/cooled_field_cache_identity.json"
         write(identity_path,identity)
         stage_path = self.owner/"inputs/cooled_frontend_field_stage_receipt.json"
@@ -158,12 +161,13 @@ class SharedFieldIdentityTests(unittest.TestCase):
         self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
         consumer=self.workspace/"artifacts/integrations/test_integration/runs/failed_postprocess_source"
         prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace,run_id="20261022_120000__build__python__cooled-fixture")
-        with patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked:
+        with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked,
+                  patch.object(field_analysis,"file_sha256",wraps=field_analysis.file_sha256) as reader_checked):
             resolved=fields(consumer)
         self.assertEqual(len(resolved["records"]),7)
         self.assertEqual((consumer/"inputs/cooled_field_source_manifest.json").read_bytes(),manifest.read_bytes())
         self.assertEqual((consumer/"inputs/cooled_field_source_run_config.json").read_bytes(),(self.owner/"run_config.json").read_bytes())
-        self.assertFalse(any(Path(call.args[0]).suffix==".pa" for call in checked.call_args_list))
+        self.assertFalse(any(Path(call.args[0]).suffix==".pa" for call in [*checked.call_args_list,*reader_checked.call_args_list]))
         stage=json.loads(Path(resolved["receipt"]["path"]).read_text())
         transaction=runtime.load_pa_family_cache_transaction(self.workspace/"cache",stage["working_points"][0]["cache_key"])
         with patch.object(runtime,"load_pa_family_cache_transaction",return_value=dict(transaction,status="building")):
@@ -177,9 +181,10 @@ class SharedFieldIdentityTests(unittest.TestCase):
         prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace,
             run_id="20261022_120000__build__python__distinct-fields")
         for run in (self.owner,consumer):
-            with patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked:
+            with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked,
+                  patch.object(field_analysis,"file_sha256",wraps=field_analysis.file_sha256) as reader_checked):
                 resolved=fields(run)
-            hashed=[Path(call.args[0]).resolve() for call in checked.call_args_list]
+            hashed=[Path(call.args[0]).resolve() for call in [*checked.call_args_list,*reader_checked.call_args_list]]
             for name in ("frontend.gem","cooled_field_plan.json"):
                 distinct={(self.owner/"inputs"/name).resolve(),(run/"inputs"/name).resolve()}
                 for path in distinct:
@@ -326,9 +331,10 @@ class SharedFieldIdentityTests(unittest.TestCase):
         experiment["common_pulse_decision"]=file_record(decision_path)
         write(experiment_path,experiment)
         with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as validated,
+              patch.object(field_analysis,"file_sha256",wraps=field_analysis.file_sha256) as reader_checked,
               patch.object(manifest_records,"file_sha256",wraps=manifest_records.file_sha256) as recorded):
             production=runtime.context(run)
-        hashed=[Path(call.args[0]).resolve() for digest in (validated,recorded) for call in digest.call_args_list]
+        hashed=[Path(call.args[0]).resolve() for digest in (validated,reader_checked,recorded) for call in digest.call_args_list]
         for name,path in (("hs1",hs),("common_pulse_decision",decision_path)):
             self.assertEqual(hashed.count(path.resolve()),1)
             self.assertEqual(production["code_records"][name],file_record(path))
@@ -360,10 +366,11 @@ class SharedFieldIdentityTests(unittest.TestCase):
         for prepare in (False,True):
             run=self.workspace/"artifacts/integrations/test_integration/runs/mesh_reuse" if prepare else None
             with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked,
+                  patch.object(field_analysis,"file_sha256",wraps=field_analysis.file_sha256) as reader_checked,
                   patch.object(manifest_records,"file_sha256",wraps=manifest_records.file_sha256) as recorded):
                 result=mesh_check.prepare_mesh_check(path,run,REPO,self.workspace,
                     run_id="20261022_120000__build__python__mesh-reuse" if prepare else None)
-            hashed=[Path(call.args[0]).resolve() for digest in (checked,recorded) for call in digest.call_args_list]
+            hashed=[Path(call.args[0]).resolve() for digest in (checked,reader_checked,recorded) for call in digest.call_args_list]
             self.assertEqual(hashed.count(self.request_path.resolve()),1)
             # fields(run) owns its independent consumption boundary in Prepare.
             self.assertEqual(hashed.count(envelope.resolve()),2 if prepare else 1)
@@ -430,9 +437,10 @@ class SharedFieldIdentityTests(unittest.TestCase):
                 continue
             before=(run/"inputs/release_global.csv").read_bytes()
             with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked,
+                  patch.object(field_analysis,"file_sha256",wraps=field_analysis.file_sha256) as reader_checked,
                   patch.object(manifest_records,"file_sha256",wraps=manifest_records.file_sha256) as recorded):
                 result=reference.prepare_reference(run)
-            hashed=[Path(call.args[0]).resolve() for digest in (checked,recorded) for call in digest.call_args_list]
+            hashed=[Path(call.args[0]).resolve() for digest in (checked,reader_checked,recorded) for call in digest.call_args_list]
             for record in records.values():
                 self.assertEqual(hashed.count(Path(record["path"]).resolve()),1)
             self.assertEqual(hashed.count(design_path.resolve()),1)

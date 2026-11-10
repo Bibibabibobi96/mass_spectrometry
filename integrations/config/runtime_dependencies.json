@@ -345,13 +345,6 @@
           ]
         },
         {
-          "id": "instrument_assembly_workflows_cooled_frontend_sample_field_lua",
-          "source_repo_path": "integrations/workflows/cooled_frontend/sample_field.lua",
-          "consumers": [
-            "cooled_frontend"
-          ]
-        },
-        {
           "id": "integrations_workflows_oa_mr_execute_ps1",
           "source_repo_path": "integrations/workflows/oa_mr/execute.ps1",
           "consumers": [
@@ -1231,6 +1224,13 @@
         {
           "id": "msplatform_simion_collision_hs1_gas_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "msplatform_simion_sample_cooled_field_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/sample_cooled_field.lua",
           "consumers": [
             "cooled_frontend"
           ]

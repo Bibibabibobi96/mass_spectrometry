@@ -1,6 +1,8 @@
 """Small public-cache transactions; inert bytes never claim native solutions."""
 from __future__ import annotations
 
+from msplatform.workflows.cooled_frontend import field_analysis
+
 from msplatform.execution.resources import resource_path
 
 import copy
@@ -77,7 +79,7 @@ single_flight_apply_standalone_dynamic_field(instance,0)
                     completed[kind] = status
                 result = runtime.finalize_field_stage(run, bundle, completed)
                 rows = result["working_points"]
-                self.assertEqual(tuple(row["kind"] for row in rows), runtime.KINDS)
+                self.assertEqual(tuple(row["kind"] for row in rows), field_analysis.KINDS)
                 self.assertEqual(len({row["generation_directory"] for row in rows}), 7)
                 self.assertEqual(result["receipt"]["aggregate_pa_copy_bytes"], 0)
                 self.assertEqual(result["receipt"]["actual_refine_count"], 0)

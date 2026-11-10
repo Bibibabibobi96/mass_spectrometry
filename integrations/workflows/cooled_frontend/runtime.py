@@ -23,6 +23,7 @@ from msplatform.backends.simion.tracking_program import (
 from msplatform.workflows.local_frontend import runtime as shared
 from msplatform.backends.simion.field_identity import laplace_member_identity
 from msplatform.backends.simion.resources import native_resource_path
+from msplatform.workflows.cooled_frontend import field_analysis
 from msplatform.backends.simion import gas_runtime
 from msplatform.components.dual_pressure_rectilinear_ion_processor import gas_regions
 
@@ -32,7 +33,6 @@ _FIELD_PUBLICATION_PIN_REASON = (
     "Retained canonical standalone cooled frontend fields for saved workbenches and explicit field-source consumers; "
     "rebuildable from frozen inputs."
 )
-KINDS = ("carrier_off", "rf_differential_unit", "entry_close_delta", "release_delta", "pulse_delta", "inner_auxiliary_unit", "hp_common_unit")
 
 
 def field_member_plans(run: Path, *, cache_root: Path | None = None, freeze: bool = True,
@@ -45,7 +45,7 @@ def field_member_plans(run: Path, *, cache_root: Path | None = None, freeze: boo
     plan = shared._load(inputs / 'cooled_field_plan.json')
     if (plan['role'] != 'rf_oatof_cooled_frontend_laplace_endpoints'
             or plan['boundary_policy'] != 'explicit_zero_dirichlet_far_faces_not_mechanical_metal'
-            or tuple(point['kind'] for point in plan['working_points']) != KINDS):
+            or tuple(point['kind'] for point in plan['working_points']) != field_analysis.KINDS):
         raise ValueError('exact seven ordinary cooled working members required')
     if solver_identity is None:
         native = shared._load(inputs / 'native_discovery.json')
@@ -216,10 +216,10 @@ def advance_field_cache(run: Path, plan: dict, verification_output: Path | None 
             manifest = shared._load(manifest_path)
             if manifest["status"] not in ("success", "failed"):
                 raise ValueError("field transaction producer is not terminal")
-            if _verified_small_record(manifest["run_config"]) != producer_config.resolve(strict=True):
+            if field_analysis._verified_small_record(manifest["run_config"]) != producer_config.resolve(strict=True):
                 raise ValueError("field transaction producer config binding differs")
             identity_source = producer / 'inputs' / Path(plan['identity_path']).name
-            if not any(_record_path(row, strict=False) == identity_source for row in manifest.get("inputs",{}).values()):
+            if not any(field_analysis._record_path(row, strict=False) == identity_source for row in manifest.get("inputs",{}).values()):
                 raise ValueError("field transaction producer identity is not manifest-bound")
             # Creation-time config SHA is an audit record, not an immutable
             # config claim: the owner's normal finalization updates this file.
@@ -247,220 +247,29 @@ def advance_field_cache(run: Path, plan: dict, verification_output: Path | None 
     return json.loads(json.dumps(asdict(result), default=str))
 
 
-def _probe_owner(record: dict, workspace: Path) -> tuple[dict, Path]:
-    path = _verified_small_record(record, workspace)
-    require_completed_terminal_publication(path)
-    owner = shared._load(path)
-    if owner.get('status') not in ('success', 'failed'):
-        raise ValueError('probe owner is not terminal')
-    config = _verified_small_record(owner['run_config'], workspace)
-    if config != path.parent / 'run_config.json':
-        raise ValueError('probe owner configuration differs')
-    return owner, path.parent
 
 
-def _bound_probe_file(owner: dict, path: Path, workspace: Path, *, output: bool) -> dict:
-    records = owner.get('outputs', []) if output else owner.get('inputs', {}).values()
-    found = [row for row in records if isinstance(row, dict) and 'path' in row
-             and _record_path(row, workspace, strict=False) == path.resolve()]
-    if not found or any((row.get('bytes'), row.get('sha256')) !=
-                        (found[0].get('bytes'), found[0].get('sha256')) for row in found):
-        raise ValueError('probe file is not bound by its sealed original owner')
-    _verified_small_record(found[0], workspace)
-    return dict(found[0], path=str(path.resolve()))
 
 
-def _probe_source(run: Path) -> tuple[dict, dict, Path]:
-    source = shared._load(run / 'inputs/cooled_experiment.json')['field_source']
-    if source is None:
-        raise ValueError('no explicit sealed probe source')
-    envelope = shared._load(_verified_small_record(source, run.parents[4]))
-    if envelope.get('schema_version') != 1 or envelope.get('role') != 'rf_oatof_cooled_frontend_field_source':
-        raise ValueError('explicit cooled field-source envelope required')
-    record = envelope['source_owner_manifest_record']
-    owner, root = _probe_owner(record, run.parents[4])
-    design_path = root / 'results/cooled_field_design/voltage_design.json'
-    design = shared._load(_verified_small_record(
-        _bound_probe_file(owner, design_path, run.parents[4], output=True)))
-    return design, record, root
 
 
-def static_probe_source_references(run: Path) -> list[dict]:
-    """Discover original CSV owners before the caller acquires their public guards."""
-    run = Path(run).resolve(strict=True)
-    try:
-        design, immediate, _ = _probe_source(run)
-    except (ValueError, KeyError, OSError, TypeError):
-        return []
-    references = {}
-    for kind in KINDS:
-        probe = design.get('native_probe_records', {}).get(kind)
-        if probe is None:
-            continue
-        projection = design.get('response_projections', {}).get(kind, {})
-        owner = projection.get('probe_owner_manifest_record', immediate)
-        key = str(_record_path(owner, run.parents[4], strict=False))
-        references.setdefault(key, dict(manifest_record=owner, protected_paths=[]))
-        references[key]['protected_paths'].append(str(_record_path(probe, run.parents[4], strict=False)))
-    return list(references.values())
 
 
-def _raw_probe_member(row: dict) -> dict:
-    """A raw generation identity: requested voltage scale is deliberately excluded."""
-    keys = ('kind', 'cache_key', 'generation_sha256', 'bytes', 'sha256')
-    result = {key: row[key] for key in keys}
-    result.update(path=str(Path(row['path']).resolve()),
-                  generation_directory=str(Path(row['generation_directory']).resolve()))
-    return result
 
 
-def _validate_probe_rows(path: Path, points: Path) -> int:
-    import csv
-    with points.open(encoding='utf-8-sig', newline='') as handle:
-        expected = list(csv.DictReader(handle))
-    with path.open(encoding='utf-8-sig', newline='') as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames != ['name', 'x_mm', 'y_mm', 'z_mm', 'potential_v',
-                                  'ex_v_per_mm', 'ey_v_per_mm', 'ez_v_per_mm']:
-            raise ValueError('static probe columns differ')
-        rows = list(reader)
-    if not expected or len(rows) != len(expected):
-        raise ValueError('static probe population differs from its frozen points')
-    for actual, target in zip(rows, expected, strict=True):
-        if actual['name'] != target['name'] or any(
-                float(actual[axis+'_mm']) != float(target[axis+'_mm']) for axis in 'xyz'):
-            raise ValueError('static probe point order or coordinates differ')
-        if any(not math.isfinite(float(value)) for key, value in actual.items() if key != 'name'):
-            raise ValueError('static probe contains unknown nonfinite values')
-    return len(rows)
 
 
-def validate_static_probe_reference(run: Path, kind: str, record: dict,
-                                    owner_record: dict, member: dict) -> dict:
-    """Validate one sealed raw measurement using small original-owner evidence only."""
-    import re
-    run = Path(run).resolve(strict=True)
-    workspace = run.parents[4]
-    owner, root = _probe_owner(owner_record, workspace)
-    path = _record_path(record, workspace)
-    if path != root / 'results/cooled_field_probe' / (kind+'.csv'):
-        raise ValueError('static probe CSV is outside its actual original owner')
-    bound = _bound_probe_file(owner, path, workspace, output=True)
-    if not _same_identity(bound, record, workspace):
-        raise ValueError('static probe record differs from its original output')
-    profile_record = _bound_probe_file(owner, root/'inputs/cooled_field_design_profile.json', workspace, output=False)
-    profile = shared._load(_verified_small_record(profile_record, workspace))
-    if profile.get('native_executed') is not True or profile.get('fly_executed') is not False:
-        raise ValueError('static probe lacks its real field-only producer profile')
-    for key, name in (('probe_plan_record', 'cooled_probe_plan.json'),
-                      ('probe_points_record', 'cooled_probe_points.csv')):
-        original = profile[key]
-        if _record_path(original, workspace) != root/'inputs'/name:
-            raise ValueError('probe profile input is outside its original frozen owner')
-        _bound_probe_file(owner, _record_path(original, workspace), workspace, output=False)
-        current = file_record(run/'inputs'/name)
-        if (original['bytes'], original['sha256']) != (current['bytes'], current['sha256']):
-            raise ValueError('frozen static probe plan or points changed')
-    sampler = file_record(Path(__file__).with_name('sample_field.lua'))
-    candidates = [row for row in owner.get('inputs', {}).values() if isinstance(row, dict)
-                  and str(row.get('path', '')).replace('\\', '/').endswith(
-                      '/integrations/workflows/cooled_frontend/sample_field.lua')]
-    if not candidates or any((row['bytes'], row['sha256']) !=
-                             (sampler['bytes'], sampler['sha256']) for row in candidates):
-        raise ValueError('original frozen static sampler differs or is unknown')
-    for candidate in candidates:
-        if not _record_path(candidate, workspace).is_relative_to(root/'inputs'):
-            raise ValueError('static sampler was not frozen by its original owner')
-        _verified_small_record(candidate, workspace)
-    native_record = profile['native_discovery_record']
-    _bound_probe_file(owner, _record_path(native_record, workspace), workspace, output=False)
-    native = shared._load(_verified_small_record(native_record, workspace))
-    identity = shared._load(_verified_small_record(member['cache_identity_record'], workspace))['simion_identity']
-    if (native['bytes'], native['sha256'], native['file_version']) != (
-            identity['executable_bytes'], identity['executable_sha256'], identity['file_version']):
-        raise ValueError('static probe solver identity differs from its raw generation')
-    design_record = _bound_probe_file(owner, root/'results/cooled_field_design/voltage_design.json', workspace, output=True)
-    design = shared._load(_verified_small_record(design_record, workspace))
-    projection = design['response_projections'][kind]
-    if (_raw_probe_member(projection['source_member']) != _raw_probe_member(member)
-            or not _same_identity(design['native_probe_records'][kind], record, workspace)
-            or not _same_identity(projection['raw_probe_record'], record, workspace)):
-        raise ValueError('static probe is not bound to the selected raw generation')
-    count = _validate_probe_rows(path, run/'inputs/cooled_probe_points.csv')
-    log_record = _bound_probe_file(owner, root/'logs'/('field_probe_'+kind+'.stdout.log'), workspace, output=True)
-    lines = _verified_small_record(log_record, workspace).read_text(encoding='utf-8-sig').splitlines()
-    if len([line for line in lines if re.fullmatch(r'COOLED_FIELD_PROBE=PASS samples='+str(count), line)]) != 1:
-        raise ValueError('original successful static probe completion is missing')
-    return bound
 
 
-def static_probe_reuse_plan(run: Path) -> dict:
-    """Choose reusable raw CSVs; insufficient legacy evidence only requests that probe."""
-    run = Path(run).resolve(strict=True)
-    result = dict(native_probe_records={}, probe_owner_manifest_records={}, missing_members=[], reuse_reasons={})
-    try:
-        design, immediate, _ = _probe_source(run)
-    except (ValueError, KeyError, OSError, TypeError) as error:
-        result['missing_members'] = list(KINDS)
-        result['reuse_reasons'] = {kind: str(error) for kind in KINDS}
-        return result
-    members = {row['kind']: row for row in shared._load(run/'inputs/cooled_frontend_field_stage_receipt.json')['working_points']}
-    for kind in KINDS:
-        try:
-            projection = design['response_projections'][kind]
-            if _raw_probe_member(projection['source_member']) != _raw_probe_member(members[kind]):
-                raise ValueError('selected raw member changed')
-            owner = projection.get('probe_owner_manifest_record', immediate)
-            record = validate_static_probe_reference(run, kind, design['native_probe_records'][kind], owner, members[kind])
-            result['native_probe_records'][kind] = record
-            result['probe_owner_manifest_records'][kind] = owner
-        except (ValueError, KeyError, OSError, TypeError) as error:
-            result['missing_members'].append(kind)
-            result['reuse_reasons'][kind] = str(error)
-    return result
 
 
-def complete_static_probe_records(run: Path, selection: dict) -> dict:
-    """Bind actual newly sampled outputs and retain reused original records verbatim."""
-    run = Path(run).resolve(strict=True)
-    records = dict(selection['native_probe_records'])
-    for kind in selection['missing_members']:
-        path = run/'results/cooled_field_probe'/(kind+'.csv')
-        _validate_probe_rows(path, run/'inputs/cooled_probe_points.csv')
-        records[kind] = file_record(path)
-    if set(records) != set(KINDS):
-        raise ValueError('complete seven-member static probe evidence required')
-    return dict(native_probe_records=records,
-                probe_owner_manifest_records=selection['probe_owner_manifest_records'])
 
 
-def static_probe_analysis_records(run: Path, members: list[dict]) -> dict:
-    """Actual analyzer consumer: originals need their sealed owner, never path-only trust."""
-    run = Path(run).resolve(strict=True)
-    costs_path = run/'results/cooled_static_probe_costs.json'
-    costs = shared._load(costs_path) if costs_path.exists() else {}
-    records = costs.get('native_probe_records')
-    owners = costs.get('probe_owner_manifest_records', {})
-    if records is None:
-        # Original unsealed local analysis remains supported; never invent reuse.
-        records = {kind: file_record(run/'results/cooled_field_probe'/(kind+'.csv')) for kind in KINDS}
-    if set(records) != set(KINDS):
-        raise ValueError('complete seven-member static probe evidence required')
-    for member in members:
-        kind = member['kind'];record = records[kind]
-        expected = run/'results/cooled_field_probe'/(kind+'.csv')
-        if _record_path(record) == expected:
-            _verified_small_record(record)
-            if (run/'inputs/cooled_probe_points.csv').exists():
-                _validate_probe_rows(expected, run/'inputs/cooled_probe_points.csv')
-        else:
-            validate_static_probe_reference(run, kind, record, owners[kind], member)
-    return dict(native_probe_records=records, probe_owner_manifest_records=owners)
 
 
 def _records(records: list[dict]) -> dict:
     """Recheck immutable field handles without rescanning large solved payloads."""
-    if not isinstance(records, list) or len(records) != len(KINDS) or {r["kind"] for r in records} != set(KINDS):
+    if not isinstance(records, list) or len(records) != len(field_analysis.KINDS) or {r["kind"] for r in records} != set(field_analysis.KINDS):
         raise ValueError("exactly seven unique real-field records required")
     for row in records:
         path = Path(row["path"]).resolve(strict=True)
@@ -477,7 +286,7 @@ def finalize_field_stage(run: Path, cache: dict, progress: dict) -> dict:
         kind = member['member_id']; source = member.get('frozen_field_source')
         if source is not None:
             generation = Path(source['generation_directory'])
-            identity = shared._load(_verified_small_record(source['cache_identity_record']))
+            identity = shared._load(field_analysis._verified_small_record(source['cache_identity_record']))
             key = source['cache_key']; names = source['cache_filenames']
             version = source['source_schema_version']; scale = member['field_scale']
             refined = False
@@ -535,24 +344,10 @@ def finalize_field_stage(run: Path, cache: dict, progress: dict) -> dict:
     return dict(receipt_path=str(receipt_path),receipt=receipt,working_points=records)
 
 
-def _record_path(record: dict,workspace_root: Path | None = None, *, strict: bool = True) -> Path:
-    path=Path(record["path"])
-    if not path.is_absolute():
-        if workspace_root is None:
-            raise ValueError("relative file identity requires an explicit workspace root")
-        path=Path(workspace_root).resolve(strict=True)/path
-    return path.resolve(strict=strict)
 
 
-def _verified_small_record(record: dict,workspace_root: Path | None = None) -> Path:
-    path=_record_path(record,workspace_root)
-    if path.stat().st_size != record["bytes"] or file_sha256(path) != record["sha256"]:
-        raise ValueError("frozen small-file identity differs")
-    return path
 
 
-def _same_identity(left: dict,right: dict,workspace_root: Path | None = None) -> bool:
-    return _record_path(left,workspace_root,strict=False)==_record_path(right,workspace_root,strict=False) and left.get("bytes")==right.get("bytes") and left.get("sha256")==right.get("sha256")
 
 
 def _field_stage(run: Path) -> tuple[dict, dict]:
@@ -564,23 +359,23 @@ def _field_stage(run: Path) -> tuple[dict, dict]:
     source = shared._load(run/'inputs/cooled_experiment.json')['field_source']
     if source is None:
         raise ValueError('a completed local or explicit sealed field bank is required')
-    envelope = shared._load(_verified_small_record(source, workspace))
+    envelope = shared._load(field_analysis._verified_small_record(source, workspace))
     if envelope.get('schema_version') != 1 or envelope.get('role') != 'rf_oatof_cooled_frontend_field_source':
         raise ValueError('sealed field-source envelope required')
     owner_record = envelope['source_owner_manifest_record']
-    owner_path = _record_path(owner_record, workspace)
+    owner_path = field_analysis._record_path(owner_record, workspace)
     require_completed_terminal_publication(owner_path)
-    owner = shared._load(_verified_small_record(dict(owner_record,
+    owner = shared._load(field_analysis._verified_small_record(dict(owner_record,
         path=str(run/'inputs/cooled_field_source_manifest.json')), workspace))
     if owner.get('status') not in ('success','failed'):
         raise ValueError('field source owner is not terminal')
-    if _record_path(owner['run_config'],workspace) != owner_path.parent/'run_config.json':
+    if field_analysis._record_path(owner['run_config'],workspace) != owner_path.parent/'run_config.json':
         raise ValueError('field source config is outside its managed owner')
-    _verified_small_record(dict(owner['run_config'],path=str(run/'inputs/cooled_field_source_run_config.json')),workspace)
+    field_analysis._verified_small_record(dict(owner['run_config'],path=str(run/'inputs/cooled_field_source_run_config.json')),workspace)
     reference = envelope['field_stage_receipt_record']
-    if not any(_same_identity(reference,row,workspace) for row in [*owner.get('inputs',{}).values(),*owner.get('outputs',[])]):
+    if not any(field_analysis._same_identity(reference,row,workspace) for row in [*owner.get('inputs',{}).values(),*owner.get('outputs',[])]):
         raise ValueError('field receipt is not bound by its original owner')
-    path = _verified_small_record(reference,workspace)
+    path = field_analysis._verified_small_record(reference,workspace)
     stage = shared._load(path)
     required = [stage['geometry_record'],stage['field_plan_record']]
     if stage.get('schema_version') == 2:
@@ -590,7 +385,7 @@ def _field_stage(run: Path) -> tuple[dict, dict]:
     else:
         raise ValueError('unsupported source field bank; frozen evidence conversion is required')
     for record in required:
-        if not any(_same_identity(record,row,workspace) for row in owner.get('inputs',{}).values()):
+        if not any(field_analysis._same_identity(record,row,workspace) for row in owner.get('inputs',{}).values()):
             raise ValueError('field scientific evidence is not bound by its original owner')
     return stage, dict(reference,path=str(path))
 
@@ -602,18 +397,18 @@ def published_members(run: Path, *, source_stage: tuple[dict, dict] | None = Non
     stage, receipt = _field_stage(run) if source_stage is None else source_stage
     if stage.get('role') != FIELD_ROLE or stage.get('status') != 'success' or stage.get('schema_version') not in (2,3):
         raise ValueError('a completed cooled working-field bank is required')
-    points = shared._load(_verified_small_record(stage['field_plan_record'],workspace))
-    if tuple(point['kind'] for point in points['working_points']) != KINDS:
+    points = shared._load(field_analysis._verified_small_record(stage['field_plan_record'],workspace))
+    if tuple(point['kind'] for point in points['working_points']) != field_analysis.KINDS:
         raise ValueError('source bank lacks its exact seven frozen endpoint definitions')
-    _verified_small_record(stage['geometry_record'],workspace)
+    field_analysis._verified_small_record(stage['geometry_record'],workspace)
     rows = _records(stage['working_points'])
     result = {}
     for point in points['working_points']:
         kind = point['kind']; record = rows[kind]
         info = stage if stage['schema_version'] == 2 else record
         identity_record = info['cache_identity_record']
-        identity = shared._load(_verified_small_record(identity_record,workspace))
-        generation = _record_path(dict(path=info['generation_directory']),workspace)
+        identity = shared._load(field_analysis._verified_small_record(identity_record,workspace))
+        generation = field_analysis._record_path(dict(path=info['generation_directory']),workspace)
         names = ([p['output_basename'] for p in points['working_points']]
                  if stage['schema_version'] == 2 else info['cache_filenames'])
         manifest = validate_pa_family_cache_generation(generation,expected_cache_key=info['cache_key'],
@@ -625,7 +420,7 @@ def published_members(run: Path, *, source_stage: tuple[dict, dict] | None = Non
             raise ValueError('field member is not its exact published immutable generation')
         inventory = {entry['name']:entry for entry in manifest['files']}
         name = Path(record['path']).name
-        if (_record_path(record,workspace) != generation/name or name not in inventory
+        if (field_analysis._record_path(record,workspace) != generation/name or name not in inventory
                 or any(record[key] != inventory[name][key] for key in ('bytes','sha256'))):
             raise ValueError('field member differs from its complete published inventory')
         source_version = 2 if stage['schema_version'] == 2 else record['source_schema_version']
@@ -643,7 +438,7 @@ def published_members(run: Path, *, source_stage: tuple[dict, dict] | None = Non
         if raw_identity['gem'].upper() != stage['geometry_record']['sha256'].upper():
             raise ValueError('field source geometry differs from the frozen solve')
         requested_record = record.get('requested_identity_record')
-        requested = shared._load(_verified_small_record(requested_record,workspace)) if requested_record else raw_identity
+        requested = shared._load(field_analysis._verified_small_record(requested_record,workspace)) if requested_record else raw_identity
         scale = record.get('field_scale',1.)
         if (type(scale) not in (int,float) or not math.isfinite(scale)
                 or pulse_reuse_scale(requested,raw_identity) != scale):
@@ -676,10 +471,10 @@ def fields(run: Path) -> dict:
     # solver authority is that field's frozen producer, not today's installed
     # executable; no native discovery or PA materialization is needed here.
     geometry = stage['geometry_record']
-    same_geometry = _record_path(geometry,run.parents[4]) == run/'inputs/frontend.gem'
+    same_geometry = field_analysis._record_path(geometry,run.parents[4]) == run/'inputs/frontend.gem'
     source_plan = stage['field_plan_record']
     target_plan = run/'inputs/cooled_field_plan.json'
-    if (_record_path(source_plan,run.parents[4]) != target_plan
+    if (field_analysis._record_path(source_plan,run.parents[4]) != target_plan
             and (target_plan.stat().st_size != source_plan['bytes']
                  or file_sha256(target_plan) != source_plan['sha256'])):
         raise ValueError('frozen small-file identity differs for the complete target field plan')
@@ -698,7 +493,7 @@ def fields(run: Path) -> dict:
             rf_differential_pa_basenames=[Path(records['rf_differential_unit']['path']).name],
             rf_reference_voltage_v=1.,pulse_delta_pa_basename=Path(records['pulse_delta']['path']).name,
             pulse_delta_scale=pulse_scale)])
-    actual = shared._load(_verified_small_record(stage['field_bank_record'],run.parents[4]))
+    actual = shared._load(field_analysis._verified_small_record(stage['field_bank_record'],run.parents[4]))
     # The original schema2 has the original unit pulse coefficient; derive
     # that fact from equal target/source vectors, never today's defaults.
     expected = bank if stage['schema_version'] == 3 else dict(bank,dynamic_roles=[{
@@ -707,7 +502,7 @@ def fields(run: Path) -> dict:
         raise ValueError('field bank role/member projection differs from its verified records')
     _resolve_standalone_dynamic_field_bank(bank,{'coarse_frontend':1})
     return dict(records=records,bank=bank,receipt=receipt,
-        bank_record=dict(stage['field_bank_record'], path=str(_record_path(stage['field_bank_record'],run.parents[4]))),
+        bank_record=dict(stage['field_bank_record'], path=str(field_analysis._record_path(stage['field_bank_record'],run.parents[4]))),
         identity_validation='per_member_public_generation__exact_operator_and_scaling__runtime_stat_recheck')
 
 
@@ -732,14 +527,14 @@ def context(run: Path, *, reference_phase: dict | None = None, shared_context: d
     else:
         if decision_record is None or result["experiment"]["field_source"] is None:
             raise ValueError("population dispatch requires sealed fields and a shared actual-field pulse decision")
-        decision_path=_verified_small_record(decision_record,workspace)
+        decision_path=field_analysis._verified_small_record(decision_record,workspace)
         decision=shared._load(decision_path)
         if decision.get("schema_version") != 1 or decision.get("role") != "actual_field_reference_exit_centering":
             raise ValueError("unsupported actual-field pulse decision")
         mode=1
         result["decision"]=decision
     identity_record=decision.get("field_identity",{}).get("field_stage_receipt_record")
-    if identity_record is None or not _same_identity(identity_record,result["fields"]["receipt"],workspace):
+    if identity_record is None or not field_analysis._same_identity(identity_record,result["fields"]["receipt"],workspace):
         raise ValueError("calibration is bound to different actual fields")
     release=decision["release_start_us"]
     if reference_phase is not None:
@@ -759,7 +554,7 @@ def context(run: Path, *, reference_phase: dict | None = None, shared_context: d
     result["cooled_drive"]=dict(result["cooled_drive"],release_start_us=release)
     hs1_path=inputs/"cooled_collision_hs1.lua"
     identity=shared._load(inputs/"cooled_hs1_identity.json")
-    if _verified_small_record(identity["adapted"],workspace) != hs1_path.resolve(strict=True):
+    if field_analysis._verified_small_record(identity["adapted"],workspace) != hs1_path.resolve(strict=True):
         raise ValueError("frozen official HS1 adapter identity differs")
     result["hs1_source"]=hs1_path.read_text(encoding="utf-8")
     module=native_resource_path("cooled_frontend.lua")

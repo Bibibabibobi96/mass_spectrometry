@@ -12,14 +12,17 @@ import json
 import math
 from pathlib import Path
 import tempfile
+import subprocess
+import shutil
 import unittest
 
 import numpy as np
 import pandas as pd
 
+from msplatform.backends.simion.resources import native_resource_path
 from msplatform.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
 from msplatform.execution.retention import file_record
-from integrations.workflows.cooled_frontend.field_design import analyze_field_run
+from msplatform.workflows.cooled_frontend.field_analysis import analyze_field_run
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design import (
     compose_samples, design_voltage_controls, project_member_samples,
 )
@@ -89,6 +92,34 @@ class CooledFrontendFieldDesignTests(unittest.TestCase):
         for kind, scale in (("carrier_off", 2.), ("pulse_delta", float("nan")), ("pulse_delta", True)):
             with self.subTest(kind=kind, scale=scale), self.assertRaises(ValueError):
                 project_member_samples(raw, kind, scale)
+
+    def test_canonical_native_sampler_uses_explicit_origin_and_anisotropic_pitch(self):
+        lua=Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
+        if not lua.is_file():self.skipTest("plain Lua interpreter unavailable")
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);points=root/'points.csv';output=root/'samples.csv'
+            points.write_text('name,x_mm,y_mm,z_mm\na,1,1,2\n',encoding='utf-8')
+            harness=root/'probe.lua'
+            harness.write_text("""local resource,path,origin,points,output=unpack(arg)
+local closed=false
+simion={pas={}}
+function simion.pas:open(value)
+ assert(value==path,'native sampler guessed a PA')
+ return {dx_mm=.2,dy_mm=.5,dz_mm=1,
+ inside_vc=function(_,x,y,z) assert(x==0 and y==4 and z==2);return true end,
+ potential_vc=function(_,x,y,z) return x+2*y+3*z end,
+ field_vc=function() return 1,2,3 end,
+ close=function() closed=true end}
+end
+arg={path,origin,points,output};dofile(resource);assert(closed,'PA not closed')
+""",encoding='utf-8')
+            result=subprocess.run([str(lua),str(harness),str(native_resource_path('sample_cooled_field.lua')),
+                'explicit.pa','1,-1,0',str(points),str(output)],cwd=root,timeout=30,capture_output=True,text=True,encoding='utf-8',check=False)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('COOLED_FIELD_PROBE=PASS samples=1',result.stdout)
+            row=pd.read_csv(output).iloc[0]
+            self.assertEqual([row.potential_v,row.ex_v_per_mm,row.ey_v_per_mm,row.ez_v_per_mm],[14,5,4,3])
+            self.assertEqual([row.x_mm,row.y_mm,row.z_mm],[1,1,2])
 
     def test_checkpoint_owner_can_publish_field_proposal_and_bound_records(self):
         # Temporary analytic samples exercise the actual run adapter, not a

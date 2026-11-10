@@ -391,6 +391,20 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                                      for row in request["stages"]))
 
+    def test_cooled_field_analysis_and_sampler_select_their_real_consumers(self):
+        expected={"integrations.tests."+name for name in (
+            "test_cooled_frontend_field_design","test_cooled_static_probe_reuse",
+            "test_cooled_frontend_reference","test_cooled_frontend","test_cooled_field_member_reuse",
+            "test_cooled_frontend_execute","test_cooled_frontend_mesh_check")}
+        for path in ("src/msplatform/workflows/cooled_frontend/field_analysis.py",
+                     "src/msplatform/backends/simion/resources/sample_cooled_field.lua"):
+            with self.subTest(path=path):
+                request,_=self.plan("-ChangedPath",path)
+                modules=[value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
+                         for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])]
+                self.assertEqual(set(modules),expected)
+                self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
+
     def test_cooled_field_design_selects_its_actual_consumers(self):
         request, _ = self.plan("-ChangedPath",
             "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py")

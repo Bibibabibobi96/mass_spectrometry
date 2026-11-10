@@ -5,6 +5,8 @@ processes, lifecycle and final publication remain in the family execute route.
 """
 from __future__ import annotations
 
+from msplatform.workflows.cooled_frontend import field_analysis
+
 import argparse
 import csv
 import itertools
@@ -133,7 +135,7 @@ def native_arrival_window(events: list[dict], frontend: dict, source_row: dict) 
 
 def _retained_record(path: Path,owner: dict,workspace: Path) -> dict:
     record=file_record(path)
-    if not any(runtime._same_identity(record,r,workspace) for r in owner.get("outputs",[])):
+    if not any(field_analysis._same_identity(record,r,workspace) for r in owner.get("outputs",[])):
         raise ValueError("reference theory/probe file is not bound by sealed field owner outputs")
     return record
 
@@ -145,8 +147,8 @@ def prepare_reference(run: Path) -> dict:
     experiment=shared._load(inputs/"cooled_experiment.json")
     if experiment["pressure_scale"]!=0 or experiment["field_source"] is None or experiment["common_pulse_decision"] is not None:
         raise ValueError("reference preparation requires shared sealed fields, vacuum and no production decision")
-    envelope=shared._load(runtime._verified_small_record(experiment["field_source"],workspace))
-    manifest_path=runtime._verified_small_record(envelope["source_owner_manifest_record"],workspace)
+    envelope=shared._load(field_analysis._verified_small_record(experiment["field_source"],workspace))
+    manifest_path=field_analysis._verified_small_record(envelope["source_owner_manifest_record"],workspace)
     owner=shared._load(manifest_path)
     design_path=manifest_path.parent/"results/cooled_field_design/voltage_design.json"
     design_record=_retained_record(design_path,owner,workspace)
@@ -155,12 +157,12 @@ def prepare_reference(run: Path) -> dict:
         raise ValueError("reference design targets differ from actual-field voltage design")
     responses={}
     for kind,record in design["native_probe_records"].items():
-        path=runtime._verified_small_record(record,workspace)
-        if not any(runtime._same_identity(record,r,workspace) for r in owner.get("outputs",[])):
+        path=field_analysis._verified_small_record(record,workspace)
+        if not any(field_analysis._same_identity(record,r,workspace) for r in owner.get("outputs",[])):
             original = design.get("response_projections", {}).get(kind, {}).get("probe_owner_manifest_record")
             if original is None:
                 raise ValueError("reference theory/probe file is not bound by sealed field owner outputs")
-            runtime.validate_static_probe_reference(run, kind, record, original, field_context["records"][kind])
+            field_analysis.validate_static_probe_reference(run, kind, record, original, field_context["records"][kind])
         responses[kind]=pd.read_csv(path)
     with (inputs/"release_global.csv").open(encoding="utf-8-sig",newline="") as handle:
         original=list(csv.DictReader(handle))

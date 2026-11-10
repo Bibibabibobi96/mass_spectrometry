@@ -196,7 +196,7 @@ function Protect-CooledStaticProbeSources {
  param([string]$RunDirectory,[string]$RepoRoot,[string]$Python,[ref]$CapacitySession,
        [Collections.Generic.List[object]]$SourceReaders)
  $context=@{RunDirectory=$RunDirectory;RepoRoot=$RepoRoot;Python=$Python}
-  $sourceCode='import json,sys;from pathlib import Path;from integrations.workflows.cooled_frontend.runtime import static_probe_source_references;print(json.dumps(static_probe_source_references(Path(sys.argv[1]))))'
+  $sourceCode='import json,sys;from pathlib import Path;from msplatform.workflows.cooled_frontend.field_analysis import static_probe_source_references;print(json.dumps(static_probe_source_references(Path(sys.argv[1]))))'
   $references=@(Invoke-FrontendRuntimePython @context -Name probe_source_owners -Arguments @('-c',$sourceCode,$RunDirectory) -Json)
   if($references.Count){
    if($null-eq$SourceReaders){throw 'Static probe reuse requires its public owner source readers.'}
@@ -294,7 +294,7 @@ rows=[dict(file_record(run/'simion/cooled_fields'/p['output_basename'],'solver_n
  $probeSelection=@{native_probe_records=@{};probe_owner_manifest_records=@{};missing_members=@($records|ForEach-Object kind)}
  if(-not$meshCheck){
   Protect-CooledStaticProbeSources -RunDirectory $run -RepoRoot $FrozenRepoRoot -Python $Python -CapacitySession $CapacitySession -SourceReaders $SourceReaders
-  $selectionCode='import json,sys;from pathlib import Path;from integrations.workflows.cooled_frontend.runtime import static_probe_reuse_plan;print(json.dumps(static_probe_reuse_plan(Path(sys.argv[1]))))'
+  $selectionCode='import json,sys;from pathlib import Path;from msplatform.workflows.cooled_frontend.field_analysis import static_probe_reuse_plan;print(json.dumps(static_probe_reuse_plan(Path(sys.argv[1]))))'
   $probeSelection=Invoke-FrontendRuntimePython @context -Name probe_reuse_plan -Arguments @('-c',$selectionCode,$run) -Json
  }
  foreach($record in $records){
@@ -329,7 +329,7 @@ rows=[dict(file_record(run/'simion/cooled_fields'/p['output_basename'],'solver_n
  $probeMetadata=@{native_probe_records=@{};probe_owner_manifest_records=@{}}
  if(-not$meshCheck){
   $selectionPath=Join-Path $probeDirectory 'selection.json';Write-RunJson -Path $selectionPath -Value $probeSelection -Depth 100
-  $completeCode='import json,sys;from pathlib import Path;from integrations.workflows.cooled_frontend.runtime import complete_static_probe_records;print(json.dumps(complete_static_probe_records(Path(sys.argv[1]),json.loads(Path(sys.argv[2]).read_text(encoding="utf-8-sig")))))'
+  $completeCode='import json,sys;from pathlib import Path;from msplatform.workflows.cooled_frontend.field_analysis import complete_static_probe_records;print(json.dumps(complete_static_probe_records(Path(sys.argv[1]),json.loads(Path(sys.argv[2]).read_text(encoding="utf-8-sig")))))'
   $probeMetadata=Invoke-FrontendRuntimePython @context -Name probe_records -Arguments @('-c',$completeCode,$run,$selectionPath) -Json
  }
  Write-RunJson -Path (Join-Path $Package.result_dir 'cooled_static_probe_costs.json') -Value @{
@@ -595,7 +595,7 @@ try{
    -Arguments @('-c',$meshAnalysis,[string]$package.artifact_run_dir)
  }else{
   Invoke-FrontendRuntimePython -Python $Python -RepoRoot $frozenRoot -RunDirectory $package.artifact_run_dir -Name field_design_theory `
-   -Arguments @('-m',($module+'.field_design'),'--run',[string]$package.artifact_run_dir)
+   -Arguments @('-m','msplatform.workflows.cooled_frontend.field_analysis','--run',[string]$package.artifact_run_dir)
  }
  $profileCode=@'
 import json,sys

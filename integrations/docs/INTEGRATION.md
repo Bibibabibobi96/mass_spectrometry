@@ -1090,3 +1090,30 @@ not ordinary-package, complete Repository or commercial-solver qualification.
 The same six parents passed on the composed workspace in 4.493 seconds
 (18 successful records, no skips). Production source and resource bytes are
 unchanged; no additional installation result is inferred from these tests.
+
+
+### Canonical cooled-field proposal and sealed probes
+
+`msplatform.workflows.cooled_frontend.field_analysis` owns the existing seven-member
+probe record reader, explicit probe reuse selection and unsealed-owner voltage proposal
+adapter. The existing root executor still acquires guards, invokes native operations and
+publishes the same run; no second owner/cache or automatic solve/Fly is added. The module's
+`--run` CLI writes the existing `results/cooled_field_design/voltage_design.json` only before
+terminal publication. Success/failed sealed caller owners reject before output.
+
+The unchanged native sampler is packaged as `sample_cooled_field.lua`; new frozen probe
+plans name its canonical backend source. Original manifest-bound legacy sampler paths
+are read only through their actual frozen probe plan/source records, with unchanged
+sampler bytes. Only that proven source-path relocation may differ; scientific/numerical
+plan fields, native arguments, exact points, solver/raw-generation bindings and completion
+logs remain required. Missing historical bytes are never supplied from today's package.
+Pulse scaling is still applied once in analysis without rewriting raw CSVs. These adapters
+remain a local quadratic/static-energy proposal, not a cooling trajectory or native
+qualification. Full root cooled orchestration remains separate migration work.
+On the composed G3 successor, all 93 selected parents and 321 records passed in
+127.236 seconds without skips, including complete affected cooled consumers,
+architecture and actual Changed selection. Independent review accepted the
+source/record guarantees and both private 449-payload installed CLI arms. That
+private source excludes G3; its retained builds and later clean client run remain
+their original evidence, not a new combined package acceptance. Final combined
+installation, Repository, performance and native qualification remain open.

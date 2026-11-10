@@ -161,7 +161,7 @@ def compile_probe_plan(conditioner: dict, frontend: dict, field_plan: dict) -> t
         point_columns=["name", "x_mm", "y_mm", "z_mm"], local_stencil_count=len(local), axial_line_count=count+1,
         release_axis_count=extended_count, oa_side_entry_vacuum_offset_mm=pitch,
         local_offsets_mm=[-2*pitch, -pitch, 0., pitch, 2*pitch],
-        sampler_repository_path="integrations/workflows/cooled_frontend/sample_field.lua",
+        sampler_repository_path="src/msplatform/backends/simion/resources/sample_cooled_field.lua",
         sampler_arguments=["PA_PATH", ",".join(str(frontend["instance_origin_mm"][a]) for a in "xyz"), "INPUT_CSV", "OUTPUT_CSV"],
         output_columns=["name", "x_mm", "y_mm", "z_mm", "potential_v", "ex_v_per_mm", "ey_v_per_mm", "ez_v_per_mm"],
         working_point_kinds=[p["kind"] for p in field_plan["working_points"]],

@@ -1,6 +1,8 @@
 """Artifact-free unified real-electrode geometry and mode regressions."""
 from __future__ import annotations
 
+from msplatform.workflows.cooled_frontend import field_analysis
+
 from msplatform.execution.resources import resource_path
 
 import copy
@@ -412,14 +414,14 @@ class CooledFrontendTests(unittest.TestCase):
             run=root/"run"
             prepared=prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
             rows=[]
-            for kind in cooled_runtime.KINDS:
+            for kind in field_analysis.KINDS:
                 spec=cooled_runtime.field_verification_spec(run,root/"ordinary",member_id=kind)
                 rows.extend(row.split("\t") for row in spec.read_text().splitlines())
-            self.assertEqual([row[1] for row in rows if row[0]=="field"],list(cooled_runtime.KINDS))
+            self.assertEqual([row[1] for row in rows if row[0]=="field"],list(field_analysis.KINDS))
             points={point["kind"]:point for point in prepared["field_plan"]["working_points"]}
             conditioner=prepared["frontend"]["conditioner_contract"]
             for name,eid in conditioner["electrode_ids"].items():
-                for kind in cooled_runtime.KINDS:
+                for kind in field_analysis.KINDS:
                     row=next(row for row in rows if row[:3]==["metal",kind,name])
                     self.assertEqual(float(row[-1]),points[kind]["electrode_voltages_v"][str(eid)])
             if LUA.is_file():

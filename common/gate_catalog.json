@@ -2078,6 +2078,28 @@
         "dependencies": [
           {
             "matches": [
+              {
+                "exact": "src/msplatform/workflows/cooled_frontend/field_analysis.py",
+                "reason": "cooled_field_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/sample_cooled_field.lua",
+                "reason": "cooled_static_sampler_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_cooled_frontend_field_design.py",
+              "integrations/tests/test_cooled_static_probe_reuse.py",
+              "integrations/tests/test_cooled_frontend_reference.py",
+              "integrations/tests/test_cooled_frontend.py",
+              "integrations/tests/test_cooled_field_member_reuse.py",
+              "integrations/tests/test_cooled_frontend_execute.py",
+              "integrations/tests/test_cooled_frontend_mesh_check.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py", "reason": "cooled_field_design_component_changed"}
             ],
             "modules": [
