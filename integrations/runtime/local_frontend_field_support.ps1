@@ -141,7 +141,7 @@ function Invoke-LocalFrontendFieldStage {
   # Use that single registered source rather than copy/hash a second tool set.
   $frozenTools=@{}
   foreach($tool in @('initialize_fast_adjust_pa_basis.lua','verify_local_frontend_fields.lua','export_standalone_pa.lua','compose_standalone_pa.lua')){
-    $source=if($tool-in@('export_standalone_pa.lua','compose_standalone_pa.lua')){Join-Path $RepoRoot $(if($tool-eq'export_standalone_pa.lua'){'src/msplatform/backends/simion/resources/'+$tool}else{'common/simion/'+$tool})}else{Join-Path $runtime $tool}
+    $source=if($tool-in@('export_standalone_pa.lua','compose_standalone_pa.lua')){Join-Path $RepoRoot ('src/msplatform/backends/simion/resources/'+$tool)}else{Join-Path $runtime $tool}
     $frozenTools[$tool]=$source
   }
   function Invoke-LocalFieldPython {

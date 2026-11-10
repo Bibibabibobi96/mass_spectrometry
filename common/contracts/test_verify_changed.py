@@ -2028,6 +2028,37 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'}
                              for row in request['stages']))
 
+    def test_installed_operating_pa_composer_public_plan_preserves_existing_owners(self):
+        request, _ = self.plan('-ChangedPath',
+            'src/msplatform/backends/simion/resources/compose_standalone_pa.lua')
+        rows = [row for row in request['stages']
+                if row['name'] == 'parallel_mirror_dual_stripe_mr_tof_static']
+        self.assertEqual(len(rows), 1)
+        command = rows[0]['command']
+        self.assertEqual(command['runner'], 'powershell')
+        self.assertEqual(command['script'],
+                         'projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1')
+        self.assertEqual(command['parameters']['Level'], 'Core')
+        self.assertNotIn('SelectedTestModules', command['parameters'])
+        self.assertEqual(command['parameters']['ChangedTestModules'], [
+            'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding'])
+        common = [value for row in request['stages']
+                  if row['name'].startswith('simion_common')
+                  for value in row['command'].get('arguments', [])]
+        expected_common = ['common/simion/' + name for name in (
+            'test_operating_pa_cache.py', 'test_standalone_pa_composition_tools.py',
+            'test_export_standalone_pa.py')]
+        for module in expected_common:
+            self.assertEqual(common.count(module), 1)
+        integration = [value for row in request['stages']
+                       if row['name'].startswith('instrument_assembly_integration')
+                       for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
+        self.assertCountEqual(integration, [
+            'integrations.tests.test_local_frontend_field_support', 'integrations.tests.test_dependencies'])
+        self.assertEqual(len(integration), len(set(integration)))
+        self.assertTrue(any(row['name'].startswith('common_contracts') for row in request['stages']))
+        self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'} for row in request['stages']))
+
     def test_installed_mr_stripe_public_plan_preserves_core_and_integration(self):
         request, _ = self.plan('-ChangedPath',
             'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py')

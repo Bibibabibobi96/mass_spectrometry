@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
-from common.simion.operating_pa_cache import (
+from msplatform.backends.simion.resources import native_resource_path
+from msplatform.backends.simion.operating_pa_cache import (
     CacheDisposition,
     OperatingPACacheError,
     canonical_operating_pa_cache_key,
@@ -98,7 +99,7 @@ class OperatingPACacheTest(unittest.TestCase):
 
     def test_linear_basis_helper_binds_standalone_composer(self) -> None:
         identity = linear_basis_operating_pa_group_identity(self.members, pa_format_version=2020)
-        implementation = Path(__file__).with_name("compose_standalone_pa.lua")
+        implementation = native_resource_path("compose_standalone_pa.lua")
         self.assertEqual(
             identity["synthesis"]["algorithm_id"],
             "standalone_linear_response_composition",
@@ -110,7 +111,7 @@ class OperatingPACacheTest(unittest.TestCase):
     def test_verified_record_identity_avoids_payload_rehash(self) -> None:
         source = self.inputs / "base-a.pa"
         record = {"bytes": source.stat().st_size, "sha256": file_sha256(source)}
-        with patch("common.simion.operating_pa_cache.file_sha256") as hasher:
+        with patch("msplatform.backends.simion.operating_pa_cache.file_sha256") as hasher:
             self.assertEqual(content_identity_from_verified_record(record, path=source), record)
             hasher.assert_not_called()
 

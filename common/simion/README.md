@@ -383,7 +383,7 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 `refinable=false`。任何 `.pa-surf` 伴随文件、已有输出或覆盖输入都会在打开 family 前失败关闭。发布后的不可变
 cache family 及其副本不得作为该工具输入。
 
-[`compose_standalone_pa.lua`](compose_standalone_pa.lua)实现
+[`compose_standalone_pa.lua`](../../src/msplatform/backends/simion/resources/compose_standalone_pa.lua)实现
 `OUTPUT = BASE + sum(COEFFICIENT * RESPONSE)`。输入只接受 `surface=none` 的 standalone `.pa`；每项响应采用
 `PATH.pa,COEFFICIENT`，路径可含逗号，因为最后一个逗号才是分隔符。工具先用官方 `pa:copy` 复制 base，随后验证
 每个响应的尺寸、网格、对称性和 potential type。SIMION 2020 没有已记录的“另一 PA 数组整体相加”API，因此
@@ -715,3 +715,13 @@ Modern installed tracking uses `validate_program_trajectory_quality` in `msplatf
 This range is for the reserved variable `sim_trajectory_quality`, documented by [Workbench Program Extensions](https://simion.com/info/workbench_program_extensions.html#sim_trajectory_quality) and the installed SIMION2020 supplemental Help; [Time Step Size](https://simion.com/info/time_step_size.html) explains that zero/negative and positive values select different numerical behavior. It is a user numerical choice, not an accuracy qualification or automatic tuning recommendation.
 
 The local frontend applies quality through its same-stem frozen Program on load and every initialize_run, with `--programs 1`; its redundant CLI quality argument has been removed. The separate `--trajectory-quality` CLI range has not been verified for8.2.0.11. Legacy CLI-only RF runners and dual-cone CLI numerics have not been broadened by this change. Plain-Lua callback/readback checks are software evidence, not a native Fly or convergence claim.
+
+Standalone operating-PA schema2 identities and cache adapters have one installed
+owner: `msplatform.backends.simion.operating_pa_cache`. They delegate publication,
+probe and materialization to the existing PA-family cache; they do not select MR
+voltages or change immutable-source/long-path protection. The two former Lua
+locations and duplicate identity body are retired without aliases. Completed
+composition readback verifies its small recorded plan and preserves its original
+generator SHA/location as provenance; it does not open a missing old generator or
+substitute the current one. New planning still requires the selected installed
+resource. Software/source and native qualification remain separate.

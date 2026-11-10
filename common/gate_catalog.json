@@ -1563,6 +1563,14 @@
         {
           "exact": "src/msplatform/analysis/terminal_plane.py",
           "reason": "canonical_terminal_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/operating_pa_cache.py",
+          "reason": "installed_standalone_pa_authority_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
+          "reason": "installed_standalone_pa_authority_changed"
         }
       ],
       "command": {
@@ -1637,6 +1645,32 @@
               "common/simion/test_analyze_terminal_plane.py"
             ],
             "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/operating_pa_cache.py",
+                "reason": "installed_standalone_pa_authority_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_operating_pa_cache.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
+                "reason": "installed_standalone_pa_authority_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_operating_pa_cache.py",
+              "common/simion/test_standalone_pa_composition_tools.py",
+              "common/simion/test_export_standalone_pa.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "exclude_modules": [
@@ -2290,6 +2324,19 @@
               "integrations/tests/test_accelerator_interface_geometry.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
+                "reason": "installed_standalone_pa_authority_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_local_frontend_field_support.py",
+              "integrations/tests/test_dependencies.py"
+            ],
+            "dependency_profile": "locked"
           }
         ]
       },
@@ -2473,6 +2520,14 @@
         {
           "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py",
           "reason": "installed_mr_stripe_math_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/operating_pa_cache.py",
+          "reason": "installed_standalone_pa_authority_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
+          "reason": "installed_standalone_pa_authority_changed"
         }
       ],
       "command": {
@@ -2987,6 +3042,22 @@
             "modules": [
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_managed_analysis_runner_contracts.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_candidate_condition_runner.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/operating_pa_cache.py",
+                "reason": "installed_standalone_pa_authority_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
+                "reason": "installed_standalone_pa_authority_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py"
             ],
             "dependency_profile": "locked"
           }

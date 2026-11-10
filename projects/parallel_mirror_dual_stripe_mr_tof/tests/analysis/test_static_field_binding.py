@@ -2545,7 +2545,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
                     binding_main()
 
     def fixture(self, root, *, ps=False):
-        from common.simion.operating_pa_cache import file_content_identity
+        from msplatform.backends.simion.operating_pa_cache import file_content_identity
         author, samples = VoltageResponseBindingTest().fixture()
         binding = VoltageResponseBindingTest().resolve(author, samples)
         if ps:
@@ -2594,7 +2594,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
             self.assertEqual(coefficients, [-2.5, .5, 2.])
             self.assertEqual(plan["authority"], binding["authority"])
             self.assertEqual(plan["response_weight_l1_norm"], 4.)
-            with patch("common.simion.operating_pa_cache.file_sha256", return_value="A" * 64) as digest:
+            with patch("msplatform.backends.simion.operating_pa_cache.file_sha256", return_value="A" * 64) as digest:
                 compile_composition_plan(binding, source, run / "results")
             self.assertTrue(all(Path(call.args[0]).suffix != ".pa" for call in digest.call_args_list))
             protected = source.parent / "field_v.pa"
@@ -2636,7 +2636,8 @@ class MaterializedResponseBindingTest(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
-        composer = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/compose_standalone_pa.lua"
+        from msplatform.backends.simion.resources import native_resource_path
+        composer = native_resource_path("compose_standalone_pa.lua")
         fixture = r'''
 local root,composer=arg[1],arg[2]
 local values={['a.pa']=2,['b.pa']=4,['c.pa']=8,['d.pa']=16}
@@ -2729,6 +2730,131 @@ print('FOUR_TERM_PUBLIC_COMPOSER_PASS')
             self.assertEqual(result["materialization_synthesis"]["implementation_sha256"], "A" * 64)
             self.assertEqual(result["materialization_synthesis"], plan["operating_pa_identity"]["synthesis"])
             self.assertEqual(result["authority"], binding["authority"])
+
+    def test_historical_readback_keeps_opaque_generator_without_opening_build_tools(self):
+        from msplatform.backends.simion import operating_pa_cache
+
+        with tempfile.TemporaryDirectory() as directory:
+            binding, source, run, plan = self.fixture(Path(directory))
+            recorded_location = r"Z:\retired tool alias\original-generator.bin"
+            for command in plan["commands"]:
+                command["argv"][0] = recorded_location
+            plan["operating_pa_identity"]["synthesis"]["implementation_sha256"] = "A" * 64
+            manifest = self.publish_fixture(run, plan)
+            plan_path = run / "inputs/composition_plan.json"
+            original_plan_bytes = plan_path.read_bytes()
+            original_manifest_bytes = manifest.read_bytes()
+            content_identity = operating_pa_cache.file_content_identity
+
+            def descriptor_identity_only(path):
+                self.assertEqual(Path(path), source)
+                return content_identity(path)
+
+            with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
+                    patch("msplatform.backends.comsol.static_field_binding.simion_native_resource_path",
+                          side_effect=AssertionError("current generator lookup forbidden")) as current_lookup, \
+                    patch.object(operating_pa_cache, "native_resource_path",
+                                 side_effect=AssertionError("implicit generator lookup forbidden")) as implicit_lookup, \
+                    patch.object(operating_pa_cache, "file_content_identity", side_effect=descriptor_identity_only) as identities:
+                result = _load_materialized_response({"response_binding": str(source), "materialization_manifest": str(manifest)})
+            current_lookup.assert_not_called()
+            implicit_lookup.assert_not_called()
+            self.assertEqual(identities.call_count, 1)
+            self.assertEqual(result["materialization_synthesis"], plan["operating_pa_identity"]["synthesis"])
+            self.assertEqual(result["authority"], binding["authority"])
+            self.assertEqual(plan_path.read_bytes(), original_plan_bytes)
+            self.assertEqual(manifest.read_bytes(), original_manifest_bytes)
+            self.assertTrue(all(command["argv"][0] == recorded_location
+                                for command in json.loads(original_plan_bytes)["commands"]))
+
+    def test_new_plan_records_actual_selected_generator_once_without_pa_hash(self):
+        from msplatform.backends.simion import operating_pa_cache
+        from msplatform.backends.simion.resources import native_resource_path
+
+        with tempfile.TemporaryDirectory() as directory:
+            binding, source, run, _ = self.fixture(Path(directory))
+            selected = native_resource_path("compose_standalone_pa.lua")
+            with patch("msplatform.backends.comsol.static_field_binding.simion_native_resource_path",
+                       return_value=selected) as lookup, \
+                    patch.object(operating_pa_cache, "file_content_identity",
+                                 wraps=operating_pa_cache.file_content_identity) as identities:
+                plan = compile_composition_plan(binding, source, run / "results")
+            lookup.assert_called_once_with("compose_standalone_pa.lua")
+            self.assertEqual([Path(call.args[0]) for call in identities.call_args_list], [selected, source])
+            self.assertEqual(plan["operating_pa_identity"]["synthesis"]["implementation_sha256"],
+                             hashlib.sha256(selected.read_bytes()).hexdigest().upper())
+            self.assertTrue(all(command["argv"][0] == str(selected) for command in plan["commands"]))
+
+    def test_new_planning_refuses_missing_selected_generator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binding, source, run, _ = self.fixture(Path(directory))
+            with patch("msplatform.backends.comsol.static_field_binding.simion_native_resource_path",
+                       side_effect=FileNotFoundError("selected installed composer is missing")):
+                with self.assertRaisesRegex(FileNotFoundError, "selected installed composer is missing"):
+                    compile_composition_plan(binding, source, run / "results")
+            for invalid_terms in (None, [], [{}], [{}] * 6):
+                invalid = copy.deepcopy(binding)
+                invalid["response_terms"] = invalid_terms
+                with patch("msplatform.backends.comsol.static_field_binding.simion_native_resource_path",
+                           side_effect=FileNotFoundError("must not precede original term guard")) as lookup:
+                    with self.assertRaisesRegex(ValueError, "baseline and one to four resolved response axes"):
+                        compile_composition_plan(invalid, source, run / "results")
+                lookup.assert_not_called()
+            self.assertEqual(list((run / "results").iterdir()), [])
+
+    def test_recorded_generator_shape_and_consistency_refuse_without_current_fallback(self):
+        for defect in ("commands", "inconsistent", "empty", "argv", "nonstring", "sha"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory:
+                binding, source, run, plan = self.fixture(Path(directory))
+                if defect == "commands":
+                    plan["commands"] = []
+                elif defect == "inconsistent":
+                    plan["commands"][1]["argv"][0] = "another-original-generator"
+                elif defect == "empty":
+                    for command in plan["commands"]:
+                        command["argv"][0] = " "
+                elif defect == "argv":
+                    plan["commands"][0]["argv"] = "not-a-list"
+                elif defect == "nonstring":
+                    plan["commands"][0]["argv"][0] = 7
+                else:
+                    plan["operating_pa_identity"]["synthesis"]["implementation_sha256"] = "invalid"
+                # The existing publisher fixture itself expects executable argv
+                # shapes. Seal the same tiny output records first, then replace
+                # and re-record this intentionally malformed author-plan fixture.
+                valid_plan = compile_composition_plan(binding, source, run / "results")
+                manifest = self.publish_fixture(run, valid_plan)
+                plan_path = run / "inputs/composition_plan.json"
+                plan_path.write_text(json.dumps(plan), encoding="utf-8")
+                from msplatform.execution.retention import file_record
+                manifest_value = json.loads(manifest.read_text())
+                manifest_value["outputs"][0] = file_record(plan_path)
+                manifest.write_text(json.dumps(manifest_value), encoding="utf-8")
+                with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
+                        patch("msplatform.backends.comsol.static_field_binding.simion_native_resource_path",
+                              side_effect=AssertionError("generator fallback forbidden")) as lookup:
+                    with self.assertRaises(ValueError):
+                        _load_materialized_response({"response_binding": str(source), "materialization_manifest": str(manifest)})
+                lookup.assert_not_called()
+
+    def test_same_size_recorded_generator_tamper_fails_original_small_plan_sha(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binding, source, run, plan = self.fixture(Path(directory))
+            manifest = self.publish_fixture(run, plan)
+            plan_path = run / "inputs/composition_plan.json"
+            before = plan_path.read_bytes()
+            altered = before.replace(b"compose_standalone_pa.lua", b"compose_standalone_pb.lua")
+            self.assertNotEqual(before, altered)
+            self.assertEqual(len(before), len(altered))
+            original_manifest = manifest.read_bytes()
+            plan_path.write_bytes(altered)
+            with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
+                    patch("msplatform.backends.comsol.static_field_binding.simion_native_resource_path",
+                          side_effect=AssertionError("generator fallback forbidden")) as lookup:
+                with self.assertRaisesRegex(AssertionError, "composition_plan SHA-256 changed"):
+                    _load_materialized_response({"response_binding": str(source), "materialization_manifest": str(manifest)})
+            lookup.assert_not_called()
+            self.assertEqual(manifest.read_bytes(), original_manifest)
 
 
 class StaticFieldVoltageTest(unittest.TestCase):

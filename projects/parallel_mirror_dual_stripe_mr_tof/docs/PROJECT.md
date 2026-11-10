@@ -871,3 +871,26 @@ source-copy identities: the Stripe row changes owner and mr_design is appended.
 This ownership move does not qualify finite fields, native transport or scientific
 precision; source, installation and native evidence remain separately scoped.
 The retired root body has no alias.
+
+
+## Standalone PA representation ownership
+
+The sole schema2 standalone operating-PA identity/cache adapter is
+`msplatform.backends.simion.operating_pa_cache`, delegating the unchanged existing
+PA-family cache. The byte-identical native composer is selected through the
+existing SIMION backend resource resolver. Component voltage/TE1 science, the
+binary PA composer, scalar adapter and long-path/immutable-source owners remain
+unchanged. Local field preparation freezes the same selected backend Lua.
+
+Completed materialized-response readback verifies the original small plan record
+and reconstructs its scientific commands with the recorded generator location and
+SHA. It neither opens a retired generator nor substitutes current code; all other
+source/member/coefficient/support/output checks remain. New planning resolves and
+hashes the actual current resource. Focused cache/readback, actual stock-Lua,
+cold-snapshot and dependency-freezer checks cover this boundary. Both ordinary
+wheel and sdist-rebuilt wheel clients verify the installed owner/resource and
+missing-resource refusal. The unchanged retained original tiny fixture reads
+back with its complete original result and cache key, without generator lookup.
+These are software and installation evidence; no new native composition, field,
+flight, GUI or scientific qualification is claimed. Original failure evidence
+remains separate from successor acceptance.

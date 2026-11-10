@@ -12,20 +12,29 @@ from copy import deepcopy
 import math
 from pathlib import Path
 import re
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from msplatform.io.file_identity import canonical_json_sha256, file_sha256
+from msplatform.backends.simion.resources import native_resource_path
+from msplatform.backends.simion.pa_family_cache import (
+    CacheDisposition,
+    CacheProbe,
+    CachePublication,
+    MaterializedFamily,
+    PAFamilyCacheError,
+    canonical_pa_family_cache_key,
+    ensure_pa_family_cache,
+    materialize_pa_family_cache,
+    probe_pa_family_cache,
+    publish_pa_family_cache,
+    validate_pa_family_cache_generation,
+)
 
 
 SCHEMA_VERSION = 2
 ROLE = "simion_standalone_operating_pa_group"
 LINEAR_BASIS_ALGORITHM_ID = "standalone_linear_response_composition"
 LINEAR_BASIS_ALGORITHM_FORMAT_VERSION = 2
-def native_resource_path(name: str) -> Path:
-    from importlib.resources import files
-    return Path(str(files("msplatform.components.parallel_mirror_dual_stripe_mr_tof").joinpath("resources", name)))
-
-
 SHA256 = re.compile(r"^[0-9A-F]{64}$")
 _IDENTITY_FIELDS = {"schema_version", "role", "members", "synthesis"}
 _MEMBER_FIELDS = {"output_name", "base_pa", "responses", "target_voltage_vector_v"}
@@ -38,7 +47,7 @@ _SYNTHESIS_FIELDS = {
 }
 
 
-class OperatingPACacheError(ValueError):
+class OperatingPACacheError(PAFamilyCacheError):
     """Raised when an operating-PA identity or generation is invalid."""
 
 
@@ -294,3 +303,128 @@ def linear_basis_operating_pa_group_identity(
         implementation_sha256=str(file_content_identity(implementation)["sha256"]),
         pa_format_version=pa_format_version,
     )
+
+
+def _backend_identity(identity: Mapping[str, object]) -> dict[str, object]:
+    operating = canonical_operating_pa_identity(identity)
+    return {
+        "geometry": {"artifact_role": ROLE, "operating_identity": operating},
+        "gem": {"not_applicable": True},
+        "basis_namespace": {"artifact_role": ROLE},
+        "mesh": {"not_applicable": True},
+        "grid_phase": {"not_applicable": True},
+        "surface": "standalone_surface_none",
+        "simion_identity": {"bound_by_pa_format_version": operating["synthesis"]["pa_format_version"]},
+        "refine_policy": {
+            "refine_performed": False,
+            "operation": "standalone_linear_response_composition",
+        },
+        "builder_identity": operating["synthesis"],
+    }
+
+
+def canonical_operating_pa_cache_key(identity: Mapping[str, object]) -> str:
+    """Return the exact 64-hex key accepted by artifact capacity gates."""
+
+    return canonical_pa_family_cache_key(_backend_identity(identity))
+
+
+def _filenames(identity: Mapping[str, object]) -> tuple[str, ...]:
+    canonical = canonical_operating_pa_identity(identity)
+    return tuple(str(member["output_name"]) for member in canonical["members"])
+
+
+def probe_operating_pa_cache(cache_root: str | Path, identity: Mapping[str, object]) -> CacheProbe:
+    """Return hit/miss/corrupt after full manifest and payload validation."""
+
+    return probe_pa_family_cache(cache_root, _backend_identity(identity), expected_filenames=_filenames(identity))
+
+
+def ensure_operating_pa_cache(
+    cache_root: str | Path,
+    identity: Mapping[str, object],
+    *,
+    lock_timeout_s: float = 30.0,
+) -> CacheProbe:
+    """Return a usable operating-PA cache state, repairing one v2 member."""
+
+    try:
+        return ensure_pa_family_cache(
+            cache_root,
+            _backend_identity(identity),
+            expected_filenames=_filenames(identity),
+            lock_timeout_s=lock_timeout_s,
+        )
+    except PAFamilyCacheError as exc:
+        raise OperatingPACacheError(str(exc)) from exc
+
+
+def validate_operating_pa_cache_generation(
+    generation_directory: str | Path, *, expected_identity: Mapping[str, object] | None = None,
+) -> dict[str, Any]:
+    """Fail closed unless a generation is an exact operating-PA group."""
+
+    expected_key = canonical_operating_pa_cache_key(expected_identity) if expected_identity is not None else None
+    expected_names = _filenames(expected_identity) if expected_identity is not None else None
+    try:
+        manifest = validate_pa_family_cache_generation(
+            generation_directory, expected_cache_key=expected_key, expected_filenames=expected_names,
+        )
+    except PAFamilyCacheError as exc:
+        raise OperatingPACacheError(str(exc)) from exc
+    embedded = manifest.get("identity", {}).get("geometry", {}).get("operating_identity")
+    canonical_embedded = canonical_operating_pa_identity(embedded)
+    if expected_identity is not None and canonical_embedded != canonical_operating_pa_identity(expected_identity):
+        raise OperatingPACacheError("operating PA generation identity differs from expected identity")
+    return manifest
+
+
+def publish_operating_pa_cache(
+    cache_root: str | Path, identity: Mapping[str, object], source_directory: str | Path, *,
+    lock_timeout_s: float = 30.0,
+) -> CachePublication:
+    """Atomically publish a complete, read-only group of standalone operating PAs."""
+
+    canonical = canonical_operating_pa_identity(identity)
+    try:
+        return publish_pa_family_cache(
+            cache_root, _backend_identity(canonical), source_directory, _filenames(canonical),
+            lock_timeout_s=lock_timeout_s,
+            recovery_policy="none",
+        )
+    except PAFamilyCacheError as exc:
+        raise OperatingPACacheError(str(exc)) from exc
+
+
+def materialize_operating_pa_cache(
+    generation_directory: str | Path, destination_directory: str | Path, *,
+    expected_identity: Mapping[str, object] | None = None,
+) -> MaterializedFamily:
+    """Copy a validated group to a writable private run directory."""
+
+    try:
+        if expected_identity is None:
+            manifest = validate_operating_pa_cache_generation(generation_directory)
+            names = tuple(record["name"] for record in manifest["files"])
+        else:
+            names = _filenames(expected_identity)
+        result = materialize_pa_family_cache(
+            generation_directory, destination_directory, expected_filenames=names
+        )
+        validate_operating_pa_cache_generation(
+            result.source_generation_directory, expected_identity=expected_identity
+        )
+        return result
+    except PAFamilyCacheError as exc:
+        raise OperatingPACacheError(str(exc)) from exc
+
+
+__all__ = [
+    "CacheDisposition", "LINEAR_BASIS_ALGORITHM_FORMAT_VERSION", "LINEAR_BASIS_ALGORITHM_ID",
+    "OperatingPACacheError", "canonical_operating_pa_cache_key",
+    "canonical_operating_pa_identity", "content_identity_from_verified_record",
+    "ensure_operating_pa_cache", "file_content_identity", "materialize_operating_pa_cache",
+    "linear_basis_operating_pa_group_identity", "operating_pa_group_identity",
+    "operating_pa_member_identity", "probe_operating_pa_cache", "publish_operating_pa_cache",
+    "validate_operating_pa_cache_generation",
+]

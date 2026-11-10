@@ -508,15 +508,13 @@ Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'ex
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runtime = root / 'snapshot/integrations/runtime'
-            common = root / 'snapshot/common/simion'
             runtime.mkdir(parents=True)
-            common.mkdir(parents=True)
             for name in ('local_frontend_field_support.ps1', 'initialize_fast_adjust_pa_basis.lua', 'verify_local_frontend_fields.lua'):
                 shutil.copyfile(RUNTIME / name, runtime / name)
-            shutil.copyfile(ROOT / 'common/simion/compose_standalone_pa.lua', common / 'compose_standalone_pa.lua')
             exporter = root/'snapshot/src/msplatform/backends/simion/resources/export_standalone_pa.lua'
             exporter.parent.mkdir(parents=True)
             shutil.copyfile(ROOT/'src/msplatform/backends/simion/resources/export_standalone_pa.lua', exporter)
+            shutil.copyfile(ROOT/'src/msplatform/backends/simion/resources/compose_standalone_pa.lua', exporter.with_name('compose_standalone_pa.lua'))
             run = root / 'run'
             for name in ('inputs', 'logs'):
                 (run / name).mkdir(parents=True, exist_ok=True)

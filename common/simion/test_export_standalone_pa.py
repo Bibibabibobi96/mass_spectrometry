@@ -15,7 +15,7 @@ from msplatform.backends.simion.resources import native_resource_path
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
 EXPORTER = native_resource_path("export_standalone_pa.lua")
-COMPOSER = Path(__file__).with_name("compose_standalone_pa.lua")
+COMPOSER = native_resource_path("compose_standalone_pa.lua")
 
 
 BUILD_LUA = r"""

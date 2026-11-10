@@ -121,13 +121,6 @@
           ]
         },
         {
-          "id": "local_frontend_common_simion_compose_standalone_pa_lua",
-          "source_repo_path": "common/simion/compose_standalone_pa.lua",
-          "consumers": [
-            "local_frontend"
-          ]
-        },
-        {
           "id": "local_frontend_common_simion_short_pa_path_support_ps1",
           "source_repo_path": "common/simion/short_pa_path_support.ps1",
           "consumers": [
@@ -949,6 +942,13 @@
           "consumers": [
             "local_frontend",
             "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_compose_standalone_pa_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
+          "consumers": [
+            "local_frontend"
           ]
         },
         {

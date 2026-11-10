@@ -14,7 +14,6 @@ from typing import Any, Callable, Mapping
 
 from msplatform.io.manifest_records import verify_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import native_resource_path
 from msplatform.backends.simion.resources import native_resource_path as simion_native_resource_path
 
 
@@ -2088,14 +2087,30 @@ def compile_sampling_request(binding_a: dict[str, Any], binding_b: dict[str, Any
 def compile_composition_plan(binding: dict[str, Any], source: Path, output_directory: Path,
                              *, _checking_sealed_outputs: bool = False) -> dict[str, Any]:
     """Plan the public standalone composer; never open, copy or hash PA payloads."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import (
+    from msplatform.backends.simion.operating_pa_cache import file_content_identity
+
+    terms = binding.get("response_terms")
+    if not isinstance(terms, list) or not 2 <= len(terms) <= 5:
+        raise ValueError("composition requires baseline and one to four resolved response axes")
+    composer = simion_native_resource_path("compose_standalone_pa.lua")
+    return _compile_composition_plan(
+        binding, source, output_directory, composer_path=str(composer),
+        implementation_sha256=str(file_content_identity(composer)["sha256"]),
+        _checking_sealed_outputs=_checking_sealed_outputs,
+    )
+
+
+def _compile_composition_plan(binding: dict[str, Any], source: Path, output_directory: Path,
+                              *, composer_path: str, implementation_sha256: str,
+                              _checking_sealed_outputs: bool = False) -> dict[str, Any]:
+    """Assemble one plan from explicit generator provenance; never open the generator."""
+    from msplatform.backends.simion.operating_pa_cache import (
         content_identity_from_verified_record, file_content_identity,
-        linear_basis_operating_pa_group_identity,
+        operating_pa_group_identity, LINEAR_BASIS_ALGORITHM_ID, LINEAR_BASIS_ALGORITHM_FORMAT_VERSION,
     )
     terms = binding.get("response_terms")
     if not isinstance(terms, list) or not 2 <= len(terms) <= 5:
         raise ValueError("composition requires baseline and one to four resolved response axes")
-    composer = native_resource_path("compose_standalone_pa.lua")
     groups = [[term["binding"], *term["binding"].get("refinement_windows", [])] for term in terms]
     if len({len(group) for group in groups}) != 1:
         raise ValueError("composition window counts differ")
@@ -2124,18 +2139,21 @@ def compile_composition_plan(binding: dict[str, Any], source: Path, output_direc
                          active_box_mm=levels[0].get("active_box_mm"),
                          ideal_sheet_projection=levels[0]["ideal_sheet_projection"],
                          valid_mask={key: levels[0]["records"]["valid_pa"][key] for key in ("bytes", "sha256")}),
-            argv=[str(composer), str(paths[0]), str(output),
+            argv=[composer_path, str(paths[0]), str(output),
                   *[f"{path},{coefficient:.17g}" for path, coefficient in zip(paths, coefficients, strict=True)]]))
     return dict(schema_version=1, role="mrtof_fixed_scalar_composition_plan",
                 response_binding=str(source.resolve()), source_identity=file_content_identity(source),
                 output_directory=str(output_directory.resolve()), commands=commands,
-                operating_pa_identity=linear_basis_operating_pa_group_identity(members, pa_format_version=2020),
+                operating_pa_identity=operating_pa_group_identity(
+                    members, algorithm_id=LINEAR_BASIS_ALGORITHM_ID,
+                    algorithm_format_version=LINEAR_BASIS_ALGORITHM_FORMAT_VERSION,
+                    implementation_sha256=implementation_sha256, pa_format_version=2020),
                 authority=binding["authority"], response_weight_l1_norm=binding["response_weight_l1_norm"],
                 qualification="exploratory_materialization_only__no_direct_field_or_gui_qualification")
 
 
 def _load_materialized_response(descriptor: dict[str, Any]) -> dict[str, Any]:
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_pa_identity import canonical_operating_pa_identity
+    from msplatform.backends.simion.operating_pa_cache import canonical_operating_pa_identity
     source = Path(descriptor["response_binding"])
     original = _read(source)
     if "materialization_manifest" in original:
@@ -2143,21 +2161,35 @@ def _load_materialized_response(descriptor: dict[str, Any]) -> dict[str, Any]:
     binding = load_binding(source)
     manifest = Path(descriptor["materialization_manifest"])
     plan_path = manifest.parent / "inputs/composition_plan.json"
-    _record(manifest, plan_path)
+    plan_record = _record(manifest, plan_path)
+    verify_record("composition_plan", plan_record, base_dir=manifest.parent)
     plan = _read(plan_path)
-    expected = compile_composition_plan(binding, source, Path(plan["output_directory"]),
-                                        _checking_sealed_outputs=True)
+    sealed_identity = canonical_operating_pa_identity(plan.get("operating_pa_identity"))
+    commands = plan.get("commands")
+    if not isinstance(commands, list) or not commands:
+        raise ValueError("sealed composition commands must be a nonempty list")
+    generator_paths = []
+    for command in commands:
+        argv = command.get("argv") if isinstance(command, dict) else None
+        if (not isinstance(argv, list) or len(argv) < 3
+                or any(not isinstance(value, str) for value in argv)
+                or not argv[0].strip()):
+            raise ValueError("sealed composition command argv is invalid")
+        generator_paths.append(argv[0])
+    if any(path != generator_paths[0] for path in generator_paths):
+        raise ValueError("sealed composition generator locations differ")
+    # The verified plan binds the original generator location and SHA. Reading
+    # a completed product does not require opening old or current build tools.
+    expected = _compile_composition_plan(
+        binding, source, Path(plan["output_directory"]), composer_path=generator_paths[0],
+        implementation_sha256=sealed_identity["synthesis"]["implementation_sha256"],
+        _checking_sealed_outputs=True,
+    )
     for key in ("schema_version", "role", "response_binding", "source_identity",
                 "authority", "response_weight_l1_norm", "qualification"):
         if plan.get(key) != expected[key]:
             raise ValueError(f"sealed composition plan source or identity differs: {key}")
-    sealed_identity = canonical_operating_pa_identity(plan.get("operating_pa_identity"))
-    current_identity = copy.deepcopy(expected["operating_pa_identity"])
-    # Generator bytes are immutable provenance, not the scientific validity of
-    # an already produced PA.  All members, coefficients and other synthesis
-    # settings remain identical to the actual consumption request.
-    current_identity["synthesis"]["implementation_sha256"] = sealed_identity["synthesis"]["implementation_sha256"]
-    if sealed_identity != current_identity:
+    if sealed_identity != expected["operating_pa_identity"]:
         raise ValueError("sealed composition scientific operating identity differs")
     if len(plan.get("commands", [])) != len(expected["commands"]):
         raise ValueError("sealed composition level count differs")

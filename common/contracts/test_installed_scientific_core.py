@@ -2930,6 +2930,102 @@ assert stripe_selected_path.read_bytes()==stripe_original_bytes
 print('INSTALLED_MR_STRIPE_DOMAIN=PASS')
 # MR_STRIPE_INSTALLED_END
 
+# MR_OPERATING_PA_INSTALLED_BEGIN
+# Actual installed identity/cache constructors; no SIMION execution or cache publication.
+pa_operating_script=root/('installed-operating-pa-'+sys.argv[2]+'.py')
+pa_operating_script.write_text(r"""import hashlib,importlib,importlib.abc,json,pathlib,sys,sysconfig
+from unittest.mock import patch
+
+def main():
+    pa_authors=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+    def pa_deny_reads(event,args):
+        if event=='open' and args and isinstance(args[0],str):
+            pa_open=pathlib.Path(args[0]).resolve()
+            if any(pa_open.is_relative_to(value) for value in pa_authors):
+                raise AssertionError('installed operating PA read author source '+str(pa_open))
+    sys.addaudithook(pa_deny_reads)
+    class PAInstalledOnly(importlib.abc.MetaPathFinder):
+        def find_spec(self,fullname,path=None,target=None):
+            if any(fullname==value or fullname.startswith(value+'.') for value in ('common','projects','integrations','tools')):
+                raise AssertionError('installed operating PA imported forbidden owner '+fullname)
+    sys.meta_path.insert(0,PAInstalledOnly())
+    pa_fixture=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))
+    pa_api=importlib.import_module('msplatform.backends.simion.operating_pa_cache')
+    pa_resources=importlib.import_module('msplatform.backends.simion.resources')
+    pa_purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    pa_module=pathlib.Path(pa_api.__file__).resolve()
+    assert pa_module==pa_purelib/'msplatform/backends/simion/operating_pa_cache.py'
+    pa_source=pa_module.read_bytes()
+    assert len(pa_source)==pa_fixture['module_source']['bytes']
+    assert hashlib.sha256(pa_source).hexdigest()==pa_fixture['module_source']['sha256']
+    pa_root=pathlib.Path(sys.argv[3]);pa_root.mkdir(parents=True,exist_ok=False)
+    pa_payload=bytes.fromhex(pa_fixture['payload_hex']);pa_base=pa_root/'base.pa';pa_base.write_bytes(pa_payload)
+    pa_members=[]
+    for pa_old_member in pa_fixture['expected_identity']['members']:
+        pa_responses=[]
+        for pa_index,pa_old_response in enumerate(pa_old_member['responses']):
+            pa_input=pa_root/(pa_old_member['output_name']+'-response-'+str(pa_index)+'.pa')
+            pa_input.write_bytes(pa_payload)
+            pa_responses.append(dict(coordinate=pa_old_response['coordinate'],path=pa_input,
+                basis_normalization_v=pa_old_response['basis_normalization_v'],applied_voltage_delta_v=pa_old_response['applied_voltage_delta_v']))
+        pa_members.append(pa_api.operating_pa_member_identity(pa_old_member['output_name'],pa_base,pa_responses,pa_old_member['target_voltage_vector_v']))
+    assert pa_members==pa_fixture['expected_identity']['members']
+    pa_record=pa_fixture['expected_identity']['members'][0]['base_pa']
+    # Already verified receipt metadata must not rehash even these tiny inputs.
+    with patch.object(pa_api,'file_sha256',side_effect=AssertionError('unexpected PA rehash')):
+        assert pa_api.content_identity_from_verified_record(pa_record,path=pa_base)==pa_record
+    pa_explicit=pa_root/'explicit-composer.lua'
+    pa_explicit.write_bytes(bytes.fromhex(pa_fixture['composer_hex']))
+    pa_explicit_identity=pa_api.linear_basis_operating_pa_group_identity(pa_members,pa_format_version=2020,implementation_path=pa_explicit)
+    assert pa_explicit_identity==pa_fixture['expected_identity']
+    assert pa_api.canonical_operating_pa_cache_key(pa_explicit_identity)==pa_fixture['expected_cache_key']
+    if sys.argv[4]=='missing':
+        try:pa_api.linear_basis_operating_pa_group_identity(pa_members,pa_format_version=2020)
+        except FileNotFoundError as pa_error:
+            assert str(pa_error)=='installed SIMION native resource is missing: compose_standalone_pa.lua'
+        else:raise AssertionError('default operating PA planning accepted missing selected Lua')
+        print(json.dumps(dict(status='MISSING_REJECTED',explicit_path_works=True,module_origin=str(pa_module))))
+        return
+    pa_resource=pa_resources.native_resource_path('compose_standalone_pa.lua').resolve()
+    assert pa_resource==pa_purelib/'msplatform/backends/simion/resources/compose_standalone_pa.lua'
+    pa_body=pa_resource.read_bytes()
+    assert pa_body==bytes.fromhex(pa_fixture['composer_hex'])
+    assert len(pa_body)==pa_fixture['composer_bytes']
+    assert hashlib.sha256(pa_body).hexdigest()==pa_fixture['composer_sha256']
+    pa_default_identity=pa_api.linear_basis_operating_pa_group_identity(pa_members,pa_format_version=2020)
+    assert pa_default_identity==pa_fixture['expected_identity']==pa_explicit_identity
+    assert pa_api.canonical_operating_pa_cache_key(pa_default_identity)==pa_fixture['expected_cache_key']
+    assert pa_base.read_bytes()==pa_payload and pa_explicit.read_bytes()==pa_body
+    print(json.dumps(dict(status='PASS',module_origin=str(pa_module),resource=str(pa_resource),cache_key=pa_fixture['expected_cache_key'],members=len(pa_members),native_executions=0)))
+
+if __name__=='__main__':main()
+""",encoding='utf-8',newline='')
+pa_operating_fixture_path=root/('installed-operating-pa-fixture-'+sys.argv[2]+'.json')
+pa_operating_fixture_path.write_text(json.dumps(fixture['mr_operating_pa']),encoding='utf-8')
+pa_operating_args=[sys.executable,'-I','-B',str(pa_operating_script),
+    json.dumps([str(value) for value in blocked_source_roots]),str(pa_operating_fixture_path)]
+pa_operating_positive=subprocess.run(pa_operating_args+[str(root/('operating-pa-positive-'+sys.argv[2])),'positive'],
+    cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+assert pa_operating_positive.returncode==0,pa_operating_positive.stdout+pa_operating_positive.stderr
+pa_operating_report=json.loads(pa_operating_positive.stdout)
+assert pa_operating_report['status']=='PASS' and pa_operating_report['members']==2 and pa_operating_report['native_executions']==0
+pa_operating_resource=pathlib.Path(pa_operating_report['resource'])
+pa_operating_resource_before=pa_operating_resource.read_bytes()
+pa_operating_held=pa_operating_resource.with_name(pa_operating_resource.name+'.missing-installed-test-held')
+assert not pa_operating_held.exists()
+pa_operating_resource.rename(pa_operating_held)
+try:
+    pa_operating_missing=subprocess.run(pa_operating_args+[str(root/('operating-pa-missing-'+sys.argv[2])),'missing'],
+        cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    assert pa_operating_missing.returncode==0,pa_operating_missing.stdout+pa_operating_missing.stderr
+    pa_operating_missing_report=json.loads(pa_operating_missing.stdout)
+    assert pa_operating_missing_report['status']=='MISSING_REJECTED' and pa_operating_missing_report['explicit_path_works']
+    missing_rejected.append('operating_pa_default_composer')
+finally:pa_operating_held.rename(pa_operating_resource)
+assert pa_operating_resource.read_bytes()==pa_operating_resource_before
+print('INSTALLED_MR_OPERATING_PA=PASS')
+# MR_OPERATING_PA_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -2953,6 +3049,20 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
 
 
 class InstalledScientificCoreTests(unittest.TestCase):
+    @staticmethod
+    def operating_pa_probe_fixture():
+        """Serialize the retained original path-free schema2 identity/key oracle."""
+        pa_oracle=json.loads('{"expected_identity":{"schema_version":2,"role":"simion_standalone_operating_pa_group","members":[{"output_name":"field_v.pa","base_pa":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"responses":[{"coordinate":"whole_point_A_correction_scale","content":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"basis_normalization_v":1.0,"applied_voltage_delta_v":-2.5},{"coordinate":"whole_point_B_scale","content":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"basis_normalization_v":1.0,"applied_voltage_delta_v":0.5},{"coordinate":"whole_point_C_scale","content":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"basis_normalization_v":1.0,"applied_voltage_delta_v":2.0}],"target_voltage_vector_v":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,-26.95,-26.95,54.2,54.2,0.0,190.0,-190.0,0.0,0.0,0.0]},{"output_name":"window-001_v.pa","base_pa":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"responses":[{"coordinate":"whole_point_A_correction_scale","content":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"basis_normalization_v":1.0,"applied_voltage_delta_v":-2.5},{"coordinate":"whole_point_B_scale","content":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"basis_normalization_v":1.0,"applied_voltage_delta_v":0.5},{"coordinate":"whole_point_C_scale","content":{"bytes":8,"sha256":"93BFCC184130DE6DCC8480D17A473BCFE3042546D5BE50B0B8EEB71A3F94DBA7"},"basis_normalization_v":1.0,"applied_voltage_delta_v":2.0}],"target_voltage_vector_v":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,-26.95,-26.95,54.2,54.2,0.0,190.0,-190.0,0.0,0.0,0.0]}],"synthesis":{"algorithm_id":"standalone_linear_response_composition","algorithm_format_version":2,"implementation_sha256":"7EB04DF1A3A0F24023AAB9392D59C1F6BDC5B897D6FD73F3AE1D42E478300D00","pa_format_version":2020}},"expected_cache_key":"C0038832AB032E3A27C580CFD10FFFDC125CC1B8A09A336853D93BB870F6B792","payload_hex":"7363616c61722d56","composer_bytes":5579,"composer_sha256":"7eb04df1a3a0f24023aab9392d59c1f6bdc5b897d6fd73f3ae1d42e478300d00"}')
+        pa_module=REPO_ROOT/'src/msplatform/backends/simion/operating_pa_cache.py'
+        pa_module_bytes=pa_module.read_bytes()
+        pa_composer=REPO_ROOT/'src/msplatform/backends/simion/resources/compose_standalone_pa.lua'
+        pa_composer_bytes=pa_composer.read_bytes()
+        assert len(pa_composer_bytes)==pa_oracle['composer_bytes']
+        assert hashlib.sha256(pa_composer_bytes).hexdigest()==pa_oracle['composer_sha256']
+        pa_oracle['composer_hex']=pa_composer_bytes.hex()
+        pa_oracle['module_source']=dict(bytes=len(pa_module_bytes),sha256=hashlib.sha256(pa_module_bytes).hexdigest())
+        return pa_oracle
+
     @staticmethod
     def stripe_probe_fixture():
         """Serialize explicit original Stripe cases; clients never read author inputs."""
@@ -4296,6 +4406,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               scalar_adapter=self.scalar_adapter_probe_fixture(),
                                               mr_prism_phase=self.prism_phase_probe_fixture(),
                                               mr_stripe=self.stripe_probe_fixture(),
+                                              mr_operating_pa=self.operating_pa_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'

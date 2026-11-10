@@ -973,6 +973,37 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertCountEqual(modules, [name[:-3].replace('/', '.') for name in case['modules']])
                     self.assertEqual(len(modules), len(set(modules)))
 
+    def test_installed_operating_pa_cache_and_composer_select_actual_consumers(self) -> None:
+        cache = 'src/msplatform/backends/simion/operating_pa_cache.py'
+        composer = 'src/msplatform/backends/simion/resources/compose_standalone_pa.lua'
+        common = 'common/simion/'
+        common_composer = [common + name for name in (
+            'test_operating_pa_cache.py', 'test_standalone_pa_composition_tools.py',
+            'test_export_standalone_pa.py')]
+        mr = [MR + '/tests/analysis/test_static_field_binding.py']
+        local = ['integrations/tests/test_local_frontend_field_support.py',
+                 'integrations/tests/test_dependencies.py']
+        cases = [
+            dict(stage='simion_common', paths=[cache], modules=[common + 'test_operating_pa_cache.py']),
+            dict(stage='simion_common', paths=[composer], modules=common_composer),
+            dict(stage='simion_common', paths=[cache, composer], modules=common_composer),
+            dict(stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[cache], modules=mr),
+            dict(stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[composer], modules=mr),
+            dict(stage='instrument_assembly_integration', paths=[composer], modules=local),
+            dict(stage='parallel_mirror_dual_stripe_mr_tof_static',
+                 paths=['src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/operating_pa_identity.py'],
+                 modules=None),
+        ]
+        for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
+            with self.subTest(stage=case['stage'], paths=case['paths']):
+                if case['modules'] is None:
+                    self.assertIsNone(selected)
+                else:
+                    self.assertCountEqual(selected['Modules'], case['modules'])
+                    self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
+                    self.assertFalse(selected['CompleteOwner'])
+                    self.assertFalse(selected['OnlyTestModules'])
+
     def test_installed_mr_prism_phase_sources_augment_core_with_actual_consumers(self) -> None:
         stage = 'parallel_mirror_dual_stripe_mr_tof_static'
         canonical = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/'
@@ -1029,12 +1060,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
         cases.append(dict(stage=stage, paths=[path for case in cases for path in case['paths']],
                           modules=sorted({module for case in cases for module in case['modules']})))
         consumers = {
-            'dual_stripe_l0': [
-                'test_dual_stripe_l0_math',
-                'test_fixed_grid_mirror_stripe_handoff',
-                'test_joint_mirror_stripe_l0',
-                'test_simion_candidate_reference',
-            ],
+            'dual_stripe_l0': None,
             'dual_stripe_operating_seed': [
                 'test_dual_stripe_l0_math',
                 'test_fixed_grid_mirror_stripe_handoff',
@@ -1070,7 +1096,8 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             ],
         }
         cases.extend(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"],
-                          modules=sorted(f"{MR}/tests/analysis/{module}.py" for module in modules))
+                          modules=(None if modules is None else
+                                   sorted(f"{MR}/tests/analysis/{module}.py" for module in modules)))
                      for name, modules in consumers.items())
         for name in dependencies:
             cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"], modules=None))
