@@ -410,9 +410,8 @@ Invoke-Expression $release.Extent.Text
 ''', encoding="utf-8")
             (root / "source.pa").write_bytes(b"inert byte transport fixture, no native PA")
             (root / "common/simion/resource_profile.py").write_text("", encoding="utf-8")
-            (root / "src/msplatform/execution").mkdir(parents=True)
-            for package in ("src/msplatform", "src/msplatform/execution"):
-                (root / package / "__init__.py").write_text("", encoding="utf-8")
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+            copy_scientific_core(ROOT, root)
             (root / "src/msplatform/execution/simion_dispatch.py").write_text(
                 "import os,sys\nfrom pathlib import Path\n"
                 "with (Path(os.environ['FIXTURE_ROOT'])/'dispatch_origins.jsonl').open('a',encoding='utf-8') as f: f.write(str(Path(__file__).resolve())+'\\n')\n"

@@ -2,6 +2,12 @@
 
 ## Installed RF source validation
 
+The dual-backend campaign and COMSOL owner fixtures explicitly copy the canonical
+RF family JSON into their isolated source trees. Their original 17-parent and
+5-parent modules passed (46 and 9 records, respectively); assertions and inert
+native boundaries are unchanged. These fixture repairs do not change package
+resources or grant native solver qualification.
+
 The complete source validator, release helpers and CLI now have one implementation in
 `msplatform.components.rf_multipole.source_validation`. Active callers and frozen source selections
 use that installed owner; the project runtime implementation has been removed. CSV byte identity,

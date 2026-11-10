@@ -186,6 +186,11 @@ environment and verifies the actual dispatcher origin for all three replans in b
 All 19 original test-method bodies remain unchanged; the complete adapter module passed in 79.429 seconds.
 The original 231-parent consumer batch remains recorded as FAIL (230 passed, one parent with two failed
 subcases); this focused correction does not retroactively make that run pass or confer native qualification.
+The later execution-path migration also requires the canonical package closure in
+the isolated compensation fixture. It now uses the existing scientific-core copier
+before installing its explicit inert dispatcher; all original assertions and three
+dispatcher-origin checks remain. The complete 19-parent adapter module passed
+(40 records, 116.252 seconds). This is fixture validation, with no native execution.
 
 正常 COMSOL core 的计时与显示移入实际调用的 `oatof_report_model_timing`，该函数不接收模型；
 原 native builder、后处理、同路径 GUI 保存及 context 更新次序保留，不增加求解或保存。

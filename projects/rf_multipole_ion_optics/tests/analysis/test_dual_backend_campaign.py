@@ -83,6 +83,7 @@ class DualBackendCampaignTests(unittest.TestCase):
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
             "src/msplatform/execution/resources/host_resource_policy.json",
+            "src/msplatform/components/rf_multipole/family_contract.json",
             "common/resource_budget_support.ps1",
         ):
             target = cls.tree / relative

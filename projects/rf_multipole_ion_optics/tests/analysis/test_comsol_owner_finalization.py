@@ -135,6 +135,7 @@ ConvertTo-Json -InputObject $records -Compress
                             and not any(part in excluded for part in relative.parts)):
                         selected.add(relative.as_posix())
             selected.add("config/project_registry.json")
+            selected.add("src/msplatform/components/rf_multipole/family_contract.json")
             # Keep the project's explicitly bound retired identities without
             # copying historical implementations or unrelated scientific assets.
             descriptor = REPO / "projects/rf_multipole_ion_optics/config/project.json"
