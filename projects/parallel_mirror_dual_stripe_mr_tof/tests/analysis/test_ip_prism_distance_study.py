@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from importlib.resources import files
 import csv
 import shutil
 import json
@@ -38,7 +39,7 @@ class FrozenStudySourceTests(unittest.TestCase):
                 freeze_code(repo, inputs)
             code = inputs / "code"
             for relative in FROZEN_SCIENTIFIC_BRIDGE_MODULES:
-                self.assertEqual((code / relative).read_bytes(), (repo / relative).read_bytes())
+                self.assertEqual((code / relative).read_bytes(), (Path(str(files("msplatform"))).parent / relative.removeprefix("src/")).read_bytes())
             self.assertFalse(any("tests" in path.relative_to(code).parts for path in code.rglob("*.py")))
             probe = r'''
 import pathlib, sys
@@ -86,6 +87,104 @@ Invoke-StudyPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_to
                                      encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
             self.assertNotEqual(refused.returncode, 0)
             self.assertRegex(refused.stderr, "core|msplatform")
+
+
+    def test_external_selected_core_provider_is_frozen_without_checkout_fallback(self):
+        """Source harness: real regular package outside checkout, no installer."""
+        repo = Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = root / "external/msplatform"
+            shutil.copytree(Path(str(files("msplatform"))), provider,
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            physics = provider / "contracts/particle_physics.py"
+            physics.write_bytes(physics.read_bytes() + b"\n# selected external provider identity\n")
+            resource_names = ("contracts/particle_count_policy.json", "execution/resources/host_resource_policy.json",
+                              "execution/resources/artifact_retention.json", "execution/resources/artifact_capacity_policy.json")
+            for relative in resource_names:
+                selected = provider / relative
+                selected.write_bytes(selected.read_bytes() + b"\n")
+            # The actual old body is supplied by the evidence driver, never a
+            # synthetic copy of its algorithm or a modified historical input.
+            import os
+            old_source = os.environ.get("MR_FREEZE_CODE_BEFORE_SOURCE", "")
+            child = r'''
+import hashlib, importlib.util, json, pathlib, shutil, sys, traceback
+from unittest.mock import patch
+provider, repo, output, mode, old_source = map(pathlib.Path, sys.argv[1:])
+mode = str(mode)
+sys.path[:0] = [str(provider.parent), str(repo)]
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_distance_study as study
+import msplatform
+assert pathlib.Path(msplatform.__file__).resolve().parent == provider.resolve()
+if mode == "old":
+    spec = importlib.util.spec_from_file_location("old_actual_mr_freeze", old_source)
+    study = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(study)
+output.mkdir()
+if mode == "tamper":
+    from msplatform.execution import inputs
+    original_copy = shutil.copyfile
+    def corrupt(source, destination, *args, **kwargs):
+        result = original_copy(source, destination, *args, **kwargs)
+        if pathlib.Path(source) == provider / "contracts/particle_physics.py":
+            target = pathlib.Path(destination)
+            payload = target.read_bytes()
+            target.write_bytes(b"#" + payload[1:])
+        return result
+    with patch.object(inputs.shutil, "copyfile", side_effect=corrupt):
+        study.freeze_code(repo, output)
+else:
+    study.freeze_code(repo, output)
+if mode == "new":
+    selected = ["contracts/particle_physics.py", "contracts/particle_count_policy.json",
+                "execution/resources/host_resource_policy.json", "execution/resources/artifact_retention.json",
+                "execution/resources/artifact_capacity_policy.json"]
+    receipts = []
+    for relative in selected:
+        source = provider / relative
+        target = output / "code/src/msplatform" / relative
+        assert target.read_bytes() == source.read_bytes()
+        assert source.read_bytes() != (repo / "src/msplatform" / relative).read_bytes()
+        receipts.append(dict(logical_path="src/msplatform/" + relative, selected_path=str(source),
+                             sha256=hashlib.sha256(source.read_bytes()).hexdigest()))
+    # The original function overwrites its owned staging files on reentry.
+    target = output / "code/src/msplatform/contracts/particle_physics.py"
+    target.write_bytes(b"changed owned staging")
+    study.freeze_code(repo, output)
+    assert target.read_bytes() == (provider / "contracts/particle_physics.py").read_bytes()
+    print("EXTERNAL_SELECTED_PROVIDER=" + json.dumps(receipts))
+'''
+            def invoke(mode, label):
+                return subprocess.run([sys.executable, "-I", "-B", "-c", child,
+                    str(provider), str(repo), str(root / label), mode, old_source], cwd=root,
+                    capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=60)
+            if old_source:
+                old = invoke("old", "old")
+                self.assertNotEqual(old.returncode, 0)
+                self.assertIn("ValueError", old.stderr)
+                self.assertIn("relative", old.stderr)
+                print("OLD_SELECTED_PROVIDER_RED=" + json.dumps(dict(returncode=old.returncode, stderr=old.stderr)))
+            fixed = invoke("new", "new")
+            self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
+            self.assertIn("EXTERNAL_SELECTED_PROVIDER=", fixed.stdout)
+            print(fixed.stdout)
+            for index, relative in enumerate((resource_names[0], resource_names[1], "contracts/particle_physics.py")):
+                with self.subTest(missing=relative):
+                    selected = provider / relative
+                    payload = selected.read_bytes()
+                    try:
+                        selected.unlink()
+                        missing = invoke("missing", "missing_" + str(index))
+                        self.assertNotEqual(missing.returncode, 0)
+                        expected_error = "ModuleNotFoundError" if relative.endswith("particle_physics.py") else "FileNotFoundError"
+                        self.assertIn(expected_error, missing.stderr)
+                    finally:
+                        selected.write_bytes(payload)
+            tampered = invoke("tamper", "tamper")
+            self.assertNotEqual(tampered.returncode, 0)
+            self.assertIn("AssertionError", tampered.stderr)
+            self.assertIn("frozen input", tampered.stderr)
 
 
 class DistanceContractTests(unittest.TestCase):

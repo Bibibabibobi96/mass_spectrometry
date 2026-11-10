@@ -801,3 +801,25 @@ interface body is retired without an alias. Current physical resolution uses the
 OA authority described above; native PA validation remains a separate backend operation.
 Retained workflow, installation and native evidence remain separate closure obligations;
 the publisher does not register an empty provider or establish field or flight support.
+
+
+## Recorded-study canonical provider snapshots
+
+The IP/prism recorded-study source freezer selects its actually imported canonical
+package and four policy resources, including an ordinary installation outside the
+research checkout. It verifies the selected bytes into the existing logical
+src/msplatform layout; it never substitutes checkout copies for absent installed
+code/resources. Loaded research/common code remains bound to the explicit research
+tree. Existing owned staging overwrite, scientific inputs, CSV/math, resource
+policies and runner missing-core refusal are preserved. This repair changes source
+binding only; its external regular-package fixture is a source harness, not new
+ordinary wheel, native or scientific qualification.
+
+The original two CI-failed parents passed in the private repair epoch. A fresh
+external regular-package source harness reproduced the old checkout-relative
+ValueError, then verified distinct actual selected source/four-policy bytes,
+logical snapshot paths, owned overwrite and strict missing/tampered-input refusal.
+Its first negative expected FileNotFoundError for a module whose import correctly
+failed earlier with ModuleNotFoundError; that test-only expectation was corrected
+and the new parent passed separately. Original failure/lint evidence is retained;
+this is not a full-MR or ordinary-installation acceptance result.

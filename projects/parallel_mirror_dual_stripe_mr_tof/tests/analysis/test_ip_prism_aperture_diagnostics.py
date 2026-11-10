@@ -123,6 +123,13 @@ class ApertureDiagnosticsTests(unittest.TestCase):
     def test_study_prepare_and_analyze_cli_freeze_and_full_mother_comparison(self) -> None:
         original = {str(p): p.read_bytes() for owner in (self.baseline, self.physical) for p in owner.rglob("*") if p.is_file()}
         study.prepare(self.run, self.author)
+        from msplatform.contracts.particle_count_policy import POLICY_PATH
+        from msplatform.execution.resources import resource_path
+        selected_resources = [POLICY_PATH, *(resource_path(name) for name in (
+            "host_resource_policy.json", "artifact_retention.json", "artifact_capacity_policy.json"))]
+        for selected in selected_resources:
+            relative = "contracts/particle_count_policy.json" if selected == POLICY_PATH else "execution/resources/" + selected.name
+            self.assertEqual((self.run / "inputs/code/src/msplatform" / relative).read_bytes(), selected.read_bytes())
         config = json.loads((self.run/"run_config.json").read_text())
         self.assertEqual(config["parameters"]["workflow"], d.ROLE)
         self.assertTrue(any(p.endswith("ip_prism_aperture_diagnostics.py") for p in config["inputs"]))

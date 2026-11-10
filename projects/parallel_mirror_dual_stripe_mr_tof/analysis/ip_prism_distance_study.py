@@ -12,13 +12,16 @@ import csv
 import hashlib
 import json
 import math
+from importlib.resources import files
 from pathlib import Path
 import shutil
 import sys
 
 from msplatform.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
-from msplatform.execution.inputs import enumerate_python_sources
+from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from msplatform.execution.retention import file_record
+from msplatform.execution.resources import resource_path
+from msplatform.io.manifest_records import verify_record
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution import retention as artifact_retention
 from msplatform.execution import run_capacity_lifecycle
@@ -134,13 +137,31 @@ def read_source(path: Path, census_path: Path) -> tuple[list, list]:
 
 
 def freeze_code(repo: Path, inputs: Path) -> None:
-    """Freeze the actually imported repository closure and adjacent resources."""
+    """Freeze selected canonical bytes plus the actually loaded research closure.
+
+    An ordinary installation may live outside the research checkout. Its source
+    and policies retain the existing logical src/msplatform snapshot layout.
+    Missing selected inputs never fall back to a checkout copy.
+    """
     repo = repo.resolve(strict=True)
-    selected = set(enumerate_python_sources(
-        repo, package_roots=("src/msplatform",), provider_root="src/msplatform",
+    provider = Path(str(files("msplatform"))).resolve(strict=True)
+    provider_parent = provider.parent
+    canonical = set(enumerate_python_sources(
+        provider_parent, package_roots=(provider.name,), provider_root=provider.name,
         resource_suffixes=(".schema.json",)))
-    selected.update(enumerate_python_sources(
-        repo, module_paths=FROZEN_SCIENTIFIC_BRIDGE_MODULES))
+    required = tuple(path.removeprefix("src/") for path in FROZEN_SCIENTIFIC_BRIDGE_MODULES)
+    canonical.update(enumerate_python_sources(provider_parent, module_paths=required,
+                                              provider_root=provider.name))
+    sources = {"src/" + relative: provider_parent / relative for relative in canonical}
+    policies = [Path(POLICY_PATH).resolve(strict=True)]
+    if policies[0] != provider / "contracts/particle_count_policy.json":
+        raise ValueError("Particle policy differs from the selected canonical provider")
+    policies.extend(resource_path(name).resolve(strict=True) for name in (
+        "host_resource_policy.json", "artifact_retention.json", "artifact_capacity_policy.json"))
+    for source in policies:
+        if not source.is_relative_to(provider):
+            raise ValueError("Execution policy escapes the selected canonical provider")
+        sources["src/msplatform/" + source.relative_to(provider).as_posix()] = source
     loaded = set()
     for module in tuple(sys.modules.values()):
         value=getattr(module,"__file__",None)
@@ -156,16 +177,15 @@ def freeze_code(repo: Path, inputs: Path) -> None:
                 or {"tests", "test_support", "testing_support", "history"}.intersection(relative.parts)):
             continue
         loaded.add(relative.as_posix())
-    selected.update(enumerate_python_sources(repo, module_paths=sorted(loaded)))
-    for relative in sorted(selected):
+    for relative in enumerate_python_sources(repo, module_paths=sorted(loaded)):
+        sources[relative] = repo / relative
+    for relative, source in sorted(sources.items()):
         destination=inputs/"code"/relative
         destination.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(repo/relative,destination)
-    for relative in (POLICY_PATH.relative_to(repo),Path("src/msplatform/execution/resources/host_resource_policy.json"),
-                     Path("src/msplatform/execution/resources/artifact_retention.json"),Path("src/msplatform/execution/resources/artifact_capacity_policy.json")):
-        destination=inputs/"code"/relative
-        destination.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(repo/relative,destination)
+        copied = freeze_file(source, destination, overwrite_existing=True,
+                             retention_classifier=artifact_retention.classify_file)
+        verify_record("source after code freeze", {**copied, "path": str(source)},
+                      retention_classifier=artifact_retention.classify_file)
 
 
 def validate_contour_contract(contract: dict, *, recorded_author: bool = False) -> None:
