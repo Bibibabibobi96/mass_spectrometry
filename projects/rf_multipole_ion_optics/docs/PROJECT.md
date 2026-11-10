@@ -35,7 +35,7 @@ retained as a failed result, not reclassified as a pass. No solver or scientific
 
 ## 科学核心 P1 接线
 
-`core/ideal_transport.py` 直接从 `msplatform.ion_release` 与
+`msplatform.components.rf_multipole.ideal_transport` 直接从 `msplatform.ion_release` 与
 `msplatform.contracts.particle_physics` 消费源策略、释放及粒子物理实现。
 相邻回归核对实际函数来源，并保持原两粒子完整固定输出；不再经旧科学兼容桥取得这些调用。
 粒子物理活动消费者、运行器冻结清单和来源探针现均直接绑定`msplatform.contracts.particle_physics`，旧公共桥已退役。
@@ -1173,3 +1173,18 @@ readable without current-package supplementation. No solver or qualification
 claim follows this ownership migration. The existing internal L1/L2 projection's
 fixed validation source/numerical/acceptance policy is unchanged; general analytic
 research-request freedom and remaining ideal/round-rod workflow migration stay OPEN.
+
+## Installed ideal and round-rod transport kernel
+
+`msplatform.components.rf_multipole.ideal_transport` owns the existing explicit
+L1/L2 field, RK4, cohort metrics and result-writing algorithms. Research adapters
+freeze the actual installed implementation source. The registered no-acceleration
+hexapole/octupole study selection and fixed internal projection choices remain
+unchanged; this migration does not claim a general research CLI, native fields,
+collisions, arbitrary waveform transport or scientific qualification.
+The complete 17-function kernel is byte-identical to its retired project implementation.
+On the composed successor, 42 original numerical, runtime/freeze and Changed-routing parents
+passed with 30 successful subtests in 66.030 seconds. Private direct/sdist installation and four
+N100 hexapole/octupole L1/L2 output comparisons remain evidence of their stated prior epoch;
+they are not retagged as a complete current Repository or native run. The separately reproduced
+scalar sine-wave selection defect is retained for a distinct numerical repair.

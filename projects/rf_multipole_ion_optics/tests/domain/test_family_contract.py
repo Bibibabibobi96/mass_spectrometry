@@ -20,7 +20,7 @@ from msplatform.components.rf_multipole.family_contract import (
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from msplatform.analysis.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
-from projects.rf_multipole_ion_optics.core.ideal_transport import source_particles
+from msplatform.components.rf_multipole.ideal_transport import source_particles
 from msplatform.ion_release.paired_mass_scan import build_paired_ion_rows
 
 

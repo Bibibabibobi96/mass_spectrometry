@@ -242,7 +242,11 @@ foreach($case in $cases){{
         standards=next(row for row in alias["stages"] if row["name"]=="development_standards")
         arguments=standards["command"]["arguments"]
         selected=[arguments[index+1] for index,value in enumerate(arguments) if value=="--path"]
-        self.assertIn("projects/rf_multipole_ion_optics/core/ideal_transport.py",selected)
+        self.assertIn("projects/rf_multipole_ion_optics/runtime/run_ideal_transport.py",selected)
+        canonical="src/msplatform/components/rf_multipole/ideal_transport.py"
+        actual=self.routed_stages(canonical)
+        self.assertTrue({"rf_multipole_domain_tests", "rf_multipole_hexapole_static",
+                         "rf_multipole_octupole_static", "rf_multipole_quadrupole_static"} <= actual.keys())
         self.assertTrue(all(path.startswith("projects/rf_multipole_ion_optics/") for path in selected),selected)
 
     def test_unknown_owner_is_rejected_during_selection_before_resource_admission(self):

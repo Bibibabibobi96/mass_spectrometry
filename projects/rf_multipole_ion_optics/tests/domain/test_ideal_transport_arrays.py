@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+import subprocess
+import sys
+import sysconfig
+import json
+from pathlib import Path
 
 import numpy as np
 
 from msplatform.components.rf_multipole.family_contract import VoltageDrive, rf_waveform_voltage
-from projects.rf_multipole_ion_optics.core.ideal_transport import (
+from msplatform.components.rf_multipole.ideal_transport import (
     electric_field_xy,
     electric_field_xy_array,
     rf_waveform_voltage_array,
@@ -77,3 +83,41 @@ class IdealTransportArrayTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FrozenIdealTransportBoundaryTests(unittest.TestCase):
+    def test_frozen_full_source_has_canonical_origin_and_missing_module_rejects(self):
+        from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+        from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
+        from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+        repo=Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);snapshot=root/'code'
+            resources=['src/msplatform/components/rf_multipole/family_contract.json']
+            paths=enumerate_python_sources(repo,package_roots=['src/msplatform'],provider_root='src/msplatform')
+            for relative in [*paths,*resources]:
+                target=snapshot/relative;target.parent.mkdir(parents=True,exist_ok=True)
+                freeze_file(repo/relative,target)
+            selected='src/msplatform/components/rf_multipole/ideal_transport.py'
+            self.assertIn(selected,paths)
+            contract=l1_l2_transport_contract_from_resolved_design(resolve_design_profile(repo,
+                'rf_multipole_ion_optics','hexapole_no_acceleration_full_length')['resolved_design'])
+            request=root/'contract.json';request.write_text(json.dumps(contract),encoding='utf-8')
+            dependencies=list(dict.fromkeys(sysconfig.get_paths()[key] for key in ('purelib','platlib')))
+            code="""import sys,pathlib,json
+sys.path[:0]=[sys.argv[1],*json.loads(sys.argv[3])]
+from msplatform.components.rf_multipole import ideal_transport as t
+assert pathlib.Path(t.__file__).is_relative_to(pathlib.Path(sys.argv[1]))
+c=json.loads(pathlib.Path(sys.argv[2]).read_text());t.validate_contract(c)
+rows=t.source_particles(c)
+assert len(rows)==c['particle_source']['count']==100
+assert [r['particle_id'] for r in rows]==list(range(1,101))
+assert not any(k.split('.')[0] in ('common','projects','integrations') for k in sys.modules)
+"""
+            command=[sys.executable,'-I','-S','-B','-c',code,str(snapshot/'src'),str(request),json.dumps(dependencies)]
+            positive=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=30)
+            self.assertEqual(positive.returncode,0,positive.stderr)
+            (snapshot/selected).unlink()
+            negative=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=30)
+            self.assertNotEqual(negative.returncode,0)
+            self.assertIn('ImportError',negative.stderr)

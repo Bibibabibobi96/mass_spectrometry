@@ -6,7 +6,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.ideal_transport import evaluate_contract, write_results
+from msplatform.components.rf_multipole import ideal_transport
 from projects.rf_multipole_ion_optics.runtime._transport_run_artifacts import transport_run
 
 
@@ -21,11 +21,11 @@ def execute(project_root: Path, run_id: str, *, design_profile_id: str) -> Path:
             "magnetic_field_model": "disabled",
             "solver_field_used": False,
         },
-        identity_inputs={"shared_implementation": Path(__file__).resolve().parents[1] / "core/ideal_transport.py"},
+        identity_inputs={"shared_implementation": Path(ideal_transport.__file__)},
         output_names=("ideal_transport_metrics.json", "particle_events.csv", "transport_comparison.png"),
     ) as run:
-        metrics, rows = evaluate_contract(run.contract)
-        write_results(metrics, rows, run.result_dir)
+        metrics, rows = ideal_transport.evaluate_contract(run.contract)
+        ideal_transport.write_results(metrics, rows, run.result_dir)
         if metrics["status"] != "PASS":
             raise RuntimeError("ideal multipole functional gate failed")
         summary = {

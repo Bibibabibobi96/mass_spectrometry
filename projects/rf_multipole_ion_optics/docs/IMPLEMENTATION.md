@@ -30,7 +30,7 @@ COMSOL/SIMION也不得反向改写设计。
 同一 resolved 杆合同由 SIMION GEM 渲染器和项目 COMSOL 杆生成器消费。COMSOL 圆杆仍使用历史
 `Cylinder` 分支，显式椭圆杆使用顶底比例为一的 `ECone`（椭圆柱），
 `points_inside_rods`对两种截面提供同一批量点内判定。既有`build_round_rod_array`仍是圆杆兼容入口。
-[`ideal_transport.py`](../core/ideal_transport.py)同时提供与标量参考公式一致的NumPy批量RF波形和理想多极场适配，
+[`ideal_transport.py`](../../../src/msplatform/components/rf_multipole/ideal_transport.py)同时提供与标量参考公式一致的NumPy批量RF波形和理想多极场适配，
 项目不得另存同义批量公式。
 
 typed operating-mode registry 只声明同一机械 base 上的电气差异。允许模式由对应项目的机器注册表

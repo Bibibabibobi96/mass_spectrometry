@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from projects.rf_multipole_ion_optics.analysis.analyze_round_rod_screen import analyze
-from projects.rf_multipole_ion_optics.core.ideal_transport import (
+from msplatform.components.rf_multipole.ideal_transport import (
     adiabaticity,
     electric_field_xy,
     evaluate_contract,

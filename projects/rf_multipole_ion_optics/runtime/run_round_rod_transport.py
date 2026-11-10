@@ -17,7 +17,7 @@ from msplatform.io.manifest_records import verified_successful_run_reference
 from msplatform.execution.retention import verify_record
 from projects.rf_multipole_ion_optics.analysis.analyze_round_rod_screen import analyze
 from projects.rf_multipole_ion_optics.runtime._transport_run_artifacts import ARTIFACT_PROJECTS_ROOT, transport_run
-from projects.rf_multipole_ion_optics.core.ideal_transport import evaluate_round_rod_contract, write_results
+from msplatform.components.rf_multipole import ideal_transport
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 
 
@@ -151,7 +151,7 @@ def execute(project_root: Path, source_run_id: str, run_id: str, *, design_profi
             "field_screen_design": source_dir / "inputs" / "multipole_resolved_design.json",
             "field_screen_contract": source_dir / "inputs" / "round_rod_field_screen.json",
             "field_screen_samples": source_dir / "results" / "round_rod_potential_samples.csv",
-            "shared_implementation": Path(__file__).resolve().parents[1] / "core/ideal_transport.py",
+            "shared_implementation": Path(ideal_transport.__file__),
             "field_screen_analysis": Path(__file__).resolve().parents[1] / "analysis/analyze_round_rod_screen.py",
         },
         output_names=("round_rod_transport_metrics.json", "particle_events.csv", "transport_comparison.png"),
@@ -162,9 +162,9 @@ def execute(project_root: Path, source_run_id: str, run_id: str, *, design_profi
         with frozen["field_screen_samples"].open(newline="", encoding="utf-8-sig") as stream:
             frozen_rows = _validated_selected_samples(list(csv.DictReader(stream)), frozen_contract, selection["resolved_design"])
         screen_metrics = analyze(frozen_rows, frozen_contract)
-        metrics, rows = evaluate_round_rod_contract(run.contract, screen_metrics, selection["resolved_design"],
+        metrics, rows = ideal_transport.evaluate_round_rod_contract(run.contract, screen_metrics, selection["resolved_design"],
             minimum_adjacent_gap_mm=float(frozen_contract["selection"]["minimum_adjacent_surface_gap_mm"]))
-        write_results(metrics, rows, run.result_dir, run.outputs[0].name)
+        ideal_transport.write_results(metrics, rows, run.result_dir, run.outputs[0].name)
         if metrics["status"] != "PASS":
             raise RuntimeError("round-rod L2 functional transport gate failed")
         summary = {
