@@ -13,7 +13,7 @@ from unittest import mock
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
     OuterGeometry,
     derive_three_zone_state,

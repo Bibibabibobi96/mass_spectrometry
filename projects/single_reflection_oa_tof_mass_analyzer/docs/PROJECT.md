@@ -81,8 +81,25 @@ the journal constant from its canonical I/O owner; publication and recovery asse
 项目粒子物理消费者及Candidate闭包直接使用`msplatform.contracts.particle_physics`，常量、公式和冻结身份边界不变。
 机器合同科学函数直接使用安装实现；真实checkout根从`common.paths.repository_root`取得，不进入可安装科学核心。
 
-活动三区理论campaign v2只通过既有`render_campaign_authorities`刷新六项源码身份，
+活动三区理论campaign v2只通过既有`render_campaign_authorities`刷新实际声明的源码身份，
 科学数值、阶段、资格与阈值保持；旧run和冻结输入不回写，缺失、过期或篡改来源仍拒绝。
+The exact total-time oracle and deterministic root collection now belong solely to
+`msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory` and
+`three_zone_ideal_root_solver`. Live callers use the actual OA-owned source/state APIs
+and these TOF implementations directly; the two old root bodies are retired. The active
+v2 author contract is refreshed through its existing compiler, while v1 and historical
+source/receipt identities remain unchanged. This ownership change preserves equations,
+constants, root clustering, branch information and caller-defined limits. The root funnel
+controller and remaining research orchestration still require their own P4 closure.
+`ideal_source_comparison` now owns explicit paired axial sources, fixed-geometry working
+points, complete mother-cohort fates and total-instrument pulse-relative propagation;
+`ideal_acceptance_theory` owns the matching Taylor coefficients (including factorials),
+uniform-position variance and first-order residual-velocity projection. Canonical peak
+analysis remains in `msplatform.analysis.peak_metrics`. Missing, singular and unsupported
+arrivals, the finite-width remainder and one-dimensional scope retain their original
+meanings. All four old root bodies are retired without aliases; historical scientific
+source hashes remain strict. This migration grants no new native or scientific qualification.
+
 质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
 不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。
 Candidate与质量谱冻结声明直接绑定安装SIMION aperture实现；旧公共aperture桥已退出，不改变几何或资产字节。

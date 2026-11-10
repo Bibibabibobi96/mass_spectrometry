@@ -44,12 +44,20 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 路径；范围只代表编译安全边界，不代表可行或最优。编译器输出candidate baseline、resolved、diff和
 PA/COMSOL/SIMION/CAD重建影响，不能直接晋升Formal。
 
-`three_zone_ideal_theory.py`仅保留本分析器的反射器、整机总时间和验收组合；局部加速器实现由独立项目
-拥有，OA 与 integration 消费同一公共 API，不复制公式。来源冻结包含所调用的独立项目源码；原有
-Formal 参数、源、资产和历史运行均不因源码归属迁移而重写。
+The exact source-to-detector theory and deterministic two/three-variable root collector
+now have sole implementations in `msplatform.components.single_reflection_oa_tof`
+(`three_zone_ideal_theory` and `three_zone_ideal_root_solver`). Accelerator-only source,
+state and timing APIs come directly from the existing orthogonal-accelerator component.
+All seeds, bounds, differences, tolerances and engineering limits remain explicit caller
+inputs; the kernel retains every converged root and does not select a scientific branch.
+The current funnel and ideal-source workflows bind the actual loaded canonical source
+files. Their root controllers and the remaining acceptance/source-comparison bodies
+are still separate P4 migration work. Formal parameters and historical run/source bytes
+are unchanged; installation, native execution and scientific qualification remain
+separate evidence boundaries.
 
 The current executable three-zone funnel is `three_zone_solver_free_funnel_v2.json`.
-Its `authorities` bind the independent accelerator's two-zone, three-zone and geometry sources.
+Its `authorities` bind the independent accelerator sources and the canonical TOF total-time/root implementations.
 Use the existing `workflows.three_zone_ideal_theory.run_theory` module with
 `<v2-campaign> --refresh-authorities`, then `--validate`, to refresh repository-source paths,
 canonical LF byte counts and SHA values. This authoring action accepts no scientific-stage options.
@@ -105,9 +113,9 @@ writer-release requirements. This does not authorize rewriting a historical pare
 
 ## 核心分析
 
-- `ideal_source_comparison.py`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
+- `msplatform.components.single_reflection_oa_tof.ideal_source_comparison`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
 - `ideal_source_experiment.py`：版本化实验校验、残差优先的确定性case计划和自动科学结论；执行成功不等于假设成立。活动入口和自动续跑说明见下节。
-- `ideal_acceptance_theory.py`、`ideal_acceptance_linear_design.py`：从精确时间的空间Taylor系数诊断有限束宽误差，以三乘三线性聚焦方程反求后两段场强、长度和匹配反射器场；不以粒子峰宽调压。
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory`、研究入口`ideal_acceptance_linear_design.py`：从精确时间的空间Taylor系数诊断有限束宽误差，以三乘三线性聚焦方程反求后两段场强、长度和匹配反射器场；不以粒子峰宽调压。
 - `ideal_acceptance_design.py`、`ideal_acceptance_experiment.py`：规定源的加权求积、有限包络检查、总方差分解、等概率总体近似及独立粒子验收；区分方差目标与直接FWHM。
 - `ideal_acceptance_density.py`：从精确残差到时间映射求总体推前密度，不使用有限粒子KDE带宽；复用canonical半高交点并保留质量密度Jacobian、概率积分和单调性适用域。
 - `peak_metrics.py`：KDE、直接FWHM和分辨率的唯一参考实现。

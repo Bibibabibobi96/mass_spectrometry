@@ -13,22 +13,17 @@ from typing import Iterable
 import numpy as np
 from numpy.typing import NDArray
 
-from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
-    ATOMIC_MASS_CONSTANT_KG as ATOMIC_MASS_CONSTANT_KG,
-    ELEMENTARY_CHARGE_C as ELEMENTARY_CHARGE_C,
-)
 from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
-    TheoryDomainError as TheoryDomainError,
-    AffineSource as AffineSource,
-    OuterGeometry as OuterGeometry,
-    ThreeZoneState as ThreeZoneState,
-    derive_three_zone_state as derive_three_zone_state,
-    source_energy_per_charge as source_energy_per_charge,
-    source_coordinate_for_energy as source_coordinate_for_energy,
-    derive_first_order_focus_drift as derive_first_order_focus_drift,
-    exact_accelerator_normalized_time as exact_accelerator_normalized_time,
-    exact_accelerator_normalized_time_from_state as exact_accelerator_normalized_time_from_state,
-    compute_accelerator_time_derivatives as compute_accelerator_time_derivatives,
+    TheoryDomainError,
+    AffineSource,
+    OuterGeometry,
+    ThreeZoneState,
+    derive_three_zone_state,
+    source_energy_per_charge,
+    source_coordinate_for_energy,
+    derive_first_order_focus_drift,
+    exact_accelerator_normalized_time_from_state,
+    compute_accelerator_time_derivatives,
 )
 
 def _finite(value: float, name: str) -> float:

@@ -34,7 +34,7 @@
 campaign、阈值、seed、前驱关系和输出结构由
 [`three_zone_solver_free_funnel_v2.json`](../../config/experiments/three_zone_solver_free_funnel_v2.json)
 管理；公式参考实现为
-[`three_zone_ideal_theory.py`](../../analysis/three_zone_ideal_theory.py)。外部输入的审阅与处置记录见
+[`three_zone_ideal_theory.py`](../../../../src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_theory.py)。外部输入的审阅与处置记录见
 [`20260817__three-zone-accelerator-external-document-review.md`](../history/20260817__three-zone-accelerator-external-document-review.md)。
 
 本工作流的 `Functional` 只表示一维精确时间、解析导数、冻结离散域和阶段receipt能够在不调用商业
@@ -189,7 +189,7 @@ T5→Candidate resolved编译边界，也必须另行预注册并执行三区工
 本节扩展的是精确理想场理论，不修改上述历史T0—T5合同。场区边界表示分段均匀场的作用范围；旧
 电极尺寸、孔径、厚度和边缘场不得成为这里的理论上限。有限接受设计应先解聚焦方程，再用精确时间
 和独立粒子检验，而不是先按峰宽寻优、再倒推解释。解析展开的维护入口为
-[`ideal_acceptance_theory.py`](../../analysis/ideal_acceptance_theory.py)。
+[`ideal_acceptance_theory.py`](../../../../src/msplatform/components/single_reflection_oa_tof/ideal_acceptance_theory.py)。
 
 ### 10.1 直接在位置域展开，保留残差投影
 

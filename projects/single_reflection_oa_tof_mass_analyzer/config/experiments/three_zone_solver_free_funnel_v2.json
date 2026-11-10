@@ -41,14 +41,14 @@
       "sha256": "EE7D5D21F8E34A0601451FC79054A048452307CD304E67161978F7CD8F21591D"
     },
     "three_zone_theory": {
-      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_theory.py",
-      "bytes": 21677,
-      "sha256": "52860EA57D3BCFBA070765A93FEFBBB77509D6650D0450285BB01A2A540B3E95"
+      "path": "src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_theory.py",
+      "bytes": 21136,
+      "sha256": "1347D655FDAD3990D14D56EC4066BCF1A2CA16827BAD91F14524375E30B7E8B0"
     },
     "three_zone_root_solver": {
-      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_root_solver.py",
-      "bytes": 29731,
-      "sha256": "FB19CE7D3EBF5A5E24E4B9292A79B968B1AEC17589D77A9BB033045224A408A2"
+      "path": "src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_root_solver.py",
+      "bytes": 29806,
+      "sha256": "60418A42C219E7AA696D230A71F9209FA296D0F4C32031DE409CDD49C4627B59"
     },
     "three_zone_funnel_schema": {
       "path": "src/msplatform/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
@@ -72,13 +72,13 @@
     },
     "three_zone_numeric_execution": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_numeric_execution.py",
-      "bytes": 39469,
-      "sha256": "3F61C78F4B2553D6F9940BF8BC9B01B7ACB4D9062663D039460392A7659F10E2"
+      "bytes": 39534,
+      "sha256": "6647C1999F87AE60431E37274AD7B88C583D7AC0B9A7B354DEBD5770E4012601"
     },
     "three_zone_experiment": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_experiment.py",
-      "bytes": 31907,
-      "sha256": "A64C79B5DD98D6D0B64CD1A0CD0CED2120D753C3AE61ACB50E2E5D0F8539D202"
+      "bytes": 33050,
+      "sha256": "FD3E4FC919A6DA7CAAF2843FB7496FEC487088F1D29B78C1CA21A5ACA6C0D207"
     },
     "three_zone_cli": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/run_theory.py",

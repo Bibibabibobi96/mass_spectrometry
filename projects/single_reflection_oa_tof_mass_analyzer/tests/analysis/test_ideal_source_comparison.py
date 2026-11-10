@@ -16,18 +16,20 @@ from contextlib import ExitStack
 import numpy as np
 
 from msplatform.analysis.peak_metrics import AnalysisSettings
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     AxialParticleSource,
     NumericalSourceSpec,
     build_numerical_source,
     build_working_point,
     propagate_ideal_source,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     InnerSolution,
-    OuterGeometry,
     ReflectronGeometry,
     exact_total_normalized_time,
+)
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
+    OuterGeometry,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import slope_scan, acceptance_theory
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import run_comparison

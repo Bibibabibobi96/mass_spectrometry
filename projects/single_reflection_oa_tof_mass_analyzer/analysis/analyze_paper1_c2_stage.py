@@ -15,10 +15,12 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c2_axial_or
     load_c2_axial_source,
     run_axial_c2_screen,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     ReflectronGeometry,
 )
 

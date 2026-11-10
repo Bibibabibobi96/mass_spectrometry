@@ -15,11 +15,13 @@ from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_count_policy import (
     load_particle_count_policy,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     OuterGeometry,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     ReflectronGeometry,
 )
 

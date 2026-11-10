@@ -14,19 +14,21 @@ from typing import Callable, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
+    OuterGeometry,
+    TheoryDomainError,
+    derive_three_zone_state,
+    source_energy_per_charge,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     DesignEvaluation,
     InnerSolution,
-    OuterGeometry,
     PhysicsGateLimits,
     ReflectronGeometry,
-    TheoryDomainError,
     TimeDerivatives,
     compute_time_derivatives,
-    derive_three_zone_state,
     evaluate_three_zone_design,
-    source_energy_per_charge,
 )
 
 

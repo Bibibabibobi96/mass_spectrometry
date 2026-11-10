@@ -14,7 +14,7 @@ import numpy as np
 from numpy.polynomial import Polynomial
 from numpy.typing import NDArray
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint, NumericalSourceSpec,
 )
 

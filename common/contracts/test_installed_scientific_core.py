@@ -1534,6 +1534,146 @@ for module in (beam_moments,beam_crossings,beam_focus):
 print('INSTALLED_RECORDED_BEAM=PASS')
 
 missing_rejected = []
+# TOF_KERNEL_INSTALLED_BEGIN
+# Fresh process: this numerical boundary must not import execution or a backend.
+tof_kernel_child = r"""import importlib.abc,json,math,os,sys
+from pathlib import Path
+request=json.load(sys.stdin)
+blocked=[Path(value).resolve() for value in request['blocked_roots']]
+def reject_author(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):raise AssertionError('TOF read author tree: '+str(path))
+sys.addaudithook(reject_author)
+class PureKernelOnly(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if any(fullname==name or fullname.startswith(name+'.') for name in ('projects','common','msplatform.execution','msplatform.backends')):
+   raise AssertionError('TOF imported execution/backend/checkout: '+fullname)
+sys.meta_path.insert(0,PureKernelOnly())
+import numpy as np
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import AffineSource,OuterGeometry,derive_three_zone_state
+from msplatform.components.single_reflection_oa_tof import three_zone_ideal_theory as theory,three_zone_ideal_root_solver as roots
+purelib=Path(request['purelib']).resolve()
+origins={module.__name__:str(Path(module.__file__).resolve()) for module in (theory,roots)}
+assert all(Path(value).is_relative_to(purelib) for value in origins.values()),origins
+source=AffineSource(**request['source']);outer=OuterGeometry(**request['outer'])
+mirror=theory.ReflectronGeometry(**request['reflectron']);inner=theory.InnerSolution(**request['inner'])
+physics=theory.PhysicsGateLimits(**request['physics_limits'])
+state=derive_three_zone_state(source,outer,inner.eta)
+cohort=theory.build_exact_cohort(source,state,mirror,inner,width_mm=2.2,sample_count=1001)
+assert abs(cohort.population_sigma_ns-0.0326914522181)<=2e-10
+energy=outer.nominal_energy_per_charge_v+source.chi_center_sqrt_v**2
+jacobian=roots.JacobianSettings(math.log(10.),1e-5,1e-5,1e-5,.5,1e-10)
+limits=roots.JacobianLimits(1e-10,0.,1e12,1.,0.)
+results=[]
+for mode in (2,3):
+ common=dict(convergence_tolerance=1e-10,maximum_iterations=80 if mode==2 else 2,
+             maximum_backtracks=12 if mode==2 else 4,cluster_distance=1e-8,jacobian=jacobian,limits=limits)
+ if mode==3:
+  settings=roots.RootSearchSettings(seeds=(roots.RootSeed(2.,2.,2.),roots.RootSeed(inner.stage1_voltage_drop_v/energy,inner.stage2_field_v_per_mm*mirror.stage2_length_mm/energy,inner.eta/math.log(10.))),bounds=roots.RootBounds(.5,.99,.1,1.,-1.5,1.5),**common)
+  result=roots.collect_three_zone_roots(source,outer,mirror,width_mm=2.2,cohort_sample_count=101,physics_limits=physics,settings=settings)
+  assert result.attempts[0].reason=='seed_out_of_bounds' and result.attempts[1].converged
+ else:
+  bounds=request['two_zone_bounds']
+  settings=roots.TwoZoneRootSearchSettings(seeds=tuple(roots.TwoZoneRootSeed(*seed) for seed in request['two_zone_seeds']),bounds=roots.TwoZoneRootBounds(bounds['u']['minimum'],bounds['u']['maximum'],bounds['f']['minimum'],bounds['f']['maximum']),**common)
+  result=roots.collect_two_zone_roots(source,outer,mirror,width_mm=2.2,cohort_sample_count=101,physics_limits=physics,settings=settings)
+ expected=request['expected_coordinates'][str(mode)]
+ assert len(result.candidates)==len(expected)
+ for candidate,coordinates in zip(result.candidates,expected,strict=True):
+  assert np.linalg.norm(np.asarray(candidate.coordinates)-coordinates)<=settings.cluster_distance
+ assert len(result.accepted_candidates)==request['expected_accepted'][str(mode)]
+ results.append(dict(mode=mode,attempts=len(result.attempts),roots=len(result.candidates),accepted=len(result.accepted_candidates)))
+print(json.dumps(dict(status='PASS',origins=origins,results=results,native=False)))
+"""
+tof_kernel_request = dict(fixture['tof_kernel'], purelib=sysconfig.get_paths()['purelib'],
+    blocked_roots=[str(path) for path in blocked_source_roots])
+tof_kernel_command = [sys.executable, '-I', '-B', '-c', tof_kernel_child]
+tof_kernel_run = subprocess.run(tof_kernel_command, cwd=root, input=json.dumps(tof_kernel_request),
+    capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+assert tof_kernel_run.returncode==0,tof_kernel_run.stdout+tof_kernel_run.stderr
+tof_kernel_result=json.loads(tof_kernel_run.stdout)
+assert tof_kernel_result['status']=='PASS'
+for name,origin in tof_kernel_result['origins'].items():
+    module_path=pathlib.Path(origin)
+    assert module_path.is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+    held=module_path.with_suffix('.missing-test-held')
+    assert not held.exists()
+    module_path.rename(held)
+    try:
+        absent=subprocess.run(tof_kernel_command, cwd=root, input=json.dumps(tof_kernel_request),
+            capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+        assert absent.returncode!=0 and name.rsplit('.',1)[-1] in absent.stderr,absent.stdout+absent.stderr
+    finally:
+        held.rename(module_path)
+print('INSTALLED_TOF_KERNEL=PASS')
+# TOF_KERNEL_INSTALLED_END
+
+# TOF_SOURCE_ACCEPTANCE_INSTALLED_BEGIN
+tof_source_child = r"""import importlib.abc,json,os,sys,sysconfig
+from pathlib import Path
+q=json.load(sys.stdin)
+blocked=[Path(value).resolve() for value in q['blocked_roots']]
+def refuse_author(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):raise AssertionError('TOF source accessed author: '+str(path))
+sys.addaudithook(refuse_author)
+class PureSource(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if any(fullname==name or fullname.startswith(name+'.') for name in ('common','projects','integrations','msplatform.backends','msplatform.execution')):raise AssertionError('TOF source imported host/checkout: '+fullname)
+sys.meta_path.insert(0,PureSource())
+import numpy as np
+from msplatform.components.single_reflection_oa_tof import ideal_source_comparison as source,ideal_acceptance_theory as acceptance
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import AffineSource,ThreeZoneState
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import ReflectronGeometry,InnerSolution
+from msplatform.analysis.peak_metrics import AnalysisSettings
+purelib=Path(sysconfig.get_path('purelib')).resolve()
+origins={module.__name__:str(Path(module.__file__).resolve()) for module in (source,acceptance)}
+assert all(Path(path).is_relative_to(purelib) for path in origins.values()),origins
+from copy import deepcopy
+before=deepcopy(q['source_acceptance']);v=before['point'];golden=before['golden']
+point=source.IdealWorkingPoint(AffineSource(**v['design_source']),ThreeZoneState(**v['state']),ReflectronGeometry(**v['reflectron']),InnerSolution(**v['inner']),v['focus_drift_mm'],None)
+spec=source.NumericalSourceSpec(**before['spec'])
+particles=source.build_numerical_source(spec,particle_count=31,seed=73,full_width_mm=1.,residual_sigma_m_per_s=3.)
+result=source.propagate_ideal_source(particles,point,settings=AnalysisSettings(grid_points=201,standardized_grid_points=101))
+for key in ('particle_id','source_x_mm','velocity_z_m_per_s','residual_m_per_s'):
+ np.testing.assert_array_equal(getattr(particles,key),golden[key])
+np.testing.assert_array_equal(result.tof_us,golden['tof_us'])
+np.testing.assert_array_equal(result.classification,golden['classification'])
+assert result.summary['mother_particle_count']==golden['mother_count']==31
+assert result.summary['full_cohort_reachable']
+np.testing.assert_array_equal(acceptance._quadratic_power(3.,2.,.1,.5,8),golden['quadratic'])
+np.testing.assert_array_equal(acceptance.axial_time_coefficients(point,order=6),golden['coefficients'])
+np.testing.assert_array_equal(acceptance.residual_time_sensitivity(point,np.array([-1.,0.,1.])),golden['residual_sensitivity'])
+assert acceptance.uniform_polynomial_variance(np.array([1e12,0.,0.,0.,2.3]),2.8)==golden['variance']
+assert acceptance.coefficient_report(point,full_width_mm=2.2,residual_sigma_m_per_s=10.,order=6,position_order=16)==golden['report']
+assert q['source_acceptance']==before
+print(json.dumps(dict(status='PASS',origins=origins,particle_count=31,native=False)))
+"""
+tof_source_request = dict(source_acceptance=fixture['tof_kernel']['source_acceptance'],
+    blocked_roots=[str(path) for path in blocked_source_roots])
+tof_source_arguments = [sys.executable, '-I', '-B', '-c', tof_source_child]
+tof_source_result = subprocess.run(tof_source_arguments, cwd=root, input=json.dumps(tof_source_request),
+    capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+assert tof_source_result.returncode==0,tof_source_result.stdout+tof_source_result.stderr
+tof_source_report=json.loads(tof_source_result.stdout)
+assert tof_source_report['status']=='PASS'
+for name,origin in tof_source_report['origins'].items():
+    original_path=pathlib.Path(origin)
+    original_bytes=original_path.read_bytes()
+    held=original_path.with_suffix('.tof-source-held')
+    assert not held.exists()
+    original_path.rename(held)
+    try:
+        absent=subprocess.run(tof_source_arguments, cwd=root, input=json.dumps(tof_source_request),
+            capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+        assert absent.returncode!=0 and name.rsplit('.',1)[-1] in absent.stderr,absent.stdout+absent.stderr
+    finally:
+        held.rename(original_path)
+    assert original_path.read_bytes()==original_bytes
+print('INSTALLED_TOF_SOURCE_ACCEPTANCE=PASS')
+# TOF_SOURCE_ACCEPTANCE_INSTALLED_END
+
 # MR_INTERFACE_INSTALLED_BEGIN
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface as mr_interface_owner
 mr_owner_path = pathlib.Path(mr_interface_owner.__file__).resolve()
@@ -2114,6 +2254,273 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
         return cases
 
+    def tof_kernel_probe_fixture(self) -> dict:
+        """Original high-contrast kernel fixture; no experiment/default selection."""
+        from dataclasses import asdict
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_three_zone_ideal_theory import ThreeZoneIdealTheoryTests
+        case = ThreeZoneIdealTheoryTests()
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_ideal_acceptance_theory import IdealAcceptanceTheoryTests
+        acceptance_case = IdealAcceptanceTheoryTests()
+        acceptance_case.setUp()
+        acceptance_golden = json.loads(r'''{
+  "particle_id": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "source_x_mm": [
+    1.491011830127508,
+    1.2669434220431108,
+    1.2182668895056232,
+    1.8530727505469107,
+    1.841738554735515,
+    1.0775815382893024,
+    1.4512842314682444,
+    1.1143791373115217,
+    1.7706171204943741,
+    1.804406854987063,
+    1.940569369756127,
+    1.149065246161113,
+    1.6749328054894028,
+    1.0798631542706731,
+    1.8701490883364094,
+    1.3431770302289623,
+    1.3970714543843965,
+    1.822867830091762,
+    1.0466796149819553,
+    1.717340881736754,
+    1.9341789219947632,
+    1.1595050026054863,
+    1.1660295259740423,
+    1.9558459192958908,
+    1.2808285989899604,
+    1.4188471564409642,
+    1.1704322883527076,
+    1.245837018672979,
+    1.1178248608526817,
+    1.601316487934303,
+    1.4480697933597515
+  ],
+  "velocity_z_m_per_s": [
+    -6.16145470059825,
+    -49.36266593172516,
+    -72.57911769486189,
+    75.37175544905125,
+    77.40862438703552,
+    -102.99572974121668,
+    -11.749973154996274,
+    -93.55520288866278,
+    57.99352787267852,
+    63.48622631570759,
+    91.77266784868765,
+    -87.19296877852565,
+    41.167326432122984,
+    -99.47919252682324,
+    77.47274265245042,
+    -39.2243241179563,
+    -21.75585482428366,
+    78.37031827689515,
+    -106.75012530149687,
+    48.64232296419626,
+    97.10090209328095,
+    -81.5225840621541,
+    -83.23090433824093,
+    101.77026387974392,
+    -51.49693123632757,
+    -14.520711155342703,
+    -79.26991694199317,
+    -59.45171919328155,
+    -87.34992543018343,
+    20.175197898430874,
+    -19.7790357555022
+  ],
+  "residual_m_per_s": [
+    -1.5442184634980922,
+    6.522776294790983,
+    -5.556190633614127,
+    -2.8527351216184074,
+    1.7774663193760207,
+    -3.7831440506499714,
+    1.9571777601284792,
+    -2.762130250897697,
+    -1.3646161984512999,
+    -3.6032132250020608,
+    -6.471578007189357,
+    -4.33628748068722,
+    3.702331928884546,
+    -0.788654362374493,
+    -4.658917210050455,
+    -0.7815921833638326,
+    4.355507137612695,
+    7.056896058195955,
+    -0.46699279384616044,
+    1.474104310567459,
+    0.31882930765135914,
+    -1.0545821343581268,
+    -4.255752789941122,
+    0.03065116109560999,
+    1.2114985858230038,
+    6.608238568502851,
+    -1.302144035250227,
+    1.2629956867362524,
+    2.654744836176227,
+    -0.44593822752325374,
+    -5.336401973804088
+  ],
+  "tof_us": [
+    31.331344313206564,
+    31.331236289033466,
+    31.331399714317318,
+    31.331367210044384,
+    31.331304131556408,
+    31.33138087436961,
+    31.3312971395956,
+    31.33136524857439,
+    31.33134361710505,
+    31.33137487832689,
+    31.331424279687894,
+    31.33138508374844,
+    31.331273902758127,
+    31.33134041027108,
+    31.331392719665118,
+    31.331334174966482,
+    31.331264853495163,
+    31.331232006496176,
+    31.331338166823844,
+    31.33130433682686,
+    31.331331932633514,
+    31.33134053366316,
+    31.331383452616794,
+    31.3313387980809,
+    31.33130770031296,
+    31.331234485856616,
+    31.33134353707873,
+    31.331307407240107,
+    31.331292131786007,
+    31.331329547553032,
+    31.331395405558062
+  ],
+  "classification": [
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival",
+    "detector_arrival"
+  ],
+  "mother_count": 31,
+  "quadratic": [
+    1.7320508075688772,
+    0.5773502691896257,
+    -0.06735753140545633,
+    0.02245251046848544,
+    -0.008793899933490132,
+    0.003804453162715588,
+    -0.0017556615824662917,
+    0.0008471664829544272,
+    -0.0004223055619656004
+  ],
+  "coefficients": [
+    31331.323507445926,
+    5.369737624127455e-14,
+    -1.3769006289216122e-11,
+    -3.3638518420215303e-12,
+    0.261432398030247,
+    0.16420282702811112,
+    0.08216715832552902
+  ],
+  "residual_sensitivity": [
+    -0.013465616932997781,
+    -0.013473428768299264,
+    -0.013491956735793594
+  ],
+  "variance": 5.5515904755484415,
+  "report": {
+    "coefficients_ns_per_mm_power": [
+      31331.323507445926,
+      5.369737624127455e-14,
+      -1.3769006289216122e-11,
+      -3.3638518420215303e-12,
+      0.261432398030247,
+      0.16420282702811112,
+      0.08216715832552902
+    ],
+    "coefficient_convention": "Taylor coefficients = derivatives / factorial; a0 is center TOF",
+    "full_width_mm": 2.2,
+    "residual_sigma_m_per_s": 10.0,
+    "polynomial_conditional_mean_variance_ns2": 0.024919927886677094,
+    "linearized_conditional_thickness_variance_ns2": 0.018157307677396026,
+    "linearized_total_sigma_ns": 0.207550561464124,
+    "residual_sensitivity_center_ns_per_m_per_s": -0.013473428768299264,
+    "scope": "local series and first-order residual projection; exact finite-width propagation must verify remainder"
+  }
+}''' )
+        campaign = json.loads((REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/experiments/three_zone_solver_free_funnel_v2.json").read_text(encoding="utf-8"))
+        return dict(source=asdict(case.source()), outer=asdict(case.outer()),
+            reflectron=asdict(case.reflectron()), inner=asdict(case.candidate()),
+            physics_limits=asdict(case.permissive_ideal_limits()),
+            two_zone_seeds=campaign["root_policy"]["two_zone_seeds"],
+            two_zone_bounds=campaign["root_policy"]["scaled_bounds"],
+            # Root-set coordinates from the exact pre-move574 arithmetic proof.
+            expected_coordinates={"2": [[0.7275719512760808, 0.40842784458225045]],
+                                  "3": [[0.8812865043851961, 0.4992181711713726, -0.9622913764817468]]},
+            expected_accepted={"2": 0, "3": 1},
+            source_acceptance=dict(spec=asdict(acceptance_case.spec),
+                point=asdict(acceptance_case.point), golden=acceptance_golden))
+
     def mr_interface_probe_fixture(self) -> list[dict]:
         # Original six-parent physical fixture; expected complete results were
         # recorded from the retired original publisher at 574ae974 (8849a767...).
@@ -2631,6 +3038,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
                                               mr_interface=self.mr_interface_probe_fixture(),
+                                              tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

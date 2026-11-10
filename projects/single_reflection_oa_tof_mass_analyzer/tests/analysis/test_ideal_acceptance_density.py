@@ -11,12 +11,17 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_d
     compute_population_density, compute_residual_time_derivative,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import DesignDomainError
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint, NumericalSourceSpec, build_numerical_source,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
-    InnerSolution, OuterGeometry, ReflectronGeometry, derive_three_zone_state,
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
+    ReflectronGeometry,
     exact_total_normalized_time_from_state,
+)
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
+    OuterGeometry,
+    derive_three_zone_state,
 )
 
 

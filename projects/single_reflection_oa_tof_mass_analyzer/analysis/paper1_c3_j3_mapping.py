@@ -22,13 +22,15 @@ from msplatform.contracts.machine_contracts import validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_candidate_control import (
     FINITE_DIFFERENCE_SCALES,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+    derive_three_zone_state,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     ReflectronGeometry,
     compute_time_derivatives,
-    derive_three_zone_state,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_experiment import (
     load_campaign,

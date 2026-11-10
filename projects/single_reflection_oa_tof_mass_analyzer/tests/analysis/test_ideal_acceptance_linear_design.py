@@ -14,8 +14,8 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_l
     find_fixed_length_designs,
     solve_linear_third_order_design,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import NumericalSourceSpec
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import NumericalSourceSpec
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     ReflectronGeometry,
     exact_total_normalized_time,
 )

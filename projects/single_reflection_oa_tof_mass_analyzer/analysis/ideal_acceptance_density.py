@@ -19,10 +19,10 @@ from msplatform.analysis.peak_metrics import half_height_width
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import (
     DesignDomainError, finite_source_envelope,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint, NumericalSourceSpec,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     exact_total_normalized_time_from_state,
 )
 

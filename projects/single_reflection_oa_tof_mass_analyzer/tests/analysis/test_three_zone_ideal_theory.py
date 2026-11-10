@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 import math
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -10,7 +17,7 @@ import numpy as np
 from msplatform.analysis.peak_metrics import (
     compute_peak_metrics,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_root_solver import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_root_solver import (
     JacobianLimits,
     JacobianSettings,
     RootBounds,
@@ -18,23 +25,27 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_r
     RootSeed,
     collect_three_zone_roots,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.accelerator_time_focus import (
     ATOMIC_MASS_CONSTANT_KG,
     ELEMENTARY_CHARGE_C,
+)
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+    derive_three_zone_state,
+    exact_accelerator_normalized_time,
+    exact_accelerator_normalized_time_from_state,
+    source_energy_per_charge,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     PhysicsGateLimits,
     ReflectronGeometry,
     build_exact_cohort,
     compute_time_derivatives,
-    derive_three_zone_state,
     evaluate_three_zone_design,
-    exact_accelerator_normalized_time,
-    exact_accelerator_normalized_time_from_state,
     exact_total_normalized_time,
     exact_total_normalized_time_from_state,
-    source_energy_per_charge,
 )
 
 
@@ -383,6 +394,69 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
         )
         self.assertFalse(backward.gates.passed)
         self.assertIn("backward_turn_clearance_mm", backward.gates.failed_names)
+
+    def test_frozen_total_time_and_root_modules_require_their_actual_sources(self) -> None:
+        from dataclasses import asdict
+        from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+        repository = Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot, competing = root / "snapshot", root / "competing"
+            selected = enumerate_python_sources(repository, package_roots=["src/msplatform"],
+                resource_suffixes=[".json", ".ps1", ".lua", ".gem", ".m", ".iob", ".pa0", ".pa"])
+            for relative in selected:
+                destination = snapshot / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                freeze_file(repository / relative, destination)
+            shutil.copytree(snapshot, competing)
+            request = dict(snapshot=str(snapshot / "src"), competing=str(competing / "src"),
+                source=asdict(self.source()), outer=asdict(self.outer()),
+                reflectron=asdict(self.reflectron()), inner=asdict(self.candidate()))
+            request["modules"] = {name: hashlib.sha256((snapshot / "src/msplatform/components/single_reflection_oa_tof" / (name + ".py")).read_bytes()).hexdigest()
+                                  for name in ("three_zone_ideal_theory", "three_zone_ideal_root_solver")}
+            code = r"""import hashlib,importlib.abc,json,math,sys
+from pathlib import Path
+request=json.load(sys.stdin)
+sys.path[:0]=[request['snapshot'],request['competing']]
+class NoExecution(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if any(fullname==name or fullname.startswith(name+'.') for name in ('projects','common','msplatform.backends','msplatform.execution')):
+   raise AssertionError('PURE_TOF_IMPORTED_EXECUTION_OR_CHECKOUT: '+fullname)
+sys.meta_path.insert(0,NoExecution())
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import AffineSource,OuterGeometry,derive_three_zone_state
+from msplatform.components.single_reflection_oa_tof import three_zone_ideal_theory as theory,three_zone_ideal_root_solver as roots
+for module in (theory,roots):
+ name=module.__name__.rsplit('.',1)[-1];path=Path(module.__file__).resolve()
+ assert path.is_relative_to(Path(request['snapshot']).resolve()),path
+ assert hashlib.sha256(path.read_bytes()).hexdigest()==request['modules'][name]
+source=AffineSource(**request['source']);outer=OuterGeometry(**request['outer'])
+mirror=theory.ReflectronGeometry(**request['reflectron']);inner=theory.InnerSolution(**request['inner'])
+state=derive_three_zone_state(source,outer,inner.eta)
+cohort=theory.build_exact_cohort(source,state,mirror,inner,width_mm=2.2,sample_count=1001)
+assert abs(cohort.population_sigma_ns-0.0326914522181)<=2e-10
+residuals,_=roots.evaluate_scaled_residuals(source,outer,mirror,inner,width_mm=2.2,derivative_count=3)
+assert residuals.infinity_norm<=1e-10
+assert not any(name=='msplatform.execution' or name.startswith('msplatform.execution.') for name in sys.modules)
+print('COLD_TOF_ROOT_AND_TIME=PASS')
+"""
+            def run():
+                return subprocess.run([sys.executable, "-I", "-B", "-c", code], cwd=root,
+                    input=json.dumps(request), capture_output=True, text=True, encoding="utf-8", timeout=30)
+            result = run()
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("COLD_TOF_ROOT_AND_TIME=PASS", result.stdout)
+            for name in request["modules"]:
+                with self.subTest(missing=name):
+                    path = snapshot / "src/msplatform/components/single_reflection_oa_tof" / (name + ".py")
+                    original = path.read_bytes()
+                    path.unlink()
+                    try:
+                        missing = run()
+                        self.assertNotEqual(missing.returncode, 0)
+                        self.assertIn(name, missing.stderr)
+                        self.assertNotIn("COLD_TOF_ROOT_AND_TIME=PASS", missing.stdout)
+                    finally:
+                        path.write_bytes(original)
 
     def test_root_collection_does_not_stop_at_first_failed_seed(self) -> None:
         source = self.source()

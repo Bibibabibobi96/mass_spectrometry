@@ -10,15 +10,20 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_d
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_experiment import (
     accepted, exact_population_moments, midpoint_population,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_theory import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import (
     axial_time_coefficients, residual_time_sensitivity, uniform_polynomial_variance,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint, NumericalSourceSpec,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
-    InnerSolution, OuterGeometry, ReflectronGeometry, derive_three_zone_state,
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
+    ReflectronGeometry,
     exact_total_normalized_time_from_state,
+)
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
+    OuterGeometry,
+    derive_three_zone_state,
 )
 
 

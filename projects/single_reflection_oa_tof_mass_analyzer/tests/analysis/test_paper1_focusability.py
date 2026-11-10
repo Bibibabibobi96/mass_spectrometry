@@ -35,10 +35,12 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c2_axial_or
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c2_stage import (
     _target_gates,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     ReflectronGeometry,
 )
 

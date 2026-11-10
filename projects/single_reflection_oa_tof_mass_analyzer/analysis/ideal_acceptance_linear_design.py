@@ -14,18 +14,20 @@ from typing import Any
 import numpy as np
 from scipy.optimize import brentq
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_theory import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import (
     _quadratic_power,
     axial_time_coefficients,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint,
     NumericalSourceSpec,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     InnerSolution,
-    OuterGeometry,
     ReflectronGeometry,
+)
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
+    OuterGeometry,
     derive_three_zone_state,
 )
 

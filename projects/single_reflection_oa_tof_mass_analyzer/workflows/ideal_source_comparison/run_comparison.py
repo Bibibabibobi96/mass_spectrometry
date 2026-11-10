@@ -32,6 +32,8 @@ import scipy
 
 from common.paths.workspace_paths import resolve_workspace_paths
 from msplatform.execution.artifact_naming import validate_run_id
+from msplatform.components.single_reflection_oa_tof import three_zone_ideal_theory as _tof_theory
+from msplatform.components.single_reflection_oa_tof import ideal_source_comparison as _source_theory
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import load_json
@@ -93,7 +95,9 @@ def _inputs(config_path: Path) -> dict[str, Path]:
             "accelerator_time_focus": accelerator / "accelerator_time_focus.py",
             "accelerator_three_zone_theory": REPO_ROOT / "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
             "accelerator_two_zone_geometry": accelerator / "two_zone_geometry.py",
-            **{Path(name).stem: PROJECT_ROOT / "analysis" / name for name in local}}
+            **{Path(name).stem: (Path(_tof_theory.__file__).resolve() if name == "three_zone_ideal_theory.py"
+                                else Path(_source_theory.__file__).resolve() if name == "ideal_source_comparison.py"
+                                else PROJECT_ROOT / "analysis" / name) for name in local}}
 
 
 
@@ -337,6 +341,14 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
     for node in ast.walk(expected_inputs):
         if isinstance(node, ast.Constant) and node.value == "src/msplatform/analysis/peak_metrics.py":
             node.value = "common/analysis/peak_metrics.py"
+    class OriginalTheorySourceLocation(ast.NodeTransformer):
+        """Project only the known relocated theory role to the old constructor."""
+        def visit_IfExp(self, node):
+            current = ast.parse('Path(_tof_theory.__file__).resolve() if name == "three_zone_ideal_theory.py" else Path(_source_theory.__file__).resolve() if name == "ideal_source_comparison.py" else PROJECT_ROOT / "analysis" / name', mode="eval").body
+            if ast.dump(node, include_attributes=False) == ast.dump(current, include_attributes=False):
+                return ast.parse('PROJECT_ROOT / "analysis" / name', mode="eval").body
+            return self.generic_visit(node)
+    expected_inputs = OriginalTheorySourceLocation().visit(expected_inputs)
     equal(function(source, "_inputs"), expected_inputs, "complete original input role constructor")
     expected_reuse = copy.deepcopy(function(current_source, "_reuse_case"))
     expected_reuse.body = [node for node in expected_reuse.body if not (
@@ -413,6 +425,11 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
                     numerical_imports[alias.asname or alias.name] = (node.module, alias.name, node.level)
     numerical_imports["AnalysisSettings"] = ("common.analysis.peak_metrics", "AnalysisSettings", 0)
     numerical_imports["load_json"] = ("common.contracts.machine_contracts", "load_json", 0)
+    # These two inspect-only historical bindings keep their original role names.
+    for name in ("OuterGeometry", "ReflectronGeometry"):
+        numerical_imports[name] = ("projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory", name, 0)
+    for name in ("NumericalSourceSpec", "build_numerical_source", "build_working_point", "propagate_ideal_source"):
+        numerical_imports[name] = ("projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison", name, 0)
     for node in ast.parse(source).body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
@@ -449,7 +466,7 @@ def _legacy_ideal_projection(previous: Path, identities: dict[str, str], seed: i
 def _legacy_csv_analysis(previous: Path, document: dict[str, Any], config: dict[str, Any], settings: AnalysisSettings) -> None:
     """Verify old analysis from its original full-mother CSV, without resampling."""
     from collections import Counter
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import _peak_summary
+    from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import _peak_summary
     path = previous / "results" / document["particles"]["path"]
     with path.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)

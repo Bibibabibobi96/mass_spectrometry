@@ -15,10 +15,10 @@ from scipy.special import ndtri
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import (
     SourceQuadrature, finite_source_envelope,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     AxialParticleSource, IdealWorkingPoint, NumericalSourceSpec, _classify_source,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     exact_total_normalized_time_from_state,
 )
 

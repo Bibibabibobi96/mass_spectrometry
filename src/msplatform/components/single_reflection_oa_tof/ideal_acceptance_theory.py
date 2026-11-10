@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint,
 )
 

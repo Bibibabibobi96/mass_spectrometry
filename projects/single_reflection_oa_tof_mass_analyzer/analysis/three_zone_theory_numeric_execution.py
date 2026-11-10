@@ -16,7 +16,7 @@ import numpy as np
 from msplatform.analysis.peak_metrics import (
     compute_peak_metrics,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_root_solver import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_root_solver import (
     JacobianAudit,
     JacobianLimits,
     JacobianSettings,
@@ -33,14 +33,16 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_r
     collect_three_zone_roots,
     collect_two_zone_roots,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+    derive_three_zone_state,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     PhysicsGateLimits,
     ReflectronGeometry,
     build_exact_cohort,
-    derive_three_zone_state,
 )
 
 

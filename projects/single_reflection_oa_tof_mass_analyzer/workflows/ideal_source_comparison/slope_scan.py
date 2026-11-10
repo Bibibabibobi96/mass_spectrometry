@@ -22,14 +22,14 @@ from common.contracts.file_identity import file_sha256
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source,
     propagate_ideal_source,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design import (
     solve_linear_third_order_design,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     ReflectronGeometry,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (

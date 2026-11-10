@@ -10,10 +10,15 @@ import numpy as np
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from common.contracts.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import load_json
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, build_working_point, propagate_ideal_source,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import OuterGeometry, ReflectronGeometry
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
+    OuterGeometry,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    ReflectronGeometry,
+)
 
 def _settings(analysis_contract_path: Path) -> AnalysisSettings:
     kde = load_json(analysis_contract_path)["kde"]

@@ -26,8 +26,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_e
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design import (
     solve_linear_third_order_design, find_fixed_length_designs,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_theory import coefficient_report
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import coefficient_report
+from msplatform.components.single_reflection_oa_tof import ideal_acceptance_theory as _acceptance_theory
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, propagate_ideal_source,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import _keys, _numbers
@@ -408,7 +409,8 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
         names.append("ideal_acceptance_density")
     run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id, resume_from=None,
         artifact_root=artifact_root, mode="ideal_acceptance_theory", extra_inputs={"theory_workflow": Path(__file__),
-        "reference_config": baseline_path, **{name: PROJECT_ROOT / "analysis" / (name+".py") for name in names}})
+        "reference_config": baseline_path, **{name: (Path(_acceptance_theory.__file__).resolve() if name == "ideal_acceptance_theory"
+                                  else PROJECT_ROOT / "analysis" / (name+".py")) for name in names}})
     started, status, error = time.perf_counter(), "success", None
     reports = []
     stage = "baseline_theory_audit"

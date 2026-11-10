@@ -25,13 +25,15 @@ from msplatform.contracts.machine_contracts import load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.experiment_campaign import (
     _canonical_sha as canonical_sha256,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+    derive_three_zone_state,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     ReflectronGeometry,
     compute_time_derivatives,
-    derive_three_zone_state,
     exact_total_normalized_time,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_numeric_execution import (
@@ -49,6 +51,10 @@ ACCELERATOR_AUTHORITY_PATHS = {
     "accelerator_two_zone_theory": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
     "accelerator_three_zone_theory": "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
     "accelerator_geometry": "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
+}
+TOF_AUTHORITY_PATHS = {
+    "three_zone_theory": "src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_theory.py",
+    "three_zone_root_solver": "src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_root_solver.py",
 }
 
 
@@ -96,6 +102,13 @@ def render_campaign_authorities(
         if label in authorities and authorities[label]["path"] != path:
             raise ValueError(f"{label} provider authority path differs")
         authorities[label] = {"path": path}
+    for label, path in TOF_AUTHORITY_PATHS.items():
+        filename = "three_zone_ideal_root_solver.py" if label == "three_zone_root_solver" else "three_zone_ideal_theory.py"
+        previous = "projects/single_reflection_oa_tof_mass_analyzer/analysis/" + filename
+        if label in authorities and authorities[label]["path"] not in {previous, path}:
+            raise ValueError(f"{label} provider authority path differs")
+        # This explicit authoring migration never rewrites frozen run evidence.
+        authorities[label] = {"path": path}
     for label, record in authorities.items():
         path = _repository_authority_path(repository_root, record["path"], label)
         canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
@@ -128,6 +141,10 @@ def load_campaign(
         record = campaign["authorities"].get(label)
         if record is None or record.get("path") != expected_path:
             raise ValueError(f"missing or invalid accelerator provider authority: {label}")
+    for label, expected_path in TOF_AUTHORITY_PATHS.items():
+        record = campaign["authorities"].get(label)
+        if record is None or record.get("path") != expected_path:
+            raise ValueError(f"missing or invalid TOF implementation authority: {label}")
     for label, record in campaign["authorities"].items():
         _bound_file(repository_root, record, label)
     return campaign

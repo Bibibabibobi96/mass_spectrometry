@@ -9,11 +9,16 @@ import numpy as np
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import (
     DesignDomainError, finite_source_envelope, prepare_source_quadrature,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
+from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint, NumericalSourceSpec,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
-    InnerSolution, OuterGeometry, ReflectronGeometry, derive_three_zone_state,
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
+    ReflectronGeometry,
+)
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
+    OuterGeometry,
+    derive_three_zone_state,
 )
 
 

@@ -17,18 +17,20 @@ from numpy.typing import NDArray
 from scipy.special import ndtri
 
 from msplatform.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
+from msplatform.components.single_reflection_oa_tof.oatof_oaaccelerator_coupling import (
     CoupledReflectronSolution,
     solve_coupled_reflectron_from_accelerator_derivatives,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
-    ReflectronGeometry,
     ThreeZoneState,
-    compute_time_derivatives,
     derive_three_zone_state,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
+    ReflectronGeometry,
+    compute_time_derivatives,
     exact_total_normalized_time_from_state,
 )
 

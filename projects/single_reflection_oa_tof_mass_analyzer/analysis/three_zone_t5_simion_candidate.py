@@ -20,17 +20,20 @@ import sys
 import tempfile
 from typing import Any, Mapping, Sequence
 
+from msplatform.components.single_reflection_oa_tof import three_zone_ideal_theory as _tof_theory
 from msplatform.execution.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import SCHEMA_DIR, load_json, validate_schema
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
+    derive_three_zone_state,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
     ReflectronGeometry,
     compute_time_derivatives,
-    derive_three_zone_state,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_experiment import (
     load_campaign,
@@ -46,7 +49,7 @@ CANDIDATE_NAME = "three_zone_t5_simion_candidate_resolved.json"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 COMPILER_SOURCE = Path(__file__).resolve()
-THEORY_CORE_SOURCE = Path(__file__).with_name("three_zone_ideal_theory.py").resolve()
+THEORY_CORE_SOURCE = Path(_tof_theory.__file__).resolve()
 ACCELERATOR_THEORY_SOURCE = REPOSITORY_ROOT / "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py"
 ACCELERATOR_TWO_ZONE_SOURCE = REPOSITORY_ROOT / "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py"
 ACCELERATOR_GEOMETRY_SOURCE = REPOSITORY_ROOT / "projects/orthogonal_accelerator/analysis/two_zone_geometry.py"

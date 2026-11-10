@@ -23,14 +23,16 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusabilit
     fit_source_condition_model,
     stack_focusability_problems,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
-    ReflectronGeometry,
-    compute_time_derivatives,
     derive_first_order_focus_drift,
     derive_three_zone_state,
+)
+from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
+    InnerSolution,
+    ReflectronGeometry,
+    compute_time_derivatives,
     exact_total_normalized_time_from_state,
 )
 
