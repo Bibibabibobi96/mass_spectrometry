@@ -670,3 +670,15 @@ match its original authority and its existing run-input record is retained.
 The integrated complete distance-study module then passed 31 tests in 14.660 seconds.
 Other modules were not rerun for this path repair. It performs no native load,
 Refine or Fly and does not add geometry or scientific qualification.
+
+### Canonical verifier and detached MR fixtures
+
+The bootstrap and corridor software fixtures now exercise the canonical manifest-verifier command,
+including its status/project/mode selectors. The detached exact-K fixture includes the real installed
+retention policy; the scientific event writer fixture loads canonical run_paths. Production execution,
+scientific constraints and all 845 existing assertions remain unchanged.
+The four complete modules passed 188 parent tests (15 existing record-level skips) in 367.863 seconds
+in the normal Windows process context. On the composed P4 successor, the five original failed parents
+passed again in 24.460 seconds (29 successful records). A prior restricted-context cleanup failure remains
+a separate failed run. These checks add no native Fly, field, GUI or Formal qualification; final Repository
+acceptance remains open.

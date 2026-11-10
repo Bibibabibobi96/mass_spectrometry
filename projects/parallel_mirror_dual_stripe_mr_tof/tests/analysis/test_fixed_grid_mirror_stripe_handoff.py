@@ -84,6 +84,10 @@ class FixedHardwareMirrorPointContractTests(unittest.TestCase):
                 target = detached / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(REPOSITORY / relative, target)
+            retention_policy = "src/msplatform/execution/resources/artifact_retention.json"
+            policy_target = detached / retention_policy
+            policy_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPOSITORY / retention_policy, policy_target)
             code = r"""
 import importlib
 from pathlib import Path

@@ -886,9 +886,16 @@ $prior=@{role='mrtof_downstream_workpoint_bootstrap';source_projection='measured
 $prior|ConvertTo-Json -Depth 20|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function mock-python {
- if($args[0]-eq'-m'){$script:verified=$true}
+ if($args[0]-eq'-c'-and$args[1]-ceq'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){
+  if($args[3]-cne'--require-status'-or$args[4]-cne$document.status-or$args[5]-cne'--require-project'-or$args[6]-cne$project-or
+     $args[7]-cne'--require-mode'-or$args[8]-cne'downstream_fixed_grid_workpoint_iteration'){throw 'Wrong public verifier identity'}
+  $script:verified=$true
+ }
  elseif($args[0]-eq'-c'-and$args[1]-match'assert_bounded_controller_resume'){& $RealPython @args;return}
- elseif($args[0]-eq'-c'){$script:replayed=$true}else{throw 'Wrong public verifier entry'}
+ elseif($args[0]-eq'-c'-and$args[1]-ceq$replayCode){
+  if($args[2]-cne$priorPath-or$args[3]-cne$seedManifest-or$args[4]-cne$frozenPreparedTargetAuthorityPath-or$args[5]-cne$frozenContract){throw 'Wrong prepared replay authority'}
+  $script:replayed=$true
+ }else{throw 'Wrong public verifier entry'}
  $global:LASTEXITCODE=0
 }
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) $FileName}
@@ -3870,8 +3877,9 @@ function Invoke-MockPython {
     $payload | & $FixturePython @args
     return
   }
-  if($args[3]-ne'success'-or$args[4]-ne'--require-project'-or$args[5]-ne'instrument_assembly'-or
-     $args[6]-ne'--require-mode'-or$args[7]-ne'oa_mr'){
+  if($args[0]-cne'-c'-or$args[1]-cne'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'-or
+     $args[3]-cne'--require-status'-or$args[4]-cne'success'-or$args[5]-cne'--require-project'-or$args[6]-cne'instrument_assembly'-or
+     $args[7]-cne'--require-mode'-or$args[8]-cne'oa_mr'){
     throw 'Ordinary MR bootstrap used a foreign run identity'
   }
   $script:verificationCalls++
