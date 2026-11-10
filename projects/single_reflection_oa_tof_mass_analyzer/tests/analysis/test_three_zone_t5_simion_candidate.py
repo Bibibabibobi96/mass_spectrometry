@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import unittest
 from unittest import mock
@@ -266,9 +267,17 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             "ACCELERATOR_GEOMETRY_SOURCE": candidate_compiler.ACCELERATOR_GEOMETRY_SOURCE,
             "EXPERIMENT_CORE_SOURCE": candidate_compiler.EXPERIMENT_CORE_SOURCE,
         }
+        theory_relative = Path('src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_theory.py')
+        theory_authority = REPOSITORY_ROOT / theory_relative
+        installed_theory = Path(sysconfig.get_path('purelib')) / 'msplatform/components/single_reflection_oa_tof/three_zone_ideal_theory.py'
+        self.assertIn(code_inputs['THEORY_CORE_SOURCE'].resolve(),
+                      (theory_authority.resolve(), installed_theory.resolve()))
+        self.assertEqual(code_inputs['THEORY_CORE_SOURCE'].read_bytes(), theory_authority.read_bytes(),
+                         'Loaded canonical T5 theory differs from selected checkout authority')
         relocated_code = {}
         for attribute, source in code_inputs.items():
-            destination = code_root / source.relative_to(REPOSITORY_ROOT)
+            relative = theory_relative if attribute == 'THEORY_CORE_SOURCE' else source.relative_to(REPOSITORY_ROOT)
+            destination = code_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(source.read_bytes())
             relocated_code[attribute] = destination
