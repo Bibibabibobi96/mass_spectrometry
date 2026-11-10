@@ -26,7 +26,7 @@ from msplatform.backends.simion.particle_batching import plan_single_wave_batche
 from msplatform.execution.simion_dispatch import plan_simion_dispatch
 
 ROOT=Path(__file__).resolve().parents[2]
-LUA=Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA=Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 ADAPTER=ROOT/"src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua"
 
 

@@ -476,7 +476,7 @@ foreach($completed in @($true,$false)){
             voltages=list(map(float,build['voltages'].split(',')))
             for electrode,value in plan['static_on_electrode_voltages_v'].items():
                 self.assertEqual(voltages[int(electrode)-1],value)
-            lua=Path('C:/Program Files/SIMION-2020/lua.exe')
+            lua=Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
             if lua.is_file():
                 grid=plan['native_geometry_compilation']['grid'];pitch=grid['cell_mm_xyz'];n=grid['dimensions']
                 wrapper=root/'inert_export.lua'

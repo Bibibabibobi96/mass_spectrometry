@@ -1071,3 +1071,22 @@ in 48.472 seconds without skips. A separate actual Changed-plan regression
 passed its four dependency cases (one parent, five records, 10.843 seconds),
 selecting the new cooled contract once while retaining the existing integration
 consumers. Full installed-suite, Repository and native closure remain open.
+
+
+### Remaining standalone Lua integration fixtures
+
+The accelerator-interface design, paired-pulse runtime and paired static-field task
+fixtures now discover PATH `lua`, then `lua5.1`, before the unchanged local fallback.
+The original callback, generated Program, IOB and inert field-export assertions run
+with the pinned CI interpreter; the static task no longer silently bypasses its Lua
+assertions merely because the vendor interpreter path is absent. No licensed SDS,
+test-plane library or native-solver authorization is changed. All original test IDs,
+assertions, resources and process arguments remain unchanged.
+
+The six newly enabled software parents passed 18 records in 8.221 seconds; one
+subsequent invocation of all three affected modules passed 64 parents and 207
+records in 217.135 seconds, without skips. This is software-fixture coverage,
+not ordinary-package, complete Repository or commercial-solver qualification.
+The same six parents passed on the composed workspace in 4.493 seconds
+(18 successful records, no skips). Production source and resource bytes are
+unchanged; no additional installation result is inferred from these tests.

@@ -1028,7 +1028,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         self._check_ip_design_preparation(upstream=True)
 
     def _check_ip_design_preparation(self, *, upstream):
-        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).is_file():
             self.skipTest("plain Lua unavailable")
         import copy
