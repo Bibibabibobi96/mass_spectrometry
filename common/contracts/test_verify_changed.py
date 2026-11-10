@@ -391,6 +391,16 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                                      for row in request["stages"]))
 
+    def test_cooled_preparation_selects_its_real_consumers(self):
+        request,_=self.plan("-ChangedPath","src/msplatform/workflows/cooled_frontend/prepare.py")
+        modules=[value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
+                 for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])]
+        self.assertEqual(set(modules),{"integrations.tests."+name for name in (
+            "test_cooled_frontend","test_cooled_frontend_reference","test_cooled_field_member_reuse",
+            "test_cooled_frontend_execute","test_cooled_static_probe_reuse","test_cooled_frontend_mesh_check",
+            "test_saved_workbench_replay_policy","test_dependencies")})
+        self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
+
     def test_cooled_compilers_select_their_actual_consumers(self):
         expected={"integrations.tests."+name for name in (
             "test_cooled_frontend", "test_cooled_frontend_reference", "test_cooled_frontend_mesh_check",

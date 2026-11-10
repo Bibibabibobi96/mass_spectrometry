@@ -1125,8 +1125,8 @@ Cooled frontend GEM and seven-point field compilation belong to
 `msplatform.backends.simion.cooled_frontend_geometry`; explicit cooled Program
 composition belongs to `msplatform.workflows.cooled_frontend.program`.
 These consume resolved inputs; the Program only materializes the existing Lua
-companions in the selected directory and does not Refine or Fly. Root prepare/runtime
-still own remaining provenance freezing, field cache and scheduling orchestration;
+companions in the selected directory and does not Refine or Fly. Canonical preparation
+now freezes source/clock/parent inputs; root runtime still owns field cache and scheduling;
 this slice does not establish the complete ordinarily installed run workflow.
 
 The integrated compiler slice passed 66 affected tests / 133 records in 94.909
@@ -1146,3 +1146,23 @@ tests / 38 records passed in 52.916 seconds without skips. Focused ordinary whee
 and sdist-rebuilt-wheel consumers passed in 33.969 seconds with all 453 payloads
 matching source/distributions/site-packages and missing-module refusal. That
 focused probe does not replace the complete installed-parent or native checks.
+
+
+
+Cooled request/source/clock and parent-input preparation is owned by
+`msplatform.workflows.cooled_frontend.prepare`. The installed API takes the explicit
+workspace and optionally a selected `field_source_authority_directory` for authored
+field envelopes; artifact sources keep their existing sealed-owner route. It does not
+look for a checkout, sample a new source, solve fields or launch a vendor. The root
+PowerShell owner transports its selected research directory. Remaining field-cache and
+flight orchestration are still separate root responsibilities.
+
+Independent review accepted the preparation source/caller closure and its explicit
+authored-directory boundary. The integrated 106 tests / 330 records passed in
+200.745 seconds without skips, including the actual cold snapshot, source/clock
+and rectangular-geometry consumers, architecture and isolated fixture lifetime.
+The complete original ordinary-install parent passed in 266.575 seconds with
+both consumers and all 454 source/build/distribution payload joins exact.
+The authored-envelope API/CLI positives and omitted/sibling-authority refusals
+preserve original input and owner bytes. Native and whole-Repository acceptance
+remain separate open requirements.

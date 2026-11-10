@@ -841,7 +841,7 @@ if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             statement = (
                 "from pathlib import Path; "
-                "from integrations.workflows.cooled_frontend import prepare; "
+                "from msplatform.workflows.cooled_frontend import prepare; "
                 "from integrations.workflows.cooled_frontend import reference, mesh_check; "
                 "from msplatform.workflows.cooled_frontend import pulse; "
                 "from msplatform.assembly import resolve_assembly; "
@@ -862,8 +862,8 @@ if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight
             self.assertIn("--run", result.stdout)
             from integrations.tests.test_cooled_frontend import cooled_request_fixture
             request_path, _ = cooled_request_fixture(Path(directory) / "scientific-input")
-            command = [sys.executable, "-B", "-s", "-m", "integrations.workflows.cooled_frontend.prepare",
-                       "--request", str(request_path), "--repo-root", str(snapshot),
+            command = [sys.executable, "-B", "-s", "-m", "msplatform.workflows.cooled_frontend.prepare",
+                       "--request", str(request_path),
                        "--workspace-root", str(Path(directory) / "scientific-input"), "--output-directory", str(Path(directory) / "prepared"),
                        "--run-id", "20261101_000000__build__python__frozen-cooled"]
             prepared = subprocess.run(command, cwd=snapshot, env=environment,

@@ -2080,6 +2080,22 @@
         "dependencies": [
           {
             "matches": [
+              {"exact": "src/msplatform/workflows/cooled_frontend/prepare.py", "reason": "cooled_preparation_changed"}
+            ],
+            "modules": [
+              "integrations/tests/test_cooled_frontend.py",
+              "integrations/tests/test_cooled_frontend_reference.py",
+              "integrations/tests/test_cooled_field_member_reuse.py",
+              "integrations/tests/test_cooled_frontend_execute.py",
+              "integrations/tests/test_cooled_static_probe_reuse.py",
+              "integrations/tests/test_cooled_frontend_mesh_check.py",
+              "integrations/tests/test_saved_workbench_replay_policy.py",
+              "integrations/tests/test_dependencies.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {"exact": "src/msplatform/backends/simion/cooled_frontend_geometry.py", "reason": "cooled_geometry_changed"},
               {"exact": "src/msplatform/workflows/cooled_frontend/program.py", "reason": "cooled_program_changed"}
             ],

@@ -12,7 +12,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
@@ -151,8 +151,8 @@ def compile_probe_plan(conditioner: dict, frontend: dict, field_plan: dict) -> t
     points += [dict(name=f"axis_{i}", x_mm=start[0], y_mm=start[1]+(stop[1]-start[1])*i/count, z_mm=start[2]) for i in range(count+1)]
     port=frontend["accelerator_local_region"]["port"]
     entry_y=port["flange_max_mm"]
-    from integrations.workflows.local_frontend.analyze import _capture_bounds
-    center_y=_capture_bounds(frontend)["y"]["center_mm"]
+    from msplatform.backends.simion.bare_frontend_geometry import capture_bounds
+    center_y=capture_bounds(frontend)["y"]["center_mm"]
     extended_count=max(1,int(math.ceil((center_y-stop[1])/pitch)))
     points += [dict(name=f"release_axis_{i}",x_mm=stop[0],y_mm=stop[1]+(center_y-stop[1])*i/extended_count,z_mm=stop[2]) for i in range(1,extended_count+1)]
     points += [dict(name="oa_side_entry",x_mm=stop[0],y_mm=entry_y+pitch,z_mm=stop[2]),
@@ -169,9 +169,12 @@ def compile_probe_plan(conditioner: dict, frontend: dict, field_plan: dict) -> t
 
 
 def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
-                           repo_root: Path, workspace_root: Path, *, simion_directory: Path | None = None, run_id: str | None = None) -> dict[str, Any]:
+                           workspace_root: Path, *, field_source_authority_directory: Path | None = None,
+                           simion_directory: Path | None = None, run_id: str | None = None) -> dict[str, Any]:
     """Validate/compile or freeze a caller-owned run; never solve or generate ions."""
-    repo=Path(repo_root).resolve(strict=True)
+    authority = None if field_source_authority_directory is None else Path(field_source_authority_directory).resolve(strict=True)
+    if authority is not None and not authority.is_dir():
+        raise ValueError("field-source authority must be a directory")
     workspace = Path(workspace_root).resolve(strict=True)
     request_path = Path(request_path).resolve(strict=True)
     request = _load(request_path)
@@ -204,8 +207,8 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
         else:
             path=Path(record["path"])
             path=(path if path.is_absolute() else workspace/path).resolve(strict=True)
-            authored_envelope=repo/"integrations/config/experiments/cooled_frontend"
-            allowed=path.is_relative_to(workspace/"artifacts") or (name=="field_source" and path.is_relative_to(authored_envelope))
+            allowed=path.is_relative_to(workspace/"artifacts") or (
+                name=="field_source" and authority is not None and path.is_relative_to(authority))
             if not allowed or path.stat().st_size != record["bytes"] or file_sha256(path) != record["sha256"]:
                 raise ValueError(f"{name} frozen workspace artifact identity differs")
             references[name]=dict(record, path=str(path))
@@ -339,7 +342,7 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
-    parser.add_argument("--repo-root", type=Path, required=True)
+    parser.add_argument("--field-source-authority-directory", type=Path)
     parser.add_argument("--workspace-root", type=Path, required=True)
     parser.add_argument("--output-directory", type=Path)
     parser.add_argument("--validate-only", action="store_true")
@@ -348,7 +351,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.validate_only == bool(args.output_directory):
         parser.error("choose validate-only or an owned output-directory")
-    result = prepare_cooled_frontend(args.request, args.output_directory, args.repo_root, args.workspace_root,simion_directory=args.simion_directory, run_id=args.run_id)
+    result = prepare_cooled_frontend(args.request, args.output_directory, args.workspace_root,field_source_authority_directory=args.field_source_authority_directory,simion_directory=args.simion_directory, run_id=args.run_id)
     print(json.dumps({k: result[k] for k in ("role", "status", "particle_count", "pressure_scale")}))
     return 0
 

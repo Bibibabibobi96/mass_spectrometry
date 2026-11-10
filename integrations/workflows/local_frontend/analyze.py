@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import csv
-import itertools
 import json
 import math
 from pathlib import Path
@@ -12,13 +11,15 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from msplatform.backends.simion import bare_frontend_geometry
+
 from msplatform.contracts.particle_state import binary64_serialization_close as _close
 
 from msplatform.analysis.particle_census import (
     CENSUS_SCHEMA_VERSION, lifetime_position, partition_cohort, subset_efficiency,
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.contracts.rigid_transform import FramedPosition, PhaseSpaceState, RigidTransform
+from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from msplatform.execution.retention import file_record
 from integrations.analysis.plot_single_flight_spatial_six_panel import (
     _checkpoint_distribution_summary,
@@ -325,37 +326,10 @@ def select_shared_time_display_counts(counts: list[dict]) -> list[dict]:
     return selected or [counts[0]]
 
 
-def _capture_bounds(frontend: dict) -> dict:
-    """Transform the actual provider rectangle; never substitute a square bore."""
-    local = frontend["accelerator_local_region"]
-    if "first_gap_bounds_mm" in local:
-        box = local["first_gap_bounds_mm"]
-        bounds = {a: {"minimum_mm": float(box[f"{a}_min"]), "maximum_mm": float(box[f"{a}_max"])}
-                  for a in "xyz"}
-        for item in bounds.values():
-            if not math.isfinite(item["minimum_mm"]) or not math.isfinite(item["maximum_mm"]) or item["minimum_mm"] >= item["maximum_mm"]:
-                raise ValueError("actual provider first-gap bounds are invalid")
-            item["center_mm"] = (item["minimum_mm"] + item["maximum_mm"]) / 2.
-            item["full_width_mm"] = item["maximum_mm"] - item["minimum_mm"]
-        return bounds
-    component = local["accelerator_component"]
-    transform = RigidTransform("accelerator_component", frontend["native_frame_id"],
-                               component["transform"]["rotation"], component["transform"]["translation_mm"])
-    box = local["canonical_electrodes"]["grid_supports"][0]["aperture_box_mm"]
-    corners = [transform.transform_position(FramedPosition(
-        transform.from_frame_id, tuple(point))).coordinates_mm
-        for point in itertools.product(*[(box[f"{a}_min_mm"], box[f"{a}_max_mm"]) for a in "xyz"])]
-    bounds = {a: {"minimum_mm": min(p[i] for p in corners), "maximum_mm": max(p[i] for p in corners)}
-              for i, a in enumerate("xy")}
-    bounds["z"] = {"minimum_mm": min(local["planes"]["repeller"], local["planes"]["grid1"]), "maximum_mm": max(local["planes"]["repeller"], local["planes"]["grid1"])}
-    for item in bounds.values():
-        item["center_mm"] = (item["minimum_mm"] + item["maximum_mm"]) / 2.
-        item["full_width_mm"] = item["maximum_mm"] - item["minimum_mm"]
-    return bounds
 
 
 def _select_pulse(events: list[dict], census: list[dict], times: list[float], frontend: dict) -> dict:
-    bounds = _capture_bounds(frontend)
+    bounds = bare_frontend_geometry.capture_bounds(frontend)
     by_time = {t: [] for t in times}
     observations = {t: [] for t in times}
     for row in census:

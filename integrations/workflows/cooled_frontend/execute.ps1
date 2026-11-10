@@ -461,7 +461,7 @@ $project=Join-Path $artifacts ('projects/'+$integration)
 $author=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -Depth 100
 $meshCheckRequest=($author.PSObject.Properties.Name-contains'role')-and$author.role-eq'rf_oatof_cooled_frontend_mesh_check_request'
 $simionDirectory=Join-Path $env:ProgramFiles 'SIMION-2020'
-$prepare=@('-m',($module+'.prepare'),'--request',$Request,'--repo-root',$RepoRoot,'--workspace-root',$workspace,'--simion-directory',$simionDirectory)
+$prepare=@('-m','msplatform.workflows.cooled_frontend.prepare','--request',$Request,'--field-source-authority-directory',(Join-Path $RepoRoot 'integrations/config/experiments/cooled_frontend'),'--workspace-root',$workspace,'--simion-directory',$simionDirectory)
 if($meshCheckRequest){
  if($SolverAuthorized-and-not$FieldDesignOnly){throw 'Local mesh check requires FieldDesignOnly; no population flight exists for this request.'}
  $meshPrepare=@'

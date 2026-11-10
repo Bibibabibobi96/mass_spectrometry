@@ -132,15 +132,16 @@ performance targets stay OPEN.
 The latest retained full Repository run is `4576fa69`: 42 PASS, 8 FAIL and
 12 NOT_APPLICABLE stages in 3,789.140 seconds. Subsequent targeted repairs preserve
 that failed result; no complete successor Repository acceptance is claimed.
-The original combined installed-core test passed on the compiler source committed
-as `68e000cd` in 262.626 seconds: all 452 runtime package payloads match the frozen
+The original combined installed-core test passed on the composed pulse/preparation
+source in 266.575 seconds: all 454 runtime package payloads match the frozen
 source, actual build source, direct wheel, sdist and rebuilt
 wheel, with both outside-checkout consumer arms successful. This is installation
 evidence for those source bytes, not native or whole-Repository acceptance. The
-later `6e5d24bf` tracking-fixture correction changes only tests, with no package
-payload changes. OA analysis,
+tracking-fixture correction changes only tests, with no package payload changes.
+OA analysis,
 neutral gas sampling/compilation, IP/cooled gas binding and pure cooled voltage
-design and cooled geometry/Program compilation now have canonical installed
+design, cooled geometry/Program compilation and explicit cooled input preparation
+now have canonical installed
 owners; their exact limits remain in project
 and integration status pages. Frontend field-producer migration, dual-cone gas/SDS
 ownership, remaining root workflows and final native/performance closure remain

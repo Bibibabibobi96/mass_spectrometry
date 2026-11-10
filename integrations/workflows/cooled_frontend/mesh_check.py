@@ -16,7 +16,7 @@ import pandas as pd
 
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend, compile_field_plan
-from .prepare import prepare_cooled_frontend
+from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from .runtime import fields
 from msplatform.workflows.cooled_frontend.field_analysis import _verified_small_record
 
@@ -80,7 +80,8 @@ def prepare_mesh_check(request_path: Path, output: Path | None, repo: Path, work
     if owner["status"] not in ("success", "failed"):
         raise ValueError("mesh field owner must be terminal with published fields")
     original = json.loads(source.read_text(encoding="utf-8-sig"))
-    result = prepare_cooled_frontend(source, output, repo, workspace, run_id=run_id)
+    result = prepare_cooled_frontend(source, output, workspace,
+        field_source_authority_directory=repo/"integrations/config/experiments/cooled_frontend", run_id=run_id)
     stage_path = _verified_small_record(published["field_stage_receipt_record"], workspace)
     stage = json.loads(stage_path.read_text(encoding="utf-8-sig"))
     geometry_sha = hashlib.sha256(result["geometry_gem"].encode("utf-8")).hexdigest().upper()

@@ -11,6 +11,7 @@ import unittest
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from msplatform.backends.simion.bare_frontend_geometry import capture_bounds
 from msplatform.contracts.rigid_transform import RigidTransform
 from integrations.tests.frontend_fixtures import (
     canonical_three_zone_frontend_fixture,
@@ -19,7 +20,6 @@ from integrations.tests.frontend_fixtures import (
 )
 from integrations.workflows.local_frontend.analyze import (
     _aperture_passages,
-    _capture_bounds,
     _source_rows,
     _snapshot_census,
     _select_pulse,
@@ -182,7 +182,7 @@ class ActualFirstGapTests(unittest.TestCase):
         _, frontend = compile_frontend(upstream, connection, accelerator_component=component,
                                        cell_mm_xyz=dict(x=.1, y=.2, z=.1), target_solver_frame="mrtof_global_cartesian")
         self.assertNotIn("grid_supports", frontend["accelerator_local_region"]["canonical_electrodes"])
-        result = _capture_bounds(frontend)
+        result = capture_bounds(frontend)
         actual = frontend["accelerator_local_region"]["first_gap_bounds_mm"]
         for axis in "xyz":
             self.assertEqual(result[axis]["minimum_mm"], actual[axis+"_min"])
@@ -289,7 +289,7 @@ class LocalFrontendAnalysisTests(unittest.TestCase):
                      vx_mm_per_us=.1+i*.001,vy_mm_per_us=1.,vz_mm_per_us=.02)
                 for i in range(37)]
         census = [dict(particle_id=row["particle_id"],instrument_time_us=.5,status="active") for row in rows]
-        actual_bounds = _capture_bounds(frontend)
+        actual_bounds = capture_bounds(frontend)
         legacy = _checkpoint_distribution_summary(pd.DataFrame(rows),"pre_pulse_state",
                                                    frame_id=frontend["native_frame_id"],propagation_axis="y")
         candidate = dict(candidate_time_us=.5,pulse_eligible_count=37,

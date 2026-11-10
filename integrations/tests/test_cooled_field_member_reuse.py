@@ -15,8 +15,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.tests.test_cooled_frontend import cooled_request_fixture, REPO
-from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+from integrations.tests.test_cooled_frontend import cooled_request_fixture
+from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from integrations.workflows.cooled_frontend import runtime
 from msplatform.backends.simion.tracking_program import _standalone_dynamic_field_lua
 
@@ -52,7 +52,7 @@ single_flight_apply_standalone_dynamic_field(instance,0)
     def prepared(self, root):
         author, _ = cooled_request_fixture(root)
         run = root / "artifacts/projects/instrument_assembly/runs/20261022_120000__test__python__members"
-        prepare_cooled_frontend(author, run, REPO, root, run_id=run.name)
+        prepare_cooled_frontend(author, run, root, run_id=run.name)
         (run / "inputs/native_discovery.json").write_text(json.dumps(dict(
             bytes=1, sha256="A" * 64, file_version="INERT_TEST")), encoding="utf-8")
         return run

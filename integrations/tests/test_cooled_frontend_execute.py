@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 from integrations.tests.test_local_frontend_analysis import fixture, write_log
 from integrations.tests.test_cooled_frontend import cooled_request_fixture
-from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -544,7 +544,7 @@ if($script:realCalls-ne47){throw ('Real argv count changed: '+$script:realCalls)
             root=Path(temporary)
             author,_=cooled_request_fixture(root)
             run=root/"run"
-            prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(author,run,root,run_id="20261022_120000__build__python__cooled-fixture")
             (run/"logs").mkdir();(run/"results").mkdir()
             (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
             try:

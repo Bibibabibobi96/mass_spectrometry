@@ -18,8 +18,8 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend, compile_field_plan
-from integrations.workflows.cooled_frontend.prepare import compile_probe_plan, prepare_cooled_frontend
-from integrations.workflows.cooled_frontend import prepare as cooled_prepare
+from msplatform.workflows.cooled_frontend.prepare import compile_probe_plan, prepare_cooled_frontend
+from msplatform.workflows.cooled_frontend import prepare as cooled_prepare
 from integrations.workflows.cooled_frontend import runtime as cooled_runtime
 from integrations.workflows.cooled_frontend.runtime import fields
 from msplatform.workflows.cooled_frontend.program import build_program
@@ -200,7 +200,7 @@ class CooledFrontendTests(unittest.TestCase):
                 geometry_profile=component["geometry_profile"], schema_version=1)
             _replace_parent(request, compile_assembly_layout(parent["recipe"], parent["components"]))
             path.write_text(json.dumps(request), encoding="utf-8")
-            result = prepare_cooled_frontend(path, None, REPO, workspace)
+            result = prepare_cooled_frontend(path, None, workspace)
             self.assertEqual(result["frontend"]["accelerator_component"]["geometry_profile"],
                              component["geometry_profile"])
             self.assertEqual(result["particle_count"], 100)
@@ -230,7 +230,7 @@ class CooledFrontendTests(unittest.TestCase):
             accelerator = next(row for row in plan["recipe"]["instances"]
                                if row["instance_id"] == "accelerator")
             self.assertEqual(accelerator["transform"]["translation_mm"], [0., 51.5, 0.])
-            result = prepare_cooled_frontend(author, root / "run", REPO, root,
+            result = prepare_cooled_frontend(author, root / "run", root,
                 run_id="20261022_120000__build__python__cooled-fixture")
             region = result["frontend"]["accelerator_local_region"]
             self.assertEqual(region["planes"], dict(repeller=34., grid1=30., exit=0.))
@@ -258,7 +258,7 @@ class CooledFrontendTests(unittest.TestCase):
             author, _ = cooled_request_fixture(root)
             artifacts = root/"artifacts"
             run = artifacts/"projects/instrument_assembly/runs/20261024_120000__test__python__cooled-pin"
-            prepare_cooled_frontend(author, run, REPO, root, run_id=run.name)
+            prepare_cooled_frontend(author, run, root, run_id=run.name)
             config = run/"run_config.json"
             config.write_text(json.dumps(dict(schema_version=2, run_id=run.name, project="instrument_assembly",
                 capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(artifacts),
@@ -332,7 +332,7 @@ class CooledFrontendTests(unittest.TestCase):
             try:
                 author, _ = cooled_request_fixture(root)
                 run = root/"artifacts/projects/instrument_assembly/runs/20261022_120000__build__python__cooled-fixture"
-                prepare_cooled_frontend(author, run, REPO, root, run_id=run.name)
+                prepare_cooled_frontend(author, run, root, run_id=run.name)
                 (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
                 bundle = cooled_runtime.field_cache_plan(run, cache_root=root/"cache")
                 plan = bundle["domains"][0]["members"][0]
@@ -367,7 +367,7 @@ class CooledFrontendTests(unittest.TestCase):
             root=Path(temporary)
             author,_=cooled_request_fixture(root)
             run=root/"run"
-            prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(author,run,root,run_id="20261022_120000__build__python__cooled-fixture")
             (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
             first=cooled_runtime.field_cache_plan(run,cache_root=root/"cache")
             for name in ("cooled_experiment.json","source_identity.json","cooled_drive.json"):
@@ -393,7 +393,7 @@ class CooledFrontendTests(unittest.TestCase):
             root=Path(temporary)
             author,_=cooled_request_fixture(root)
             run=root/"run"
-            prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(author,run,root,run_id="20261022_120000__build__python__cooled-fixture")
             (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
             original=cooled_runtime.field_cache_plan(run,cache_root=root/"cache")
             sha=cooled_runtime.file_sha256
@@ -412,7 +412,7 @@ class CooledFrontendTests(unittest.TestCase):
             root=Path(temporary)
             author,_=cooled_request_fixture(root)
             run=root/"run"
-            prepared=prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
+            prepared=prepare_cooled_frontend(author,run,root,run_id="20261022_120000__build__python__cooled-fixture")
             rows=[]
             for kind in field_analysis.KINDS:
                 spec=cooled_runtime.field_verification_spec(run,root/"ordinary",member_id=kind)
@@ -510,7 +510,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
             workspace = Path(temporary)
             request_path, request = cooled_request_fixture(workspace)
             output = workspace/"prepared"
-            result = prepare_cooled_frontend(request_path, output, REPO, workspace,
+            result = prepare_cooled_frontend(request_path, output, workspace,
                                              run_id="20261022_120000__build__python__cooled-fixture")
             inputs = output/"inputs"
             identity = json.loads((inputs/"integration_identity.json").read_text())
@@ -532,7 +532,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
             parent = _parent_path(request).resolve()
             frozen = (output / "inputs" / "parent_composition_plan.json").resolve()
             with patch.object(cooled_prepare, "_load", wraps=cooled_prepare._load) as load:
-                prepare_cooled_frontend(request_path, output, REPO, workspace,
+                prepare_cooled_frontend(request_path, output, workspace,
                                         run_id="20261022_120000__build__python__cooled-fixture")
             loaded = [Path(call.args[0]).resolve() for call in load.call_args_list]
             self.assertIn(frozen, loaded)
@@ -543,11 +543,11 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
             workspace = Path(temporary)
             path, request = cooled_request_fixture(workspace)
             original_dir, renamed_dir = workspace / "original_instances", workspace / "renamed_instances"
-            original = prepare_cooled_frontend(path, original_dir, REPO, workspace,
+            original = prepare_cooled_frontend(path, original_dir, workspace,
                                                run_id="20261022_120000__build__python__cooled-fixture")
             renamed_cooled_parent(request)
             path.write_text(json.dumps(request), encoding="utf-8")
-            renamed = prepare_cooled_frontend(path, renamed_dir, REPO, workspace,
+            renamed = prepare_cooled_frontend(path, renamed_dir, workspace,
                                               run_id="20261022_120000__build__python__cooled-fixture")
             self.assertEqual({row["instance_id"] for row in renamed["assembly_plan"]["recipe"]["instances"]},
                              {"source_a", "oa_b"})
@@ -562,7 +562,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary)
             path, request = cooled_request_fixture(workspace)
-            full = prepare_cooled_frontend(path, workspace / "two", REPO, workspace,
+            full = prepare_cooled_frontend(path, workspace / "two", workspace,
                                            run_id="20261022_120000__build__python__cooled-fixture")
             baseline_parent = json.loads(_parent_path(request).read_text())
             for count in (3, 4):
@@ -579,7 +579,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
                     )
                     path.write_text(json.dumps(candidate), encoding="utf-8")
                     local_dir = workspace / f"local_{count}"
-                    local = prepare_cooled_frontend(path, local_dir, REPO, workspace,
+                    local = prepare_cooled_frontend(path, local_dir, workspace,
                                                     run_id="20261022_120000__build__python__cooled-fixture")
                     self.assertEqual(local["assembly_plan"]["scope"]["kind"], "local")
                     self.assertEqual(local["assembly_plan"]["scope"]["instance_ids"], ["cooler", "accelerator"])
@@ -595,7 +595,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
             extend_parent(request, 3)
             path.write_text(json.dumps(request), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "explicitly selected cooler"):
-                prepare_cooled_frontend(path, None, REPO, workspace)
+                prepare_cooled_frontend(path, None, workspace)
 
     def test_managed_failure_retains_the_verified_frozen_parent_plan(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -607,7 +607,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
             output.mkdir()
             (output / "run_config.json").write_text(json.dumps({"project": "instrument_assembly"}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "explicitly selected cooler"):
-                prepare_cooled_frontend(path, output, REPO, workspace,
+                prepare_cooled_frontend(path, output, workspace,
                                         run_id="20261022_120000__build__python__cooled-fixture")
             self.assertEqual((output / "inputs" / "parent_composition_plan.json").read_bytes(),
                              _parent_path(request).read_bytes())
@@ -632,7 +632,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
                 path.write_text(json.dumps(request), encoding="utf-8")
                 output = workspace / defect
                 with self.subTest(defect=defect), self.assertRaises(ValueError):
-                    prepare_cooled_frontend(path, output, REPO, workspace,
+                    prepare_cooled_frontend(path, output, workspace,
                                             run_id="20261022_120000__build__python__cooled-fixture")
                 self.assertTrue((output / "inputs" / "parent_composition_plan.json").is_file())
 
@@ -653,7 +653,7 @@ print('INERT_PA_API_BOUNDARY=PASS '..scenario)
                 path.write_text(json.dumps(request), encoding="utf-8")
                 output = workspace/kind
                 with self.subTest(kind=kind), self.assertRaises(ValueError):
-                    prepare_cooled_frontend(path, output, REPO, workspace,
+                    prepare_cooled_frontend(path, output, workspace,
                                             run_id="20261022_120000__build__python__cooled-fixture")
                 if kind == "legacy":
                     self.assertFalse(output.exists())
@@ -700,15 +700,15 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             import os
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
-            prepared = subprocess.run([sys.executable, "-I", "-c", "import sys,json,runpy;from pathlib import Path;sys.path[:0]=json.loads(sys.argv[1]);import msplatform.backends.simion.source as source;assert Path(source.__file__).resolve().is_relative_to(Path.cwd().resolve());sys.argv=['prepare',*sys.argv[2:]];runpy.run_module('integrations.workflows.cooled_frontend.prepare',run_name='__main__')", json.dumps(python_import_roots(snapshot)),
-                "--request", str(request_path), "--repo-root", str(REPO), "--workspace-root", str(workspace),
+            prepared = subprocess.run([sys.executable, "-I", "-c", "import sys,json,runpy;from pathlib import Path;sys.path[:0]=json.loads(sys.argv[1]);import msplatform.backends.simion.source as source;assert Path(source.__file__).resolve().is_relative_to(Path.cwd().resolve());sys.argv=['prepare',*sys.argv[2:]];runpy.run_module('msplatform.workflows.cooled_frontend.prepare',run_name='__main__')", json.dumps(python_import_roots(snapshot)),
+                "--request", str(request_path), "--workspace-root", str(workspace),
                 "--output-directory", str(output), "--run-id", "20261022_120000__build__python__cooled-fixture"],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
             self.assertEqual(prepared.returncode, 0, prepared.stdout+prepared.stderr)
             self.assertTrue((output/"inputs/composition_plan.json").exists())
             plan = json.loads((output/"inputs/composition_plan.json").read_text(encoding="utf-8"))
             self.assertEqual({item["instance_id"] for item in plan["recipe"]["instances"]}, {"source_a", "oa_b"})
-            self.assertTrue((snapshot/"integrations/workflows/cooled_frontend/prepare.py").exists())
+            self.assertTrue((snapshot/"src/msplatform/workflows/cooled_frontend/prepare.py").exists())
             self.assertTrue((snapshot/"src/msplatform/backends/simion/collision_hs1.py").exists())
             for resource in ("cooled_frontend.lua","collision_hs1_gas.lua"):
                 frozen_resource=snapshot/"src/msplatform/backends/simion/resources"/resource
@@ -821,7 +821,7 @@ try{
             for pressure in (0,1):
                 request["pressure_scale"]=pressure
                 path.write_text(json.dumps(request),encoding="utf-8")
-                result=prepare_cooled_frontend(path,workspace/f"p{pressure}",REPO,workspace, run_id="20261022_120000__build__python__cooled-fixture")
+                result=prepare_cooled_frontend(path,workspace/f"p{pressure}",workspace, run_id="20261022_120000__build__python__cooled-fixture")
                 self.assertEqual(result["particle_count"],100)
             for name in ("release_global.csv","frontend.gem","cooled_field_plan.json","cooled_drive.json","cooled_probe_points.csv"):
                 self.assertEqual((workspace/"p0/inputs"/name).read_bytes(),(workspace/"p1/inputs"/name).read_bytes())
@@ -841,7 +841,7 @@ try{
             path,_=cooled_request_fixture(workspace)
             run=workspace/"artifacts/projects/instrument_assembly/runs/20261022_120000__build__python__cooled-fixture"
             self.assertEqual(run.parents[4],workspace)
-            prepare_cooled_frontend(path,run,REPO,workspace, run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(path,run,workspace, run_id="20261022_120000__build__python__cooled-fixture")
             records=[]
             try:
                 result=publish_inert_fields(run, workspace/"cache")

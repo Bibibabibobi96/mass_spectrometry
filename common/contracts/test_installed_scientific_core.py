@@ -476,6 +476,91 @@ for module in (cooled_geometry,cooled_program):
     finally:held.rename(module_path)
 # COOLED_COMPILERS_INSTALLED_END
 
+# COOLED_PREPARATION_INSTALLED_BEGIN
+from msplatform.workflows.cooled_frontend import prepare as cooled_prep
+cooled_prep_fixture=fixture['cooled_preparation']
+cooled_prep_workspace=pathlib.Path(cooled_prep_fixture['workspace'])
+cooled_prep_request=pathlib.Path(cooled_prep_fixture['request_path'])
+cooled_prep_before={q:hashlib.sha256(q.read_bytes()).hexdigest() for q in cooled_prep_workspace.rglob('*') if q.is_file()}
+assert pathlib.Path(cooled_prep.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+assert cooled_prep.prepare_cooled_frontend(cooled_prep_request,None,cooled_prep_workspace)==cooled_prep_fixture['expected']
+cooled_prep_run_id='20261022_120000__build__python__cooled-fixture'
+cooled_prep_output=root/('cooled-preparation-api-'+sys.argv[2])
+cooled_prep_result=cooled_prep.prepare_cooled_frontend(cooled_prep_request,cooled_prep_output,cooled_prep_workspace,run_id=cooled_prep_run_id)
+assert cooled_prep_result['status']=='prepared' and cooled_prep_result['particle_count']==100
+cooled_prep_cli_output=root/('cooled-preparation-cli-'+sys.argv[2])
+cooled_prep_cli=subprocess.run([sys.executable,'-I','-B','-m','msplatform.workflows.cooled_frontend.prepare',
+    '--request',str(cooled_prep_request),'--workspace-root',str(cooled_prep_workspace),
+    '--output-directory',str(cooled_prep_cli_output),'--run-id',cooled_prep_run_id],cwd=root,
+    capture_output=True,text=True,timeout=60,check=False)
+assert cooled_prep_cli.returncode==0,cooled_prep_cli.stdout+cooled_prep_cli.stderr
+assert json.loads(cooled_prep_cli.stdout)['status']=='prepared'
+assert {q.relative_to(cooled_prep_output).as_posix():q.read_bytes() for q in cooled_prep_output.rglob('*') if q.is_file()}=={q.relative_to(cooled_prep_cli_output).as_posix():q.read_bytes() for q in cooled_prep_cli_output.rglob('*') if q.is_file()}
+cooled_prep_author=json.loads(cooled_prep_request.read_text(encoding='utf-8'))
+cooled_prep_parent=pathlib.Path(cooled_prep_author['composition_plan']['path'])
+cooled_prep_hold=cooled_prep_parent.with_suffix('.missing-test-held');cooled_prep_parent.rename(cooled_prep_hold)
+try:
+    try:cooled_prep.prepare_cooled_frontend(cooled_prep_request,None,cooled_prep_workspace)
+    except AssertionError as error:assert str(error)==f'manifest cooled parent composition plan is missing: {cooled_prep_parent}'
+    else:raise AssertionError('missing explicit parent source accepted')
+finally:cooled_prep_hold.rename(cooled_prep_parent)
+cooled_prep_clock=pathlib.Path(cooled_prep_fixture['expected']['input_records']['clock_authority']['path'])
+cooled_prep_hold=cooled_prep_clock.with_suffix('.missing-test-held');cooled_prep_clock.rename(cooled_prep_hold)
+try:
+    try:cooled_prep.prepare_cooled_frontend(cooled_prep_request,None,cooled_prep_workspace)
+    except AssertionError as error:assert str(error)==f'manifest producer clock_authority is missing: {cooled_prep_clock}'
+    else:raise AssertionError('missing original clock authority accepted')
+finally:cooled_prep_hold.rename(cooled_prep_clock)
+cooled_prep_schema=machine_contracts.SCHEMA_DIR/'integration_artifact_identity.schema.json'
+cooled_prep_hold=cooled_prep_schema.with_suffix('.missing-test-held');cooled_prep_schema.rename(cooled_prep_hold)
+try:
+    cooled_prep_missing_schema=subprocess.run([sys.executable,'-I','-B','-m','msplatform.workflows.cooled_frontend.prepare',
+        '--request',str(cooled_prep_request),'--workspace-root',str(cooled_prep_workspace),
+        '--output-directory',str(root/('cooled-missing-schema-'+sys.argv[2])),'--run-id',cooled_prep_run_id],
+        cwd=root,capture_output=True,text=True,timeout=60,check=False)
+    assert cooled_prep_missing_schema.returncode!=0 and 'integration_artifact_identity.schema.json' in cooled_prep_missing_schema.stderr
+finally:cooled_prep_hold.rename(cooled_prep_schema)
+cooled_prep_module=pathlib.Path(cooled_prep.__file__);cooled_prep_hold=cooled_prep_module.with_suffix('.missing-test-held');cooled_prep_module.rename(cooled_prep_hold)
+try:
+    cooled_prep_absent=subprocess.run([sys.executable,'-I','-B','-m','msplatform.workflows.cooled_frontend.prepare','--help'],
+        cwd=root,capture_output=True,text=True,timeout=30,check=False)
+    assert cooled_prep_absent.returncode!=0 and 'msplatform.workflows.cooled_frontend.prepare' in cooled_prep_absent.stderr
+finally:cooled_prep_hold.rename(cooled_prep_module)
+assert cooled_prep_before=={q:hashlib.sha256(q.read_bytes()).hexdigest() for q in cooled_prep_workspace.rglob('*') if q.is_file()}
+cooled_auth=cooled_prep_fixture['authored']
+cooled_auth_workspace=pathlib.Path(cooled_auth['workspace'])
+cooled_auth_request=pathlib.Path(cooled_auth['request_path'])
+cooled_auth_paths=[pathlib.Path(cooled_auth[name]) for name in ('artifact_request','request_path','artifact_envelope','authored_envelope','owner_manifest','owner_config')]
+cooled_auth_before={q:q.read_bytes() for q in cooled_auth_paths}
+assert pathlib.Path(cooled_auth['artifact_envelope']).read_bytes()==pathlib.Path(cooled_auth['authored_envelope']).read_bytes()
+assert cooled_prep.prepare_cooled_frontend(pathlib.Path(cooled_auth['artifact_request']),None,cooled_auth_workspace)['status']=='validated'
+for wrong_authority in (None,pathlib.Path(cooled_auth['sibling'])):
+    try:cooled_prep.prepare_cooled_frontend(cooled_auth_request,None,cooled_auth_workspace,field_source_authority_directory=wrong_authority)
+    except ValueError as error:assert str(error)=='field_source frozen workspace artifact identity differs'
+    else:raise AssertionError('unselected authored field directory accepted')
+cooled_auth_output=root/('cooled-authored-api-'+sys.argv[2])
+assert cooled_prep.prepare_cooled_frontend(cooled_auth_request,cooled_auth_output,cooled_auth_workspace,
+    field_source_authority_directory=pathlib.Path(cooled_auth['authority']),run_id=cooled_prep_run_id)['status']=='prepared'
+assert (cooled_auth_output/'inputs/cooled_field_source.json').read_bytes()==pathlib.Path(cooled_auth['artifact_envelope']).read_bytes()
+cooled_auth_cli_output=root/('cooled-authored-cli-'+sys.argv[2])
+cooled_auth_cli=subprocess.run([sys.executable,'-I','-B','-m','msplatform.workflows.cooled_frontend.prepare',
+    '--request',str(cooled_auth_request),'--workspace-root',str(cooled_auth_workspace),
+    '--field-source-authority-directory',cooled_auth['authority'],
+    '--output-directory',str(cooled_auth_cli_output),'--run-id',cooled_prep_run_id],cwd=root,
+    capture_output=True,text=True,timeout=60,check=False)
+assert cooled_auth_cli.returncode==0,cooled_auth_cli.stdout+cooled_auth_cli.stderr
+for q in cooled_auth_output.rglob('*'):
+    if not q.is_file():continue
+    relative=q.relative_to(cooled_auth_output)
+    if relative.as_posix()=='inputs/cooled_experiment.json':
+        api=json.loads(q.read_text(encoding='utf-8'));cli=json.loads((cooled_auth_cli_output/relative).read_text(encoding='utf-8'))
+        assert api['field_source']['path']==str(cooled_auth_output/'inputs/cooled_field_source.json')
+        api['field_source']['path']=str(cooled_auth_cli_output/'inputs/cooled_field_source.json')
+        assert api==cli
+    else:assert q.read_bytes()==(cooled_auth_cli_output/relative).read_bytes()
+assert cooled_auth_before=={q:q.read_bytes() for q in cooled_auth_paths}
+# COOLED_PREPARATION_INSTALLED_END
+
 # COOLED_FIELD_ANALYSIS_INSTALLED_BEGIN
 from msplatform.workflows.cooled_frontend import field_analysis as cooled_analysis
 import pandas as pd
@@ -2117,12 +2202,67 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             expected_differences=(source/'out/paired_pulse_differences.csv').read_text(encoding='utf-8'),
             expected_comparison=json.loads((source/'out/paired_pulse_comparison.json').read_text(encoding='utf-8')))
 
+    def test_cooled_preparation_fixture_restores_cache_validator_before_return(self) -> None:
+        from integrations.workflows.cooled_frontend import runtime
+        original=runtime.validate_pa_family_cache_generation
+        with tempfile.TemporaryDirectory() as directory:
+            fixture=self.cooled_preparation_probe_fixture(Path(directory))
+            self.assertIs(runtime.validate_pa_family_cache_generation,original)
+            for name in ("request_path","artifact_request","artifact_envelope","authored_envelope","owner_manifest","owner_config"):
+                self.assertTrue(Path(fixture["authored"][name]).is_file(),name)
+            self.assertEqual(Path(fixture["authored"]["artifact_envelope"]).read_bytes(),
+                             Path(fixture["authored"]["authored_envelope"]).read_bytes())
+
+    def cooled_preparation_probe_fixture(self, root: Path) -> dict:
+        from integrations.tests.test_cooled_frontend import cooled_request_fixture
+        from integrations.tests.test_cooled_frontend_reference import SharedFieldIdentityTests, write
+        from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+        from msplatform.execution.retention import file_record
+        from unittest.mock import patch
+        workspace=root/"cooled-preparation-explicit-inputs"
+        workspace.mkdir()
+        request_path,_=cooled_request_fixture(workspace)
+        expected=prepare_cooled_frontend(request_path,None,workspace)
+        # Reuse the existing explicitly INERT seven-member software fixture;
+        # never invent another producer or claim native field qualification.
+        field_root=root/"cooled-preparation-field-inputs"
+        field_root.mkdir()
+        original_temporary_directory=tempfile.TemporaryDirectory
+        def temporary_directory(*args,**kwargs):
+            kwargs.setdefault("dir",field_root)
+            return original_temporary_directory(*args,**kwargs)
+        field_case=SharedFieldIdentityTests()
+        try:
+            with patch.object(tempfile,"TemporaryDirectory",side_effect=temporary_directory):
+                field_case.setUp()
+        finally:
+            field_case._pin_boundary.stop()
+        self.addCleanup(field_case.doCleanups)
+        artifact_envelope=field_case.workspace/"artifacts/field_source.json"
+        write(artifact_envelope,field_case.envelope)
+        artifact_request=field_case.workspace/"artifact-request.json"
+        write(artifact_request,dict(field_case.request,field_source=file_record(artifact_envelope)))
+        authority=root/"selected-field-authority"
+        authority.mkdir()
+        authored_envelope=authority/"field_source.json"
+        shutil.copyfile(artifact_envelope,authored_envelope)
+        authored_request=field_case.workspace/"authored-request.json"
+        write(authored_request,dict(field_case.request,field_source=file_record(authored_envelope)))
+        sibling=root/"other-field-authority"
+        sibling.mkdir()
+        return dict(workspace=str(workspace),request_path=str(request_path),expected=expected,
+            authored=dict(workspace=str(field_case.workspace),artifact_request=str(artifact_request),
+                request_path=str(authored_request),authority=str(authority),sibling=str(sibling),
+                artifact_envelope=str(artifact_envelope),authored_envelope=str(authored_envelope),
+                owner_manifest=str(field_case.owner/"run_manifest.json"),
+                owner_config=str(field_case.owner/"run_config.json")))
+
     @staticmethod
     def cooled_compilers_probe_fixture() -> dict:
         from integrations.tests.test_cooled_frontend import (
             cooled_fixture, cooled_request_fixture, publish_inert_fields,
         )
-        from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+        from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
         from integrations.workflows.cooled_frontend.runtime import fields
         from msplatform.workflows.local_frontend.runtime import _context
         from msplatform.backends.simion.cooled_frontend_geometry import compile_cooled_frontend, compile_field_plan
@@ -2134,7 +2274,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             request_path,_=cooled_request_fixture(workspace)
             run_id="20261022_120000__build__python__cooled-fixture"
             run=workspace/"artifacts/projects/instrument_assembly/runs"/run_id
-            prepare_cooled_frontend(request_path,run,REPO_ROOT,workspace,run_id=run_id)
+            prepare_cooled_frontend(request_path,run,workspace,run_id=run_id)
             published=publish_inert_fields(run,workspace/"cache")
             try:
                 context=_context(run,field_provider=fields)
@@ -2378,6 +2518,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               paired_static=paired,
                                               cooled_field_analysis=self.cooled_field_analysis_probe_fixture(),
                                               cooled_compilers=self.cooled_compilers_probe_fixture(),
+                                              cooled_preparation=self.cooled_preparation_probe_fixture(root),
                                               paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),

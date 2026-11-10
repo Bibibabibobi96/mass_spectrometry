@@ -12,7 +12,7 @@ from integrations.tests.test_local_frontend_workflow import fixture as local_fix
 from integrations.tests.test_cooled_frontend import cooled_request_fixture
 from integrations.tests.test_single_reflection_preparation import fixture as single_fixture
 from msplatform.workflows.local_frontend.prepare import prepare_local_frontend
-from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 
 REPO = Path(__file__).resolve().parents[2]
@@ -42,17 +42,17 @@ class SavedWorkbenchReplayPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             path, request = cooled_request_fixture(root)
-            normal = prepare_cooled_frontend(path, None, REPO, root)
+            normal = prepare_cooled_frontend(path, None, root)
             self.assertFalse(normal["default_replay_requested"])
             request["verify_saved_workbench_replay"] = True
             path.write_text(json.dumps(request), encoding="utf-8")
-            explicit = prepare_cooled_frontend(path, None, REPO, root)
+            explicit = prepare_cooled_frontend(path, None, root)
             self.assertTrue(explicit["default_replay_requested"])
             self.assertEqual(normal["field_plan"], explicit["field_plan"])
             request["verify_saved_workbench_replay"] = 1
             path.write_text(json.dumps(request), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "must be a boolean"):
-                prepare_cooled_frontend(path, None, REPO, root)
+                prepare_cooled_frontend(path, None, root)
 
     def test_single_reflection_freezes_the_resolved_action_and_preserves_author_bytes(self):
         for requested in (None, False, True):

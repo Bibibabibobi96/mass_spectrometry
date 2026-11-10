@@ -21,7 +21,7 @@ from msplatform.io import manifest_records
 from msplatform.execution.retention import file_record
 from integrations.tests.test_cooled_frontend import cooled_request_fixture, publish_inert_fields
 from integrations.tests.test_local_frontend_workflow import REPO
-from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 from integrations.workflows.cooled_frontend.runtime import fields
 from msplatform.workflows.cooled_frontend.field_analysis import _verified_small_record
 from integrations.workflows.cooled_frontend import reference, runtime
@@ -93,7 +93,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         envelope=self.workspace/"artifacts/legacy_source.json";write(envelope,self.envelope)
         self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
         consumer=self.workspace/"artifacts/integrations/test_integration/runs/legacy_consumer"
-        prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace,run_id="20261022_120000__test__python__legacy-consumer")
+        prepare_cooled_frontend(self.request_path,consumer,self.workspace,run_id="20261022_120000__test__python__legacy-consumer")
         actual=fields(consumer)
         self.assertEqual({row["cache_key"] for row in actual["records"].values()},{status.cache_key})
         self.assertTrue(all(row["source_schema_version"]==2 for row in actual["records"].values()))
@@ -122,6 +122,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         validate = runtime.validate_pa_family_cache_generation
         pin_boundary = patch.object(runtime, "validate_pa_family_cache_generation",
             side_effect=lambda *a, **k: {} if k.get("require_publication_pin") else validate(*a, **k))
+        self._pin_boundary=pin_boundary
         pin_boundary.start()
         self.addCleanup(pin_boundary.stop)
         self.temp=tempfile.TemporaryDirectory()
@@ -130,7 +131,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         self.addCleanup(self.make_writable)
         self.request_path,self.request=cooled_request_fixture(self.workspace)
         self.owner=self.workspace/"artifacts/integrations/test_integration/runs/field_owner"
-        prepare_cooled_frontend(self.request_path,self.owner,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+        prepare_cooled_frontend(self.request_path,self.owner,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
         receipt=publish_inert_fields(self.owner,self.workspace/"cache")
         records=receipt["working_points"]
         profile=self.owner/"inputs/cooled_field_design_profile.json"
@@ -160,7 +161,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         envelope=self.workspace/"artifacts/field_source.json";write(envelope,self.envelope)
         self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
         consumer=self.workspace/"artifacts/integrations/test_integration/runs/failed_postprocess_source"
-        prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace,run_id="20261022_120000__build__python__cooled-fixture")
+        prepare_cooled_frontend(self.request_path,consumer,self.workspace,run_id="20261022_120000__build__python__cooled-fixture")
         with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked,
                   patch.object(field_analysis,"file_sha256",wraps=field_analysis.file_sha256) as reader_checked):
             resolved=fields(consumer)
@@ -178,7 +179,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         envelope=self.workspace/"artifacts/field_source.json";write(envelope,self.envelope)
         self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
         consumer=self.workspace/"artifacts/integrations/test_integration/runs/distinct_fields"
-        prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace,
+        prepare_cooled_frontend(self.request_path,consumer,self.workspace,
             run_id="20261022_120000__build__python__distinct-fields")
         for run in (self.owner,consumer):
             with (patch.object(runtime,"file_sha256",wraps=runtime.file_sha256) as checked,
@@ -218,33 +219,40 @@ class SharedFieldIdentityTests(unittest.TestCase):
         self.request["field_source"]=file_record(envelope_path)
         write(self.request_path,self.request)
         consumer=self.workspace/"artifacts/integrations/test_integration/runs/reference"
-        prepare_cooled_frontend(self.request_path,consumer,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+        prepare_cooled_frontend(self.request_path,consumer,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
         self.assertEqual(len(fields(consumer)["records"]),7)
         frozen=json.loads((consumer/"inputs/cooled_experiment.json").read_text())["field_source"]
         self.assertEqual(Path(frozen["path"]),consumer/"inputs/cooled_field_source.json")
         self.assertEqual((consumer/"inputs/cooled_field_source.json").read_bytes(),envelope_path.read_bytes())
 
     def test_authored_envelope_is_frozen_and_other_repo_paths_are_rejected(self):
-        repository=self.workspace/"simulation_repo"
-        authored=repository/"integrations/config/experiments/cooled_frontend/source.json"
+        repository=self.workspace/"science-inputs"
+        authored=repository/"selected/source.json"
         write(authored,self.envelope)
         record=file_record(authored);record["path"]=authored.relative_to(self.workspace).as_posix()
         self.request["field_source"]=record
         write(self.request_path,self.request)
         run=self.workspace/"artifacts/integrations/test_integration/runs/authored_consumer"
-        prepare_cooled_frontend(self.request_path,run,repository,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+        authority=authored.parent
+        with self.assertRaisesRegex(ValueError,"authority must be a directory"):
+            prepare_cooled_frontend(self.request_path,None,self.workspace,field_source_authority_directory=authored)
+        with self.assertRaisesRegex(ValueError,"workspace artifact identity"):
+            prepare_cooled_frontend(self.request_path,None,self.workspace)
+        prepare_cooled_frontend(self.request_path,run,self.workspace,field_source_authority_directory=authority,
+                                run_id="20261022_120000__build__python__cooled-fixture")
         authored.unlink()
         self.assertEqual(len(fields(run)["records"]),7)
         denied=repository/"other/source.json";write(denied,self.envelope)
         self.request["field_source"]=file_record(denied);write(self.request_path,self.request)
         with self.assertRaisesRegex(ValueError,"workspace artifact identity"):
-            prepare_cooled_frontend(self.request_path,None,repository,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(self.request_path,None,self.workspace,field_source_authority_directory=authority,
+                                    run_id="20261022_120000__build__python__cooled-fixture")
 
     def test_two_trial_cases_and_shared_dispatch_keep_mother_source_untouched(self):
         envelope=self.workspace/"artifacts/field_source.json";write(envelope,self.envelope)
         self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
         run=self.workspace/"artifacts/integrations/test_integration/runs/multitrial"
-        prepare_cooled_frontend(self.request_path,run,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+        prepare_cooled_frontend(self.request_path,run,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
         before=(run/"inputs/release_global.csv").read_bytes()
         ctx=shared._context(run,field_provider=fields)
         ctx.update(conditioner=shared._load(run/"inputs/conditioner_contract.json"),cooled_drive=shared._load(run/"inputs/cooled_drive.json"),
@@ -276,7 +284,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         envelope=self.workspace/"artifacts/field_source.json";write(envelope,self.envelope)
         self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
         run=self.workspace/"artifacts/integrations/test_integration/runs/held_off"
-        prepare_cooled_frontend(self.request_path,run,REPO,self.workspace,run_id="20261022_120000__build__python__cooled-fixture")
+        prepare_cooled_frontend(self.request_path,run,self.workspace,run_id="20261022_120000__build__python__cooled-fixture")
         hs=run/"inputs/cooled_collision_hs1.lua";hs.write_text("-- pure HS1 identity fixture")
         write(run/"inputs/cooled_hs1_identity.json",dict(adapted=file_record(hs)))
         release=self.request["drive"]["release_start_us"]
@@ -428,7 +436,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
             write(envelope,self.envelope)
             self.request["field_source"]=file_record(envelope);write(self.request_path,self.request)
             run=self.workspace/"artifacts/integrations/test_integration/runs"/("missing_probe" if omit_probe else "reference_reuse")
-            prepare_cooled_frontend(self.request_path,run,REPO,self.workspace,
+            prepare_cooled_frontend(self.request_path,run,self.workspace,
                 run_id="20261022_120000__build__python__reference-reuse")
             if omit_probe:
                 with self.assertRaisesRegex(ValueError,"not bound by sealed field owner outputs"):
@@ -465,15 +473,15 @@ class SharedFieldIdentityTests(unittest.TestCase):
         manifest=owner/"run_manifest.json"
         write(manifest,dict(role="simulation_run_manifest",status="checkpoint",inputs={},outputs=[file_record(decision)]))
         with self.assertRaisesRegex(ValueError,"successful sealed producer"):
-            prepare_cooled_frontend(self.request_path,None,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(self.request_path,None,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
         write(manifest,dict(role="simulation_run_manifest",status="success",inputs={},outputs=[]))
         with self.assertRaisesRegex(ValueError,"not bound"):
-            prepare_cooled_frontend(self.request_path,None,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(self.request_path,None,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
         write(manifest,dict(role="simulation_run_manifest",status="success",inputs={},outputs=[file_record(decision)]))
-        self.assertEqual(prepare_cooled_frontend(self.request_path,None,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")["status"],"validated")
+        self.assertEqual(prepare_cooled_frontend(self.request_path,None,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")["status"],"validated")
         write(owner/".run_terminal_publication.json",{})
         with self.assertRaisesRegex(ValueError,"terminal publication is incomplete"):
-            prepare_cooled_frontend(self.request_path,None,REPO,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
+            prepare_cooled_frontend(self.request_path,None,self.workspace, run_id="20261022_120000__build__python__cooled-fixture")
 
 
 class ReferenceTrialTests(unittest.TestCase):

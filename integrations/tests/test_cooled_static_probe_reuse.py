@@ -22,7 +22,7 @@ from integrations.tests import test_cooled_frontend_reference as reference_fixtu
 from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments
 from integrations.workflows.cooled_frontend import runtime, reference
 from msplatform.components.dual_pressure_rectilinear_ion_processor import cooled_field_design
-from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
+from msplatform.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -86,7 +86,7 @@ class StaticProbeReuseTests(unittest.TestCase):
         self.fixture.request['field_source'] = file_record(envelope)
         write(self.fixture.request_path, self.fixture.request)
         self.run = self.workspace/'artifacts/projects/instrument_assembly/runs/20261031_010000__test__python__probe-reuse'
-        prepare_cooled_frontend(self.fixture.request_path, self.run, REPO, self.workspace, run_id=self.run.name)
+        prepare_cooled_frontend(self.fixture.request_path, self.run, self.workspace, run_id=self.run.name)
         shutil.copyfile(self.source/'inputs/cooled_probe_points.csv', self.run/'inputs/cooled_probe_points.csv')
         write(self.run/'inputs/cooled_frontend_field_stage_receipt.json', dict(working_points=self.rows))
         write(self.run/'run_manifest.json', dict(status='checkpoint'))

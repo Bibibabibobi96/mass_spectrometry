@@ -23,7 +23,8 @@ from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from integrations.workflows.cooled_frontend import runtime
 from msplatform.workflows.local_frontend import runtime as shared
-from integrations.workflows.local_frontend.analyze import _capture_bounds, _validate_lifetimes, parse_local_logs
+from integrations.workflows.local_frontend.analyze import _validate_lifetimes, parse_local_logs
+from msplatform.backends.simion import bare_frontend_geometry
 from msplatform.workflows.local_frontend.prepare import _csv_text, _nominal_extraction_duration
 
 
@@ -95,7 +96,7 @@ def native_arrival_window(events: list[dict], frontend: dict, source_row: dict) 
     interpolation stays between recorded native states; native pulse trials
     must still bracket the requested exit position before a secant is used.
     """
-    bounds=_capture_bounds(frontend)
+    bounds=bare_frontend_geometry.capture_bounds(frontend)
     target=bounds["y"]["center_mm"]
     rows=[row for row in events if row["event"]=="local_trajectory"]
     crossings=[i for i,(a,b) in enumerate(zip(rows,rows[1:]))
@@ -176,7 +177,7 @@ def prepare_reference(run: Path) -> dict:
     row,micro=cold_reference_state(design,responses["rf_differential_unit"],guide,
         release_start_us=drive["release_start_us"],mass_amu=mass,charge_state=charge)
     calibration=design["voltage_calibration"]
-    target=_capture_bounds(shared._load(inputs/"frontend_contract.json"))["y"]["center_mm"]
+    target=bare_frontend_geometry.capture_bounds(shared._load(inputs/"frontend_contract.json"))["y"]["center_mm"]
     value=dict(schema_version=1,role="rf_oatof_cooled_frontend_cold_reference_source",mother_count=100,simulated_count=1,
         mother_population_flight=False,source_rows=[row],voltage_calibration=calibration,micromotion=micro,
         field_stage_receipt_record=field_context["receipt"],

@@ -5,6 +5,8 @@ from __future__ import annotations
 from msplatform.components.orthogonal_accelerator.sectioned_geometry import resolve_bare_three_zone_component
 
 import json
+import itertools
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 import math
 from typing import Any
 
@@ -398,3 +400,32 @@ def _outward_aligned_boundary(
     else:
         raise ValueError("numerical boundary side is invalid")
     return origin + index * cell
+
+
+def capture_bounds(frontend: dict) -> dict:
+    """Transform the actual provider rectangle; never substitute a square bore."""
+    local = frontend["accelerator_local_region"]
+    if "first_gap_bounds_mm" in local:
+        box = local["first_gap_bounds_mm"]
+        bounds = {a: {"minimum_mm": float(box[f"{a}_min"]), "maximum_mm": float(box[f"{a}_max"])}
+                  for a in "xyz"}
+        for item in bounds.values():
+            if not math.isfinite(item["minimum_mm"]) or not math.isfinite(item["maximum_mm"]) or item["minimum_mm"] >= item["maximum_mm"]:
+                raise ValueError("actual provider first-gap bounds are invalid")
+            item["center_mm"] = (item["minimum_mm"] + item["maximum_mm"]) / 2.
+            item["full_width_mm"] = item["maximum_mm"] - item["minimum_mm"]
+        return bounds
+    component = local["accelerator_component"]
+    transform = RigidTransform("accelerator_component", frontend["native_frame_id"],
+                               component["transform"]["rotation"], component["transform"]["translation_mm"])
+    box = local["canonical_electrodes"]["grid_supports"][0]["aperture_box_mm"]
+    corners = [transform.transform_position(FramedPosition(
+        transform.from_frame_id, tuple(point))).coordinates_mm
+        for point in itertools.product(*[(box[f"{a}_min_mm"], box[f"{a}_max_mm"]) for a in "xyz"])]
+    bounds = {a: {"minimum_mm": min(p[i] for p in corners), "maximum_mm": max(p[i] for p in corners)}
+              for i, a in enumerate("xy")}
+    bounds["z"] = {"minimum_mm": min(local["planes"]["repeller"], local["planes"]["grid1"]), "maximum_mm": max(local["planes"]["repeller"], local["planes"]["grid1"])}
+    for item in bounds.values():
+        item["center_mm"] = (item["minimum_mm"] + item["maximum_mm"]) / 2.
+        item["full_width_mm"] = item["maximum_mm"] - item["minimum_mm"]
+    return bounds
