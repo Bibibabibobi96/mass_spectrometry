@@ -32,6 +32,24 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_installed_particle_comparison_selects_both_real_analyzers(self):
+        request, _ = self.plan(
+            "-ChangedPath", "src/msplatform/analysis/particle_state_comparison.py"
+        )
+        modules = {
+            value
+            for row in request["stages"]
+            if row["name"].startswith("rf_multipole_quadrupole_static")
+            for value in row["command"].get("parameters", {}).get("ChangedTestModules", [])
+        }
+        self.assertEqual(modules, {
+            "projects.rf_multipole_ion_optics.tests.analysis.test_compare_particle_state_evidence",
+            "projects.rf_multipole_ion_optics.tests.analysis.test_same_solver_numerical_convergence",
+            "projects.rf_multipole_ion_optics.tests.analysis.test_cross_solver_gate_contract",
+        })
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                             for row in request["stages"]))
+
     def test_installed_rf_transport_metrics_selects_original_domain_owner(self):
         self.assertIn("rf_multipole_domain_tests",
                       self.routed_stages("src/msplatform/analysis/rf_transport_metrics.py"))

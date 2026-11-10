@@ -2827,6 +2827,10 @@
       ],
       "matches": [
         {
+          "exact": "src/msplatform/analysis/particle_state_comparison.py",
+          "reason": "installed_particle_state_comparison_changed"
+        },
+        {
           "exact": "src/msplatform/ion_release/paired_mass_scan.py",
           "reason": "installed_paired_mass_response_changed"
         },
@@ -2994,6 +2998,20 @@
               }
             ],
             "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/particle_state_comparison.py",
+                "reason": "installed_particle_state_comparison_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_compare_particle_state_evidence.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py"
             ],
             "dependency_profile": "locked"

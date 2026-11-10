@@ -1674,6 +1674,85 @@ for name,origin in tof_source_report['origins'].items():
 print('INSTALLED_TOF_SOURCE_ACCEPTANCE=PASS')
 # TOF_SOURCE_ACCEPTANCE_INSTALLED_END
 
+# RF_PARTICLE_COMPARISON_INSTALLED_BEGIN
+rf_comparison_child = r"""import importlib.abc,json,math,os,sys,sysconfig
+from pathlib import Path
+q=json.load(sys.stdin)
+blocked=[Path(value).resolve() for value in q['blocked_roots']]
+def refuse_author(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):raise AssertionError('RF comparison accessed author: '+str(path))
+sys.addaudithook(refuse_author)
+class PureComparison(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if any(fullname==name or fullname.startswith(name+'.') for name in ('common','projects','integrations','msplatform.backends','msplatform.execution')):raise AssertionError('RF comparison imported host/checkout: '+fullname)
+sys.meta_path.insert(0,PureComparison())
+from msplatform.analysis import particle_state_comparison as comparison
+origin=Path(comparison.__file__).resolve()
+assert origin==Path(sysconfig.get_path('purelib')).resolve()/'msplatform/analysis/particle_state_comparison.py',origin
+directory=Path(q['directory']);directory.mkdir()
+header='particle_id,event,elapsed_time_us,radial_position_mm,divergence_angle_deg,kinetic_energy_eV,max_rod_radius_mm,transverse_x_mm,transverse_y_mm,velocity_axial_m_s,velocity_x_m_s,velocity_y_m_s,rf_phase_rad\n'
+sources=''.join(str(i)+',source,0,0,0,0,0,0,0,0,0,0,0\n' for i in range(1,5))
+left_text=header+sources+'1,handoff,10,5,2,7,0,3,4,10,3,4,3\n2,handoff,20,0,4,9,0,0,0,0,0,0,0\n'
+right_text=header+sources+'1,handoff,8,1,2,9,0,0,0,-2,0,0,-3\n3,handoff,12,0,4,11,0,0,0,0,0,0,0\n'
+left_path=directory/'left.csv';right_path=directory/'right.csv'
+left_path.write_text(left_text,encoding='utf-8',newline='');right_path.write_text(right_text,encoding='utf-8',newline='')
+left=comparison.load_event_table(left_path);right=comparison.load_event_table(right_path)
+assert comparison.source_id_evidence(left,right,4)==dict(valid=True,expected_count=4,left_missing_ids=[],left_extra_ids=[],left_unexpected_event_ids=[],right_missing_ids=[],right_extra_ids=[],right_unexpected_event_ids=[])
+census,residuals=comparison.pair_event_census(left,right,{1,2,3,4})
+assert [row['pair_status'] for row in census]==['paired','left_only','right_only','neither']
+wrapped=2*math.pi-6
+assert residuals==[dict(particle_id=1,position_residual_mm=5.,velocity_residual_m_s=13.,tof_residual_us=2.,energy_residual_eV=-2.,rf_phase_residual_rad=wrapped)]
+for row in census[1:]:
+ assert all(row[key]=='' for key in ('position_residual_mm','velocity_residual_m_s','tof_residual_us','energy_residual_eV','rf_phase_residual_rad'))
+left_metrics=comparison.aggregate_handoff(left,4);right_metrics=comparison.aggregate_handoff(right,4)
+assert left_metrics==dict(handoff_particles=2,transmission=.5,mean_tof_us=15.,p95_tof_us=19.5,rms_radius_mm=math.sqrt(12.5),p95_radius_mm=4.75,rms_divergence_deg=math.sqrt(10.),p95_divergence_deg=3.9,mean_energy_eV=8.,max_rod_radius_mm=None)
+assert right_metrics==dict(handoff_particles=2,transmission=.5,mean_tof_us=10.,p95_tof_us=11.8,rms_radius_mm=math.sqrt(.5),p95_radius_mm=.95,rms_divergence_deg=math.sqrt(10.),p95_divergence_deg=3.9,mean_energy_eV=10.,max_rod_radius_mm=None)
+metrics=comparison.aggregate_comparison(left_metrics,right_metrics,residuals)
+assert metrics['transmission_absolute_difference']==0
+assert metrics['mean_tof_relative_difference']==.4
+assert metrics['mean_energy_relative_difference']==2/9
+assert metrics['rms_radius_relative_difference']==abs(math.sqrt(12.5)-math.sqrt(.5))/((math.sqrt(12.5)+math.sqrt(.5))/2)
+assert metrics['rms_divergence_relative_difference']==0
+assert [metrics[key] for key in ('paired_mean_position_residual_mm','paired_p95_position_residual_mm','paired_mean_velocity_residual_m_s','paired_p95_velocity_residual_m_s','paired_mean_absolute_tof_residual_us','paired_mean_absolute_energy_residual_eV','paired_mean_absolute_rf_phase_residual_rad')]==[5.,5.,13.,13.,2.,2.,wrapped]
+empty=comparison.aggregate_handoff({key:row for key,row in left.items() if key[1]=='source'},4)
+assert empty==dict(handoff_particles=0,transmission=0.,mean_tof_us=None,p95_tof_us=None,rms_radius_mm=None,p95_radius_mm=None,rms_divergence_deg=None,p95_divergence_deg=None,mean_energy_eV=None,max_rod_radius_mm=None)
+census_path=directory/'census.csv';comparison.write_census(census_path,census,left_label='left',right_label='right')
+expected=('particle_id,pair_status,left_event,right_event,position_residual_mm,velocity_residual_m_s,tof_residual_us,energy_residual_eV,rf_phase_residual_rad\r\n'
+ +f'1,paired,1,1,5.0,13.0,2.0,-2.0,{wrapped}\r\n'
+ +'2,left_only,1,0,,,,,\r\n3,right_only,0,1,,,,,\r\n4,neither,0,0,,,,,\r\n').encode('utf-8')
+assert census_path.read_bytes()==expected
+duplicate=directory/'duplicate.csv';duplicate.write_text(left_text+left_text.splitlines()[-1]+'\n',encoding='utf-8',newline='')
+try:comparison.load_event_table(duplicate)
+except ValueError as error:assert 'duplicate particle event' in str(error)
+else:raise AssertionError('duplicate particle/event accepted')
+assert left_path.read_bytes()==left_text.encode() and right_path.read_bytes()==right_text.encode()
+print(json.dumps(dict(status='PASS',origin=str(origin),native=False)))
+"""
+rf_comparison_request=dict(directory=str(root/('rf-comparison-'+sys.argv[2])),
+    blocked_roots=[str(path) for path in blocked_source_roots])
+rf_comparison_command=[sys.executable,'-I','-B','-c',rf_comparison_child]
+rf_comparison_run=subprocess.run(rf_comparison_command,cwd=root,input=json.dumps(rf_comparison_request),
+    capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert rf_comparison_run.returncode==0,rf_comparison_run.stdout+rf_comparison_run.stderr
+rf_comparison_report=json.loads(rf_comparison_run.stdout)
+assert rf_comparison_report['status']=='PASS'
+rf_comparison_path=pathlib.Path(rf_comparison_report['origin'])
+rf_comparison_bytes=rf_comparison_path.read_bytes()
+rf_comparison_held=rf_comparison_path.with_suffix('.rf-comparison-held')
+assert not rf_comparison_held.exists()
+rf_comparison_path.rename(rf_comparison_held)
+try:
+    rf_comparison_absent=subprocess.run(rf_comparison_command,cwd=root,input=json.dumps(rf_comparison_request),
+        capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert rf_comparison_absent.returncode!=0 and 'particle_state_comparison' in rf_comparison_absent.stderr,rf_comparison_absent.stdout+rf_comparison_absent.stderr
+finally:
+    rf_comparison_held.rename(rf_comparison_path)
+assert rf_comparison_path.read_bytes()==rf_comparison_bytes
+print('INSTALLED_RF_PARTICLE_COMPARISON=PASS')
+# RF_PARTICLE_COMPARISON_INSTALLED_END
+
 # MR_INTERFACE_INSTALLED_BEGIN
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface as mr_interface_owner
 mr_owner_path = pathlib.Path(mr_interface_owner.__file__).resolve()

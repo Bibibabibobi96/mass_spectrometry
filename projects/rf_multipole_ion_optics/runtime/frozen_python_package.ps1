@@ -164,6 +164,7 @@ function Invoke-IsolatedFrozenPythonModule {
         [string[]]$DistributionNames = @(),
         [string[]]$RequiredModuleNames = @(),
         [string[]]$ForbiddenRoots = @(),
+        [string]$StdoutPath = '',
         [switch]$ProbeOnly
     )
     Assert-FrozenPythonPackage -Package $Package
@@ -329,12 +330,21 @@ finally:
                     raise RuntimeError(detail)
                 failure.add_note(detail)
 '@
-                $moduleOutput = (& $Python -I -B -c $execute @isolationArguments $Module @Arguments |
-                    Out-String).Trim()
-                if ($LASTEXITCODE -ne 0) {
+                if ($StdoutPath) {
+                    & $Python -I -B -c $execute @isolationArguments $Module @Arguments 1> $StdoutPath
+                    $moduleExitCode = $LASTEXITCODE
+                    if ($moduleExitCode -eq 0) {
+                        $moduleOutput = [IO.File]::ReadAllText($StdoutPath).Trim()
+                    }
+                } else {
+                    $moduleOutput = (& $Python -I -B -c $execute @isolationArguments $Module @Arguments |
+                        Out-String).Trim()
+                    $moduleExitCode = $LASTEXITCODE
+                }
+                if ($moduleExitCode -ne 0) {
                     $failure = [InvalidOperationException]::new(
-                        "Frozen Python module failed with exit code $LASTEXITCODE.")
-                    $failure.Data['exit_code'] = [int]$LASTEXITCODE
+                        "Frozen Python module failed with exit code $moduleExitCode.")
+                    $failure.Data['exit_code'] = [int]$moduleExitCode
                     throw $failure
                 }
             }

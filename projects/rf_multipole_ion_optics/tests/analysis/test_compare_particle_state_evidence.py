@@ -20,7 +20,7 @@ EVALUATOR = PROJECT_ROOT / "workflows" / "cross_solver" / "evaluate.py"
 INTERFACE = "transport_interface_readiness"
 NO_COLLISION = "transport_no_collision"
 ANALYZER_MODULE = "projects.rf_multipole_ion_optics.workflows.cross_solver.evaluate"
-CORE = ANALYSIS / "particle_state_comparison_core.py"
+CORE = REPO_ROOT / "src/msplatform/analysis/particle_state_comparison.py"
 STATE_FIELDS = [
     "particle_id",
     "event",
@@ -291,6 +291,108 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIsNone(report)
         self.assertIn("duplicate particle event", result.stderr)
+
+    def test_actual_cross_solver_frozen_path_requires_canonical_core(self) -> None:
+        self.run_analyzer(INTERFACE, 100, set(range(1, 81)), set(range(1, 81)))
+        case = self.root / "case_0"
+        arguments = ["--comsol", str(case / "comsol.csv"), "--simion", str(case / "simion.csv"),
+                     "--mode-contract", str(self.interface_mode), "--particles", str(case / "particles.dat"),
+                     "--particle-count", "100", "--output", str(case / "cold.json"),
+                     "--census-output", str(case / "cold.csv")]
+        args_path = self.root / "arguments.json"
+        args_path.write_text(json.dumps(arguments), encoding="utf-8")
+        literal = lambda value: "'" + str(value).replace("'", "''") + "'"
+        script = f"""
+$ErrorActionPreference='Stop'
+$repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
+$t=$null;$e=$null
+$entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/cross_solver/compare_cross_solver.ps1'
+$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e)
+if($e.Count){{throw 'Actual cross-solver entry did not parse'}}
+$frozen=New-CrossSolverFrozenPathSet -InputDir {literal(self.root / 'frozen-inputs')} `
+ -AnalyzerRelativePath 'projects/rf_multipole_ion_optics/workflows/cross_solver/evaluate.py' -ModeFilename 'mode.json'
+$selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'}},$true)
+Invoke-Expression $selection.Extent.Text
+$arguments=@(Get-Content -Raw -LiteralPath {literal(args_path)}|ConvertFrom-Json)
+$parameters=@{{Python=$python;AnalyzerModule='{ANALYZER_MODULE}';ModuleRoot=$frozen.module_root;
+ Package=$frozenPackage;ForbiddenRoots=@($repoRoot);Arguments=$arguments;
+ Stdout={literal(self.root / 'stdout.txt')};Stderr={literal(self.root / 'stderr.txt')};
+ RequiredOutputs=@({literal(case / 'cold.json')},{literal(case / 'cold.csv')})}}
+Invoke-CrossSolverAnalyzer @parameters
+Remove-Item -LiteralPath $frozen.core
+try{{Invoke-CrossSolverAnalyzer @parameters;throw 'Missing canonical core was accepted'}}
+catch{{if($_.Exception.Message-notlike'Frozen Python dependency is missing*'){{throw}}}}
+Write-Output 'CANONICAL_CORE_MISSING_REJECTED'
+exit 0
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                                cwd=self.root, timeout=120, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout + (self.root / "stderr.txt").read_text(encoding="utf-8"))
+        self.assertIn("CANONICAL_CORE_MISSING_REJECTED", result.stdout)
+        expected = json.loads((case / "result.json").read_text(encoding="utf-8"))
+        actual = json.loads((case / "cold.json").read_text(encoding="utf-8"))
+        self.assertEqual(actual, expected)
+        self.assertEqual((case / "cold.csv").read_bytes(), (case / "census.csv").read_bytes())
+
+    def test_cross_solver_failure_stdout_bytes_survive_isolated_exit(self) -> None:
+        source = self.root / "source"
+        for relative in ("src/msplatform/__init__.py", "src/msplatform/analysis/__init__.py",
+                         "src/msplatform/analysis/particle_state_comparison.py"):
+            target = source / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((REPO_ROOT / relative).read_bytes())
+        expected = "OWNED_STDOUT_MARKER\n\n\u4e2d\u6587 trailing  \n\n".encode("utf-8")
+        (source / "owned_analyzer.py").write_text(
+            "import pathlib, sys\n"
+            f"sys.stdout.buffer.write(bytes.fromhex('{expected.hex()}'))\n"
+            "sys.stdout.flush()\n"
+            "print('OWNED_STDERR_MARKER', file=sys.stderr, flush=True)\n"
+            "pathlib.Path(sys.argv[2]).write_text(str(pathlib.Path(__file__).resolve()), encoding='utf-8')\n"
+            "raise SystemExit(int(sys.argv[1]))\n", encoding="utf-8")
+        literal = lambda value: "'" + str(value).replace("'", "''") + "'"
+        report = self.root / "stdout-proof.json"
+        script = f"""
+$ErrorActionPreference='Stop'
+$repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)};$root={literal(self.root)}
+. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
+$package=New-FrozenPythonPackage -SourceRoot {literal(source)} -CodeRoot (Join-Path $root 'frozen') `
+ -RelativePaths @('owned_analyzer.py','src/msplatform/__init__.py','src/msplatform/analysis/__init__.py','src/msplatform/analysis/particle_state_comparison.py')
+$before=@($package.files|ForEach-Object{{Get-RunFileSha256 -Path $_.path}})
+$rows=@()
+foreach($code in @(0,7)){{
+ $stdout=Join-Path $root "$code.stdout";$stderr=Join-Path $root "$code.stderr";$origin=Join-Path $root "$code.origin"
+ $threw=$false;$errorCode=$null;$message=''
+ try{{Invoke-CrossSolverAnalyzer -Python $python -AnalyzerModule owned_analyzer -ModuleRoot $package.code_root `
+   -Package $package -ForbiddenRoots @($repoRoot,{literal(source)}) -Arguments @([string]$code,$origin) `
+   -Stdout $stdout -Stderr $stderr -RequiredOutputs @($origin)}}
+ catch{{$threw=$true;$errorCode=$_.Exception.Data['exit_code'];$message=$_.Exception.Message}}
+ Assert-FrozenPythonPackage -Package $package
+ $rows+=@{{code=$code;threw=$threw;exit_code=$errorCode;message=$message;origin=[IO.File]::ReadAllText($origin);
+ stdout_hex=[Convert]::ToHexString([IO.File]::ReadAllBytes($stdout));stderr=[IO.File]::ReadAllText($stderr)}}
+}}
+$after=@($package.files|ForEach-Object{{Get-RunFileSha256 -Path $_.path}})
+@{{before=$before;after=$after;rows=$rows;code_root=$package.code_root}}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath {literal(report)} -Encoding utf8NoBOM
+exit 0
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                                cwd=self.root, timeout=120, capture_output=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        proof = json.loads(report.read_text(encoding="utf-8-sig"))
+        self.assertEqual(proof["before"], proof["after"])
+        for row in proof["rows"]:
+            with self.subTest(exit_code=row["code"]):
+                self.assertEqual(bytes.fromhex(row["stdout_hex"]), expected)
+                self.assertIn("OWNED_STDERR_MARKER", row["stderr"])
+                self.assertEqual(Path(row["origin"]), Path(proof["code_root"]) / "owned_analyzer.py")
+                self.assertEqual(row["threw"], row["code"] != 0)
+                if row["code"]:
+                    self.assertEqual(row["exit_code"], 7)
+                    self.assertIn("exit code 7", row["message"])
 
     def test_shared_core_has_no_claim_vocabulary(self) -> None:
         source = CORE.read_text(encoding="utf-8").lower()

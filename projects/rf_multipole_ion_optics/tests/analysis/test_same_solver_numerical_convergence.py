@@ -830,7 +830,7 @@ $arguments=@(Get-Content -Raw -LiteralPath {literal(arguments_path)}|ConvertFrom
 $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
  -Module 'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate' `
  -Arguments $arguments -DistributionNames @('numpy') `
- -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.particle_state_comparison_core') `
+ -RequiredModuleNames @('msplatform.analysis.particle_state_comparison') `
  -ForbiddenRoots @($repoRoot)
 if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
 """
@@ -1447,7 +1447,7 @@ if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
         analyzer = (
             PROJECT_ROOT / "workflows" / "same_solver_convergence" / "evaluate.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("particle_state_comparison_core", analyzer)
+        self.assertIn("msplatform.analysis.particle_state_comparison", analyzer)
         self.assertNotIn("def load_event_table", analyzer)
         self.assertNotIn("def aggregate_handoff", analyzer)
         self.assertNotIn("math.hypot", analyzer)

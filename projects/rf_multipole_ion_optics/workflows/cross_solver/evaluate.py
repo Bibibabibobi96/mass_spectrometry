@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256 as _sha256
-from projects.rf_multipole_ion_optics.analysis.particle_state_comparison_core import (
+from msplatform.analysis.particle_state_comparison import (
     aggregate_comparison, aggregate_handoff, load_event_table, pair_event_census,
     source_id_evidence, write_census,
 )

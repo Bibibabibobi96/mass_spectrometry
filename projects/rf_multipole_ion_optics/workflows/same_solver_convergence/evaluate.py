@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256 as sha256
-from projects.rf_multipole_ion_optics.analysis.particle_state_comparison_core import (
+from msplatform.analysis.particle_state_comparison import (
     aggregate_handoff,
     event_ids,
     load_event_table,

@@ -1211,3 +1211,13 @@ Combined ordinary installation and native acceptance of the corrected version re
 The existing callback regression discovers standalone `lua`, then `lua5.1`, on PATH before its unchanged local SIMION Lua fallback. Its actual Program normalization, terminal/interpolation and repeated-run assertions are unchanged. This is an inert callback test; no PA, Refine or Fly is executed.
 
 The three affected RF/TOF modules passed in one private public-GATE invocation: 15 parent tests in 3.135 seconds, with one unchanged optional historical-snapshot skip. The typed-argv observer recorded 18 calls to the pinned standalone Lua executable and no commercial SIMION invocation. Original tests, numerical assertions and loaded production resources remain unchanged. This is not native or full-Repository acceptance.
+
+## Installed neutral particle-state comparison
+
+The same-solver and cross-solver analyzers share the sole installed
+`msplatform.analysis.particle_state_comparison` implementation. Event IDs, complete
+mother population, paired residuals and CSV fields retain their existing definitions;
+comparison thresholds and source-binding policy remain in the research workflows.
+Both frozen entrypoints select the canonical source package and use the existing
+isolated verifier; missing selected code fails without author-tree fallback.
+This ownership slice does not install the full finite-3D runner or grant native qualification.
