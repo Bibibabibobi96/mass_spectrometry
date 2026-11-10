@@ -7,10 +7,10 @@ import unittest
 import numpy as np
 from scipy.integrate import cumulative_trapezoid
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_density import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_density import (
     compute_population_density, compute_residual_time_derivative,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import DesignDomainError
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_design import DesignDomainError
 from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     IdealWorkingPoint, NumericalSourceSpec, build_numerical_source,
 )

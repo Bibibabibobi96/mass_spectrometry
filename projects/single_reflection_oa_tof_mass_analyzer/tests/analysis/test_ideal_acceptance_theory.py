@@ -6,8 +6,8 @@ import unittest
 import numpy as np
 from scipy.special import ndtri
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import prepare_source_quadrature
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_experiment import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_design import prepare_source_quadrature
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment import (
     accepted, exact_population_moments, midpoint_population,
 )
 from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import (

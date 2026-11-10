@@ -26,7 +26,8 @@ from msplatform.components.single_reflection_oa_tof.ideal_source_comparison impo
     NumericalSourceSpec, build_numerical_source,
     propagate_ideal_source,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design import (
+from msplatform.components.single_reflection_oa_tof import ideal_acceptance_linear_design as _linear_design
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_linear_design import (
     solve_linear_third_order_design,
 )
 from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
@@ -174,7 +175,8 @@ def execute_slope_scan(config_path: Path, *, seed: int, run_id: str, resume_from
     receipt = _receipt_path(config)
     run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id, resume_from=None,
         artifact_root=artifact_root, mode="ideal_source_slope_scan", extra_inputs={
-            "slope_scan_workflow": Path(__file__), "historical_slope_receipt": receipt})
+            "slope_scan_workflow": Path(__file__), "historical_slope_receipt": receipt,
+            "ideal_acceptance_linear_design": Path(_linear_design.__file__).resolve()})
     started, status, error, stage = time.perf_counter(), "success", None, "paired_ideal_propagation"
     records: list[dict[str, Any]] = []
     try:

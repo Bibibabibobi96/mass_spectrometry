@@ -115,9 +115,15 @@ writer-release requirements. This does not authorize rewriting a historical pare
 
 - `msplatform.components.single_reflection_oa_tof.ideal_source_comparison`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
 - `ideal_source_experiment.py`：版本化实验校验、残差优先的确定性case计划和自动科学结论；执行成功不等于假设成立。活动入口和自动续跑说明见下节。
-- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory`、研究入口`ideal_acceptance_linear_design.py`：从精确时间的空间Taylor系数诊断有限束宽误差，以三乘三线性聚焦方程反求后两段场强、长度和匹配反射器场；不以粒子峰宽调压。
-- `ideal_acceptance_design.py`、`ideal_acceptance_experiment.py`：规定源的加权求积、有限包络检查、总方差分解、等概率总体近似及独立粒子验收；区分方差目标与直接FWHM。
-- `ideal_acceptance_density.py`：从精确残差到时间映射求总体推前密度，不使用有限粒子KDE带宽；复用canonical半高交点并保留质量密度Jacobian、概率积分和单调性适用域。
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory` and `ideal_acceptance_linear_design`: exact time-series diagnostics and the caller-controlled third-order linear focus and fixed-length root equations. These retain every detected valid branch without particle-peak ranking or a continuous-domain completeness claim.
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_design`: finite uniform/Gaussian quadrature and exact finite-envelope event checks. `msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment` owns population decomposition, equal-probability source construction and explicit cohort/resolution acceptance; particle confirmation remains in the root workflow. Unequal quadrature weights do not define particle FWHM.
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_density`: deterministic population pushforward density, residual Jacobian, finite Gaussian-tail probability and certified monotonicity. It reuses the canonical half-height crossing implementation and is distinct from finite-particle KDE.
+
+The theory workflow records the actual selected canonical source for each migrated kernel,
+including the population experiment implementation; the slope workflow also records its
+selected linear-design implementation. These remain
+source-audited live workflows, not frozen-code execution. Existing run roles and historical
+input bytes are unchanged; root workflow/controller closure remains separate P4 work.
 - `peak_metrics.py`：KDE、直接FWHM和分辨率的唯一参考实现。
 - `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
 - `mass_spectrum.py`：五质量标定、峰形与探测落点比较。

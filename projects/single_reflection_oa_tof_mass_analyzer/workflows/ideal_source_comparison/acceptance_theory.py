@@ -19,15 +19,18 @@ import numpy as np
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import DesignDomainError, prepare_source_quadrature
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_experiment import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_design import DesignDomainError, prepare_source_quadrature
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment import (
     accepted, exact_population_moments, midpoint_population, source_at_point,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_linear_design import (
     solve_linear_third_order_design, find_fixed_length_designs,
 )
 from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import coefficient_report
 from msplatform.components.single_reflection_oa_tof import ideal_acceptance_theory as _acceptance_theory
+from msplatform.components.single_reflection_oa_tof import ideal_acceptance_design as _acceptance_design
+from msplatform.components.single_reflection_oa_tof import ideal_acceptance_linear_design as _acceptance_linear_design
+from msplatform.components.single_reflection_oa_tof import ideal_acceptance_experiment as _acceptance_experiment
 from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, propagate_ideal_source,
 )
@@ -240,7 +243,7 @@ def _confirm(config: dict[str, Any], spec: NumericalSourceSpec, point: Any, *, w
     population = []
     for nx, nv in num["population_orders"]:
         if "density" in num:
-            from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_density import compute_population_density
+            from msplatform.components.single_reflection_oa_tof.ideal_acceptance_density import compute_population_density
             try:
                 density_inputs = {key: value for key, value in num["density"].items()
                                   if key != "probability_integration_tolerance"}
@@ -404,13 +407,16 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
         raise ValueError("seed must be a nonnegative integer")
     baseline_path = PROJECT_ROOT / config["reference_config"]
     baseline = load_json(baseline_path)
-    names = ["ideal_acceptance_theory", "ideal_acceptance_design", "ideal_acceptance_linear_design", "ideal_acceptance_experiment"]
+    canonical_sources = {"ideal_acceptance_theory": _acceptance_theory,
+                         "ideal_acceptance_design": _acceptance_design,
+                         "ideal_acceptance_linear_design": _acceptance_linear_design,
+                         "ideal_acceptance_experiment": _acceptance_experiment}
     if "density" in config["numerics"]:
-        names.append("ideal_acceptance_density")
+        from msplatform.components.single_reflection_oa_tof import ideal_acceptance_density as _acceptance_density
+        canonical_sources["ideal_acceptance_density"] = _acceptance_density
     run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id, resume_from=None,
         artifact_root=artifact_root, mode="ideal_acceptance_theory", extra_inputs={"theory_workflow": Path(__file__),
-        "reference_config": baseline_path, **{name: (Path(_acceptance_theory.__file__).resolve() if name == "ideal_acceptance_theory"
-                                  else PROJECT_ROOT / "analysis" / (name+".py")) for name in names}})
+        "reference_config": baseline_path, **{name: Path(module.__file__).resolve() for name, module in canonical_sources.items()}})
     started, status, error = time.perf_counter(), "success", None
     reports = []
     stage = "baseline_theory_audit"

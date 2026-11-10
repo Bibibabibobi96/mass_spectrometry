@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import tempfile
@@ -12,6 +13,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.contracts.machine_contracts import load_json
+from msplatform.components.single_reflection_oa_tof import (
+    ideal_acceptance_design, ideal_acceptance_density, ideal_acceptance_linear_design,
+)
+from msplatform.components.single_reflection_oa_tof import ideal_acceptance_experiment
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import acceptance_theory as workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import run_comparison as runner
 
@@ -63,6 +68,21 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             self.assertEqual(receipt["requested_max_workers"], 2)
             self.assertFalse(receipt["scientific_inputs_changed"])
             publish.assert_called_once_with(result, "success")
+            selected_sources = {
+                "ideal_acceptance_design": ideal_acceptance_design,
+                "ideal_acceptance_linear_design": ideal_acceptance_linear_design,
+                "ideal_acceptance_experiment": ideal_acceptance_experiment,
+            }
+            frozen_config = load_json(result / "run_config.json")
+            for role, module in selected_sources.items():
+                with self.subTest(source_role=role):
+                    source = Path(module.__file__).resolve()
+                    frozen = Path(frozen_config["inputs"][role])
+                    source_bytes = source.read_bytes()
+                    self.assertEqual(frozen.parent, result / "inputs")
+                    self.assertEqual(frozen.read_bytes(), source_bytes)
+                    self.assertEqual(frozen_config["input_sha256"][role],
+                                     hashlib.sha256(source_bytes).hexdigest().upper())
 
     def test_fixed_length_and_direct_density_end_to_end(self):
         config = load_json(runner.PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")
@@ -92,6 +112,22 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             screened = selection["rejected_population_records"]
             self.assertTrue(screened)
             self.assertTrue(all("density_path" not in record["population"][-1] for record in screened))
+            selected_sources = {
+                "ideal_acceptance_design": ideal_acceptance_design,
+                "ideal_acceptance_linear_design": ideal_acceptance_linear_design,
+                "ideal_acceptance_density": ideal_acceptance_density,
+                "ideal_acceptance_experiment": ideal_acceptance_experiment,
+            }
+            frozen_config = load_json(result / "run_config.json")
+            for role, module in selected_sources.items():
+                with self.subTest(source_role=role):
+                    source = Path(module.__file__).resolve()
+                    frozen = Path(frozen_config["inputs"][role])
+                    source_bytes = source.read_bytes()
+                    self.assertEqual(frozen.parent, result / "inputs")
+                    self.assertEqual(frozen.read_bytes(), source_bytes)
+                    self.assertEqual(frozen_config["input_sha256"][role],
+                                     hashlib.sha256(source_bytes).hexdigest().upper())
 
     def test_screen_limit_applies_to_every_width(self):
         config = load_json(runner.PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")

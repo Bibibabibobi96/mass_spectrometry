@@ -100,6 +100,18 @@ arrivals, the finite-width remainder and one-dimensional scope retain their orig
 meanings. All four old root bodies are retired without aliases; historical scientific
 source hashes remain strict. This migration grants no new native or scientific qualification.
 
+The finite-source quadrature/envelope, deterministic population density, population
+moments and linear third-order/fixed-length design implementations now belong solely to
+`msplatform.components.single_reflection_oa_tof.ideal_acceptance_design`,
+`ideal_acceptance_density`, `ideal_acceptance_experiment` and
+`ideal_acceptance_linear_design`. Their public types,
+mathematics, explicit controls, exception reasons and original scope are retained;
+the four root bodies are retired without aliases. The actual acceptance and slope
+callers record the selected canonical kernel sources through their existing input
+snapshot mechanism. This is audited live execution, not a claim that copied source
+snapshots are executed. Root workflow/controller bodies remain separate P4 work;
+software, ordinary installation and native qualification require their own evidence.
+
 质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
 不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。
 Candidate与质量谱冻结声明直接绑定安装SIMION aperture实现；旧公共aperture桥已退出，不改变几何或资产字节。

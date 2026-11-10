@@ -3026,6 +3026,185 @@ assert pa_operating_resource.read_bytes()==pa_operating_resource_before
 print('INSTALLED_MR_OPERATING_PA=PASS')
 # MR_OPERATING_PA_INSTALLED_END
 
+# TOF_ACCEPTANCE_KERNELS_INSTALLED_BEGIN
+# Original portable math budgets, not universal full-vector/JSON bitwise goldens.
+tof_acceptance_script=root/('installed-tof-acceptance-'+sys.argv[2]+'.py')
+tof_acceptance_script.write_text(r"""import hashlib,importlib,importlib.abc,json,pathlib,sys,sysconfig,unittest
+from dataclasses import replace
+import numpy as np
+from scipy.special import ndtri
+
+def main():
+    authors=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+    def deny(event,args):
+        if event=='open' and args and isinstance(args[0],str):
+            path=pathlib.Path(args[0]).resolve()
+            if any(path.is_relative_to(value) for value in authors):
+                raise AssertionError('installed TOF acceptance read author source '+str(path))
+    sys.addaudithook(deny)
+    class PureOnly(importlib.abc.MetaPathFinder):
+        def find_spec(self,fullname,path=None,target=None):
+            if any(fullname==value or fullname.startswith(value+'.') for value in
+                   ('common','projects','integrations','tools','msplatform.backends','msplatform.execution')):
+                raise AssertionError('installed TOF acceptance imported forbidden owner '+fullname)
+    sys.meta_path.insert(0,PureOnly())
+    fixture=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))
+    names=('ideal_acceptance_design','ideal_acceptance_density','ideal_acceptance_linear_design','ideal_acceptance_experiment')
+    modules={name:importlib.import_module('msplatform.components.single_reflection_oa_tof.'+name) for name in names}
+    purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve();origins={}
+    for name,module in modules.items():
+        path=pathlib.Path(module.__file__).resolve()
+        assert path==purelib/'msplatform/components/single_reflection_oa_tof'/(name+'.py')
+        content=path.read_bytes()
+        assert len(content)==fixture['sources'][name]['bytes']
+        assert hashlib.sha256(content).hexdigest()==fixture['sources'][name]['sha256']
+        origins[name]=str(path)
+    design,density,linear,population=(modules[name] for name in names)
+    from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import NumericalSourceSpec,IdealWorkingPoint
+    from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import ReflectronGeometry,InnerSolution,exact_total_normalized_time_from_state
+    from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import coefficient_report
+    from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import OuterGeometry,derive_three_zone_state
+    check=unittest.TestCase()
+    spec=NumericalSourceSpec(**fixture['spec']);outer=OuterGeometry(**fixture['outer'])
+    mirror=ReflectronGeometry(**fixture['mirror']);inner=InnerSolution(**fixture['inner']);affine=spec.affine()
+    point=IdealWorkingPoint(affine,derive_three_zone_state(affine,outer,inner.eta),mirror,inner,fixture['focus_drift_mm'],None)
+    q=design.prepare_source_quadrature(spec,**fixture['quadrature'])
+    assert q.weights.size==96
+    check.assertAlmostEqual(float(q.weights.sum()),1.,places=14)
+    check.assertAlmostEqual(float(q.weights@q.position_offset_mm),0.,places=14)
+    check.assertAlmostEqual(float(q.weights@q.position_offset_mm**2),2.8**2/12,places=14)
+    check.assertAlmostEqual(float(q.weights@q.residual_m_per_s**2),100.,places=11)
+    envelope=design.finite_source_envelope(spec,point,2.8,60.)
+    y=np.linspace(-1.4,1.4,1001)[:,None];residual=np.linspace(-60.,60.,201)[None,:]
+    velocity=spec.center_velocity_m_per_s+spec.velocity_slope_m_per_s_per_mm*y+residual
+    chi=velocity*affine.time_scale_s_sqrt_v_per_mm*1e3
+    energy=point.state.repeller_v-point.state.field1_v_per_mm*(spec.center_x_mm+y)+chi**2
+    check.assertAlmostEqual(envelope['energy_min_v'],float(energy.min()),places=10)
+    check.assertAlmostEqual(envelope['energy_max_v'],float(energy.max()),places=10)
+    assert envelope['minimum_repeller_turn_mm']>0
+    with check.assertRaisesRegex(design.DesignDomainError,'first acceleration'):
+        design.finite_source_envelope(spec,point,3.,60.)
+    with check.assertRaisesRegex(design.DesignDomainError,'repeller'):
+        design.finite_source_envelope(spec,point,2.8,100000.)
+    with check.assertRaisesRegex(ValueError,'must match'):
+        design.finite_source_envelope(replace(spec,center_x_mm=1.6),point,2.8,60.)
+    offset=np.linspace(-1.4,1.4,17);residual=np.linspace(-50.,50.,17)
+    def times(x,r):
+        chi=(spec.center_velocity_m_per_s+spec.velocity_slope_m_per_s_per_mm*x+r)*affine.time_scale_s_sqrt_v_per_mm*1e3
+        return np.asarray(exact_total_normalized_time_from_state(point.state,mirror,inner,spec.center_x_mm+x,chi,point.focus_drift_mm))*affine.time_scale_s_sqrt_v_per_mm*1e6
+    derivative=density.compute_residual_time_derivative(spec,point,offset,residual)
+    np.testing.assert_allclose(derivative,(times(offset,residual+.02)-times(offset,residual-.02))/(2*.02),rtol=1e-6,atol=1e-11)
+    settings=fixture['density_settings'];result=density.compute_population_density(spec,point,**settings)
+    assert len(result.time_grid_us)==len(result.time_density_per_us)==len(result.mass_grid_da)==len(result.mass_density_per_da)==2001
+    check.assertLess(abs(result.summary['probability_integration_error']),1e-7)
+    check.assertAlmostEqual(float(np.trapezoid(result.mass_density_per_da,result.mass_grid_da)),result.summary['integrated_probability'],places=7)
+    assert result.summary['minimum_absolute_residual_derivative_bound_us_per_m_per_s']>0
+    assert result.summary['metric_kind']=='population_pushforward_density_not_finite_particle_kde'
+    refined=density.compute_population_density(spec,point,**(settings|dict(position_order=128,grid_points=4001)))
+    check.assertLess(abs(refined.summary['resolution_mass']/result.summary['resolution_mass']-1),1e-4)
+    assert 40190.<refined.summary['resolution_mass']<40200.
+    with check.assertRaises(ValueError):density.compute_population_density(spec,point,**(settings|dict(residual_sigma_m_per_s=0.)))
+    with check.assertRaisesRegex(ArithmeticError,'root_iterations'):
+        density.compute_population_density(spec,point,**(settings|dict(root_iterations=2)))
+    blocked=replace(point,inner=replace(inner,stage2_field_v_per_mm=.1))
+    with check.assertRaisesRegex(design.DesignDomainError,'backplate'):
+        density.compute_population_density(spec,blocked,**settings)
+    folded=replace(point,inner=replace(inner,stage2_field_v_per_mm=.01),reflectron=replace(mirror,stage2_length_mm=100000.))
+    with check.assertRaisesRegex(design.DesignDomainError,'monotonicity'):
+        density.compute_population_density(spec,folded,**settings)
+    controls=fixture['linear_controls'];solved=linear.solve_linear_third_order_design(spec,mirror,**controls)
+    np.testing.assert_allclose(solved.report['zone_lengths_mm'],[3.25,5.1,11.9],rtol=2e-8)
+    np.testing.assert_allclose(solved.report['fields_v_per_mm'],[250/3.25,48.15003152685739,136.1087818397458,9.880402594970798],rtol=2e-8)
+    assert solved.report['equation_closed'] and not solved.report['particle_peak_optimization_performed']
+    check.assertAlmostEqual(solved.report['fourth_order_coefficient_ns_per_mm4'],.261432,places=5)
+    with check.assertRaises(linear.LinearDesignError) as error:
+        linear.solve_linear_third_order_design(spec,mirror,**(controls|dict(condition_limit=1.)))
+    assert error.exception.reason=='SINGULAR_OR_ILL_CONDITIONED_EQUATION_MATRIX'
+    with check.assertRaises(linear.LinearDesignError) as error:
+        linear.solve_linear_third_order_design(spec,mirror,**(controls|dict(center_to_grid1_mm=10.,grid2_voltage_fraction=.5,reflectron_stage1_voltage_v=1200.)))
+    assert error.exception.reason=='NO_POSITIVE_FIELD_SOLUTION'
+    fixed={k:v for k,v in controls.items() if k!='reflectron_stage1_voltage_v'}
+    fixed.update(total_accel_length_mm=20.25,length_tolerance_mm=1e-7,root_xtol_v=1e-10)
+    roots=linear.find_fixed_length_designs(spec,mirror,**(fixed|dict(stage1_voltage_grid_v=list(np.arange(1690.,1711.,1.)))))
+    assert roots
+    closest=min(roots,key=lambda value:abs(value.point.inner.stage1_voltage_drop_v-controls['reflectron_stage1_voltage_v']))
+    check.assertAlmostEqual(closest.point.inner.stage1_voltage_drop_v,controls['reflectron_stage1_voltage_v'],places=6)
+    for root in roots:
+        assert abs(sum(root.report['zone_lengths_mm'])-20.25)<1e-7
+        assert not root.report['fixed_length_equation']['all_roots_in_continuous_domain_proved']
+    multiple=linear.find_fixed_length_designs(replace(spec,center_x_mm=4.5),mirror,**(fixed|dict(field1_v_per_mm=50.,center_to_grid1_mm=4.5,grid2_voltage_fraction=.99,stage1_voltage_grid_v=list(np.arange(1300.,1950.,15.)))))
+    assert len(multiple)==2
+    np.testing.assert_allclose([v.point.inner.stage1_voltage_drop_v for v in multiple],[1765.1587877126208,1791.7631558603202],atol=1e-6)
+    with check.assertRaises(ValueError):
+        linear.find_fixed_length_designs(spec,mirror,**(fixed|dict(stage1_voltage_grid_v=[1700.,1700.])))
+    # Same existing math composition used by acceptance workflow, without its owner/I/O shell.
+    placed=population.source_at_point(spec,solved.point)
+    assert placed.center_x_mm==solved.point.design_source.center_extraction_position_mm
+    chain_q=design.prepare_source_quadrature(placed,**fixture['moments_controls'])
+    chain=population.exact_population_moments(placed,solved.point,chain_q,envelope_sigma=6.)
+    assert chain['node_count']==288 and not chain['fwhm_claim']
+    # Original independent variance/decomposition budgets use the original fixture point.
+    original_q=design.prepare_source_quadrature(spec,**fixture['moments_controls'])
+    moments=population.exact_population_moments(spec,point,original_q,envelope_sigma=6.)
+    exact_velocity=spec.center_velocity_m_per_s+spec.velocity_slope_m_per_s_per_mm*original_q.position_offset_mm+original_q.residual_m_per_s
+    exact_chi=exact_velocity*affine.time_scale_s_sqrt_v_per_mm*1e3
+    exact=np.asarray(exact_total_normalized_time_from_state(point.state,mirror,inner,spec.center_x_mm+original_q.position_offset_mm,exact_chi,point.focus_drift_mm))*affine.time_scale_s_sqrt_v_per_mm*1e9
+    mean=float(original_q.weights@exact);variance=float(original_q.weights@(exact-mean)**2)
+    check.assertAlmostEqual(moments['variance_ns2'],variance,places=12)
+    check.assertAlmostEqual(moments['conditional_mean_variance_ns2']+moments['conditional_thickness_variance_ns2'],variance,places=10)
+    assert abs(moments['variance_decomposition_residual_ns2'])<1e-10
+    assert moments['conditional_mean_variance_ns2']>0 and moments['conditional_thickness_variance_ns2']>0 and not moments['fwhm_claim']
+    zero_q=design.prepare_source_quadrature(spec,**fixture['zero_controls'])
+    zero=population.exact_population_moments(spec,point,zero_q,envelope_sigma=6.)
+    assert zero['conditional_thickness_variance_ns2']<1e-20
+    with check.assertRaisesRegex(ValueError,'field regions'):
+        population.exact_population_moments(spec,replace(point,inner=replace(inner,stage1_voltage_drop_v=1999.)),zero_q,envelope_sigma=6.)
+    midpoint=population.midpoint_population(spec,**fixture['midpoint_controls'])
+    np.testing.assert_array_equal(midpoint.particle_id,np.arange(1,25))
+    expected_x=np.repeat(np.array([-.75,-.25,.25,.75]),6)
+    expected_r=np.tile(ndtri((np.arange(6)+.5)/6)*10.,4)
+    np.testing.assert_allclose(midpoint.source_x_mm-spec.center_x_mm,expected_x)
+    np.testing.assert_allclose(midpoint.residual_m_per_s,expected_r)
+    np.testing.assert_allclose(midpoint.velocity_z_m_per_s,spec.center_velocity_m_per_s+spec.velocity_slope_m_per_s_per_mm*expected_x+expected_r)
+    assert not hasattr(midpoint,'weights')
+    with check.assertRaises(ValueError):population.midpoint_population(spec,full_width_mm=1.,residual_sigma_m_per_s=10.,position_order=2.5,residual_order=4)
+    good=dict(full_cohort_reachable=True,peak_metrics=dict(mass_resolution=25000.))
+    assert population.accepted(good,25000.)
+    assert not population.accepted(good|dict(full_cohort_reachable=False),25000.)
+    for value in (None,float('nan'),float('inf'),24999.):assert not population.accepted(good|dict(peak_metrics=dict(mass_resolution=value)),25000.)
+    assert not population.accepted(dict(full_cohort_reachable=True),25000.)
+    coefficients=coefficient_report(solved.point,full_width_mm=2.8,residual_sigma_m_per_s=10.,order=6,position_order=12)
+    assert coefficients['coefficient_convention']=='Taylor coefficients = derivatives / factorial; a0 is center TOF'
+    json.dumps(dict(density=result.summary,linear=solved.report,moments=moments,coefficients=coefficients),allow_nan=False)
+    print(json.dumps(dict(status='PASS',origins=origins,source_nodes=96,density_points=2001,multiple_roots=len(multiple),midpoint_ids=midpoint.particle_id.tolist(),native_executions=0)))
+
+if __name__=='__main__':main()
+""",encoding='utf-8',newline='')
+tof_acceptance_fixture_path=root/('installed-tof-acceptance-fixture-'+sys.argv[2]+'.json')
+tof_acceptance_fixture_path.write_text(json.dumps(fixture['tof_acceptance_kernels']),encoding='utf-8')
+tof_acceptance_args=[sys.executable,'-I','-B',str(tof_acceptance_script),
+    json.dumps([str(value) for value in blocked_source_roots]),str(tof_acceptance_fixture_path)]
+tof_acceptance_child=subprocess.run(tof_acceptance_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=90,check=False)
+assert tof_acceptance_child.returncode==0,tof_acceptance_child.stdout+tof_acceptance_child.stderr
+tof_acceptance_report=json.loads(tof_acceptance_child.stdout)
+assert tof_acceptance_report['status']=='PASS' and tof_acceptance_report['native_executions']==0
+assert tof_acceptance_report['source_nodes']==96 and tof_acceptance_report['density_points']==2001 and tof_acceptance_report['multiple_roots']==2
+assert tof_acceptance_report['midpoint_ids']==list(range(1,25))
+for tof_acceptance_name in ('ideal_acceptance_design','ideal_acceptance_density','ideal_acceptance_linear_design','ideal_acceptance_experiment'):
+    tof_acceptance_selected=pathlib.Path(tof_acceptance_report['origins'][tof_acceptance_name])
+    tof_acceptance_original=tof_acceptance_selected.read_bytes()
+    tof_acceptance_held=tof_acceptance_selected.with_name(tof_acceptance_selected.name+'.missing-installed-test-held')
+    assert not tof_acceptance_held.exists()
+    tof_acceptance_selected.rename(tof_acceptance_held)
+    try:
+        tof_acceptance_missing=subprocess.run(tof_acceptance_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert tof_acceptance_missing.returncode!=0 and 'ModuleNotFoundError' in tof_acceptance_missing.stderr and ('msplatform.components.single_reflection_oa_tof.'+tof_acceptance_name) in tof_acceptance_missing.stderr,tof_acceptance_missing.stderr
+        missing_rejected.append('tof_acceptance_'+tof_acceptance_name)
+    finally:tof_acceptance_held.rename(tof_acceptance_selected)
+    assert tof_acceptance_selected.read_bytes()==tof_acceptance_original
+print('INSTALLED_TOF_ACCEPTANCE_KERNELS=PASS')
+# TOF_ACCEPTANCE_KERNELS_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -3049,6 +3228,18 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
 
 
 class InstalledScientificCoreTests(unittest.TestCase):
+    @staticmethod
+    def tof_acceptance_kernels_probe_fixture():
+        """Original explicit fixture inputs; portable assertions keep original budgets."""
+        tof_acceptance_input=json.loads('{"spec":{"mass_to_charge_th":100.0,"center_x_mm":1.498375640839315,"center_velocity_m_per_s":-2.9323518410018137,"velocity_slope_m_per_s_per_mm":228.80604377795845,"velocity_quadratic_m_per_s_per_mm2":0.0},"outer":{"zone1_length_mm":3.25,"downstream_length_mm":17.0,"split_fraction":0.3,"zone1_voltage_drop_v":250.0,"nominal_energy_per_charge_v":2000.0},"mirror":{"stage1_length_mm":120.0,"stage2_length_mm":96.1563,"upstream_drift_mm":600.0,"downstream_drift_mm":600.0},"inner":{"stage1_voltage_drop_v":1701.7426470174573,"stage2_field_v_per_mm":9.880402594970798,"eta":-1.0391326394747527},"focus_drift_mm":42.742615461548496,"quadrature":{"full_width_mm":2.8,"residual_sigma_m_per_s":10.0,"position_order":12,"residual_order":8},"density_settings":{"full_width_mm":2.8,"residual_sigma_m_per_s":10.0,"grid_points":2001,"position_order":64,"envelope_sigma":6.0,"root_iterations":48,"residual_tolerance_m_per_s":1e-07,"monotonicity_subdivisions":32},"linear_controls":{"field1_v_per_mm":76.92307692307692,"center_to_grid1_mm":1.751624359160685,"grid2_voltage_fraction":0.868348002459428,"reflectron_stage1_voltage_v":1701.7426470174573,"nominal_energy_per_charge_v":2000.0,"focus_drift_mm":42.742615461548496,"characteristic_half_width_mm":1.4,"condition_limit":1000000000000.0,"coefficient_tolerance_ns":1e-06},"moments_controls":{"full_width_mm":2.2,"residual_sigma_m_per_s":10.0,"position_order":24,"residual_order":12},"zero_controls":{"full_width_mm":1.0,"residual_sigma_m_per_s":0.0,"position_order":8,"residual_order":4},"midpoint_controls":{"full_width_mm":2.0,"residual_sigma_m_per_s":10.0,"position_order":4,"residual_order":6},"envelope_sigma":6.0,"acceptance_threshold":25000.0}')
+        tof_acceptance_input['sources']={}
+        for tof_acceptance_name in ('ideal_acceptance_design','ideal_acceptance_density',
+                                    'ideal_acceptance_linear_design','ideal_acceptance_experiment'):
+            tof_acceptance_source=REPO_ROOT/'src/msplatform/components/single_reflection_oa_tof'/(tof_acceptance_name+'.py')
+            tof_acceptance_body=tof_acceptance_source.read_bytes()
+            tof_acceptance_input['sources'][tof_acceptance_name]=dict(bytes=len(tof_acceptance_body),sha256=hashlib.sha256(tof_acceptance_body).hexdigest())
+        return tof_acceptance_input
+
     @staticmethod
     def operating_pa_probe_fixture():
         """Serialize the retained original path-free schema2 identity/key oracle."""
@@ -4407,6 +4598,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               mr_prism_phase=self.prism_phase_probe_fixture(),
                                               mr_stripe=self.stripe_probe_fixture(),
                                               mr_operating_pa=self.operating_pa_probe_fixture(),
+                                              tof_acceptance_kernels=self.tof_acceptance_kernels_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'

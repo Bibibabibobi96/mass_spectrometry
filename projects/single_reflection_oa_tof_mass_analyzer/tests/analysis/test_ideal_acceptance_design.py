@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_design import (
     DesignDomainError, finite_source_envelope, prepare_source_quadrature,
 )
 from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_linear_design import (
     LinearDesignError,
     find_fixed_length_designs,
     solve_linear_third_order_design,
@@ -120,7 +120,7 @@ class LinearDesignTests(unittest.TestCase):
 
     def test_fixed_length_rejects_a_pole_and_invalid_interior(self):
         reference = self.solve()
-        module = "projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design"
+        module = "msplatform.components.single_reflection_oa_tof.ideal_acceptance_linear_design"
         for invalid_midpoint in (False, True):
             def fabricated(*args, reflectron_stage1_voltage_v, **kwargs):
                 u = reflectron_stage1_voltage_v

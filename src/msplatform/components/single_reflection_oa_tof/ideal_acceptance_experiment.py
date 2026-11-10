@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from scipy.special import ndtri
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_design import (
+from msplatform.components.single_reflection_oa_tof.ideal_acceptance_design import (
     SourceQuadrature, finite_source_envelope,
 )
 from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (

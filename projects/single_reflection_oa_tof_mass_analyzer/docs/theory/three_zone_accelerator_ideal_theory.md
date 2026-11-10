@@ -284,7 +284,7 @@ $u_2,u_3,u_R$。正场解对应的长度随后由
 在前三阶线性解上对剩余的 $U_1$求此方程的根。必须排除矩阵极点、负场与不满足长度残差的伪根，
 保留全部检测到的正场根。固定旧总长只是公平对照，不是理论设计的普适尺寸限制；有限电压网格没有
 检测到根也不能证明连续域无根。实现见
-[`ideal_acceptance_linear_design.py`](../../analysis/ideal_acceptance_linear_design.py)。
+[`ideal_acceptance_linear_design.py`](../../../../src/msplatform/components/single_reflection_oa_tof/ideal_acceptance_linear_design.py)。
 
 ### 10.4 “最大接受尺度”的范围必须明示
 
@@ -310,7 +310,7 @@ f_T(t)=\frac{1}{W}\int_{-W/2}^{W/2}
 {|\partial t/\partial\epsilon|_{\epsilon_k}}\,dy.
 ```
 
-当前维护实现[`ideal_acceptance_density.py`](../../analysis/ideal_acceptance_density.py)在显式有限残差
+当前维护实现[`ideal_acceptance_density.py`](../../../../src/msplatform/components/single_reflection_oa_tof/ideal_acceptance_density.py)在显式有限残差
 包络内检查每个位置积分节点的残差到时间映射单调性，反演唯一根并积分，不使用KDE带宽。映射折叠时
 明确报告模型方法不支持，不删除该位置，也不冒充无粒子损失；位置求积、时间网格和概率积分须检查
 收敛。包络外Gaussian尾概率单独报告，不能称无限Gaussian严格全体可达。
