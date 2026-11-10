@@ -167,6 +167,48 @@ class GasFlowContractTests(unittest.TestCase):
         self.assertEqual(summary["row_count"], 100)
         self.assertTrue(summary["quantitative_continuum_claim_allowed"])
 
+    def test_masked_fields_require_nan_and_fluid_fields_require_finite_values(self) -> None:
+        validator = _load_validator()
+        _, numerics = _contracts()
+        required_fields = numerics["validation"]["required_fields"]
+        for fluid_mask in (0, 1):
+            for token in ("nan", "inf", "-inf", "finite"):
+                for field in required_fields:
+                    with self.subTest(fluid_mask=fluid_mask, token=token, field=field), tempfile.TemporaryDirectory() as directory:
+                        csv_path, metadata_path = _write_fixture(Path(directory))
+                        with csv_path.open(encoding="utf-8", newline="") as stream:
+                            reader = csv.DictReader(stream)
+                            columns = reader.fieldnames
+                            rows = list(reader)
+                        # Add a fluid plane so one masked row still preserves
+                        # the original minimum-fluid-row contract, unchanged.
+                        for original in rows[-10:]:
+                            rows.append(dict(original, z_index="10", z_mm="10"))
+                        original_value = rows[0][field]
+                        rows[0]["fluid_mask"] = str(fluid_mask)
+                        if fluid_mask == 0:
+                            rows[0].update({name: "nan" for name in required_fields})
+                        rows[0][field] = original_value if token == "finite" else token
+                        with csv_path.open("w", encoding="utf-8", newline="") as stream:
+                            writer = csv.DictWriter(stream, fieldnames=columns)
+                            writer.writeheader()
+                            writer.writerows(rows)
+                        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                        metadata["grid"]["z_values_mm"].append(10.0)
+                        metadata["row_count"] = len(rows)
+                        metadata["field_csv_sha256"] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+                        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+                        arguments = (csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+                        accepted = token == "nan" if fluid_mask == 0 else token == "finite"
+                        if accepted:
+                            summary = validator.validate_gas_field(*arguments)
+                            self.assertEqual(summary["status"], "PASS")
+                            self.assertEqual(summary["fluid_row_count"], 109 if fluid_mask == 0 else 110)
+                        else:
+                            message = "outside-domain gas fields must be NaN" if fluid_mask == 0 else "fluid row contains nonfinite"
+                            with self.assertRaisesRegex(ValueError, message):
+                                validator.validate_gas_field(*arguments)
+
     def test_nonfinite_axes_and_interpolation_tolerance_are_rejected(self) -> None:
         validator = _load_validator()
         for axis in ("r_values_mm", "z_values_mm"):

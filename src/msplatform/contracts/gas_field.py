@@ -132,7 +132,7 @@ def validate_gas_field(
             raise ValueError("gas-field r coordinate disagrees with metadata")
         values = {field: _finite_float(row, field, fluid_mask == 1) for field in required_fields}
         if fluid_mask == 0:
-            if any(math.isfinite(value) for value in values.values()):
+            if any(not math.isnan(value) for value in values.values()):
                 raise ValueError("outside-domain gas fields must be NaN")
             continue
         fluid_count += 1

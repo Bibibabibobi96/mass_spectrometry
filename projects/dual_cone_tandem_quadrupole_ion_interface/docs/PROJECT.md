@@ -2,6 +2,14 @@
 
 ## Installed SIMION input preparation
 
+Masked gas-field samples now require NaN in every declared gas field; positive
+and negative infinity are rejected rather than treated as unavailable data.
+The real CSV/metadata validator regression covers all seven required fields in
+masked and fluid rows, retaining the original source hashes, grid and minimum
+fluid-count checks. The eight gas-flow contract tests passed; this correction
+does not imply that historical exports contained infinity or grant native
+collision or CFD qualification.
+
 The pure preparation implementation is `msplatform.backends.simion.dual_cone_transport.prepare_transport`;
 its Program is an installed SIMION resource. Explicit transport/release/interface contracts remain research
 inputs. The public operation can consume a published gas-field reference using its original frozen data and
