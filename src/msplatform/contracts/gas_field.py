@@ -1,30 +1,61 @@
-"""Validate a COMSOL axisymmetric gas-field export before SIMION consumption."""
+"""Read the recorded rectilinear gas export without project acceptance policy."""
 
 from __future__ import annotations
 
-import argparse
+from array import array
+from collections.abc import Mapping, Sequence
+import copy
 import csv
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 
 
-PROJECT_ID = "dual_cone_tandem_quadrupole_ion_interface"
-SCIENCE_ROLE = "dual_cone_axisymmetric_gas_flow_science_contract"
-NUMERICS_ROLE = "dual_cone_axisymmetric_gas_flow_comsol_numerics"
-METADATA_ROLE = "dual_cone_axisymmetric_gas_field_metadata"
+@dataclass(frozen=True, init=False)
+class GasFieldData:
+    """Actual source documents and compact immutable columns read in one scan.
 
+    This is a data snapshot, not permission to consume later modified files.
+    Artifact records and native input guards retain their existing authority.
+    Axes are the recorded local r/z coordinates in mm; column names retain the
+    source export's Pa, K, m/s, kg/m3 and dimensionless Mach/Kn units. No world
+    pose, gas-axis regularization, new EOS or scientific qualification is applied.
+    """
 
-def _load_json(path: Path, role: str) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if value.get("schema_version") != 1 or value.get("role") != role:
-        raise ValueError(f"{path} is not a supported {role} contract")
-    if value.get("project_id") != PROJECT_ID:
-        raise ValueError(f"{path} has the wrong project identity")
-    return value
+    _documents: dict[str, Any]
+    columns: Mapping[str, memoryview]
+    fluid_mask: bytes
+    r_values_mm: tuple[float, ...]
+    z_values_mm: tuple[float, ...]
+
+    def __init__(
+        self,
+        documents: Mapping[str, Any],
+        columns: Mapping[str, array],
+        fluid_mask: bytes | bytearray,
+        r_values: Sequence[float],
+        z_values: Sequence[float],
+    ) -> None:
+        object.__setattr__(self, "_documents", copy.deepcopy(documents))
+        object.__setattr__(self, "columns", MappingProxyType({
+            field: memoryview(values.tobytes()).cast("d") for field, values in columns.items()
+        }))
+        object.__setattr__(self, "fluid_mask", bytes(fluid_mask))
+        object.__setattr__(self, "r_values_mm", tuple(r_values))
+        object.__setattr__(self, "z_values_mm", tuple(z_values))
+
+    @property
+    def row_count(self) -> int:
+        return len(self.fluid_mask)
+
+    @property
+    def documents(self) -> dict[str, Any]:
+        return copy.deepcopy(self._documents)
 
 
 def _finite_float(row: dict[str, str], field: str, fluid: bool) -> float:
@@ -37,25 +68,22 @@ def _finite_float(row: dict[str, str], field: str, fluid: bool) -> float:
     return value
 
 
-def validate_gas_field(
+def read_gas_field_data(
     csv_path: Path,
     metadata_path: Path,
     science_path: Path,
     numerics_path: Path,
     geometry_path: Path,
-) -> dict[str, Any]:
-    """Return a fail-closed validation summary for one rectilinear r-z field."""
-    science = _load_json(science_path, SCIENCE_ROLE)
-    numerics = _load_json(numerics_path, NUMERICS_ROLE)
-    _load_json(
-        geometry_path, "dual_cone_tandem_quadrupole_resolved_geometry"
-    )
-    metadata = _load_json(metadata_path, METADATA_ROLE)
-    model_id = science["model_id"]
-    if numerics.get("model_id") != model_id or metadata.get("model_id") != model_id:
-        raise ValueError("gas-flow model identities disagree")
-    if metadata.get("claim_scope") != science["claim_scope"]:
-        raise ValueError("gas-field claim scope disagrees with science contract")
+) -> GasFieldData:
+    """Read original format, provenance, finite values and mask/order semantics."""
+    documents = {
+        name: json.loads(path.read_text(encoding="utf-8"))
+        for name, path in (
+            ("science", science_path), ("numerics", numerics_path),
+            ("geometry", geometry_path), ("metadata", metadata_path),
+        )
+    }
+    science, numerics, metadata = (documents[name] for name in ("science", "numerics", "metadata"))
     if metadata.get("field_csv_sha256") != file_sha256(csv_path).lower():
         raise ValueError("gas-field CSV SHA-256 does not match metadata")
     source_hashes = metadata.get("source_contract_sha256", {})
@@ -91,18 +119,7 @@ def validate_gas_field(
     ])
     if not math.isfinite(coordinate_tolerance) or coordinate_tolerance < 0.0:
         raise ValueError("gas-field coordinate tolerance must be finite and nonnegative")
-    gas = science["physics"]["gas_species"]
-    density_factor = gas["molar_mass_kg_per_mol"] / gas[
-        "universal_gas_constant_j_per_mol_k"
-    ]
-    density_tolerance = float(numerics["validation"]["ideal_gas_relative_tolerance"])
-    if (not math.isfinite(density_factor) or density_factor <= 0.0
-            or not math.isfinite(density_tolerance) or density_tolerance < 0.0):
-        raise ValueError("gas-field density validation inputs must be finite and physical")
     required_fields = numerics["validation"]["required_fields"]
-    fluid_count = 0
-    max_knudsen = 0.0
-    max_mach = 0.0
     with csv_path.open("r", encoding="utf-8", newline="") as stream:
         reader = csv.DictReader(stream)
         if reader.fieldnames != expected_columns:
@@ -112,6 +129,8 @@ def validate_gas_field(
     if len(rows) != expected_count or metadata.get("row_count") != expected_count:
         raise ValueError("gas-field row count does not match its rectilinear grid")
 
+    columns = {field: array("d") for field in required_fields}
+    masks = bytearray()
     for linear_index, row in enumerate(rows):
         expected_z_index, expected_r_index = divmod(linear_index, len(r_values))
         try:
@@ -131,78 +150,11 @@ def validate_gas_field(
         if abs(r_mm - r_values[r_index]) > coordinate_tolerance:
             raise ValueError("gas-field r coordinate disagrees with metadata")
         values = {field: _finite_float(row, field, fluid_mask == 1) for field in required_fields}
+        masks.append(fluid_mask)
+        for field, value in values.items():
+            columns[field].append(value)
         if fluid_mask == 0:
             if any(not math.isnan(value) for value in values.values()):
                 raise ValueError("outside-domain gas fields must be NaN")
             continue
-        fluid_count += 1
-        if values["p_pa"] <= 0.0 or values["temperature_k"] <= 0.0:
-            raise ValueError("fluid pressure and temperature must be positive")
-        if values["rho_kg_per_m3"] <= 0.0 or values["mach"] < 0.0:
-            raise ValueError("fluid density and Mach number are outside their domains")
-        if values["knudsen_aperture"] < 0.0:
-            raise ValueError("Knudsen number cannot be negative")
-        expected_density = density_factor * values["p_pa"] / values["temperature_k"]
-        relative_error = abs(values["rho_kg_per_m3"] - expected_density) / expected_density
-        if relative_error > density_tolerance:
-            raise ValueError("gas density violates the declared ideal-gas equation")
-        max_knudsen = max(max_knudsen, values["knudsen_aperture"])
-        max_mach = max(max_mach, values["mach"])
-
-    if fluid_count < numerics["validation"]["minimum_fluid_row_count"]:
-        raise ValueError("gas-field export contains too few fluid samples")
-    solution = metadata["solution_summary"]
-    mass_error = float(solution["mass_balance_relative_error"])
-    if not math.isfinite(mass_error) or mass_error < 0.0:
-        raise ValueError("invalid mass-balance error")
-    if mass_error > numerics["validation"]["maximum_mass_balance_relative_error"]:
-        raise ValueError("COMSOL gas-flow solution fails the mass-balance contract")
-    target_outlet = science["boundary_conditions"]["outlet"]["static_pressure_pa"]
-    if float(solution["requested_outlet_static_pressure_pa"]) != target_outlet:
-        raise ValueError("COMSOL export did not consume the requested outlet pressure")
-    terminal_diffusion = float(
-        numerics["study"]["accepted_terminal_isotropic_diffusion"]
-    )
-    if float(solution["accepted_isotropic_diffusion"]) != terminal_diffusion:
-        raise ValueError("COMSOL export did not record the governed terminal stabilization")
-    reject_knudsen = science["continuum_scope"][
-        "reject_quantitative_use_knudsen_number"
-    ]
-    return {
-        "schema_version": 1,
-        "role": "dual_cone_axisymmetric_gas_field_validation",
-        "project_id": PROJECT_ID,
-        "model_id": model_id,
-        "status": "PASS",
-        "row_count": len(rows),
-        "fluid_row_count": fluid_count,
-        "maximum_mach": max_mach,
-        "maximum_knudsen_aperture": max_knudsen,
-        "mass_balance_relative_error": mass_error,
-        "accepted_isotropic_diffusion": terminal_diffusion,
-        "quantitative_continuum_claim_allowed": max_knudsen <= reject_knudsen,
-        "claim_scope": science["claim_scope"],
-    }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", type=Path, required=True)
-    parser.add_argument("--metadata", type=Path, required=True)
-    parser.add_argument("--science", type=Path, required=True)
-    parser.add_argument("--numerics", type=Path, required=True)
-    parser.add_argument("--geometry", type=Path, required=True)
-    parser.add_argument("--output", type=Path)
-    args = parser.parse_args()
-    summary = validate_gas_field(
-        args.csv, args.metadata, args.science, args.numerics, args.geometry
-    )
-    text = json.dumps(summary, ensure_ascii=False, indent=2) + "\n"
-    if args.output:
-        args.output.write_text(text, encoding="utf-8", newline="\n")
-    print(text, end="")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return GasFieldData(documents, columns, masks, r_values, z_values)

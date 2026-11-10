@@ -185,6 +185,40 @@ class GasModelResumeTests(unittest.TestCase):
 
 
 class GasFieldReaderTests(unittest.TestCase):
+    def test_readable_published_data_does_not_grant_project_quality(self):
+        from msplatform.results.gas_field import read_gas_field
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import (
+            validate_gas_field_data,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            csv_path, metadata_path = _write_fixture(root)
+            metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+            metadata['solution_summary']['mass_balance_relative_error'] = 1.0
+            metadata_path.write_text(json.dumps(metadata), encoding='utf-8')
+            inputs = {}
+            for key, name in (
+                ('gas_flow_science', 'gas_flow_science.json'),
+                ('comsol_solver_numerics', 'comsol_solver_numerics.json'),
+                ('resolved_geometry', 'resolved_geometry.json'),
+            ):
+                target = root / name
+                target.write_bytes((PROJECT_ROOT / 'config' / name).read_bytes())
+                inputs[key] = file_record(target, 'required_evidence')
+            location = root / 'run_manifest.json'
+            location.write_text(json.dumps(dict(
+                schema_version=2, role='simulation_run_manifest', project=gas_flow.PROJECT,
+                run_id='historical-quality-limited', mode='axisymmetric_gas_flow_screening',
+                status='success', inputs=inputs,
+                outputs=[file_record(csv_path, 'required_evidence'), file_record(metadata_path, 'required_evidence')],
+            )), encoding='utf-8')
+            opened = read_gas_field(dict(manifest=file_record(location, 'required_evidence'), product_id='gas_field'))
+            self.assertEqual(opened.data.row_count, 100)
+            self.assertEqual(opened.artifact.data_path('field_csv'), csv_path)
+            with self.assertRaisesRegex(ValueError, 'mass-balance contract'):
+                validate_gas_field_data(opened.data)
+
     def test_historical_data_requires_its_original_contracts_without_reading_model(self):
         from msplatform.results.gas_field import read_gas_field
         from unittest.mock import patch
@@ -240,7 +274,7 @@ class GasFieldReaderTests(unittest.TestCase):
                         return original(path, *args, **kwargs)
 
                     with patch.object(Path, "open", tracked):
-                        field = read_gas_field(reference)
+                        field = read_gas_field(reference).artifact
                     self.assertNotIn(absent, opened)
                     self.assertNotIn("model", field.data_locations)
                     self.assertEqual(field.data_locations["science"], root / "gas_flow_science.json")
@@ -262,7 +296,7 @@ class NoExecution:
    raise AssertionError('READ_ONLY_IMPORTED_EXECUTION:'+name)
 sys.meta_path.insert(0,NoExecution())
 from msplatform.results.gas_field import read_gas_field
-result=read_gas_field(json.loads(sys.argv[3]))
+result=read_gas_field(json.loads(sys.argv[3])).artifact
 assert 'model' not in result.data_locations
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
            for name,module in sys.modules.items() if name=='msplatform' or name.startswith('msplatform.'))

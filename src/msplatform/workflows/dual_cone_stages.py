@@ -178,7 +178,10 @@ def track_fields(
         collision_sds_records=sds,
         placement=placement, source_to_device=source_to_device,
     )
-    gas = read_gas_field(gas_field_reference)
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    opened_gas = read_gas_field(gas_field_reference)
+    validate_gas_field_data(opened_gas.data)
+    gas = opened_gas.artifact
     request = dict(
         gas_field_reference=gas.reference,
         source_spec_path=Path(source_spec_path),

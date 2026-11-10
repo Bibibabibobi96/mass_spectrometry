@@ -91,7 +91,7 @@ print('GEOMETRY_INPUT_ADMISSION=PASS NUMPY='+numpy.__version__)
                 target.write_bytes((PROJECT / "config" / name).read_bytes())
                 paths.append(target)
             code = """
-from msplatform.contracts import gas_field
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field_validation as gas_field
 assert pathlib.Path(gas_field.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 gas_field.validate_gas_field(*map(pathlib.Path,sys.argv[3:8]))
 print('FROSNAPSHOT')
@@ -100,7 +100,7 @@ print('FROSNAPSHOT')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("FROSNAPSHOT", result.stdout)
             self.assertNotIn("ACTIVE_FALLBACK", result.stdout + result.stderr)
-            (root / "src/msplatform/contracts/gas_field.py").unlink()
+            (root / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py").unlink()
             missing = cold(root, code, paths)
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn("gas_field", missing.stderr)

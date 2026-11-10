@@ -12,7 +12,7 @@ from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry im
     resolve_geometry,
     serialized,
 )
-from msplatform.contracts.gas_field import (
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import (
     _load_json,
     SCIENCE_ROLE,
     NUMERICS_ROLE,
@@ -119,7 +119,7 @@ def solve_axisymmetric_gas_flow(
         use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api,
     )
-    return read_gas_field({"manifest": result["manifest"], "product_id": "gas_field"})
+    return read_gas_field({"manifest": result["manifest"], "product_id": "gas_field"}).artifact
 
 
 def _execute(session, *, request, limits, parent):

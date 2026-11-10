@@ -818,6 +818,21 @@
           },
           {
             "matches": [
+              {"exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py", "reason": "dual_cone_gas_source_quality_changed"},
+              {"exact": "src/msplatform/contracts/gas_field.py", "reason": "recorded_gas_structure_changed"},
+              {"exact": "src/msplatform/results/gas_field.py", "reason": "published_gas_reader_changed"}
+            ],
+            "modules": [
+              "common/contracts/test_comsol_gas_flow.py",
+              "common/contracts/test_dual_cone_stages.py",
+              "common/contracts/test_dual_cone_managed_stages.py",
+              "common/contracts/test_dual_cone_transport_execution.py",
+              "common/contracts/test_dual_cone_transport.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {
                 "exact": "src/msplatform/contracts/gas.py",
                 "reason": "pure_gas_dependency_changed"
@@ -3363,6 +3378,14 @@
       "repository_integration_group": "regression",
       "project_id": "dual_cone_tandem_quadrupole_ion_interface",
       "matches": [
+        {
+          "exact": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py",
+          "reason": "dual_cone_gas_source_quality_changed"
+        },
+        {
+          "exact": "src/msplatform/results/gas_field.py",
+          "reason": "published_gas_reader_changed"
+        },
         {
           "prefix": "projects/dual_cone_tandem_quadrupole_ion_interface/",
           "reason": "dual_cone_tandem_quadrupole_ion_interface_changed"

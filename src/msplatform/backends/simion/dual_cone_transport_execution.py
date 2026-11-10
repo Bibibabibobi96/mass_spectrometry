@@ -299,7 +299,10 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         "operation_dependencies"
     ] != dict(session.operation_dependencies):
         raise ValueError("transport graph differs from its admitted owner operations")
-    gas = read_gas_field(request["gas_field_reference"])
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    opened_gas = read_gas_field(request["gas_field_reference"])
+    validate_gas_field_data(opened_gas.data)
+    gas = opened_gas.artifact
     _protected_source(
         session, gas.reference["manifest"], required_paths=[str(path) for path in gas.data_locations.values()]
     )

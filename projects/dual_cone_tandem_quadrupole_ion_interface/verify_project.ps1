@@ -60,6 +60,7 @@ try {
       'src/msplatform/results/gas_field.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\geometry.py',
       'src\msplatform\contracts\gas_field.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field_validation.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_runtime.py',
       'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\uniform_gas_runtime.py',
       'src\msplatform\backends\simion\dual_cone_geometry.py'

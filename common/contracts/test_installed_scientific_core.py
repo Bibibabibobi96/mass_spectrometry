@@ -1107,7 +1107,8 @@ sys.meta_path.insert(0,OfflineReader())
 from msplatform.results.gas_field import read_gas_field
 import msplatform.contracts.gas_field as contract
 assert pathlib.Path(contract.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
-field=read_gas_field(json.loads(sys.argv[1]))
+opened_field=read_gas_field(json.loads(sys.argv[1]))
+field=opened_field.artifact
 assert field.kind=='gas_field' and 'model' not in field.data_locations
 print('INSTALLED_OFFLINE_GAS_READER=PASS')
 """
@@ -1125,6 +1126,38 @@ try:
     assert missing_gas.returncode != 0 and b'gas_field' in missing_gas.stderr, missing_gas.stderr
 finally:
     gas_contract_backup.rename(gas_contract_path)
+
+gas_policy_code = """
+import sys,json,pathlib,sysconfig,os
+blocked = [pathlib.Path(value).resolve() for value in json.loads(sys.argv[2])]
+def deny_source(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):
+   raise AssertionError('GAS_POLICY_AUTHOR_READ:'+str(path))
+sys.addaudithook(deny_source)
+from msplatform.results.gas_field import read_gas_field
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field_validation
+opened=read_gas_field(json.loads(sys.argv[1]))
+summary=gas_field_validation.validate_gas_field_data(opened.data)
+assert summary['status']=='PASS'
+assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+           for name,module in sys.modules.items() if (name=='msplatform' or name.startswith('msplatform.')) and getattr(module,'__file__',None))
+print('INSTALLED_PROJECT_GAS_POLICY=PASS')
+"""
+gas_blocked_roots = json.dumps([str(path) for path in blocked_source_roots])
+gas_policy = subprocess.run([sys.executable, '-I', '-c', gas_policy_code, gas_reference, gas_blocked_roots],
+                            cwd=root, capture_output=True, timeout=30)
+assert gas_policy.returncode == 0 and b'INSTALLED_PROJECT_GAS_POLICY=PASS' in gas_policy.stdout, gas_policy.stderr
+gas_policy_path = pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py'
+gas_policy_backup = gas_policy_path.with_suffix('.absent')
+gas_policy_path.rename(gas_policy_backup)
+try:
+    missing_policy = subprocess.run([sys.executable, '-I', '-c', gas_policy_code, gas_reference, gas_blocked_roots],
+                                    cwd=root, capture_output=True, timeout=30)
+    assert missing_policy.returncode != 0 and b'gas_field_validation' in missing_policy.stderr, missing_policy.stderr
+finally:
+    gas_policy_backup.rename(gas_policy_path)
 
 from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
 import msplatform.workflows.prepared_joint.analysis_inputs as admission_module

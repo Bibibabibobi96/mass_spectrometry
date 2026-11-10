@@ -510,7 +510,10 @@ def plan_saved_fly_inputs(
     from .dual_cone_transport import SDS_FILES
 
     model = require_model_projection(model)
-    gas = read_gas_field(gas_field_reference)
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    opened_gas = read_gas_field(gas_field_reference)
+    validate_gas_field_data(opened_gas.data)
+    gas = opened_gas.artifact
     gas_geometry = json.loads(gas.data_path("geometry").read_text(encoding="utf-8-sig"))
     if gas_geometry != model["geometry"]["resolved"]:
         raise ValueError("gas producer geometry differs from selected saved fields")

@@ -2,11 +2,20 @@
 
 from collections.abc import Mapping
 from typing import Any
-from msplatform.contracts.gas_field import validate_gas_field
+from dataclasses import dataclass
+from msplatform.contracts.gas_field import GasFieldData, read_gas_field_data
 from .artifacts import ArtifactResolver, OpenedArtifact, open_artifact
 
 
-def read_gas_field(reference: Mapping[str, Any], *, resolver: ArtifactResolver | None = None) -> OpenedArtifact:
+@dataclass(frozen=True)
+class OpenedGasField:
+    """Original product identity together with its actual neutral data scan."""
+
+    artifact: OpenedArtifact
+    data: GasFieldData
+
+
+def read_gas_field(reference: Mapping[str, Any], *, resolver: ArtifactResolver | None = None) -> OpenedGasField:
     """Verify selected gas data, including the explicit historical manifest format."""
     import json
     from pathlib import Path
@@ -70,10 +79,10 @@ def read_gas_field(reference: Mapping[str, Any], *, resolver: ArtifactResolver |
             manifest_location=location,
         )
     paths = artifact.data_locations
-    validate_gas_field(
+    data = read_gas_field_data(
         paths["field_csv"], paths["field_metadata"], paths["science"], paths["numerics"], paths["geometry"]
     )
-    return artifact
+    return OpenedGasField(artifact=artifact, data=data)
 
 
 def read_gas_model(reference: Mapping[str, Any], expected_contracts: Mapping[str, Mapping[str, Any]]) -> dict:

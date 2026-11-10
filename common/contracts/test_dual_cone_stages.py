@@ -328,6 +328,18 @@ class IndependentStageTests(unittest.TestCase):
                 stages.plan_saved_field_fly(
                     **dict(kwargs, collision_science=dict(values["science"]["gas"], collision_gas_mass_amu=0))
                 )
+            recorded = json.loads(metadata.read_text())
+            recorded["solution_summary"]["mass_balance_relative_error"] = 1.0
+            metadata.write_text(json.dumps(recorded))
+            producer = json.loads(manifest.read_text())
+            producer["outputs"][1] = file_record(metadata, "required_evidence")
+            manifest.write_text(json.dumps(producer))
+            limited_reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+            from msplatform.results.gas_field import read_gas_field
+
+            self.assertEqual(read_gas_field(limited_reference).data.row_count, 100)
+            with self.assertRaisesRegex(ValueError, "mass-balance contract"):
+                stages.plan_saved_field_fly(**dict(kwargs, gas_field_reference=limited_reference))
 
 
 class StageOwnerGraphTests(unittest.TestCase):

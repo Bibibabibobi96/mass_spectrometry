@@ -335,6 +335,7 @@ class ManagedTransportTests(unittest.TestCase):
             "invalid_bool",
             "invalid_key",
             "insufficient_gas_coverage",
+            "bad_gas_quality",
         ):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 if scenario.startswith("native_") and not LUA.is_file():
@@ -387,6 +388,8 @@ class ManagedTransportTests(unittest.TestCase):
                 meta = json.loads(metadata.read_text())
                 meta["grid"] = {"r_values_mm": radii, "z_values_mm": axial}
                 meta["field_csv_sha256"] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+                if scenario == "bad_gas_quality":
+                    meta["solution_summary"]["mass_balance_relative_error"] = 1.0
                 metadata.write_text(json.dumps(meta))
                 identity = dict(
                     project="dual_cone_tandem_quadrupole_ion_interface",
@@ -657,6 +660,26 @@ class ManagedTransportTests(unittest.TestCase):
                         self.assertEqual(load_capacity_protection_leases(artifact_root)["audit"], [])
                         continue
 
+                    if scenario == "bad_gas_quality":
+                        from msplatform.results.gas_field import read_gas_field
+
+                        self.assertEqual(read_gas_field(reference).data.row_count, 100)
+                        with self.assertRaisesRegex(ValueError, "mass-balance contract"):
+                            run_gas_assisted_transport(
+                                resolved_path=CONFIG / "resolved_geometry.json",
+                                numerics_path=CONFIG / "simion_solver_numerics.json",
+                                science_path=CONFIG / "ion_transport_science.json",
+                                interface_path=CONFIG / "gas_field_interface.json",
+                                gas_science_path=CONFIG / "gas_flow_science.json",
+                                source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                                gas_field_reference=reference,
+                                collision_sds_dir=sds,
+                                context=context,
+                            )
+                        self.assertEqual(calls, [])
+                        self.assertEqual(list(context.workspace.glob("artifacts/projects/*/runs/20*")), [])
+                        self.assertEqual(load_capacity_protection_leases(artifact_root)["audit"], [])
+                        continue
                     if scenario in {"invalid_bool", "invalid_key"}:
                         with self.assertRaisesRegex(ValueError, "runtime only accepts explicit boolean"):
                             run_gas_assisted_transport(

@@ -376,7 +376,10 @@ def prepare_transport(
             raise ValueError("Select one explicit gas field product or runtime manifest")
         from msplatform.results.gas_field import read_gas_field
 
-        producer = read_gas_field(gas_field_reference)
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+        opened_gas = read_gas_field(gas_field_reference)
+        validate_gas_field_data(opened_gas.data)
+        producer = opened_gas.artifact
         selected = {"geometry": resolved_path, "science": gas_science_path}
         for name, path in selected.items():
             if file_sha256(path).upper() != producer.data_records[name]["sha256"].upper():

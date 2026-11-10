@@ -534,7 +534,10 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
         _protected_source(session, selected.reference["manifest"], required_paths=[row["path"] for row in guards])
     from msplatform.results.gas_field import read_gas_field
 
-    gas = read_gas_field(request["gas_field_reference"])
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    opened_gas = read_gas_field(request["gas_field_reference"])
+    validate_gas_field_data(opened_gas.data)
+    gas = opened_gas.artifact
     request = dict(request)
     for key in ("placement", "source_to_device"):
         if key in plan:

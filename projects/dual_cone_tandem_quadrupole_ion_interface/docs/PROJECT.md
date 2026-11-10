@@ -260,7 +260,7 @@ The source migration and the separately frozen installed native acceptance below
 [碰撞模型](../../rf_multipole_ion_optics/docs/theory/collisions.md)。
 
 Dual-cone geometry and the gas runtime compiler are installed in
-`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`; exported gas data validation is owned by `msplatform.contracts.gas_field`. Fractional GEM compilation is installed in
+`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`; exported gas data validation is owned by `msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation`. Fractional GEM compilation is installed in
 `msplatform.backends.simion.dual_cone_geometry`。杆数组与杆 GEM 分别直接复用
 `msplatform.components.rf_multipole.round_rod_geometry` 和 `msplatform.backends.simion.rf_geometry`，
 旧项目内五个对应模块已退役且无转发桥。resolved JSON、GEM 与均匀场 Lua 已逐字节对照；
@@ -422,19 +422,19 @@ gas-flow profile 的 baseline 与 resolved geometry 传入原 runner；prepare �
 
 ### Gas-field data contract ownership
 
-`msplatform.contracts.gas_field` is the sole pure validator of the exported
-axisymmetric field and its explicit science/numerics/geometry records. Producer,
-SIMION runtime compiler and offline results reader consume that same validator;
-the former component module is retired without an import alias. The original
-validation algorithm, CLI arguments, identities, thresholds and claim scope are
-unchanged. The results reader retains strict manifest/hash/terminal checks and
-requires no component, backend or execution imports. This relocation does not
-change or rerun the already frozen native gas-flow operation.
+`msplatform.contracts.gas_field` owns recorded r-z data structure and provenance;
+the component's `gas_field_validation` owns the original study policy and CLI.
+Producers, the runtime compiler and scientific execution boundaries apply that
+policy explicitly. The offline results reader retains strict manifest, hash and
+terminal checks without component, backend or execution imports; readable data
+does not by itself grant study acceptance. The current typed result and policy
+split are described below. Frozen native gas-flow operations are unchanged.
 
-This ownership repair passed 25 focused boundary/reader/producer/contract tests
+The earlier validator relocation passed 25 focused boundary/reader/producer/contract tests
 and the original five-method ordinary wheel/sdist acceptance (including offline
 reader origin and missing-validator rejection in both installed rounds). No new
-COMSOL/SIMION solve or scientific qualification was performed.
+COMSOL/SIMION solve or scientific qualification was performed. Those results
+retain their original source versions; they are not current split acceptance.
 
 ### Installed gas-flow native acceptance (2026-11-09)
 
@@ -543,3 +543,48 @@ ordinary wheel/sdist-rebuilt installation arms (96.094 seconds, 440 exact payloa
 source-root denial and missing-module rejection). Main adds public type annotations
 with every delivered function body unchanged; that private package proof is not
 retagged as a combined successor installation or native result.
+
+### Gas export structure and explicit study quality
+
+`msplatform.results.gas_field.read_gas_field` now returns an `OpenedGasField`:
+`.artifact` retains the original published records, metadata and locations, while
+`.data` contains the actual neutral structural scan. Recorded CSV hashes, source
+hashes, finite values, axes, row order and NaN mask semantics remain enforced.
+Reading data requires no COMSOL, execution owner or component import and does not
+grant the dual-cone study's scientific acceptance.
+
+The sole project policy and five-path validation CLI are in the component's
+`gas_field_validation` module. Producers validate before publication; scientific
+planning and preparation explicitly apply the same policy to the scanned data.
+This preserves positive fluid values, the original recorded EOS, minimum sample
+count, mass balance, outlet pressure, terminal stabilization and continuum-use
+qualification. Same-scan policy checks perform no file reads. Existing separate
+public planning, owner-freeze and preparation integrity boundaries remain; this
+ownership slice does not claim to remove their pre-existing repeated reads.
+
+The data snapshot retains immutable numeric columns and a mask, not raw CSV
+strings or a second artifact cache. Original record identities and owner guards
+still govern later file consumption. Historical producer bytes and formats are
+unchanged. A readable result that fails study quality remains readable for
+inspection but is rejected by the original scientific execution boundaries.
+
+The selected 20261109_195300 published CFD export has 1,251 fluid axis rows;
+194 have nonzero radial velocity, at most 1.48174396448725e-14 m/s. This split
+preserves those actual source scalars and does not instantiate the stricter G1
+axisymmetric representation, zero values, or add an epsilon. Explicit versioned
+legacy axis projection and canonical Lua/SDS adoption remain separate work.
+No new CFD or ion Fly, native equality or scientific qualification is claimed.
+
+The annotated composed successor passed 32 parents and 262 records in 66.268
+seconds, without skips: original export/producer/reader contracts, architecture,
+actual public bad-quality rejection and all three Changed routing cases.
+Independent review accepted the original policy and 278 retained assertions.
+The private pre-annotation source passed focused direct-wheel/sdist-rebuilt
+acceptance in 98.943 seconds with 446 exact payload joins per arm. That source
+excludes the later cooled addition; its installation evidence is not retagged as
+the composed annotated package. Final combined installation remains due.
+On the unchanged 295,236-row CFD source, one instrumented baseline/candidate
+observation returned identical quality summaries: 36.681/34.835 seconds and
+330,510,444/364,722,767 bytes of peak traced Python allocations. The new data
+result retains 16,828,452 bytes of numeric columns and mask. These are not RSS
+measurements; cache order, shared load and tracing overhead prevent a speedup claim.

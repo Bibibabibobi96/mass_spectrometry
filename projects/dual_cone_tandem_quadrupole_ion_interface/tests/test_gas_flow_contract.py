@@ -20,7 +20,7 @@ INTERFACE_PATH = PROJECT_ROOT / "config" / "gas_field_interface.json"
 
 
 def _load_validator():
-    from msplatform.contracts import gas_field
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field_validation as gas_field
 
     return gas_field
 
@@ -105,6 +105,35 @@ def _write_fixture(tmp_path: Path) -> tuple[Path, Path]:
 
 
 class GasFlowContractTests(unittest.TestCase):
+    def test_neutral_scan_is_distinct_from_original_project_quality(self) -> None:
+        from msplatform.contracts.gas_field import read_gas_field_data
+        from unittest.mock import patch
+
+        validator = _load_validator()
+        with tempfile.TemporaryDirectory() as directory:
+            csv_path, metadata_path = _write_fixture(Path(directory))
+            arguments = (csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+            original = validator.validate_gas_field(*arguments)
+            data = read_gas_field_data(*arguments)
+            self.assertEqual(validator.validate_gas_field_data(data), original)
+            self.assertEqual(data.row_count, 100)
+            self.assertEqual(sum(column.nbytes for column in data.columns.values()), 5600)
+            self.assertTrue(all(column.readonly for column in data.columns.values()))
+            with self.assertRaises(TypeError):
+                data.columns['p_pa'][0] = 1.0
+            copied_documents = data.documents
+            copied_documents['science']['model_id'] = 'changed'
+            self.assertEqual(validator.validate_gas_field_data(data), original)
+            metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+            metadata['solution_summary']['mass_balance_relative_error'] = 1.0
+            metadata_path.write_text(json.dumps(metadata), encoding='utf-8')
+            rejected = read_gas_field_data(*arguments)
+            with patch.object(Path, 'open', side_effect=AssertionError('duplicate data read')):
+                with self.assertRaisesRegex(ValueError, 'mass-balance contract'):
+                    validator.validate_gas_field_data(rejected)
+            with self.assertRaisesRegex(ValueError, 'mass-balance contract'):
+                validator.validate_gas_field(*arguments)
+
     def test_contract_declares_choked_flow_risk_and_regular_export(self) -> None:
         science, numerics = _contracts()
         self.assertEqual(science["physics"]["comsol_interface"], "HighMachNumberFlow")

@@ -22,7 +22,7 @@ else:
     manifest = Path(sys.argv[2]).resolve() / "run_manifest.json"
     reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
 field = read_gas_field(reference)
-paths = field.data_locations
+paths = field.artifact.data_locations
 output = Path(sys.argv[4]).resolve()
 export_runtime(
     paths["field_csv"], paths["field_metadata"],

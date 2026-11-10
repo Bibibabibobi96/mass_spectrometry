@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.contracts.gas_field import (
+from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import (
     validate_gas_field,
 )
 
