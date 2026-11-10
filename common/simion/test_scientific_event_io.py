@@ -1,5 +1,6 @@
 """Structured scientific output and explicit legacy adapters; no solver required."""
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from msplatform.io import scientific_csv as io
@@ -22,7 +23,7 @@ class ScientificEventIoTests(unittest.TestCase):
 
     def test_lua_writer_preserves_declared_numeric_precision_and_csv_strings(self):
         import subprocess
-        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
         with tempfile.TemporaryDirectory() as directory:
@@ -62,7 +63,7 @@ class ScientificEventIoTests(unittest.TestCase):
 
     def test_lua_write_flush_close_and_incomplete_rows_fail(self):
         import subprocess
-        lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
         module = (ROOT / 'src/msplatform/backends/simion/resources/scientific_event_csv.lua').as_posix()

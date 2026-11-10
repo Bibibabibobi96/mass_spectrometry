@@ -16,7 +16,7 @@ COMPOSER = ROOT / "compose_standalone_pa.lua"
 DIRICHLET_OPERATING_PATCH = native_resource_path("build_dirichlet_patch_operating_pa.lua")
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
-LUA = Path(shutil.which("lua") or r"C:\Program Files\SIMION-2020\lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or r"C:\Program Files\SIMION-2020\lua.exe")
 
 
 @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
@@ -75,7 +75,9 @@ assert(calls==1,'one and only one Refine call required')
         result = self.run_helper("1e-5")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("REFINE_CALL=explicit", result.stdout)
-        self.assertIn("refine_convergence=1e-05", result.stdout.lower())
+        reported = next(token.split("=", 1)[1] for token in result.stdout.split()
+                        if token.startswith("refine_convergence="))
+        self.assertEqual(float(reported), 1e-5)
 
     def test_parent_patch_restores_only_synthetic_faces_and_keeps_sampled_potentials(self) -> None:
         harness = r'''

@@ -443,10 +443,11 @@ class StageOwnerGraphTests(unittest.TestCase):
 
 class ExistingModelConsumerTests(unittest.TestCase):
     def test_dual_cone_projection_uses_actual_existing_source_free_lua_consumer(self):
+        import shutil
         import subprocess
         from msplatform.backends.simion.resources import native_resource_path
 
-        lua = Path("C:/Program Files/SIMION-2020/lua.exe")
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
         if not lua.is_file():
             self.skipTest("plain Lua unavailable; no native fallback")
         with tempfile.TemporaryDirectory() as directory:

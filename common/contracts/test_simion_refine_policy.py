@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -13,7 +14,7 @@ class SimionRefinePolicyTests(unittest.TestCase):
     """Native adapter option forwarding and invalid numerical input behavior."""
 
     def test_official_skipped_point_option_reaches_fake_pa_without_changing_defaults(self) -> None:
-        lua = Path("C:/Program Files/SIMION-2020/lua.exe")
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
         if not lua.is_file():
             self.skipTest("installed Lua interpreter required; no SIMION process")
         adapter = REPOSITORY_ROOT / "common/simion/build_dirichlet_patch_basis.lua"

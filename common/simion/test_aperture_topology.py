@@ -11,7 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 VERIFIER = Path(__file__).with_name("verify_aperture_topology.lua")
-LUA = shutil.which("lua") or str(Path("C:/Program Files/SIMION-2020/lua.exe"))
+LUA = shutil.which("lua") or shutil.which("lua5.1") or str(Path("C:/Program Files/SIMION-2020/lua.exe"))
 
 STUB = r"""
 local axis, mode = arg[2], arg[3]

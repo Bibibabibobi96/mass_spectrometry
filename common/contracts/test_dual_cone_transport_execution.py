@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ from msplatform.backends.simion.resources import native_resource_path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "projects/dual_cone_tandem_quadrupole_ion_interface/config"
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
 def request():
@@ -761,7 +762,11 @@ class TimeStepContractTests(unittest.TestCase):
                         solver=root,
                     )
                 )
-                program = native_resource_path("dual_cone_gas_assisted_transport.lua")
+                # Stock Lua has no SIMION adjustable declaration preprocessor.
+                original_program = native_resource_path("dual_cone_gas_assisted_transport.lua")
+                program = root / "dual_cone_gas_assisted_transport.lua"
+                program.write_text(original_program.read_text(encoding="utf-8").replace("adjustable ", ""),
+                                   encoding="utf-8")
                 text = """simion={workbench_program=function()end}
 segment={}
 local original=loadfile

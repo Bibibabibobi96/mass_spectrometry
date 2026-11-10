@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ import unittest
 from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
 from msplatform.backends.simion.source import lua_value
 
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
 HARNESS = r"""local spec=dofile(arg[1])

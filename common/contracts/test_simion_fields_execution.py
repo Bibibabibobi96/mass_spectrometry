@@ -29,6 +29,8 @@ from msplatform.execution.run_session import RunSession
 from msplatform.execution.processes import ProcessExecutionError
 from msplatform.io.file_identity import file_sha256
 
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
+
 
 def field_case(root):
     model, assets, _seed, _plan = model_plan(root)
@@ -66,7 +68,7 @@ class FieldExecutionPlanningTests(unittest.TestCase):
             pending.extend(re.findall(r"(?:loadfile|dofile)\(resource_dir\s*\.\.\s*['\"]/([^'\"]+)['\"]",text))
         self.assertIn('gem2pa_geometry.lua',seen)
 
-    @unittest.skipUnless(Path('C:/Program Files/SIMION-2020/lua.exe').is_file(),'plain Lua interpreter unavailable')
+    @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
     def test_all_actual_downstream_builders_load_frozen_transitive_closure_before_native(self):
         """Execute real builder prefixes, stopping at the first native PA call.
 
@@ -95,7 +97,7 @@ class FieldExecutionPlanningTests(unittest.TestCase):
                     'local okay,message=pcall(function() dofile('+lua_value(str(frozen/Path(arguments[3]).name))+') end)\n'+
                     "assert(not okay and entered and tostring(message):find('EXPECTED_NATIVE_BOUNDARY',1,true),tostring(message))\nprint('ACTUAL_BUILDER_CLOSURE_PASS')\n",
                     encoding='utf-8',newline='\n')
-                return subprocess.run(['C:/Program Files/SIMION-2020/lua.exe',str(script)],cwd=root,
+                return subprocess.run([str(LUA),str(script)],cwd=root,
                     capture_output=True,text=True,encoding='utf-8',timeout=30)
             builders=[operation for operation in plan.operations if operation['operation_id'].startswith('solve_')]
             self.assertEqual(len(builders),3)

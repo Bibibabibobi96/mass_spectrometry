@@ -10,7 +10,7 @@ import unittest
 from msplatform.backends.simion.native_io import apply_native_io_mode
 
 
-LUA = shutil.which("lua") or str(Path(os.environ.get(
+LUA = shutil.which("lua") or shutil.which("lua5.1") or str(Path(os.environ.get(
     "SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe")).with_name("lua.exe"))
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -19,7 +20,7 @@ from msplatform.backends.simion.tof_geometry import resolve_physical_geometry
 from msplatform.execution.resources import resource_path
 
 
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 REPO = Path(__file__).resolve().parents[2]
 SEED = dict(path=str(structural_seed_path(4)),
     bytes=20940,sha256="437d67349bccc25b63da2befe79b5c1b78448a150c768277515e6a2adf5f6daa")

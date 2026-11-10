@@ -1,5 +1,6 @@
 """Lua native transport reads the same ephemeral mapping as Python."""
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ import unittest
 from msplatform.execution.resources import resource_path
 
 
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 MODULE = resource_path("native_run_path.lua")
 
 

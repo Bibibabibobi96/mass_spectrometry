@@ -9,7 +9,7 @@ import unittest
 
 class VoltageWaveformsTests(unittest.TestCase):
     def test_frozen_module_caps_only_a_future_edge(self) -> None:
-        lua = shutil.which("lua") or r"C:\Program Files\SIMION-2020\lua.exe"
+        lua = shutil.which("lua") or shutil.which("lua5.1") or r"C:\Program Files\SIMION-2020\lua.exe"
         if not Path(lua).is_file():
             self.skipTest("standalone Lua unavailable")
         source = Path(__file__).parent
