@@ -62,6 +62,11 @@ class IpPreparationTests(unittest.TestCase):
         self.assertFalse(any((self.run / "simion").glob("*.pa*")))
         self.assertFalse((self.run / "simion/iob_seed").exists())
         self.assertEqual(json.loads((self.run / "inputs/clock_validation.json").read_text())["status"], "PASS")
+        gas = compiled["config"]["gas_runtime"]
+        self.assertEqual(gas["sampling_policy"], "legacy_callback_sampling_v1")
+        self.assertEqual(gas["source_kind"], "prescribed_proxy")
+        self.assertEqual(Path(gas["runtime"]["path"]).read_bytes(), (self.run / "simion/gas_field.lua").read_bytes())
+        self.assertEqual((self.run / "simion/collision_hs1_gas.lua").read_bytes(), native_resource_path("collision_hs1_gas.lua").read_bytes())
 
     def test_missing_vendor_or_resource_refuses_before_outputs(self) -> None:
         self.vendor.unlink()
@@ -119,4 +124,31 @@ class IpPreparationTests(unittest.TestCase):
         self.assertEqual(compiled["clock_epoch_id"], "original_upstream_epoch")
         self.assertEqual(compiled["config"]["source"]["particle_count"], 0)
         self.assertEqual(compiled["config"]["source"]["mother_particle_count"], 100)
+        self.assertEqual(list(self.run.iterdir()), [])
+
+    def test_explicit_zero_pressure_materializes_without_relaxing_other_gas_constraints(self) -> None:
+        self.config["baseline"]["gas"]["hp_pressure_pa"] = 0
+        self.authorities["baseline"].write_text(json.dumps(self.config["baseline"]), encoding="utf-8")
+        compiled = self.materialize()
+        self.assertEqual(compiled["config"]["baseline"]["gas"]["hp_pressure_pa"], 0)
+        for key in ("temperature_k", "mass_amu", "cross_section_m2"):
+            broken = copy.deepcopy(self.config)
+            broken["baseline"]["gas"][key] = 0
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "nonpositive"):
+                preparation.validate_configs(broken)
+        for pressure in (-1, float("nan"), float("inf")):
+            broken = copy.deepcopy(self.config)
+            broken["baseline"]["gas"]["lp_pressure_pa"] = pressure
+            with self.subTest(pressure=pressure), self.assertRaises(ValueError):
+                preparation.validate_configs(broken)
+
+    def test_missing_hs1_gas_binding_refuses_before_any_output(self) -> None:
+        real = preparation.native_resource_path
+        def selected(name):
+            if name == "collision_hs1_gas.lua":
+                raise FileNotFoundError(name)
+            return real(name)
+        with patch.object(preparation, "native_resource_path", side_effect=selected):
+            with self.assertRaisesRegex(FileNotFoundError, "collision_hs1_gas"):
+                self.materialize()
         self.assertEqual(list(self.run.iterdir()), [])

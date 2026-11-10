@@ -796,6 +796,18 @@
         "dependencies": [
           {
             "matches": [
+              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "ip_gas_regions_changed"},
+              {"exact": "src/msplatform/workflows/ion_processor/preparation.py", "reason": "ip_gas_preparation_changed"},
+              {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "hs1_gas_binding_changed"},
+              {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "ip_gas_compiler_changed"},
+              {"exact": "src/msplatform/contracts/gas.py", "reason": "ip_gas_contract_changed"},
+              {"prefix": "src/msplatform/gas/", "reason": "ip_gas_sampler_changed"}
+            ],
+            "modules": ["common/contracts/test_ip_gas_regions.py", "common/contracts/test_ip_preparation.py"],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {
                 "exact": "src/msplatform/contracts/gas.py",
                 "reason": "pure_gas_dependency_changed"
@@ -3231,6 +3243,9 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
+        {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "ip_gas_regions_changed"},
+        {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "hs1_gas_binding_changed"},
+        {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "ip_gas_compiler_changed"},
         {
           "prefix": "src/msplatform/workflows/ion_processor/",
           "reason": "ion_processor_preparation_changed"

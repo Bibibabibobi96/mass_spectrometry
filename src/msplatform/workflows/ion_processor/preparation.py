@@ -14,6 +14,10 @@ from typing import Any
 from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.contracts.particle_physics import kinetic_energy_ev
+from msplatform.contracts.gas import BoxDomain
+from msplatform.gas.field import prepare_gas_field
+from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import build_gas_field_spec
+from msplatform.backends.simion.gas_runtime import compile_gas_runtime
 from msplatform.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
@@ -27,6 +31,7 @@ from msplatform.execution.resources import resource_path
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.io.file_identity import file_sha256
+from msplatform.io.manifest_records import file_record
 
 def lua_literal(value: Any) -> str:
     """Serialize frozen JSON values into a data-only Lua companion."""
@@ -78,7 +83,9 @@ def validate_configs(config: dict[str, Any]) -> None:
                     raise ValueError("frame_id must be nonempty")
             elif isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError(f"invalid finite number {section}.{key}")
-            elif key not in {"epoch_us", "rf_phase_rad", "mean_free_path_mm"} and value <= 0:
+            elif section == "gas" and key in {"hp_pressure_pa", "lp_pressure_pa"} and value < 0:
+                raise ValueError(f"negative pressure {section}.{key}")
+            elif key not in {"epoch_us", "rf_phase_rad", "mean_free_path_mm", "hp_pressure_pa", "lp_pressure_pa"} and value <= 0:
                 raise ValueError(f"nonpositive physical input {section}.{key}")
     nkeys = "schema_version dt_us trajectory_quality sample_interval_us extraction_sample_interval_us seed rf_steps_per_period solver_timeout_s hs1_steps_per_mfp native_grid_mm refine_convergence_v native_aux_segments collision_rng_policy".split()
     if set(numerics) != set(nkeys) or numerics["schema_version"] != 1:
@@ -310,12 +317,17 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
     supplied_config = config
     compiled = compile_source(config, admission=admission)
     config = compiled["config"]
+    projection = config["native_projection"]
+    gas_spec = build_gas_field_spec(config["baseline"], domain=BoxDomain(
+        projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3))
+    gas_lua = compile_gas_runtime(prepare_gas_field(gas_spec), placement=transform_from_config(config))
     native = {name: native_resource_path("ip_" + name) for name in
               ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")}
     native.update({name: native_resource_path(source) for name, source in
                    (("native_drive.lua", "native_drive.lua"),
                     ("scientific_event_csv.lua", "scientific_event_csv.lua"),
                     ("simion_rf_drive.lua", "rf_drive.lua"),
+                    ("collision_hs1_gas.lua", "collision_hs1_gas.lua"),
                     ("voltage_waveforms.lua", "voltage_waveforms.lua"))})
     native["native_run_path.lua"] = resource_path("native_run_path.lua")
     authorities = {name: Path(path) for name, path in configuration_files.items()}
@@ -355,6 +367,11 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
     (solver / "processor.fly2").write_text(compiled["fly2"], encoding="utf-8")
     (solver / "source_states.lua").write_text(compiled["source_states"], encoding="utf-8")
     (solver / "processor.gem").write_text(render_gem(config["native_projection"]), encoding="utf-8")
+    (solver / "gas_field.lua").write_text(gas_lua, encoding="utf-8", newline="\n")
+    config["gas_runtime"] = dict(schema_version=1, field_id=gas_spec.field_id,
+        query_frame_id=transform_from_config(config).to_frame_id,
+        sampling_policy="legacy_callback_sampling_v1", source_kind=gas_spec.source.kind,
+        assumptions=list(gas_spec.source.assumptions), runtime=file_record(solver / "gas_field.lua"))
     (solver / "frozen_config.lua").write_text("return " + lua_literal(config) + "\n", encoding="utf-8")
     write_json(inputs / "resolved_model.json", config)
     epoch_path = inputs / "instrument_epoch.json"

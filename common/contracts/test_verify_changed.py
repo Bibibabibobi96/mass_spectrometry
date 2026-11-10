@@ -348,6 +348,22 @@ ConvertTo-Json -Compress -InputObject $paths
                 else:
                     self.assertEqual(modules, [path])
 
+    def test_ip_gas_dependencies_select_consumers_without_native_stages(self):
+        for path in ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
+                     "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
+                     "src/msplatform/backends/simion/gas_runtime.py"):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                modules = [value for row in request["stages"]
+                           if row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertTrue({"common/contracts/test_ip_gas_regions.py",
+                                 "common/contracts/test_ip_preparation.py"} <= set(modules))
+                self.assertTrue(any(row["name"].startswith("dual_pressure_rectilinear_ion_processor_static")
+                                    for row in request["stages"]))
+                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                                     for row in request["stages"]))
+
     def test_common_contract_dependencies_select_modules_without_retired_routes(self):
         cases = (("src/msplatform/execution/inputs.py", "common.contracts.test_frozen_inputs"),
                  ("common/contracts/expected_values.py", "common.contracts.test_expected_values"),

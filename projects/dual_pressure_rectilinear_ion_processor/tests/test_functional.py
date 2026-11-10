@@ -353,6 +353,7 @@ class FunctionalContractTests(unittest.TestCase):
                          repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
                          repo / "src/msplatform/backends/simion/resources/native_drive.lua",
                          repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+                         repo / "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
                          repo / "src/msplatform/execution/resources/native_run_path.lua",
                          repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
                          repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",

@@ -29,7 +29,7 @@ DOMAIN_IMPORTS = {
     "backends": SCIENTIFIC_DOMAINS | {"gas", "components", "backends", "execution", "results"},
     "execution": SCIENTIFIC_DOMAINS | {"execution", "results"},
     "results": SCIENTIFIC_DOMAINS | {"results"},
-    "workflows": SCIENTIFIC_DOMAINS | {"workflows", "components", "backends", "execution", "results"},
+    "workflows": SCIENTIFIC_DOMAINS | {"gas", "workflows", "components", "backends", "execution", "results"},
     "examples": SCIENTIFIC_DOMAINS | {"examples"},
     "exporters": SCIENTIFIC_DOMAINS | {"components", "exporters", "execution", "results"},
     "applications": SCIENTIFIC_DOMAINS | {"applications", "execution", "results"},
@@ -282,6 +282,8 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
     def test_gas_layer_has_only_explicit_pure_dependencies(self):
         self.assertEqual(core_boundary_errors("from msplatform.gas.field import GasField",
                          "msplatform.backends.simion.gas_runtime", dependencies=set()), [])
+        self.assertEqual(core_boundary_errors("from msplatform.gas.field import prepare_gas_field",
+                         "msplatform.workflows.ion_processor.preparation", dependencies=set()), [])
         for source in ("from msplatform.contracts.gas import GasState",
                        "from msplatform.io.manifest_records import validate_file_record",
                        "from .thermodynamics import number_density_m3"):

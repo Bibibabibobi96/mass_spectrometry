@@ -493,3 +493,36 @@ sdist-rebuilt-wheel acceptance passed with all 436 package payloads matching sou
 installations, including the actual API origin and missing-verifier refusal. These results
 remain separate from the preceding ordinary-installation epoch and do not add a native
 operation or scientific qualification.
+
+### V8.4 canonical prescribed gas / HS1 software binding
+
+The selected baseline remains the sole pressure, temperature, gas mass and geometry authority.
+The component gas-region builder projects HP [guide, guide+hp) and LP from that interface to
+the actual native PA query-domain end, with strict transverse bore boundaries. LP is not
+clipped at its nominal210mm electrode end: the default domain includes211mm. Background
+zero pressure is explicitly prescribed collision omission, not measured vacuum; out-of-domain
+or missing support refuses instead of silently continuing as vacuum. Explicit zero HP or LP
+pressure is allowed; other temperature/mass/cross-section, drive, source and timing checks remain.
+
+Scientific materialization emits one canonical static gas_field.lua and freezes the backend
+HS1 gas binding. Resolved configuration records the exact emitted file and
+legacy_callback_sampling_v1. The official HS1 algorithm/lifecycle adapter is unchanged.
+Its position arguments are GU but the binding uses actual workbench ion_*_mm, applies the
+existing rigid placement once and converts gas velocity m/s to official HS1 mm/us by1000.
+No PA-pitch velocity scaling, cross-callback time/ID cache, new timestep truncation or RNG draw
+is introduced. Actual Program activation/reset/seed, callback/event order and15electrodes stay.
+
+Acceptance in this slice is software preparation, emittedLua and actual Program with inert
+HS1 callback recording. It does not establish native collisions, boundary-resolved integration,
+P11 arbitrary IP placement, new field/flight qualification or whole installed IP orchestration.
+The existing root workflow still owns its genuine snapshot/seed/field/admission/analysis duties.
+
+Independent review accepted the thirteen-file software slice, including unchanged
+HS1 source/adapter and Program callback bodies. Focused private direct-wheel and
+sdist-rebuilt preparation passed in 89.484 seconds with 444 exact payload joins,
+explicit external HS1, source denial and missing-resource negatives. Earlier
+fixture failures and their bounded successful corrections remain separate records.
+On the composed successor, 38 parents and 202 records passed in 60.139 seconds,
+covering actual generated Lua/Program wiring, detached preparation, architecture
+and Changed selection. Combined full installation, native and Repository acceptance
+remain open; these checks do not prove collision physics or step resolution.

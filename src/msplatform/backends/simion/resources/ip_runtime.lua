@@ -70,13 +70,13 @@ local rf=assert(loadfile(directory..'simion_rf_drive.lua'))().new{
  electrodes={{electrode_id=1,electrode_group=1,polarity=1,common_mode_v=0}}
 }
 local hs=simion.import(directory..'collision_hs1.lua')
+local gas=assert(loadfile(directory..'gas_field.lua'))()
+local gas_binding=assert(loadfile(directory..'collision_hs1_gas.lua'))()
+local gas_frame=assert(c.gas_runtime,'frozen gas runtime required').query_frame_id
+local gas_sample=gas_binding.bind(hs,gas,function() return ion_px_mm,ion_py_mm,ion_pz_mm end,gas_frame)
 -- Assign imported HS1 adjustables explicitly inside each run reset.
 local function local_pressure()
- local x,y,z=local_position(ion_px_mm,ion_py_mm,ion_pz_mm)
- if math.abs(y)>=g.r0_mm or math.abs(z)>=g.r0_mm then return 0 end
- if x>=g.guide_length_mm and x<g.guide_length_mm+g.hp_length_mm then return b.gas.hp_pressure_pa end
- if x>=g.guide_length_mm+g.hp_length_mm then return b.gas.lp_pressure_pa end
- return 0
+ return gas_sample().pressure_pa
 end
 hs.pressure=local_pressure
 local function reset_collision_module(audit_run)

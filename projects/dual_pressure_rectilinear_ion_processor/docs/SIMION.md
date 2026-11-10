@@ -393,3 +393,11 @@ field qualification. The root CLI's `adopt-native-field` action remains the same
 workflow consumer. Ordinary software proof covers actual CLI verification, adoption,
 incomplete-publication rejection, missing canonical owner rejection and installed origins;
 it uses inert PA-shaped test files and does not claim native PA readback.
+
+### V8.4 gas input binding
+
+Scientific input materialization now generates `gas_field.lua` from the selected IP
+baseline and freezes `collision_hs1_gas.lua` beside the unchanged official HS1 run copy.
+See [current gas-input scope](PROJECT.md#v84-canonical-prescribed-gas--hs1-software-binding)
+for region/unit/callback guarantees and software-only acceptance limits. This does not
+add a new native launcher, implicit Refine/Fly, or boundary-resolved integration policy.

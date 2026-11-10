@@ -91,6 +91,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             Path("src/msplatform/backends/simion/resources/voltage_waveforms.lua"),
             Path("src/msplatform/backends/simion/resources/native_drive.lua"),
             Path("src/msplatform/backends/simion/resources/scientific_event_csv.lua"),
+            Path("src/msplatform/backends/simion/resources/collision_hs1_gas.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("src/msplatform/backends/simion/resources/1_instance_seed.iob"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
@@ -206,6 +207,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
                 for relative in (
                     "src/msplatform/execution/resources/native_run_path.lua",
                     "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+                    "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
                     "projects/dual_pressure_rectilinear_ion_processor/config/source.json",
                 ):
                     target = run / "inputs/code" / relative
@@ -215,6 +217,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
     def test_missing_dynamic_resource_fails_before_materialization(self):
         for relative in (
             Path("src/msplatform/backends/simion/resources/ip_runtime.lua"),
+            Path("src/msplatform/backends/simion/resources/collision_hs1_gas.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
         ):

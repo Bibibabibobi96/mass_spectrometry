@@ -82,6 +82,12 @@ simion.import=function(path)
   end
   hs.segment.other_actions=function()
     hs.segment.initialize()
+    if arg[2]=='gas-binding' then
+      local p=hs.pressure(999,999,999)
+      local t=hs.temperature(999,999,999)
+      local u,v,w=hs.velocity(999,999,999)
+      gas_trace[#gas_trace+1]={p,t,u,v,w}
+    end
     -- Deliberately nonphysical deterministic mutation exercises PRNG replay.
     ion_vx_mm=ion_vx_mm+rand()*1e-4
     max_timestep=.004
@@ -132,6 +138,31 @@ end
 local function contents(path)
   local handle=assert(io.open(path,'r'))
   local value=handle:read('*a');handle:close();return value
+end
+if arg[2]=='gas-binding' then
+  gas_trace={}
+  segment.initialize_run()
+  local positions={{29,0,0,0},{30,0,0,1},{130,0,0,.2},{211,0,0,.2},
+                   {50,2,0,0},{50,0,0,1},{29,0,0,0}}
+  for id=1,sim_ions_count do
+    ion_number=id;ion_time_of_flight=0;ion_splat=0;segment.initialize()
+    for _,p in ipairs(positions) do
+      put_local(p[1],p[2],p[3],1,0,0)
+      segment.other_actions()
+      local sample=gas_trace[#gas_trace]
+      assert(sample[1]==p[4] and sample[2]==300,'actual HS1 callback P/T differs')
+      assert(sample[3]==0 and sample[4]==0 and sample[5]==0,'static IP bath flow must remain zero')
+    end
+    segment.terminate()
+  end
+  assert(#gas_trace==2*#positions,'each actual HS1 callback sequence must query once')
+  segment.terminate_run()
+  local seeds=contents(directory..'collision_rng_seeds.csv')
+  assert(seeds:match('7,7,48') and seeds:match('101,101,142'),'retain sparse original-ID streams')
+  put_local(213,0,0,1,0,0)
+  local ok,err=pcall(test_hs.pressure)
+  assert(not ok and tostring(err):match('gas field coverage lost'),'unknown coverage is not vacuum')
+  print('IP_GAS_PROGRAM_BINDING_PASS');return
 end
 if arg[2]=='injected' then
   segment.initialize_run()
@@ -403,14 +434,28 @@ class RuntimeReplayTests(unittest.TestCase):
         config["source"]["particle_count"] = 2
         if mode == "injected":
             config["injected_source"] = dict(particle_ids=[2, 42])
+        if mode == "gas-binding":
+            config["injected_source"] = dict(particle_ids=[7, 101])
         if mode in {"offset", "csv-batch"}:
             config["source"]["particle_count"] = 100
             config["execution_batch"] = {"particle_id_offset": 50, "particle_id_min": 51, "particle_id_max": 52, "retain_trajectories": mode != "csv-batch"}
         config["native_projection"] = native_projection(config["baseline"], config["numerics"])
         from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
         config["numerical_boundaries"]=derive_numerical_boundaries(config["native_projection"])
+        from msplatform.contracts.gas import BoxDomain
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import build_gas_field_spec
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import transform_from_config
+        from msplatform.gas.field import prepare_gas_field
+        from msplatform.backends.simion.gas_runtime import compile_gas_runtime
+        projection = config["native_projection"]
+        gas_spec = build_gas_field_spec(config["baseline"], domain=BoxDomain(
+            projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3))
+        gas_lua = compile_gas_runtime(prepare_gas_field(gas_spec), placement=transform_from_config(config))
+        config["gas_runtime"] = {"query_frame_id": transform_from_config(config).to_frame_id}
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:
             folder = Path(temporary)
+            (folder / "gas_field.lua").write_text(gas_lua, encoding="utf-8")
+            shutil.copyfile(native_resource_path("collision_hs1_gas.lua"), folder / "collision_hs1_gas.lua")
             for name in ("runtime.lua", "extraction_force_audit.lua"):
                 if name == "runtime.lua":
                     # Syntax adapter for standalone Lua only; real SIMION evidence
@@ -448,6 +493,9 @@ class RuntimeReplayTests(unittest.TestCase):
 
     def test_injected_sparse_identity_and_absolute_arrival(self) -> None:
         self.assertIn("RUNTIME_INJECTED_ID_ARRIVAL_PASS", self.run_runtime_fixture("injected"))
+
+    def test_actual_program_hs1_gas_callbacks_keep_regions_units_and_sparse_streams(self) -> None:
+        self.assertIn("IP_GAS_PROGRAM_BINDING_PASS", self.run_runtime_fixture("gas-binding"))
 
     def test_repeated_initialize_run_resets_state_and_draws_numerical_outline(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("replay"))

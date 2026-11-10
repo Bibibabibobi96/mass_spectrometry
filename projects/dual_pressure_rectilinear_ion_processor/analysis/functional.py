@@ -87,6 +87,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         "src/msplatform/backends/simion/resources/rf_drive.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "src/msplatform/backends/simion/resources/native_drive.lua",
         "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+        "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
         "src/msplatform/backends/simion/resources/1_instance_seed.iob",
         "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
     runtime_resources.append(repo / "src/msplatform/execution/resources/native_run_path.lua")
