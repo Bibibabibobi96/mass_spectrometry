@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -52,7 +53,7 @@ try{
 
     def test_builder_transports_frozen_waveform_with_each_program_basename(self) -> None:
         """Execute the builder's real companion-copy section, without SIMION."""
-        lua = Path(r'C:\Program Files\SIMION-2020\lua.exe')
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(r'C:\Program Files\SIMION-2020\lua.exe')))
         if not lua.is_file():
             self.skipTest('standalone Lua unavailable')
         builder = (PROJECT/'simion/build_native_corridor_iob.lua').read_text()

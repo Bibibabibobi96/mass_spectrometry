@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ import unittest
 from msplatform.backends.simion.resources import native_resource_path
 
 PROJECT = Path(__file__).resolve().parents[2]
-LUA = Path('C:/Program Files/SIMION-2020/lua.exe')
+LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
 EXPORT = native_resource_path('export_paired_accelerator_field.lua')
 COMSOL = Path(__file__).resolve().parents[4] / 'src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m'
 

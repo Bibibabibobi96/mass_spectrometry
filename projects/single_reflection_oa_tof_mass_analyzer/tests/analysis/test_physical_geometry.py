@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
 
 from msplatform.backends.simion.resources import gem_template_path, gem_template_text, native_resource_path
 
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
 
 
 def nondefault_resolved():

@@ -10,6 +10,7 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -367,7 +368,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         self.assertAlmostEqual(result[two_prism_simion_trial.CONVERGING_PRISM_ENERGY_RESIDUAL],-.36835835613722345)
 
     def test_launcher_preloads_overlay_occupancy_without_refine_save_or_duplicate_open(self) -> None:
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("plain vendor Lua unavailable; no commercial execution")
         launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
@@ -428,7 +429,7 @@ print('OVERLAY_COLLISION_PRELOAD_PASS')
                     self.assertIn('OVERLAY_COLLISION_PRELOAD_PASS',actual.stdout)
 
     def test_launcher_preloads_only_static_ordinary_collision_without_saving(self) -> None:
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
         launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
@@ -510,7 +511,7 @@ print('COLLISION_PRELOAD_PASS')
                         self.assertIn("existing_pa_reused=false", result.stdout)
 
     def test_launcher_load_workbench_preserves_preload_without_flying_or_saving(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("plain vendor Lua unavailable; no commercial execution")
         launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"

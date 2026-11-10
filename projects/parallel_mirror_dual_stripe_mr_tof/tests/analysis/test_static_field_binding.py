@@ -8,6 +8,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -929,7 +930,7 @@ class NativeStaticBindingTest(unittest.TestCase):
                 verify_joint_asset_records(metadata)
 
     def test_native_factories_reuse_matching_open_pa_container_userdata(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -994,7 +995,7 @@ print('NATIVE_EXISTING_PA_REUSE_PASS')
             self.assertIn("workbench_reused=false existing_pa_reused=true", result.stdout)
 
     def test_native_shadowed_windows_do_not_open_and_keep_first_match_samples(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -1073,7 +1074,7 @@ print('NATIVE_SHADOWED_WINDOWS_PASS')
             self.assertIn("skip_shadowed=true name=hidden covered_by=fine", result.stdout)
 
     def test_native_parent_reuses_only_matching_workbench_pa_without_mutation(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -1140,7 +1141,7 @@ print('NATIVE_PARENT_REUSE_PASS')
             self.assertIn("NATIVE_PARENT_REUSE_PASS", result.stdout)
 
     def test_native_lua_routes_mirrored_axis_and_never_falls_back_on_invalid_local_support(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file(): self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
         fixture = r'''
@@ -1440,7 +1441,7 @@ class NativeCollisionReferenceTest(unittest.TestCase):
 
 class StaticFieldSamplingTest(unittest.TestCase):
     def test_zero_weight_terms_do_not_open_assets_and_keep_raw_and_flight_sum(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -1486,7 +1487,7 @@ print('ZERO_WEIGHT_QUERY_PASS')
             self.assertIn("ZERO_WEIGHT_QUERY_PASS", completed.stdout)
 
     def test_combination_opens_each_scalar_but_only_one_mask_per_ordered_level(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -1607,7 +1608,7 @@ print('SHARED_MASK_QUERY_PASS')
 
     def test_raw_sampling_matches_flight_routes_affine_weights_and_common_metrics(self):
         from common.simion.field_comparison import read_field_comparison_csv, compute_field_residual_metrics
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         sampler = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/compare_static_fields_at_samples.lua"
@@ -1852,7 +1853,7 @@ class RefinementWindowTest(unittest.TestCase):
             self.load_fixture([window], local_grid=grid)
 
     def test_vendor_lua_routes_inclusive_boxes_in_order_without_unknown_fallback(self) -> None:
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
         adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -1913,7 +1914,7 @@ print('ORDERED_LOCAL_FIELD_FIXTURE_PASS')
             self.assertIn("ORDERED_LOCAL_FIELD_FIXTURE_PASS", completed.stdout)
 
     def test_generated_scalar_transport_drives_native_window_routing(self) -> None:
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
         adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -2214,7 +2215,7 @@ print("METADATA_WITHOUT_WORKPOINT_PASS")
             self.resolve(author, samples)
 
     def test_cross_anchor_zero_increment_serializer_keeps_existing_consumer_contract(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         author, samples = self.cross_anchor_fixture()
@@ -2440,7 +2441,7 @@ print('CROSS_ANCHOR_ZERO_SERIALIZER_PASS')
         self.assertEqual(resolved["baseline_binding"], "base.json")
 
     def test_generated_response_transport_uses_native_mocked_queries_without_saving(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -2606,7 +2607,7 @@ class MaterializedResponseBindingTest(unittest.TestCase):
                         _load_materialized_response(descriptor)
 
     def test_public_composer_four_input_loop_runs_in_native_lua_with_tiny_mock_pas(self):
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         composer = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/compose_standalone_pa.lua"
@@ -2745,7 +2746,7 @@ class StaticFieldVoltageTest(unittest.TestCase):
                         load_binding(Path("binding.json"))
 
     def test_lua_anisotropic_headers_and_axis_support_fail_closed(self) -> None:
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
         adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"
@@ -2870,7 +2871,7 @@ print('ANISOTROPIC_ADAPTER_FIXTURE_PASS')
             ideal_sheet_projection(assembly, grid)
 
     def test_lua_sheet_marker_preserves_potential_and_skips_invalid_mask(self) -> None:
-        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
         adapter = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua"

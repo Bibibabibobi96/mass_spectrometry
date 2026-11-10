@@ -736,3 +736,27 @@ The combined ten modules passed all 143 parents and 274 records on the composed
 successor in 71.140 seconds, with no skips. All 792 original assertions and test
 identities are retained; this is software evidence, not native execution or the
 complete MR/Repository gate.
+
+
+### Software PA-interface Lua discovery
+
+Five PA-interface/corridor/crop/static-binding/trial test modules now try PATH
+lua/lua5.1 before their original local standalone fallback. Their existing
+selected-variable guards and actual subprocess arguments remain paired. The two
+real corridor/workbench native checks retain their exact SIMION_EXE opt-in guards
+and bodies; a portable interpreter does not authorize either native check.
+
+The original Lua-dependent round passed23 parents in2.550seconds. The complete
+five-module round then passed183 executed parents with two explicit native skips
+(185discovered;231.122seconds unittest,232.190seconds harness). All784 assertion
+ASTs,31subprocess call ASTs and185test identities remain unchanged. Each software
+round captured46 actual Lua process paths/hashes, all using the pinned portable
+Lua5.1.5 provider. Forty selector priority cases and Python lint passed. An earlier
+task-only observer setup failed before tests imported; that failure is retained,
+not a production failure or a result retag. PA queries/crop/save/refine/workbench
+methods remain existing inert fixtures. No solver/GUI, solved family copy, native
+propagation or scientific qualification is implied.
+The composed successor passed the 23 actual Lua-dependent MR parents together
+with the three RF/TOF modules: 38 parents and 87 successful records in 2.808 seconds,
+without skips. The other MR parents retain the private full-module evidence above;
+neither of the native opt-in checks was enabled by this run.

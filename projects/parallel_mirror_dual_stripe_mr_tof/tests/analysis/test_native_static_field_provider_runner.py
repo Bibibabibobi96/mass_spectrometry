@@ -14,7 +14,7 @@ SIMION_ROOT = REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
 RUNNER = SIMION_ROOT / 'run_native_static_field_provider.ps1'
 CROP = SIMION_ROOT / 'crop_native_static_field.lua'
 PWSH = shutil.which('pwsh') or 'C:/Program Files/PowerShell/7/pwsh.exe'
-LUA = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'SIMION-2020/lua.exe'
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'SIMION-2020/lua.exe'))
 
 
 @unittest.skipUnless(Path(PWSH).is_file(), 'PowerShell Core required for AST fixtures')

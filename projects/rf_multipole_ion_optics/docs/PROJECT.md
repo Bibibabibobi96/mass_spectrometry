@@ -1204,3 +1204,10 @@ On the composed successor, 22 original/new methods and 21 subtests passed in 47.
 All four original N100 cosine hexapole/octupole L1/L2 cases preserve complete metrics,
 200 rows per case and JSON/CSV/PNG bytes. The original sine analytic RED remains recorded.
 Combined ordinary installation and native acceptance of the corrected version remain open.
+
+
+## Standalone Lua software fixtures
+
+The existing callback regression discovers standalone `lua`, then `lua5.1`, on PATH before its unchanged local SIMION Lua fallback. Its actual Program normalization, terminal/interpolation and repeated-run assertions are unchanged. This is an inert callback test; no PA, Refine or Fly is executed.
+
+The three affected RF/TOF modules passed in one private public-GATE invocation: 15 parent tests in 3.135 seconds, with one unchanged optional historical-snapshot skip. The typed-argv observer recorded 18 calls to the pinned standalone Lua executable and no commercial SIMION invocation. Original tests, numerical assertions and loaded production resources remain unchanged. This is not native or full-Repository acceptance.

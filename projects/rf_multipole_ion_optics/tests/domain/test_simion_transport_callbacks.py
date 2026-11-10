@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 PROJECT = ROOT / 'projects/rf_multipole_ion_optics'
-SUPPLIER_LUA = Path(r'C:\Program Files\SIMION-2020\lua.exe')
+SUPPLIER_LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or r'C:\Program Files\SIMION-2020\lua.exe')
 
 
 class SimionTransportCallbackTests(unittest.TestCase):
