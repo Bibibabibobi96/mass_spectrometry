@@ -2095,6 +2095,11 @@
             "dependency_profile": "locked"
           },
           {
+            "matches": [{"exact": "src/msplatform/analysis/cooling_diagnostics.py", "reason": "cooled_recorded_diagnostics_changed"}],
+            "modules": ["integrations/tests/test_cooled_frontend_analysis.py", "integrations/tests/test_cooled_frontend_execute.py"],
+            "dependency_profile": "locked"
+          },
+          {
             "matches": [
               {"exact": "src/msplatform/backends/simion/cooled_frontend_geometry.py", "reason": "cooled_geometry_changed"},
               {"exact": "src/msplatform/workflows/cooled_frontend/program.py", "reason": "cooled_program_changed"}

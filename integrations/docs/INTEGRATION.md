@@ -1166,3 +1166,32 @@ both consumers and all 454 source/build/distribution payload joins exact.
 The authored-envelope API/CLI positives and omitted/sibling-authority refusals
 preserve original input and owner bytes. Native and whole-Repository acceptance
 remain separate open requirements.
+
+
+### Recorded cooled population diagnostics
+
+`msplatform.analysis.cooling_diagnostics` describes caller-selected homogeneous
+mass/charge cohorts using the existing population moment implementation. The
+cooled analyzer retains its original active-only snapshots and separately records
+every declared clock, consecutive same-ID pairs and confirmed OA-exit-selected
+cohorts. Missing/ended states are never propagated. Current source weights remain
+explicitly unit test-particle weights; source mass/charge is not a chemical species ID.
+
+Laboratory energy and nominal-bath-reference energy are separate. The reference
+comes from the existing component gas provider and rigid vector transformation;
+it is not an actual gas sample at an outside/vacuum point. Velocity second-moment
+tensors include instantaneous RF motion and are not equilibrium/secular temperature,
+SDS microscopic temperature or collision counts. Root cooled/local parsing and
+figure orchestration remain separate migration work. No native or scientific
+qualification follows from pure diagnostics or installed-source availability.
+
+The integrated successor at `26c6982a` plus this slice passed 27 actual
+analysis/execution/architecture parents; the Changed selector passed separately
+(one initially mistyped class selector is retained as a command error). A fresh
+focused ordinary wheel and sdist-rebuilt-wheel check passed in 85.624 seconds,
+with all 455 runtime payloads joined to source, both installed trees and the
+sdist. It exercised the actual pure diagnostic and missing-module/complex-input
+negatives outside denied author roots, not the complete installed parent.
+The component-provided reference remains nominal rather than a gas sample.
+Observed old/new moment roundoff on the retained examples is not a general error
+bound. Full Repository, native cooling and the performance target remain open.

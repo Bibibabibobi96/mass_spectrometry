@@ -439,6 +439,25 @@ try:
 finally:cooled_pulse_held.rename(cooled_pulse_module)
 # COOLED_PULSE_INSTALLED_END
 
+# COOLING_DIAGNOSTICS_INSTALLED_BEGIN
+from msplatform.analysis import cooling_diagnostics as cooling_diagnostics
+assert pathlib.Path(cooling_diagnostics.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+cohort=np.array([[90.,0.,0.],[110.,0.,0.]])
+cooled_diagnostic=cooling_diagnostics.velocity_population_diagnostics(cohort,mass_amu=100.,charge_state=-1,
+    reference_velocity_m_s=(100.,0.,0.),relative_weights=None,frame_id='lab',sample_kind='time_snapshot',
+    reference_label='explicit nominal bath, not actual sampled gas')
+assert cooled_diagnostic['velocity_covariance_m2_s2'][0][0]==100.
+assert cooled_diagnostic['mean_velocity_m_s']==[100.,0.,0.]
+assert cooled_diagnostic['mean_laboratory_energy_ev']>cooled_diagnostic['mean_reference_relative_energy_ev']>0.
+cooling_path=pathlib.Path(cooling_diagnostics.__file__);cooling_held=cooling_path.with_suffix('.missing-test-held')
+cooling_path.rename(cooling_held)
+try:
+    cooling_missing=subprocess.run([sys.executable,'-I','-B','-c','import msplatform.analysis.cooling_diagnostics'],
+        cwd=root,capture_output=True,text=True,timeout=30,check=False)
+    assert cooling_missing.returncode!=0 and 'cooling_diagnostics' in cooling_missing.stderr
+finally:cooling_held.rename(cooling_path)
+# COOLING_DIAGNOSTICS_INSTALLED_END
+
 # COOLED_COMPILERS_INSTALLED_BEGIN
 from msplatform.backends.simion import cooled_frontend_geometry as cooled_geometry
 from msplatform.workflows.cooled_frontend import program as cooled_program

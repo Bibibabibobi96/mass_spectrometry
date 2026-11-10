@@ -138,5 +138,143 @@ class CooledFrontendAnalysisTests(unittest.TestCase):
             self.assertTrue(document["snapshots"])
 
 
+class CoolingPopulationDiagnosticsTests(unittest.TestCase):
+    def test_actual_cooled_freezer_delivers_helper_without_author_fallback(self):
+        import shutil
+        import subprocess
+        import sys
+        repo=Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/"inputs";output.mkdir()
+            script=Path(directory)/"freeze.ps1"
+            script.write_text("""param($Repo,$Output,$Python)
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Output -OwnerId instrument_assembly -ConsumerId cooled_frontend | Out-Null
+""",encoding="utf-8")
+            self.assertIsNotNone(shutil.which("pwsh"))
+            frozen=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script),str(repo),str(output),sys.executable],
+                cwd=repo,capture_output=True,text=True,encoding="utf-8",timeout=90)
+            self.assertEqual(frozen.returncode,0,frozen.stdout+frozen.stderr)
+            snapshot=output/"runtime_snapshot"
+            target=snapshot/"src/msplatform/analysis/cooling_diagnostics.py"
+            self.assertEqual(target.read_bytes(),(repo/"src/msplatform/analysis/cooling_diagnostics.py").read_bytes())
+            code="""import sys,json
+from pathlib import Path
+root=Path.cwd();sys.path[:0]=[str(root/'src'),str(root)]
+from msplatform.analysis import cooling_diagnostics as m
+assert Path(m.__file__).resolve().is_relative_to(root)
+print(json.dumps(m.velocity_population_diagnostics([[100.,0.,0.]],mass_amu=100.,charge_state=1,
+ reference_velocity_m_s=(100.,0.,0.),relative_weights=None,frame_id='lab',sample_kind='time_snapshot',reference_label='explicit nominal bath')))
+"""
+            command=[sys.executable,"-I","-B","-c",code]
+            def cold():
+                return subprocess.run(command,cwd=snapshot,capture_output=True,text=True,encoding="utf-8",timeout=30)
+            accepted=cold();self.assertEqual(accepted.returncode,0,accepted.stdout+accepted.stderr)
+            self.assertEqual(json.loads(accepted.stdout)["mean_reference_relative_energy_ev"],0.)
+            target.unlink()
+            rejected=cold();self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("cooling_diagnostics",rejected.stderr)
+
+    def test_diagnostic_mass_charge_groups_never_use_an_average_species_mass(self):
+        from integrations.workflows.cooled_frontend.analyze import _population_diagnostics
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);_,_,experiment=cooled_analysis_fixture(root,pressure_scale=1)
+            output=root/"pure-diagnostic";output.mkdir()
+            source=pd.DataFrame([dict(particle_id=pid,mass_amu=mass,charge_state=charge,instrument_time_us=0.)
+                for pid,mass,charge in ((1,100.,1),(7,100.,1),(101,524.,-1))]).set_index("particle_id")
+            path=root/"explicit-selected-source.csv";source.to_csv(path)
+            (output/"metadata.json").write_text(json.dumps(dict(source=file_record(path))))
+            pd.DataFrame([dict(particle_id=pid,instrument_time_us=t,status="active")
+                for t in (1.,2.) for pid in (1,7,101)]).to_csv(output/"all_shared_time_census.csv",index=False)
+            pd.DataFrame([dict(particle_id=pid,terminal_class="exit" if pid==7 else "timeout")
+                for pid in (1,7,101)]).to_csv(output/"all_mother_terminal_census.csv",index=False)
+            states=pd.DataFrame([dict(particle_id=pid,requested_time_us=t,vx_mm_per_us=v,vy_mm_per_us=0.,vz_mm_per_us=0.)
+                for t in (1.,2.) for pid,v in ((1,.09),(7,.11),(101,.2))])
+            conditioner=json.loads((root/"inputs/conditioner_contract.json").read_text())
+            doc=_population_diagnostics(output,states,source,conditioner,experiment,[1.,2.])
+            groups=doc["declared_clocks"][0]["active_groups"]
+            self.assertEqual([(g["mass_amu"],g["charge_state"],g["particle_ids"]) for g in groups],
+                [(100.,1,[1,7]),(524.,-1,[101])])
+            self.assertEqual(groups[0]["sample_count"],2)
+            self.assertEqual(groups[1]["velocity_covariance_m2_s2"],[[0.]*3]*3)
+            self.assertEqual(doc["consecutive_recorded_pairs"][0]["paired_particle_ids"],[1,7,101])
+            integral_csv=source.astype({"charge_state":float})
+            self.assertEqual(_population_diagnostics(output,states,integral_csv,conditioner,experiment,[1.,2.]),doc)
+            for charge in (1.5, float("nan"), float("inf"), -float("inf"), 0.):
+                invalid=source.astype({"charge_state":float})
+                invalid.loc[7,"charge_state"]=charge
+                with self.subTest(invalid_source_charge=charge),self.assertRaisesRegex(ValueError,"source mass/charge"):
+                    _population_diagnostics(output,states,invalid,conditioner,experiment,[1.,2.])
+
+    def test_complex_velocity_and_reference_reject_before_real_conversion(self):
+        import numpy as np
+        from msplatform.analysis.cooling_diagnostics import velocity_population_diagnostics
+        args=dict(mass_amu=100.,charge_state=1,reference_velocity_m_s=np.array([0.,0.,0.]),relative_weights=None,
+            frame_id="lab",sample_kind="time_snapshot",reference_label="explicit nominal reference")
+        for selected in ("velocity","reference"):
+            with self.subTest(complex_input=selected),self.assertRaisesRegex(ValueError,"real"):
+                velocity=np.array([[1.+2j,0.,0.]]) if selected=="velocity" else np.array([[1.,0.,0.]])
+                reference=np.array([0.+2j,0.,0.]) if selected=="reference" else args["reference_velocity_m_s"]
+                velocity_population_diagnostics(velocity,**dict(args,reference_velocity_m_s=reference))
+
+    def test_explicit_reference_weighting_and_velocity_tensor(self):
+        import numpy as np
+        from msplatform.analysis.cooling_diagnostics import velocity_population_diagnostics as describe
+        from msplatform.contracts.particle_physics import BOLTZMANN_CONSTANT_J_K
+        args=dict(mass_amu=100.,charge_state=-1,reference_velocity_m_s=(100.,0.,0.),relative_weights=None,
+            frame_id="lab",sample_kind="time_snapshot",reference_label="explicit nominal reference")
+        drift=describe(np.array([[100.,0.,0.],[100.,0.,0.]]),**args)
+        self.assertGreater(drift["mean_laboratory_energy_ev"],0.)
+        self.assertEqual(drift["mean_reference_relative_energy_ev"],0.)
+        self.assertEqual(drift["effective_second_moment_tensor_k"],[[0.]*3]*3)
+        pair=describe(np.array([[90.,0.,0.],[110.,0.,0.]]),**args)
+        self.assertEqual(pair["mean_velocity_m_s"],[100.,0.,0.])
+        self.assertEqual(pair["velocity_covariance_m2_s2"][0][0],100.)
+        self.assertAlmostEqual(pair["effective_second_moment_tensor_k"][0][0],100.*AMU_KG*100./BOLTZMANN_CONSTANT_J_K)
+        weighted=describe(np.array([[90.,0.,0.],[110.,0.,0.]]),**dict(args,relative_weights=np.array([1.,3.])))
+        self.assertEqual(weighted["mean_velocity_m_s"],[105.,0.,0.])
+        self.assertEqual(weighted["velocity_covariance_m2_s2"][0][0],75.)
+        self.assertEqual(weighted["weighting"],"explicit_relative")
+        self.assertIn("not equilibrium",pair["interpretation"])
+        empty=describe(np.empty((0,3)),**args)
+        self.assertEqual(empty["sample_count"],0)
+        self.assertIsNone(empty["mean_laboratory_energy_ev"])
+        self.assertIsNone(empty["effective_second_moment_tensor_k"])
+        for changed in (dict(mass_amu=True),dict(charge_state=True),dict(reference_velocity_m_s=(float("nan"),0.,0.)),
+                        dict(relative_weights=np.array([1.,0.])),dict(frame_id=""),dict(sample_kind="SDS microscopic temperature")):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                describe(np.array([[90.,0.,0.],[110.,0.,0.]]),**dict(args,**changed))
+
+    def test_declared_clocks_pairs_and_nominal_reference_preserve_empty_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);log,_,_=cooled_analysis_fixture(root,pressure_scale=0)
+            result=analyze_cooled_frontend(root,[log],shared_times_us=_TIMES,pulse_time_us=2.)
+            doc=json.loads(Path(result["cooling_population_diagnostics_record"]).read_text())
+            self.assertEqual(doc["mother_particle_ids"],[3,11,67])
+            source=pd.read_csv(root/"inputs/release_global.csv",float_precision="round_trip")
+            self.assertEqual(doc["source_birth_times_us"],{str(int(row.particle_id)):row.instrument_time_us for row in source.itertuples()})
+            self.assertEqual(doc["source_record"],file_record(root/"inputs/release_global.csv"))
+            self.assertEqual(doc["instrument_time_units"],"us")
+            self.assertEqual(doc["moment_method"],"population_moments_centered_columnwise_numpy_float64_ddof0")
+            self.assertEqual([r["instrument_time_us"] for r in doc["declared_clocks"]],_TIMES)
+            last=doc["declared_clocks"][-1]
+            self.assertTrue(all(g["sample_count"]==0 for g in last["active_groups"]))
+            self.assertFalse(doc["reference"]["actual_gas_sample"])
+            self.assertEqual(doc["reference"]["kind"],"nominal_prescribed_bath")
+            self.assertEqual(doc["reference"]["velocity_m_s"],[0.,0.,0.])
+            self.assertEqual(doc["reference"]["source"],"selected_cooled_conditioner_gas")
+            self.assertEqual(last["confirmed_oa_exit_selected"]["cohort_particle_ids"],[3])
+            self.assertEqual(last["confirmed_oa_exit_selected"]["unobserved_particle_ids"],[3])
+            self.assertEqual(doc["consecutive_recorded_pairs"][-1]["paired_particle_ids"],[])
+            for pair in doc["consecutive_recorded_pairs"]:
+                before=[pid for g in pair["before"] for pid in g["particle_ids"]]
+                after=[pid for g in pair["after"] for pid in g["particle_ids"]]
+                self.assertEqual(before,after)
+                self.assertEqual(sorted(before),pair["paired_particle_ids"])
+            legacy=json.loads((root/"results/local_frontend/extraction/cooling_evolution.json").read_text())
+            self.assertNotIn(3.,[r["instrument_time_us"] for r in legacy["snapshots"]])
+            self.assertIn("not proof of physical",doc["terminal_semantics"])
+
+
 if __name__ == "__main__":
     unittest.main()

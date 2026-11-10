@@ -401,6 +401,13 @@ ConvertTo-Json -Compress -InputObject $paths
             "test_saved_workbench_replay_policy","test_dependencies")})
         self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
 
+
+    def test_recorded_cooling_helper_selects_the_actual_analysis_consumers(self):
+        request,_=self.plan("-ChangedPath","src/msplatform/analysis/cooling_diagnostics.py")
+        modules={value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
+                 for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])}
+        self.assertEqual(modules,{"integrations.tests.test_cooled_frontend_analysis","integrations.tests.test_cooled_frontend_execute"})
+        self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
     def test_cooled_compilers_select_their_actual_consumers(self):
         expected={"integrations.tests."+name for name in (
             "test_cooled_frontend", "test_cooled_frontend_reference", "test_cooled_frontend_mesh_check",
