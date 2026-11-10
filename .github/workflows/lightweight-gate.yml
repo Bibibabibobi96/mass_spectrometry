@@ -75,6 +75,31 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Prepare pinned standalone Lua 5.1.5 for software tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'lua-5.1.5_Win64_bin.zip'
+          $directory = Join-Path $env:RUNNER_TEMP 'lua-5.1.5-software-tests'
+          & curl.exe --fail --location --proto '=https' --proto-redir '=https' --output $archive 'https://downloads.sourceforge.net/project/luabinaries/5.1.5/Tools%20Executables/lua-5.1.5_Win64_bin.zip'
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone Lua archive download failed.' }
+          # Observed official HTTPS archive identity, not a separately published vendor digest.
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ine '5f34cf7d40a20a587ea351482a4207d93b92ef6f1983e910a13338253819fe93') { throw 'Standalone Lua archive identity differs.' }
+          $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+          try {
+            foreach ($entry in $zip.Entries) {
+              if ([IO.Path]::IsPathRooted($entry.FullName) -or ($entry.FullName.Replace('\','/')) -match '(^|/)\.\.(/|$)|:' -or (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) { throw 'Unsafe standalone Lua archive entry.' }
+            }
+          } finally { $zip.Dispose() }
+          # Keep the matching DLL, external manifests and complete private VC80 assembly.
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          foreach ($relative in @('lua5.1.exe','lua5.1.dll','lua5.1.exe.manifest','lua5.1.dll.manifest','Microsoft.VC80.CRT/Microsoft.VC80.CRT.manifest','Microsoft.VC80.CRT/msvcr80.dll','Microsoft.VC80.CRT/msvcp80.dll','Microsoft.VC80.CRT/msvcm80.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $directory $relative) -PathType Leaf)) { throw "Standalone Lua closure is missing: $relative" }
+          }
+          $version = & (Join-Path $directory 'lua5.1.exe') -v 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch '^Lua 5\.1\.5(?:\s|$)') { throw 'Standalone Lua runtime version differs.' }
+          Write-Output "SOFTWARE_TEST_LUA=$directory VERSION=$version"
+          $directory | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Install repository scientific core
         shell: pwsh
         # Install this checkout before planning; stdlib routes need its hash API
@@ -383,6 +408,31 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Prepare pinned standalone Lua 5.1.5 for software tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'lua-5.1.5_Win64_bin.zip'
+          $directory = Join-Path $env:RUNNER_TEMP 'lua-5.1.5-software-tests'
+          & curl.exe --fail --location --proto '=https' --proto-redir '=https' --output $archive 'https://downloads.sourceforge.net/project/luabinaries/5.1.5/Tools%20Executables/lua-5.1.5_Win64_bin.zip'
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone Lua archive download failed.' }
+          # Observed official HTTPS archive identity, not a separately published vendor digest.
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ine '5f34cf7d40a20a587ea351482a4207d93b92ef6f1983e910a13338253819fe93') { throw 'Standalone Lua archive identity differs.' }
+          $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+          try {
+            foreach ($entry in $zip.Entries) {
+              if ([IO.Path]::IsPathRooted($entry.FullName) -or ($entry.FullName.Replace('\','/')) -match '(^|/)\.\.(/|$)|:' -or (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) { throw 'Unsafe standalone Lua archive entry.' }
+            }
+          } finally { $zip.Dispose() }
+          # Keep the matching DLL, external manifests and complete private VC80 assembly.
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          foreach ($relative in @('lua5.1.exe','lua5.1.dll','lua5.1.exe.manifest','lua5.1.dll.manifest','Microsoft.VC80.CRT/Microsoft.VC80.CRT.manifest','Microsoft.VC80.CRT/msvcr80.dll','Microsoft.VC80.CRT/msvcp80.dll','Microsoft.VC80.CRT/msvcm80.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $directory $relative) -PathType Leaf)) { throw "Standalone Lua closure is missing: $relative" }
+          }
+          $version = & (Join-Path $directory 'lua5.1.exe') -v 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch '^Lua 5\.1\.5(?:\s|$)') { throw 'Standalone Lua runtime version differs.' }
+          Write-Output "SOFTWARE_TEST_LUA=$directory VERSION=$version"
+          $directory | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Install repository scientific core
         shell: pwsh
         # Install this checkout before planning; stdlib routes need its hash API

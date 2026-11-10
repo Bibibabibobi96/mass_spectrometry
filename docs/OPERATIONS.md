@@ -97,6 +97,18 @@ SummaryPath保存范围、命令、环境、状态、原因、日志和慢测试
 失败诊断保留请求及group_failure.log；复核后使用该次输出的精确GATE_DIAGNOSTICS_CLEANUP，
 不广泛删除TEMP、不按年龄删失败证据。编排细节按需查[公共实现](../common/README.md#门禁编排)。
 
+### Standalone Lua for software tests
+
+Windows CI provisions the pinned LuaBinaries 5.1.5 x64 console archive in each job's temporary
+folder. Its observed official HTTPS SHA-256 is checked before extraction; the DLL, executable
+manifests and complete private VC80 CRT assembly stay together under the original `lua5.1.exe`
+name. The job adds only that folder to its own PATH. Shared prepared-model fixtures discover
+`lua` or `lua5.1` on PATH before the existing local SIMION standalone fallback.
+This is a software-test dependency, not a commercial SIMION installation or native Fly/Refine
+qualification. A changed archive, missing closure or wrong runtime version fails the setup.
+Source: [LuaBinaries 5.1.5 official files](https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/),
+reviewed 2026-11-10. The pinned digest records observed archive bytes, not an independent vendor-published checksum.
+
 ### 主机资源调度
 
 门禁和商业运行通过同一公共入口申请资源；重、轻阶段及额度只由

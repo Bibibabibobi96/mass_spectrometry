@@ -6,6 +6,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 
@@ -18,7 +19,7 @@ from msplatform.backends.simion.native_plans import plan_solve_fields, plan_down
 from msplatform.backends.simion.resources import native_resource_path
 
 
-LUA = Path('C:/Program Files/SIMION-2020/lua.exe')
+LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
 
 
 def model_inputs(root):
