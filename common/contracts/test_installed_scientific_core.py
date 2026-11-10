@@ -2341,6 +2341,7 @@ from msplatform.workflows.rf_mass_filter import finite_length as rf_l1
 from msplatform.components.rf_multipole import finite_length_transport as rf_l1_kernel
 from msplatform.execution.context import load_environment as rf_l1_load_environment
 from msplatform.execution.capacity_protection import load_capacity_protection_leases as rf_l1_capacity
+from msplatform.execution.capacity_admission import capture_capacity_policy as rf_l1_capture_capacity
 from msplatform.execution.completion import no_particle_batch_completion_api as rf_l1_completion
 from msplatform.execution.owner import resume_finalization as rf_l1_resume
 from msplatform.io.manifest_records import verify_record as rf_l1_verify
@@ -2356,6 +2357,18 @@ for rf_l1_name,rf_l1_record in rf_l1_fixture['inputs'].items():
     rf_l1_path=rf_l1_science/(rf_l1_name+'.json');rf_l1_path.write_bytes(rf_l1_bytes);rf_l1_paths[rf_l1_name]=rf_l1_path
 rf_l1_policy=rf_l1_science/'host-policy.json';rf_l1_policy.write_bytes(bytes.fromhex(rf_l1_fixture['host_policy_hex']))
 assert hashlib.sha256(rf_l1_policy.read_bytes()).hexdigest()==rf_l1_fixture['host_policy_sha256']
+# Explicit TEST-only capacity deployment; canonical/default machine policy is unchanged.
+rf_l1_capacity_resource=execution_resource_path('artifact_capacity_policy.json')
+rf_l1_capacity_original=rf_l1_capacity_resource.read_bytes()
+rf_l1_capacity_defaults=json.loads(rf_l1_capacity_original)
+rf_l1_capacity_snapshot=dict(rf_l1_capacity_defaults,target_gib=1,minimum_free_gib=64 / 1024)
+rf_l1_capacity_policy=rf_l1_science/'test-owned-capacity-policy.json'
+rf_l1_capacity_policy.write_text(json.dumps(rf_l1_capacity_snapshot),encoding='utf-8')
+rf_l1_capacity_selection=rf_l1_capture_capacity(rf_l1_capacity_policy)
+assert rf_l1_capacity_selection['snapshot']==rf_l1_capacity_snapshot
+assert pathlib.Path(rf_l1_capacity_selection['source_record']['path'])==rf_l1_capacity_policy
+rf_l1_verify('installed TEST capacity policy',rf_l1_capacity_selection['source_record'])
+assert rf_l1_capacity_resource.read_bytes()==rf_l1_capacity_original
 rf_l1_competing=root/('rf-competing-'+sys.argv[2]);(rf_l1_competing/'msplatform').mkdir(parents=True)
 (rf_l1_competing/'msplatform/__init__.py').write_text("raise RuntimeError('COMPETING_WORKER_PACKAGE_USED')\n",encoding='utf-8')
 rf_l1_original_invoke=rf_l1._invoke_frozen_stage
@@ -2375,9 +2388,12 @@ try:
         rf_l1_machine=rf_l1_science/('environment-'+rf_l1_case+'.json')
         rf_l1_machine.write_text(json.dumps(dict(schema_version=1,role='execution_environment',
             tools=dict(python=sys.executable,powershell=rf_l1_fixture['powershell']),
-            policy=dict(host_state_path=rf_l1_fixture['host_state_path'],policy_path=str(rf_l1_policy)),
+            policy=dict(host_state_path=rf_l1_fixture['host_state_path'],policy_path=str(rf_l1_policy),
+                capacity_policy_path=str(rf_l1_capacity_policy)),
             profiles={'rf_l1_test_only':dict(stage_policy_path=str(rf_l1_stages))})),encoding='utf-8')
         rf_l1_context=rf_l1_load_environment(rf_l1_machine,workspace=rf_l1_workspace,profile='rf_l1_test_only')
+        assert rf_l1_context.capacity_policy_path==rf_l1_capacity_policy
+        assert rf_l1_context.environment['policy']['capacity_policy_path']==str(rf_l1_capacity_policy)
         rf_l1_id='20261111_120000__test__python__installed-l1-'+sys.argv[2]+'-'+rf_l1_case
         rf_l1_seen={}
         def rf_l1_observe(session,request,stage,guards,limits):
@@ -2412,11 +2428,20 @@ try:
                 rf_l1.run(rf_l1_context,baseline_path=rf_l1_paths['baseline'],resolved_path=rf_l1_paths['resolved'],
                     mode_path=rf_l1_paths['mode'],source_path=rf_l1_paths['source'],run_id=rf_l1_id)
         except RuntimeError as error:
+            if 'session' not in rf_l1_seen:
+                raise
             rf_l1_error=error
         session=rf_l1_seen['session'];project=rf_l1_workspace/'artifacts/projects/rf_multipole_ion_optics'
         result_path=project/'scratch/workflow_results'/rf_l1_id/'result.json'
         result=json.loads(result_path.read_text(encoding='utf-8'))
         assert result['writers_confirmed'] is True
+        rf_l1_captured_capacity=result['capacity_session']['capacity_policy']
+        assert rf_l1_captured_capacity['source_record']==rf_l1_capacity_selection['source_record']
+        assert rf_l1_captured_capacity['snapshot']==rf_l1_capacity_selection['snapshot']
+        assert rf_l1_captured_capacity['snapshot_sha256']==rf_l1_capacity_selection['snapshot_sha256']
+        rf_l1_verify('owner frozen TEST capacity policy',rf_l1_captured_capacity['frozen_record'])
+        assert pathlib.Path(rf_l1_captured_capacity['frozen_record']['path'])==session.input_dir/'capacity_policy.json'
+        assert json.loads(pathlib.Path(rf_l1_captured_capacity['frozen_record']['path']).read_text(encoding='utf-8'))==rf_l1_capacity_snapshot
         assert (session.input_dir/'analysis_request.json').read_bytes()==rf_l1_seen['request']
         assert (session.input_dir/'analysis_package.json').read_bytes()==rf_l1_seen['package']
         if rf_l1_case=='positive':
@@ -2479,6 +2504,8 @@ finally:
 for rf_l1_name,rf_l1_path in rf_l1_paths.items():
     assert hashlib.sha256(rf_l1_path.read_bytes()).hexdigest()==rf_l1_fixture['inputs'][rf_l1_name]['sha256']
 assert len(rf_l1_cases)==3
+assert rf_l1_capacity_resource.read_bytes()==rf_l1_capacity_original
+rf_l1_verify('unchanged TEST capacity selection',rf_l1_capacity_selection['source_record'])
 print('INSTALLED_RF_MANAGED_L1=PASS '+json.dumps(rf_l1_cases))
 # RF_MANAGED_L1_INSTALLED_END
 
@@ -2669,6 +2696,58 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 cwd=directory, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED", result.stdout)
+
+    def test_installed_rf_prehook_runtime_failure_preserves_primary_diagnostic(self) -> None:
+        """Synthetic diagnostic branches; no owner, process or OS-cause claim."""
+        import ast
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        tree = ast.parse(INSTALLED_PROBE)
+        case = next(node for node in ast.walk(tree) if isinstance(node, ast.For)
+                    and isinstance(node.target, ast.Name) and node.target.id == 'rf_l1_case')
+        initialization = next(node for node in case.body if isinstance(node, ast.Assign)
+                              and any(isinstance(target, ast.Name) and target.id == 'rf_l1_error' for target in node.targets))
+        invocation = next(node for node in case.body if isinstance(node, ast.Try)
+                          and any(isinstance(handler.type, ast.Name) and handler.type.id == 'RuntimeError'
+                                  for handler in node.handlers))
+        lookup = next(node for node in case.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == 'session' for target in node.targets))
+        # Execute the actual invocation/handler and following mandatory lookup,
+        # not a copied approximation of the exception-handling policy.
+        code = compile(ast.Module(body=[initialization, invocation, lookup], type_ignores=[]),
+                       '<actual-installed-rf-handler>', 'exec')
+        primary = RuntimeError('CONTROLLED_PREHOOK_DIAGNOSTIC')
+        primary.add_note('Synthetic diagnostic sentinel; not a measured OS failure')
+        def fail_before_hook(*args, **kwargs):
+            raise primary
+        selected = SimpleNamespace(_invoke_frozen_stage=object(), run=fail_before_hook)
+        seen = {}
+        namespace = dict(rf_l1_patch=patch, rf_l1=selected, rf_l1_seen=seen,
+            rf_l1_observe=lambda *args, **kwargs: None,
+            rf_l1_kernel=SimpleNamespace(simulate_mass=object()), rf_l1_context=object(),
+            rf_l1_paths={key: Path(key+'.json') for key in ('baseline','resolved','mode','source')},
+            rf_l1_id='controlled-handler-only')
+        with self.assertRaises(RuntimeError) as caught:
+            exec(code, namespace)
+        self.assertIs(caught.exception, primary)
+        self.assertEqual(primary.__notes__, ['Synthetic diagnostic sentinel; not a measured OS failure'])
+        self.assertNotIn('session', seen)
+        # A missing hook without a primary RuntimeError is still a real failure.
+        selected.run = lambda *args, **kwargs: None
+        with self.assertRaisesRegex(KeyError, 'session'):
+            exec(code, namespace)
+        # The existing post-hook capture and positive control flow stay intact.
+        marker = object()
+        seen['session'] = marker
+        selected.run = fail_before_hook
+        exec(code, namespace)
+        self.assertIs(namespace['rf_l1_error'], primary)
+        self.assertIs(namespace['session'], marker)
+        selected.run = lambda *args, **kwargs: None
+        exec(code, namespace)
+        self.assertIsNone(namespace['rf_l1_error'])
+        self.assertIs(namespace['session'], marker)
 
     def test_command_transport_preserves_non_utf8_diagnostics_and_failure_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

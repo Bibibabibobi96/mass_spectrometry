@@ -109,11 +109,47 @@ class MassFilterL1Tests(unittest.TestCase):
                 minimum_system_available_memory_bytes=1073741824, compact_final_retained_bytes=67108864,
                 automatic_retry_count=0), artifact_retention=dict(policy_version=1, **{'class': 'compact'}, reason=None))
         })), encoding='utf-8')
+        # Explicit TEST deployment, not the workstation's 295-GiB free-disk floor.
+        # Real admission/commitment/reserve checks remain active for these small fixtures.
+        from msplatform.execution.resources import resource_path
+        capacity = workspace / 'test-owned-capacity-policy.json'
+        capacity_policy = load_json(resource_path('artifact_capacity_policy.json'))
+        capacity_policy.update(target_gib=1, minimum_free_gib=64 / 1024)
+        capacity.write_text(json.dumps(capacity_policy), encoding='utf-8')
         host = json.loads(os.environ['MASS_SPECTROMETRY_HOST_CONTEXT_JSON'])
         return ExecutionContext(workspace=workspace, python_executable=Path(sys.executable),
             powershell_executable=Path(shutil.which('pwsh')), tools={},
             host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
-            policy_path=Path(host['policy_path']), stage_policy_path=stage)
+            policy_path=Path(host['policy_path']), capacity_policy_path=capacity, stage_policy_path=stage)
+
+    def test_test_deployment_capacity_policy_keeps_real_reserve_refusal(self) -> None:
+        from types import SimpleNamespace
+        from msplatform.execution.capacity_admission import capture_capacity_policy
+        from msplatform.execution import capacity_session
+        from msplatform.execution.resources import resource_path
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+        canonical = resource_path('artifact_capacity_policy.json')
+        original = canonical.read_bytes()
+        with self._workspace() as temporary:
+            root = Path(temporary)
+            context = self._context(root / 'artifacts/projects/rf_multipole_ion_optics')
+            self.assertEqual(context.capacity_policy_path, root / 'test-owned-capacity-policy.json')
+            selection = capture_capacity_policy(context.capacity_policy_path)
+            self.assertEqual(selection['snapshot']['target_gib'], 1)
+            self.assertEqual(selection['snapshot']['minimum_free_gib'], 64 / 1024)
+            self.assertEqual(Path(selection['source_record']['path']), context.capacity_policy_path)
+            (root / 'artifacts').mkdir()
+            initialize_capacity_ledger(root / 'artifacts', objects=[])
+            # Negative-only measured-input control: never force an admission to pass.
+            with patch('msplatform.execution.capacity_admission.shutil.disk_usage',
+                       return_value=SimpleNamespace(free=63 * 1024**2)):
+                with self.assertRaises(capacity_session.CapacityAdmissionError) as caught:
+                    capacity_session.enter_capacity_session(root / 'artifacts', root / 'artifacts/runs/blocked',
+                        owner='test-reserve', committed_new_bytes=1, capacity_policy=selection)
+            self.assertEqual(caught.exception.receipt['blocking_reason'], 'MINIMUM_FREE_CAPACITY_UNAVAILABLE')
+            self.assertEqual(caught.exception.capacity_lease_cleanup['status'], 'released')
+            self.assertEqual(load_capacity_protection_leases(root / 'artifacts')['audit'], [])
+        self.assertEqual(canonical.read_bytes(), original)
 
     @staticmethod
     def _controlled_provider(artifact_root: Path, *, passed: bool = True) -> Path:
