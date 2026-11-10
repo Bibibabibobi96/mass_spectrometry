@@ -127,6 +127,13 @@ an empty-package freeze declaration and a stale DAG node; those were corrected w
 source enumeration, and the failed run and successful targeted successor remain separate evidence.
 Final ordinary installation of the composed source, full regression and performance targets stay OPEN.
 
+The installed RF metric assembler and IP scientific input compiler now replace their root
+implementations. IP source compilation needs no vendor, seed or field; explicit unsolved
+input materialization preserves the original HS1 adapter and four native Lua resources.
+Native path projection/context and the single-flight Program renderer also have installed
+owners and actual migrated consumers. Their scoped checks do not close the remaining
+root native orchestration, current composed installation, complete regression or native acceptance.
+
 
 | 当前对象／职责 | 规范所有者与活动消费者 | 本阶段退出条件 |
 |---|---|---|
@@ -141,6 +148,9 @@ Final ordinary installation of the composed source, full regression and performa
 | Independent OA model/field/tracking | Installed SIMION model, field and shared tracking owners; explicit drive, source/clock and original protected family | Source and ordinary-install software slices delivered; actual OA native field/Fly and coupled-field qualification stay OPEN. Detailed evidence belongs to the OA project state. |
 | OA accelerator-only theory and closed-focus source | `components.orthogonal_accelerator.three_zone_ideal_theory` and `backends.simion.oa_focus_source`; actual contracts, CLI and frozen consumers | Old bodies retired with scientific definitions unchanged; current v2 authority refresh preserves historical v1 bytes/refusal. The closed-focus plan, recorded analysis and protocol-2 FastAdjust decisions are installed with explicit mesh/profile authority and frozen consumers. Remaining native orchestration and native acceptance stay OPEN. |
 | Paired RF source and sampled response | `ion_release.paired_mass_scan` and `analysis.mass_response`; actual RF preparation/evaluation and three frozen PS consumers | Both old bodies retired, explicit mass/input/criteria preserved; ordinary source epochs and main scoped checks delivered. Remaining root RF workflows and final composed-source acceptance remain OPEN. |
+| RF finite-SIMION metrics | `analysis.rf_transport_metrics`; all four actual finite-transport CLI modes and frozen consumers | The complete old assembler is retired, with original denominators, handoff counting and UNQUALIFIED limits unchanged. Scoped software and ordinary-wheel evidence delivered; remaining RF algorithms/orchestration and composed acceptance stay OPEN. |
+| IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, cooled, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
+| Native execution path projection/context | `execution.run_paths` and its selected installed/frozen PowerShell resource; actual native consumers | Root projection/context bodies retired; explicit execution roots, canonical identity, shared ledger and existing junction/writer guards retained. Repository DEV root discovery remains outside the package. No new native or general historical-path portability claim. |
 | Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration, composed installation and native seed/reopen acceptance stay OPEN. |
 | Local frontend and initial-state CSV | `workflows.local_frontend` and `backends.simion.source.load_initial_state`; cooled and local consumers | Root local bodies retired; classified IOB policy and original particle/clock semantics retained. Final composed acceptance and remaining shared orchestration stay OPEN. |
 | Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
