@@ -105,7 +105,7 @@ print('PASSIVE_FORCE_AUDIT_PASS')
 
 class ExtractionForceAuditTests(unittest.TestCase):
     def run_case(self, mode: str) -> tuple[list[dict], list[dict]]:
-        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua")
+        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
         if executable is None:
             installed = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
             executable = str(installed) if installed.is_file() else None

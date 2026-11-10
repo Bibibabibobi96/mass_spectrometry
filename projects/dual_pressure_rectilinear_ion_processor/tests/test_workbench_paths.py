@@ -115,7 +115,7 @@ class WorkbenchPathTests(unittest.TestCase):
 
     def run_path_fixture(self, *, external_native_field: bool, transformed: bool = False) -> None:
         """Execute the actual builder with isolated inert assets and stub APIs."""
-        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua")
+        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
         if executable is None:
             installed = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
             if installed.is_file():
@@ -177,7 +177,7 @@ class WorkbenchPathTests(unittest.TestCase):
         original = case.seed_repository
         hidden = original.with_name(original.name + "_unavailable")
         original.rename(hidden)
-        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua")
+        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
         if executable is None:
             executable = str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
         if not Path(executable).is_file():

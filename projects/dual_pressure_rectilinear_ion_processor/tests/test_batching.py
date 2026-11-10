@@ -446,7 +446,7 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
         self.assertNotEqual(before, batching.prepare_request(self.run)["case_input_sha256"])
 
     def test_generated_template_lua_projects_actual_load_save_and_preserves_canonical_receipt(self) -> None:
-        lua=Path('C:/Program Files/SIMION-2020/lua.exe')
+        lua=Path(os.environ.get('SIMION_LUA_EXE') or shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():self.skipTest('Standalone Lua interpreter unavailable')
         self.config['native_field']=dict(directory=str(self.run/'simion'),source_manifest=None)
         (self.run/'simion/processor.pa0').write_bytes(b'inert not PA')

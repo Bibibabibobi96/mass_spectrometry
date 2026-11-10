@@ -21,7 +21,7 @@ class NativeDriveTests(unittest.TestCase):
     """Check RF quarter-cycle, DC switches, lift and extraction electrode roles."""
 
     def test_frozen_voltage_schedule_with_independent_expected_values(self) -> None:
-        lua = shutil.which("lua") or str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
+        lua = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1") or str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
         if not Path(lua).is_file():
             self.skipTest("ordinary lua.exe unavailable; no commercial SIMION process is used")
         baseline = json.loads((PROJECT / "config/baseline.json").read_text(encoding="utf-8"))

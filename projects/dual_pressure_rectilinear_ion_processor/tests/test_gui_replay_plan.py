@@ -688,7 +688,7 @@ class GuiReplayPlanTests(unittest.TestCase):
                     self.prepare_native(count)
 
     def test_repeat_orchestration_snapshots_each_complete_stub_fly(self) -> None:
-        lua = shutil.which("lua") or str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
+        lua = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1") or str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
         if not Path(lua).is_file():
             self.skipTest("ordinary Lua interpreter unavailable")
         plan = self.prepare_native(2)

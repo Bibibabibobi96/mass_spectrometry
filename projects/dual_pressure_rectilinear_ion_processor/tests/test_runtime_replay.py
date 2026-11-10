@@ -413,7 +413,7 @@ class RuntimeReplayTests(unittest.TestCase):
 
     def run_runtime_fixture(self, mode: str) -> str:
         """Run isolated callback contracts without a vendor application or fields."""
-        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua")
+        executable = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
         if executable is None:
             installed = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
             if installed.is_file():

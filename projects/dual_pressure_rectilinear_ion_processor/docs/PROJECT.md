@@ -550,3 +550,25 @@ pure API acceptance scope, not the full installed suite or a native run.
 The composed successor passed 57 parents and 219 records in 63.884 seconds,
 including the unchanged numerical consumers, complete architecture checks and
 the actual Changed plan selecting the three migrated integration consumers.
+
+
+### Software-only Lua test discovery
+
+Seven IP software-test modules now select explicit SIMION_LUA_EXE first, then
+PATH lua/lua5.1 before their original local vendor fallback. The skip guard and
+actual subprocess keep the same selected interpreter. Callback/drive/replay,
+field-probe and workbench tests use their existing inert resources and stub APIs;
+this change does not select SIMION_EXE or authorize a vendor solver/GUI.
+
+The original121 parents passed with no skips in50.081seconds unittest time
+(51.398seconds harness). All464 original assertion ASTs, twelve subprocess call
+ASTs and121 test identities are unchanged. A separate actual NativeDrive parent
+confirms the pinned portable Lua5.1.5 process path/hash; task-only audit transport
+capture initially missed Windows command-line encoding, so those empty captures
+remain separate and are not relabeled as process-origin proof. The unchanged
+tracked16,403,404-byte structural placeholder was verified against its original
+Git blob in the private archive; no solved PA family was copied or produced. These results are
+plain-Lua/software evidence, not native propagation or scientific qualification.
+The composed successor also passed all seventeen drive/replay/workbench-path
+parents in 2.383 seconds without skips. The other four modules retain the scoped
+private evidence above; the complete Repository was not rerun for this selector slice.

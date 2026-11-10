@@ -190,7 +190,7 @@ class FieldDiagnosticsTests(unittest.TestCase):
         figure.canvas.draw()
 
     def test_actual_lua_probe_converts_units_and_keeps_post_pulse_audit(self) -> None:
-        executable=os.environ.get("SIMION_LUA_EXE") or shutil.which("lua")
+        executable=os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
         if executable is None:
             path=Path(os.environ.get("ProgramFiles","C:/Program Files"))/"SIMION-2020/lua.exe"
             if path.is_file():executable=str(path)
