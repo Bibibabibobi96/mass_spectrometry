@@ -1,5 +1,7 @@
 """Native owner transport uses real short processes, never a solver fixture."""
 from pathlib import Path
+import hashlib
+import sysconfig
 import shutil
 import subprocess
 import sys
@@ -151,8 +153,13 @@ foreach($boundary in @('field','replay')){foreach($mode in @('nonzero','unknown'
         from msplatform.backends.simion import field_worker
         from msplatform.execution.context import ExecutionContext
         from msplatform.execution.processes import ProcessExecutionError
-        self.assertEqual(Path(field_worker.__file__).resolve(),
-                         (REPO / 'src/msplatform/backends/simion/field_worker.py').resolve())
+        worker_path = Path(field_worker.__file__).resolve()
+        expected_source = REPO / 'src/msplatform/backends/simion/field_worker.py'
+        installed_source = Path(sysconfig.get_path('purelib')) / 'msplatform/backends/simion/field_worker.py'
+        self.assertIn(worker_path, (expected_source.resolve(), installed_source.resolve()))
+        self.assertEqual(hashlib.sha256(worker_path.read_bytes()).digest(),
+                         hashlib.sha256(expected_source.read_bytes()).digest(),
+                         'Loaded canonical field worker differs from the selected checkout source')
         context = ExecutionContext(workspace=root, python_executable=Path(sys.executable),
             powershell_executable=Path(shutil.which('pwsh')), tools={},
             host_state_path=root/'host.json', policy_path=root/'policy.json')
