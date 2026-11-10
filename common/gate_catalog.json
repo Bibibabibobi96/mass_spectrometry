@@ -2094,6 +2094,16 @@
           },
           {
             "matches": [
+              {"exact": "src/msplatform/workflows/cooled_frontend/pulse.py", "reason": "cooled_pulse_changed"}
+            ],
+            "modules": [
+              "integrations/tests/test_cooled_frontend_pulse.py",
+              "integrations/tests/test_cooled_frontend_reference.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {
                 "exact": "src/msplatform/workflows/cooled_frontend/field_analysis.py",
                 "reason": "cooled_field_analysis_changed"

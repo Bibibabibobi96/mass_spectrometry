@@ -416,6 +416,29 @@ for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_acceler
     assert text.startswith('function') and 'mfilename' not in text
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
+# COOLED_PULSE_INSTALLED_BEGIN
+from msplatform.workflows.cooled_frontend import pulse as cooled_pulse
+assert pathlib.Path(cooled_pulse.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+cooled_trials=[dict(pulse_time_us=t,exit_y_mm=y,exit_time_us=t+1.,evidence={'fixture':'explicit reference-ray record'})
+               for t,y in ((101.,-2.),(105.,6.))]
+cooled_proposal=cooled_pulse.propose_common_pulse(cooled_trials,target_y_mm=0.,release_start_us=100.)
+assert cooled_proposal['proposal_time_us']==102. and cooled_proposal['native_check_required']
+assert not cooled_proposal['selection_uses_mother_terminal_outcome']
+cooled_decision=cooled_pulse.freeze_common_pulse_decision(
+    dict(pulse_time_us=102.,exit_y_mm=.12,exit_time_us=103.,evidence={'fixture':'explicit verified-ray record'}),
+    target_y_mm=0.,release_start_us=100.,field_identity={'fixture':'explicit field record'},
+    voltage_calibration=dict(inner_correction_v=-1.,release_hp_common_correction_v=.2))
+assert cooled_decision['actual_pulse_time_us']==102. and cooled_decision['reference_centering_residual_mm']==.12
+assert 'passed' not in cooled_decision
+cooled_pulse_module=pathlib.Path(cooled_pulse.__file__);cooled_pulse_held=cooled_pulse_module.with_suffix('.test-held')
+assert not cooled_pulse_held.exists();cooled_pulse_module.rename(cooled_pulse_held)
+try:
+    cooled_pulse_missing=subprocess.run([sys.executable,'-I','-B','-c',
+        'import msplatform.workflows.cooled_frontend.pulse'],cwd=root,capture_output=True,text=True,timeout=30,check=False)
+    assert cooled_pulse_missing.returncode!=0 and 'msplatform.workflows.cooled_frontend.pulse' in cooled_pulse_missing.stderr
+finally:cooled_pulse_held.rename(cooled_pulse_module)
+# COOLED_PULSE_INSTALLED_END
+
 # COOLED_COMPILERS_INSTALLED_BEGIN
 from msplatform.backends.simion import cooled_frontend_geometry as cooled_geometry
 from msplatform.workflows.cooled_frontend import program as cooled_program

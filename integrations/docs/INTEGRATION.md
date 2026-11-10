@@ -1136,3 +1136,13 @@ outside the checkout with author-tree reads denied, and all 452 runtime payloads
 matched source, actual build source and all three distributions. Mutable cooled
 probe directories are distinct for the two consumers; repeated creation within
 one consumer still fails. This is software/installation evidence, not native Fly.
+
+Reference-ray pulse proposal and frozen common-clock decisions now use
+`msplatform.workflows.cooled_frontend.pulse`. The source is byte-identical to the
+retired root module; actual PowerShell and cold-frozen consumers import the
+installed owner directly. Original calibration policy, evidence requirements,
+reported residual and refusal to extrapolate are unchanged. The 23 affected
+tests / 38 records passed in 52.916 seconds without skips. Focused ordinary wheel
+and sdist-rebuilt-wheel consumers passed in 33.969 seconds with all 453 payloads
+matching source/distributions/site-packages and missing-module refusal. That
+focused probe does not replace the complete installed-parent or native checks.

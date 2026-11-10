@@ -42,7 +42,7 @@ function Invoke-CooledReferenceCalibration {
     $code=@'
 import json,sys
 from pathlib import Path
-from integrations.workflows.cooled_frontend.pulse import propose_common_pulse
+from msplatform.workflows.cooled_frontend.pulse import propose_common_pulse
 metadata=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 trials=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8-sig'))
 print(json.dumps(propose_common_pulse(trials,target_y_mm=metadata['target_y_mm'],release_start_us=metadata['release_start_us']),allow_nan=False))
@@ -73,7 +73,7 @@ print(json.dumps(propose_common_pulse(trials,target_y_mm=metadata['target_y_mm']
 import json,sys
 from pathlib import Path
 from msplatform.execution.retention import file_record
-from integrations.workflows.cooled_frontend.pulse import freeze_common_pulse_decision
+from msplatform.workflows.cooled_frontend.pulse import freeze_common_pulse_decision
 metadata=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'));trials_path=Path(sys.argv[2]);verified=json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig'))
 decision=freeze_common_pulse_decision(verified,target_y_mm=metadata['target_y_mm'],release_start_us=metadata['release_start_us'],field_identity=metadata['field_identity'],voltage_calibration=metadata['voltage_calibration'])
 decision['all_reference_trials_record']=file_record(trials_path.resolve())

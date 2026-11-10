@@ -407,6 +407,15 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertIn("common/contracts/test_cooled_gas_regions.py",common)
                 self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
 
+    def test_cooled_pulse_selects_its_calibration_consumers(self):
+        request, _ = self.plan("-ChangedPath", "src/msplatform/workflows/cooled_frontend/pulse.py")
+        modules = [value for row in request["stages"]
+                   if row["name"].startswith("instrument_assembly_integration")
+                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
+        self.assertEqual(set(modules), {"integrations.tests.test_cooled_frontend_pulse",
+                                       "integrations.tests.test_cooled_frontend_reference"})
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
+
     def test_cooled_field_analysis_and_sampler_select_their_real_consumers(self):
         expected={"integrations.tests."+name for name in (
             "test_cooled_frontend_field_design","test_cooled_static_probe_reuse",

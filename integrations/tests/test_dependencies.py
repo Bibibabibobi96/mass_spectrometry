@@ -842,7 +842,8 @@ if(-not(Get-Command Invoke-FrontendFlightPhase)){{throw 'Frozen reference flight
             statement = (
                 "from pathlib import Path; "
                 "from integrations.workflows.cooled_frontend import prepare; "
-                "from integrations.workflows.cooled_frontend import reference, pulse, mesh_check; "
+                "from integrations.workflows.cooled_frontend import reference, mesh_check; "
+                "from msplatform.workflows.cooled_frontend import pulse; "
                 "from msplatform.assembly import resolve_assembly; "
                 "from projects.orthogonal_accelerator.analysis import assembly_interface; "
                 "assert all(Path(module.__file__).is_relative_to(Path.cwd()) "

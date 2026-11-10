@@ -4,7 +4,7 @@ import copy
 import math
 import unittest
 
-from integrations.workflows.cooled_frontend.pulse import (
+from msplatform.workflows.cooled_frontend.pulse import (
     freeze_common_pulse_decision, propose_common_pulse,
 )
 
