@@ -1020,3 +1020,14 @@ auditor error, then its three original modes passed after correcting only that
 external auditor. The original failed run remains recorded. Nine representative
 composed-main consumers, including that parent, passed 82 records in 7.847 seconds;
 this is not a new full eight-module, Repository or native acceptance.
+
+
+### Component-owned cooled-field voltage proposal
+
+Cooled frontend run analysis calls the sole pure measured-response/control design
+in `msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design`.
+The existing root adapter still owns selected run records, CSVs and pre-publication
+I/O; sealed-probe/sampler migration remains separate. Scientific assumptions and
+scoped46-parent/443-payload ordinary validation are recorded in the
+[IP project status](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#installed-pure-cooled-field-voltage-design).
+No new field solve, Fly or cooling/capture qualification is implied.

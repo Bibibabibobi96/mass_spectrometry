@@ -19,8 +19,9 @@ import pandas as pd
 
 from msplatform.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, ELEMENTARY_CHARGE_C
 from msplatform.execution.retention import file_record
-from integrations.workflows.cooled_frontend.field_design import (
-    analyze_field_run, compose_samples, design_voltage_controls, project_member_samples,
+from integrations.workflows.cooled_frontend.field_design import analyze_field_run
+from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design import (
+    compose_samples, design_voltage_controls, project_member_samples,
 )
 
 

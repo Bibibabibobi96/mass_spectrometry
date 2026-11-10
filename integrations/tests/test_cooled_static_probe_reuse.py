@@ -18,6 +18,7 @@ from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from integrations.tests import test_cooled_frontend_reference as reference_fixture
 from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments
 from integrations.workflows.cooled_frontend import runtime, field_design, reference
+from msplatform.components.dual_pressure_rectilinear_ion_processor import cooled_field_design
 from integrations.workflows.cooled_frontend.prepare import prepare_cooled_frontend
 
 REPO = Path(__file__).resolve().parents[2]
@@ -187,7 +188,7 @@ class StaticProbeReuseTests(unittest.TestCase):
             with self.subTest(scale=scale):
                 rows = copy.deepcopy(self.rows);rows[4]['field_scale'] = scale
                 write(self.run/'inputs/cooled_frontend_field_stage_receipt.json', dict(working_points=rows))
-                with patch.object(field_design, 'project_member_samples', wraps=field_design.project_member_samples) as projected:
+                with patch.object(cooled_field_design, 'project_member_samples', wraps=cooled_field_design.project_member_samples) as projected:
                     result = field_design.analyze_field_run(self.run)
                 pulse_calls = [call for call in projected.call_args_list if call.args[1] == 'pulse_delta']
                 self.assertEqual(len(pulse_calls), 1)
@@ -209,7 +210,7 @@ class StaticProbeReuseTests(unittest.TestCase):
         intermediate = self.workspace/'artifacts/projects/instrument_assembly/runs/intermediate_probe_owner'
         arguments = design_arguments()
         arguments.update(release_reference_name='well_62', oa_entry_reference_name='oa_side_entry')
-        design = field_design.design_voltage_controls(self.responses, **arguments)
+        design = cooled_field_design.design_voltage_controls(self.responses, **arguments)
         design.update(design_status='proposal_computed', native_probe_records=selected['native_probe_records'],
                       target_record=file_record(self.run/'inputs/cooled_design_targets.json'),
                       response_projections={kind: dict(probe_owner_manifest_record=self.source_manifest)

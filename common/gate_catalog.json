@@ -2053,6 +2053,17 @@
         "dependencies": [
           {
             "matches": [
+              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py", "reason": "cooled_field_design_component_changed"}
+            ],
+            "modules": [
+              "integrations/tests/test_cooled_frontend_field_design.py",
+              "integrations/tests/test_cooled_static_probe_reuse.py",
+              "integrations/tests/test_cooled_frontend_reference.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {
                 "exact": "src/msplatform/backends/simion/bare_frontend_geometry.py",
                 "reason": "installed_bare_frontend_geometry_changed"

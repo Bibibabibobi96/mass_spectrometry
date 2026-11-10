@@ -526,3 +526,27 @@ On the composed successor, 38 parents and 202 records passed in 60.139 seconds,
 covering actual generated Lua/Program wiring, detached preparation, architecture
 and Changed selection. Combined full installation, native and Repository acceptance
 remain open; these checks do not prove collision physics or step resolution.
+
+
+### Installed pure cooled-field voltage design
+
+`msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design`
+owns the existing measured-response projection, composition and two-control voltage
+proposal. Explicit samples, species/RF/temperature, width/energy targets and reference
+names are unchanged. It calls the existing cooled_buncher curvature/barrier analyzers;
+no field is prescribed and no capture, cooling, native flight or scientific qualification
+is inferred. The root cooled_frontend field_design module retains its meaningful
+run/receipt/CSV/publication adapter and CLI, using qualified component calls with no
+old pure-body aliases. Sealed-probe reader and sampler ownership remain separate work.
+
+The original field-design/static-probe/reference/IP-cooled modules passed46 parents
+in58.549seconds with no skips. Exact old/new harmonic/coupled full results and unstable
+case errors match, and all187 original assertions across the three migrated integration
+test files remain unchanged. A focused ordinary wheel/sdist-rebuilt API check passed
+in90.884seconds: both443-member payloads match source and fresh site-packages, explicit
+outside-tree data produces the exact full result, four author/build roots are denied,
+and physical removal of the canonical module fails in a fresh process. This is the
+pure API acceptance scope, not the full installed suite or a native run.
+The composed successor passed 57 parents and 219 records in 63.884 seconds,
+including the unchanged numerical consumers, complete architecture checks and
+the actual Changed plan selecting the three migrated integration consumers.

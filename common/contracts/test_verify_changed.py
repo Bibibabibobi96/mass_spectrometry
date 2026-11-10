@@ -348,6 +348,18 @@ ConvertTo-Json -Compress -InputObject $paths
                 else:
                     self.assertEqual(modules, [path])
 
+    def test_cooled_field_design_selects_its_actual_consumers(self):
+        request, _ = self.plan("-ChangedPath",
+            "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py")
+        modules = [value for row in request["stages"]
+                   if row["name"].startswith("instrument_assembly_integration")
+                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
+        self.assertEqual(set(modules), {"integrations.tests.test_cooled_frontend_field_design",
+                         "integrations.tests.test_cooled_static_probe_reuse",
+                         "integrations.tests.test_cooled_frontend_reference"})
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                             for row in request["stages"]))
+
     def test_ip_gas_dependencies_select_consumers_without_native_stages(self):
         for path in ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
                      "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",

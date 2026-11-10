@@ -392,7 +392,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
 
     def test_reference_probes_are_hashed_once_and_must_belong_to_the_owner(self):
         from integrations.tests.test_cooled_frontend_field_design import harmonic_response_fixture, design_arguments
-        from integrations.workflows.cooled_frontend.field_design import design_voltage_controls
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design import design_voltage_controls
 
         responses=harmonic_response_fixture()
         design=design_voltage_controls(responses,**design_arguments())
