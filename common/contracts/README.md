@@ -965,6 +965,8 @@ profile明确实际purpose、action、tools、model、资格支持和输出。`-
 表达实际解析结果、科学条件与输入来源。公共层验证身份、所选能力的结构归属及运行身份；项目解释
 物种、几何、工作点与必要sidecar。接口查询不调用GEM渲染或商业求解器。
 
+Python step entrypoints under the actual repository `src/msplatform` tree compile to installed `msplatform.*` module names; project Python module names and PowerShell file commands keep their existing mapping. Project-only `runtime_binding` is unchanged.
+
 Python owner执行使用编译计划记录的`python_executable`（编译器当前`sys.executable`），不依赖仓库`.venv`或执行时的环境默认值。旧计划缺少该字段或解释器已不可用时，需用预期解释器重新编译；不静默换解释器。
 
 项目runtime resolver可用现有`tools`字段返回本次已解析动作的工具集合，编译器只接受profile声明集合内的非空、唯一工具列表，并在preview显示实际选择。未解析或未提供该投影时，显示profile支持集合；支持多个后端不表示一次请求必启动全部后端。后端选择与依赖仍归实际项目入口，不由公共编译器猜测。

@@ -311,7 +311,9 @@ def compile_execution(
                 str(entrypoint), *arguments,
             ]
         else:
-            module = entrypoint.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
+            module_root = (REPO_ROOT / "src" if entrypoint.is_relative_to(REPO_ROOT / "src" / "msplatform")
+                           else REPO_ROOT)
+            module = entrypoint.relative_to(module_root).with_suffix("").as_posix().replace("/", ".")
             argv = [context["python_exe"], "-m", module, *arguments]
         commands.append({
             "step_id": step["step_id"], "kind": step["kind"], "shell": step["shell"],

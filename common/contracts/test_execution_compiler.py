@@ -372,6 +372,47 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                         self.assertFalse((project/"actual.json").exists())
                     original.write_text('{"value":2}')  # release is observable after every branch
 
+    def test_canonical_src_profile_compiles_to_installed_module_without_changing_project_mapping(self):
+        request = load_json(HERE / "examples" / "oa_tof_500da_r30000.example.json")
+        request["status"] = "approved"
+        request["approval"] = {"approved_by": "owner", "approved_on": "2026-07-20"}
+        request["target"]["mode"] = "design_candidate"
+        request["operating_points"] = [{"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}]
+        request["objectives"] = [dict(metric="transmission_fraction", operator="maximize", value=None,
+                                      unit="1", tolerance=None)]
+        request["constraints"] = []
+        request["design_variables"] = []
+        original = self.compile_request(request, {"particle_source_seed": "20260720"}, proposal=True)
+        self.assertEqual(original["status"], "EXECUTION_READY")
+        self.assertEqual(original["commands"][0]["argv"][1:3],
+                         ["-m", "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate"])
+        installed = REPO_ROOT / "src/msplatform/analysis/tof_error_budget.py"
+        self.assertTrue(installed.is_file())
+        execution = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/execution_profiles.json"
+
+        def selected_load(path):
+            document = load_json(path)
+            if Path(path) == execution:
+                document = copy.deepcopy(document)
+                profile = next(item for item in document["profiles"]
+                               if item["profile_id"] == "validated_structural_candidate")
+                profile["steps"][0]["entrypoint"] = "../../src/msplatform/analysis/tof_error_budget.py"
+            return document
+
+        with patch("common.contracts.compile_execution_plan.load_json", side_effect=selected_load):
+            selected = self.compile_request(request, {"particle_source_seed": "20260720"}, proposal=True)
+        self.assertEqual(selected["status"], "EXECUTION_READY")
+        self.assertEqual(selected["commands"][0]["argv"][1:3], ["-m", "msplatform.analysis.tof_error_budget"])
+        self.assertEqual(Path(selected["commands"][0]["entrypoint"]), installed.resolve())
+        original_arguments = original["commands"][0]["arguments"]
+        selected_arguments = selected["commands"][0]["arguments"].copy()
+        self.assertEqual(original_arguments[original_arguments.index("--request") + 1],
+                         original["planning_sources"][2]["path"])
+        self.assertEqual(selected_arguments[selected_arguments.index("--request") + 1],
+                         selected["planning_sources"][2]["path"])
+        selected_arguments[selected_arguments.index("--request") + 1] = original_arguments[original_arguments.index("--request") + 1]
+        self.assertEqual(selected_arguments, original_arguments)
+
     def test_ordinary_profiles_compile_only_declared_scientific_steps_and_empty_ei_is_unavailable(self):
         from msplatform.contracts.machine_contracts import sha256, validate_schema
         projects = ("apertured_tube_electron_impact_ion_source", "dual_cone_tandem_quadrupole_ion_interface",
