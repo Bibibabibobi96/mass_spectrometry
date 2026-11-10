@@ -102,7 +102,7 @@ P4 retains the remaining approved designs and named COMSOL capabilities. P5 test
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
 
-V8.4 is the active P4 scope, continuing the same goal. Formal reusable implementations and workflows belong to
+V8.5 is the active P4 scope, continuing the same goal. Formal reusable implementations and workflows belong to
 `src/msplatform`; research inputs, history, tests and development tools remain outside that
 production tree. Existing completed slices are retained. Independent RF raw geometry/model,
 independent two-/three-zone OA geometry and Wehnelt build-only operations have source-bound
