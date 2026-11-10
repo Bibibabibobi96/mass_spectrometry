@@ -5,6 +5,7 @@ electrode solve, workbench load, or particle flight is executed by these tests.
 """
 
 from __future__ import annotations
+from msplatform.backends.simion.resources import native_resource_path
 
 import os
 from pathlib import Path
@@ -14,7 +15,7 @@ import subprocess
 import tempfile
 import unittest
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+from msplatform.workflows.ion_processor.preparation import lua_literal
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -140,7 +141,7 @@ class WorkbenchPathTests(unittest.TestCase):
                 config["coordinate_transform"] = __import__("json").loads((PROJECT / "config/coordinate_transform.json").read_text())
             (solver / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
             builder = solver / "build_workbench.lua"
-            shutil.copyfile(PROJECT / "simion/build_workbench.lua", builder)
+            shutil.copyfile(native_resource_path("ip_build_workbench.lua"), builder)
             shutil.copyfile(resource_path("native_run_path.lua"), solver / "native_run_path.lua")
             harness = root / "check_paths.lua"
             harness.write_text(LUA_HARNESS, encoding="utf-8")

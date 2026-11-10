@@ -289,12 +289,13 @@ from integrations.workflows.accelerator_interface import prepare
 from msplatform.workflows.multipole_ip import prepare as handoff
 from msplatform.contracts.machine_contracts import ContractError
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+from msplatform.workflows.ion_processor import preparation
 import tempfile
 root = Path.cwd().resolve()
-for module in (prepare, functional, handoff):
+for module in (prepare, functional, handoff, preparation):
     Path(module.__file__).resolve().relative_to(root)
 handoff.SCHEMA.resolve().relative_to(root)
-assert callable(functional.validate_configs)
+assert callable(preparation.validate_configs)
 with tempfile.TemporaryDirectory() as request_directory:
     invalid = Path(request_directory) / "request.json"
     invalid.write_text("{}", encoding="utf-8")

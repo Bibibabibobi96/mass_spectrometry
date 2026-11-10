@@ -74,7 +74,7 @@ HS1示例的2.27e-18 m²用于He与约200 amu离子示例，不是N2与524 amu�
 ## 被动引出受力与碰撞审计
 
 新准备的resolved输入声明`extraction_force_audit`并冻结
-[`extraction_force_audit.lua`](../simion/extraction_force_audit.lua)；它在实际primary quench后，
+[`extraction_force_audit.lua`](../../../src/msplatform/backends/simion/resources/ip_extraction_force_audit.lua)；它在实际primary quench后，
 围绕既有HS1调用记录同时间、同位置的pre/post速度。相邻步的上一post-HS1至当前pre-HS1速度差
 是实际数值传播增量，当前post减pre是实际碰撞跳变。记录不改粒子状态、积分步长或随机流；
 初始化只查询全部15个单位响应，使首正式批资源观测包含这些原生场的实际载入。
@@ -346,3 +346,31 @@ is used. A historical control that does not load the locator gains no new depend
 Software tests run the unchanged builder with inert APIs and a real relative seed-pair
 lookup; they do not establish new SIMION/GUI or pose qualification. Current acceptance
 and the P11 placement gap are recorded in PROJECT.
+
+### Canonical preparation versus native execution
+
+Scientific preparation is available from `msplatform.workflows.ion_processor.preparation`;
+`compile_source` accepts the explicit research dictionary and optional already validated
+`msplatform.backends.simion.ip_handoff.load_injected_source` result. It preserves the existing
+source sampler and source/clock projection without requiring HS1, an IOB seed or a field.
+The existing `native_projection` and `ip_geometry.render_gem` remain the geometry-only route;
+no fake release is needed to obtain a GEM.
+
+`materialize_inputs` additionally requires explicit research-authority paths and an explicit
+official HS1 source path. Raw authority values must match the supplied request before
+admission-derived changes. It preflights selected resources, authority identity and the
+unchanged HS1 adapter before writes. The adapter's sole source is now
+[`collision_hs1.py`](../../../src/msplatform/backends/simion/collision_hs1.py). Current IP Lua
+sources are installed [`ip_runtime.lua`](../../../src/msplatform/backends/simion/resources/ip_runtime.lua),
+[`ip_build_workbench.lua`](../../../src/msplatform/backends/simion/resources/ip_build_workbench.lua),
+[`ip_probe_native_field.lua`](../../../src/msplatform/backends/simion/resources/ip_probe_native_field.lua)
+and [`ip_extraction_force_audit.lua`](../../../src/msplatform/backends/simion/resources/ip_extraction_force_audit.lua).
+They retain exact original bytes and run-local names, so sibling dependencies are unchanged.
+No large legacy placeholder PA or vendor source is shipped in the wheel.
+
+The root `functional.prepare` still supplies its managed run's existing seed pair, adopts
+any explicit guarded field and freezes the genuine downstream analysis producers. That
+remaining orchestration is explicit P4 work. Unsolved materialized inputs alone do not
+permit IOB/Fly or bypass native-field/priority/frame guards. Installed software checks use
+real official HS1 source bytes without executing them; their results do not replace native
+Refine/Fly, collision verification, GUI or P11 placement acceptance.

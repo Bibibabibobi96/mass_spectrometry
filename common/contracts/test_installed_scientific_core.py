@@ -341,6 +341,48 @@ ip = fixture['ip']
 projection = native_projection(ip['baseline'], ip['numerics'])
 assert len(projection['electrodes']) == 15
 assert hashlib.sha256(render_ip_gem(projection).encode()).hexdigest() == ip['gem_sha256']
+# Existing scientific source compiler and explicit unsolved input materializer.
+# HS1 is an explicit source input (inert by default); no vendor/physics execution is claimed.
+from msplatform.workflows.ion_processor import preparation as ip_preparation
+from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
+compiled_ip = ip_preparation.compile_source(ip['preparation_config'])
+assert len(compiled_ip['states']) == ip['source']['particle_count']
+assert hashlib.sha256(render_ip_gem(compiled_ip['config']['native_projection']).encode()).hexdigest() == ip['gem_sha256']
+assert 'workbench_seed_path' not in compiled_ip['config'] and 'native_field' not in compiled_ip['config']
+ip_authorities = {}
+ip_input_root = root / ('explicit-ip-inputs-' + sys.argv[2])
+ip_input_root.mkdir()
+for key in ('baseline', 'numerics', 'source', 'acceptance', 'native_operating_point'):
+    path = ip_input_root / (key + '.json')
+    path.write_text(json.dumps(ip['preparation_config'][key]), encoding='utf-8')
+    ip_authorities[key] = path
+ip_hs1 = ip_input_root / 'selected_HS1_source.lua'
+ip_hs1.write_bytes(bytes.fromhex(ip['hs1_input_bytes_hex']))
+assert hashlib.sha256(ip_hs1.read_bytes()).hexdigest() == ip['hs1_input_sha256']
+ip_output = root / ('unsolved-ip-inputs-' + sys.argv[2])
+ip_output.mkdir()
+ip_materialized = ip_preparation.materialize_inputs(ip_output, ip['preparation_config'], configuration_files=ip_authorities, hs1_source=ip_hs1)
+assert (ip_output/'simion/processor.fly2').read_text() == compiled_ip['fly2']
+assert (ip_output/'simion/source_states.lua').read_text() == compiled_ip['source_states']
+assert (ip_output/'inputs/collision_hs1_original.lua').read_bytes() == ip_hs1.read_bytes()
+assert (ip_output/'simion/collision_hs1.lua').read_text() == adapt_hs1_for_repeat_fly(ip_hs1.read_text(encoding='utf-8'))
+assert not (ip_output/'simion/processor.iob').exists() and not list((ip_output/'simion').glob('*.pa*'))
+assert not (ip_output/'simion/iob_seed').exists()
+print('INSTALLED_IP_INPUTS=' + json.dumps(dict(hs1_input_kind=ip['hs1_input_kind'], hs1_sha256=ip['hs1_input_sha256'], particles=len(compiled_ip['states']), vendor_execution_count=0)))
+from msplatform.backends.simion.resources import native_resource_path as ip_resource
+for resource_name in ('runtime.lua', 'build_workbench.lua', 'probe_native_field.lua', 'extraction_force_audit.lua'):
+    assert (ip_output/'simion'/resource_name).read_bytes() == ip_resource('ip_' + resource_name).read_bytes()
+missing_ip_resource = ip_resource('ip_runtime.lua')
+hidden_ip_resource = missing_ip_resource.with_name(missing_ip_resource.name + '.missing')
+missing_ip_resource.rename(hidden_ip_resource)
+try:
+    ip_missing_output = root / ('missing-ip-inputs-' + sys.argv[2])
+    ip_missing_output.mkdir()
+    try: ip_preparation.materialize_inputs(ip_missing_output, ip['preparation_config'], configuration_files=ip_authorities, hs1_source=ip_hs1)
+    except FileNotFoundError as error: assert 'ip_runtime.lua' in str(error)
+    else: raise AssertionError('missing installed IP runtime was accepted')
+    assert not list(ip_missing_output.iterdir())
+finally: hidden_ip_resource.rename(missing_ip_resource)
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from importlib.resources import files
 from msplatform.backends.simion.resources import native_resource_path
@@ -1870,7 +1912,15 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
             ip_config = REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/config'
             ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
-                  for name in ('baseline', 'numerics', 'source', 'native_operating_point')}
+                  for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
+            from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
+            ip['preparation_config'] = {name: ip[name] for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
+            ip['preparation_config'].update(source_profile='functional', source_authority_file='source.json')
+            selected_hs1 = environment.get('MASS_SPECTROMETRY_INSTALLED_IP_HS1_SOURCE')
+            hs1_bytes = Path(selected_hs1).read_bytes() if selected_hs1 else HS1_SOURCE_FIXTURE.encode('utf-8')
+            ip['hs1_input_bytes_hex'] = hs1_bytes.hex()
+            ip['hs1_input_kind'] = 'explicit_vendor_source' if selected_hs1 else 'inert_unit_fixture'
+            ip['hs1_input_sha256'] = hashlib.sha256(hs1_bytes).hexdigest()
             ip['gem_sha256'] = hashlib.sha256(render_ip_gem(native_projection(ip['baseline'], ip['numerics'])).encode()).hexdigest()
             ip['native_drive'] = (REPO_ROOT/'src/msplatform/backends/simion/resources/native_drive.lua').read_text(encoding='utf-8')
             from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract

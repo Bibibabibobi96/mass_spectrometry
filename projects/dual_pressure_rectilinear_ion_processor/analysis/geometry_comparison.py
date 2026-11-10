@@ -29,7 +29,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis import aperture_a
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_numerical_boundaries
+from msplatform.workflows.ion_processor.preparation import validate_numerical_boundaries
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts, section_centroid
 

@@ -3194,6 +3194,18 @@
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
         {
+          "prefix": "src/msplatform/workflows/ion_processor/",
+          "reason": "ion_processor_preparation_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/collision_hs1.py",
+          "reason": "official_hs1_adapter_changed"
+        },
+        {
+          "regex": "^src/msplatform/backends/simion/resources/ip_(?:runtime|build_workbench|probe_native_field|extraction_force_audit)\\.lua$",
+          "reason": "ion_processor_native_resources_changed"
+        },
+        {
           "prefix": "projects/dual_pressure_rectilinear_ion_processor/",
           "reason": "ion_processor_changed"
         },

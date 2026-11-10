@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+from msplatform.workflows.ion_processor.preparation import lua_literal
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 
 

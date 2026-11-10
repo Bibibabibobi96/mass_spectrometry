@@ -501,7 +501,7 @@ def prepare_request(run: Path, native_pa0_record: dict | None = None) -> dict:
 
 def materialize_batches(run: Path, batch_plan: Path) -> dict:
     """Create isolated sibling workbenches; keep IOB relative PA references valid."""
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+    from msplatform.workflows.ion_processor.preparation import lua_literal
     run = run.resolve()
     c = _read(run/"inputs/resolved_model.json")
     retain = frozen_runtime_profile(run)["retain_batch_trajectories"]

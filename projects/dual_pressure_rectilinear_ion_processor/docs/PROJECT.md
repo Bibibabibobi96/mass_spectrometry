@@ -412,3 +412,43 @@ HS1 validation or scientific qualification was performed. The 15-electrode drive
 cohort, clock and collision semantics are unchanged. Arbitrary proper IP native placement
 remains P11 OPEN; the existing supported placement restriction is an adaptation boundary,
 not a claim of physical impossibility.
+
+### P4 scientific input compilation and installed resources
+
+The sole IP source/profile/scientific-input and observation-boundary checks now live in
+`msplatform.workflows.ion_processor.preparation`, together with the existing diagnostic
+control validators. Their original bodies and rejection semantics are preserved. The
+root functional workflow delegates scientific compilation/materialization, while retaining
+its genuine repository snapshot, seed provision, field adoption, analysis and CLI duties;
+that whole workflow has not yet been retired or qualified as an installed native operation.
+
+`compile_source(config, *, admission=None)` accepts an explicit in-memory research request
+and preserves the existing release or validated `ip_handoff` admission, original birth,
+arrival, mother/species identity and clock. It needs no vendor file, seed or field and does
+not write files. `materialize_inputs(run, config, *, configuration_files, hs1_source,
+admission=None)` freezes the corresponding explicit research files and official HS1 source
+and writes unsolved GEM/FLY2/configuration inputs. Those files must describe the same values
+as the supplied request before admission-derived replacement; conflicting representations
+fail before output writes. A research edit is applied by updating that selected authority
+and parsing its values, with no hidden project defaults. Diagnostic controls are validated
+only when explicitly supplied. Materialized inputs are not a PreparedModel or FieldBundle:
+no IOB, Refine, Fly or GUI readiness is implied.
+
+The HS1 lifecycle adapter has one installed owner, `msplatform.backends.simion.collision_hs1`.
+Its entire source is unchanged; both IP and cooled-frontend callers now select that owner.
+The four original IP Lua bodies are byte-identical installed `ip_*.lua` resources and are
+materialized under their original run filenames. NativeDrive, the 15 electrode IDs,
+thermal/pressure/PRNG/collision equations, positive-polarity scope and current placement
+restriction are unchanged. Arbitrary native IP placement remains P11 OPEN; HS1 has not been
+replaced by SDS or vacuum transport.
+
+Scoped software and detached ordinary wheel/sdist-rebuilt-wheel checks passed. Both installed
+rounds used the explicit SIMION-2020 official `examples/collision_hs1/collision_hs1.lua`
+(23,973 bytes, SHA-256 `c8f6ef6ce6ee3252e89af68de6dea31d32685ba5f0165494c63673d8ddb58acb`),
+compiled/materialized N=100 inputs and rejected a missing installed IP runtime before output.
+The full ordinary parent took 199.345 seconds and joined 432 payload members. Its initial
+initializer used CRLF; that epoch is retained. The LF-only successor rebuilt both wheels
+and passed targeted installed IP calls with exact 432-member source/wheel/two-install joins
+in 83.646 seconds. Scientific bodies were unchanged and vendor executions were zero. Initial incidental old-owner test mocks/imports and one pre-discovery edit error
+remain recorded separately from their corrected checks. This is input/identity/resource
+acceptance, not new HS1 trajectories, scientific qualification or full Repository acceptance.

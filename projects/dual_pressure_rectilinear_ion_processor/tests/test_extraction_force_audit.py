@@ -1,5 +1,6 @@
 """Ordinary-Lua passive audit contracts and independent quadrature references."""
 from __future__ import annotations
+from msplatform.backends.simion.resources import native_resource_path
 
 import csv
 import os
@@ -114,7 +115,7 @@ class ExtractionForceAuditTests(unittest.TestCase):
             folder = Path(directory)
             script = folder / "audit_test.lua"
             script.write_text(HARNESS, encoding="utf-8")
-            result = subprocess.run([executable, str(script), str(PROJECT / "simion/extraction_force_audit.lua"),
+            result = subprocess.run([executable, str(script), str(native_resource_path("ip_extraction_force_audit.lua")),
                                      folder.as_posix()+"/", mode], cwd=folder, capture_output=True,
                                     text=True, encoding="utf-8", timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

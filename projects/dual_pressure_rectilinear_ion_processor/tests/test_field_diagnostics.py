@@ -1,5 +1,7 @@
 """Synthetic diagnostics contracts; no native solver or physical evidence is produced."""
 from __future__ import annotations
+from msplatform.workflows.ion_processor import preparation
+from msplatform.backends.simion.resources import native_resource_path
 
 import copy
 import csv
@@ -16,7 +18,7 @@ from unittest import mock
 import numpy as np
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis import field_diagnostics as diagnostics
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+from msplatform.workflows.ion_processor.preparation import lua_literal
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
@@ -89,7 +91,7 @@ class FieldDiagnosticsTests(unittest.TestCase):
         np.testing.assert_allclose(ax.collections[1].V,[r["ex_v_per_mm"] for r in ordered])
 
     def test_config_rejects_invalid_sampling_and_stage_references(self) -> None:
-        diagnostics.validate_field_diagnostics_config(config_fixture())
+        preparation.validate_field_diagnostics_config(config_fixture())
         for mutate in (lambda c:c.update(epsilon_us=float("nan")),
                        lambda c:c.update(quiver_stride=0),
                        lambda c:c["stages"][0].update(time_ref="unknown"),
@@ -97,7 +99,7 @@ class FieldDiagnosticsTests(unittest.TestCase):
                        lambda c:c.update(fit_radius_scale=2)):
             config=config_fixture();mutate(config)
             with self.assertRaises(ValueError):
-                diagnostics.validate_field_diagnostics_config(config)
+                preparation.validate_field_diagnostics_config(config)
 
     def test_field_conversion_retains_electric_field_sign(self) -> None:
         np.testing.assert_allclose(diagnostics.field_gu_to_v_per_mm(np.array([1,-2,3]),.1),[10,-20,30])
@@ -202,7 +204,7 @@ class FieldDiagnosticsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="native_field_probe_fixture_") as temporary:
             folder=Path(temporary);config["native_field"]={"directory":str(folder)}
             shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/native_drive.lua",folder/"native_drive.lua")
-            shutil.copyfile(PROJECT/"simion/probe_native_field.lua",folder/"probe_native_field.lua")
+            shutil.copyfile(native_resource_path("ip_probe_native_field.lua"),folder/"probe_native_field.lua")
             shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/rf_drive.lua",folder/"simion_rf_drive.lua")
             shutil.copyfile(REPOSITORY/"src/msplatform/backends/simion/resources/voltage_waveforms.lua",folder/"voltage_waveforms.lua")
             (folder/"frozen_config.lua").write_text("return "+lua_literal(config),encoding="utf-8")

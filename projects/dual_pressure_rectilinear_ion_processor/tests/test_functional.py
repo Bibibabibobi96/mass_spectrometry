@@ -5,6 +5,9 @@ particle simulations or evidence for the device's physical performance.
 """
 
 from __future__ import annotations
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.backends.simion.resources import native_resource_path
+from msplatform.workflows.ion_processor import preparation
 
 import msplatform.execution.manifest_publication as _canonical_manifest_publication
 import msplatform.execution.manifest_verification as _canonical_manifest_verification
@@ -24,7 +27,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
+from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.contracts.particle_count_policy import POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 from msplatform.ion_release.release import generate_release_states
@@ -105,7 +108,7 @@ class FunctionalContractTests(unittest.TestCase):
         config = load_config()
         del config["baseline"]["native_geometry"]["shield_extraction_slit_width_mm"]
         with self.assertRaisesRegex(ValueError, "explicit shield extraction aperture"):
-            functional.validate_configs(config)
+            preparation.validate_configs(config)
 
     """Exercise current configuration, frozen projections, and full source IDs."""
 
@@ -126,7 +129,7 @@ class FunctionalContractTests(unittest.TestCase):
             writer.writerows(rows)
 
     def test_validate_current_config(self) -> None:
-        functional.validate_configs(self.config)
+        preparation.validate_configs(self.config)
 
     def test_native_timing_aligns_both_switches_and_preserves_lift_end(self) -> None:
         baseline = copy.deepcopy(self.config["baseline"])
@@ -166,7 +169,7 @@ class FunctionalContractTests(unittest.TestCase):
             derive_native_timing(b)
         self.config["native_timing"]["primary_quench_us"] += .01
         with self.assertRaisesRegex(ValueError, "native timing differs"):
-            functional.validate_configs(self.config)
+            preparation.validate_configs(self.config)
 
     def test_requested_time_policy_keeps_authored_clock_and_arbitrary_positive_delay(self) -> None:
         b = copy.deepcopy(self.config["baseline"])
@@ -182,12 +185,12 @@ class FunctionalContractTests(unittest.TestCase):
             c = copy.deepcopy(self.config)
             c["baseline"]["electric"]["rf_quench_alignment"] = invalid
             with self.assertRaisesRegex(ValueError, "rf_quench_alignment"):
-                functional.validate_configs(c)
+                preparation.validate_configs(c)
 
     def test_functional_profile_rejects_small_cohort(self) -> None:
         self.config["source"]["particle_count"] = 10
         with self.assertRaisesRegex(ValueError, "standard particle count"):
-            functional.validate_configs(self.config)
+            preparation.validate_configs(self.config)
         self.write_events(event_fixture(self.config))
         with self.assertRaisesRegex(ValueError, "standard particle count"):
             functional.analyze(self.run)
@@ -205,7 +208,7 @@ class FunctionalContractTests(unittest.TestCase):
     def test_exploration_analysis_never_claims_functional_pass(self) -> None:
         self.config["source"] = functional.read_json(PROJECT / "config/source_exploration.json")
         self.config["source_profile"] = "exploration"
-        functional.validate_configs(self.config)
+        preparation.validate_configs(self.config)
         rows = event_fixture(self.config)
         self.write_events(rows)
         result = functional.analyze(self.run)
@@ -303,7 +306,7 @@ class FunctionalContractTests(unittest.TestCase):
                 config = copy.deepcopy(self.config)
                 mutate(config)
                 with self.assertRaises((ValueError, AssertionError, KeyError)):
-                    functional.validate_configs(config)
+                    preparation.validate_configs(config)
 
     def make_prepare_fixture(self) -> tuple[Path, Path]:
         """Create inert source-copy inputs, without executing vendor code."""
@@ -341,7 +344,9 @@ class FunctionalContractTests(unittest.TestCase):
         functional.write_json(project / "config/source_exploration.json",
                               functional.read_json(PROJECT / "config/source_exploration.json"))
         for name in ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
-            (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
+            target = repo / "src/msplatform/backends/simion/resources" / ("ip_" + name)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(native_resource_path("ip_" + name), target)
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
         fixture_paths = [repo / "src/msplatform/backends/simion/resources/rf_drive.lua",
                          repo / "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
@@ -401,7 +406,7 @@ class FunctionalContractTests(unittest.TestCase):
         code = self.run / 'inputs/code'
         frozen = code / 'projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py'
         self.assertEqual(frozen.read_bytes(), Path(functional.__file__).read_bytes())
-        self.assertTrue((code / 'common/simion/collision_hs1.py').is_file())
+        self.assertTrue((code / 'src/msplatform/backends/simion/collision_hs1.py').is_file())
         self.assertFalse((code / 'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py').exists())
         self.assertEqual((code / 'src/msplatform/contracts/rigid_transform.py').read_bytes(),
                          (PROJECT.parents[1] / 'src/msplatform/contracts/rigid_transform.py').read_bytes())
@@ -531,7 +536,7 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         self.assertEqual(audit["step_state_scope"],"actual_pre_and_post_HS1")
         self.assertEqual(audit["integration"],"Hermite_composite_Simpson_5_vs_3")
         self.assertEqual((self.run/"simion/extraction_force_audit.lua").read_bytes(),
-                         (project/"simion/extraction_force_audit.lua").read_bytes())
+                         (native_resource_path("ip_extraction_force_audit.lua")).read_bytes())
         self.assertEqual(functional.read_json(self.run/"inputs/source_parameter_sources.json"),
                          functional.read_json(PROJECT/"config/source_parameter_sources.json"))
         self.assertEqual(functional.read_json(self.run/"inputs/native_timing.json"),
@@ -710,14 +715,14 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
             "schema_version": 2, "role": "native_numerical_observation_boundaries",
             "upstream_exit_x_mm": -1.9, "downstream_exit_x_mm": 211.25,
             "classification": "numerical_observation_not_metal"})
-        self.assertEqual(resolved["native_projection"], functional.native_projection(
+        self.assertEqual(resolved["native_projection"], native_projection(
             self.config["baseline"], self.config["numerics"]))
 
     def downstream_fixture(self) -> list[dict]:
         """Use synthetic states to test a local numerical exit, never a metal hit."""
-        projection = functional.native_projection(self.config["baseline"], self.config["numerics"])
+        projection = native_projection(self.config["baseline"], self.config["numerics"])
         self.config["native_projection"] = projection
-        self.config["numerical_boundaries"] = functional.derive_numerical_boundaries(projection)
+        self.config["numerical_boundaries"] = preparation.derive_numerical_boundaries(projection)
         transfer = self.config["baseline"]["schedule"]["transfer_end_us"]
         rows = [row for row in event_fixture(self.config)
                 if row["particle_id"] != 1 or row["t_us"] <= transfer]
@@ -759,24 +764,24 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
                     functional.analyze(self.run)
 
     def test_downstream_derivation_rejects_lens_outside_domain(self) -> None:
-        projection = functional.native_projection(self.config["baseline"], self.config["numerics"])
+        projection = native_projection(self.config["baseline"], self.config["numerics"])
         projection["maximum_mm"][0] = 210.5
         with self.assertRaisesRegex(ValueError, "after lens and inside PA"):
-            functional.derive_numerical_boundaries(projection)
+            preparation.derive_numerical_boundaries(projection)
 
     def test_observation_schema_requires_active_upstream_but_preserves_explicit_recorded_contract(self) -> None:
-        projection = functional.native_projection(self.config["baseline"], self.config["numerics"])
-        boundaries = functional.derive_numerical_boundaries(projection)
+        projection = native_projection(self.config["baseline"], self.config["numerics"])
+        boundaries = preparation.derive_numerical_boundaries(projection)
         self.assertEqual(boundaries["upstream_exit_x_mm"], projection["origin_mm"][0]+projection["grid_mm"])
-        functional.validate_numerical_boundaries(boundaries, projection)
+        preparation.validate_numerical_boundaries(boundaries, projection)
         legacy = {key: boundaries[key] for key in ("downstream_exit_x_mm", "classification")}
         with self.assertRaisesRegex(ValueError, "derived authority"):
-            functional.validate_numerical_boundaries(legacy, projection)
-        functional.validate_numerical_boundaries(legacy, projection, recorded=True)
+            preparation.validate_numerical_boundaries(legacy, projection)
+        preparation.validate_numerical_boundaries(legacy, projection, recorded=True)
         for malformed in ({**legacy,"downstream_exit_x_mm":0}, {**legacy,"schema_version":1},
                           {**boundaries,"upstream_exit_x_mm":projection["origin_mm"][0]}):
             with self.subTest(malformed=malformed), self.assertRaisesRegex(ValueError,"derived authority"):
-                functional.validate_numerical_boundaries(malformed, projection, recorded=True)
+                preparation.validate_numerical_boundaries(malformed, projection, recorded=True)
 
     def test_prepare_refuses_birth_on_internal_upstream_observation(self) -> None:
         project, vendor = self.make_prepare_fixture()

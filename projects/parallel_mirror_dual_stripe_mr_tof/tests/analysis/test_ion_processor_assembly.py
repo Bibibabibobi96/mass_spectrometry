@@ -228,7 +228,7 @@ class AssemblyTests(unittest.TestCase):
                          original["native_operating_point"]["hp_transfer_offset_v"])
         self.assertEqual(json.loads((self.root / "source.json").read_text()), original)
         from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs
+        from msplatform.workflows.ion_processor.preparation import validate_configs
         config["source_profile"] = "functional"
         config["native_timing"] = derive_native_timing(config["baseline"])
         validate_configs(config)
@@ -251,7 +251,7 @@ class AssemblyTests(unittest.TestCase):
                 config = {name: json.loads(Path(path).read_text())
                           for name, path in report["source_config_paths"].items()}
                 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
-                from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs
+                from msplatform.workflows.ion_processor.preparation import validate_configs
                 config["source_profile"] = "functional"
                 config["native_timing"] = derive_native_timing(config["baseline"])
                 validate_configs(config)

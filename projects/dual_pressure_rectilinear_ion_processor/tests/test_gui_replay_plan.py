@@ -1,5 +1,6 @@
 """Synthetic replay planning/identity tests; no PA solve or physical evidence."""
 from __future__ import annotations
+from msplatform.backends.simion.resources import native_resource_path
 
 import json
 import os
@@ -80,7 +81,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             (self.baseline / "simion" / ("processor.pa" + suffix)).write_bytes(b"synthetic-test-not-a-real-pa")
         for name in ("frozen_config.lua", "collision_hs1.lua", "source_states.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "processor.fly2", "processor.lua", "processor.gem", "probe_native_field.lua"):
             (self.baseline / "simion" / name).write_text("-- synthetic frozen input", encoding="utf-8")
-        shutil.copyfile(Path(__file__).resolve().parents[1] / "simion/build_workbench.lua", self.baseline / "simion/build_workbench.lua")
+        shutil.copyfile(native_resource_path("ip_build_workbench.lua"), self.baseline / "simion/build_workbench.lua")
         from msplatform.execution.resources import resource_path
         shutil.copyfile(resource_path("native_run_path.lua"), self.baseline / "simion/native_run_path.lua")
         config = {"source_profile": "functional", "native_projection": {"origin_mm": [-1, -4, -4], "electrode_ids": list(range(1, 16))}, "numerics": {"seed": 42, "trajectory_quality": 0}}
@@ -188,7 +189,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.add_native_field_diagnostics()
         (self.baseline / "simion/build_workbench.lua").write_text(
             "-- INERT FROZEN LEGACY BUILDER WITHOUT LOCATOR\n", encoding="utf-8")
-        probe = Path(__file__).resolve().parents[1] / "simion/probe_native_field.lua"
+        probe = native_resource_path("ip_probe_native_field.lua")
         shutil.copyfile(probe, self.baseline / "simion/probe_native_field.lua")
         self.publish_manifest()
         plan = prepare_replay(self.run, self.baseline)
@@ -575,7 +576,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertIn("not_every_integration_step", result["comparison_coverage"])
 
     def test_wrapper_identity_uses_final_runtime_bytes(self) -> None:
-        current_runtime = Path(__file__).resolve().parents[1] / "simion/runtime.lua"
+        current_runtime = native_resource_path("ip_runtime.lua")
         (self.baseline / "simion/processor.lua").write_bytes(current_runtime.read_bytes())
         self.publish_manifest()
         plan = self.prepare_native()
@@ -595,7 +596,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         # prove that the workspace runtime is never requested as an input.
         import shutil as copy_module
         original_copy = copy_module.copyfile
-        workspace_runtime = Path(__file__).resolve().parents[1] / "simion/runtime.lua"
+        workspace_runtime = native_resource_path("ip_runtime.lua")
         def reject_worktree_runtime(source, target, **kwargs):
             if Path(source).resolve() == workspace_runtime.resolve():
                 raise AssertionError("working-tree runtime must not affect replay")

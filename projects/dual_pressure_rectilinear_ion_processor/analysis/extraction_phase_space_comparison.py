@@ -26,7 +26,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
+from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings import (
     VALUES, prepare_spatial_crossings_from_samples,

@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from matplotlib import pyplot as plt
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
+from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (

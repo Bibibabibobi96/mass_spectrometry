@@ -701,7 +701,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             plan = json.loads((output/"inputs/composition_plan.json").read_text(encoding="utf-8"))
             self.assertEqual({item["instance_id"] for item in plan["recipe"]["instances"]}, {"source_a", "oa_b"})
             self.assertTrue((snapshot/"integrations/workflows/cooled_frontend/prepare.py").exists())
-            self.assertTrue((snapshot/"common/simion/collision_hs1.py").exists())
+            self.assertTrue((snapshot/"src/msplatform/backends/simion/collision_hs1.py").exists())
             # Provider packages may also deliver modules unused by this preparation.
             # Exercise new static imports and dynamic seed resources from this same frozen tree.
             smoke_code = ("from pathlib import Path; import sys,json; sys.path[:0]=json.loads(sys.argv[1]); "

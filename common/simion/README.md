@@ -95,7 +95,7 @@ oaTOF、single-flight或具体电极编号。
 
 ## HS1运行副本生命周期
 
-[`collision_hs1.adapt_hs1_for_repeat_fly`](collision_hs1.py)接收显式冻结的官方SIMION 2020
+[`collision_hs1.adapt_hs1_for_repeat_fly`](../../src/msplatform/backends/simion/collision_hs1.py)接收显式冻结的官方SIMION 2020
 `examples/collision_hs1/collision_hs1.lua`文本，返回增加`reset_run_state`和只读`bound_parameters`的运行副本。
 它是仓库的生命周期适配，不是供应商推荐的新碰撞算法；安装目录源码不修改。未知私有声明、参数绑定、
 已适配来源或非唯一return均拒绝。碰撞公式、抽样、参数、PRNG及种子约定保持，调用方负责原始／适配源码身份。

@@ -7,6 +7,7 @@ usage solely to reveal stale run state in the production callback wrapper.
 """
 
 from __future__ import annotations
+from msplatform.backends.simion.resources import native_resource_path
 
 import json
 import os
@@ -16,7 +17,7 @@ import subprocess
 import tempfile
 import unittest
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+from msplatform.workflows.ion_processor.preparation import lua_literal
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
 
@@ -406,7 +407,7 @@ class RuntimeReplayTests(unittest.TestCase):
             config["source"]["particle_count"] = 100
             config["execution_batch"] = {"particle_id_offset": 50, "particle_id_min": 51, "particle_id_max": 52, "retain_trajectories": mode != "csv-batch"}
         config["native_projection"] = native_projection(config["baseline"], config["numerics"])
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
+        from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
         config["numerical_boundaries"]=derive_numerical_boundaries(config["native_projection"])
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:
             folder = Path(temporary)
@@ -414,10 +415,10 @@ class RuntimeReplayTests(unittest.TestCase):
                 if name == "runtime.lua":
                     # Syntax adapter for standalone Lua only; real SIMION evidence
                     # is required to prove adjustable binding.
-                    text = (PROJECT / "simion" / name).read_text(encoding="utf-8")
+                    text = (native_resource_path("ip_" + name)).read_text(encoding="utf-8")
                     (folder / name).write_text(text.replace("adjustable ", ""), encoding="utf-8")
                 else:
-                    shutil.copyfile(PROJECT / "simion" / name, folder / name)
+                    shutil.copyfile(native_resource_path("ip_" + name), folder / name)
             shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/native_drive.lua",
                             folder / "native_drive.lua")
             shutil.copyfile(REPOSITORY / "src/msplatform/backends/simion/resources/rf_drive.lua",

@@ -133,7 +133,7 @@ def prepare_joint_flight(*, reference_run: Path,
     assembly = prepared_geometry["report"]
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
     prepare_handoff(matching, assembly["composition_plan"], interface_results / "mrtof_handoff")
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs
+    from msplatform.workflows.ion_processor.preparation import validate_configs
     from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
     seed_config = prepared_geometry["seed_configs"]
     if source.get("source_profile") == "upstream":

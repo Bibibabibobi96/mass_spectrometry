@@ -157,7 +157,7 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
     config = _read(inputs / "resolved_model.json")
     if "native_timing" in config and _read(inputs / "native_timing.json") != config["native_timing"]:
         raise ValueError("GUI frozen native timing JSON differs from baseline resolved timing")
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+    from msplatform.workflows.ion_processor.preparation import lua_literal
 
     config["native_field"] = {"directory": str(solver.resolve()), "source_manifest": None, "construction_policy": "new_private_refine_from_frozen_GEM"}
     config["workbench_seed_path"] = str(seed.resolve())

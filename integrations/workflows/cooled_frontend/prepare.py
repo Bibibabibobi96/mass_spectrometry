@@ -31,7 +31,7 @@ from integrations.workflows.cooled_frontend.geometry import (
 )
 from msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher import build_cooled_buncher_contract, prepare_buncher_probe_points, export_cooled_buncher_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
-from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
+from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 
 
 ROLE = "instrument_assembly_cooled_frontend_request"
@@ -331,7 +331,7 @@ def prepare_cooled_frontend(request_path: Path, output_directory: Path | None,
         frozen_hs1=inputs/"cooled_collision_hs1.lua"
         frozen_hs1.write_text(hs1_text,encoding="utf-8",newline="\n")
         (inputs/"cooled_hs1_identity.json").write_text(json.dumps(dict(source=file_record(hs1_source), adapted=file_record(frozen_hs1),
-            adapter="common.simion.collision_hs1.adapt_hs1_for_repeat_fly"),indent=2)+"\n",encoding="utf-8",newline="\n")
+            adapter="msplatform.backends.simion.collision_hs1.adapt_hs1_for_repeat_fly"),indent=2)+"\n",encoding="utf-8",newline="\n")
     result.update(status="prepared", output_directory=str(output))
     return result
 

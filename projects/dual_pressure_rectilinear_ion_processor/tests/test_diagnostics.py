@@ -1,5 +1,6 @@
 """Synthetic census/interpolation and headless rendering, not physical evidence."""
 from __future__ import annotations
+from msplatform.workflows.ion_processor.preparation import validate_diagnostics_config
 
 import copy
 import csv
@@ -17,7 +18,7 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_cha
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import (
     build_figures, census, export_diagnostics, prepare_data, state_at,
-    pulse_timing_context, validate_diagnostics_config,
+    pulse_timing_context,
     project_geometry, cooling_statistics,
 )
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector

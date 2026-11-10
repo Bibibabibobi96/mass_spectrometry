@@ -1,5 +1,6 @@
 """Whole-cohort diagnostics from recorded states; never simulate missing motion."""
 from __future__ import annotations
+from msplatform.workflows.ion_processor import preparation
 
 from bisect import bisect_left
 import csv
@@ -103,32 +104,6 @@ def _write_csv(path: Path, rows: list[dict], fields: list[str]) -> None:
 
 
 
-def validate_diagnostics_config(config: dict) -> None:
-    """Validate the complete diagnostic author contract before solver startup."""
-    contract = config
-    expected = {"schema_version", "role", "max_ordinary_bracket_us", "max_extraction_bracket_us", "evolution_interval_us", "png_dpi", "snapshots", "stage_labels"}
-    if set(contract) != expected or contract["schema_version"] != 1 or contract["role"] != "ion_processor_diagnostics":
-        raise ValueError("unsupported diagnostics contract")
-    for key in ("max_ordinary_bracket_us", "max_extraction_bracket_us", "evolution_interval_us", "png_dpi"):
-        if isinstance(contract[key], bool) or not isinstance(contract[key], (int, float)) or not math.isfinite(contract[key]) or contract[key] <= 0:
-            raise ValueError(f"invalid diagnostics {key}")
-    if contract["png_dpi"] < 180:
-        raise ValueError("diagnostic PNG requires at least 180 DPI")
-    labels = []
-    allowed_anchors = {"epoch_us", "capture_end_us", "transfer_end_us", "lift_end_us", "extraction_start_us", "terminal_us", "primary_quench_us", "pulse_start_us"}
-    if not isinstance(contract["snapshots"], list) or not contract["snapshots"]:
-        raise ValueError("diagnostic snapshots must be nonempty")
-    for item in contract["snapshots"]:
-        if not isinstance(item, dict) or set(item) != {"label", "anchor", "offset_us"}:
-            raise ValueError("snapshot must declare label/anchor/offset")
-        if not isinstance(item["label"], str) or not item["label"] or item["anchor"] not in allowed_anchors:
-            raise ValueError("invalid snapshot label or schedule anchor")
-        if isinstance(item["offset_us"], bool) or not isinstance(item["offset_us"], (int,float)) or not math.isfinite(item["offset_us"]):
-            raise ValueError("snapshot offset must be finite numeric")
-        labels.append(item["label"])
-    if len(set(labels)) != len(labels) or not isinstance(contract["stage_labels"], list) or not contract["stage_labels"] or not set(contract["stage_labels"]) <= set(labels):
-        raise ValueError("duplicate or missing diagnostic stage label")
-
 
 def pulse_timing_context(data: dict) -> dict:
     """Describe frozen quench and actual pulse timing without a new authority."""
@@ -150,7 +125,7 @@ def prepare_data(run: Path) -> dict[str, Any]:
     """Normalize actual samples/events and retain complete source/terminal IDs."""
     c = _json(run / "inputs/resolved_model.json")
     contract = _json(run / "inputs/diagnostics.json")
-    validate_diagnostics_config(contract)
+    preparation.validate_diagnostics_config(contract)
     from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import native_data_directory
     native = native_data_directory(run)
     events = iter_csv_rows(native / "events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})

@@ -1,5 +1,7 @@
 """Solver-free batch projections and full-ID merge contracts; no physics claim."""
 from __future__ import annotations
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.workflows.ion_processor import preparation
 
 import msplatform.execution.retention as _canonical_retention
 import msplatform.execution.manifest_verification as _canonical_manifest_verification
@@ -42,7 +44,7 @@ class BatchingTests(unittest.TestCase):
         self.config={name:functional.read_json(PROJECT/"config"/f"{name}.json") for name in ("baseline","numerics","source","native_operating_point")}
         self.config["coordinate_transform"]=functional.read_json(PROJECT/"config/coordinate_transform.json")
         self.config["native_timing"]=derive_native_timing(self.config["baseline"])
-        self.config["native_projection"]=functional.native_projection(self.config["baseline"],self.config["numerics"])
+        self.config["native_projection"]=native_projection(self.config["baseline"],self.config["numerics"])
         self.field=Path(self.temp.name)/"native"
         self.field.mkdir()
         (self.field/"processor.pa0").write_bytes(b"inert field fixture")
@@ -430,7 +432,7 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
                          (self.run/"simion/voltage_waveforms.lua").read_bytes())
         text=(self.run/"simion_batch_0001/frozen_config.lua").read_text()
         self.assertIn('["retain_trajectories"]=false', text)
-        self.assertIn('["native_timing"]='+functional.lua_literal(self.config["native_timing"]),text)
+        self.assertIn('["native_timing"]='+preparation.lua_literal(self.config["native_timing"]),text)
         profile=functional.read_json(self.run/"inputs/runtime_profiles.json")
         profile["profiles"][0]["retain_batch_trajectories"]=True
         functional.write_json(self.run/"inputs/runtime_profiles.json",profile)

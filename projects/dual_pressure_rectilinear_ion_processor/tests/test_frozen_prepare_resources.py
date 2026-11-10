@@ -79,7 +79,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
         project = author / PROJECT_RELATIVE
         resources = [
             *[
-                (PROJECT_RELATIVE / "simion" / name)
+                (Path("src/msplatform/backends/simion/resources") / ("ip_" + name))
                 for name in (
                     "runtime.lua",
                     "build_workbench.lua",
@@ -214,7 +214,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
 
     def test_missing_dynamic_resource_fails_before_materialization(self):
         for relative in (
-            PROJECT_RELATIVE / "simion/runtime.lua",
+            Path("src/msplatform/backends/simion/resources/ip_runtime.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
         ):

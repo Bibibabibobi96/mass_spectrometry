@@ -1,5 +1,7 @@
 """Synthetic admission contracts only; no solver flight or physical claims."""
 from __future__ import annotations
+from msplatform.workflows.ion_processor import preparation
+from msplatform.backends.simion import ip_handoff
 
 import csv
 import json
@@ -399,7 +401,7 @@ class AdmissionTests(unittest.TestCase):
         self.publish()
         consumer, config = self.prepare_consumer()
         self.assertEqual(config["source"]["particle_count"], 0)
-        with patch.object(functional, "generate_release_states", side_effect=AssertionError("must not resample")):
+        with patch.object(preparation, "generate_release_states", side_effect=AssertionError("must not resample")), patch.object(ip_handoff, "generate_release_states", side_effect=AssertionError("must not resample")):
             summary = functional.analyze(consumer)
         self.assertEqual(summary["status"], "success")
         self.assertFalse(summary["solver_executed"])
@@ -435,7 +437,7 @@ class AdmissionTests(unittest.TestCase):
                 **dict(zip(("vx_mm_us", "vy_mm_us", "vz_mm_us"), velocity)))
             events.extend([row, dict(row, event="terminal", reason="solver_stop", t_us=row["t_us"]+.1)])
         batching._csv(consumer/"simion/events.csv", list(events[0]), events)
-        with patch.object(functional, "generate_release_states", side_effect=AssertionError("must not resample")), \
+        with patch.object(preparation, "generate_release_states", side_effect=AssertionError("must not resample")), patch.object(ip_handoff, "generate_release_states", side_effect=AssertionError("must not resample")), \
                 patch("projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics.export_diagnostics"), \
                 patch("projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics.export_field_diagnostics"), \
                 patch("projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget.export_force_budget"):

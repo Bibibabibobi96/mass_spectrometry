@@ -1,5 +1,6 @@
 """Analyze read-only native PA samples; fits diagnose fields and never replace them."""
 from __future__ import annotations
+from msplatform.workflows.ion_processor import preparation
 
 import csv
 import json
@@ -57,49 +58,6 @@ def producer_identity(run: Path) -> dict[str, Any]:
             "frozen_source_sha256": frozen_hash,
             "matches_frozen": frozen_hash == PRODUCER_SOURCE_SHA256 if frozen_hash is not None else None}
 
-
-def validate_field_diagnostics_config(config: dict[str, Any]) -> None:
-    """Reject unknown sampling controls, nonfinite inputs and unsupported stages."""
-    keys = {"schema_version", "epsilon_us", "stages", "sections", "section_radius_scale", "fit_radius_scale",
-            "section_grid_multiple", "axial_grid_multiple", "orthogonal_grid_multiple", "quiver_stride",
-            "maximum_samples", "figure_width_mm", "figure_height_mm", "dpi"}
-    if set(config) != keys or config["schema_version"] != 1:
-        raise ValueError("unsupported field diagnostics schema/fields")
-    for key in keys - {"schema_version", "stages", "sections"}:
-        value = config[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-            raise ValueError(f"field diagnostics {key} must be positive and finite")
-    for key in ("section_grid_multiple", "axial_grid_multiple", "orthogonal_grid_multiple", "quiver_stride", "maximum_samples", "dpi"):
-        if int(config[key]) != config[key]:
-            raise ValueError(f"field diagnostics {key} must be integer")
-    if config["fit_radius_scale"] >= config["section_radius_scale"]:
-        raise ValueError("fit radius must lie inside sampled cross sections")
-    seen = set()
-    for stage in config["stages"]:
-        if set(stage) != {"stage_id", "time_ref", "component"} or not stage["stage_id"] or stage["stage_id"] in seen:
-            raise ValueError("invalid/duplicate field stage")
-        seen.add(stage["stage_id"])
-        if stage["time_ref"] not in {"capture_mid", "transfer_mid", "pre_extraction", "quench_mid", "pulse_after"}:
-            raise ValueError("unsupported field time reference")
-        if stage["component"] not in {"dc", "rf_only_peak", "total"}:
-            raise ValueError("unsupported native field component")
-    if not seen:
-        raise ValueError("field stages cannot be empty")
-    seen = set()
-    for section in config["sections"]:
-        expected = {"section_id", "position_ref"}
-        if section.get("position_ref") == "hp_fraction":
-            expected.add("fraction")
-            fraction = section["fraction"]
-            if isinstance(fraction, bool) or not isinstance(fraction, (int, float)) or not 0 < fraction < 1:
-                raise ValueError("HP section fraction must be in (0,1)")
-        elif section.get("position_ref") != "lp_center":
-            raise ValueError("unsupported native field section")
-        if set(section) != expected or not section["section_id"] or section["section_id"] in seen:
-            raise ValueError("invalid/duplicate field section")
-        seen.add(section["section_id"])
-    if not seen:
-        raise ValueError("field sections cannot be empty")
 
 
 def field_gu_to_v_per_mm(field_v_per_gu: np.ndarray, grid_mm: float) -> np.ndarray:
@@ -339,7 +297,7 @@ def export_field_diagnostics(run: Path, output_directory: Path | None = None) ->
     """
     c = json.loads((run/"inputs/resolved_model.json").read_text(encoding="utf-8"))
     config = c["field_diagnostics"]
-    validate_field_diagnostics_config(config)
+    preparation.validate_field_diagnostics_config(config)
     output = run/"results" if output_directory is None else Path(output_directory).resolve()
     output.mkdir(parents=True, exist_ok=True)
     metadata_path = output/"field_diagnostics.json"
