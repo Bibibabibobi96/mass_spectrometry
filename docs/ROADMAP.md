@@ -125,17 +125,23 @@ SFI field planning/downstream/runtime and the explicit OA closed-focus plan have
 with scoped software validation. Their retired root bodies are absent. Runtime composition exposed
 an empty-package freeze declaration and a stale DAG node; those were corrected without relaxing
 source enumeration, and the failed run and successful targeted successor remain separate evidence.
-Final ordinary installation of the composed source, full regression and performance targets stay OPEN.
+Those scoped checks did not establish composed installation or full regression;
+the latest combined installation evidence is recorded below. Full regression and
+performance targets stay OPEN.
 
 The latest retained full Repository run is `4576fa69`: 42 PASS, 8 FAIL and
 12 NOT_APPLICABLE stages in 3,789.140 seconds. Subsequent targeted repairs preserve
 that failed result; no complete successor Repository acceptance is claimed.
-The original combined installed-core test passed on `d7ded7a0` in 224.904 seconds:
-all 446 package payloads match the frozen source, direct wheel, sdist and rebuilt
+The original combined installed-core test passed on the compiler source committed
+as `68e000cd` in 262.626 seconds: all 452 runtime package payloads match the frozen
+source, actual build source, direct wheel, sdist and rebuilt
 wheel, with both outside-checkout consumer arms successful. This is installation
-evidence for that commit, not native or whole-Repository acceptance. OA analysis,
+evidence for those source bytes, not native or whole-Repository acceptance. The
+later `6e5d24bf` tracking-fixture correction changes only tests, with no package
+payload changes. OA analysis,
 neutral gas sampling/compilation, IP/cooled gas binding and pure cooled voltage
-design now have canonical installed owners; their exact limits remain in project
+design and cooled geometry/Program compilation now have canonical installed
+owners; their exact limits remain in project
 and integration status pages. Frontend field-producer migration, dual-cone gas/SDS
 ownership, remaining root workflows and final native/performance closure remain
 OPEN in this same goal. No stage is transferred to P5 to hide unfinished work.
