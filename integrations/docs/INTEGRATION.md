@@ -1006,3 +1006,17 @@ grant propagation or scientific qualification.
 The retired Program wrapper has no active import compatibility entry. Scientific
 rendering uses `msplatform.backends.simion.tracking_program`; every projected
 Program receives its explicitly selected frozen native-path helper bytes.
+
+### Standalone Lua discovery for frontend software checks
+
+The single-reflection, local and cooled frontend software fixtures try `lua`, then the pinned
+`lua5.1` provider on PATH, before their unchanged vendor fallback. The provider keeps its original
+executable name and matching runtime manifests. This changes test interpreter discovery only;
+production supplier selection, callbacks, source/field identities and numerical policies are unchanged.
+Standalone Lua doubles do not grant native Fly, Refine or collision qualification.
+All 1199 original assertions and test identities are retained. The private
+eight-module run passed 218 parents; one parent hit a task-only Windows command
+auditor error, then its three original modes passed after correcting only that
+external auditor. The original failed run remains recorded. Nine representative
+composed-main consumers, including that parent, passed 82 records in 7.847 seconds;
+this is not a new full eight-module, Repository or native acceptance.

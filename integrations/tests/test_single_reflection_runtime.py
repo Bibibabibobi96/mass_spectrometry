@@ -42,7 +42,7 @@ from msplatform.results.single_reflection_source import instance_design_record
 from msplatform.backends.simion.frontend import native_frontend_instances
 
 ROOT = Path(__file__).resolve().parents[2]
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 BUILDER = ROOT / "src/msplatform/backends/simion/resources/build_iob.lua"
 
 

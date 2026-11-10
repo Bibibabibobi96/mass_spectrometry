@@ -331,7 +331,7 @@ print('COLD_CANONICAL_LOCAL_RUNTIME=PASS')
             materialize_batches(self.run, "discovery", plan_single_wave_batches(100, 1), 100., self.times)
         self.assertFalse((self.run/"simion/discovery").exists())
 
-    @unittest.skipUnless(Path(shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
+    @unittest.skipUnless(Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
     def test_tracking_wrapper_projects_bootstrap_and_keeps_rf_dualcone_aliases(self):
         from msplatform.backends.simion.source import lua_value
 
@@ -368,12 +368,12 @@ arg={specfile,'build',helper};dofile(wrapper);assert(checked,'actual wrapper did
                     request.write_text("return "+lua_value(spec)+"\n", encoding="utf-8")
                     env = dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(canonical),
                                MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(execution))
-                    result = subprocess.run([shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe",
+                    result = subprocess.run([shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe",
                         str(harness),str(wrapper),str(request),str(helper),execution.as_posix()],
                         env=env,cwd=self.workspace,capture_output=True,text=True,timeout=30)
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
-    @unittest.skipUnless(Path(shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
+    @unittest.skipUnless(Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
     def test_plain_lua_iob_builder_keeps_exact_companions_and_shared_absolute_carrier(self):
         result = materialize_batches(self.run, "extraction", plan_single_wave_batches(100, 1), 40., self.times)
         case = result["gui_case"]
@@ -421,7 +421,7 @@ arg={specpath,'build',pathhelper};dofile(builder)
 assert(io.open(spec.bootstrap_paths[1],'rb')==nil,'owned bootstrap must be removed')
 arg={specpath,'verify',pathhelper};dofile(builder)
 """, encoding="utf-8")
-        command = [shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe", str(harness), str(builder),
+        command = [shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe", str(harness), str(builder),
                    case["iob_builder_arguments"][4],case["iob_builder_arguments"][6]]
         completed = subprocess.run(command, cwd=self.workspace, capture_output=True, text=True, check=False, timeout=30)
         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)

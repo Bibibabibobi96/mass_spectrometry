@@ -29,7 +29,7 @@ from integrations.tests.frontend_fixtures import canonical_frontend_fixture, can
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / 'integrations/runtime'
 SUPPORT = RUNTIME / 'local_frontend_field_support.ps1'
-LUA = Path('C:/Program Files/SIMION-2020/lua.exe')
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
 
 
 def normalization_fixture(directory):

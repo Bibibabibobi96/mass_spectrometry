@@ -32,7 +32,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 from msplatform.backends.simion.frontend import native_frontend_instances
 
 ROOT = Path(__file__).resolve().parents[2]
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
 def read_designs(run):

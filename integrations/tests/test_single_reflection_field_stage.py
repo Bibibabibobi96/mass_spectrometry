@@ -28,7 +28,7 @@ from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / 'integrations/workflows/single_reflection_flight'
-LUA = Path(shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe')
+LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
 
 
 def prepared(root: Path, *, source=None, entrance_refinement=False, local=False) -> tuple[Path, dict]:

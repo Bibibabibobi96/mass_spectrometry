@@ -906,7 +906,7 @@ print('SEVEN_FIELD_TRANSPORT=PASS')
                     Path(record["path"]).chmod(stat.S_IREAD|stat.S_IWRITE)
 
 
-LUA=Path(shutil.which("lua") or r"C:\Program Files\SIMION-2020\lua.exe")
+LUA=Path(shutil.which("lua") or shutil.which("lua5.1") or r"C:\Program Files\SIMION-2020\lua.exe")
 
 
 @unittest.skipUnless(LUA.is_file(),"plain Lua interpreter unavailable")

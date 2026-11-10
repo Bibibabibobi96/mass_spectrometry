@@ -6,6 +6,7 @@ from msplatform.execution.resources import resource_path
 import copy
 import json
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -20,7 +21,7 @@ from msplatform.backends.simion.tracking_program import _standalone_dynamic_fiel
 
 class CooledFieldMemberReuseTests(unittest.TestCase):
     def test_actual_lua_pulse_multiplies_the_projected_source_field(self):
-        lua = Path("C:/Program Files/SIMION-2020/lua.exe")
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
         if not lua.is_file():
             self.skipTest("plain Lua unavailable")
         with tempfile.TemporaryDirectory() as temporary:

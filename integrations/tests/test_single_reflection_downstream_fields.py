@@ -19,7 +19,7 @@ from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.workflows.single_reflection_flight.downstream_fields import _live_run, plan_downstream_fields, preflight_frontend_resources, publish_downstream_fields
 
 ROOT = Path(__file__).resolve().parents[2]
-LUA = Path("C:/Program Files/SIMION-2020/lua.exe")
+LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
 class FrontendResourcePreflightTests(unittest.TestCase):
