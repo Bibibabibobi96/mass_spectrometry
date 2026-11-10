@@ -258,7 +258,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         with self.assertRaises(ValueError):assert_bounded_controller_resume(old,wrong,state,budget_only=True)
 
     def test_clean_energy_prism_model_uses_energy_units_and_ignores_diagnostic_angle(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL as energy_name
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL as energy_name
         base, p1, p2, contract, numerics = self.prism_preclosure_fixtures()
         contract["downstream_fixed_grid_workpoint_profile"]["active_stripe_axes"] = ["stripe_1_voltage_v"]
         target = {"mode": "converging_clean_phase_energy", "energy_tolerance_per_charge_v": .05234301827329357,
@@ -303,7 +303,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             decide_prism_preclosure(base, p1, p2, contract, numerics)
 
     def test_clean_energy_stripe_rechecks_prism_and_retains_all_four_acceptance_rows(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL as energy_name
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL as energy_name
         baseline, s1, contract, numerics = self.single_stripe_fixtures()
         target = {"mode": "converging_clean_phase_energy", "energy_tolerance_per_charge_v": .05234301827329357,
                   "slow_energy_reference_per_charge_v": 5.374387143093758}
@@ -340,7 +340,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
                 "trusted_advance_multiplier": 1.}
 
     def joint_ps_fixtures(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL as energy_name
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL as energy_name
         baseline, _, contract, numerics = self.single_stripe_fixtures()
         profile = contract["downstream_fixed_grid_workpoint_profile"]
         profile["single_stripe_refinement_mode"] = "joint_ps_constrained"

@@ -22,7 +22,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contra
     resolve_drift_phase_contract,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (compile_dual_stripe_width_evaluator, dual_stripe_total_path_scale, dual_stripe_width_at_y_mm)
-from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
@@ -1448,13 +1448,9 @@ def audit_theory_function_origin_registration(contract: dict[str, Any]) -> dict[
     }
 
 
-def analyze_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[float], *, accelerator_geometry_authority, axial_energy_per_charge_v: float | None=None) -> dict[str, Any]:
-    """Check nominal dual-Stripe response independence and resolved widths.
-
-    ``h_i=sqrt(w0/(w0-v_i))`` follows the project theory.  The matrix
-    ``[[1,1],[h1,h2]]`` maps the two nominal spatial contributions to
-    ``(psi,g)`` and is the unit-independent conditioning diagnostic.
-    """
+def _nominal_dual_stripe_response(contract: dict[str, Any], biases_v: Sequence[float], *,
+                                  axial_energy_per_charge_v: float | None = None) -> tuple[dict[str, Any], dict[str, float]]:
+    """Calculate the original ordered nominal response before any geometry resolution."""
     nominal_energy = (
         _finite(axial_energy_per_charge_v, "selected axial energy per charge")
         if axial_energy_per_charge_v is not None
@@ -1475,7 +1471,19 @@ def analyze_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[float], 
     condition = _condition_number_2x2(1.0, 1.0, h1, h2)
     if determinant == 0.0 or not math.isfinite(condition):
         raise CandidateContractError("dual Stripe response matrix is singular")
-    resolved = resolve_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
+    return stripe, {'nominal_energy': nominal_energy, 'v1': v1, 'v2': v2, 'h1': h1, 'h2': h2, 'determinant': determinant, 'condition': condition}
+
+
+def _complete_dual_stripe_response(stripe: dict[str, Any], values: dict[str, float],
+                                   resolved: dict[str, Any]) -> dict[str, Any]:
+    """Finish the original physical-width, mapping and response report in order."""
+    nominal_energy = values['nominal_energy']
+    v1 = values['v1']
+    v2 = values['v2']
+    h1 = values['h1']
+    h2 = values['h2']
+    determinant = values['determinant']
+    condition = values['condition']
     width_1 = _width_bounds(resolved["stripe_electrodes"][0])
     width_2 = _width_bounds(resolved["stripe_electrodes"][2])
     component_assignment = stripe["theory_profile"].get("component_basis_assignment")
@@ -1509,3 +1517,22 @@ def analyze_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[float], 
         "geometry_status": "positive B-spline-evaluated widths; central-ground opening and three-dimensional clearance remain gated",
         "not_evaluated": ["target_psi_g_fit", "voltage_inverse_solution", "mirror_period", "return_time", "oscillation_count", "time_platform"],
     }
+
+
+def analyze_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[float], *,
+                           accelerator_requirements: dict[str, Any], geometry_profile: dict[str, Any],
+                           geometry_profile_id: str, axial_energy_per_charge_v: float | None = None) -> dict[str, Any]:
+    """Check nominal dual-Stripe response independence and resolved widths.
+
+    ``h_i=sqrt(w0/(w0-v_i))`` follows the project theory.  The matrix
+    ``[[1,1],[h1,h2]]`` maps the two nominal spatial contributions to
+    ``(psi,g)`` and is the unit-independent conditioning diagnostic.
+
+    Explicit OA physical requirements/profile/id resolve this same MR contract
+    once through the neutral resolver. No I/O, PA or native qualification occurs.
+    """
+    stripe, values = _nominal_dual_stripe_response(
+        contract, biases_v, axial_energy_per_charge_v=axial_energy_per_charge_v)
+    resolved = resolve_geometry(contract, accelerator_requirements=accelerator_requirements,
+                                geometry_profile=geometry_profile, geometry_profile_id=geometry_profile_id)
+    return _complete_dual_stripe_response(stripe, values, resolved)

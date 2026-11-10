@@ -211,7 +211,8 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
         if not powershell:
             self.skipTest("PowerShell 7 required")
         expected_runner_names = ("run_two_prism_segmented_coverage.ps1",
-                                 "run_two_prism_segmented_continuation.ps1")
+                                 "run_two_prism_segmented_continuation.ps1",
+                                 "run_dual_stripe_operating_seed.ps1", "run_mirror_exact_k_operating_point.ps1")
         repository = PROJECT.parents[1]
         harness = r"""param($Repository,$Output)
 $ErrorActionPreference='Stop'
@@ -222,7 +223,7 @@ $copy=@($support.FindAll({param($n)$n-is[Management.Automation.Language.Function
 if($copy.Count-ne1){throw 'Public input-copy function must be unique'}
 . ([scriptblock]::Create($copy[0].Extent.Text))
 $reports=@()
-foreach($name in @('run_two_prism_segmented_coverage.ps1','run_two_prism_segmented_continuation.ps1')){
+foreach($name in @('run_two_prism_segmented_coverage.ps1','run_two_prism_segmented_continuation.ps1','run_dual_stripe_operating_seed.ps1','run_mirror_exact_k_operating_point.ps1')){
  $tokens=$null;$errors=$null
  $tree=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository ('projects/parallel_mirror_dual_stripe_mr_tof/analysis/'+$name)),[ref]$tokens,[ref]$errors)
  if($errors.Count){throw 'Actual runner parse failed'}
@@ -232,7 +233,7 @@ foreach($name in @('run_two_prism_segmented_coverage.ps1','run_two_prism_segment
  . ([scriptblock]::Create($lists[0].Extent.Text))
  $repoRoot=$Repository;$sourceDir=Join-Path $Output $name
  New-Item -ItemType Directory -Path $sourceDir|Out-Null
- $sourceInputs=[ordered]@{};$sourceChecks=@()
+ $sourceInputs=[ordered]@{};$configuration=@{inputs=$sourceInputs};$inputDir=$sourceDir;$sourceChecks=@()
  . ([scriptblock]::Create($copies[0].Extent.Text))
  $rows=@()
  for($index=0;$index-lt$sourcePaths.Count;$index++){
@@ -256,9 +257,14 @@ ConvertTo-Json -InputObject @($reports) -Depth 8 -Compress
             for report in reports:
                 with self.subTest(runner=report["runner"]):
                     paths = report["paths"]
-                    self.assertEqual(paths[-2:], [
+                    self.assertEqual(paths[-1], "src\\msplatform\\workflows\\mr_design.py")
+                    if report["runner"].startswith("run_two_prism_segmented_"):
+                        self.assertEqual(paths[-3:-1], [
                         "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\prism_analytic.py",
                         "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\prism_l0.py"])
+                    stripe_path = "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\dual_stripe_l0.py"
+                    self.assertEqual(paths.count(stripe_path), 1)
+                    self.assertEqual(paths[{'run_dual_stripe_operating_seed.ps1': 2, 'run_mirror_exact_k_operating_point.ps1': 25, 'run_two_prism_segmented_continuation.ps1': 14, 'run_two_prism_segmented_coverage.ps1': 13}[report["runner"]]], stripe_path)
                     self.assertEqual(report["input_count"], len(paths))
                     self.assertEqual(report["check_count"], len(paths))
                     self.assertEqual(len(report["rows"]), len(paths))
@@ -268,10 +274,10 @@ ConvertTo-Json -InputObject @($reports) -Depth 8 -Compress
                         self.assertEqual(row["key"], f"analytic_source_{index:02d}")
                         self.assertEqual(Path(row["source"]), source)
                         self.assertEqual(row["checked_frozen"], row["frozen"])
-                        self.assertEqual(frozen.name, f"source_{index:02d}" + source.suffix)
+                        self.assertEqual(frozen.name, source.name if report["runner"] == "run_mirror_exact_k_operating_point.ps1" else f"source_{index:02d}" + source.suffix)
                         self.assertEqual(frozen.read_bytes(), source.read_bytes())
                         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), row["sha256"].lower())
-                    for name in ("prism_l0", "prism_analytic", "drift_phase_contract"):
+                    for name in (("prism_l0", "prism_analytic", "drift_phase_contract") if report["runner"].startswith("run_two_prism_segmented_") else ("drift_phase_contract",)):
                         selected = "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\" + name + ".py"
                         self.assertEqual(paths.count(selected), 1)
 

@@ -60,7 +60,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry
     resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose, resolve_static_iob_origins,
 )
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     CONVERGING_PRISM_ENERGY_RESIDUAL, converging_design_potential_delta_v,
     resolve_converging_prism_target,
 )

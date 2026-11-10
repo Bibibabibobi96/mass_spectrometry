@@ -2028,6 +2028,45 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'}
                              for row in request['stages']))
 
+    def test_installed_mr_stripe_public_plan_preserves_core_and_integration(self):
+        request, _ = self.plan('-ChangedPath',
+            'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py')
+        rows = [row for row in request['stages']
+                if row['name'] == 'parallel_mirror_dual_stripe_mr_tof_static']
+        self.assertEqual(len(rows), 1)
+        command = rows[0]['command']
+        self.assertEqual(command['runner'], 'powershell')
+        self.assertEqual(command['script'],
+                         'projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1')
+        self.assertEqual(command['parameters']['Level'], 'Core')
+        self.assertNotIn('SelectedTestModules', command['parameters'])
+        prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.'
+        expected = [prefix + name for name in [
+            'test_downstream_fixed_grid_workpoint',
+            'test_downstream_workpoint_iteration',
+            'test_dual_stripe_l0_math',
+            'test_fixed_grid_mirror_stripe_handoff',
+            'test_joint_mirror_stripe_l0',
+            'test_managed_analysis_runner_contracts',
+            'test_measured_component_source',
+            'test_mirror_exact_k_operating_point',
+            'test_mirror_l0_l1_runner',
+            'test_native_candidate_condition_runner',
+            'test_prepared_joint_trial',
+            'test_prism_runner_contract_matrix',
+            'test_simion_candidate_reference',
+            'test_static_field_binding',
+            'test_static_workpoint_iteration',
+            'test_two_prism_simion_trial',
+        ]]
+        self.assertCountEqual(command['parameters']['ChangedTestModules'], expected)
+        self.assertEqual(len(expected), len(set(expected)))
+        self.assertTrue(any(row['name'].startswith('common_contracts') for row in request['stages']))
+        self.assertTrue(any(row['name'].startswith('instrument_assembly_integration')
+                            for row in request['stages']))
+        self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'}
+                             for row in request['stages']))
+
     def test_scalar_adapter_selects_original_core_and_actual_consumers(self):
         request, _ = self.plan(
             "-ChangedPath", "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"

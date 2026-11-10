@@ -37,7 +37,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.cad_pose_con
     project_to_source,
     source_to_project,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import analyze_dual_stripe_l0
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import analyze_dual_stripe_l0
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     axial_potential_gradient_v_per_mm,
@@ -608,7 +608,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         result = analyze_dual_stripe_l0(
             load_contract(PROJECT / "config" / "simion_candidate_two_zone.json"),
             (-40.0, 60.0),
-        accelerator_geometry_authority=geometry_authority(load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")))
+        **pure_geometry_inputs(load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")))
         self.assertNotEqual(result["response_matrix_determinant"], 0.0)
         self.assertTrue(math.isfinite(result["response_matrix_condition_number_2"]))
         self.assertGreater(result["physical_width_bounds_mm"]["set_1"][0], 0.0)

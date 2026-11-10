@@ -165,7 +165,7 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
@@ -193,7 +193,8 @@ try {
     'src\msplatform\execution\resources\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_two_prism_segmented_coverage.ps1',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\prism_analytic.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\prism_l0.py'
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\prism_l0.py',
+    'src\msplatform\workflows\mr_design.py'
   )
   $sourceInputs = [ordered]@{}
   $sourceChecks = @()

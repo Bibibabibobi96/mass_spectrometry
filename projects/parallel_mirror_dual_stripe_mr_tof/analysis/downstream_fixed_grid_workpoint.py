@@ -99,7 +99,7 @@ RESIDUAL_NAMES = (
 def workpoint_residual_names(materialization: Mapping[str, Any]) -> tuple[str, ...]:
     """Select explicit scientific residual units without relabelling old angle rows."""
     if materialization.get("prism_handoff_target") is not None:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL
         return (RESIDUAL_NAMES[0], CONVERGING_PRISM_ENERGY_RESIDUAL, *RESIDUAL_NAMES[2:])
     return RESIDUAL_NAMES
 

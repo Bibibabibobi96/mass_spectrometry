@@ -13,7 +13,7 @@ import math
 from typing import Any
 
 from common.contracts.file_identity import canonical_json_sha256
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     ManufacturedStripeBasisPathScales,
     NativeStripeSpatialReturnNumerics,
     NativeStripeSpatialShapeRoot,

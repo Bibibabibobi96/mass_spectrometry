@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import dual_stripe_operating_seed
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     materialize_native_stripe_spatial_return_root,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (

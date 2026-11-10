@@ -42,7 +42,7 @@ def author_measured_centroid_prism_target(*, event_field_audit: dict, audit_requ
     """
     from scipy.optimize import brentq
     from msplatform.contracts.particle_state import DERIVED_ABSOLUTE_TOLERANCE, DERIVED_RELATIVE_TOLERANCE
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
         converging_design_potential_delta_v, resolve_converging_prism_target,
     )
 

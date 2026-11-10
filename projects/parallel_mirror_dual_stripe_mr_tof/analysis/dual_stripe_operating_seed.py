@@ -32,8 +32,8 @@ from msplatform.execution.retention import verify_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
-    analyze_dual_stripe_l0,
+from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     derive_manufactured_basis_voltage_seed,
     exact_k_slow_energy_per_charge_v,
     identify_fixed_cad_component_shapes,
@@ -1470,7 +1470,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate, *, a
             continue
         if not _bias_pair_is_nondegenerate(values, profile, energy):
             continue
-        response = analyze_dual_stripe_l0(contract, values, accelerator_geometry_authority=accelerator_geometry_authority)
+        response = analyze_native_dual_stripe_l0(contract, values, accelerator_geometry_authority=accelerator_geometry_authority)
         entry_y_mm = project_y_from_theory_drift_mm(contract, 0.0)
         periods = [
             coupled_reduced_period_mm_per_sqrt_v(
@@ -1674,7 +1674,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
                 "mirror_root_index": index,
                 "source_l0_restart_index": root.source_l0_restart_index,
                 "mirror_root_gamma_degrees": root.gamma_degrees,
-                "dual_stripe_l0_response": analyze_dual_stripe_l0(
+                "dual_stripe_l0_response": analyze_native_dual_stripe_l0(
                     mirror.contract, branch["stripe_biases_v"]
                 , accelerator_geometry_authority=accelerator_geometry_authority),
             })
@@ -2020,7 +2020,7 @@ def build_operating_seed_report_from_fixed_grid(fixed_grid_manifest: Path, downs
         "stripe_biases_v": list(materialized.stripe_biases_v),
         "native_spatial_return_materialization": asdict(materialized),
     }
-    seed["dual_stripe_l0_response"] = analyze_dual_stripe_l0(
+    seed["dual_stripe_l0_response"] = analyze_native_dual_stripe_l0(
         contract,
         seed["stripe_biases_v"],
         axial_energy_per_charge_v=mirror.nominal_energy_per_charge_v,
@@ -2084,7 +2084,7 @@ def build_operating_seed_report_from_exact_k(exact_k_manifest: Path, downstream_
             source_slow_energy / exact_k.axial_energy_per_charge_v,
         ))),
     }
-    seed["dual_stripe_l0_response"] = analyze_dual_stripe_l0(
+    seed["dual_stripe_l0_response"] = analyze_native_dual_stripe_l0(
         exact_k.contract,
         seed["stripe_biases_v"],
         axial_energy_per_charge_v=exact_k.axial_energy_per_charge_v,

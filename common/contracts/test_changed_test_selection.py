@@ -920,9 +920,14 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'test_two_prism_segmented_voltage_seed', 'test_mirror_l0_l1_runner',
             'test_prism_runner_contract_matrix'))
         search_modules = sorted(f"{MR}/tests/analysis/{name}.py" for name in (
-            'test_simion_candidate_reference', 'test_mirror_l0_l1_runner'))
+            'test_simion_candidate_reference', 'test_mirror_l0_l1_runner',
+            'test_dual_stripe_l0_math', 'test_fixed_grid_mirror_stripe_handoff',
+            'test_prism_runner_contract_matrix'))
         runner_modules = sorted(f"{MR}/tests/analysis/{name}.py" for name in (
             'test_mirror_l0_l1_runner', 'test_prism_runner_contract_matrix'))
+        stripe_runner_modules = sorted([*runner_modules,
+            f"{MR}/tests/analysis/test_managed_analysis_runner_contracts.py",
+            f"{MR}/tests/analysis/test_native_candidate_condition_runner.py"])
         changed_test = f"{MR}/tests/analysis/test_two_prism_segmented_coverage.py"
         cases = [
             dict(stage=stage, paths=[domain], modules=math_modules),
@@ -936,7 +941,10 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                        'run_mirror_l0_l1_candidate.ps1',
                        'run_two_prism_segmented_continuation.ps1',
                        'run_two_prism_segmented_coverage.ps1'):
-            cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{runner}"], modules=runner_modules))
+            # Only the four changed Stripe source lists gain these two tests.
+            expected = (runner_modules if runner == 'run_mirror_l0_l1_candidate.ps1'
+                        else stripe_runner_modules)
+            cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{runner}"], modules=expected))
         # Combination and runner mappings use the existing selector boundary in
         # one host. Keep real public CLI coverage for each new canonical path.
         for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
@@ -1066,6 +1074,69 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                      for name, modules in consumers.items())
         for name in dependencies:
             cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"], modules=None))
+        for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
+            with self.subTest(paths=case['paths']):
+                if case['modules'] is None:
+                    self.assertIsNone(selected)
+                else:
+                    self.assertCountEqual(selected['Modules'], case['modules'])
+                    self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
+                    self.assertFalse(selected['CompleteOwner'])
+                    self.assertFalse(selected['OnlyTestModules'])
+
+    def test_installed_mr_stripe_and_native_analysis_select_actual_consumers(self) -> None:
+        stage = 'parallel_mirror_dual_stripe_mr_tof_static'
+        canonical = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py'
+        workflow = 'src/msplatform/workflows/mr_design.py'
+        stripe_names = [
+            'test_downstream_fixed_grid_workpoint',
+            'test_downstream_workpoint_iteration',
+            'test_dual_stripe_l0_math',
+            'test_fixed_grid_mirror_stripe_handoff',
+            'test_joint_mirror_stripe_l0',
+            'test_managed_analysis_runner_contracts',
+            'test_measured_component_source',
+            'test_mirror_exact_k_operating_point',
+            'test_mirror_l0_l1_runner',
+            'test_native_candidate_condition_runner',
+            'test_prepared_joint_trial',
+            'test_prism_runner_contract_matrix',
+            'test_simion_candidate_reference',
+            'test_static_field_binding',
+            'test_static_workpoint_iteration',
+            'test_two_prism_simion_trial',
+        ]
+        search_names = [
+            'test_dual_stripe_l0_math',
+            'test_fixed_grid_mirror_stripe_handoff',
+            'test_mirror_l0_l1_runner',
+            'test_prism_runner_contract_matrix',
+            'test_simion_candidate_reference',
+        ]
+        runner_names = [
+            'test_managed_analysis_runner_contracts',
+            'test_mirror_l0_l1_runner',
+            'test_native_candidate_condition_runner',
+            'test_prism_runner_contract_matrix',
+        ]
+        cases = [
+            dict(stage=stage, paths=[canonical], modules=stripe_names),
+            dict(stage=stage, paths=[workflow], modules=search_names),
+            dict(stage=stage, paths=[canonical, workflow],
+                 modules=sorted(set(stripe_names + search_names))),
+            # Deleted production sources cannot authorize stale leaf selection.
+            dict(stage=stage, paths=[MR + '/analysis/dual_stripe_l0.py'], modules=None),
+        ]
+        for runner in [
+            'run_dual_stripe_operating_seed.ps1',
+            'run_mirror_exact_k_operating_point.ps1',
+            'run_two_prism_segmented_continuation.ps1',
+            'run_two_prism_segmented_coverage.ps1',
+        ]:
+            cases.append(dict(stage=stage, paths=[MR + '/analysis/' + runner], modules=runner_names))
+        for case in cases:
+            if case['modules'] is not None:
+                case['modules'] = sorted(f"{MR}/tests/analysis/{name}.py" for name in case['modules'])
         for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
             with self.subTest(paths=case['paths']):
                 if case['modules'] is None:

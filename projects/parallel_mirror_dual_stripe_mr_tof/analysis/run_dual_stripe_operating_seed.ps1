@@ -125,7 +125,7 @@ try {
   $sourcePaths = @(
     'common\contracts\file_identity.py',
     'src\msplatform\execution\manifest_verification.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\drift_phase_contract.py',
@@ -148,7 +148,8 @@ try {
     'src\msplatform\backends\simion\bare_three_zone_component.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_dual_stripe_operating_seed.ps1'
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_dual_stripe_operating_seed.ps1',
+    'src\msplatform\workflows\mr_design.py'
   )
   $sourceInputs = [ordered]@{}
   $sourceChecks = @()

@@ -109,7 +109,7 @@ try {
     'common\host_resource_python.ps1',
     'common\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
@@ -130,7 +130,8 @@ try {
     'src\msplatform\backends\simion\rectangular_accelerator.py',
     'src\msplatform\backends\simion\bare_three_zone_component.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_mirror_exact_k_operating_point.ps1'
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_mirror_exact_k_operating_point.ps1',
+    'src\msplatform\workflows\mr_design.py'
   )
   $configuration = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
   $configuration.inputs = [ordered]@{

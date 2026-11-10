@@ -11,8 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
-    CandidateContractError,
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     NativeStripeSpatialReturnNumerics,
     analyze_dual_stripe_l0,
     audit_theory_function_origin_registration,
@@ -223,7 +223,7 @@ class DualStripeL0MathTest(unittest.TestCase):
             contract,
             (-40.0, 60.0),
             axial_energy_per_charge_v=4050.0,
-        accelerator_geometry_authority=geometry_authority(contract))
+        **pure_geometry_inputs(contract))
         self.assertEqual(result["energy_per_charge_v"], 4050.0)
         self.assertAlmostEqual(result["h_factors"][0], math.sqrt(4050.0 / 4090.0))
 
@@ -506,12 +506,12 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertEqual(assignment["set_2"], "user_confirmed_scaled_original_psi_m_linear_basis")
         self.assertTrue(assignment["termwise_original_paper_geometry_basis_identification"])
         self.assertEqual(
-            analyze_dual_stripe_l0(contract, (-40.0, 60.0), accelerator_geometry_authority=geometry_authority(contract))["model"],
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0), **pure_geometry_inputs(contract))["model"],
             "dual_stripe_nominal_response_l0",
         )
         assignment["set_2"] = "unqualified"
         with self.assertRaisesRegex(CandidateContractError, "qualified theory-CAD mapping"):
-            analyze_dual_stripe_l0(contract, (-40.0, 60.0), accelerator_geometry_authority=geometry_authority(contract))
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0), **pure_geometry_inputs(contract))
 
     def test_endpoint_regularization_recovers_linear_reference_integral(self) -> None:
         self.assertAlmostEqual(endpoint_regularized_kappa(lambda eta: eta), 2.0, places=8)
@@ -1024,6 +1024,78 @@ class DualStripeL0MathTest(unittest.TestCase):
             result["native_minus_upstream_shape_kappa_1"],
             result["native_kappa_1"] - result["upstream_native_shape_kappa_1"],
         )
+
+
+
+
+class DualStripeOwnershipBoundaryTests(unittest.TestCase):
+    def test_native_response_preserves_prefix_error_priority_before_geometry(self) -> None:
+        from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
+        cases = (
+            ({"nominal": {"energy_per_charge_v": float("nan")}}, (), CandidateContractError, "finite"),
+            ({"nominal": {"energy_per_charge_v": 4000}}, (), KeyError, "dual_stripe"),
+            ({"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}}, (), CandidateContractError, "exactly two"),
+            ({"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}}, (-40, -40), CandidateContractError, "distinct"),
+            ({"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}}, (-40, float("nan")), CandidateContractError, "finite"),
+        )
+        with patch("msplatform.backends.simion.mr_geometry.resolve_mr_geometry", side_effect=AssertionError("geometry must follow prefix")) as resolver:
+            for contract, biases, error, message in cases:
+                with self.subTest(message=message), self.assertRaisesRegex(error, message):
+                    analyze_native_dual_stripe_l0(contract, biases, accelerator_geometry_authority={})
+            resolver.assert_not_called()
+        with self.assertRaisesRegex(CandidateContractError, "complete frozen OA geometry authority"):
+            analyze_native_dual_stripe_l0(
+                {"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}},
+                (-40, 60), accelerator_geometry_authority={})
+
+    def test_pure_and_native_use_same_contract_once_and_return_same_report(self) -> None:
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof import dual_stripe_l0 as domain
+        from msplatform.backends.simion.mr_geometry import resolve_mr_geometry
+        from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        physical = pure_geometry_inputs(contract)
+        authority = geometry_authority(contract)
+        with patch.object(domain, "resolve_geometry", wraps=domain.resolve_geometry) as resolver:
+            pure = domain.analyze_dual_stripe_l0(contract, (-40, 60), **physical)
+            self.assertEqual(resolver.call_count, 1)
+            self.assertIs(resolver.call_args.args[0], contract)
+            self.assertIs(resolver.call_args.kwargs["geometry_profile"], physical["geometry_profile"])
+        with patch("msplatform.backends.simion.mr_geometry.resolve_mr_geometry", wraps=resolve_mr_geometry) as resolver:
+            native = analyze_native_dual_stripe_l0(contract, (-40, 60), accelerator_geometry_authority=authority)
+            self.assertEqual(resolver.call_count, 1)
+            self.assertIs(resolver.call_args.args[0], contract)
+            self.assertIs(resolver.call_args.kwargs["accelerator_geometry_authority"], authority)
+        self.assertEqual(native, pure)
+
+    def test_completion_checks_actual_width_before_component_mapping(self) -> None:
+        import copy
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof import dual_stripe_l0 as domain
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        stripe, values = domain._nominal_dual_stripe_response(contract, (-40, 60))
+        resolved = domain.resolve_geometry(contract, **pure_geometry_inputs(contract))
+        bad_stripe = copy.deepcopy(stripe)
+        bad_stripe["theory_profile"]["component_basis_assignment"] = {}
+        bad_width = copy.deepcopy(resolved)
+        bad_width["stripe_electrodes"][0]["polygon_yz_mm"] = [[0,0],[1,0],[1,-1],[0,-1]]
+        with self.assertRaisesRegex(CandidateContractError, "non-positive physical width"):
+            domain._complete_dual_stripe_response(bad_stripe, values, bad_width)
+        with self.assertRaisesRegex(CandidateContractError, "qualified theory-CAD mapping"):
+            domain._complete_dual_stripe_response(bad_stripe, values, resolved)
+
+    def test_importing_pure_component_and_search_workflow_has_no_eager_backend(self) -> None:
+        import subprocess
+        import sys
+        repository = PROJECT.parents[1]
+        code = (
+            "import sys;sys.path.insert(0,sys.argv[1]);"
+            "import msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0;"
+            "import msplatform.workflows.mr_design;"
+            "assert not any(n.startswith('msplatform.backends') for n in sys.modules)"
+        )
+        completed = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(repository/"src")],
+                                   cwd=repository, capture_output=True, text=True,
+                                   encoding="utf-8", timeout=30, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":

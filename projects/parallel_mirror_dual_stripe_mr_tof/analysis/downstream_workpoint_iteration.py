@@ -2298,7 +2298,7 @@ def load_measured_centroid_closure_target(path: Path, source_receipt_path: Path,
                                          contract_path: Path) -> dict[str, Any]:
     """Import the explicit audited target; never synthesize an old OA target."""
     from msplatform.contracts.particle_state import DERIVED_RELATIVE_TOLERANCE, DERIVED_ABSOLUTE_TOLERANCE
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import resolve_converging_prism_target
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import resolve_converging_prism_target
     target = _load(path, "measured centroid closure target")
     required = {"schema_version", "role", "inputs", "source_energy_ledger", "prism_handoff_target",
                 "target_positive_mirror_turn_y_mm", "target_low_field_tangent_ratio_vy_over_vz",

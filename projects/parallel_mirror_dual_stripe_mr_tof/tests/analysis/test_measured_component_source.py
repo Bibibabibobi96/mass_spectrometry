@@ -66,7 +66,7 @@ class MeasuredCentroidTargetTests(unittest.TestCase):
                     trajectory_contract=contract,design_target=design,stripe_1_voltage_v=values[10],input_records=records)
 
     def test_partition_uses_actual_phi_and_ex_not_unclosed_ky_or_oa_energy(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import converging_design_potential_delta_v
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import converging_design_potential_delta_v
         evidence=self.evidence();before=copy.deepcopy(evidence)
         result=author_measured_centroid_prism_target(**evidence)
         target=result["target_authority"];model=target["prism_handoff_target"];ledger=result["authoring_ledger"]

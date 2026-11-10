@@ -2759,6 +2759,177 @@ with prism_check.assertRaises(prism_contract_error):prism_phase_api.resolve_drif
 print('INSTALLED_MR_PRISM_PHASE=PASS')
 # MR_PRISM_PHASE_INSTALLED_END
 
+# MR_STRIPE_INSTALLED_BEGIN
+# Actual pure APIs and original bounded math oracles; no native execution.
+stripe_script=root/('installed-mr-stripe-'+sys.argv[2]+'.py')
+stripe_script.write_text(r"""import copy,hashlib,importlib,importlib.abc,json,math,pathlib,sys,sysconfig,unittest
+from decimal import Decimal,localcontext
+
+def main():
+    stripe_authors=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+    def stripe_deny_reads(event,args):
+        if event=='open' and args and isinstance(args[0],str):
+            stripe_open_path=pathlib.Path(args[0]).resolve()
+            if any(stripe_open_path.is_relative_to(value) for value in stripe_authors):
+                raise AssertionError('installed Stripe read author source '+str(stripe_open_path))
+    sys.addaudithook(stripe_deny_reads)
+    class StripePureOnly(importlib.abc.MetaPathFinder):
+        def find_spec(self,fullname,path=None,target=None):
+            if any(fullname==value or fullname.startswith(value+'.') for value in
+                   ('common','projects','integrations','tools','msplatform.backends','msplatform.execution')):
+                raise AssertionError('installed Stripe imported forbidden owner '+fullname)
+    sys.meta_path.insert(0,StripePureOnly())
+    stripe_fixture=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))
+    stripe_api=importlib.import_module('msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0')
+    stripe_workflow=importlib.import_module('msplatform.workflows.mr_design')
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError as stripe_error
+    stripe_check=unittest.TestCase()
+    stripe_purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    stripe_origins={}
+    for stripe_name,stripe_module,stripe_relative in (
+        ('dual_stripe_l0',stripe_api,'msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py'),
+        ('mr_design',stripe_workflow,'msplatform/workflows/mr_design.py')):
+        stripe_path=pathlib.Path(stripe_module.__file__).resolve()
+        assert stripe_path==stripe_purelib/stripe_relative
+        stripe_bytes=stripe_path.read_bytes()
+        assert len(stripe_bytes)==stripe_fixture['sources'][stripe_name]['bytes']
+        assert hashlib.sha256(stripe_bytes).hexdigest()==stripe_fixture['sources'][stripe_name]['sha256']
+        stripe_origins[stripe_name]=str(stripe_path)
+    with stripe_check.assertRaisesRegex(AssertionError,'forbidden owner projects'):
+        importlib.import_module('projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0')
+    stripe_response_results=[]
+    for stripe_case in stripe_fixture['responses']:
+        stripe_contract=copy.deepcopy(stripe_case['contract'])
+        stripe_oa=copy.deepcopy(stripe_case['pure_geometry_inputs'])
+        stripe_before=json.dumps(dict(contract=stripe_contract,oa=stripe_oa),sort_keys=True)
+        stripe_kwargs={} if stripe_case['axial_energy_per_charge_v'] is None else {
+            'axial_energy_per_charge_v':stripe_case['axial_energy_per_charge_v']}
+        stripe_result=stripe_api.analyze_dual_stripe_l0(
+            stripe_contract,(-40.,60.),**stripe_oa,**stripe_kwargs)
+        stripe_expected_report=stripe_fixture['response_metadata']
+        assert stripe_result.keys()==set(stripe_expected_report['keys'])
+        for stripe_metadata_key in ('model','geometry_status','not_evaluated'):
+            assert stripe_result[stripe_metadata_key]==stripe_expected_report[stripe_metadata_key]
+        assert stripe_result['biases_v']==[-40.,60.]
+        assert len(stripe_result['h_factors'])==2
+        assert stripe_result['response_matrix']==[[1.,1.],stripe_result['h_factors']]
+        assert stripe_result['physical_width_bounds_mm'].keys()=={'set_1','set_2'}
+        assert stripe_result['theory_cad_component_mapping'].keys()=={'high_order_width_response','linear_width_response','linear_width_fit'}
+        assert stripe_result['theory_cad_component_mapping']['linear_width_fit'].keys()=={
+            'intercept_at_first_y_mm','slope_mm_per_mm','maximum_residual_mm'}
+        stripe_selected_energy=(stripe_contract['nominal']['energy_per_charge_v']
+                                if stripe_case['axial_energy_per_charge_v'] is None
+                                else stripe_case['axial_energy_per_charge_v'])
+        assert stripe_result['energy_per_charge_v']==stripe_selected_energy
+        stripe_check.assertAlmostEqual(stripe_result['h_factors'][0],math.sqrt(stripe_selected_energy/(stripe_selected_energy+40.)))
+        stripe_response_results.append(stripe_result)
+        assert json.dumps(dict(contract=stripe_contract,oa=stripe_oa),sort_keys=True)==stripe_before
+        assert stripe_result['response_matrix_determinant']!=0.
+        assert math.isfinite(stripe_result['response_matrix_condition_number_2'])
+        assert stripe_result['physical_width_bounds_mm']['set_1'][0]>0.
+        assert stripe_result['physical_width_bounds_mm']['set_2'][0]>0.
+        assert stripe_result['theory_cad_component_mapping']['high_order_width_response']=='set_1'
+        assert stripe_result['theory_cad_component_mapping']['linear_width_response']=='set_2'
+        assert stripe_result['theory_cad_component_mapping']['linear_width_fit']['maximum_residual_mm']<.002
+    assert stripe_response_results[0]['h_factors']!=stripe_response_results[1]['h_factors']
+    stripe_first=stripe_fixture['responses'][0]
+    for stripe_biases in ((0.,60.),(-40.,-40.),(-40.,math.nan),(-40.,math.inf),(-40.,)):
+        with stripe_check.assertRaises(stripe_error):
+            stripe_api.analyze_dual_stripe_l0(stripe_first['contract'],stripe_biases,**stripe_first['pure_geometry_inputs'])
+    with stripe_check.assertRaises(stripe_error):
+        stripe_workflow.analyze_native_dual_stripe_l0(
+            stripe_first['contract'],(0.,60.),accelerator_geometry_authority={})
+    stripe_check.assertAlmostEqual(stripe_api.endpoint_regularized_kappa(lambda eta:eta),2.,places=8)
+    stripe_check.assertAlmostEqual(stripe_api.endpoint_regularized_kappa_at_turn(lambda eta:eta,1.21),2.2,places=8)
+    stripe_check.assertAlmostEqual(stripe_api.kappa_derivative_at_turn(lambda eta:eta,1.,step=1e-3),1.,places=5)
+    stripe_check.assertAlmostEqual(stripe_api.endpoint_regularized_tau_g(lambda eta:eta,lambda eta:1.,1.),2.,places=8)
+    stripe_check.assertAlmostEqual(stripe_api.tau_g_derivative_at_turn(lambda eta:eta,lambda eta:1.,1.,step=1e-3),1.,places=5)
+    with stripe_check.assertRaises(stripe_error):stripe_api.endpoint_regularized_kappa(lambda eta:1.)
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import compile_dual_stripe_path_length_evaluator
+    stripe_shape_contract=stripe_first['contract']
+    stripe_path_functions=tuple(compile_dual_stripe_path_length_evaluator(stripe_shape_contract,value)
+                                for value in ('set_1','set_2'))
+    stripe_basis=stripe_api.identify_manufactured_basis_path_scales(stripe_shape_contract,
+        basis_coefficients_c0_to_c5=(.83999,.75160,-7.52535,14.0242,-9.17661,2.08613))
+    stripe_count=stripe_api.derive_native_stripe_branch_validation_sample_count(stripe_shape_contract)
+    assert stripe_count==176
+    stripe_numerics=stripe_api.NativeStripeSpatialReturnNumerics(
+        kappa_derivative_step=stripe_shape_contract['dual_stripe_l0']['operating_seed_search']['kappa_derivative_step'],
+        branch_validation_sample_count=stripe_count,**stripe_fixture['shape_numerics'])
+    stripe_shape=stripe_api.solve_native_stripe_spatial_shape_branch(stripe_path_functions,
+        entry_y_mm=stripe_api.project_y_from_theory_drift_mm(stripe_shape_contract,0.),
+        drift_length_l_mm=340.,drift_direction_sign=1.,
+        reference_relative_action_weight_ratio=stripe_basis.reference_relative_action_weight_ratio,
+        geometry_input_identity_source='config/simion_candidate_two_zone.json#dual_stripe.theory_profile',
+        numerics=stripe_numerics)
+    stripe_check.assertAlmostEqual(stripe_shape.relative_action_weight_ratio,-1.9981408612,places=8)
+    stripe_check.assertAlmostEqual(stripe_shape.kappa_1,1.4889697387,places=8)
+    assert abs(stripe_shape.kappa_prime)<2e-8
+    assert stripe_shape.root_bracket[0]<=stripe_shape.relative_action_weight_ratio<=stripe_shape.root_bracket[1]
+    stripe_materialized=stripe_api.materialize_native_stripe_spatial_return_root(stripe_shape,
+        source_slow_energy_per_charge_v=5.,
+        mirror_reduced_period_mm_per_sqrt_v=586.9264153996922/math.sqrt(4171.767483909065),
+        axial_energy_per_charge_v=4171.767483909065)
+    stripe_check.assertAlmostEqual(stripe_materialized.stripe_biases_v[0],-25.31809249,places=7)
+    stripe_check.assertAlmostEqual(stripe_materialized.stripe_biases_v[1],50.35968780,places=7)
+    for stripe_k in (25.5,31.5):
+        stripe_period=8.913211876315327
+        stripe_energy=stripe_api.exact_k_slow_energy_per_charge_v(stripe_shape,
+            mirror_reduced_period_mm_per_sqrt_v=stripe_period,target_period_ratio=stripe_k)
+        with localcontext() as stripe_decimal_context:
+            stripe_decimal_context.prec=80
+            stripe_expected=(Decimal(str(stripe_shape.drift_length_l_mm))*Decimal(str(stripe_shape.kappa_1))/
+                             (Decimal(str(stripe_period))*Decimal(str(stripe_k))))**2
+        stripe_check.assertAlmostEqual(stripe_energy,float(stripe_expected),places=12)
+        stripe_return=stripe_api.materialize_native_stripe_spatial_return_root(stripe_shape,
+            source_slow_energy_per_charge_v=stripe_energy,
+            mirror_reduced_period_mm_per_sqrt_v=stripe_period,
+            axial_energy_per_charge_v=4372.010347796059)
+        stripe_check.assertAlmostEqual(stripe_return.continuous_oscillation_count,stripe_k,places=12)
+        stripe_check.assertAlmostEqual(stripe_return.turning_pseudopotential_v,stripe_energy,places=12)
+    for stripe_bad_k in (0.,-1.,math.nan,math.inf):
+        with stripe_check.assertRaises(stripe_error):
+            stripe_api.exact_k_slow_energy_per_charge_v(stripe_shape,
+                mirror_reduced_period_mm_per_sqrt_v=8.913211876315327,target_period_ratio=stripe_bad_k)
+    stripe_target_fixture=stripe_fixture['narrow_target']
+    stripe_target=stripe_api.resolve_converging_prism_target(
+        stripe_target_fixture['contract'],stripe_target_fixture['resolved'])
+    assert stripe_target.keys()==set(stripe_target_fixture['expected_target_keys'])
+    assert stripe_target['qualification']=='hard_boundary_clean_phase_engineering_target__not_3d_energy_or_field_qualification'
+    assert stripe_target['width_contract']=={'dual_stripe':{'theory_profile':stripe_target_fixture['contract']['dual_stripe']['theory_profile']}}
+    assert stripe_target['slow_energy_reference_per_charge_v']==5.374387143093758
+    stripe_check.assertAlmostEqual(stripe_target['energy_tolerance_per_charge_v'],.05234301827329357)
+    stripe_check.assertAlmostEqual(stripe_api.converging_design_potential_delta_v(
+        stripe_target,-27.36410265968425,9.29765627041),.2053296122891533)
+    assert stripe_api.converging_design_potential_delta_v(stripe_target,-27.36410265968425,0.)==0.
+    print(json.dumps(dict(status='PASS',origins=stripe_origins,response_cases=len(stripe_fixture['responses']),
+                         exact_k_cases=2,native_executions=0)))
+
+if __name__=='__main__':main()
+""",encoding='utf-8')
+stripe_fixture_path=root/('installed-mr-stripe-fixture-'+sys.argv[2]+'.json')
+stripe_fixture_path.write_text(json.dumps(fixture['mr_stripe']),encoding='utf-8')
+stripe_args=[sys.executable,'-I','-B',str(stripe_script),
+             json.dumps([str(value) for value in blocked_source_roots]),str(stripe_fixture_path)]
+stripe_child=subprocess.run(stripe_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=90,check=False)
+assert stripe_child.returncode==0,stripe_child.stdout+stripe_child.stderr
+stripe_report=json.loads(stripe_child.stdout)
+assert stripe_report['status']=='PASS' and stripe_report['response_cases']==3 and stripe_report['exact_k_cases']==2
+assert stripe_report['native_executions']==0
+stripe_selected_path=pathlib.Path(stripe_report['origins']['dual_stripe_l0'])
+stripe_original_bytes=stripe_selected_path.read_bytes()
+stripe_held=stripe_selected_path.with_name(stripe_selected_path.name+'.missing-test-held')
+assert not stripe_held.exists()
+stripe_selected_path.rename(stripe_held)
+try:
+    stripe_missing=subprocess.run(stripe_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert stripe_missing.returncode!=0 and 'ModuleNotFoundError' in stripe_missing.stderr and 'msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0' in stripe_missing.stderr,stripe_missing.stderr
+    missing_rejected.append('mr_stripe_domain')
+finally:stripe_held.rename(stripe_selected_path)
+assert stripe_selected_path.read_bytes()==stripe_original_bytes
+print('INSTALLED_MR_STRIPE_DOMAIN=PASS')
+# MR_STRIPE_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -2782,6 +2953,59 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
 
 
 class InstalledScientificCoreTests(unittest.TestCase):
+    @staticmethod
+    def stripe_probe_fixture():
+        """Serialize explicit original Stripe cases; clients never read author inputs."""
+        import copy
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
+        stripe_contract=load_contract(REPO_ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
+        stripe_converging=copy.deepcopy(stripe_contract)
+        stripe_converging['mirror']['convergence_transform']={'angle_deg':.025688744787259285,'pivot_y_mm':0.}
+        stripe_converging['downstream_fixed_grid_workpoint_profile']['active_stripe_axes']=['stripe_1_voltage_v']
+        stripe_converging['prism_transport']['handoff_target']={
+            'mode':'converging_clean_phase_energy','axial_energy_per_charge_v':4371.97610111757,
+            'mirror_axial_width_w_mm':590.519039985,'slow_energy_reference_per_charge_v':5.374387143093758,
+            'total_energy_reference_per_charge_v':4377.32967207278,'clean_reference_slow_energy_per_charge_v':5.169057530804604}
+        stripe_converging['downstream_fixed_grid_workpoint_profile']['automatic_iteration']['acceptance_tolerances']['P1_P2_P2_shield_low_field_angle_degrees']=.01
+        stripe_responses=[dict(contract=copy.deepcopy(stripe_case),pure_geometry_inputs=pure_geometry_inputs(stripe_case),
+                               axial_energy_per_charge_v=stripe_energy)
+                          for stripe_case,stripe_energy in ((stripe_contract,None),(stripe_contract,4050.),(stripe_converging,None))]
+        stripe_sources={}
+        for stripe_name,stripe_relative in (
+            ('dual_stripe_l0','components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py'),
+            ('mr_design','workflows/mr_design.py')):
+            stripe_content=(REPO_ROOT/'src/msplatform'/stripe_relative).read_bytes()
+            stripe_sources[stripe_name]=dict(bytes=len(stripe_content),sha256=hashlib.sha256(stripe_content).hexdigest())
+        return dict(sources=stripe_sources,responses=stripe_responses,
+                    response_metadata={'model': 'dual_stripe_nominal_response_l0',
+ 'geometry_status': 'positive B-spline-evaluated widths; central-ground opening and '
+                    'three-dimensional clearance remain gated',
+ 'not_evaluated': ['target_psi_g_fit',
+                   'voltage_inverse_solution',
+                   'mirror_period',
+                   'return_time',
+                   'oscillation_count',
+                   'time_platform'],
+ 'keys': ['model',
+          'energy_per_charge_v',
+          'biases_v',
+          'h_factors',
+          'response_matrix',
+          'response_matrix_determinant',
+          'response_matrix_condition_number_2',
+          'physical_width_bounds_mm',
+          'theory_cad_component_mapping',
+          'geometry_status',
+          'not_evaluated']},
+                    shape_numerics=dict(initial_ratio_half_width=.004,search_expansion_factor=1.5,
+                        maximum_search_expansions=12,root_absolute_tolerance=1e-11,
+                        root_relative_tolerance=1e-11,maximum_root_iterations=80),
+                    narrow_target=dict(contract=stripe_converging,
+                        resolved=dict(mirror_convergence_transform=dict(angle_deg=.025688744787259285),
+                                      metadata=dict(ion_foil_slot_bridge_from_min_y_mm=2.,ion_foil_slot_bridge_from_max_y_mm=5.)),
+                        expected_target_keys=['mode', 'axial_energy_per_charge_v', 'mirror_axial_width_w_mm', 'slow_energy_reference_per_charge_v', 'total_energy_reference_per_charge_v', 'clean_reference_slow_energy_per_charge_v', 'angle_tolerance_degrees', 'single_mirror_angle_degrees', 'function_y_zero_project_y_mm', 'width_contract', 'energy_tolerance_per_charge_v', 'clean_y_interval_mm', 'qualification']))
+
     @staticmethod
     def prism_phase_probe_fixture():
         """Transport explicit original MR reference inputs, never author paths to clients."""
@@ -4071,6 +4295,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               scalar_adapter=self.scalar_adapter_probe_fixture(),
                                               mr_prism_phase=self.prism_phase_probe_fixture(),
+                                              mr_stripe=self.stripe_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'

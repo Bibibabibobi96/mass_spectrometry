@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     endpoint_regularized_kappa,
     gauss_legendre_rule,
     kappa_derivative_at_turn,

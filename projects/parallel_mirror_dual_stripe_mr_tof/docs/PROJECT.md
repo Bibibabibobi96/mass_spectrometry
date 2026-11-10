@@ -854,3 +854,20 @@ Both the ordinary wheel and sdist-rebuilt wheel execute the kernel and an actual
 bounded ProcessPool restart outside checkout. The installed checks verify parent
 and worker module origins, original numerical vectors and missing-module refusal.
 This is installed software evidence, not full-MR, native or scientific qualification.
+
+
+## Stripe L0 scientific ownership
+
+The sole Stripe L0 mathematics is now the installed MR component
+`msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0`.
+Its pure response analyzer resolves the same explicit contract and OA physical
+requirements/profile once. Native operating-seed consumers call
+`msplatform.workflows.mr_design.analyze_native_dual_stripe_l0`, retaining the
+original bias/energy → native OA envelope → physical widths → mapping order.
+The backend import is lazy; ideal quadrature, spatial-return roots and narrow
+verified converging-target analysis do not acquire native authority requirements.
+Four research runners retain their original audited-live execution and flat
+source-copy identities: the Stripe row changes owner and mr_design is appended.
+This ownership move does not qualify finite fields, native transport or scientific
+precision; source, installation and native evidence remain separately scoped.
+The retired root body has no alias.

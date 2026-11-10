@@ -10,7 +10,8 @@ from concurrent.futures import ProcessPoolExecutor
 import math
 import os
 import random
-from typing import Iterable
+from typing import Any, Iterable
+from collections.abc import Mapping, Sequence
 
 from scipy.optimize import differential_evolution
 
@@ -197,3 +198,21 @@ def parallel_global_l0_family_search(
     }
     selected["restart_receipts"] = results
     return selected
+
+
+def analyze_native_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[float], *,
+                                  accelerator_geometry_authority: Mapping[str, Any],
+                                  axial_energy_per_charge_v: float | None = None) -> dict[str, Any]:
+    """Analyze selected MR Stripe response with its original native OA-envelope checks.
+
+    Bias/energy errors precede geometry errors, which precede width/mapping errors.
+    Inputs retain volts per charge and mm; this performs no native execution.
+    """
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+        _nominal_dual_stripe_response, _complete_dual_stripe_response,
+    )
+    stripe, values = _nominal_dual_stripe_response(
+        contract, biases_v, axial_energy_per_charge_v=axial_energy_per_charge_v)
+    from msplatform.backends.simion.mr_geometry import resolve_mr_geometry
+    resolved = resolve_mr_geometry(contract, accelerator_geometry_authority=accelerator_geometry_authority)
+    return _complete_dual_stripe_response(stripe, values, resolved)
