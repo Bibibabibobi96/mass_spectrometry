@@ -17,10 +17,7 @@ from typing import Any
 
 from msplatform.execution.retention import verify_record
 from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
-    _analyzer_geometry_lines,
-    ordinary_pa_file_bytes,
-)
+from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines, ordinary_pa_file_bytes
 
 
 def _read(path: Path) -> dict:

@@ -433,6 +433,16 @@ ConvertTo-Json -Compress -InputObject $paths
                     self.assertEqual(integration, {"integrations.tests.test_dependencies"})
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
+    def test_mr_backend_geometry_keeps_one_original_software_owner(self):
+        request, _ = self.plan(
+            "-ChangedPath", "src/msplatform/backends/simion/mr_geometry.py"
+        )
+        mr = [row for row in request["stages"]
+              if row["name"] == "parallel_mirror_dual_stripe_mr_tof_static"]
+        self.assertEqual(len(mr), 1)
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                             for row in request["stages"]))
+
     def test_mr_interface_selects_its_original_tests_and_real_composition_consumer(self):
         request, _ = self.plan("-ChangedPath",
             "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py")

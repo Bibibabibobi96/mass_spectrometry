@@ -769,7 +769,8 @@ def _load_native_binding(binding: dict[str, Any], *, pure_response: bool = False
 
 def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instances: list) -> None:
     """Verify the one declared mixed-owner exception without weakening ordinary fields."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain, ordinary_pa_file_bytes
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
+    from msplatform.backends.simion.mr_geometry import ordinary_pa_file_bytes
     if [w["name"] for w in windows] != ["ion_processor_local", "positive_integer_grid_a",
                                           "negative_integer_grid_a", "covered_local"]:
         raise ValueError("IP fine extension must retain all four ordered windows")
@@ -1588,7 +1589,7 @@ def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[st
 
 def _load_collision_overlay(binding: dict[str, Any], path: Path) -> dict[str, Any]:
     """Preserve the source operator seal and independently verify new occupancy."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import collision_overlay_plan
+    from msplatform.backends.simion.mr_geometry import collision_overlay_plan
     required = {"schema_version", "role", "manifest", "source_binding", "source_binding_copy",
                 "patch_plan_path", "patch_pa_path", "patch_surface_path"}
     if set(binding) != required or binding["schema_version"] != 1:

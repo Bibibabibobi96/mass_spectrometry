@@ -100,9 +100,15 @@ MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒）�
 `classify_corridor_conductor_voltage.m` 唯一保存在 `msplatform/backends/comsol/matlab`；
 旧项目 Python 与同份 MATLAB 副本已退役，不保留转发。
 
-科学几何、电压、binding 与 manifest 校验仍属 MR owner。真实科学算法位于
-`msplatform.components.parallel_mirror_dual_stripe_mr_tof`；候选权限、binding、manifest 与退役读取边界位于
-`msplatform.backends.comsol` 的同名模块，component 不反向依赖 execution/backend。
+MR owns its physical geometry, electrode authority and scientific constraints.
+The installed `msplatform.components.parallel_mirror_dual_stripe_mr_tof` holds the
+domain contracts and response authority. SIMION GEM emission, collision-overlay
+geometry, native grid validation and ordinary-PA byte forecasts belong solely to
+`msplatform.backends.simion.mr_geometry`; their former component implementations
+are retired without aliases. Candidate permissions, binding/manifest checks and
+historical retention readers remain in the existing COMSOL backend boundary.
+The root physical resolver still requires its explicit OA-input migration; this
+backend move does not register an empty MR provider or qualify a new field/Fly.
 旧 `simion_candidate_reference.py`、`static_field_binding.py`、`mirror_geometry_parameters.py`、
 `analyzer_candidate_geometry.py` 已退役；所有活动消费者直接使用其新 owner，不保留转发。
 backend/component 均无 `projects.*` 或 `common.*` 依赖；

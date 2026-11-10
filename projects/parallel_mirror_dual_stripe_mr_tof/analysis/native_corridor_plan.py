@@ -10,10 +10,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     CandidateContractError,
     load_contract,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
-    _grid_shape,
-    validate_generation_grid_pitch,
-)
+from msplatform.backends.simion.mr_geometry import _grid_shape, validate_generation_grid_pitch
 
 
 def _numbers(value: object, label: str, count: int) -> list[float]:

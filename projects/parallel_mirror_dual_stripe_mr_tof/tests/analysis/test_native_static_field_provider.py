@@ -29,7 +29,7 @@ class NativeStaticProviderTest(unittest.TestCase):
             Path(instance["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
             instance["origin_mm"] = [0, -10 if index == 1 else 30*index, -10]
         p.write_json(self.root / "binding.json", {"schema_version": 1, "role": "mrtof_native_static_field_binding"})
-        mock = patch("msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science._analyzer_geometry_lines", return_value=["e(1) { box(0,-1,-1,1,1,1) }"])
+        mock = patch("msplatform.backends.simion.mr_geometry._analyzer_geometry_lines", return_value=["e(1) { box(0,-1,-1,1,1,1) }"])
         mock.start()
         self.addCleanup(mock.stop)
         update = dict(box_mm=[0, -2, -2, 2, 2, 2], pitch_mm=[.5]*3, priority_probes=[
@@ -84,6 +84,7 @@ class NativeStaticProviderTest(unittest.TestCase):
 param($python,$repo,$RunDirectory,$planPath)
 $ErrorActionPreference='Stop';$isComposition=$false
 $overlayGuards=[Collections.Generic.List[IDisposable]]::new()
+. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
 $script:calls=0
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
  $script:calls++
@@ -95,7 +96,7 @@ function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
    if(-not$blocked){throw 'Native header validation lacked a read guard'}
   }
  }
- $env:PYTHONPATH=$repo
+ $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repo)-join[IO.Path]::PathSeparator
  & $Operation
 }
 try {
@@ -1100,7 +1101,7 @@ try {
                 p.compile_request(dict(request, **change))
 
     def test_te1_e_closure_ids_consume_the_same_paired_e_drive(self):
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import _mirror_ground_shield_lines
+        from msplatform.backends.simion.mr_geometry import _mirror_ground_shield_lines
         basis = p._te1_basis_metadata(self.te1_reference())
         authority = p._response_authority(self.authority, basis)
         geometry = dict(mirror_inner_shield_slot=[-2,0,-1,2,1,1], mirror_ground_shields=[],

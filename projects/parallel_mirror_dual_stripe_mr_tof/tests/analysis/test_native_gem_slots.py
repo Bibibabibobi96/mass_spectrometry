@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import unittest
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry import (
+from msplatform.backends.simion.mr_geometry import (
     _mirror_lines,
     _prism_ground_shield_lines,
     _stripe_lines,

@@ -1,28 +1,18 @@
-"""Pure native-field response, grid, GEM and collision compilation for MR."""
+"""MR response authority, fine-domain extension and frozen TE1 references."""
 from __future__ import annotations
 
 import copy
 import math
-import struct
-from typing import Any, Mapping
+from typing import Any
 from pathlib import Path
 import json
 
-from .analyzer_candidate_geometry import (
-    _central_ground_lines,
-    _extrude_polygon_bands,
-    _mirror_ground_shield_lines,
-    _mirror_lines,
-    _prism_ground_shield_lines,
-    _stripe_lines,
-)
 from .candidate_voltage import PS_GROUPS, candidate_authority
 from .candidate_contract import CandidateContractError
 from .operating_authority import vector as _finite_vector
 
 RESPONSE_NORMALIZATION_V = 10000.0
 TE1_AXIS = "te1"
-IP_PROVIDER = "dual_pressure_rectilinear_ion_processor"
 
 
 def _finite(value: Any) -> float:
@@ -141,135 +131,6 @@ def compile_response_coefficients(
             raise ValueError("target mirror increment is incompatible with the frozen TE1 direction")
         coefficients[TE1_AXIS] = coefficient
     return {"target_authority": target, "coefficients": coefficients, "normalization_v": RESPONSE_NORMALIZATION_V}
-
-
-def validate_generation_grid_pitch(contract: Mapping[str, Any], pitch_mm: object) -> float:
-    """Validate new target spacing against the contract quantum; never round a grid.
-
-    Historical PA consumers do not call this generation-only check. Eight ULPs
-    allow binary representation of an integer ratio, not a physical tolerance.
-    """
-    try:
-        quantum = contract["simion"]["numerical_profiles"]["grid_generation"]["spacing_quantum_mm"]
-    except (KeyError, TypeError) as error:
-        raise CandidateContractError("new grid requires its spacing_quantum_mm contract") from error
-    if (isinstance(quantum, bool) or not isinstance(quantum, (int, float))
-            or not math.isfinite(quantum) or quantum <= 0):
-        raise CandidateContractError("spacing_quantum_mm must be finite and positive")
-    if (not isinstance(pitch_mm, list) or len(pitch_mm) != 3
-            or any(isinstance(v, bool) or not isinstance(v, (int, float))
-                   or not math.isfinite(v) or v <= 0 for v in pitch_mm)):
-        raise CandidateContractError("new grid pitch must contain three finite positive numeric spacings")
-    for value in pitch_mm:
-        ratio = value / quantum
-        if not math.isfinite(ratio):
-            raise CandidateContractError("new grid spacing/quantum ratio must be finite")
-        multiple = round(ratio)
-        if multiple < 1 or abs(ratio - multiple) > 8 * math.ulp(ratio):
-            raise CandidateContractError("new grid spacing must be a positive integer multiple of spacing_quantum_mm")
-    return float(quantum)
-
-
-def _grid_shape(box: list[float], mesh: list[float]) -> list[int]:
-    shape: list[int] = []
-    for axis in range(3):
-        cells = (box[axis + 3] - box[axis]) / mesh[axis]
-        rounded = round(cells)
-        if abs(cells - rounded) > 1e-8:
-            raise CandidateContractError("native corridor extent is not aligned to its mesh")
-        shape.append(int(rounded) + 1)
-    return shape
-
-
-def ordinary_pa_file_bytes(dimensions: list[int], pitch_mm: list[float]) -> int:
-    """Forecast SIMION's ordinary GEM-save header and double node payload.
-
-    SIMION 2020 lib/python/SIMION/PA.py load/save: mode -1 stores the 32-byte
-    fixed header and implicit unit pitch. Nonunit pitch selects mode -2 and
-    adds three double pitches (56-byte header). This is not a PA parser and
-    does not broaden the mode -2-only affine-composition consumer.
-    """
-    header_bytes = struct.calcsize("<iidiiii")
-    if pitch_mm != [1, 1, 1]:
-        header_bytes += 3 * struct.calcsize("<d")
-    return header_bytes + math.prod(dimensions) * struct.calcsize("<d")
-
-
-def _analyzer_geometry_lines(resolved: dict[str, object]) -> list[str]:
-    """Return the geometry emitter shared by the global fallback and native corridor."""
-    lines: list[str] = []
-    lines.extend(_mirror_lines(resolved))
-    lines.extend(_mirror_ground_shield_lines(resolved))
-    lines.extend(_stripe_lines(resolved))
-    lines.extend(_central_ground_lines(resolved))
-    lines.append("  ; CAD-constrained triangular prism electrodes, emitted after ground bodies.")
-    for prism in resolved["prism_electrodes"]:
-        terms = " ".join(
-            term for part in prism["parts"] for term in _extrude_polygon_bands(part["x"], part["polygon_yz_mm"])
-        )
-        lines.append(f"  e({prism['id']}) {{ {terms} }}")
-    lines.extend(_prism_ground_shield_lines(resolved))
-    return lines
-
-
-def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
-    """Compile same-CSG occupancy; its vacuum replaces the coarse PA too."""
-    if (not isinstance(update, dict) or set(update) != {"box_mm", "pitch_mm", "priority_probes"}
-            or "collision_overlay" in source or source.get("consumer_view")
-            or source.get("accelerator_provider") != IP_PROVIDER
-            or [i["role"] for i in source["instances"]] != ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]):
-        raise ValueError("collision overlay requires one complete four-role IP source and explicit patch numerics")
-    box, pitch = update["box_mm"], update["pitch_mm"]
-    if (not isinstance(box, list) or len(box) != 6
-            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in box)
-            or box[0] != 0 or any(box[a] >= box[a+3] for a in range(3))):
-        raise ValueError("collision overlay requires a finite x-mirrored nonempty box")
-    validate_generation_grid_pitch(contract, pitch)
-    dimensions = _grid_shape(box, pitch)
-    if min(dimensions) < 3:
-        raise ValueError("collision overlay requires at least three nodes on every axis")
-    effective = [-box[3], box[1], box[2], *box[3:]]
-    probes = update["priority_probes"]
-    if not isinstance(probes, list) or not probes:
-        raise ValueError("collision overlay requires declared metal, vacuum and exterior priority probes")
-    labels, categories = set(), set()
-    for probe in probes:
-        if (not isinstance(probe, dict) or set(probe) != {"label", "point_mm", "expected_electrode", "expected_instance"}
-                or not isinstance(probe["label"], str) or not probe["label"] or probe["label"] in labels
-                or type(probe["expected_electrode"]) is not bool or type(probe["expected_instance"]) is not int
-                or probe["expected_instance"] not in (2, 5)):
-            raise ValueError("invalid collision overlay priority probe")
-        point = probe["point_mm"]
-        if (not isinstance(point, list) or len(point) != 3
-                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in point)):
-            raise ValueError("collision overlay probe requires finite project coordinates")
-        inside = all(effective[a] <= point[a] <= effective[a+3] for a in range(3))
-        if inside != (probe["expected_instance"] == 5):
-            raise ValueError("collision overlay probe instance contradicts its declared box")
-        labels.add(probe["label"])
-        categories.add((inside, probe["expected_electrode"]))
-    if not {(True, True), (True, False)} <= categories or not any(not inside for inside, _ in categories):
-        raise ValueError("collision overlay probes must cover interior metal, interior vacuum and exterior")
-    bracket = any(
-        sum(a != b for a, b in zip(inner["point_mm"], outer["point_mm"], strict=True)) == 1
-        and all(abs(inner["point_mm"][a]-outer["point_mm"][a]) <= 2*pitch[a] for a in range(3))
-        for inner in probes if inner["expected_instance"] == 5
-        for outer in probes if outer["expected_instance"] == 2)
-    if not bracket:
-        raise ValueError("collision overlay probes require an adjacent inside/outside face bracket")
-    gem = ("; Same complete analyzer CSG; collision only, no Refine or Fast Adjust.\npa_define("
-           + ",".join(map(str, dimensions)) + ",planar,x,electric_,,"
-           + ",".join(format(v, ".17g") for v in pitch) + ",surface=fractional)\nlocate("
-           + ",".join(format(-v, ".17g") for v in box[:3]) + ") {\n"
-           + "\n".join(_analyzer_geometry_lines(source["geometry"])) + "\n}\n")
-    pa_bytes = ordinary_pa_file_bytes(dimensions, pitch)
-    # Fractional surface storage is unknown before native GEM conversion. Reserve
-    # another full PA plus evidence; the owner still measures the actual output.
-    committed = 2*pa_bytes + 16*1024**2
-    return dict(box_mm=box, origin_mm=box[:3], pitch_mm=pitch, dimensions=dimensions,
-                symmetry="x", pa_bytes=pa_bytes, committed_new_bytes=committed,
-                surface_allowance_bytes=pa_bytes, priority_probes=copy.deepcopy(probes), gem=gem,
-                refine_performed=False, fast_adjust_performed=False, refinable=False)
 
 
 def extend_fine_z_domain(grid: dict, active: list, update: dict, parent_grid: dict) -> tuple[dict, list]:

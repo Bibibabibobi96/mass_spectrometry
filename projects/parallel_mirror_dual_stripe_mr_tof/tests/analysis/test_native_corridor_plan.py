@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import derive_native_corridor_plan
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import validate_generation_grid_pitch
+from msplatform.backends.simion.mr_geometry import validate_generation_grid_pitch
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
     NATIVE_RESPONSE_NAMES,
     RAW_NAME,

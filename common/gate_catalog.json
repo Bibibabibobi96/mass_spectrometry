@@ -2344,6 +2344,10 @@
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/mr_geometry.py",
+          "reason": "installed_mr_native_geometry_dependency_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_consumer_changed"
         },

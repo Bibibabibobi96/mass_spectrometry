@@ -1824,6 +1824,38 @@ assert pathlib.Path(sys.argv[1]).read_bytes() == mr_fixture_before
 print('INSTALLED_MR_INTERFACE=PASS cases=16')
 # MR_INTERFACE_INSTALLED_END
 
+# MR_BACKEND_GEOMETRY_INSTALLED_BEGIN
+from msplatform.backends.simion import mr_geometry as mr_gem_owner
+assert pathlib.Path(mr_gem_owner.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert importlib.util.find_spec('msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry') is None
+mr_gem_fixture = fixture['mr_backend_geometry']
+mr_gem_input_before = pathlib.Path(sys.argv[1]).read_bytes()
+for mr_gem_case in mr_gem_fixture['cases']:
+    mr_geometry_before = copy.deepcopy(mr_gem_case['geometry'])
+    mr_gem_bytes = '\n'.join(mr_gem_owner._analyzer_geometry_lines(mr_gem_case['geometry'])).encode('utf-8')
+    assert len(mr_gem_bytes) == mr_gem_case['expected_gem_bytes'], mr_gem_case['case']
+    assert hashlib.sha256(mr_gem_bytes).hexdigest() == mr_gem_case['expected_gem_sha256'], mr_gem_case['case']
+    assert mr_gem_case['geometry'] == mr_geometry_before
+assert mr_gem_owner.validate_generation_grid_pitch(mr_gem_fixture['numerical_contract'], [.01,.02,.03]) == .01
+assert mr_gem_owner.ordinary_pa_file_bytes([65,65,9], [1,1,1]) == 304232
+assert mr_gem_owner.ordinary_pa_file_bytes([65,65,9], [1,1,.5]) == 304256
+mr_gem_module = pathlib.Path(mr_gem_owner.__file__)
+mr_gem_original_bytes = mr_gem_module.read_bytes()
+mr_gem_held = mr_gem_module.with_name(mr_gem_module.name + '.missing-test-held')
+mr_gem_module.rename(mr_gem_held)
+try:
+    mr_gem_missing = subprocess.run([sys.executable, '-I', '-B', '-c',
+        'import msplatform.backends.simion.mr_geometry'], cwd=root, capture_output=True,
+        text=True, encoding='utf-8', timeout=30, check=False)
+    assert mr_gem_missing.returncode != 0 and 'mr_geometry' in mr_gem_missing.stderr, mr_gem_missing.stderr
+    missing_rejected.append('mr_backend_geometry')
+finally:
+    mr_gem_held.rename(mr_gem_module)
+assert mr_gem_module.read_bytes() == mr_gem_original_bytes
+assert pathlib.Path(sys.argv[1]).read_bytes() == mr_gem_input_before
+print('INSTALLED_MR_BACKEND_GEOMETRY=PASS cases=2')
+# MR_BACKEND_GEOMETRY_INSTALLED_END
+
 
 # Provider-specific recorded analysis: actual explicit fixture and its unchanged protocol2 report.
 from msplatform.workflows import oa_focus_analysis as focus_analysis
@@ -2600,6 +2632,24 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             source_acceptance=dict(spec=asdict(acceptance_case.spec),
                 point=asdict(acceptance_case.point), golden=acceptance_golden))
 
+    def mr_backend_geometry_probe_fixture(self) -> dict:
+        import copy
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_assembly_interface import complete_geometry
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+        contract = load_contract(REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json")
+        converging = copy.deepcopy(contract)
+        converging["mirror"]["convergence_transform"] = {"angle_deg": 0.025688743, "pivot_y_mm": 0.0}
+        # Frozen original-owner full-output identities, not a current-emitter oracle.
+        return dict(numerical_contract=contract, cases=[
+            dict(case="parallel", geometry=copy.deepcopy(complete_geometry()),
+                 expected_gem_bytes=93548,
+                 expected_gem_sha256="10fbab197ef4bf2193a7f1b694606ad2c48b3749c3a7e2039d1b9ac948a505af"),
+            dict(case="converging", geometry=resolve_geometry(converging),
+                 expected_gem_bytes=97273,
+                 expected_gem_sha256="bf5d3cc84247bd59c85b1e4a2f1fa47436c47b6b06d9f3ea317a45a5706eae99"),
+        ])
+
     def mr_interface_probe_fixture(self) -> list[dict]:
         # Original six-parent physical fixture; expected complete results were
         # recorded from the retired original publisher at 574ae974 (8849a767...).
@@ -3117,6 +3167,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
                                               mr_interface=self.mr_interface_probe_fixture(),
+                                              mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')

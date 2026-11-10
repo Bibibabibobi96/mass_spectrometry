@@ -23,21 +23,12 @@ from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeade
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _analyzer_geometry_lines
+from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
-    _grid_shape,
-    validate_generation_grid_pitch,
-)
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
-    RESPONSE_NORMALIZATION_V,
-    TE1_AXIS,
-    _response_authority,
-    _te1_basis_metadata,
-    collision_overlay_plan,
-    compile_response_coefficients,
-)
+from msplatform.backends.simion.mr_geometry import _grid_shape, validate_generation_grid_pitch
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata, compile_response_coefficients
+from msplatform.backends.simion.mr_geometry import collision_overlay_plan
 from msplatform.backends.comsol.static_field_binding import (
     _native_active_box,
     _record,
@@ -554,10 +545,8 @@ def _new_collision_plan(source: dict[str, Any], geometry: dict[str, Any]) -> dic
 def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
     """Reuse one ordinary operator, rebuilding only its extended IP fine domain."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _gem
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
-        extend_fine_z_domain,
-        ordinary_pa_file_bytes,
-    )
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
+    from msplatform.backends.simion.mr_geometry import ordinary_pa_file_bytes
     required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
                 "numerical_contract_path", "reuse_source_levels", "ion_processor_local_domain_update"}
     if (set(request) - {"run_id"} != required or request["schema_version"] != 1
