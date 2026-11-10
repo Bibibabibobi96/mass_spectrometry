@@ -149,6 +149,37 @@ def _dynamic_import_target(node: ast.Call, package: str) -> str:
     return target
 
 
+def _mr_numeric_thread_environment_access(node: ast.AST, module: str,
+                                          parents: dict[ast.AST, ast.AST]) -> bool:
+    """The named restart workflow retains four inherited numeric-worker knobs."""
+    if module != "msplatform.workflows.mr_design":
+        return False
+    parent = parents.get(node)
+    current, loop = parent, None
+    while current is not None:
+        if isinstance(current, ast.For) and loop is None:
+            loop = current
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if current.name != "parallel_global_l0_family_search":
+                return False
+            break
+        current = parents.get(current)
+    if current is None or loop is None or not isinstance(loop.target, ast.Name) or not isinstance(loop.iter, ast.Tuple):
+        return False
+    keys = [item.value for item in loop.iter.elts if isinstance(item, ast.Constant)]
+    if (len(loop.iter.elts) != 4 or len(keys) != 4
+            or set(keys) != {"OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"}):
+        return False
+    if isinstance(parent, ast.Subscript) and parent.value is node:
+        key = parent.slice
+    elif (isinstance(parent, ast.Compare) and len(parent.ops) == 1 and isinstance(parent.ops[0], ast.NotIn)
+          and parent.comparators == [node]):
+        key = parent.left
+    else:
+        return False
+    return isinstance(key, ast.Name) and key.id == loop.target.id
+
+
 def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
                          dependencies: set[str]) -> list[str]:
     """Check explicit imports and loaders; dynamic runtime behavior is tested separately."""
@@ -175,7 +206,8 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
                     errors.append(f"{node.lineno}: {error}")
         if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
                 and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records"})
-                and not (source_domain == "applications" and name == "os.environ")):
+                and not (source_domain == "applications" and name == "os.environ")
+                and not (name == "os.environ" and _mr_numeric_thread_environment_access(node, module, parents))):
             errors.append(f"{node.lineno}: scientific core probes host/search-path state: {name}")
         if not isinstance(node, ast.Call):
             continue
@@ -336,6 +368,34 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
         for source in rejected:
             with self.subTest(source=source):
                 self.assertTrue(core_boundary_errors(source, "msplatform.analysis.example", dependencies=set()))
+
+    def test_named_mr_restart_thread_environment_does_not_allow_host_or_search_path_probes(self):
+        source = """
+import os
+def parallel_global_l0_family_search():
+    thread_limits = {}
+    for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        if variable not in os.environ:
+            os.environ[variable] = "1"
+        thread_limits[variable] = os.environ[variable]
+"""
+        module = "msplatform.workflows.mr_design"
+        self.assertEqual(core_boundary_errors(source, module, dependencies=set()), [])
+        for other in ("msplatform.workflows.other", "msplatform.analysis.example",
+                      "msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0"):
+            with self.subTest(module=other):
+                self.assertTrue(core_boundary_errors(source, other, dependencies=set()))
+        rejected = (
+            source.replace("parallel_global_l0_family_search", "other_function"),
+            source.replace('"OMP_NUM_THREADS"', '"PATH"'),
+            source + '\n    value = os.environ["PATH"]\n',
+            source + '\n    value = os.getenv("HOME")\n',
+            source.replace("import os", "import os, sys") + '\n    sys.path.append(author_checkout)\n',
+            'import os; value = os.environ["OMP_NUM_THREADS"]',
+        )
+        for invalid in rejected:
+            with self.subTest(source=invalid):
+                self.assertTrue(core_boundary_errors(invalid, module, dependencies=set()))
 
     def test_declared_third_party_and_canonical_relative_imports_are_allowed(self):
         source = """

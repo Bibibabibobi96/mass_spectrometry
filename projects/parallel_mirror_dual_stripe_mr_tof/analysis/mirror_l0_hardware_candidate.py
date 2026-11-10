@@ -17,10 +17,8 @@ from pathlib import Path
 import scipy
 
 from common.contracts.file_identity import file_sha256
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
-    derive_mirror_l0_slope_tolerance_per_v,
-    parallel_global_l0_family_search,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
+from msplatform.workflows.mr_design import parallel_global_l0_family_search
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (
     derive_mirror_boundaries,
 )

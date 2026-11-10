@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     normalized_period_slope_per_v,
     reduced_period,

@@ -815,11 +815,28 @@ policies and runner missing-core refusal are preserved. This repair changes sour
 binding only; its external regular-package fixture is a source harness, not new
 ordinary wheel, native or scientific qualification.
 
-The original two CI-failed parents passed in the private repair epoch. A fresh
-external regular-package source harness reproduced the old checkout-relative
-ValueError, then verified distinct actual selected source/four-policy bytes,
-logical snapshot paths, owned overwrite and strict missing/tampered-input refusal.
-Its first negative expected FileNotFoundError for a module whose import correctly
-failed earlier with ModuleNotFoundError; that test-only expectation was corrected
-and the new parent passed separately. Original failure/lint evidence is retained;
-this is not a full-MR or ordinary-installation acceptance result.
+The source-harness regression verifies distinct selected source/four-policy
+bytes, logical snapshot paths, owned staging overwrite and missing/corrupted-input
+refusal. Original failure evidence remains separate from successor acceptance.
+
+## Installed ideal-mirror L0 ownership
+
+The ideal planar five-electrode mirror kernel and its fixed-geometry voltage
+solve are owned by `msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0`.
+The explicit global search, deterministic restart list and process-pool family
+selection are owned by `msplatform.workflows.mr_design`. Research inputs and
+contract selection remain explicit in the hardware-candidate author entry.
+The original first-upward turning-point rule, terminal-image convention,
+three local period slopes, bounds, seeds and selection status are preserved.
+L1 screening and native finite-thickness/slotted-field qualification remain
+separate; installed L0 mathematics does not qualify a native mirror.
+The existing PowerShell research runner records checked live source snapshots;
+it does not claim to execute those snapshots as a separate frozen environment.
+
+The restart workflow preserves caller-supplied values for its four numerical-library
+thread controls; missing values retain the original one-thread defaults and the
+selected values are recorded. This grants no host or tool-path discovery.
+Both the ordinary wheel and sdist-rebuilt wheel execute the kernel and an actual
+bounded ProcessPool restart outside checkout. The installed checks verify parent
+and worker module origins, original numerical vectors and missing-module refusal.
+This is installed software evidence, not full-MR, native or scientific qualification.

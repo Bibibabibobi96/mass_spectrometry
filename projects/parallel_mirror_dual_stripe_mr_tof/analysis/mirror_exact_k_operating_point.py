@@ -48,7 +48,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (
     derive_mirror_boundaries,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     derive_mirror_l0_slope_tolerance_per_v,
     effective_axial_width_mm,

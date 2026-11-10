@@ -38,7 +38,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.cad_pose_con
     source_to_project,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import analyze_dual_stripe_l0
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     axial_potential_gradient_v_per_mm,
     axial_potential_v,
@@ -46,10 +46,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     effective_axial_width_mm,
     normalized_period_slope_per_v,
     optimize_fixed_geometry_voltages,
-    parallel_global_l0_family_search,
     three_point_normalized_period_slopes_per_v,
     three_point_report,
 )
+from msplatform.workflows.mr_design import parallel_global_l0_family_search
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     continue_fixed_e_l0_family_to_gamma,
     map_at_energy,

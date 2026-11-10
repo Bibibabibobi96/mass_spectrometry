@@ -19,7 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stri
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
     FixedHardwareMirrorPoint,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )

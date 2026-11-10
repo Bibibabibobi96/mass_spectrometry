@@ -12,7 +12,10 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import FixedHardwareMirrorPoint
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import derive_mirror_boundaries
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design, derive_mirror_l0_slope_tolerance_per_v
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+    MirrorL0Design,
+    derive_mirror_l0_slope_tolerance_per_v,
+)
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError, derive_mirror_voltage_bounds, derive_operating_energy_envelope, load_contract
 
 _PROJECT = "parallel_mirror_dual_stripe_mr_tof"

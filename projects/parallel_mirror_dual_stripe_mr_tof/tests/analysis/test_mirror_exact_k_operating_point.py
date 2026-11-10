@@ -20,7 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operati
     ManagedExactKOperatingPoint,
     _td_over_t0,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     reduced_period,
 )

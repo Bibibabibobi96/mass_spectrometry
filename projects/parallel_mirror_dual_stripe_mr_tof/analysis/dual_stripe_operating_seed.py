@@ -67,7 +67,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operati
     ManagedExactKOperatingPoint,
     load_managed_exact_k_operating_point,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     derive_mirror_l0_slope_tolerance_per_v,
     reduced_period,
 )

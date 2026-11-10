@@ -29,8 +29,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operati
     ManagedExactKOperatingPoint,
     load_managed_exact_k_operating_point,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import axial_potential_v
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import axial_potential_v
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (
     TransportNumerics,
 )

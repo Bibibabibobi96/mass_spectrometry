@@ -28,7 +28,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design, reduced_period
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+    MirrorL0Design,
+    reduced_period,
+)
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
 )

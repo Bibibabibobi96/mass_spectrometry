@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (
     PhaseState2D,
     TransportEvent,

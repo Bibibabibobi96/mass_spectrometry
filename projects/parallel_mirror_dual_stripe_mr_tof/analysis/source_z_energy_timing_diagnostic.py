@@ -28,9 +28,7 @@ from msplatform.execution.retention import verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     resolve_bunch_source_interval,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
-    derive_mirror_l0_slope_tolerance_per_v,
-)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )

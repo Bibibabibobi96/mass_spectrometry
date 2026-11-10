@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from scipy.integrate import solve_ivp
 from scipy.optimize import brentq, least_squares
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     optimize_fixed_geometry_voltages,
     step_response_derivative,

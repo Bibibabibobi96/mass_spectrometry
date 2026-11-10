@@ -2482,6 +2482,109 @@ assert len(rf_l1_cases)==3
 print('INSTALLED_RF_MANAGED_L1=PASS '+json.dumps(rf_l1_cases))
 # RF_MANAGED_L1_INSTALLED_END
 
+# MR_L0_INSTALLED_BEGIN
+mr_l0_script=root/('installed-mr-l0-'+sys.argv[2]+'.py')
+mr_l0_script.write_text(r"""import functools,hashlib,importlib,importlib.abc,json,math,os,pathlib,sys,sysconfig
+from concurrent.futures import ProcessPoolExecutor
+from unittest.mock import patch
+NAMES=('msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0','msplatform.workflows.mr_design')
+def guards(authors):
+    roots=[pathlib.Path(p).resolve() for p in authors]
+    def deny(event,args):
+        if event=='open' and args and isinstance(args[0],str):
+            p=pathlib.Path(args[0]).resolve()
+            if any(p.is_relative_to(r) for r in roots):raise AssertionError('author read '+str(p))
+    sys.addaudithook(deny)
+    class NeutralOnly(importlib.abc.MetaPathFinder):
+        def find_spec(self,fullname,path=None,target=None):
+            if any(fullname==p or fullname.startswith(p+'.') for p in ('common','projects','integrations','tools','msplatform.backends','msplatform.execution')):raise AssertionError(fullname)
+    sys.meta_path.insert(0,NeutralOnly())
+def origins(expected=None):
+    purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    rows={}
+    for name in NAMES:
+        module=importlib.import_module(name);path=pathlib.Path(module.__file__).resolve()
+        assert path.is_relative_to(purelib)
+        rows[name]=dict(path=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    if expected is not None:assert rows==expected
+    return rows
+def worker_initializer(expected,authors,directory):
+    # TEST-only constructor instrumentation; original worker/physics/RNG untouched.
+    guards(authors);rows=origins(expected)
+    path=pathlib.Path(directory)/('worker-'+str(os.getpid())+'.json')
+    path.write_text(json.dumps(dict(pid=os.getpid(),origins=rows)),encoding='utf-8')
+def main():
+    authors=json.loads(sys.argv[1]);directory=pathlib.Path(sys.argv[2]);guards(authors)
+    expected=origins()
+    m=importlib.import_module(NAMES[0]);w=importlib.import_module(NAMES[1])
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+    assert m.CandidateContractError is CandidateContractError and w.CandidateContractError is CandidateContractError
+    assert m.step_response(0.)==.5 and m.step_response_derivative(0.)==.5
+    design=m.MirrorL0Design(15.,(0.,164.5,226.5,258.5,288.5),(0.,-500.,2000.,3500.,7000.),320.,7000.)
+    for z in (20.,164.5,250.,319.):
+        difference=(m.axial_potential_v(z+1e-4,design)-m.axial_potential_v(z-1e-4,design))/(2e-4)
+        gradient=m.axial_potential_gradient_v_per_mm(z,design)
+        assert abs(gradient-difference)<.5e-6
+        assert abs(m.axial_potential_gradient_v_per_mm(-z,design)+gradient)<.5e-12
+    assert m.axial_potential_gradient_v_per_mm(0.,design)==0.
+    assert abs(m.effective_axial_width_mm(4000.,641./math.sqrt(4000.))-641.)<.5e-7
+    for call in (lambda:m.effective_axial_width_mm(4000.,0.),lambda:m.turning_point_mm(0.,design),
+                 lambda:m.normalized_period_slope_per_v(design,4000.,0.)):
+        try:call()
+        except CandidateContractError:pass
+        else:raise AssertionError('original invalid input accepted')
+    slopes=m.three_point_normalized_period_slopes_per_v(design,(3900.,4000.,4100.),1.)
+    assert len(slopes)==3 and all(math.isfinite(v) for v in slopes)
+    assert abs(slopes[1]-m.normalized_period_slope_per_v(design,4000.,1.))<.5e-7
+    turning=m.turning_point_mm(4000.,design)
+    # First upward crossing: no earlier sampled upward bracket may be bypassed.
+    points=[320.*i/256 for i in range(257)]
+    earlier=[(lo,hi) for lo,hi in zip(points,points[1:]) if m.axial_potential_v(lo,design)<=4000.<=m.axial_potential_v(hi,design)]
+    assert earlier and earlier[0][0]<=turning<=earlier[0][1]
+    assert abs(m.axial_potential_v(turning,design)-4000.)<1e-7
+    args=(15.,(0.,164.5,226.5,258.5,288.5),(-10000.,-10000.,-10000.,4100.001),
+          (10000.,10000.,10000.,10000.),1.,1e-7,(3900.,4000.,4100.),7,1,1,1,1,1e-7,320.,20)
+    # Real ProcessPoolExecutor and original map/work entry; only initializer added.
+    with patch.object(w,'ProcessPoolExecutor',functools.partial(ProcessPoolExecutor,
+            initializer=worker_initializer,initargs=(expected,authors,str(directory)))):
+        result=w.parallel_global_l0_family_search(*args)
+    search=result['parallel_restart_search']
+    assert search['actual_workers']==1 and search['restart_count']==1
+    assert len(result['restart_receipts'])==1
+    receipt=result['restart_receipts'][0]
+    assert receipt['transition_z_mm']==[0.,164.5,226.5,258.5,288.5]
+    serial=w.global_l0_family_search(*args[:7],search['restart_seeds'][0],*args[10:])
+    assert serial==receipt
+    json.dumps(result,allow_nan=False)
+    files=list(directory.glob('worker-*.json'));assert len(files)==1
+    proof=json.loads(files[0].read_text(encoding='utf-8'))
+    assert type(proof['pid']) is int and proof['pid']>0 and proof['pid']!=os.getpid()
+    assert proof['origins']==expected
+    assert origins()==expected
+    print(json.dumps(dict(status='PASS',origins=expected,worker=proof,model='ideal mirror L0 only; not L1/native qualified')))
+if __name__=='__main__':main()
+""",encoding='utf-8')
+mr_l0_worker_proof=root/('installed-mr-l0-workers-'+sys.argv[2]);mr_l0_worker_proof.mkdir()
+mr_l0_args=[sys.executable,'-I','-B',str(mr_l0_script),
+            json.dumps([str(p) for p in blocked_source_roots]),str(mr_l0_worker_proof)]
+mr_l0_child=subprocess.run(mr_l0_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+assert mr_l0_child.returncode==0,mr_l0_child.stdout+mr_l0_child.stderr
+mr_l0_report=json.loads(mr_l0_child.stdout)
+assert mr_l0_report['status']=='PASS'
+for mr_l0_name,mr_l0_record in mr_l0_report['origins'].items():
+    mr_l0_path=pathlib.Path(mr_l0_record['path']);mr_l0_bytes=mr_l0_path.read_bytes()
+    assert hashlib.sha256(mr_l0_bytes).hexdigest()==mr_l0_record['sha256']
+    mr_l0_held=mr_l0_path.with_name(mr_l0_path.name+'.missing-test-held');assert not mr_l0_held.exists()
+    mr_l0_path.rename(mr_l0_held)
+    try:
+        mr_l0_missing=subprocess.run(mr_l0_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert mr_l0_missing.returncode!=0 and 'ModuleNotFoundError' in mr_l0_missing.stderr and mr_l0_name in mr_l0_missing.stderr,mr_l0_missing.stderr
+        missing_rejected.append(mr_l0_name)
+    finally:mr_l0_held.rename(mr_l0_path)
+    assert mr_l0_path.read_bytes()==mr_l0_bytes
+print('INSTALLED_MR_L0_DOMAIN_WORKFLOW=PASS')
+# MR_L0_INSTALLED_END
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),

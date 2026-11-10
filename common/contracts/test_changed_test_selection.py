@@ -909,6 +909,62 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertCountEqual(selected, [module[:-3].replace("/", ".") for module in case["modules"]])
                     self.assertEqual(len(selected), len(set(selected)))
 
+    def test_installed_mirror_l0_and_search_augment_core_with_actual_consumers(self) -> None:
+        stage = 'parallel_mirror_dual_stripe_mr_tof_static'
+        domain = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/mirror_l0.py'
+        workflow = 'src/msplatform/workflows/mr_design.py'
+        math_modules = sorted(f"{MR}/tests/analysis/{name}.py" for name in (
+            'test_dual_stripe_l0_math', 'test_fixed_grid_mirror_stripe_handoff',
+            'test_joint_mirror_stripe_l0', 'test_mirror_exact_k_operating_point',
+            'test_simion_candidate_reference', 'test_two_prism_segmented_transport',
+            'test_two_prism_segmented_voltage_seed', 'test_mirror_l0_l1_runner',
+            'test_prism_runner_contract_matrix'))
+        search_modules = sorted(f"{MR}/tests/analysis/{name}.py" for name in (
+            'test_simion_candidate_reference', 'test_mirror_l0_l1_runner'))
+        runner_modules = sorted(f"{MR}/tests/analysis/{name}.py" for name in (
+            'test_mirror_l0_l1_runner', 'test_prism_runner_contract_matrix'))
+        changed_test = f"{MR}/tests/analysis/test_two_prism_segmented_coverage.py"
+        cases = [
+            dict(stage=stage, paths=[domain], modules=math_modules),
+            dict(stage=stage, paths=[workflow], modules=search_modules),
+            dict(stage=stage, paths=[domain, workflow, changed_test],
+                 modules=sorted([*math_modules, changed_test])),
+            dict(stage=stage, paths=[f"{MR}/analysis/mirror_l0.py"], modules=None),
+        ]
+        for runner in ('run_dual_stripe_operating_seed.ps1',
+                       'run_mirror_exact_k_operating_point.ps1',
+                       'run_mirror_l0_l1_candidate.ps1',
+                       'run_two_prism_segmented_continuation.ps1',
+                       'run_two_prism_segmented_coverage.ps1'):
+            cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{runner}"], modules=runner_modules))
+        # Combination and runner mappings use the existing selector boundary in
+        # one host. Keep real public CLI coverage for each new canonical path.
+        for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
+            with self.subTest(paths=case['paths']):
+                if case['modules'] is None:
+                    self.assertIsNone(selected)
+                else:
+                    self.assertCountEqual(selected['Modules'], case['modules'])
+                    self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
+                    self.assertFalse(selected['CompleteOwner'])
+                    self.assertFalse(selected['OnlyTestModules'])
+        with tempfile.TemporaryDirectory(prefix='mr_l0_public_plans_') as directory:
+            for index, case in enumerate(cases[:2]):
+                with self.subTest(public_path=case['paths'][0]):
+                    request = Path(directory) / f'plan-{index}.json'
+                    write_planned_request(REPO_ROOT, request, case['paths'])
+                    plan = json.loads(request.read_text(encoding='utf-8-sig'))
+                    selected = [row for row in plan['stages'] if row['selected'] and row['name'] == stage]
+                    self.assertEqual(len(selected), 1)
+                    command = selected[0]['command']
+                    self.assertEqual(command['runner'], 'powershell')
+                    self.assertEqual(command['script'], MR + '/verify_project.ps1')
+                    self.assertEqual(command['parameters']['Level'], 'Core')
+                    self.assertNotIn('SelectedTestModules', command['parameters'])
+                    modules = command['parameters']['ChangedTestModules']
+                    self.assertCountEqual(modules, [name[:-3].replace('/', '.') for name in case['modules']])
+                    self.assertEqual(len(modules), len(set(modules)))
+
     def test_weighted_partitions_cover_each_actual_owner_scope_once(self) -> None:
         script = r"""
 . __SUPPORT__

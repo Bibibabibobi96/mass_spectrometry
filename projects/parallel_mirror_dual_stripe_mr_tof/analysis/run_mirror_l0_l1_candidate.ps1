@@ -46,7 +46,7 @@ function Invoke-MirrorPython {
   $savedPythonPath = $env:PYTHONPATH
   $savedNoUserSite = $env:PYTHONNOUSERSITE
   try {
-    $env:PYTHONPATH = $repoRoot
+    $env:PYTHONPATH = @(Get-RunPythonImportRoots -RepoRoot $repoRoot) -join [IO.Path]::PathSeparator
     $env:PYTHONNOUSERSITE = '1'
     Push-Location -LiteralPath $repoRoot
     try {
@@ -82,7 +82,8 @@ try {
     'projects\orthogonal_accelerator\analysis\two_zone_geometry.py',
     'projects\orthogonal_accelerator\analysis\two_zone_theory.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_l0.py',
+    'src\msplatform\workflows\mr_design.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0_hardware_candidate.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0_l1_hardware_candidate.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0_l1_run_summary.py',

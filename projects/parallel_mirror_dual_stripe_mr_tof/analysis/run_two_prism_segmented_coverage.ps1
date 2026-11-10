@@ -80,7 +80,7 @@ function Invoke-ProjectPython {
   $savedMklThreads = $env:MKL_NUM_THREADS
   $savedNumExprThreads = $env:NUMEXPR_NUM_THREADS
   try {
-    $env:PYTHONPATH = $repoRoot; $env:OPENBLAS_NUM_THREADS = '1'; $env:OMP_NUM_THREADS = '1'; $env:MKL_NUM_THREADS = '1'; $env:NUMEXPR_NUM_THREADS = '1'
+    $env:PYTHONPATH = @(Get-RunPythonImportRoots -RepoRoot $repoRoot) -join [IO.Path]::PathSeparator; $env:OPENBLAS_NUM_THREADS = '1'; $env:OMP_NUM_THREADS = '1'; $env:MKL_NUM_THREADS = '1'; $env:NUMEXPR_NUM_THREADS = '1'
     if($null-eq$ResourceLease){
       & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
       if ($LASTEXITCODE -ne 0) { throw "MR-TOF coverage stage failed: $($Arguments -join ' ')" }
@@ -90,7 +90,7 @@ function Invoke-ProjectPython {
       $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
       $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false);$start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
       foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
-      $start.Environment['PYTHONPATH']=$repoRoot;$start.Environment['OPENBLAS_NUM_THREADS']='1';$start.Environment['OMP_NUM_THREADS']='1'
+      $start.Environment['PYTHONPATH']=$env:PYTHONPATH;$start.Environment['OPENBLAS_NUM_THREADS']='1';$start.Environment['OMP_NUM_THREADS']='1'
       $start.Environment['MKL_NUM_THREADS']='1';$start.Environment['NUMEXPR_NUM_THREADS']='1'
       $process=[Diagnostics.Process]::Start($start)
       try{
@@ -169,7 +169,7 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\native_stripe_shape_adapter.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\resolved_geometry.py',

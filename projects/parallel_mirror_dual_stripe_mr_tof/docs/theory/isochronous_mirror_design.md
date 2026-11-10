@@ -628,3 +628,12 @@ P1/P2、目标 $K$、源和探测器都冻结后，只沿该镜自身 Jacobian �
 - D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI：[原始来源](https://doi.org/10.1016/j.nima.2023.169017).
 - A. S. Berdnikov et al., *Journal of Analytical Chemistry* 74 (2019) 1437–1446. DOI：[原始来源](https://doi.org/10.1134/S1061934819140041).
 - H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI：[原始来源](https://doi.org/10.26434/chemrxiv-2023-p6zln).
+
+## Canonical implementation boundary
+
+The executable L0 formulas and bounded fixed-geometry voltage solve live in
+`msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0`; explicit
+global/restart searches live in `msplatform.workflows.mr_design`. Both consume
+caller-selected physical and numerical inputs. The analytic model retains its
+ideal planar, no-slot/no-finite-thickness scope; it is not the native 3-D field
+model. The separate L1/prism/stripe scientific closures remain distinct.

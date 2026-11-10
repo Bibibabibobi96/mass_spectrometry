@@ -27,7 +27,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry 
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     reduced_period,
 )
