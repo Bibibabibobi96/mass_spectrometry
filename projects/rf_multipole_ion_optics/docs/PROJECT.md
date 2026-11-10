@@ -1187,4 +1187,20 @@ On the composed successor, 42 original numerical, runtime/freeze and Changed-rou
 passed with 30 successful subtests in 66.030 seconds. Private direct/sdist installation and four
 N100 hexapole/octupole L1/L2 output comparisons remain evidence of their stated prior epoch;
 they are not retagged as a complete current Repository or native run. The separately reproduced
-scalar sine-wave selection defect is retained for a distinct numerical repair.
+scalar sine-wave selection defect is addressed in the distinct numerical repair below.
+
+### Ideal trajectory waveform correction
+
+A pure analytic regression reproduced a pre-existing defect: the accepted `sine`
+RF declaration was ignored by the scalar RK4 derivative, which always used cosine.
+The derivative now consumes the existing canonical waveform evaluator with a
+unit-amplitude drive prepared once per particle, outside the integration loop;
+physical harmonic voltages retain their original multiplication order. Sine
+forces intentionally follow the selected waveform and phase, including signed
+charge. Existing cosine study inputs, complete source cohorts, timesteps and
+acceptance criteria are unchanged. Original runs and frozen results are not
+rewritten; this software correction grants no native or scientific qualification.
+On the composed successor, 22 original/new methods and 21 subtests passed in 47.463 seconds.
+All four original N100 cosine hexapole/octupole L1/L2 cases preserve complete metrics,
+200 rows per case and JSON/CSV/PNG bytes. The original sine analytic RED remains recorded.
+Combined ordinary installation and native acceptance of the corrected version remain open.

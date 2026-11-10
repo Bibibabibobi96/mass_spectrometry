@@ -14,7 +14,9 @@ from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.ion_release.mt19937_disk_cone_rf_phase import IDEAL_TRANSPORT_STRATEGY
 from msplatform.ion_release.release import generate_release_states
-from msplatform.components.rf_multipole.family_contract import VoltageDrive, from_high_order_baseline
+from msplatform.components.rf_multipole.family_contract import (
+    VoltageDrive, from_high_order_baseline, rf_waveform_voltage,
+)
 
 
 def validate_contract(contract: dict[str, Any]) -> None:
@@ -169,13 +171,11 @@ def source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
 
 def _derivative(
     time_s: float, state: tuple[float, float, float, float], contract: dict[str, Any],
-    field_terms: list[tuple[int, float]], rf_enabled: bool,
+    field_terms: list[tuple[int, float]], rf_enabled: bool, *, rf_drive: VoltageDrive,
 ) -> tuple[float, float, float, float]:
     x_m, y_m, vx_m_s, vy_m_s = state
-    rf = contract["rf"]
     r0_m = float(contract["geometry_mm"]["inscribed_radius_r0"]) * 1e-3
-    phase = float(rf["phase_rad"])
-    rf_factor = math.cos(2 * math.pi * float(rf["frequency_Hz"]) * time_s + phase) if rf_enabled else 0.0
+    rf_factor = rf_waveform_voltage(rf_drive, time_s) if rf_enabled else 0.0
     field_x, field_y = electric_field_series_xy(field_terms, r0_m, rf_factor, x_m, y_m)
     charge = int(contract["particle_source"]["charge_state"]) * ELEMENTARY_CHARGE_C
     mass = float(contract["particle_source"]["mass_amu"]) * AMU_KG
@@ -184,15 +184,19 @@ def _derivative(
 
 def _rk4_step(
     time_s: float, state: tuple[float, float, float, float], step_s: float,
-    contract: dict[str, Any], field_terms: list[tuple[int, float]], rf_enabled: bool,
+    contract: dict[str, Any], field_terms: list[tuple[int, float]], rf_enabled: bool, *,
+    rf_drive: VoltageDrive,
 ) -> tuple[float, float, float, float]:
     def add(base: tuple[float, ...], delta: tuple[float, ...], scale: float) -> tuple[float, ...]:
         return tuple(value + scale * change for value, change in zip(base, delta))
 
-    k1 = _derivative(time_s, state, contract, field_terms, rf_enabled)
-    k2 = _derivative(time_s + step_s / 2, add(state, k1, step_s / 2), contract, field_terms, rf_enabled)
-    k3 = _derivative(time_s + step_s / 2, add(state, k2, step_s / 2), contract, field_terms, rf_enabled)
-    k4 = _derivative(time_s + step_s, add(state, k3, step_s), contract, field_terms, rf_enabled)
+    k1 = _derivative(time_s, state, contract, field_terms, rf_enabled, rf_drive=rf_drive)
+    k2 = _derivative(time_s + step_s / 2, add(state, k1, step_s / 2),
+                     contract, field_terms, rf_enabled, rf_drive=rf_drive)
+    k3 = _derivative(time_s + step_s / 2, add(state, k2, step_s / 2),
+                     contract, field_terms, rf_enabled, rf_drive=rf_drive)
+    k4 = _derivative(time_s + step_s, add(state, k3, step_s),
+                     contract, field_terms, rf_enabled, rf_drive=rf_drive)
     return tuple(
         value + step_s * (a + 2 * b + 2 * c + d) / 6
         for value, a, b, c, d in zip(state, k1, k2, k3, k4)
@@ -209,6 +213,9 @@ def _simulate_particle(
     usable_radius_m = float(geometry["usable_radius"]) * 1e-3
     transit_s = length_m / particle["vz_m_s"]
     frequency_hz = float(contract["rf"]["frequency_Hz"])
+    # Harmonic coefficients carry volts; bind the unit RF factor once per particle.
+    rf_drive = VoltageDrive(str(contract["rf"]["waveform"]), 1.0, 0.0, 0.0,
+                            frequency_hz, float(contract["rf"]["phase_rad"]))
     base_step_s = 1 / frequency_hz / int(numerics["rf_steps_per_period"])
     state = (particle["x_m"], particle["y_m"], particle["vx_m_s"], particle["vy_m_s"])
     time_s = particle["birth_time_s"]
@@ -217,7 +224,7 @@ def _simulate_particle(
     status, reason = "transmitted", "ideal_exit"
     while time_s < end_s:
         step_s = min(base_step_s, end_s - time_s)
-        state = _rk4_step(time_s, state, step_s, contract, field_terms, rf_enabled)
+        state = _rk4_step(time_s, state, step_s, contract, field_terms, rf_enabled, rf_drive=rf_drive)
         time_s += step_s
         radius_m = math.hypot(state[0], state[1])
         maximum_radius_m = max(maximum_radius_m, radius_m)

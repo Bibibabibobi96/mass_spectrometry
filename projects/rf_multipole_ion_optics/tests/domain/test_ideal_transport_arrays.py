@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import unittest
+import copy
+import math
 import tempfile
 import subprocess
 import sys
@@ -13,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from msplatform.components.rf_multipole.family_contract import VoltageDrive, rf_waveform_voltage
+from msplatform.components.rf_multipole import ideal_transport as transport
 from msplatform.components.rf_multipole.ideal_transport import (
     electric_field_xy,
     electric_field_xy_array,
@@ -121,3 +124,64 @@ assert not any(k.split('.')[0] in ('common','projects','integrations') for k in 
             negative=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=30)
             self.assertNotEqual(negative.returncode,0)
             self.assertIn('ImportError',negative.stderr)
+
+
+class IdealTransportScalarWaveformTests(unittest.TestCase):
+    def test_declared_waveform_phase_and_signed_charge_set_the_analytic_force(self):
+        from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
+        from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+        repo = Path(__file__).resolve().parents[4]
+        resolved = resolve_design_profile(
+            repo, "rf_multipole_ion_optics", "hexapole_no_acceleration_full_length",
+        )["resolved_design"]
+        original = l1_l2_transport_contract_from_resolved_design(resolved)
+        # On the positive x axis, E_x = -n*V*x**(n-1)/r0**n and E_y = 0.
+        x_m = 0.5e-3
+        for waveform, cycles, phase, expected_factor in (
+            ("sine", 0.0, 0.0, 0.0), ("cosine", 0.0, 0.0, 1.0),
+            ("sine", 0.25, 0.0, 1.0), ("cosine", 0.25, 0.0, 0.0),
+            ("sine", 0.0, math.pi / 2, 1.0), ("cosine", 0.0, math.pi / 2, 0.0),
+            ("sine", 0.25, math.pi / 2, 0.0), ("cosine", 0.25, math.pi / 2, -1.0),
+        ):
+            for charge_state in (1, -1):
+                with self.subTest(waveform=waveform, cycles=cycles, phase=phase, charge=charge_state):
+                    contract = copy.deepcopy(original)
+                    contract["rf"].update(waveform=waveform, phase_rad=phase)
+                    contract["particle_source"]["charge_state"] = charge_state
+                    transport.validate_contract(contract)
+                    order = contract["multipole"]["radial_order_n"]
+                    amplitude = contract["rf"]["amplitude_V_peak"]
+                    r0_m = contract["geometry_mm"]["inscribed_radius_r0"] * 1e-3
+                    mass_kg = contract["particle_source"]["mass_amu"] * transport.AMU_KG
+                    full_acceleration = -charge_state * transport.ELEMENTARY_CHARGE_C * order * amplitude * x_m**(order - 1) / (mass_kg * r0_m**order)
+                    state = (x_m, 0.0, 17.0, -23.0)
+                    time_s = cycles / contract["rf"]["frequency_Hz"]
+                    drive = VoltageDrive(waveform, 1.0, 0.0, 0.0, contract["rf"]["frequency_Hz"], phase)
+                    actual = transport._derivative(
+                        time_s, state, contract, [(order, amplitude)], True, rf_drive=drive,
+                    )
+                    self.assertEqual(actual[:2], state[2:])
+                    # Eight floating-point roundoff units cover this analytic phase/force projection.
+                    self.assertAlmostEqual(actual[2], full_acceleration * expected_factor,
+                                           delta=8 * sys.float_info.epsilon * abs(full_acceleration))
+                    self.assertEqual(actual[3], 0.0)
+                    self.assertEqual(transport._derivative(
+                        time_s, state, contract, [(order, amplitude)], False, rf_drive=drive,
+                    ), (17.0, -23.0, 0.0, 0.0))
+
+    def test_particle_prepares_unit_drive_once_outside_rk4_steps(self):
+        from unittest.mock import patch
+        from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
+        from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+        repo = Path(__file__).resolve().parents[4]
+        contract = l1_l2_transport_contract_from_resolved_design(resolve_design_profile(
+            repo, "rf_multipole_ion_optics", "hexapole_no_acceleration_full_length",
+        )["resolved_design"])
+        particle = transport.source_particles(contract)[0]
+        order = contract["multipole"]["radial_order_n"]
+        with patch.object(transport, "VoltageDrive", wraps=VoltageDrive) as prepare_drive:
+            with patch.object(transport, "rf_waveform_voltage", wraps=rf_waveform_voltage) as evaluate:
+                transport._simulate_particle(particle, contract, [(order, contract["rf"]["amplitude_V_peak"])], True)
+        self.assertEqual(prepare_drive.call_count, 1)
+        self.assertGreater(evaluate.call_count, 4)
+        self.assertEqual(len({id(call.args[0]) for call in evaluate.call_args_list}), 1)
