@@ -391,7 +391,7 @@ def _verified_handoff_source(session, source_reference, particles, plan, geometr
 def _execute_tracking_units(session, *, model, plan, design, stored_bank, frontend, downstream, source,
                             compiled, field_workbench, borrowed, frozen, native_path, sources,
                             resource_names, small, records, limits, allow_asynchronous_io,
-                            recovery, dispatch_profiles):
+                            recovery, dispatch_profiles, executable_identity):
     """Prepare whole units, dispatch actual Fly operations, then collect once."""
     import json
     from msplatform.io.manifest_records import file_record,verify_record
@@ -403,7 +403,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
 
     index_path = session.declare_file(session.log_dir/'tracking_units.json','required_evidence')
     index = dict(schema_version=1,role='simion_tracking_units',applicability_sha256=tracking_applicability(plan),
-        immutable_inputs=list(records.values()),
+        native_executable_identity=executable_identity,immutable_inputs=list(records.values()),
         units=[dict(key=unit['key'],source_row_range=unit['source_row_range'],
                     expected_particle_ids=unit['expected_particle_ids'],complete=False) for unit in plan['units']])
     write_json_atomic(index_path,index)
@@ -654,6 +654,8 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         plan.update(partition_tracking_units(plan,unit_size=unit_size,reused_unit_keys=recovery['reused_unit_keys']))
     if tuple(plan['expected_operation_ids'])!=session.expected_operation_ids or dict(plan['operation_dependencies'])!=dict(session.operation_dependencies):
         raise ValueError('tracking graph differs from the admitted owner operations')
+    from .tracking_units import require_tracking_executable_identity
+    executable_identity = require_tracking_executable_identity(plan,recovery,session.context.tools.get('simion'))
     parent_source = None
     if isinstance(particles,HandoffResult):
         parent_source = _verified_handoff_source(session,source_reference,particles,plan,geometry)
@@ -704,7 +706,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             compiled=compiled,field_workbench=field_workbench,borrowed=borrowed,frozen=frozen,
             native_path=native_path,sources=sources,resource_names=resource_names,small=small,
             records=records,limits=limits,allow_asynchronous_io=allow_asynchronous_io,
-            recovery=recovery,dispatch_profiles=dispatch_profiles)
+            recovery=recovery,dispatch_profiles=dispatch_profiles,executable_identity=executable_identity)
     collection.update(schema_version=1,role='simion_tracking_collection',clock_epoch_id=document['drive']['clock']['clock_epoch_id'],
         field_reference=source.reference,model_identity_sha256=document['model_identity_sha256'],
         source_provenance_record=records['source_provenance'],propagation=plan['propagation'],

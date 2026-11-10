@@ -579,6 +579,18 @@ Windows分配失败、真实进程非零退出仍保留失败证据并失败闭�
 
 ### 中断续算
 
+Installed SIMION tracking records the selected executable's exact byte count and
+SHA-256 in its existing whole-unit index. Partial replay that adopts completed
+units requires the same binary identity; relocating identical bytes is allowed.
+Missing prior executable identity or different bytes rejects replay before any
+IOB/Fly call. Fully completed reuse and read-only inspection require no installed
+SIMION and preserve recorded (or historically unknown) identity without inventing
+it. Historical manifests are not rewritten. The regression uses actual shared
+owner/dispatcher processes with inert Python only; it grants no native qualification.
+The composed successor passed all five original-module methods and eight subtests in
+218.985 seconds, including complete reuse without tools and partial-replay failures.
+The original reproduced failure and the first repair's no-tool regression remain separate evidence.
+
 跨项目的复用与中断恢复规则以[开发标准：昂贵阶段复用与中断恢复](../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)
 为唯一正文；这里仅说明现有公共 API 的职责和接入边界。
 

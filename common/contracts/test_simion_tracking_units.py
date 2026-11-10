@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from common.contracts import test_simion_tracking_execution as base_fixture
 from msplatform.backends.simion.tracking_execution import plan_tracking_execution,execute_tracking
-from msplatform.backends.simion.tracking_units import partition_tracking_units,slice_tracking_plan,inspect_tracking_recovery
+from msplatform.backends.simion.tracking_units import partition_tracking_units,slice_tracking_plan,inspect_tracking_recovery,require_tracking_executable_identity
 from msplatform.execution import owner
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
@@ -55,6 +55,36 @@ class TrackingUnitPlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'canonical run_manifest.json'):
                     inspect_tracking_recovery({},file_record(sidecar,'required_evidence'))
                 read.assert_not_called()
+
+    def test_partial_replay_binds_binary_bytes_and_missing_identity_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool=Path(directory)/'first.exe';tool.write_bytes(b'INERT_IDENTITY_A')
+            relocated=Path(directory)/'elsewhere.exe';relocated.write_bytes(tool.read_bytes())
+            changed=Path(directory)/'changed.exe';changed.write_bytes(b'INERT_IDENTITY_B')
+            plan={'expected_operation_ids':['track_fly__unit_0002']}
+            identity=require_tracking_executable_identity(plan,None,tool)
+            recovery={'index':{'native_executable_identity':identity},'reused_unit_keys':['unit_0001']}
+            self.assertEqual(require_tracking_executable_identity(plan,recovery,relocated),identity)
+            with self.assertRaisesRegex(ValueError,'executable identity differs'):
+                require_tracking_executable_identity(plan,recovery,changed)
+            historical={'index':{},'reused_unit_keys':['unit_0001']}
+            with self.assertRaisesRegex(ValueError,'executable identity is missing'):
+                require_tracking_executable_identity(plan,historical,tool)
+            historical['reused_unit_keys']=[]
+            self.assertEqual(require_tracking_executable_identity(plan,historical,changed),
+                             require_tracking_executable_identity(plan,None,changed))
+            with self.assertRaisesRegex(ValueError,'selected native executable'):
+                require_tracking_executable_identity(plan,recovery,None)
+
+    def test_complete_reuse_preserves_recorded_or_unknown_identity_without_tools(self):
+        prior={'bytes':17,'sha256':'A'*64}
+        with patch('msplatform.backends.simion.tracking_units.file_record',side_effect=AssertionError('no tool read')):
+            for identity in (prior,None):
+                recovery={'index':{'native_executable_identity':identity},'reused_unit_keys':['unit_0001']}
+                self.assertEqual(require_tracking_executable_identity({'expected_operation_ids':[]},recovery,None),identity)
+            self.assertIsNone(require_tracking_executable_identity({'expected_operation_ids':[]},
+                {'index':{},'reused_unit_keys':['unit_0001']},None))
+            self.assertIsNone(require_tracking_executable_identity({'expected_operation_ids':[]},None,None))
 
     def test_ordinal_partition_not_ids_and_global_mother_immutable(self):
         case=base_fixture.TrackingExecutionPlanTests();case.setUp()
@@ -149,7 +179,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
             def fail_after_reuse(session,execute_action):
                 execute_action(session)
                 raise RuntimeError('INERT_FAIL_AFTER_REUSE')
-            def run(label,recovery=None,after_error=False):
+            def run(label,recovery=None,after_error=False,selected_tool=None):
                 graph=case.plan(unit_size=25,field_manifest_record=artifact.reference['manifest'])
                 if recovery is not None:
                     inspected=inspect_tracking_recovery(graph,recovery)
@@ -160,6 +190,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                 if after_error:action=partial(fail_after_reuse,execute_action=action)
                 from dataclasses import replace
                 active_context=replace(context,tools={}) if label=='all-reused' or after_error else context
+                if selected_tool is not None:active_context=replace(active_context,tools={'simion':selected_tool})
                 return owner.run_managed_stage(active_context,descriptor=dict(project='instrument_assembly',mode='inert_tracking',software=[]),
                     run_id=run_id,payload={},committed_new_bytes=67108864,commitment_inputs=[file_record(budget,'required_evidence')],
                     retention=dict(policy_version=1,**{'class':'solver_review'},reason='explicit inert Python not native'),
@@ -180,6 +211,8 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                 reference=file_record(predecessor/'run_manifest.json','required_evidence')
                 index=json.loads((predecessor/'logs/tracking_units.json').read_text())
                 self.assertEqual([row['complete'] for row in index['units']],[True,False,True,False])
+                selected_record=file_record(Path(sys.executable),'solver_native_binary')
+                self.assertEqual(index['native_executable_identity'],{key:selected_record[key] for key in ('bytes','sha256')})
                 self.assertEqual([name for rid,name in calls if rid.endswith('failed') and name.startswith('track_fly')],
                     ['track_fly__unit_0003','track_fly__unit_0002','track_fly__unit_0001'])
                 graph=case.plan(unit_size=25,field_manifest_record=artifact.reference['manifest'])
@@ -208,7 +241,17 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                     return original_read(path)
                 with patch.object(Path,'read_bytes',new=no_partial):
                     self.assertEqual(inspect_tracking_recovery(graph,reference)['reused_unit_keys'],['unit_0001','unit_0003'])
-                resumed=run('resumed',reference)
+                # Actual recovery consumer must not mix completed Fly units from
+                # one binary with replay under a different selected executable.
+                changed_tool=root/'different-selected-tool.exe'
+                changed_tool.write_bytes(b'INERT_IDENTITY_FIXTURE_NEVER_EXECUTED')
+                before_calls=len(calls)
+                with self.assertRaisesRegex(ValueError,'executable identity'):
+                    run('changed-tool',reference,selected_tool=changed_tool)
+                self.assertEqual(calls[before_calls:],[])
+                relocated_tool=root/'same-selected-tool.exe'
+                shutil.copyfile(sys.executable,relocated_tool)
+                resumed=run('resumed',reference,selected_tool=relocated_tool)
                 child=Path(resumed['run_directory'])
                 self.assertEqual(len([x for rid,x in calls if rid.endswith('resumed')]),6)
                 collection=json.loads((child/'results/collection.json').read_text())

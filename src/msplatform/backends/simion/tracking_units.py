@@ -10,7 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from msplatform.io.manifest_records import verify_record
+from msplatform.io.manifest_records import file_record,verify_record
 from msplatform.execution.recovery import (
     WholeUnitReplayUnit, build_whole_unit_replay_plan, _whole_unit_artifact_hashes,
 )
@@ -91,6 +91,29 @@ def tracking_applicability(plan):
                       for unit in plan['units']]
     value['renderer_resources'] = resources
     return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode()).hexdigest()
+
+
+
+def require_tracking_executable_identity(plan, recovery, executable):
+    """Bind native replay to the actual binary; pure reuse needs no tool.
+
+    Paths are deployment details. A partial replay may combine completed units
+    only when their recorded binary bytes match the newly selected executable.
+    Historical missing identity stays unknown on read-only/complete reuse.
+    """
+    previous = recovery['index'].get('native_executable_identity') if recovery else None
+    if not plan['expected_operation_ids']:
+        return copy.deepcopy(previous)
+    if executable is None or not Path(executable).is_file():
+        raise ValueError('tracking executable identity requires the selected native executable')
+    record = file_record(Path(executable),'solver_native_binary')
+    selected = {key:record[key] for key in ('bytes','sha256')}
+    if recovery and recovery['reused_unit_keys']:
+        if previous is None:
+            raise ValueError('tracking predecessor executable identity is missing for partial replay')
+        if previous != selected:
+            raise ValueError('tracking predecessor executable identity differs for partial replay')
+    return selected
 
 
 def _validate_completed_unit(row, plan, unit):
