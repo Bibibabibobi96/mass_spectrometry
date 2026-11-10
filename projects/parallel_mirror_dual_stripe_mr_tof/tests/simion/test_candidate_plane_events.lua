@@ -3,6 +3,10 @@ local repo=assert(arg[1],'repository root required')
 local directory=repo..'/projects/parallel_mirror_dual_stripe_mr_tof/simion/'
 -- Exercise the production CSV writer; the fixture owns only this temporary file.
 local events_path=os.tmpname()
+-- MSVC tmpnam may return a drive-root-relative name; keep test CSVs writable.
+if package.config:sub(1,1)=='\\' and events_path:sub(1,1)=='\\' and events_path:sub(2,2)~='\\' then
+  events_path=assert(os.getenv('TEMP') or os.getenv('TMP'),'explicit temporary directory required')..'/'..events_path:sub(2)
+end
 local original_open,output_stream=io.open,nil
 io.open=function(path,mode)
   if path==events_path and mode=='w' then

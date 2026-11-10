@@ -82,14 +82,16 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
                      "test_mirror_cycle_counter.lua"):
             (lua / name).write_text("-- inert plain-Lua dispatch fixture\n", encoding="utf-8")
 
-    def run_gate(self, project, *arguments, fail=""):
-        if project == OA:
+    def run_gate(self, project, *arguments, fail="", automatic_lua=False, lua_directory=None, lua_temporary=None):
+        if project == OA and not automatic_lua:
             arguments = (*arguments, "-LuaExe", str(self.root/"lua_probe.ps1"))
         return subprocess.run(
             [PWSH, "-NoProfile", "-File", str(self.root / "projects" / project / "verify_project.ps1"),
              "-PythonExe", sys.executable, *arguments], cwd=self.root,
             env=dict(os.environ, GATE_CALLS=str(self.log), GATE_FAIL=fail,
-                     ProgramFiles=str(self.root / "no_vendor"), PYTHONPATH=str(self.root)),
+                     ProgramFiles=str(self.root / "no_vendor"), PYTHONPATH=str(self.root),
+                     TEMP=str(lua_temporary) if lua_temporary else os.environ.get("TEMP", ""),
+                     PATH=(str(lua_directory) + os.pathsep + os.environ.get("PATH", "")) if lua_directory else os.environ.get("PATH", "")),
             capture_output=True, text=True, encoding="utf-8", timeout=30)
 
     def calls(self):
@@ -157,6 +159,73 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         syntax = self.run_gate(MR, "-PreflightOnly", "-RegistryPrevalidated")
         self.assertNotEqual(syntax.returncode, 0)
         self.assertIn("PowerShell syntax gate failed", syntax.stderr)
+
+
+    def test_actual_plain_lua_scripts_use_path_and_keep_explicit_authority_and_failure(self):
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or
+                   "C:/Program Files/SIMION-2020/lua.exe")
+        self.assertTrue(lua.is_file(), "standalone Lua software-test dependency required")
+        print("PROJECT_GATE_SOFTWARE_LUA=" + str(lua.resolve()))
+        resources = [
+            *(f"projects/{MR}/tests/simion/{name}" for name in (
+                "test_candidate_plane_events.lua", "test_candidate_voltage_map.lua", "test_mirror_cycle_counter.lua")),
+            *(f"projects/{MR}/simion/{name}" for name in (
+                "mrtof_candidate.lua", "candidate_voltage_map.lua", "mirror_cycle_counter.lua")),
+            "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+            "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
+            f"projects/{OA}/tests/simion/test_required_parameters.lua",
+            f"projects/{OA}/tests/simion/test_component_focus_callbacks.lua",
+            f"projects/{OA}/simion/build_two_zone_pa.lua",
+            f"projects/{OA}/simion/two_zone_accelerator.gem",
+            f"projects/{OA}/simion/component_focus.lua",
+        ]
+        for relative in resources:
+            source, target = REPO / relative, self.root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            self.assertEqual(target.read_bytes(), source.read_bytes())
+        lua_temporary = self.root / "private_lua_outputs"
+        lua_temporary.mkdir()
+        for project in (MR, OA):
+            args = ("-PreflightOnly", "-RegistryPrevalidated") if project == MR else ()
+            with self.subTest(project=project, case="path"):
+                result = self.run_gate(project, *args, automatic_lua=True, lua_directory=lua.parent, lua_temporary=lua_temporary)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if project == MR:
+                    for marker in ("CANDIDATE_PLANE_EVENTS=PASS", "CANDIDATE_VOLTAGE_MAP=PASS",
+                                   "PASS mirror_cycle_counter:"):
+                        self.assertIn(marker, result.stdout)
+                    self.assertNotIn("MRTOF_PLAIN_LUA=SKIP", result.stdout)
+                else:
+                    self.assertIn("ACCELERATOR_REQUIRED_PARAMETERS=PASS cases=26", result.stdout)
+                    if not (lua.parent / "examples/test_plane/testplanelib.lua").is_file():
+                        self.assertIn("ACCELERATOR_COMPONENT_FOCUS_CALLBACKS=SKIP REASON=official_test_plane_library_unavailable", result.stdout)
+            with self.subTest(project=project, case="explicit"):
+                explicit = self.run_gate(project, *args, "-LuaExe", str(lua),
+                                         automatic_lua=True, lua_directory=lua.parent, lua_temporary=lua_temporary)
+                self.assertEqual(explicit.returncode, 0, explicit.stdout + explicit.stderr)
+            with self.subTest(project=project, case="missing_explicit"):
+                missing = self.run_gate(project, *args, "-LuaExe", str(self.root / "missing-lua.exe"),
+                                        automatic_lua=True, lua_directory=lua.parent, lua_temporary=lua_temporary)
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn("Explicit Lua executable is missing", missing.stderr)
+                self.assertNotIn("PROJECT_GATE=PASS", missing.stdout)
+            dependency = self.root / (f"projects/{MR}/simion/candidate_voltage_map.lua" if project == MR
+                                      else f"projects/{OA}/simion/two_zone_accelerator.gem")
+            payload = dependency.read_bytes()
+            dependency.unlink()
+            try:
+                with self.subTest(project=project, case="actual_script_nonzero"):
+                    failed = self.run_gate(project, *args, automatic_lua=True, lua_directory=lua.parent, lua_temporary=lua_temporary)
+                    self.assertNotEqual(failed.returncode, 0)
+                    self.assertIn("plain-Lua regression failed" if project == MR else
+                                  "Lua parameter-contract regression failed", failed.stderr)
+                    self.assertNotIn("PROJECT_GATE=PASS", failed.stdout)
+            finally:
+                dependency.write_bytes(payload)
+            self.assertEqual(dependency.read_bytes(), payload)
+            self.assertEqual(list(lua_temporary.iterdir()), [])
+
 
 
 if __name__ == "__main__":

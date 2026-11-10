@@ -18,6 +18,12 @@ try {
     if ($LuaExe -and -not (Test-Path -LiteralPath $LuaExe -PathType Leaf)) {
         throw "Explicit Lua executable is missing: $LuaExe"
     }
+    if (-not $LuaExe) {
+      foreach ($commandName in @('lua', 'lua5.1')) {
+        $candidate = Get-Command -Name $commandName -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($candidate) { $LuaExe = $candidate.Source; break }
+      }
+    }
     if (-not $LuaExe -and $env:ProgramFiles) {
         $installedLua = Join-Path $env:ProgramFiles 'SIMION-2020\lua.exe'
         if (Test-Path -LiteralPath $installedLua -PathType Leaf) { $LuaExe = $installedLua }

@@ -115,6 +115,18 @@ qualification. A changed archive, missing closure or wrong runtime version fails
 Source: [LuaBinaries 5.1.5 official files](https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/),
 reviewed 2026-11-10. The pinned digest records observed archive bytes, not an independent vendor-published checksum.
 
+MR and OA software gates likewise discover `lua`, then `lua5.1`, before the local
+fallback. An explicit `-LuaExe` remains authoritative; a missing explicit path fails.
+OA's separate official test-plane callback still needs the selected runtime's
+licensed `testplanelib.lua`; portable Lua does not provide or qualify it. Two MR
+scientific-CSV test scripts resolve only MSVC Windows drive-root-relative
+`os.tmpname()` results beneath the explicit temporary directory. All other paths,
+original payloads, callbacks and cleanup remain unchanged.
+The actual gate-selector module passed all four parents and nineteen records on
+the composed successor in 28.312 seconds. This includes the three MR scripts,
+OA's 26 required-parameter cases, explicit-path refusal and script-error propagation;
+the licensed callback diagnostic remains separate from software-test success.
+
 ### 主机资源调度
 
 门禁和商业运行通过同一公共入口申请资源；重、轻阶段及额度只由
