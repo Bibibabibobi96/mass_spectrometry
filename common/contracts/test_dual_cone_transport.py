@@ -332,3 +332,94 @@ class LargeGasRuntimeFreezeTests(unittest.TestCase):
             self.assertLess((output / "preparation_receipt.json").stat().st_size, 32 * 1024)
             self.assertFalse(receipt["qualified_evidence"])
             self.assertEqual(list(output.rglob("*.pa*")), [])
+
+
+class ExplicitUniformStudyTests(unittest.TestCase):
+    def test_named_control_and_explicit_pressure_reach_actual_preparation_and_program(self):
+        from msplatform.backends.simion.dual_cone_transport import prepare_transport, SDS_FILES
+        from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+        from msplatform.backends.simion.resources import native_resource_path
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+        from msplatform.contracts.gas import GasSpecies
+        from msplatform.io.manifest_records import file_record
+        from common.contracts.test_simion_prepared_model import LUA
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_simion_layer import PROJECT
+        if not LUA.is_file():
+            self.skipTest("standalone Lua 5.1 required for actual Program consumer; no native fallback")
+        config = PROJECT / "config"
+        source = json.loads((config / "uniform_rear_gas_field.json").read_text(encoding="utf8"))
+        interface_path = config / "gas_field_interface.json"
+        interface = json.loads(interface_path.read_text(encoding="utf8"))
+        science = json.loads((config / "ion_transport_science.json").read_text(encoding="utf8"))
+        composition = (GasSpecies("N2", science["gas"]["collision_gas_mass_amu"], 1.),)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec_path = root / "explicit-study.json"
+            def construct(value):
+                spec_path.write_text(json.dumps(value), encoding="utf8")
+                return prepare_uniform_rear_gas_field(value, interface=interface, composition=composition,
+                    spec_record=file_record(spec_path,"required_evidence"),
+                    interface_record=file_record(interface_path,"required_evidence"))
+            changed = json.loads(json.dumps(source))
+            changed["rear_region"]["pressure_pa"] = 125.
+            with self.assertRaisesRegex(ValueError, "frozen minimal prototype requires a 400 Pa"):
+                construct(changed)
+            for pressure in (125., 0.):
+                with self.subTest(pressure_pa=pressure):
+                    value = json.loads(json.dumps(source))
+                    value["model_id"] = "explicit_" + str(pressure) + "_pa_rear_study"
+                    value["rear_region"]["pressure_pa"] = pressure
+                    field, metadata = construct(value)
+                    runtime, manifest = root / (str(pressure)+".lua"), root / (str(pressure)+".json")
+                    materialize_gas_runtime(field,runtime,manifest,manifest_metadata=metadata)
+                    sds = root / ("sds-"+str(pressure)); sds.mkdir()
+                    for name in SDS_FILES:(sds/name).write_text("INERT_TEST_ONLY",encoding="utf8")
+                    output = root / ("prepared-"+str(pressure))
+                    arguments=dict(mode="gas_assisted_transport",resolved_path=config/"resolved_geometry.json",
+                        numerics_path=config/"simion_solver_numerics.json",science_path=config/"ion_transport_science.json",
+                        interface_path=interface_path,gas_science_path=config/"gas_flow_science.json",
+                        source_spec_path=config/"cylindrical_ion_source.json",gas_field_manifest=manifest,collision_sds_dir=sds)
+                    receipt=prepare_transport(output,**arguments)
+                    self.assertFalse(receipt["qualified_evidence"])
+                    self.assertEqual(list(output.rglob("*.pa*")),[])
+                    self.assertEqual(receipt["inputs"]["cylindrical_ion_source_receipt"]["identity"]["particle_count"],100)
+                    if LUA.is_file():
+                        harness=root/(str(pressure)+"-program.lua")
+                        harness.write_text(r"""local load=loadfile;local config=assert(load(arg[1]))()
+loadfile=function(path)if path==arg[1]then return function()return config end end;return load(path)end
+local installs,seeds=0,0;local SDS={install=function()installs=installs+1 end}
+simion={workbench_program=function()segment={}end,import=function()return SDS end}
+os.getenv=function()return arg[1]end;seed=function(value)assert(value==config.random_seed);seeds=seeds+1 end
+adj_elect={};ion_number=7;ion_time_of_flight=0;ion_time_step=1;ion_splat=0
+ion_px_mm=config.device_x_offset_mm;ion_py_mm=config.device_y_offset_mm;ion_pz_mm=config.device_z_offset_mm+10
+ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0
+local f=assert(io.open(arg[2],'rb'));local text=f:read('*a');f:close();assert(loadstring(text:gsub('adjustable%s+',''),'@'..arg[2]))()
+segment.initialize_run();segment.initialize()
+assert(SDS.pressure(ion_px_mm,ion_py_mm,ion_pz_mm)==tonumber(arg[3])*(760/101325))
+assert(SDS.temperature(ion_px_mm,ion_py_mm,ion_pz_mm)==300)
+local x,y,z=SDS.velocity(ion_px_mm,ion_py_mm,ion_pz_mm);assert(x==0 and y==0 and z==100)
+segment.other_actions();segment.terminate();segment.terminate_run()
+assert(installs==1 and seeds==1);print('EXPLICIT_UNIFORM_SDS=PASS')
+""",encoding="utf8")
+                        child=subprocess.run([str(LUA),str(harness),str(output/"solver/simion/run_config.lua"),
+                            str(native_resource_path("dual_cone_gas_assisted_transport.lua")),str(pressure)],
+                            cwd=output,capture_output=True,text=True,encoding="utf8",timeout=30)
+                        self.assertEqual(child.returncode,0,child.stdout+child.stderr)
+                        self.assertIn("EXPLICIT_UNIFORM_SDS=PASS",child.stdout)
+                        print("EXPLICIT_UNIFORM_SOFTWARE="+json.dumps(dict(pressure_pa=pressure,lua=str(LUA),lua_sha256=hashlib.sha256(LUA.read_bytes()).hexdigest(),program_sha256=hashlib.sha256(native_resource_path("dual_cone_gas_assisted_transport.lua").read_bytes()).hexdigest())))
+                    broken=json.loads(manifest.read_text(encoding="utf8"))
+                    broken["source"]["spec_record"]["sha256"]="0"*64
+                    manifest.write_text(json.dumps(broken),encoding="utf8")
+                    with self.assertRaisesRegex(AssertionError,"SHA-256 changed"):
+                        prepare_transport(root/("bad-source-"+str(pressure)),**arguments)
+                    self.assertFalse((root/("bad-source-"+str(pressure))).exists())
+            for pressure in (-1.,float("nan"),float("inf"),True):
+                with self.subTest(invalid_pressure=pressure):
+                    value=json.loads(json.dumps(source));value["model_id"]="explicit_invalid_pressure"
+                    value["rear_region"]["pressure_pa"]=pressure
+                    with self.assertRaises(ValueError):construct(value)
+            for model_id in ("",None,True):
+                with self.subTest(invalid_model_id=model_id):
+                    value=json.loads(json.dumps(source));value["model_id"]=model_id
+                    with self.assertRaisesRegex(ValueError,"explicit uniform gas study model_id"):
+                        construct(value)

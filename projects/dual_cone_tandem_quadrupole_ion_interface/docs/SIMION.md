@@ -149,3 +149,6 @@ all field, rotated-velocity and EOS validity checks on every actual callback.
 The projection avoids unused result/metadata allocations; the four-field CFD
 sum loop keeps the original per-field corner/product/sum order. No sample cache,
 channel-skipped validation, vendor reset or RNG/callback change is introduced.
+
+Explicit prescribed-pressure studies use the existing constructor and preparation path;
+see the single [study contract](PROJECT.md#explicit-prescribed-pressure-studies).

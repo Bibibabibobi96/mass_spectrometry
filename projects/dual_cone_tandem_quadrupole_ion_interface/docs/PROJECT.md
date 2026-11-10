@@ -710,3 +710,24 @@ physics. The earlier complete installed-core acceptance predates this gas slice.
 The named 400 Pa constructor remains constrained here; general prescribed-study
 pressure freedom requires its separately validated successor. CFD callback cost,
 final combined installation, Repository and native acceptance remain open.
+
+### Explicit prescribed pressure studies
+
+The recorded `uniform_400pa_plug_flow_prototype_v1` retains its 400 Pa constraint
+and unchanged compiled golden. A different explicit nonempty `model_id` selects
+another study through the same `prepare_uniform_rear_gas_field` constructor;
+it accepts finite nonnegative rear pressure, with zero an explicit vacuum
+control. The same role, explicit source/interface records, temperature/velocity,
+composition, sampling profile and materializer/public preparation remain.
+No default request, source file or historical result is changed. Blank or
+non-string study IDs, invalid pressures and altered source identities reject.
+Actual stock-Lua Program/SDS callback tests are software wiring evidence, not
+native or vendor collision qualification.
+
+The composed explicit-study successor passed 28 software parents and 127 records
+in 3.013 seconds. Fresh direct-wheel and sdist-rebuilt consumers passed in
+91.307 seconds, including actual 125 Pa and zero-pressure preparation/Program
+wiring, invalid/source negatives and the unchanged original 400 Pa Lua golden.
+All 457 runtime payloads joined source/distributions/installations; only the
+component constructor changed from the preceding gas package. This closes the
+identified software pressure-selection gap, not native collision or RNG physics.

@@ -133,7 +133,10 @@ def prepare_uniform_rear_gas_field(
         raise ValueError("explicit uniform rear-gas study required")
     contract = _contract(interface)
     rear, upstream = spec["rear_region"], spec["upstream_collision_proxy"]
-    if rear["pressure_pa"] != 400.:
+    model_id = spec.get("model_id")
+    if not isinstance(model_id, str) or not model_id.strip():
+        raise ValueError("an explicit uniform gas study model_id is required")
+    if model_id == "uniform_400pa_plug_flow_prototype_v1" and rear["pressure_pa"] != 400.:
         raise ValueError("the frozen minimal prototype requires a 400 Pa rear region")
     declared = _domain(contract["domain"])
     if not declared.minimum_z_mm <= rear["start_z_mm"] <= declared.maximum_z_mm:
