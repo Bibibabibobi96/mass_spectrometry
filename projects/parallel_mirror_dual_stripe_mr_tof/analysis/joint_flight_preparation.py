@@ -603,7 +603,7 @@ def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contra
 def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_executable: Path) -> dict:
     """Evaluate the sole provider Lua schedule with RF=0; no field or flight API."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import derive_lift_seed
-    if lua_executable.name.lower() not in {"lua", "lua.exe"} or not lua_executable.is_file():
+    if lua_executable.name.lower() not in {"lua", "lua.exe", "lua5.1", "lua5.1.exe"} or not lua_executable.is_file():
         raise ValueError("an explicit plain Lua interpreter is required; no SIMION solver fallback")
     baseline, point = copy.deepcopy(source["baseline"]), copy.deepcopy(source["native_operating_point"])
     point["lift_v"] = derive_lift_seed(source, request)

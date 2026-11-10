@@ -25,7 +25,7 @@ class JointPreparationTests(unittest.TestCase):
     def test_provider_voltage_projection_freezes_injected_public_waveforms(self):
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import load_config
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import REPO, project_provider_voltages
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')
         with tempfile.TemporaryDirectory() as directory:
@@ -35,6 +35,12 @@ class JointPreparationTests(unittest.TestCase):
             request = dict(policies=dict(energy_adjustment='preserve_measured_workpoint'),
                 target=dict(axial_energy_per_charge_v=4000),
                 current_measured_baseline=dict(directional_energy=dict(z=dict(mean=4000))))
+            for rejected in (inputs / "lua5.1.exe", inputs / "simion.exe"):
+                if rejected.name == "simion.exe":
+                    rejected.write_bytes(b"INERT_NOT_AN_EXECUTABLE")
+                with self.subTest(rejected_interpreter=rejected.name):
+                    with self.assertRaisesRegex(ValueError, "explicit plain Lua interpreter"):
+                        project_provider_voltages(source, request, inputs, rejected)
             result = project_provider_voltages(source, request, inputs, Path(lua))
             self.assertEqual(result['values_v15'][4:8], [3100,4900,3100,4900])
             self.assertEqual(Path(result['source_voltage_waveforms']['path']).read_bytes(),
@@ -42,7 +48,7 @@ class JointPreparationTests(unittest.TestCase):
             self.assertEqual(json.loads((inputs / 'provider_voltage_projection.json').read_text()), result)
 
     def test_five_role_builder_checks_saved_patch_occupancy_and_boundary_priority(self):
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')
         with tempfile.TemporaryDirectory() as directory:
@@ -132,7 +138,7 @@ print('FIVE_ROLE_BUILDER_MOCK=PASS')
         self.assertRegex(identities[1], r'__analysis__python__accelerator-interface-ip-[0-9a-f]{8}$')
 
     def test_generated_sidecar_removes_inherited_oa_launch_plane(self):
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file() and shutil.which(lua) is None:
             self.skipTest('plain Lua unavailable')
         with tempfile.TemporaryDirectory() as directory:
@@ -148,7 +154,7 @@ print('FIVE_ROLE_BUILDER_MOCK=PASS')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_measured_sidecar_keeps_canonical_sources_across_execution_representations(self):
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')
         with tempfile.TemporaryDirectory() as directory:
@@ -266,7 +272,7 @@ print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
                                      (reference/"results/two_prism_trial_materialization.json").read_bytes())
 
     def test_measured_builder_uses_four_real_roles_and_rejects_unverified_inputs(self):
-        lua = shutil.which('lua') or str(Path('C:/Program Files/SIMION-2020/lua.exe'))
+        lua = shutil.which('lua') or shutil.which('lua5.1') or str(Path('C:/Program Files/SIMION-2020/lua.exe'))
         if not Path(lua).is_file() and shutil.which(lua) is None:
             self.skipTest('plain Lua unavailable; no solver fallback')
         with tempfile.TemporaryDirectory() as directory:
@@ -322,7 +328,7 @@ print('MEASURED_BUILDER_MOCK=PASS')
 
 
     def test_default_oa_builder_preserves_four_roles_and_voltage_guards(self):
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file() and shutil.which(lua) is None:
             self.skipTest('plain Lua unavailable; no solver fallback')
         with tempfile.TemporaryDirectory() as directory:
@@ -481,7 +487,7 @@ print('OA_BUILDER_MOCK=PASS')
                 self.assertIn("measured_source_matches_workpoint=true", sidecar)
                 self.assertIn("ip_local.pa", sidecar)
                 with self.subTest(verification="plain_lua_voltage_projection"):
-                    lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+                    lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
                     if not Path(lua).is_file():
                         self.skipTest('plain Lua unavailable; Python preparation assertions remain active')
                     check = root / "check_finalized_voltages.lua"
@@ -634,7 +640,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
     def test_interface_field_audit_uses_actual_clock_basis_route_and_centroid_ledger(self):
         import csv
         from msplatform.contracts.rigid_transform import RigidTransform
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')
         with tempfile.TemporaryDirectory() as directory:
@@ -698,7 +704,7 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
 
     def test_actual_event_audit_binds_original_6d_queries_selected_fields_and_retains_nonzero_phi(self):
         import csv
-        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')
         with tempfile.TemporaryDirectory() as directory:

@@ -698,3 +698,14 @@ on the composed successor in 7.214 seconds, including actual source-table extrac
 canonical module origins and the missing-policy negative. The private checkout's earlier 14
 historical-evidence skips remain a separate run; no native solver or new scientific qualification
 was exercised by this repair.
+
+### Standalone Lua provider selection
+
+Software-only joint preparation accepts the pinned standalone `lua5.1.exe` provider
+alongside `lua`/`lua.exe`; discovery tries `lua`, then `lua5.1`, before the existing
+local standalone fallback. The selected interpreter must exist and have an accepted
+standalone name. Missing binaries and `simion.exe` remain rejected before voltage
+projection. Voltage schedules, frozen resources and native qualification are unchanged.
+All thirteen original joint-preparation parents passed on the composed successor
+in 5.074 seconds (45 successful records, no skips), including missing-interpreter
+and inert solver-name rejection. Final Repository acceptance remains open.
