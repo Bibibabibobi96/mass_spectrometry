@@ -92,6 +92,64 @@ class RejectRepositoryImports(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'common','projects','integrations'}:
             raise AssertionError('installed action imported a repository owner: ' + fullname)
 sys.meta_path.insert(0, RejectRepositoryImports())
+# G1 pure static gas: explicit inputs, actual installed API, no supplier/owner.
+from dataclasses import replace as replace_gas
+from msplatform.contracts.gas import (AxisymmetricRZData, BoxDomain, CylindricalDomain,
+    GasFieldSpec, GasRegion, GasSource, GasSpecies, GasState, UnboundedDomain)
+from msplatform.gas import field as gas_field_api
+from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
+composition = (GasSpecies('N2', 28, 1),)
+uniform_spec = GasFieldSpec('installed_uniform', 'gas_local', 'uniform', 'n2', composition,
+    UnboundedDomain(), GasSource('prescribed','installed_explicit',()), GasState('gas',713,310,(100,0,0)))
+placement = RigidTransform('gas_local','gas_world',((0,0,1),(1,0,0),(0,1,0)),(10,20,30))
+uniform = gas_field_api.prepare_gas_field(uniform_spec)
+posed = gas_field_api.sample_gas(uniform,FramedPosition('gas_world',(13,21,32)),placement=placement)
+assert posed.state.pressure_pa == 713 and posed.state.bulk_velocity_m_s == (0,100,0)
+assert uniform.spec.source.kind == 'prescribed' and uniform.spec.source.source_id == 'installed_explicit'
+proxy = GasSource('prescribed_proxy','explicit_zero',('collisions omitted; not measured vacuum',))
+published_source = GasSource('published_cfd','explicit_fixture_producer',(),fixture['gas_field_reference']['manifest'])
+assert dict(published_source.reference) == {key:fixture['gas_field_reference']['manifest'][key] for key in ('path','exists','bytes','sha256')}
+try: published_source.reference['bytes'] = 0
+except TypeError: pass
+else: raise AssertionError('published gas identity is mutable')
+try: GasSource('published_cfd','missing_reference',())
+except ValueError as error: assert 'existing complete source record' in str(error)
+else: raise AssertionError('published source without identity was accepted')
+assert gas_field_api.prepare_gas_field(replace_gas(uniform_spec,source=proxy,uniform_state=GasState('vacuum',0))).spec.source.assumptions == proxy.assumptions
+bath = BoxDomain((30,-2,-2),(130,2,2),(True,False,False),(False,False,False))
+valid = BoxDomain((0,-5,-5),(250,5,5),(True,)*3,(True,)*3)
+piecewise_spec = replace_gas(uniform_spec,field_id='installed_bath',representation='piecewise_uniform',
+    domain=valid,uniform_state=None,regions=(GasRegion('bath',bath,GasState('gas',1,300,(0,0,0))),),
+    background_state=GasState('vacuum',0))
+piecewise = gas_field_api.prepare_gas_field(piecewise_spec)
+assert gas_field_api.sample_gas(piecewise,FramedPosition('gas_local',(30,0,0))).state.pressure_pa == 1
+assert gas_field_api.sample_gas(piecewise,FramedPosition('gas_local',(130,0,0))).state.status == 'vacuum'
+assert gas_field_api.sample_gas(piecewise,FramedPosition('gas_local',(50,2,0))).number_density_m3 == 0
+assert gas_field_api.sample_gas(piecewise,FramedPosition('gas_local',(251,0,0))).state.status == 'outside_domain'
+grid = AxisymmetricRZData((0,1),(0,1),(True,True,True,False),
+    (100,200,300,None),(300,300,300,None),(0,10,0,None),(100,100,100,None))
+grid_spec = replace_gas(uniform_spec,field_id='installed_rz',representation='axisymmetric_rz_grid',
+    uniform_state=None,domain=CylindricalDomain(0,1,1),
+    interpolation_policy='bilinear_fluid_corner_weight_renormalization_v1')
+r_z = gas_field_api.prepare_gas_field(grid_spec,data=grid)
+assert gas_field_api.sample_gas(r_z,FramedPosition('gas_local',(.5,0,.5))).state.pressure_pa == 200
+assert gas_field_api.sample_gas(r_z,FramedPosition('gas_local',(1,0,1))).state.status == 'no_data'
+assert gas_field_api.sample_gas(r_z,FramedPosition('gas_local',(0,0,.5))).state.bulk_velocity_m_s == (0,0,100)
+try: replace_gas(grid,radial_velocity_m_s=(10,10,0,None))
+except ValueError as error: assert 'zero radial velocity at r=0' in str(error)
+else: raise AssertionError('inconsistent axis data silently accepted')
+for gas_module in ('msplatform.contracts.gas','msplatform.gas.field','msplatform.gas.thermodynamics'):
+    assert pathlib.Path(sys.modules[gas_module].__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+# A new interpreter cannot satisfy this check from the current process module cache.
+gas_field_path = pathlib.Path(gas_field_api.__file__).resolve()
+gas_field_hidden = gas_field_path.with_name(gas_field_path.name+'.missing')
+gas_field_path.rename(gas_field_hidden)
+try:
+    import subprocess
+    missing_gas = subprocess.run([sys.executable,'-I','-B','-c','from msplatform.gas.field import sample_gas'],
+        cwd=root,capture_output=True,text=True,timeout=30)
+    assert missing_gas.returncode != 0 and 'msplatform.gas.field' in missing_gas.stderr
+finally: gas_field_hidden.rename(gas_field_path)
 assert sys.version_info[:2] == (3, 11)
 assert sys.prefix != sys.base_prefix
 assert all(shutil.which(tool) is None for tool in ('pwsh', 'powershell', 'simion', 'comsol', 'matlab'))

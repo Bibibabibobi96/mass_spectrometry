@@ -939,3 +939,21 @@ RF 资源预算的两个调度用例改由真实 admission-pause 事件释放短
 生产leaf可在现catalog的test_selection.dependencies用exact匹配声明受影响模块；已删除leaf和未知来源仍回退完整owner。SFI的SelectedTestModules复用原CLI与实际前置，完整分片按实际模块union判定，不能将替换式subset误当追加式完整范围。Owner／Repository保持全范围；纯测试Changed快路径保持，窄leaf结果不代表完整owner或Repository通过。
 `frozen_inputs.py`的机制测试归公共合同owner，真实`workbench_seed`消费者测试归SIMION owner；
 两者通过同一catalog精确选择，混合SIMION改动时seed模块仍只在其owner执行一次。
+
+### Pure static gas inputs
+
+`msplatform.contracts.gas` owns explicit immutable gas/source/model-selection data;
+`msplatform.gas.field` prepares and samples declared static uniform, box-region and
+legacy-policy axisymmetric data, using existing rigid transforms and constants.
+No vendor, context or run owner is needed for these pure actions. See the
+[domain directions](../docs/REPOSITORY_ARCHITECTURE.md#可安装科学核心与迁移边界).
+The two existing-catalog contract modules test real sampler/state behavior;
+point-query checks do not establish step-crossing, Lua/Program, HS1/SDS or native
+qualification. Production adapter migration and its original callback/RNG/resource
+closures remain separate P4 work.
+The composed pure sampler/boundary checks passed 36 actual methods; the corrected
+Changed-route method separately passed all eight path cases. An initial outer class-selector
+error remains recorded. Ordinary direct-wheel and sdist-rebuilt-wheel acceptance passed
+in 233.590 seconds, exercising the installed gas probe and original consumers with source
+access denied. All 440 package payloads match the current source, sdist and both wheels.
+These results cover this pure input slice; final Repository and native gas acceptance remain open.

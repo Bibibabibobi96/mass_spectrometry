@@ -22,6 +22,8 @@ PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection
 COMPONENT_INFRASTRUCTURE = {"model", "catalog"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
+    "gas": {"gas", "contracts", "io"},
+    "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
     "components": SCIENTIFIC_DOMAINS | {"components"},
     "backends": SCIENTIFIC_DOMAINS | {"components", "backends", "execution", "results"},
@@ -276,6 +278,24 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"), module, is_package=path.name == "__init__.py",
                 dependencies=selected_dependencies))
         self.assertEqual(errors, [])
+
+    def test_gas_layer_has_only_explicit_pure_dependencies(self):
+        for source in ("from msplatform.contracts.gas import GasState",
+                       "from msplatform.io.manifest_records import validate_file_record",
+                       "from .thermodynamics import number_density_m3"):
+            with self.subTest(source=source):
+                self.assertEqual(core_boundary_errors(source, "msplatform.gas.field", dependencies=set()), [])
+        self.assertEqual(core_boundary_errors("from msplatform.gas.field import sample_gas",
+                         "msplatform.analysis.example", dependencies=set()), [])
+        for source in ("from msplatform.components.orthogonal_accelerator import time_focus",
+                       "from msplatform.backends.simion import operations",
+                       "from msplatform.execution import owner", "from msplatform.workflows import dual_cone_stages",
+                       "from msplatform.analysis import peak_metrics", "import subprocess",
+                       "import os; value = os.getenv('GAS_DEFAULT')", "import projects.example"):
+            with self.subTest(source=source):
+                self.assertTrue(core_boundary_errors(source, "msplatform.gas.field", dependencies=set()))
+        self.assertTrue(core_boundary_errors("from msplatform.gas.field import sample_gas",
+                        "msplatform.contracts.example", dependencies=set()))
 
     def test_ordinary_relative_and_dynamic_reverse_dependencies_are_rejected(self):
         rejected = (

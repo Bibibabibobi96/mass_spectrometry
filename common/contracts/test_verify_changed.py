@@ -317,6 +317,28 @@ ConvertTo-Json -Compress -InputObject $paths
         owner = next(row for row in request["stages"] if row["name"] == "workspace_paths_tests")
         self.assertEqual(owner["command"]["arguments"][2:], ["common/paths/test_workspace_paths.py"])
 
+    def test_pure_gas_dependencies_select_actual_tests_without_native_stages(self):
+        expected = {"common/contracts/test_gas.py", "common/contracts/test_gas_field_sampling.py"}
+        for path in ("src/msplatform/contracts/gas.py", "src/msplatform/gas/field.py",
+                     "src/msplatform/gas/thermodynamics.py", "src/msplatform/contracts/rigid_transform.py",
+                     "src/msplatform/contracts/particle_physics.py", "src/msplatform/io/manifest_records.py"):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                modules = [value for row in request["stages"]
+                           if row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertTrue(expected <= set(modules))
+                self.assertEqual(len(modules), len(set(modules)))
+                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                                     for row in request["stages"]))
+        for path in expected:
+            with self.subTest(test=path):
+                request, _ = self.plan("-ChangedPath", path)
+                modules = [value for row in request["stages"]
+                           if row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertEqual(modules, [path])
+
     def test_common_contract_dependencies_select_modules_without_retired_routes(self):
         cases = (("src/msplatform/execution/inputs.py", "common.contracts.test_frozen_inputs"),
                  ("common/contracts/expected_values.py", "common.contracts.test_expected_values"),

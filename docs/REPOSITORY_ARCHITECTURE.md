@@ -106,6 +106,7 @@
 | 域 | 允许依赖及副作用边界 |
 |---|---|
 | `contracts`／`assembly`／`analysis`／`ion_release` | 科学域与已声明依赖；不反向依赖器件、后端、运行器或宿主探测。 |
+| `gas` | Pure static gas state sampling and declared ideal-gas views over `gas`, `contracts` and neutral `io`; no provider, backend, execution, host discovery or vendor dependency. Scientific analysis may consume gas; contracts do not import gas. |
 | `io` | Explicit file identity, manifest records and read-only publication checks. Windows file handles and platform selection are limited to exact file reading/identity; no process, environment discovery, scheduler, ledger or publication writer. |
 | `results` | Published-product reading over neutral I/O and data contracts; no execution owner, backend, provider or host discovery. Opening data does not confer scientific applicability or qualification. |
 | `components` | 科学域及本链明确交付的器件实现；提供者拥有物理知识，不调用后端、求解器或执行owner。 |
