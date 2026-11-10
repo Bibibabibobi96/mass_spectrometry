@@ -45,6 +45,13 @@ setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请�
 不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
+Shared field-comparison mathematics and conditional TOF planning budgets are owned by
+[`msplatform.analysis.field_comparison`](../src/msplatform/analysis/field_comparison.py)
+and [`msplatform.analysis.tof_error_budget`](../src/msplatform/analysis/tof_error_budget.py).
+Their former `common/analysis` implementations have been removed without aliases;
+repository consumers use the installed owners. The TOF budget reports optional planning
+limits and does not grant scientific qualification or impose a Case C accuracy gate.
+
 The canonical SIMION GEM resolver normally reads installed package resources.
 Downstream planning supplies its explicit frozen source root instead: registered
 templates must exist inside that tree, with canonical containment checked and the

@@ -374,7 +374,7 @@
       "repository_integration_group": "fast",
       "matches": [
         {
-          "exact": "common/analysis/tof_error_budget.py",
+          "exact": "src/msplatform/analysis/tof_error_budget.py",
           "reason": "tof_error_budget_changed"
         },
         {
@@ -1886,6 +1886,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/analysis/field_comparison.py",
+          "reason": "installed_field_comparison_dependency_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -2605,7 +2609,7 @@
           "reason": "longitudinal_fit_dependency_changed"
         },
         {
-          "exact": "common/analysis/field_comparison.py",
+          "exact": "src/msplatform/analysis/field_comparison.py",
           "reason": "field_comparison_dependency_changed"
         },
         {

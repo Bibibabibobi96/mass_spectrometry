@@ -13,7 +13,7 @@ import pandas as pd
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_field_profiles import region_metrics
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_longitudinal_closure import analyze_axis_profiles
-from common.analysis.field_comparison import (
+from msplatform.analysis.field_comparison import (
     merge_complete_samples,
     normalized_rms_difference_pct,
 )

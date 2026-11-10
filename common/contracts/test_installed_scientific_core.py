@@ -1919,6 +1919,119 @@ assert mr_neutral_path.read_bytes()==mr_neutral_original
 assert mr_neutral_input.read_bytes()==mr_neutral_before
 # MR_NEUTRAL_INSTALLED_END
 
+# TOF_BUDGET_INSTALLED_BEGIN
+# Optional Gaussian planning only; never an accuracy or Case C gate.
+tof_budget_code = r"""import importlib,importlib.abc,json,math,pathlib,runpy,sys,sysconfig
+purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+authors=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def deny_author(event,args):
+    if event=='open' and args and isinstance(args[0],str):
+        p=pathlib.Path(args[0]).resolve()
+        if any(p.is_relative_to(a) for a in authors):raise AssertionError('author access: '+str(p))
+sys.addaudithook(deny_author)
+class PureOnly(importlib.abc.MetaPathFinder):
+    def find_spec(self,fullname,path=None,target=None):
+        if any(fullname==p or fullname.startswith(p+'.') for p in ('common','projects','integrations','msplatform.backends','msplatform.execution')):
+            raise AssertionError(fullname)
+sys.meta_path.insert(0,PureOnly())
+m=importlib.import_module('msplatform.analysis.tof_error_budget')
+assert pathlib.Path(m.__file__).resolve().is_relative_to(purelib)
+f=json.loads(sys.argv[2]);r=m.calculate_tof_error_budget(**f['api']);e=f['expected']
+assert r['role']=='tof_error_budget' and r['qualification'] is False
+for k in ('reference_fwhm_s','maximum_fwhm_s','remaining_fwhm_margin_s'):
+    assert math.isclose(r[k],e[k],rel_tol=1e-14,abs_tol=0)
+assert math.isclose(r['common_bias']['maximum_absolute_bias_s'],e['maximum_bias_s'],rel_tol=1e-14)
+g=r['gaussian_planning'];assert math.isclose(g['independent_zero_mean_sigma_limit_s']/g['worst_positive_correlation_sigma_limit_s'],3,rel_tol=1e-14)
+if len(sys.argv)>3:
+    sys.argv=['msplatform.analysis.tof_error_budget',*json.loads(sys.argv[3])]
+    runpy.run_module('msplatform.analysis.tof_error_budget',run_name='__main__')
+"""
+tof_budget_fixture=fixture['tof_budget']
+tof_budget_argv=[sys.executable,'-I','-B','-c',tof_budget_code,
+                 json.dumps([str(p) for p in blocked_source_roots]),json.dumps(tof_budget_fixture)]
+for tof_budget_index,tof_budget_cli in enumerate(tof_budget_fixture['cli']):
+    tof_budget_child=subprocess.run([*tof_budget_argv,json.dumps(tof_budget_cli)],cwd=root,
+        capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert tof_budget_child.returncode==0,tof_budget_child.stdout+tof_budget_child.stderr
+    if tof_budget_index<2:
+        assert '**Planning only; not qualification.**' in tof_budget_child.stdout
+        assert 'RMS budgets are not per-particle maximum errors, dt or rtol.' in tof_budget_child.stdout
+        if tof_budget_index==0:assert '| Reference FWHM | 500 | ps |' in tof_budget_child.stdout
+        else:assert '| Flight time T | 71.3527985968 | us |' in tof_budget_child.stdout
+    else:
+        tof_budget_unmet=json.loads(tof_budget_child.stdout)
+        assert tof_budget_unmet['qualification'] is False and tof_budget_unmet['reference_meets_target'] is False
+        assert tof_budget_unmet['gaussian_planning']['independent_zero_mean_sigma_limit_s'] is None
+        assert tof_budget_unmet['remaining_fwhm_margin_s']<0
+import importlib.util as tof_budget_util
+tof_budget_path=pathlib.Path(tof_budget_util.find_spec('msplatform.analysis.tof_error_budget').origin)
+assert tof_budget_path.resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+tof_budget_original=tof_budget_path.read_bytes()
+tof_budget_held=tof_budget_path.with_name(tof_budget_path.name+'.missing-test-held')
+assert not tof_budget_held.exists()
+tof_budget_path.rename(tof_budget_held)
+try:
+    tof_budget_missing=subprocess.run(tof_budget_argv,cwd=root,capture_output=True,text=True,
+                                     encoding='utf-8',timeout=30,check=False)
+    assert tof_budget_missing.returncode!=0 and 'ModuleNotFoundError' in tof_budget_missing.stderr and 'tof_error_budget' in tof_budget_missing.stderr,tof_budget_missing.stderr
+    missing_rejected.append('tof_error_budget')
+finally:
+    tof_budget_held.rename(tof_budget_path)
+assert tof_budget_path.read_bytes()==tof_budget_original
+print('INSTALLED_TOF_PLANNING_BUDGET=PASS')
+# TOF_BUDGET_INSTALLED_END
+
+# FIELD_COMPARISON_INSTALLED_BEGIN
+# Additive installed probe proposal; no shared file is replaced.
+field_child = r"""import importlib.abc,json,os,sys,sysconfig
+from pathlib import Path
+blocked=[Path(value).resolve() for value in json.loads(sys.argv[1])]
+def deny_author(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):raise AssertionError('field read author source')
+sys.addaudithook(deny_author)
+class NoHost(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if any(fullname==name or fullname.startswith(name+'.') for name in ('common','projects','integrations','msplatform.backends','msplatform.execution')):raise AssertionError(fullname)
+sys.meta_path.insert(0,NoHost())
+import numpy as np
+import pandas as pd
+import importlib
+field_comparison=importlib.import_module('msplatform.analysis.field_comparison')
+origin=Path(field_comparison.__file__).resolve()
+assert origin.is_relative_to(Path(sysconfig.get_path('purelib')).resolve())
+a=pd.DataFrame({'id':[2,1],'value':[20.,10.]});b=pd.DataFrame({'id':[1,2],'value':[11.,22.]})
+a_before=a.copy(deep=True);b_before=b.copy(deep=True)
+actual=field_comparison.merge_complete_samples(a,b,keys=['id'],left_label='A',right_label='B',suffixes=('_a','_b'))
+pd.testing.assert_frame_equal(actual,pd.DataFrame({'id':[1,2],'value_a':[10.,20.],'value_b':[11.,22.]}))
+pd.testing.assert_frame_equal(a,a_before);pd.testing.assert_frame_equal(b,b_before)
+r=field_comparison.normalized_rms_difference_pct(np.array([3.,4.]),np.array([6.,8.]))
+assert r['relative_to_reference_rms_pct']==100. and r['symmetric_scale_pct']==50.
+assert r['reference_rms_V_per_m']==float(np.sqrt(12.5))
+assert field_comparison.normalized_rms_difference_pct(np.zeros(3),np.array([0.,1e-12,-1e-12]))['relative_to_reference_rms_pct'] is None
+for invalid in (b.iloc[:1],pd.concat([b,b.iloc[:1]])):
+ try:field_comparison.merge_complete_samples(a,invalid,keys=['id'],left_label='A',right_label='B')
+ except ValueError:pass
+ else:raise AssertionError('incomplete/duplicate coverage accepted')
+print(json.dumps({'status':'PASS','origin':str(origin)}))
+"""
+field_arguments=[sys.executable,'-I','-B','-c',field_child,json.dumps([str(path) for path in blocked_source_roots])]
+field_run=subprocess.run(field_arguments,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert field_run.returncode==0,field_run.stdout+field_run.stderr
+field_report=json.loads(field_run.stdout)
+field_path=pathlib.Path(field_report['origin']);field_bytes=field_path.read_bytes()
+field_held=field_path.with_suffix('.field-comparison-held');assert not field_held.exists()
+field_path.rename(field_held)
+try:
+    field_missing=subprocess.run(field_arguments,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert field_missing.returncode!=0 and 'ModuleNotFoundError' in field_missing.stderr and 'field_comparison' in field_missing.stderr,field_missing.stderr
+finally:
+    field_held.rename(field_path)
+assert field_path.read_bytes()==field_bytes
+missing_rejected.append('field_comparison')
+print('INSTALLED_FIELD_COMPARISON=PASS')# FIELD_COMPARISON_INSTALLED_END
+
 
 # Provider-specific recorded analysis: actual explicit fixture and its unchanged protocol2 report.
 from msplatform.workflows import oa_focus_analysis as focus_analysis
@@ -2695,6 +2808,20 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             source_acceptance=dict(spec=asdict(acceptance_case.spec),
                 point=asdict(acceptance_case.point), golden=acceptance_golden))
 
+    def tof_budget_probe_fixture(self) -> dict:
+        # Original planning tests and the three pre-move documented CLI oracles.
+        return dict(api=dict(flight_time_s=2.0, reference_resolution=10.0,
+                             minimum_resolution=8.0, mass_bias_limit_ppm=210000.0),
+                    expected=dict(reference_fwhm_s=0.1, maximum_fwhm_s=0.125,
+                                  remaining_fwhm_margin_s=0.025, maximum_bias_s=0.2),
+                    cli=[
+                        ["--flight-time-us", "100", "--reference-resolution", "100000",
+                         "--max-resolution-loss-pct", "1", "--mass-bias-ppm", "1", "--format", "markdown"],
+                        ["--flight-time-us", "71.35279859675002", "--reference-resolution", "37054.74023592537",
+                         "--max-resolution-loss-pct", "1", "--mass-bias-ppm", "1", "--format", "markdown"],
+                        ["--flight-time-us", "100", "--reference-resolution", "100000",
+                         "--minimum-resolution", "200000"]])
+
     def mr_backend_geometry_probe_fixture(self) -> dict:
         import copy
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
@@ -3247,6 +3374,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
                                               mr_interface=self.mr_interface_probe_fixture(),
                                               mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),
+                                              tof_budget=self.tof_budget_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')

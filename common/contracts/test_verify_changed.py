@@ -833,7 +833,7 @@ exit 0
         self.assertIn("orthogonal_accelerator_static",
                       self.routed_stages("common/contracts/expected_values.py"))
         self.assertTrue({"single_reflection_oa_tof_mass_analyzer_static", "instrument_assembly_integration"}
-                        <= self.routed_stages("common/analysis/field_comparison.py").keys())
+                        <= self.routed_stages("src/msplatform/analysis/field_comparison.py").keys())
 
     def test_host_scheduler_and_adapters_keep_regression_routes(self) -> None:
         for path, expected in (
@@ -1150,7 +1150,7 @@ $result|ConvertTo-Json -Compress
         paths = [
             "common/comsol/add_comsol_size_feature.m",
             "projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py",
-            "common/analysis/field_comparison.py",
+            "src/msplatform/analysis/field_comparison.py",
             "src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m",
             "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
             "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",

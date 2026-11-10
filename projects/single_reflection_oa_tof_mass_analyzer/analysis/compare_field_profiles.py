@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from common.analysis.field_comparison import (
+from msplatform.analysis.field_comparison import (
     merge_complete_samples,
     normalized_rms_difference_pct,
 )

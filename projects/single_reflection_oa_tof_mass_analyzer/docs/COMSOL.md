@@ -125,7 +125,7 @@ COMSOL 6.4官方API核查（2026-10-24）：
 允许 R 下降 1% 和固定外标偏差 1 ppm 是规划假设，不是本项目批准的功能要求。
 
 ```powershell
-python -m common.analysis.tof_error_budget --flight-time-us 71.35279859675002 --reference-resolution 37054.74023592537 --max-resolution-loss-pct 1 --mass-bias-ppm 1 --format markdown
+python -m msplatform.analysis.tof_error_budget --flight-time-us 71.35279859675002 --reference-resolution 37054.74023592537 --max-resolution-loss-pct 1 --mass-bias-ppm 1 --format markdown
 ```
 
 该样本的直接 FWHM 与高斯代理明显不同，且有多个 KDE 模态，不能用高斯 sigma 预算作验收。

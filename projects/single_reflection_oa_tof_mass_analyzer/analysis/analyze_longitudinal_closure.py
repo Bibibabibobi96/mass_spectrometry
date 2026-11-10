@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from common.analysis.field_comparison import merge_complete_samples
+from msplatform.analysis.field_comparison import merge_complete_samples
 
 
 KEY_COLUMNS = ["region", "sample_index", "x_mm", "y_mm", "z_mm"]

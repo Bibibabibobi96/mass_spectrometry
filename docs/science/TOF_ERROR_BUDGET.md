@@ -39,10 +39,10 @@ abs(common_time_bias) <= T p/(sqrt(1+p)+1)
 该稳定表达式避免两个相近数相减。若质量用当前样本平均 TOF 自归一化，共同偏移可能被隐藏，仍须
 单列绝对时间偏移；质量准确度和分辨率是不同预算。
 
-唯一计算入口是 [`tof_error_budget.py`](../../common/analysis/tof_error_budget.py)，使用标准库，不启动求解器：
+唯一计算入口是 [`tof_error_budget.py`](../../src/msplatform/analysis/tof_error_budget.py)，使用标准库，不启动求解器：
 
 ```powershell
-python -m common.analysis.tof_error_budget --flight-time-us 100 --reference-resolution 100000 --max-resolution-loss-pct 1 --mass-bias-ppm 1 --format markdown
+python -m msplatform.analysis.tof_error_budget --flight-time-us 100 --reference-resolution 100000 --max-resolution-loss-pct 1 --mass-bias-ppm 1 --format markdown
 ```
 
 默认输出供脚本读取的 JSON；`--format markdown` 输出供人查阅的表格，两种输出消费同一份计算结果。

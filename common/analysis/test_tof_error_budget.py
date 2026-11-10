@@ -9,7 +9,7 @@ import subprocess
 import sys
 import unittest
 
-from common.analysis.tof_error_budget import calculate_tof_error_budget
+from msplatform.analysis.tof_error_budget import calculate_tof_error_budget
 
 
 class TofErrorBudgetTest(unittest.TestCase):
@@ -105,7 +105,7 @@ class TofErrorBudgetTest(unittest.TestCase):
 class TofErrorBudgetCliTest(unittest.TestCase):
     def run_cli(self, *arguments):
         return subprocess.run(
-            [sys.executable, "-B", "-m", "common.analysis.tof_error_budget", *arguments],
+            [sys.executable, "-B", "-m", "msplatform.analysis.tof_error_budget", *arguments],
             cwd=Path(__file__).resolve().parents[2],
             capture_output=True, text=True, encoding="utf-8", timeout=10,
             check=False,

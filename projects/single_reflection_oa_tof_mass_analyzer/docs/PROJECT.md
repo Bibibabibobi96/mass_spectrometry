@@ -1067,3 +1067,7 @@ single-operation simplification, not a controlled performance comparison.
 The paired-field adapter and physical-geometry software fixtures discover standalone `lua`, then `lua5.1`, on PATH before the unchanged local SIMION Lua fallback. They retain the same real resources, inert PA API, negative builder checks, GEM projections and original assertions. Historical-snapshot availability remains a separate explicit condition; this selector change grants no native or scientific qualification.
 
 The three affected RF/TOF modules passed in one private public-GATE invocation: 15 parent tests in 3.135 seconds, with one unchanged optional historical-snapshot skip. The typed-argv observer recorded 18 calls to the pinned standalone Lua executable and no commercial SIMION invocation. Original tests, numerical assertions and loaded production resources remain unchanged. This is not native or full-Repository acceptance.
+
+### Shared field-sample comparison owner
+
+The pure complete-sample pairing and scale-aware RMS diagnostics are provided by `msplatform.analysis.field_comparison`. Axis, vector and longitudinal saved-data consumers use that one implementation. Their CSV contracts, original coordinate checks, plots and output status semantics remain unchanged; diagnostics do not grant numerical equivalence or scientific qualification.
