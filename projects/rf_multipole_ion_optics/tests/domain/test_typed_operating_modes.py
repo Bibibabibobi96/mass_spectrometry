@@ -54,10 +54,12 @@ class TypedOperatingModeTests(unittest.TestCase):
         ]
         capability_ids = set(descriptor["structural_variants"][0]["capability_ids"])
         descriptor["capabilities"] = [row for row in descriptor["capabilities"] if row["capability_id"] in capability_ids]
-        family = json.loads((REPO_ROOT / "projects" / PROJECT_ID / "config/contracts/family_contract.json").read_text(encoding="utf-8"))
+        family = json.loads((REPO_ROOT / "src/msplatform/components/rf_multipole/family_contract.json").read_text(encoding="utf-8"))
         family["structural_variants"] = {"hexapole": family["structural_variants"]["hexapole"]}
         (config / "contracts").mkdir()
-        (config / "contracts/family_contract.json").write_text(json.dumps(family), encoding="utf-8")
+        family_path = root / "src/msplatform/components/rf_multipole/family_contract.json"
+        family_path.parent.mkdir(parents=True)
+        family_path.write_text(json.dumps(family), encoding="utf-8")
         shutil.copyfile(
             REPO_ROOT / "projects" / PROJECT_ID / "config/contracts/design_profiles.schema.json",
             config / "contracts/design_profiles.schema.json",

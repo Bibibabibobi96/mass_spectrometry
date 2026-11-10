@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from projects.rf_multipole_ion_optics.core.family_contract import VoltageDrive, rf_waveform_voltage
+from msplatform.components.rf_multipole.family_contract import VoltageDrive, rf_waveform_voltage
 from projects.rf_multipole_ion_optics.core.ideal_transport import (
     electric_field_xy,
     electric_field_xy_array,

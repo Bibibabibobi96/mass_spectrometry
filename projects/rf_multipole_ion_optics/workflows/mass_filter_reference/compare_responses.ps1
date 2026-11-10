@@ -214,7 +214,7 @@ try {
             'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
         ) `
         -RelativePaths @(
-            'projects\rf_multipole_ion_optics\config\contracts\family_contract.json'
+            'src/msplatform/components/rf_multipole/family_contract.json'
         )
     $frozenPythonPackage = New-FrozenPythonPackage `
         -SourceRoot $repoRoot -CodeRoot $runtimeRoot `
@@ -244,7 +244,7 @@ try {
         $module,
         'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.theory',
         'projects.rf_multipole_ion_optics.core',
-        'projects.rf_multipole_ion_optics.core.family_contract',
+        'msplatform.components.rf_multipole.family_contract',
         'msplatform.analysis.mass_response',
         'msplatform.ion_release.paired_mass_scan',
         'msplatform.io.file_identity',

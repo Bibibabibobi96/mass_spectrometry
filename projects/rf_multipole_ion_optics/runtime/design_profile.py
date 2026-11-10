@@ -14,7 +14,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_governed_design_request_file,
     validate_design_request,
 )
-from projects.rf_multipole_ion_optics.core.family_contract import load_family_contract
+from msplatform.components.rf_multipole.family_contract import load_family_contract
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -27,10 +27,11 @@ def _inside(root: Path, relative: str) -> Path:
 
 
 def validate_design_profile_structures(
-    descriptor: dict[str, Any], profiles: list[dict[str, Any]], project_root: Path,
+    descriptor: dict[str, Any], profiles: list[dict[str, Any]],
+    *, family_contract_path: Path,
 ) -> None:
     """Keep pole counts in the project contract, separate from public discovery."""
-    family = load_family_contract(project_root / "config/contracts/family_contract.json")
+    family = load_family_contract(family_contract_path)
     structures = family["structural_variants"]
     declared = {item["variant_id"] for item in descriptor["structural_variants"]}
     if set(structures) != declared:
@@ -84,7 +85,10 @@ def resolve_design_profile(
     validate_schema(profiles, project_root / "config/contracts/design_profiles.schema.json")
     if profiles["project_id"] != project_id or profiles["family_id"] != descriptor["family_id"]:
         raise ContractError("design profile registry identity differs")
-    validate_design_profile_structures(descriptor, profiles["profiles"], project_root)
+    validate_design_profile_structures(
+        descriptor, profiles["profiles"],
+        family_contract_path=repo_root / "src/msplatform/components/rf_multipole/family_contract.json",
+    )
     selected = [item for item in profiles["profiles"] if item["design_profile_id"] == design_profile_id]
     if len(selected) != 1:
         raise ContractError(f"design profile is not unique: {design_profile_id!r}")

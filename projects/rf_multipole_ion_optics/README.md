@@ -60,7 +60,7 @@ remain necessary until those actual operations and fractional-field representati
 
 [project.json](config/project.json)声明项目身份与结构变体；[设计注册表](config/design_profiles.json)、
 [runtime注册表](config/runtime_profiles.json)、[粒子源注册表](config/particle_source_profiles.json)
-分别绑定设计、完整运行与源。极数与物理结构映射归[家族合同](config/contracts/family_contract.json)，
+分别绑定设计、完整运行与源。极数与物理结构映射归[家族合同](../../src/msplatform/components/rf_multipole/family_contract.json)，
 由项目设计解析器校验；公共发现合同只登记变体身份与能力。精确参数和路径只由机器合同维护，完整路由见
 [PROJECT的机器权威表](docs/PROJECT.md#机器权威)。
 

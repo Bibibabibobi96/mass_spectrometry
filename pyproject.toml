@@ -37,6 +37,7 @@ include = ["msplatform*"]
 namespaces = false
 
 [tool.setuptools.package-data]
+"msplatform.components.rf_multipole" = ["family_contract.json"]
 "msplatform.workflows.multipole_ip" = ["*.json"]
 "msplatform.contracts" = ["schemas/*.schema.json", "particle_count_policy.json"]
 "msplatform.examples" = ["*.json"]

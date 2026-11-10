@@ -26,6 +26,7 @@ from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_run
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ID = "rf_multipole_ion_optics"
 PROJECT_ROOT = REPO_ROOT / "projects" / PROJECT_ID
+FAMILY_CONTRACT = REPO_ROOT / "src/msplatform/components/rf_multipole/family_contract.json"
 
 
 def load(path: Path) -> dict:
@@ -77,6 +78,9 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
                 target = root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / relative, target)
+            family_target = root / FAMILY_CONTRACT.relative_to(REPO_ROOT)
+            family_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(FAMILY_CONTRACT, family_target)
             root.joinpath("common/paths").mkdir()
             shutil.copyfile(
                 REPO_ROOT / "common/paths/repository_root.py",
@@ -111,13 +115,13 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
             {v["variant_id"] for v in self.descriptor["structural_variants"]},
             {"quadrupole", "hexapole", "octupole"},
         )
-        validate_design_profile_structures(self.descriptor, self.profiles, PROJECT_ROOT)
+        validate_design_profile_structures(self.descriptor, self.profiles, family_contract_path=FAMILY_CONTRACT)
 
     def test_wrong_pole_count_and_undeclared_structure_fail_closed(self) -> None:
         changed = copy.deepcopy(self.profiles)
         changed[0]["identity"]["electrode_count"] = 8
         with self.assertRaisesRegex(ContractError, "structural identity"):
-            validate_design_profile_structures(self.descriptor, changed, PROJECT_ROOT)
+            validate_design_profile_structures(self.descriptor, changed, family_contract_path=FAMILY_CONTRACT)
         changed[0]["structural_variant_id"] = "undeclared"
         with self.assertRaisesRegex(ContractError, "declared structural variant"):
             validate_structural_variants(self.descriptor, changed, PROJECT_ROOT)

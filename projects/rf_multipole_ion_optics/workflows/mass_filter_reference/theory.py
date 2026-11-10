@@ -19,7 +19,7 @@ from scipy.constants import atomic_mass, elementary_charge
 from scipy.optimize import brentq
 from scipy.special import mathieu_a, mathieu_b
 
-from projects.rf_multipole_ion_optics.core.family_contract import from_quadrupole_contract
+from msplatform.components.rf_multipole.family_contract import from_quadrupole_contract
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

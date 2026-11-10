@@ -398,7 +398,7 @@ print(json.dumps({key: path.relative_to(root).as_posix() for key, path in profil
     if ($LASTEXITCODE -ne 0) {throw 'Frozen RF publication resource selection failed.'}
     $selection = $selectionText | ConvertFrom-Json
     $resources = @($selection.PSObject.Properties | ForEach-Object {[string]$_.Value}) + @(
-        'projects/rf_multipole_ion_optics/config/contracts/family_contract.json'
+        'src/msplatform/components/rf_multipole/family_contract.json'
     )
     # The scientific-core package selection already owns its schema resources.
     $resourcePackage = New-FrozenPythonPackage -SourceRoot $SourceRoot `

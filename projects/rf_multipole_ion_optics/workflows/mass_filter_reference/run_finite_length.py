@@ -267,7 +267,7 @@ def _prepare_analysis_request(inputs: Path, results: Path) -> tuple[Path, dict[s
         "common/contracts", "common/analysis",
         prefix + "core", prefix + "workflows/mass_filter_reference",
     ]
-    relative_paths = [prefix + "config/contracts/family_contract.json"]
+    relative_paths = ["src/msplatform/components/rf_multipole/family_contract.json"]
     request = {
         "schema_version": 1, "role": "rf_mass_filter_l1_frozen_analysis_request",
         "source_root": str(REPOSITORY_ROOT), "code_root": str(inputs / "analysis_code"),

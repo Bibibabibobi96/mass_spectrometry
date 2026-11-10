@@ -3,11 +3,13 @@ from __future__ import annotations
 import copy
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.family_contract import (
+from msplatform.components.rf_multipole.family_contract import (
     VoltageDrive,
     electrode_group_voltages,
     from_high_order_baseline,
@@ -218,3 +220,42 @@ class MultipoleMassResponseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstalledFamilyResourceBoundaryTests(unittest.TestCase):
+    def test_cold_selected_family_resource_and_historical_path_are_fail_closed(self):
+        from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+        relative="src/msplatform/components/rf_multipole/family_contract.json"
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);snapshot=root/'code'
+            for name in [*enumerate_python_sources(REPO_ROOT,package_roots=['src/msplatform'],provider_root='src/msplatform'),relative]:
+                target=snapshot/name;target.parent.mkdir(parents=True,exist_ok=True)
+                freeze_file(REPO_ROOT/name,target)
+            historical=root/'historical.json'
+            historical.write_bytes((snapshot/relative).read_bytes())
+            resolved = resolve_design_profile(REPO_ROOT, 'rf_multipole_ion_optics',
+                'hexapole_no_acceleration_full_length')['resolved_design']
+            resolved_path=root/'resolved.json'
+            resolved_path.write_text(json.dumps(resolved), encoding='utf-8')
+            code="""import sys,pathlib,json
+sys.path.insert(0,sys.argv[1])
+from msplatform.components.rf_multipole import family_contract as f
+assert pathlib.Path(f.__file__).is_relative_to(pathlib.Path(sys.argv[1]))
+assert f.load_family_contract()==f.load_family_contract(pathlib.Path(sys.argv[2]))
+assert f.load_family_contract()['supported_radial_orders']==[2,3,4]
+projection=f.l1_l2_transport_contract_from_resolved_design(json.loads(pathlib.Path(sys.argv[3]).read_text()))
+assert projection['multipole']['radial_order_n']==3
+assert not any(k.split('.')[0] in ('common','projects','integrations','numpy','scipy') for k in sys.modules)
+"""
+            command=[sys.executable,'-I','-S','-B','-c',code,str(snapshot/'src'),str(historical),str(resolved_path)]
+            result=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+            historical.unlink()
+            result=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=30)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('FileNotFoundError',result.stderr)
+            historical.write_bytes((snapshot/relative).read_bytes())
+            (snapshot/relative).unlink()
+            result=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=30)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('FileNotFoundError',result.stderr)

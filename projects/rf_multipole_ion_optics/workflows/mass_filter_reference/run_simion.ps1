@@ -138,7 +138,7 @@ try {
         ) `
         -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
-            'projects\rf_multipole_ion_optics\config\contracts\family_contract.json',
+            'src/msplatform/components/rf_multipole/family_contract.json',
             'src\msplatform\contracts\particle_count_policy.json'
         )
     $frozenAnalysisPackage = New-FrozenPythonPackage `

@@ -1497,12 +1497,12 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "rf_multipole_generated_publications", "rf_multipole_domain_tests",
         }
         for path in (
-            "projects/rf_multipole_ion_optics/core/family_contract.py",
+            "src/msplatform/components/rf_multipole/family_contract.py",
             "projects/rf_multipole_ion_optics/runtime/design_profile.py",
             "projects/rf_multipole_ion_optics/analysis/campaign_analysis.py",
             "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m",
             "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
-            "projects/rf_multipole_ion_optics/config/contracts/family_contract.json",
+            "src/msplatform/components/rf_multipole/family_contract.json",
             "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1.json",
         ):
             with self.subTest(path=path):

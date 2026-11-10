@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-FAMILY_CONTRACT_PATH = Path(__file__).resolve().parents[1] / "config/contracts/family_contract.json"
+FAMILY_CONTRACT_PATH = Path(__file__).with_name("family_contract.json")
 
 
 @dataclass(frozen=True)
@@ -194,7 +194,7 @@ def l1_l2_transport_contract_from_resolved_design(
     current profile compiler.  It is deliberately not a design authority.
     """
     operating = from_high_order_resolved_design(resolved)
-    from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain
+    from msplatform.components.rf_multipole.interface_geometry import transport_numerical_domain
     domain = transport_numerical_domain(resolved)
     energy = resolved["particle_source"]["energy_model"]
     if energy.get("kind") != "monoenergetic":

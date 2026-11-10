@@ -3306,7 +3306,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "exact": "projects/rf_multipole_ion_optics/core/family_contract.py",
+          "exact": "src/msplatform/components/rf_multipole/family_contract.py",
           "reason": "shared_rf_voltage_dependency_changed"
         },
         {

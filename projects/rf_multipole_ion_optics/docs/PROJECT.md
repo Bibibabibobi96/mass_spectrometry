@@ -336,7 +336,7 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 | 职责 | 入口 |
 |---|---|
 | 身份、结构变体与发现能力 | [project.json](../config/project.json) |
-| 变体极数、电极数与物理设计校验 | [家族合同](../config/contracts/family_contract.json)、[项目设计Schema](../config/contracts/design_profiles.schema.json)、[设计解析器](../runtime/design_profile.py) |
+| 变体极数、电极数与物理设计校验 | [家族合同](../../../src/msplatform/components/rf_multipole/family_contract.json)、[项目设计Schema](../config/contracts/design_profiles.schema.json)、[设计解析器](../runtime/design_profile.py) |
 | 具名设计与typed电气模式 | [design_profiles.json](../config/design_profiles.json)、[operating_modes.json](../config/operating_modes.json) |
 | 完整runtime与粒子源绑定 | [runtime_profiles.json](../config/runtime_profiles.json)、[particle_source_profiles.json](../config/particle_source_profiles.json) |
 | 三变体传输数值注册表 | [COMSOL](../config/comsol_solver_numerics.json)、[SIMION](../config/simion_solver_numerics.json) |
@@ -1156,3 +1156,14 @@ and their CLI. The finite-3D runner calls the installed owner directly; the old
 project implementation is retired. Original summary-particle denominators and
 canonical handoff-only counts, controls and UNQUALIFIED limits are unchanged.
 This is offline analysis, not new native transport or field qualification.
+
+## Installed RF family normalization
+
+`msplatform.components.rf_multipole.family_contract` owns the original typed
+normalization and sole version6 structural/voltage convention JSON. Research
+baselines and modes remain explicit project inputs. Current frozen publications
+select the canonical JSON explicitly; explicit historical resource paths remain
+readable without current-package supplementation. No solver or qualification
+claim follows this ownership migration. The existing internal L1/L2 projection's
+fixed validation source/numerical/acceptance policy is unchanged; general analytic
+research-request freedom and remaining ideal/round-rod workflow migration stay OPEN.

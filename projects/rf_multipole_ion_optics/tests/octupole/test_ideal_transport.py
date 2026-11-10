@@ -19,7 +19,7 @@ from projects.rf_multipole_ion_optics.core.compile_design_request import (
     compile_design_request,
 )
 from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.core.family_contract import l1_l2_transport_contract_from_resolved_design
+from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
