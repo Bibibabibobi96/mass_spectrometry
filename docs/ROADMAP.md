@@ -102,7 +102,7 @@ P4 retains the remaining approved designs and named COMSOL capabilities. P5 test
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
 
-V8.2 is the active P4 scope. Formal reusable implementations and workflows belong to
+V8.4 is the active P4 scope, continuing the same goal. Formal reusable implementations and workflows belong to
 `src/msplatform`; research inputs, history, tests and development tools remain outside that
 production tree. Existing completed slices are retained. Independent RF raw geometry/model,
 independent two-/three-zone OA geometry and Wehnelt build-only operations have source-bound
@@ -114,7 +114,7 @@ capacity policy and selected failed-output preservation use the existing owner a
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.
-The latest diagnostic full Repository baseline, `778e7015`, ended with 38 PASS, 12 FAIL
+The earlier diagnostic full Repository baseline, `778e7015`, ended with 38 PASS, 12 FAIL
 and 12 NOT_APPLICABLE stages: 7,006 parents (6,838 success, 21 skip, 56 failure, 91 error),
 plus one loader error; 7,996 subtests (7,894 success, 59 failure, 43 error). Its summary
 elapsed time was 3,243.832287 seconds, not a separately retained external command wall.
@@ -126,6 +126,19 @@ with scoped software validation. Their retired root bodies are absent. Runtime c
 an empty-package freeze declaration and a stale DAG node; those were corrected without relaxing
 source enumeration, and the failed run and successful targeted successor remain separate evidence.
 Final ordinary installation of the composed source, full regression and performance targets stay OPEN.
+
+The latest retained full Repository run is `4576fa69`: 42 PASS, 8 FAIL and
+12 NOT_APPLICABLE stages in 3,789.140 seconds. Subsequent targeted repairs preserve
+that failed result; no complete successor Repository acceptance is claimed.
+The original combined installed-core test passed on `d7ded7a0` in 224.904 seconds:
+all 446 package payloads match the frozen source, direct wheel, sdist and rebuilt
+wheel, with both outside-checkout consumer arms successful. This is installation
+evidence for that commit, not native or whole-Repository acceptance. OA analysis,
+neutral gas sampling/compilation, IP/cooled gas binding and pure cooled voltage
+design now have canonical installed owners; their exact limits remain in project
+and integration status pages. Frontend field-producer migration, dual-cone gas/SDS
+ownership, remaining root workflows and final native/performance closure remain
+OPEN in this same goal. No stage is transferred to P5 to hide unfinished work.
 
 The installed RF metric assembler and IP scientific input compiler now replace their root
 implementations. IP source compilation needs no vendor, seed or field; explicit unsolved
