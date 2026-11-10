@@ -5,6 +5,7 @@ import json
 import itertools
 import math
 from pathlib import Path
+from msplatform.backends.simion.resources import native_resource_path
 import stat
 import shutil
 import subprocess
@@ -243,7 +244,7 @@ class SharedFieldIdentityTests(unittest.TestCase):
         ctx=shared._context(run,field_provider=fields)
         ctx.update(conditioner=shared._load(run/"inputs/conditioner_contract.json"),cooled_drive=shared._load(run/"inputs/cooled_drive.json"),
             experiment=shared._load(run/"inputs/cooled_experiment.json"),voltage_calibration=dict(inner_correction_v=0.,release_hp_common_correction_v=0.),
-            hs1_source="-- pure test only; not native HS1\n",cooled_module_source=(REPO/"integrations/workflows/cooled_frontend/cooled_frontend.lua").read_text())
+            hs1_source="-- pure test only; not native HS1\n",cooled_module_source=native_resource_path("cooled_frontend.lua").read_text())
         row={k:float(v) for k,v in ctx["rows"][0].items()};row.update(particle_id=1,charge_state=1,instrument_time_us=100.,position_y_mm=28.)
         data=dict(source_rows=[row],voltage_calibration=ctx["voltage_calibration"],field_stage_receipt_record=fields(run)["receipt"])
         write(run/"inputs/cooled_reference_source.json",data)

@@ -22,6 +22,9 @@ from msplatform.backends.simion.tracking_program import (
 )
 from msplatform.workflows.local_frontend import runtime as shared
 from msplatform.backends.simion.field_identity import laplace_member_identity
+from msplatform.backends.simion.resources import native_resource_path
+from msplatform.backends.simion import gas_runtime
+from msplatform.components.dual_pressure_rectilinear_ion_processor import gas_regions
 
 
 FIELD_ROLE = "rf_oatof_cooled_frontend_field_stage"
@@ -759,9 +762,12 @@ def context(run: Path, *, reference_phase: dict | None = None, shared_context: d
     if _verified_small_record(identity["adapted"],workspace) != hs1_path.resolve(strict=True):
         raise ValueError("frozen official HS1 adapter identity differs")
     result["hs1_source"]=hs1_path.read_text(encoding="utf-8")
-    module=Path(__file__).resolve().with_name("cooled_frontend.lua")
+    module=native_resource_path("cooled_frontend.lua")
     result["cooled_module_source"]=module.read_text(encoding="utf-8")
     result["code_records"]["cooled_module"]=file_record(module)
+    result["code_records"]["hs1_gas_binding"]=file_record(native_resource_path("collision_hs1_gas.lua"))
+    result["code_records"]["gas_runtime_compiler"]=file_record(Path(gas_runtime.__file__))
+    result["code_records"]["gas_region_provider"]=file_record(Path(gas_regions.__file__))
     result["code_records"]["hs1"]=dict(path=str(hs1_path),exists=True,
         bytes=identity["adapted"]["bytes"],sha256=identity["adapted"]["sha256"])
     if decision_record is not None:

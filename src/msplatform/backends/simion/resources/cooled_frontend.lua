@@ -10,15 +10,11 @@ function M.install(c,callbacks)
   for key,value in pairs(original) do segment[key]=value end
   local fields,active,done={},nil,{}
   local function call(name) if original[name] then original[name]() end end
+  local field=assert(loadfile(c.gas_path))()
+  local binding=assert(loadfile(c.gas_binding_path))()
+  local sample=binding.bind(hs,field,function() return ion_px_mm,ion_py_mm,ion_pz_mm end,c.query_frame_id)
   local function pressure()
-    local p={ion_px_mm-c.pose.translation_mm[1],ion_py_mm-c.pose.translation_mm[2],ion_pz_mm-c.pose.translation_mm[3]}
-    local local_p={0,0,0}
-    for i=1,3 do for j=1,3 do local_p[i]=local_p[i]+c.pose.rotation[j][i]*p[j] end end
-    local d=c.gas.domain_native_mm
-    if local_p[1]>=d.x_min and local_p[1]<d.x_max and math.abs(local_p[2])<d.transverse_halfwidth and math.abs(local_p[3])<d.transverse_halfwidth then
-      return c.gas.parameters.hp_pressure_pa*c.pressure_scale
-    end
-    return 0
+    return sample().pressure_pa
   end
   local function reset_hs()
     hs.reset_run_state()

@@ -338,13 +338,6 @@
           ]
         },
         {
-          "id": "instrument_assembly_workflows_cooled_frontend_cooled_frontend_lua",
-          "source_repo_path": "integrations/workflows/cooled_frontend/cooled_frontend.lua",
-          "consumers": [
-            "cooled_frontend"
-          ]
-        },
-        {
           "id": "instrument_assembly_workflows_cooled_frontend_execute_ps1",
           "source_repo_path": "integrations/workflows/cooled_frontend/execute.ps1",
           "consumers": [
@@ -1225,6 +1218,20 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/build_tracking_iob.lua",
           "consumers": [
             "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "msplatform_simion_cooled_frontend_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/cooled_frontend.lua",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "msplatform_simion_collision_hs1_gas_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
+          "consumers": [
             "cooled_frontend"
           ]
         }

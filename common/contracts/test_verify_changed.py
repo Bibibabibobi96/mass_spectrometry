@@ -348,6 +348,29 @@ ConvertTo-Json -Compress -InputObject $paths
                 else:
                     self.assertEqual(modules, [path])
 
+    def test_cooled_gas_dependencies_keep_contract_and_existing_consumers(self):
+        paths = ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
+                 "src/msplatform/backends/simion/gas_runtime.py",
+                 "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
+                 "src/msplatform/backends/simion/resources/cooled_frontend.lua")
+        for index, path in enumerate(paths):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                modules = [value for row in request["stages"]
+                           if row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertEqual(modules.count("common/contracts/test_cooled_gas_regions.py"), 1)
+                if index < 3:
+                    self.assertTrue({"common/contracts/test_ip_gas_regions.py",
+                                     "common/contracts/test_ip_preparation.py"} <= set(modules))
+                integration = [value for row in request["stages"]
+                               if row["name"].startswith("instrument_assembly_integration")
+                               for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
+                self.assertTrue({"integrations.tests.test_cooled_frontend",
+                                 "integrations.tests.test_cooled_frontend_reference"} <= set(integration))
+                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
+                                     for row in request["stages"]))
+
     def test_cooled_field_design_selects_its_actual_consumers(self):
         request, _ = self.plan("-ChangedPath",
             "src/msplatform/components/dual_pressure_rectilinear_ion_processor/cooled_field_design.py")

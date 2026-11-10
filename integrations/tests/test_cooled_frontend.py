@@ -7,6 +7,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+from msplatform.backends.simion.resources import native_resource_path
 import shutil
 import stat
 import subprocess
@@ -702,6 +703,20 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             self.assertEqual({item["instance_id"] for item in plan["recipe"]["instances"]}, {"source_a", "oa_b"})
             self.assertTrue((snapshot/"integrations/workflows/cooled_frontend/prepare.py").exists())
             self.assertTrue((snapshot/"src/msplatform/backends/simion/collision_hs1.py").exists())
+            for resource in ("cooled_frontend.lua","collision_hs1_gas.lua"):
+                frozen_resource=snapshot/"src/msplatform/backends/simion/resources"/resource
+                self.assertEqual(frozen_resource.read_bytes(),native_resource_path(resource).read_bytes())
+                hold=frozen_resource.with_suffix(".test-held")
+                frozen_resource.rename(hold)
+                try:
+                    absent=subprocess.run([sys.executable,"-I","-B","-c",
+                        "import sys,json;from pathlib import Path;sys.path[:0]=json.loads(sys.argv[1]);from msplatform.backends.simion import resources;assert Path(resources.__file__).resolve().is_relative_to(Path.cwd().resolve());resources.native_resource_path(sys.argv[2])",
+                        json.dumps(python_import_roots(snapshot)),resource],cwd=snapshot,env=environment,
+                        timeout=30,capture_output=True,text=True,encoding="utf-8",check=False)
+                    self.assertNotEqual(absent.returncode,0)
+                    self.assertIn("installed SIMION native resource is missing: "+resource,absent.stderr)
+                finally:
+                    hold.rename(frozen_resource)
             # Provider packages may also deliver modules unused by this preparation.
             # Exercise new static imports and dynamic seed resources from this same frozen tree.
             smoke_code = ("from pathlib import Path; import sys,json; sys.path[:0]=json.loads(sys.argv[1]); "
@@ -804,6 +819,14 @@ try{
             for name in ("release_global.csv","frontend.gem","cooled_field_plan.json","cooled_drive.json","cooled_probe_points.csv"):
                 self.assertEqual((workspace/"p0/inputs"/name).read_bytes(),(workspace/"p1/inputs"/name).read_bytes())
             self.assertEqual(json.loads((workspace/"p0/inputs/cooled_experiment.json").read_text())["pressure_scale"],0)
+            keys=[]
+            for pressure in (0,1):
+                run=workspace/f"p{pressure}"
+                (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
+                cache_plan=cooled_runtime.field_cache_plan(run,cache_root=workspace/"cache")
+                keys.append([member["cache_key"] for member in cache_plan["domains"][0]["members"]])
+            self.assertEqual(len(keys[0]),7)
+            self.assertEqual(keys[0],keys[1],"one-way gas control must not invalidate seven electric members")
 
     def test_field_receipt_requires_seven_readonly_actual_owner_handles(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -825,7 +848,12 @@ try{
                            experiment=json.loads((inputs/"cooled_experiment.json").read_text()),
                            voltage_calibration=dict(inner_correction_v=0.,release_hp_common_correction_v=0.),
                            hs1_source="-- pure test companion; no native collision claim\n",
-                           cooled_module_source=(Path(__file__).parents[1]/"workflows/cooled_frontend/cooled_frontend.lua").read_text())
+                           cooled_module_source=native_resource_path("cooled_frontend.lua").read_text())
+                from integrations.workflows.cooled_frontend import program as cooled_program
+                missing=run/"not_created"
+                with patch.object(cooled_program,"native_resource_path",side_effect=FileNotFoundError("missing canonical HS1 gas binding")),self.assertRaisesRegex(FileNotFoundError,"canonical HS1"):
+                    build_program(ctx,dict(pulse_time_us=110.,shared_times_us=[0.,110.]),[0.],[1],[(0.,0.,0.)],missing)
+                self.assertFalse(missing.exists(),"required binding must fail before case output")
                 case=shared_runtime._case(run,"extraction","pure_case",ctx["rows"][:1],ctx,
                     dict(pulse_time_us=110.,shared_times_us=[0.,20.,100.,110.,120.]),program_builder=build_program)
                 program=Path(case["program_path"]).read_text()
@@ -912,7 +940,7 @@ LUA=Path(shutil.which("lua") or shutil.which("lua5.1") or r"C:\Program Files\SIM
 @unittest.skipUnless(LUA.is_file(),"plain Lua interpreter unavailable")
 class CooledCallbackTests(unittest.TestCase):
     def test_field_composition_collision_order_and_id_stream_reset(self):
-        source=(REPO/"integrations/workflows/cooled_frontend/cooled_frontend.lua").read_text(encoding="utf-8").replace("adjustable ","")
+        source=native_resource_path("cooled_frontend.lua").read_text(encoding="utf-8").replace("adjustable ","")
         harness=_standalone_dynamic_field_lua([], native_path_source=resource_path('native_run_path.lua').read_text(encoding='utf-8-sig'))+r'''
 local module_path=assert(arg[1])
 local public=assert(loadfile(arg[2]))()
@@ -954,6 +982,8 @@ local cfg={hs1_path='fake',pose={rotation={{1,0,0},{0,1,0},{0,0,1}},translation_
  numerics={hs1_steps_per_mfp=20,collision_seed=123,extraction_sample_interval_us=.01},
  drive={entrance_close_us=10,release_start_us=20},calibration={inner_correction_v=3,release_hp_common_correction_v=4},
  extra_fields={entry_close_delta='a',release_delta='b',inner_auxiliary_unit='c',hp_common_unit='d'}}
+cfg.pressure_scale=tonumber(assert(arg[5]))
+cfg.gas_path=assert(arg[3]);cfg.gas_binding_path=assert(arg[4]);cfg.query_frame_id='test_gas'
 assert(loadfile(module_path))().install(cfg,{clock=function() return t end,voltage_waveforms=shared,particle_id=function() return id end,state_for=function() return state end,
  validate_response=function(response,label) single_flight_assert_matching_response(simion.wb.instances[1],response,label) end})
 segment.initialize_run();segment.initialize();assert(calls[2]=='coreinit')
@@ -973,7 +1003,26 @@ for _,sample in ipairs({{9.875,.125},{10,.25},{10.125,.25},
 end
 -- A distinct injected result proves the consumer uses, rather than just calls, it.
 forced_cap=.0625;t=10;ion_time_step=1;segment.tstep_adjust();assert(ion_time_step==forced_cap);forced_cap=nil
-assert(hs.pressure()==1);ion_px_mm=1;assert(hs.pressure()==0);ion_px_mm=.5
+assert(hs.pressure()==cfg.pressure_scale);ion_px_mm=1;assert(hs.pressure()==0);ion_px_mm=.5
+-- Actual installed module/binding/compiler: forward, reverse, diagonal and thin
+-- point sequences. These are callback point probes, not step integration claims.
+local points={{-.1,0,0},{0,0,0},{.5,0,0},{1,0,0},{1.1,0,0},
+ {1,0,0},{.5,0,0},{0,0,0},{-.1,0,0},{.5,2,0},{.5,1.5,1.5},
+ {-.1,-2.1,0},{.5,0,0},{1.1,2.1,0}}
+for _,when in ipairs({19.875,20,20.125}) do
+ t=when
+ for _,point in ipairs(points) do
+  ion_px_mm,ion_py_mm,ion_pz_mm=unpack(point)
+  local expected=(point[1]>=0 and point[1]<1 and math.abs(point[2])<2 and math.abs(point[3])<2) and cfg.pressure_scale or 0
+  assert(hs.pressure()==expected,'finite bath/release boundary changed')
+  assert(hs.temperature()==300,'temperature callback lost')
+  local x,y,z=hs.velocity();assert(x==0 and y==0 and z==0,'static bath flow changed')
+ end
+end
+ion_px_mm=11
+local supported,coverage=pcall(hs.pressure)
+assert(not supported and tostring(coverage):find('gas field coverage lost: outside_domain',1,true),'unknown carrier exterior became vacuum')
+ion_px_mm=.5;ion_py_mm=0;ion_pz_mm=0
 for _,sample in ipairs({{0,-3},{10,-4},{20,-6}}) do t=sample[1];ion_dvoltsx_gu=0;segment.efield_adjust();assert(ion_dvoltsx_gu==sample[2]) end
 segment.other_actions();assert(state.next_track<=20.01)
 -- An unfinished ID switch is still rejected; it cannot silently reset HS1.
@@ -1023,11 +1072,24 @@ print('COOLED_CALLBACK_HARNESS=PASS')
 '''
         with tempfile.TemporaryDirectory() as temporary:
             directory=Path(temporary)
+            from msplatform.contracts.gas import BoxDomain
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import build_cooled_gas_field_spec
+            from msplatform.gas.field import prepare_gas_field
+            from msplatform.backends.simion.gas_runtime import compile_gas_runtime
+            gas_fixture=dict(native_projection_fragment=dict(frame_id="test_gas"),
+                gas=dict(parameters=dict(mass_amu=28,temperature_k=300,hp_pressure_pa=1),
+                         domain_native_mm=dict(x_min=0,x_max=1,transverse_halfwidth=2)))
+            binding=directory/"binding.lua";binding.write_bytes(native_resource_path("collision_hs1_gas.lua").read_bytes())
             module=directory/"module.lua";module.write_text(source,encoding="utf-8")
             script=directory/"harness.lua";script.write_text(harness,encoding="utf-8")
-            result=subprocess.run([str(LUA),str(script),str(module),str(REPO/"src/msplatform/backends/simion/resources/voltage_waveforms.lua")],cwd=directory,timeout=30,capture_output=True,text=True,encoding="utf-8",check=False)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn("COOLED_CALLBACK_HARNESS=PASS",result.stdout)
+            for scale in (1,0):
+                with self.subTest(pressure_scale=scale):
+                    gas=prepare_gas_field(build_cooled_gas_field_spec(gas_fixture,pressure_scale=scale,
+                        domain=BoxDomain((-10,-10,-10),(10,10,10),(True,)*3,(True,)*3)))
+                    gas_path=directory/f"gas_{scale}.lua";gas_path.write_text(compile_gas_runtime(gas),encoding="utf-8")
+                    result=subprocess.run([str(LUA),str(script),str(module),str(REPO/"src/msplatform/backends/simion/resources/voltage_waveforms.lua"),str(gas_path),str(binding),str(scale)],cwd=directory,timeout=30,capture_output=True,text=True,encoding="utf-8",check=False)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                    self.assertIn("COOLED_CALLBACK_HARNESS=PASS",result.stdout)
 
 
 if __name__ == "__main__":

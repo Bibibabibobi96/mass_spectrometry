@@ -808,6 +808,16 @@
           },
           {
             "matches": [
+              {"exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py", "reason": "cooled_gas_regions_changed"},
+              {"exact": "src/msplatform/backends/simion/gas_runtime.py", "reason": "cooled_gas_compiler_changed"},
+              {"exact": "src/msplatform/backends/simion/resources/collision_hs1_gas.lua", "reason": "cooled_hs1_gas_binding_changed"},
+              {"exact": "src/msplatform/backends/simion/resources/cooled_frontend.lua", "reason": "cooled_gas_program_changed"}
+            ],
+            "modules": ["common/contracts/test_cooled_gas_regions.py"],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {
                 "exact": "src/msplatform/contracts/gas.py",
                 "reason": "pure_gas_dependency_changed"

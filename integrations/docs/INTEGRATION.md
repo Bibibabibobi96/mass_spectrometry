@@ -1031,3 +1031,43 @@ I/O; sealed-probe/sampler migration remains separate. Scientific assumptions and
 scoped46-parent/443-payload ordinary validation are recorded in the
 [IP project status](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#installed-pure-cooled-field-voltage-design).
 No new field solve, Fly or cooling/capture qualification is implied.
+
+
+### Canonical cooled HS1 gas input
+
+The finite cooled bath is defined by the component's
+`gas_regions.build_cooled_gas_field_spec` and materialized once by the SIMION
+`gas_runtime.compile_gas_runtime` compiler. The canonical backend resource
+`cooled_frontend.lua` consumes that generated field through the existing
+`collision_hs1_gas.lua` binding. The root workflow still performs its existing
+preparation, field ownership and execution; this slice does not install or
+retire that orchestration.
+
+The gas query domain is the inverse of the actual carrier PA bounds under the
+existing signed-permutation pose. It includes explicit modeled vacuum outside
+the finite bath; beyond carrier coverage is unavailable, not vacuum. This does
+not add arbitrary rotated cooled CSG geometry. Positions use the canonical
+inverse rigid transform, and HS1 gas velocity uses mm/us after one m/s conversion.
+Pressure controls remain explicit zero/one; release switching does not turn off
+the bath. The sampling policy remains `legacy_callback_sampling_v1`: no new
+boundary step cap, random draw, collision algorithm or callback/reset order.
+Seven electric member keys remain unchanged by pressure control under the
+existing one-way gas-to-ion model.
+
+Scoped software validation passed 46 parents / 104 records in 58.050 s; actual
+old/current module traces matched for scale zero/one, including 42 point queries
+each and reset/seed/termination order. The earlier pre-LF focused ordinary arms passed in 72.706 s. The final LF-only
+successor (two Python files, identical ASTs) passed fresh direct-wheel and
+sdist-rebuilt arms in 92.438 s, each with 445 exact source/wheel/site payload
+joins, author source denied and real resource/module negatives.
+This is the installed component/compiler/canonical module with inert HS1, not
+installation of the whole root cooled workflow. Earlier failed test/harness
+setup epochs remain in the delivery evidence. No native collision, stochastic
+trajectory equality or step-crossing qualification is granted; prior native
+results retain their original versions.
+On the composed successor, the complete affected cooled/reference modules,
+IP gas regressions and architecture checks passed 59 parents and 256 records
+in 48.472 seconds without skips. A separate actual Changed-plan regression
+passed its four dependency cases (one parent, five records, 10.843 seconds),
+selecting the new cooled contract once while retaining the existing integration
+consumers. Full installed-suite, Repository and native closure remain open.
