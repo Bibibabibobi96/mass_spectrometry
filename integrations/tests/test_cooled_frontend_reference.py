@@ -299,8 +299,11 @@ class SharedFieldIdentityTests(unittest.TestCase):
         self.assertEqual(ctx["flight_horizon_us"],release+ctx["numerics"]["maximum_flight_us"])
         for name in ("cooled_frontend.lua","cooled_program.py","cooled_runtime.py"):
             self.assertFalse((run/"inputs/local_program_sources"/name).exists())
-        for name in ("cooled_module","cooled_program.py","cooled_runtime.py"):
-            self.assertTrue(Path(ctx["code_records"][name]["path"]).is_relative_to(REPO))
+        from msplatform.workflows.cooled_frontend import program as selected_program
+        for name,path in (("cooled_module",native_resource_path("cooled_frontend.lua")),
+                          ("cooled_program.py",Path(selected_program.__file__).resolve()),
+                          ("cooled_runtime.py",Path(runtime.__file__).resolve())):
+            self.assertEqual(ctx["code_records"][name],file_record(path))
         before=(run/"inputs/release_global.csv").read_bytes()
         row={key:float(value) for key,value in ctx["rows"][0].items()};row.update(particle_id=1,instrument_time_us=release)
         from msplatform.workflows.cooled_frontend.program import build_program

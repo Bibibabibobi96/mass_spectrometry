@@ -1231,3 +1231,10 @@ failed on an undefined installation-probe variable; the corrected assertion
 resolves the real site-packages path directly, and that failure remains recorded.
 No production package byte changed for the probe correction. These results do
 not close native field qualification, Repository or the performance target.
+
+The held-off reference test now compares each actual selected Lua/program/runtime
+file record rather than requiring package files to live inside the checkout.
+The hosted-install origin failure is reproduced separately; the corrected
+current-main reference module passed all 16 parents (22 records) in 25.243
+seconds. Source/no-copy/release and tamper assertions remain in place. This
+test-only repair does not convert the preceding Changed failure into a pass.
