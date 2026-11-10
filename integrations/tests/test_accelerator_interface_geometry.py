@@ -271,7 +271,8 @@ class AcceleratorGeometryTests(unittest.TestCase):
         command = f"""
 . '{repo / 'integrations/runtime/dependencies.ps1'}'
 $path='{repo / 'integrations/config/runtime_dependencies.json'}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$snapshot=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+ConvertTo-Json -InputObject @($snapshot.import_roots) | Out-File -LiteralPath '{inputs / "import_roots.json"}' -Encoding utf8NoBOM
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=repo,
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
@@ -280,18 +281,22 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' 
 import json, sys
 from pathlib import Path
 from unittest.mock import patch
+roots = list(map(Path, json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))))
+sys.path[:0] = list(map(str, roots))
 from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
-paths = list(map(Path, sys.argv[1:4]))
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface
+assert Path(assembly_interface.__file__).resolve().is_relative_to(Path.cwd() / "src")
+paths = list(map(Path, sys.argv[2:5]))
 values = [json.loads(path.read_text()) for path in paths]
 # Independent fixture supplies minimal MR conductors; only its renderer is stubbed.
 with patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines', return_value=['e(2) { box3d(1,2,3,4,5,6) }']):
-    prepare_ion_processor_assembly(*values, connection=resolve_ip_mr_connection(values[2]["composition_plan"]), input_paths=paths, output_directory=Path(sys.argv[4]))
+    prepare_ion_processor_assembly(*values, connection=resolve_ip_mr_connection(values[2]["composition_plan"]), input_paths=paths, output_directory=Path(sys.argv[5]))
 """
         environment = dict(os.environ)
         environment.pop("PYTHONPATH", None)
         output = fixture.root / "detached"
-        completed = subprocess.run([sys.executable, "-B", "-s", "-c", program, *map(str, paths), str(output)],
+        completed = subprocess.run([sys.executable, "-I", "-B", "-c", program, str(inputs / "import_roots.json"), *map(str, paths), str(output)],
             cwd=inputs / "runtime_snapshot", env=environment, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)

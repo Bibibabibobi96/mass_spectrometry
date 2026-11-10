@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import CENTRAL_GROUND_ELECTRODE_ID
+from .geometry_contract import CENTRAL_GROUND_ELECTRODE_ID
 
 
 def _component_electrodes(resolved: dict[str, Any]) -> list[dict[str, Any]]:

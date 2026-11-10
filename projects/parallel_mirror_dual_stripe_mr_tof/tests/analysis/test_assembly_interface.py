@@ -6,7 +6,7 @@ from pathlib import Path
 
 from msplatform.contracts.machine_contracts import validate_schema
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.assembly_interface import resolve_assembly_interface
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 

@@ -1534,6 +1534,77 @@ for module in (beam_moments,beam_crossings,beam_focus):
 print('INSTALLED_RECORDED_BEAM=PASS')
 
 missing_rejected = []
+# MR_INTERFACE_INSTALLED_BEGIN
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface as mr_interface_owner
+mr_owner_path = pathlib.Path(mr_interface_owner.__file__).resolve()
+assert mr_owner_path.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+mr_cases = fixture['mr_interface']
+assert len(mr_cases) == 16
+mr_fixture_before = pathlib.Path(sys.argv[1]).read_bytes()
+for mr_case in mr_cases:
+    mr_before = copy.deepcopy(mr_case['source'])
+    if 'error' in mr_case:
+        try:
+            mr_interface_owner.resolve_assembly_interface(mr_case['source'])
+        except ValueError as mr_error:
+            assert mr_case['error'] in str(mr_error), (mr_case['case'], str(mr_error))
+        else:
+            raise AssertionError('invalid installed MR interface accepted: ' + mr_case['case'])
+    else:
+        mr_actual = mr_interface_owner.resolve_assembly_interface(mr_case['source'])
+        assert mr_actual == mr_case['expected'], mr_case['case']
+        machine_contracts.validate_schema(mr_actual, 'component_geometry_interface.schema.json')
+    assert mr_case['source'] == mr_before, mr_case['case']
+mr_input_path = root / ('mr-interface-' + sys.argv[2] + '.json')
+mr_input_path.write_text(json.dumps(mr_cases), encoding='utf-8')
+mr_input_before = mr_input_path.read_bytes()
+mr_negative_child = """import importlib.abc,json,os,pathlib,sys,sysconfig
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[2])]
+def refuse_author(event,args):
+    if event=='open' and args and isinstance(args[0],(str,bytes)):
+        path=pathlib.Path(os.fsdecode(args[0])).resolve()
+        if any(path.is_relative_to(root) for root in blocked):
+            raise AssertionError('MR child accessed author source: '+str(path))
+sys.addaudithook(refuse_author)
+class DenyRepository(importlib.abc.MetaPathFinder):
+    def find_spec(self,fullname,path=None,target=None):
+        if fullname.split('.')[0] in {'common','projects','integrations'}:
+            raise AssertionError('MR child imported repository owner: '+fullname)
+sys.meta_path.insert(0,DenyRepository())
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface
+from msplatform.contracts.machine_contracts import validate_schema
+assert pathlib.Path(assembly_interface.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+case=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))[0]
+actual=assembly_interface.resolve_assembly_interface(case['source'])
+assert actual==case['expected']
+validate_schema(actual,'component_geometry_interface.schema.json')
+"""
+mr_schema_path = machine_contracts.SCHEMA_DIR / 'component_geometry_interface.schema.json'
+mr_fresh_arguments = [sys.executable, '-I', '-B', '-c', mr_negative_child,
+    str(mr_input_path), json.dumps([str(path) for path in blocked_source_roots])]
+mr_fresh = subprocess.run(mr_fresh_arguments, cwd=root, capture_output=True,
+    text=True, encoding='utf-8', timeout=30, check=False)
+assert mr_fresh.returncode == 0, mr_fresh.stdout + mr_fresh.stderr
+for mr_label, mr_missing, mr_diagnostic in (
+    ('mr_interface_owner', mr_owner_path, 'assembly_interface'),
+    ('mr_interface_schema', mr_schema_path, 'component_geometry_interface.schema.json'),
+):
+    mr_resource_before = mr_missing.read_bytes()
+    mr_hold = mr_missing.with_name(mr_missing.name + '.mr-interface-held')
+    mr_missing.rename(mr_hold)
+    try:
+        mr_failure = subprocess.run(mr_fresh_arguments, cwd=root, capture_output=True,
+            text=True, encoding='utf-8', timeout=30, check=False)
+        assert mr_failure.returncode != 0 and mr_diagnostic in mr_failure.stderr, mr_failure.stderr
+        missing_rejected.append(mr_label)
+    finally:
+        mr_hold.rename(mr_missing)
+    assert mr_missing.read_bytes() == mr_resource_before
+assert mr_input_path.read_bytes() == mr_input_before
+assert pathlib.Path(sys.argv[1]).read_bytes() == mr_fixture_before
+print('INSTALLED_MR_INTERFACE=PASS cases=16')
+# MR_INTERFACE_INSTALLED_END
+
 
 # Provider-specific recorded analysis: actual explicit fixture and its unchanged protocol2 report.
 from msplatform.workflows import oa_focus_analysis as focus_analysis
@@ -2043,6 +2114,193 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
         return cases
 
+    def mr_interface_probe_fixture(self) -> list[dict]:
+        # Original six-parent physical fixture; expected complete results were
+        # recorded from the retired original publisher at 574ae974 (8849a767...).
+        # This is an explicit test oracle, not a second design/default authority.
+        import copy
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_assembly_interface as fixtures
+        baseline = json.loads(r'''{
+  "schema_version": 1,
+  "role": "component_geometry_interface",
+  "project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "variant_id": "complete_mr_analyzer",
+  "geometry_profile_id": null,
+  "local_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+  "length_unit": "mm",
+  "ports": {
+    "accelerator_entry": {
+      "surface_kind": "aperture_outer_face",
+      "center_mm": [
+        0.0,
+        -55.0,
+        -30.0
+      ],
+      "outward_normal": [
+        0,
+        0,
+        1
+      ],
+      "wall_thickness_mm": null,
+      "cross_section": {
+        "shape": "rectangle",
+        "width_mm": 4.0,
+        "height_mm": 40.0,
+        "width_axis": [
+          1,
+          0,
+          0
+        ],
+        "height_axis": [
+          0,
+          1,
+          0
+        ]
+      }
+    }
+  },
+  "component_electrodes": [
+    {
+      "component_electrode_id": 1,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 2,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 3,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 4,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 5,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 6,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 7,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 8,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 9,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 10,
+      "role": "mirror"
+    },
+    {
+      "component_electrode_id": 11,
+      "role": "stripe"
+    },
+    {
+      "component_electrode_id": 12,
+      "role": "stripe"
+    },
+    {
+      "component_electrode_id": 13,
+      "role": "stripe"
+    },
+    {
+      "component_electrode_id": 14,
+      "role": "stripe"
+    },
+    {
+      "component_electrode_id": 15,
+      "role": "central_ground"
+    },
+    {
+      "component_electrode_id": 16,
+      "role": "prism"
+    },
+    {
+      "component_electrode_id": 17,
+      "role": "prism"
+    },
+    {
+      "component_electrode_id": 18,
+      "role": "prism_ground_shield"
+    },
+    {
+      "component_electrode_id": 20,
+      "role": "prism_ground_shield"
+    },
+    {
+      "component_electrode_id": 25,
+      "role": "detector"
+    }
+  ]
+}''')
+        golden = [copy.deepcopy(baseline)]
+        # Exact original-oracle port deltas; the 20-electrode inventory is shared.
+        rectangular = copy.deepcopy(baseline)
+        rectangular["ports"]["accelerator_entry"]["center_mm"] = [0.0, -55.0, 5.3]
+        rectangular["ports"]["accelerator_entry"]["cross_section"]["width_mm"] = 4
+        rectangular["ports"]["accelerator_entry"]["cross_section"]["height_mm"] = 40
+        golden.append(rectangular)
+        nondefault = copy.deepcopy(rectangular)
+        nondefault["ports"]["accelerator_entry"]["center_mm"] = [2.0, -55.0, 5.3]
+        nondefault["ports"]["accelerator_entry"]["cross_section"]["width_mm"] = 6
+        golden.append(nondefault)
+        cases = []
+        for index, (label, resolved) in enumerate((
+            ("complete", copy.deepcopy(fixtures.complete_geometry())),
+            ("rectangular_slot", fixtures.geometry()),
+            ("nondefault_slot", fixtures.geometry()),
+        )):
+            if label == "nondefault_slot":
+                slot = resolved["prism_ground_shields"][0]["rectangular_slots_mm"][0]
+                slot[0], slot[3] = -1, 5
+            cases.append(dict(case=label, source=resolved, expected=golden[index]))
+        for kind in ("missing", "closure", "duplicate", "noninteger", "ground", "detector"):
+            resolved = copy.deepcopy(fixtures.complete_geometry())
+            if kind == "missing":
+                resolved["stripe_electrodes"] = []
+            elif kind == "closure":
+                resolved["mirror_e_closures"][0]["id"] = 25
+            elif kind == "duplicate":
+                resolved["stripe_electrodes"][0]["id"] = resolved["mirror_electrodes"][0]["id"]
+            elif kind == "noninteger":
+                resolved["stripe_electrodes"][0]["id"] = True
+            elif kind == "ground":
+                resolved["central_ground_electrodes"] = []
+            else:
+                resolved["detector"]["id"] = 15
+            cases.append(dict(case="identity_" + kind, source=resolved, error="MR"))
+        for kind in ("front", "back", "body", "clearance"):
+            resolved = fixtures.geometry()
+            shield = resolved["prism_ground_shields"][0]
+            if kind == "front":
+                shield["rectangular_slots_mm"][0][5] = 5.2
+            elif kind == "back":
+                shield["rectangular_slots_mm"][0][2] = -99
+            elif kind == "body":
+                shield["body_sections"][0]["polygon_yz_mm"][2][1] = 5.2
+            else:
+                shield["prism_clearance_polygon_yz_mm"][0][1] = 5.3
+            cases.append(dict(case="slot_" + kind, source=resolved, error="MR E18"))
+        for kind in ("missing", "duplicate", "frame"):
+            resolved = fixtures.geometry()
+            if kind == "missing":
+                resolved["prism_ground_shields"] = []
+            elif kind == "duplicate":
+                resolved["prism_ground_shields"] *= 2
+            else:
+                resolved["frame_id"] = "ip_frame"
+            cases.append(dict(case="frame_" + kind, source=resolved, error="MR accelerator_exit"))
+        return cases
+
     def oa_focus_analysis_probe_fixture(self) -> dict:
         from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
         from msplatform.workflows.oa_focus_analysis import analyze
@@ -2372,6 +2630,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
+                                              mr_interface=self.mr_interface_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)

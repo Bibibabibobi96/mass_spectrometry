@@ -326,6 +326,10 @@
         {
           "exact": "common/analysis/test_population_moments.py",
           "reason": "population_moments_tests_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/cooling_diagnostics.py",
+          "reason": "velocity_population_diagnostics_changed"
         }
       ],
       "command": {
@@ -1438,22 +1442,6 @@
               "common/contracts/test_simion_rf_tracking.py"
             ],
             "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {
-                "exact": "src/msplatform/analysis/cooling_diagnostics.py",
-                "reason": "velocity_population_diagnostics_changed"
-              },
-              {
-                "exact": "src/msplatform/analysis/population_moments.py",
-                "reason": "velocity_population_moments_changed"
-              }
-            ],
-            "modules": [
-              "common/analysis/test_population_moments.py"
-            ],
-            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"
@@ -2251,6 +2239,18 @@
               "integrations/tests/test_dependencies.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py",
+                "reason": "installed_mr_physical_interface_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_accelerator_interface_geometry.py"
+            ],
+            "dependency_profile": "locked"
           }
         ]
       },
@@ -2390,6 +2390,10 @@
         {
           "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py",
+          "reason": "installed_mr_physical_interface_changed"
         }
       ],
       "command": {
@@ -2557,6 +2561,19 @@
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_downstream_workpoint_iteration_runner.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_workpoint_iteration.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prism_runner_contract_matrix.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py",
+                "reason": "installed_mr_physical_interface_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_assembly_interface.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_simion_candidate_reference.py"
             ],
             "dependency_profile": "locked"
           }

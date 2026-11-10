@@ -760,3 +760,15 @@ The composed successor passed the 23 actual Lua-dependent MR parents together
 with the three RF/TOF modules: 38 parents and 87 successful records in 2.808 seconds,
 without skips. The other MR parents retain the private full-module evidence above;
 neither of the native opt-in checks was enabled by this run.
+
+### Installed neutral MR assembly interface
+
+The complete resolved MR entry-face/electrode publisher is owned by
+`msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface`.
+Accelerator-interface composition and the retained native-system geometry adapter call
+that same pure implementation. It consumes explicit resolved physical geometry, retains
+the actual E18 rectangular slot, shared closure/ground identities and existing topology
+guards, and neither reads a project profile nor performs a native operation. The root
+interface body is retired without an alias. Full MR geometry resolution still has its
+separate project/OA-profile and PA-layout closure; this migration does not register an
+empty provider or establish complete installed MR geometry, field or flight support.

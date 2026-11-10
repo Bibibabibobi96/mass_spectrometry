@@ -391,14 +391,46 @@ ConvertTo-Json -Compress -InputObject $paths
 
 
     def test_recorded_cooling_helper_selects_the_actual_analysis_consumers(self):
-        request,_=self.plan("-ChangedPath","src/msplatform/analysis/cooling_diagnostics.py")
-        modules={value for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")
-                 for value in row["command"].get("parameters",{}).get("SelectedTestModules",[])}
-        self.assertEqual(modules, {"integrations.tests.test_dependencies"})
-        common = [value for row in request["stages"] if row["name"].startswith("common_contracts")
-                  for value in row["command"].get("arguments", [])]
-        self.assertIn("common/analysis/test_population_moments.py", common)
-        self.assertFalse(any(row["resource_role"] in {"SIMION","COMSOL"} for row in request["stages"]))
+        from common.contracts.test_changed_test_selection import write_planned_request
+
+        helper = "src/msplatform/analysis/cooling_diagnostics.py"
+        for paths in ((helper,), (helper, "src/msplatform/analysis/population_moments.py"),
+                      (helper, "common/analysis/test_population_moments.py")):
+            with self.subTest(paths=paths):
+                with tempfile.TemporaryDirectory(prefix="recorded_cooling_route_") as directory:
+                    request_path = Path(directory) / "request.json"
+                    write_planned_request(REPO_ROOT, request_path, list(paths))
+                    request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+                units = [row for row in request["stages"] if row["name"] == "population_moments_tests"]
+                self.assertEqual(len(units), 1)
+                self.assertEqual(units[0]["command"]["arguments"],
+                                 ["-m", "common.gate_unittest", "common.analysis.test_population_moments"])
+                common = [value for row in request["stages"] if row["name"].startswith("common_contracts")
+                          for value in row["command"].get("arguments", [])]
+                self.assertNotIn("common/analysis/test_population_moments.py", common)
+                if len(paths) == 1:
+                    integration = {value for row in request["stages"]
+                                   if row["name"].startswith("instrument_assembly_integration")
+                                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
+                    self.assertEqual(integration, {"integrations.tests.test_dependencies"})
+                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
+
+    def test_mr_interface_selects_its_original_tests_and_real_composition_consumer(self):
+        request, _ = self.plan("-ChangedPath",
+            "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py")
+        mr_rows = [row for row in request["stages"]
+                   if row["name"] == "parallel_mirror_dual_stripe_mr_tof_static"]
+        self.assertEqual(len(mr_rows), 1)
+        mr = mr_rows[0]["command"]["parameters"]["ChangedTestModules"]
+        self.assertEqual(set(mr), {
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_assembly_interface",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference"})
+        self.assertEqual(len(mr), len(set(mr)))
+        integration = {value for row in request["stages"]
+                       if row["name"].startswith("instrument_assembly_integration")
+                       for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
+        self.assertEqual(integration, {"integrations.tests.test_accelerator_interface_geometry"})
+        self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
     def test_recorded_frontend_analysis_selects_actual_consumers(self):
         expected = {"integrations.tests." + name for name in (

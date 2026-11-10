@@ -12,7 +12,7 @@ from msplatform.execution.retention import verify_record
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface as ip_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.assembly_interface import resolve_assembly_interface as mr_interface
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface as mr_interface
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
     _bounds, _finite, _gem, _grid_plan, _inside_body, _point, _primitive, _read,
     _shield_contains, _transform_projection, _write, derive_lift_seed,
