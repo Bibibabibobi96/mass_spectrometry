@@ -169,6 +169,87 @@ sys.exit(23)
   $nativeTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $PID
   $managedTicks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString('D19')
   Assert-True ($nativeTicks -eq $managedTicks) 'Native limited process query did not preserve the current creation identity.'
+  # Exercise the real optional diagnostic output without changing the identity
+  # API's null/return contract; an API error alone is not proof of process death.
+  $selfDetail = @{}
+  $selfTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $PID -Diagnostics ([ref]$selfDetail)
+  Assert-True ($selfTicks -eq $managedTicks -and $null -eq $selfDetail.native_error -and
+    [string]::IsNullOrEmpty([string]$selfDetail.native_api)) 'Self identity diagnostics changed a successful native query.'
+  $fixtureExitSignal = Join-Path $testRoot 'owned-adapter-child-exit.signal'
+  $quotedFixtureExitSignal = $fixtureExitSignal.Replace("'", "''")
+  $fixtureChildCode = @"
+`$deadline=[Diagnostics.Stopwatch]::StartNew()
+while (-not (Test-Path -LiteralPath '$quotedFixtureExitSignal') -and `$deadline.Elapsed.TotalSeconds -lt 600) {
+  Start-Sleep -Milliseconds 250
+}
+"@
+  $fixtureChildEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($fixtureChildCode))
+  $fixtureChild = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden -PassThru `
+    -WorkingDirectory $testRoot -ArgumentList @('-NoProfile','-EncodedCommand',$fixtureChildEncoded)
+  $realParentsCollector = ${function:Get-HostResourceProcessParents}
+  try {
+    $childTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $fixtureChild.Id
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$childTicks) -and -not $fixtureChild.HasExited) `
+      'The owned child did not expose a live native creation identity.'
+    # Force only CIM unavailable; the real fallback still captures OS processes,
+    # parent table, native identity, memory and CPU, without any scheduler call.
+    function Get-CimInstance { throw 'TEST_ONLY_CIM_UNAVAILABLE' }
+    try {
+      $actualSnapshot = Get-HostResourceSnapshot -TargetPath $testRoot
+      $actualRows = @($actualSnapshot.processes | Where-Object { $_.pid -eq $fixtureChild.Id })
+      Assert-True ($actualSnapshot.complete -and $actualRows.Count -eq 1 -and
+        [string]$actualRows[0].started -eq [string]$childTicks -and
+        $fixtureChild.Id -notin $actualSnapshot.unknown_process_ids -and
+        $fixtureChild.Id -notin $actualSnapshot.definitely_exited_process_ids) `
+        'Native fallback did not retain the actual live child creation identity.'
+      # Return the genuine parent table but explicitly age its observation time
+      # before this child's real birth. This exercises the existing freshness seam.
+      $script:FixtureBirthTicks = [long]$childTicks
+      function Get-HostResourceProcessParents {
+        $actual = & $realParentsCollector
+        if (-not $actual.complete -or -not $actual.parents.ContainsKey($fixtureChild.Id)) {
+          throw 'Owned child was absent from the real parent table.'
+        }
+        $actual.started_at_utc_ticks = $script:FixtureBirthTicks - 1
+        return $actual
+      }
+      $staleSnapshot = Get-HostResourceSnapshot -TargetPath $testRoot
+      $detail = @($staleSnapshot.unknown_process_details | Where-Object { $_.pid -eq $fixtureChild.Id })
+      Assert-True ($detail.Count -eq 1 -and $fixtureChild.Id -in $staleSnapshot.unknown_process_ids -and
+        $fixtureChild.Id -notin $staleSnapshot.definitely_exited_process_ids -and
+        @($staleSnapshot.processes | Where-Object { $_.pid -eq $fixtureChild.Id }).Count -eq 0 -and
+        $detail[0].branch -eq 'native' -and $detail[0].reason -eq 'birth_newer_than_parent_snapshot' -and
+        [long]$detail[0].birth_ticks -eq [long]$childTicks -and
+        [long]$detail[0].parent_snapshot_ticks -eq ([long]$childTicks - 1) -and
+        $detail[0].exit_probe -eq 'not_checked' -and -not $fixtureChild.HasExited) `
+        'Stale parent time failed to classify the live owned identity as unknown.'
+    } finally {
+      Set-Item -Path function:Get-HostResourceProcessParents -Value $realParentsCollector
+      Remove-Item -Path function:Get-CimInstance -ErrorAction SilentlyContinue
+      Remove-Variable FixtureBirthTicks -Scope Script -ErrorAction SilentlyContinue
+    }
+  } finally {
+    # Stop and reap this fixture child only. No reservation or live ledger is touched.
+    if (-not $fixtureChild.HasExited) {
+      [IO.File]::WriteAllText($fixtureExitSignal, 'exit')
+      if (-not $fixtureChild.WaitForExit(10000)) { $fixtureChild.Kill() }
+    }
+    $fixtureChild.WaitForExit()
+    $absentPid = $fixtureChild.Id
+    $fixtureChild.Dispose()
+  }
+  # First independently check the owned, waited PID is absent; a recycled/live
+  # PID invalidates this fixture and must never be interpreted as an exited identity.
+  $pidAbsent = $false
+  try { $reused = [Diagnostics.Process]::GetProcessById($absentPid); $reused.Dispose() }
+  catch [ArgumentException] { $pidAbsent = $true }
+  Assert-True $pidAbsent 'Waited fixture PID was reused before the absent-PID query.'
+  $absentDetail = @{}
+  $absentTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $absentPid -Diagnostics ([ref]$absentDetail)
+  Assert-True ($null -eq $absentTicks -and $absentDetail.native_api -in @('OpenProcess','GetProcessTimes') -and
+    $absentDetail.native_error -is [int] -and $absentDetail.native_error -ne 0) `
+    'Absent fixture native query did not return an immediate API error diagnostic.'
+  Write-Output 'HOST_RESOURCE_REAL_ADAPTER_DIAGNOSTIC_TEST=PASS SCOPE=CONTROLLED_OWNED_CHILD'
   $ordinary = Get-HostResourceBudget -Role GATE -Stage unlisted-ordinary-check
   Assert-True (-not $ordinary.heavy_stage -and -not $ordinary.unknown_peak -and $ordinary.memory_bytes -eq 2GB) `
     'Ordinary unclassified GATE work must default to its declared light budget.'

@@ -97,29 +97,32 @@ function Get-HostResourceIoPressure {
 
 function Get-HostResourceNativeProcessCreationTicks {
   <# Query creation time with PROCESS_QUERY_LIMITED_INFORMATION when .NET/CIM is denied. #>
-  param([Parameter(Mandatory)][int]$ProcessId)
-  if ($null -eq ('MassSpectrometry.NativeProcessIdentity' -as [type])) {
+  param([Parameter(Mandatory)][int]$ProcessId, $Diagnostics=$null)
+  if ($null -eq ('MassSpectrometry.NativeProcessIdentityDiagnostics' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 namespace MassSpectrometry {
-  public static class NativeProcessIdentity {
+  public static class NativeProcessIdentityDiagnostics {
     const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr handle, out long creation, out long exit, out long kernel, out long user);
-    public static bool TryGetCreationTicks(int processId, out long ticks) {
-      ticks=0; IntPtr handle=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)processId);
-      if (handle==IntPtr.Zero) return false;
-      try { long exit, kernel, user; return GetProcessTimes(handle, out ticks, out exit, out kernel, out user); }
+    public static bool TryGetCreationTicksDetailed(int processId, out long ticks, out int error, out string failedApi) {
+      ticks=0; error=0; failedApi=null; IntPtr handle=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)processId);
+      if (handle==IntPtr.Zero) { error=Marshal.GetLastWin32Error(); failedApi="OpenProcess"; return false; }
+      try { long exit, kernel, user; bool ok=GetProcessTimes(handle, out ticks, out exit, out kernel, out user);
+        if (!ok) { error=Marshal.GetLastWin32Error(); failedApi="GetProcessTimes"; } return ok; }
       finally { CloseHandle(handle); }
     }
   }
 }
 '@
   }
-  [int64]$ticks=0
-  if ([MassSpectrometry.NativeProcessIdentity]::TryGetCreationTicks($ProcessId, [ref]$ticks)) {
+  [int64]$ticks=0; [int]$nativeError=0; [string]$failedApi=$null
+  $ok=[MassSpectrometry.NativeProcessIdentityDiagnostics]::TryGetCreationTicksDetailed($ProcessId, [ref]$ticks, [ref]$nativeError, [ref]$failedApi)
+  if($null-ne$Diagnostics){$Diagnostics.Value.native_error=if($ok){$null}else{$nativeError};$Diagnostics.Value.native_api=$failedApi}
+  if ($ok) {
     return [DateTime]::FromFileTimeUtc($ticks).Ticks.ToString('D19')
   }
   return $null
@@ -208,12 +211,14 @@ function Get-HostResourceSnapshot {
     $cpu = @(& $observeCim Win32_Processor)
     $load = ($cpu | Measure-Object LoadPercentage -Average).Average
     $unknownProcessIds = [Collections.Generic.List[int]]::new()
+    $unknownDetails = [Collections.Generic.List[object]]::new()
     $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
     $processes = @(foreach ($process in & $observeCim Win32_Process) {
       if ($null -eq $process.CreationDate) {
         # CIM can deny CreationDate for a live process. A native limited query
         # still identifies it without treating an unreadable PID as dead.
-        $started = Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.ProcessId)
+        $nativeDetail=@{}
+        $started = Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.ProcessId) -Diagnostics ([ref]$nativeDetail)
         if ($null -ne $started) {
           @{ pid = [int]$process.ProcessId; parent_pid = [int]$process.ParentProcessId; started = $started
              memory_bytes = [int64][Math]::Max([int64]$process.WorkingSetSize, [int64]$process.PrivatePageCount)
@@ -223,14 +228,14 @@ function Get-HostResourceSnapshot {
         # A CIM row can outlive a short-lived process. Only an explicit native
         # no-such-process result authorizes scheduler recovery; all access or
         # metadata failures remain unknown and therefore fail closed.
-        $exited = $false
+        $exited = $false; $exitProbe='probe_failed'
         try {
           $probe = [Diagnostics.Process]::GetProcessById([int]$process.ProcessId)
-          try { $exited = $probe.HasExited } finally { $probe.Dispose() }
-        } catch [ArgumentException] { $exited = $true }
-        catch { $exited = $false }
+          try { $exited = $probe.HasExited; $exitProbe=if($exited){'exited'}else{'live'} } finally { $probe.Dispose() }
+        } catch [ArgumentException] { $exited = $true; $exitProbe='not_found' }
+        catch { $exited = $false; $exitProbe='probe_failed' }
         if ($exited) { $definitelyExitedProcessIds.Add([int]$process.ProcessId) }
-        else { $unknownProcessIds.Add([int]$process.ProcessId) }
+        else { $unknownProcessIds.Add([int]$process.ProcessId); $unknownDetails.Add(@{pid=[int]$process.ProcessId; branch='cim';reason='creation_unavailable';native_error=$nativeDetail['native_error'];native_api=$nativeDetail['native_api'];birth_ticks=$null;parent_snapshot_ticks=$null;exit_probe=$exitProbe}) }
         continue
       }
       @{
@@ -260,6 +265,7 @@ function Get-HostResourceSnapshot {
     $load = [double](@($sample.CounterSamples | Select-Object -First 1)[0].CookedValue)
     if (-not [double]::IsFinite($load) -or $load -lt 0 -or $load -gt 100) { throw 'Native CPU telemetry is invalid.' }
     $unknownProcessIds = [Collections.Generic.List[int]]::new()
+    $unknownDetails = [Collections.Generic.List[object]]::new()
     $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
     # Capture the observed processes first, then enumerate their ancestry once.
     # Never share this table across observations or attach it to a newer PID identity.
@@ -274,15 +280,16 @@ function Get-HostResourceSnapshot {
         $started = $process.StartTime.ToUniversalTime().Ticks.ToString('D19')
         $parent = Get-HostResourceSnapshotParent -Parents $parentSnapshot.parents -ProcessId ([int]$process.Id) `
           -Started $started -SnapshotStartedUtcTicks $parentSnapshot.started_at_utc_ticks
-        if ($null -eq $parent) { $unknownProcessIds.Add([int]$process.Id); continue }
+        if ($null -eq $parent) { $unknownProcessIds.Add([int]$process.Id); $unknownDetails.Add(@{pid=[int]$process.Id;branch='native';reason='birth_newer_than_parent_snapshot';native_error=$null;birth_ticks=$started;parent_snapshot_ticks=$parentSnapshot.started_at_utc_ticks;exit_probe='not_checked'}); continue }
         @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
            memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$isSystemConsoleHost }
       } catch {
-        $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id)
+        $nativeDetail=@{}
+        $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id) -Diagnostics ([ref]$nativeDetail)
         if($null-ne$started){
           $parent = Get-HostResourceSnapshotParent -Parents $parentSnapshot.parents -ProcessId ([int]$process.Id) `
             -Started $started -SnapshotStartedUtcTicks $parentSnapshot.started_at_utc_ticks
-          if ($null -eq $parent) { $unknownProcessIds.Add([int]$process.Id); continue }
+          if ($null -eq $parent) { $unknownProcessIds.Add([int]$process.Id); $unknownDetails.Add(@{pid=[int]$process.Id;branch='native';reason='birth_newer_than_parent_snapshot';native_error=$null;birth_ticks=$started;parent_snapshot_ticks=$parentSnapshot.started_at_utc_ticks;exit_probe='not_checked'}); continue }
           @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
              memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$isSystemConsoleHost }
           continue
@@ -290,7 +297,7 @@ function Get-HostResourceSnapshot {
         # An exited process is neither a live descendant nor an unavailable
         # identity. Preserve fail-closed handling only when both OS paths
         # cannot read a live process creation identity.
-        if($process.HasExited){$definitelyExitedProcessIds.Add([int]$process.Id)}else{$unknownProcessIds.Add([int]$process.Id)}
+        if($process.HasExited){$definitelyExitedProcessIds.Add([int]$process.Id)}else{$unknownProcessIds.Add([int]$process.Id);$unknownDetails.Add(@{pid=[int]$process.Id;branch='native';reason='creation_unavailable';native_error=$nativeDetail['native_error'];native_api=$nativeDetail['native_api'];birth_ticks=$null;parent_snapshot_ticks=$parentSnapshot.started_at_utc_ticks;exit_probe='live'})}
       }
       finally { $process.Dispose() }
     })
@@ -321,7 +328,7 @@ function Get-HostResourceSnapshot {
     }
   }
   return @{
-    complete = $true; processes = $processes; unknown_process_ids = $unknownProcessIds.ToArray(); definitely_exited_process_ids = $definitelyExitedProcessIds.ToArray()
+    complete = $true; processes = $processes; unknown_process_ids = $unknownProcessIds.ToArray(); definitely_exited_process_ids = $definitelyExitedProcessIds.ToArray(); unknown_process_details = $unknownDetails.ToArray()
     logical_processors = [Environment]::ProcessorCount
     cpu_percent = $load
     total_memory_bytes = $totalMemoryBytes
@@ -338,11 +345,13 @@ function Invoke-HostResourceTransaction {
   $backoffMilliseconds = [int]$policy.poll_milliseconds
   $timer = [Diagnostics.Stopwatch]::StartNew()
   $lastReport = -[double]$policy.status_interval_seconds
+  $identityRecollections=0; $identityFailures=[Collections.Generic.List[object]]::new()
   $repo = [string]$script:HostResourceExecutionContext.workspace
   $python = [string]$script:HostResourceExecutionContext.python_executable
   if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Host scheduler requires the explicitly configured Python runtime: $python"
   }
+  try {
   while ($true) {
     Test-HostResourceWaitDeadline -Timer $WaitTimer -TimeoutSeconds $WaitTimeoutSeconds -Reason snapshot_contention
     $snapshotStarted = [DateTime]::UtcNow.Ticks
@@ -395,7 +404,18 @@ function Invoke-HostResourceTransaction {
       $output = $outputTask.GetAwaiter().GetResult()
       $errorText = $errorTask.GetAwaiter().GetResult()
       if ($process.ExitCode -eq 0) { return $output | ConvertFrom-Json -Depth 12 }
-      if ($process.ExitCode -ne 75) { throw "Host scheduler transaction failed: $errorText" }
+      if ($process.ExitCode -eq 76) {
+        $matched=$errorText.Trim() -match '^HOST_RESOURCE_IDENTITY_UNAVAILABLE=(\{.*\})$'
+        if(-not$matched){throw "Malformed identity-unavailable response: $errorText"}
+        $failure=$Matches[1] | ConvertFrom-Json -AsHashtable
+        if(-not($failure.pids -is [Collections.IList])-or-not$failure.pids.Count-or-not($failure.message -is [string])){throw 'Malformed identity-unavailable details'}
+        $details=@(); if($snapshot.ContainsKey('unknown_process_details')){
+          $details=@($snapshot.unknown_process_details | Where-Object {[int]$_.pid -in $failure.pids})
+        }
+        $identityFailures.Add(@{message=$failure.message;pids=@($failure.pids);observations=$details})
+        if($identityRecollections-ge 3){throw ('Reserved process identity unavailable after bounded recollection: '+($identityFailures|ConvertTo-Json -Depth 8 -Compress))}
+        $identityRecollections++
+      } elseif ($process.ExitCode -ne 75) { throw "Host scheduler transaction failed: $errorText" }
     } finally { $process.Dispose() }
     # Another transaction committed a newer observation. This is ordinary
     # queue contention, not a workload failure. Never reuse the rejected
@@ -408,6 +428,10 @@ function Invoke-HostResourceTransaction {
     Start-Sleep -Milliseconds $delay
     $backoffMilliseconds = [int][Math]::Min(
       [int]$policy.snapshot_backoff_max_milliseconds, [int64]$backoffMilliseconds * 2)
+  }
+  } catch {
+    if($identityFailures.Count-gt0){$_.Exception.Data['host_identity_observations']=@($identityFailures)}
+    throw
   }
 }
 

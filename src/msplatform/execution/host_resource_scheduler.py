@@ -23,6 +23,14 @@ from typing import Any
 class StaleSnapshotError(ValueError):
     """The client must recollect telemetry; this transaction changed no state."""
 
+
+class ReservedIdentityUnavailable(StaleSnapshotError):
+    """A reserved identity needs a bounded fresh observation; no state changed."""
+
+    def __init__(self, message: str, pids: set[int]) -> None:
+        super().__init__(message)
+        self.pids = sorted(pids)
+
 def load_policy(path: Path) -> dict[str, Any]:
     """Read an explicitly supplied policy; no checkout or host default is searched."""
     return json.loads(Path(path).read_text("utf-8"))
@@ -292,8 +300,13 @@ def _release_stale_snapshot(state: dict[str, Any], request: dict[str, Any], snap
     if not isinstance(owner, dict) or not _same_process(owner, record["owner"]):
         raise ValueError("stale release requires the reservation owner creation identity")
     unknown = set(snapshot.get("unknown_process_ids", [])) - _definitely_exited_process_ids(snapshot, processes)
-    if unknown.intersection(process["pid"] for process in record["processes"]):
-        raise StaleSnapshotError("reserved process identity unavailable; recollect before release")
+    unavailable = unknown.intersection(process["pid"] for process in record["processes"])
+    if unavailable:
+        raise ReservedIdentityUnavailable(
+            "a reserved process creation identity is unavailable; reservations are unchanged; "
+            f"unavailable_pids={sorted(unavailable)} reservation_token={record['token']} "
+            f"owner_pid={record['owner']['pid']} role={record['role']} stage={record['stage']}",
+            unavailable)
     if not _same_process(owner, processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
         raise ValueError("stale release requires the live reservation owner creation identity")
     observed = copy.deepcopy(record)
@@ -361,11 +374,12 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
             if operation == "release" and record is not requested_record:
                 isolated_release = True
                 continue
-            raise ValueError(
+            raise ReservedIdentityUnavailable(
                 "a reserved process creation identity is unavailable; reservations are unchanged; "
                 f"unavailable_pids={sorted(unavailable_record_pids)} "
                 f"reservation_token={record['token']} owner_pid={record['owner']['pid']} "
-                f"role={record['role']} stage={record['stage']}"
+                f"role={record['role']} stage={record['stage']}",
+                unavailable_record_pids,
             )
     if isolated_release and requested_record is not None:
         owner = request.get("owner")
@@ -472,6 +486,10 @@ def main(*, policy: dict[str, Any] | None = None) -> int:
     payload = json.load(sys.stdin)
     try:
         result = transact(args.state, payload["request"], payload["snapshot"], policy=policy)
+    except ReservedIdentityUnavailable as error:
+        print("HOST_RESOURCE_IDENTITY_UNAVAILABLE=" + json.dumps(
+            {"message": str(error), "pids": error.pids}, separators=(",", ":")), file=sys.stderr)
+        return 76
     except StaleSnapshotError:
         print("HOST_RESOURCE_SNAPSHOT_STALE", file=sys.stderr)
         return 75

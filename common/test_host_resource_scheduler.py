@@ -16,7 +16,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from common.host_resource_scheduler import StaleSnapshotError, _same_creation_time, load_policy, transact, validate_budget
+from common.host_resource_scheduler import ReservedIdentityUnavailable, StaleSnapshotError, _same_creation_time, load_policy, transact, validate_budget
 
 GIB = 1024**3
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,6 +171,74 @@ if(@($status.records).Count-ne0){throw 'transition retained its expired waiting 
             output = self.finish(self.launch(script))
             self.assertIn("TRANSITION_DEADLINE", output)
 
+    def test_reserved_unknown_recollects_then_succeeds_and_bounds_permanent_unknown(self) -> None:
+        # Actual PowerShell transport + scheduler + isolated SQLite; synthetic
+        # identity snapshots keep this a controlled software test.
+        with tempfile.TemporaryDirectory(prefix="host_unknown_recollection_") as directory:
+            state = Path(directory) / "state.sqlite3"
+            script = self.prelude(state) + """
+$script:samples=0; $script:mode='known'
+function Get-HostResourceSnapshot {
+  $script:samples++
+  $s=Get-TestSnapshot
+  if($script:mode-eq'known' -or ($script:mode-eq'transient' -and $script:samples-gt3)){
+    $s.processes+=@{pid=424242;parent_pid=$PID;started='fixture-child';memory_bytes=1}
+  }else{
+    $s.unknown_process_ids=@(424242)
+    if($script:mode-eq'denied'){
+      $s.unknown_process_details=@(@{pid=424242;branch='cim';reason='creation_unavailable';native_error=5;native_api='OpenProcess';birth_ticks=$null;parent_snapshot_ticks=$null;exit_probe='probe_failed'})
+    }else{
+      $s.unknown_process_details=@(@{pid=424242;branch='native';reason='birth_newer_than_parent_snapshot';native_error=$null;birth_ticks='200';parent_snapshot_ticks=100;exit_probe='not_checked'})
+    }
+  }
+  return $s
+}
+$lease=Enter-HostResourceStage -Role GATE -Stage fixture -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoWait -NoEnvironment
+$lease=Register-HostResourceProcess -Lease $lease -ProcessId 424242
+$script:samples=0;$script:mode='transient'
+$status=Invoke-HostResourceTransaction -StatePath $lease.state_path -Request @{operation='status'}
+if($script:samples-ne4){throw "expected three fresh recollections and success: $script:samples"}
+$before=[Convert]::ToBase64String([IO.File]::ReadAllBytes($lease.state_path))
+$script:mode='unknown'
+$budget=Get-HostResourceBudget -Profile measured-small-check
+$requests=@(
+ @{operation='status'}, @{operation='poll';token=$lease.token},
+ @{operation='inherit';token=$lease.token;role='GATE';budget=$budget},
+ @{operation='transition';token=$lease.token;stage='next';budget=$budget;retained_memory_bytes=0},
+ @{operation='register';token=$lease.token;process_id=424242},
+ @{operation='release';token=$lease.token},
+ @{operation='request';token='next-test';role='GATE';stage='next';budget=$budget;run_id=''}
+)
+foreach($request in $requests){
+ $script:samples=0
+ try {
+  $null=Invoke-HostResourceTransaction -StatePath $lease.state_path -Request $request
+  throw 'permanent unknown was accepted'
+ }catch{
+  if($_.Exception.Message-notmatch 'bounded recollection' -or $_.Exception.Message-notmatch 'birth_newer_than_parent_snapshot' -or $_.Exception.Message-notmatch '424242'){throw}
+ }
+ if($script:samples-ne4){throw "unbounded identity recollection: $script:samples"}
+ $after=[Convert]::ToBase64String([IO.File]::ReadAllBytes($lease.state_path))
+ if($before-cne$after){throw 'rejected snapshots changed scheduler database'}
+}
+$script:samples=0;$script:mode='denied'
+try{
+ $null=Invoke-HostResourceTransaction -StatePath $lease.state_path -Request @{operation='status'}
+ throw 'denied identity was accepted'
+}catch{
+ if($_.Exception.Message-notmatch 'creation_unavailable' -or $_.Exception.Message-notmatch 'OpenProcess' -or $_.Exception.Message-notmatch 'native_error\":5'){throw}
+}
+if($script:samples-ne4){throw 'denied identity did not use bounded recollection'}
+$after=[Convert]::ToBase64String([IO.File]::ReadAllBytes($lease.state_path))
+if($before-cne$after){throw 'denied identity changed scheduler database'}
+$script:mode='absent'
+function Get-HostResourceSnapshot { return Get-TestSnapshot }
+Exit-HostResourceStage -Lease $lease
+Write-Output 'RESERVED_IDENTITY_RECOLLECTION=PASS'
+"""
+            output = self.finish(self.launch(script))
+            self.assertIn("RESERVED_IDENTITY_RECOLLECTION=PASS", output)
+
     def test_more_than_three_stale_snapshots_resample_then_succeed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="host_contention_retry_") as directory:
             state = Path(directory) / "state.sqlite3"
@@ -309,6 +377,8 @@ class HostResourceSchedulerTests(unittest.TestCase):
             snapshot["observed_at_ticks"] = time.time_ns()
             try:
                 return transact(self.path, request, snapshot, self.policy)
+            except ReservedIdentityUnavailable:
+                raise
             except StaleSnapshotError:
                 continue
         self.fail("fresh observations did not make progress")
@@ -735,6 +805,18 @@ class HostResourceSchedulerTests(unittest.TestCase):
             after = json.loads(connection.execute("SELECT document FROM state WHERE id=1").fetchone()[0])
         self.assertEqual([r for r in after["records"] if r["token"] != "1"],
                          [r for r in before["records"] if r["token"] != "1"])
+
+    def test_reserved_unknown_has_typed_failure_and_transaction_rolls_back(self) -> None:
+        from msplatform.execution.host_resource_scheduler import ReservedIdentityUnavailable
+        self.acquire(1)
+        before = self.stored_state()
+        self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 1]
+        self.snapshot["unknown_process_ids"] = [1]
+        with self.assertRaises(ReservedIdentityUnavailable) as caught:
+            self.acquire(2)
+        self.assertEqual(caught.exception.pids, [1])
+        self.assertEqual(self.stored_state(), before)
+        self.assertIn("reservation_token=1", str(caught.exception))
 
     def test_missing_creation_identity_is_not_process_death(self) -> None:
         reservation = self.acquire(1)

@@ -1002,3 +1002,5 @@ absence. All five fault identities remain. The production observer policy and
 the original large-tool preflight test are unchanged. This reduces repeated
 process plumbing without treating controlled state-machine facts as native or
 OS evidence; it does not close the full software performance target.
+
+When one reserved process identity is unavailable, the host adapter recollects the complete metadata snapshot at most three times after the initial observation, then fails closed with bounded diagnostic details. Generic stale-snapshot contention retains its existing retry and deadline semantics. This engineering bound governs host metadata observation, not solver retry or scientific qualification; when an operating-system telemetry call has no supplied deadline, the count does not bound its wall time. An independently verified unrelated release retains its existing isolation rules.
