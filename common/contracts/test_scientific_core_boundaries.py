@@ -290,6 +290,9 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
     def test_current_scientific_implementations_have_no_repository_or_host_dependencies(self):
         project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
         dependencies = {Requirement(value).name.replace("-", "_") for value in project["dependencies"]}
+        # Pillow's distribution name differs from its public import namespace.
+        if any(Requirement(value).name.casefold() == "pillow" for value in project["dependencies"]):
+            dependencies.add("PIL")
         paths = sorted(CORE_ROOT.rglob("*.py"))
         self.assertTrue(paths, "scientific implementations must actually exist")
         errors = []

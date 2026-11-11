@@ -96,6 +96,110 @@ def _mass_analysis_setup(runner: Path) -> str:
 
 
 class FrozenParticlePolicyPackageTests(unittest.TestCase):
+    def test_executor_working_directory_and_pillow_distribution_use_real_selected_provider(self) -> None:
+        """Exercise only the shared executor with one tiny frozen test module."""
+        import importlib.metadata
+        import PIL
+        from msplatform.execution.inputs import freeze_python_package
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source"
+            source.mkdir()
+            module = source / "owned_cwd.py"
+            module.write_text(
+                "import json,os,sys\nfrom pathlib import Path\nimport PIL\n"
+                "Path(sys.argv[1]).write_text(json.dumps(dict(cwd=os.getcwd(),pid=os.getpid(),"
+                "module=__file__,pil_origin=PIL.__file__)),encoding='utf-8')\n"
+                "print('OWNED_CWD_MODULE_INVOKED')\n", encoding="utf-8")
+            original_module = module.read_bytes()
+            code_root = root / "frozen"
+            package = freeze_python_package(source, code_root, relative_paths=["owned_cwd.py"])
+            package_path = root / "package.json"
+            package_path.write_text(json.dumps(package), encoding="utf-8")
+            explicit = root / "explicit different cwd"
+            explicit.mkdir()
+            (root / "relative-cwd").mkdir()
+            receipt = root / "receipt.json"
+            script = root / "exercise.ps1"
+            script.write_text(f"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+$package=Get-Content -LiteralPath {_ps(package_path)} -Raw -Encoding UTF8|ConvertFrom-Json
+$startingDirectory=(Get-Location).Path
+$positive=@()
+foreach($label in @('default','explicit')){{
+ $marker=Join-Path {_ps(root)} ($label+'-invoked.json')
+ $stdout=Join-Path {_ps(root)} ($label+'-stdout.log')
+ $options=@{{}}
+ if($label-ceq'explicit'){{$options.WorkingDirectory={_ps(explicit)}}}
+ $execution=Invoke-IsolatedFrozenPythonModule -Python {_ps(sys.executable)} -Package $package `
+  -Module 'owned_cwd' -Arguments @($marker) -DistributionNames @('Pillow') `
+  -RequiredModuleNames @('owned_cwd') -ForbiddenRoots @({_ps(source)},{_ps(REPO_ROOT)}) `
+  -StdoutPath $stdout @options
+ $positive+=@{{label=$label;execution=$execution;marker=(Get-Content -LiteralPath $marker -Raw|ConvertFrom-Json);
+  stdout=[IO.File]::ReadAllText($stdout);restored=((Get-Location).Path-ceq$startingDirectory)}}
+}}
+$negative=@()
+foreach($label in @('relative','missing')){{
+ $marker=Join-Path {_ps(root)} ($label+'-invoked.json')
+ $stdout=Join-Path {_ps(root)} ($label+'-stdout.log')
+ $cwd=if($label-ceq'relative'){{'relative-cwd'}}else{{{_ps(root / 'missing-cwd')}}}
+ $message=$null
+ try{{
+  Invoke-IsolatedFrozenPythonModule -Python {_ps(sys.executable)} -Package $package `
+   -Module 'owned_cwd' -Arguments @($marker) -DistributionNames @('Pillow') `
+   -RequiredModuleNames @('owned_cwd') -WorkingDirectory $cwd -StdoutPath $stdout|Out-Null
+ }}catch{{$message=$_.Exception.Message}}
+ $negative+=@{{label=$label;requested=$cwd;message=$message;
+  marker_exists=[IO.File]::Exists($marker);stdout_exists=[IO.File]::Exists($stdout);
+  restored=((Get-Location).Path-ceq$startingDirectory)}}
+}}
+@{{positive=$positive;negative=$negative}}|ConvertTo-Json -Depth 16|
+ Set-Content -LiteralPath {_ps(receipt)} -Encoding utf8NoBOM
+""", encoding="utf-8")
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            result = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual([row["label"] for row in result["positive"]], ["default", "explicit"])
+            for row in result["positive"]:
+                with self.subTest(cwd=row["label"]):
+                    expected = code_root if row["label"] == "default" else explicit
+                    execution = row["execution"]
+                    self.assertEqual(execution["schema_version"], 1)
+                    self.assertTrue(execution["module_invoked"])
+                    self.assertEqual(execution["module"], "owned_cwd")
+                    self.assertEqual(Path(execution["working_directory"]), expected)
+                    self.assertEqual(Path(row["marker"]["cwd"]), expected)
+                    self.assertGreater(row["marker"]["pid"], 0)
+                    self.assertEqual(Path(row["marker"]["module"]), code_root / "owned_cwd.py")
+                    self.assertTrue(row["restored"])
+                    self.assertIn("OWNED_CWD_MODULE_INVOKED", row["stdout"])
+                    self.assertEqual(execution["module_stdout"], "OWNED_CWD_MODULE_INVOKED")
+                    self.assertEqual(execution["package_roots"], package["package_roots"])
+                    self.assertEqual(execution["frozen_modules"], [dict(name="owned_cwd", origin=str(code_root / "owned_cwd.py"))])
+                    self.assertEqual(len(execution["third_party"]), 1)
+                    pillow = execution["third_party"][0]
+                    self.assertEqual(pillow["name"], "Pillow")
+                    self.assertEqual(pillow["version"], importlib.metadata.version("Pillow"))
+                    self.assertEqual(Path(pillow["module_path"]), Path(PIL.__file__).resolve())
+                    self.assertEqual(Path(row["marker"]["pil_origin"]), Path(pillow["module_path"]))
+                    self.assertTrue(Path(pillow["module_path"]).is_relative_to(Path(pillow["distribution_root"])))
+            self.assertEqual([row["label"] for row in result["negative"]], ["relative", "missing"])
+            for row in result["negative"]:
+                with self.subTest(invalid_cwd=row["label"]):
+                    self.assertIsInstance(row["message"], str)
+                    self.assertTrue(row["message"].startswith("Explicit frozen Python working directory must be absolute and existing:"), row)
+                    self.assertIn(row["requested"], row["message"])
+                    self.assertFalse(row["marker_exists"])
+                    self.assertFalse(row["stdout_exists"])
+                    self.assertTrue(row["restored"])
+            self.assertEqual(module.read_bytes(), original_module)
+            self.assertEqual((code_root / "owned_cwd.py").read_bytes(), original_module)
+
     def test_same_solver_and_mass_filter_select_real_rf_adapter_closure(self):
         with tempfile.TemporaryDirectory() as directory:
             for index, (relative, variable) in enumerate((

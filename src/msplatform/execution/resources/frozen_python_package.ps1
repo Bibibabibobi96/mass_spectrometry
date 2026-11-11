@@ -45,9 +45,18 @@ function Invoke-IsolatedFrozenPythonModule {
         [string[]]$RequiredModuleNames = @(),
         [string[]]$ForbiddenRoots = @(),
         [string]$StdoutPath = '',
+        [string]$WorkingDirectory = '',
         [switch]$ProbeOnly
     )
     Assert-FrozenPythonPackage -Package $Package
+    $selectedWorkingDirectory = [string]$Package.code_root
+    if ($PSBoundParameters.ContainsKey('WorkingDirectory')) {
+        if (-not [IO.Path]::IsPathFullyQualified($WorkingDirectory) -or
+            -not (Test-Path -LiteralPath $WorkingDirectory -PathType Container)) {
+            throw "Explicit frozen Python working directory must be absolute and existing: $WorkingDirectory"
+        }
+        $selectedWorkingDirectory = [IO.Path]::GetFullPath($WorkingDirectory)
+    }
     $packageRoots = @($Package.package_roots | ForEach-Object {
         [IO.Path]::GetFullPath([string]$_)
     })
@@ -79,7 +88,7 @@ function Invoke-IsolatedFrozenPythonModule {
         $env:PYTHONPATH = $packageRoots -join [IO.Path]::PathSeparator
         $env:PYTHONNOUSERSITE = '1'
         $env:PYTHONDONTWRITEBYTECODE = '1'
-        Push-Location -LiteralPath ([string]$Package.code_root)
+        Push-Location -LiteralPath $selectedWorkingDirectory
         try {
             $isolate = @'
 import pathlib, sys
@@ -100,6 +109,7 @@ sys.argv = [sys.argv[0], *sys.argv[offset + 1 + forbidden_count:]]
 import importlib.metadata
 import importlib.util
 import json
+import os
 import pathlib
 import site
 import sys
@@ -113,7 +123,9 @@ user_site = pathlib.Path(site.getusersitepackages()).resolve()
 for name in distribution_names:
     distribution = importlib.metadata.distribution(name)
     root = pathlib.Path(distribution.locate_file("")).resolve()
-    spec = importlib.util.find_spec(name)
+    # The Pillow distribution provides the PIL import package.
+    module_name = "PIL" if name.casefold() == "pillow" else name
+    spec = importlib.util.find_spec(module_name)
     module_path = pathlib.Path(spec.origin).resolve() if spec and spec.origin else None
     if root == user_site or user_site in root.parents:
         raise RuntimeError(f"distribution resolved from user site: {name} -> {root}")
@@ -139,6 +151,7 @@ for name in module_names:
         raise RuntimeError(f"required module escaped frozen roots: {name} -> {origin}")
     modules.append({"name": name, "origin": str(origin)})
 print(json.dumps({
+    "working_directory": os.getcwd(),
     "python_executable": sys.executable,
     "python_prefix": sys.prefix,
     "pythonpath": sys.path,
@@ -241,7 +254,7 @@ finally:
         schema_version = 1
         module = $Module
         module_invoked = -not [bool]$ProbeOnly
-        working_directory = [string]$Package.code_root
+        working_directory = [string]$environment.working_directory
         package_roots = $packageRoots
         python_path = $packageRoots -join [IO.Path]::PathSeparator
         python_no_user_site = $true
