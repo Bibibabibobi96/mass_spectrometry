@@ -243,7 +243,7 @@ def _target_plan(*, target, request=None, available=None):
     from collections.abc import Mapping
     from msplatform.io.file_identity import canonical_json_sha256
     from msplatform.backends.simion.dual_cone_stages import (
-        plan_saved_fly_inputs, require_field_numerics,
+        device_placement, plan_saved_fly_inputs, require_field_numerics,
     )
 
     if target not in _TARGETS:
@@ -284,7 +284,10 @@ def _target_plan(*, target, request=None, available=None):
         if "geometry" in groups:
             _target_arguments(build_geometry, groups["geometry"])
             if ("geometry" in products and "placement" in groups["geometry"]
-                    and groups["geometry"]["placement"] != products["geometry"].metadata.get("placement")):
+                    and device_placement(geometries[0]["resolved"], geometries[0]["numerics"],
+                                         groups["geometry"]["placement"]).to_contract()
+                    != device_placement(geometries[0]["resolved"], geometries[0]["numerics"],
+                                        products["geometry"].metadata.get("placement")).to_contract()):
                 raise ValueError("explicit geometry placement conflicts with selected geometry product")
             geometries.append(plan_geometry_stage(**groups["geometry"])["projection"])
         if not geometries:
@@ -292,9 +295,14 @@ def _target_plan(*, target, request=None, available=None):
         geometry = geometries[0]
         if any(value != geometry for value in geometries[1:]):
             raise ValueError("explicit products/request have conflicting geometry")
+        placements = ([products["geometry"].metadata.get("placement")] if "geometry" in products else [])
+        placements.extend(document.get("placement") for document in documents.values())
+        poses = [device_placement(geometry["resolved"], geometry["numerics"], placement).to_contract()
+                 for placement in placements]
+        if any(value != poses[0] for value in poses[1:]):
+            raise ValueError("explicit products have conflicting world placement or frame")
         model = documents.get("model", documents.get("fields"))
         if model is not None and "model" not in groups and "placement" in groups.get("geometry", {}):
-            from msplatform.backends.simion.dual_cone_stages import device_placement
             requested_pose = device_placement(geometry["resolved"], geometry["numerics"],
                                               groups["geometry"]["placement"]).to_contract()
             selected_pose = device_placement(geometry["resolved"], geometry["numerics"],
@@ -310,6 +318,12 @@ def _target_plan(*, target, request=None, available=None):
                     projected["placement"] = (products["geometry"].metadata.get("placement") if "geometry" in products
                                               else groups.get("geometry", {}).get("placement"))
                 model = plan_model_stage(geometry, **projected)["projection"]
+                if ("placement" in groups.get("geometry", {})
+                        and device_placement(geometry["resolved"], geometry["numerics"],
+                                             groups["geometry"]["placement"]).to_contract()
+                        != device_placement(geometry["resolved"], geometry["numerics"],
+                                            model.get("placement")).to_contract()):
+                    raise ValueError("explicit geometry and model requests have conflicting world placement or frame")
                 from msplatform.backends.simion.model_execution import _clock_reference
                 _clock_reference(dict(drive=dict(clock=model["clock"])), arguments["clock_authority_reference"])
                 authorities.extend(arguments["clock_authority_reference"][key] for key in ("contract", "authority"))

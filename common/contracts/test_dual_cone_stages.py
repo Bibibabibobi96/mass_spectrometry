@@ -24,11 +24,12 @@ def geometry():
     return stages.plan_geometry_stage(resolved=values["resolved"], numerics=values["numerics"])["projection"]
 
 
-def model(*, amplitude=None):
+def model(*, amplitude=None, placement=None):
     electric = copy.deepcopy(request()["science"]["electric_field"])
     if amplitude is not None:
         electric["stage_1"]["rf_amplitude_v_zero_to_peak_per_group"] = amplitude
-    return stages.plan_model_stage(geometry(), electric_field=electric, clock=CLOCK, physics=RF_PHYSICS)["projection"]
+    return stages.plan_model_stage(geometry(), electric_field=electric, clock=CLOCK, physics=RF_PHYSICS,
+                                   placement=placement)["projection"]
 
 
 def record(root, name, text="INERT_NOT_NATIVE"):
@@ -105,9 +106,9 @@ def raw_data(root):
     }
 
 
-def fields_fixture(root, *, unknown=False, missing=None, amplitude=None):
+def fields_fixture(root, *, unknown=False, missing=None, amplitude=None, placement=None):
     root.mkdir(parents=True, exist_ok=True)
-    doc = model(amplitude=amplitude)
+    doc = model(amplitude=amplitude, placement=placement)
     raw = raw_data(root)
     implementation = {name: record(root, name + ".inert") for name in ("simion", "refiner", "auditor")}
     authority = {name: raw[name] for name in ("raw_geometry", "fractional_surface", "surface_witnesses")}
@@ -502,6 +503,93 @@ print('DUAL_CONE_EXISTING_MODEL_CONSUMER=PASS SOURCE=False FIELD=False')
 
 
 class NamedTargetPlanningTests(unittest.TestCase):
+    def test_explicit_saved_products_preserve_world_placement_and_frame(self):
+        """Real product readers over inert files; no solver or owner is invoked."""
+        from unittest.mock import patch
+        from common.contracts.test_dual_cone_placement import pose
+        from common.contracts.test_simion_rf_prepared_model import clock_reference
+        from msplatform.workflows.dual_cone_stages import plan_to, run_to
+
+        values = request()
+        default = stages.device_placement(values["resolved"], values["numerics"]).to_contract()
+        placed = pose(values).to_contract()
+        shifted = copy.deepcopy(placed)
+        shifted["translation_mm"][0] += 1
+        other_frame = copy.deepcopy(placed)
+        other_frame["to_frame_id"] = "different_laboratory_mm"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            products = {}
+            for name, placement in (("legacy", None), ("default", default), ("placed", placed),
+                                    ("shifted", shifted), ("frame", other_frame)):
+                geometry_root = root / name / "geometry"
+                data = raw_data(geometry_root)
+                data["compiled_geometry"] = record(geometry_root, "geometry.json", json.dumps(geometry()))
+                data["native_stage_receipts"] = record(geometry_root, "native.json", receipts(
+                    "build_geometry", "build_geometry_model", "verify_geometry_model"))
+                metadata = dict(sampled_particles=0, field_status="not_solved", source_status="not_requested")
+                if placement is not None:
+                    metadata["placement"] = placement
+                    data["placement"] = record(geometry_root, "placement.json", json.dumps(placement))
+                geometry_reference = publish(geometry_root, "geometry_artifact", data, metadata)
+                model_root = root / name / "model"
+                data = raw_data(model_root)
+                data["compiled_model"] = record(model_root, "model.json", json.dumps(model(placement=placement)))
+                data["native_stage_receipts"] = record(model_root, "native.json", receipts(
+                    "materialize_geometry", "build_model", "verify_model"))
+                data.update(clocks(model_root))
+                for key in ("model_configuration", "model_readback"):
+                    data[key] = record(model_root, key)
+                model_reference = publish(model_root, "prepared_model", data, dict(
+                    sampled_particles=0, field_status="not_solved", source_status="not_requested"))
+                fields, _identity = fields_fixture(root / name / "fields", placement=placement)
+                products[name] = dict(geometry=geometry_reference, model=model_reference, fields=fields)
+            with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+                for name in ("legacy", "default", "placed"):
+                    with self.subTest(matching=name):
+                        plan = plan_to(target="fields", available=products[name])
+                        self.assertEqual(plan["stages"], [])
+                        self.assertEqual(run_to(plan).reference, products[name]["fields"])
+                matching = dict(products["legacy"], geometry=products["default"]["geometry"])
+                self.assertEqual(plan_to(target="fields", available=matching)["stages"], [])
+                for name in ("shifted", "frame", "legacy"):
+                    for left, right in (("geometry", "fields"), ("geometry", "model"), ("model", "fields")):
+                        with self.subTest(conflict=name, stages=(left, right)):
+                            target = "fields" if right == "fields" else "model"
+                            with self.assertRaisesRegex(ValueError, "conflicting world placement or frame"):
+                                plan_to(target=target, available={left: products["placed"][left],
+                                                                 right: products[name][right]})
+                selected = dict(resolved=values["resolved"], numerics=values["numerics"], placement=placed)
+                self.assertEqual(plan_to(target="fields", request={"geometry": selected},
+                                         available={"fields": products["placed"]["fields"]})["stages"], [])
+                with self.assertRaisesRegex(ValueError, "placement.*model request"):
+                    plan_to(target="fields", request={"geometry": selected},
+                            available={"fields": products["shifted"]["fields"]})
+                explicit_default = dict(resolved=values["resolved"], numerics=values["numerics"], placement=default)
+                self.assertEqual(plan_to(target="geometry", request={"geometry": explicit_default},
+                                         available={"geometry": products["legacy"]["geometry"]})["stages"], [])
+                rebind = plan_to(target="fields", available={"fields": products["legacy"]["fields"]}, request={
+                    "geometry": selected,
+                    "model": dict(electric_field=values["science"]["electric_field"], clock=CLOCK,
+                                  physics=RF_PHYSICS, placement=placed, clock_authority_reference=clock_reference()),
+                    "fields": dict(numerics=values["numerics"])})
+                self.assertEqual(rebind["stages"], ["geometry", "model", "fields"])
+                for conflicting in (shifted, other_frame):
+                    with self.subTest(request_conflict=conflicting):
+                        with self.assertRaisesRegex(ValueError, "requests have conflicting world placement or frame"):
+                            plan_to(target="model", request={
+                                "geometry": selected,
+                                "model": dict(electric_field=values["science"]["electric_field"], clock=CLOCK,
+                                              physics=RF_PHYSICS, placement=conflicting,
+                                              clock_authority_reference=clock_reference())})
+                omitted_geometry_placement = dict(resolved=values["resolved"], numerics=values["numerics"])
+                rebind_without_geometry_placement = plan_to(target="model", request={
+                    "geometry": omitted_geometry_placement,
+                    "model": dict(electric_field=values["science"]["electric_field"], clock=CLOCK,
+                                  physics=RF_PHYSICS, placement=placed, clock_authority_reference=clock_reference())})
+                self.assertEqual(rebind_without_geometry_placement["stages"], ["geometry", "model"])
+                owner.assert_not_called()
+
     def test_geometry_target_has_no_context_source_or_model_dependency_and_binds_request(self):
         from unittest.mock import patch
         from msplatform.workflows.dual_cone_stages import plan_to, run_to

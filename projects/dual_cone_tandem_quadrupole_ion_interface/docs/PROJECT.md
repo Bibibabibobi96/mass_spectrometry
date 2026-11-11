@@ -540,6 +540,10 @@ stages. Request groups use those same stage arguments without context or predece
 references. `available` explicitly selects published products; absent prerequisites
 are built only from supplied request groups, while missing, changed or conflicting
 references fail rather than selecting another run or silently recomputing fields.
+Explicit saved geometry, model and field products must also agree on their device-to-world
+placement and named frames, including the established default embedding when placement is
+omitted. Equal local PA geometry does not erase a conflicting saved world pose. An explicit
+new model request still permits the existing deliberate model/basis rebind path.
 
 Geometry/model/fields do not require source, gas or SDS. A trajectory from saved
 fields calls only the existing tracking-model build/reopen and Fly; changed drive
