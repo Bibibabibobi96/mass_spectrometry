@@ -285,6 +285,7 @@ foreach($name in @('Invoke-ProjectPython','Get-PreparedJointSourceReferences')){
  Invoke-Expression $node.Extent.Text
 }
 $script:preparedPackage=$null
+$repoRoot=(Resolve-Path -LiteralPath $Repo).Path
 $script:pythonRoot=$Repo;$python=$Python
 $data=Get-Content $Request -Raw|ConvertFrom-Json -AsHashtable
 function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
