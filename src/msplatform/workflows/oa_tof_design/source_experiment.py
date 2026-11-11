@@ -77,8 +77,8 @@ def validate_experiment(config: dict[str, Any]) -> None:
     _numbers([fraction], "minimum_model_arrival_fraction", positive=True)
     if fraction > 1:
         raise ValueError("minimum_model_arrival_fraction cannot exceed one")
-    if config["analysis_contract"] != "config/analysis_contract.json":
-        raise ValueError("use the project's canonical analysis contract")
+    if not isinstance(config["analysis_contract"], str) or not config["analysis_contract"].strip():
+        raise ValueError("analysis_contract must declare an explicit input path")
     if not isinstance(config["scope"], str) or not config["scope"].strip():
         raise ValueError("scope must describe the experiment boundary")
 

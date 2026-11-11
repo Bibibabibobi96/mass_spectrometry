@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from msplatform.analysis.peak_metrics import AnalysisSettings
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, build_working_point, propagate_ideal_source,

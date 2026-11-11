@@ -17,13 +17,36 @@ from msplatform.components.single_reflection_oa_tof import (
     ideal_acceptance_design, ideal_acceptance_density, ideal_acceptance_linear_design,
 )
 from msplatform.components.single_reflection_oa_tof import ideal_acceptance_experiment
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import acceptance_theory as workflow
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import run_comparison as runner
+from msplatform.workflows.oa_tof_design import acceptance_theory as workflow
+from msplatform.workflows.oa_tof_design import source_comparison as runner
+
+
+from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.ideal_source_workflow import (
+    copy_input_root, make_context, owned_workflow_environment, retained_workspace,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class AcceptanceWorkflowTests(unittest.TestCase):
     def setUp(self):
-        self.config = load_json(runner.PROJECT_ROOT / "config/experiments/ideal_acceptance_theory.json")
+        self.config = load_json(PROJECT_ROOT / "config/experiments/ideal_acceptance_theory.json")
+
+    def _assert_real_scientific_owner(self, result: Path) -> None:
+        self.assertEqual(load_json(result / "run_manifest.json")["status"], "success")
+        completion = load_json(result / "results/execution_completion.json")
+        operations = completion["writer_completion"]["operations"]
+        self.assertEqual([row["operation_id"] for row in operations], ["scientific_analysis"])
+        self.assertEqual(operations[0]["observation"]["returncode"], 0)
+        self.assertGreater(operations[0]["observation"]["process_id"], 0)
+        origins = [json.loads(line.split("OA_TOF_WORKER_ORIGIN=", 1)[1])
+                   for line in (result / "logs/scientific_module.stdout.log").read_text(encoding="utf-8").splitlines()
+                   if line.startswith("OA_TOF_WORKER_ORIGIN=")]
+        self.assertGreaterEqual(len({row["pid"] for row in origins}), 2)
+        selected = (result / "inputs/analysis_code").resolve()
+        self.assertTrue(all(Path(path).resolve().is_relative_to(selected)
+                            for row in origins for path in row["modules"].values()))
 
     def test_declared_domain_and_unknown_fields(self):
         workflow.validate_theory_config(self.config)
@@ -49,12 +72,14 @@ class AcceptanceWorkflowTests(unittest.TestCase):
         self.config["numerics"].update(position_order=8, residual_order=4, population_orders=[[8, 8], [16, 16]])
         self.config["numerics"]["population_resolution_relative_tolerance"] = .9
         self.config["sampling"] = {"particle_count": 64, "replicate_count": 1}
-        with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "experiment.json"
+        with retained_workspace() as root:
+            input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
+            context = make_context(root / "study")
+            config_path = root / "experiment.json"
             config_path.write_text(json.dumps(self.config), encoding="utf-8")
-            with patch.object(workflow, "_publish_manifest") as publish, contextlib.redirect_stdout(io.StringIO()):
+            with owned_workflow_environment(), contextlib.redirect_stdout(io.StringIO()):
                 result = runner.execute(config_path, seed=41, run_id="20260827_210001__analysis__python__theory-test",
-                                        artifact_root=Path(directory) / "artifacts", max_workers=2)
+                                        input_root=input_root, context=context, max_workers=2)
             summary = load_json(result / "summary.json")
             self.assertEqual(summary["status"], "success", summary)
             self.assertGreaterEqual(summary["completed_confirmations"], 1)
@@ -64,10 +89,10 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             self.assertEqual(len(selected["2.8"]), 1)
             self.assertFalse(selected["2.8"][0]["theory"]["particle_peak_optimization_performed"])
             self.assertGreaterEqual(len(list((result / "results").glob("*__seed41.csv"))), 1)
-            receipt = load_json(result / "run_config.json")["execution"]
+            receipt = load_json(result / "run_config.json")["scientific_execution"]
             self.assertEqual(receipt["requested_max_workers"], 2)
             self.assertFalse(receipt["scientific_inputs_changed"])
-            publish.assert_called_once_with(result, "success")
+            self._assert_real_scientific_owner(result)
             selected_sources = {
                 "ideal_acceptance_design": ideal_acceptance_design,
                 "ideal_acceptance_linear_design": ideal_acceptance_linear_design,
@@ -85,19 +110,21 @@ class AcceptanceWorkflowTests(unittest.TestCase):
                                      hashlib.sha256(source_bytes).hexdigest().upper())
 
     def test_fixed_length_and_direct_density_end_to_end(self):
-        config = load_json(runner.PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")
+        config = load_json(PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")
         config["design"].update(field1_v_per_mm=[250/3.25], center_to_grid1_mm=[2.5],
             grid2_voltage_fraction=[.975], reflectron_stage1_energy_fraction=[v/2000 for v in range(1800, 1901, 5)])
         config["full_widths_mm"] = [3.0]
         config["numerics"].update(position_order=8, residual_order=4, population_orders=[[8, 201], [16, 401]])
         config["numerics"]["population_resolution_relative_tolerance"] = .9
         config["sampling"] = {"particle_count": 64, "replicate_count": 1}
-        with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "experiment.json"
+        with retained_workspace() as root:
+            input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
+            context = make_context(root / "study")
+            config_path = root / "experiment.json"
             config_path.write_text(json.dumps(config), encoding="utf-8")
-            with patch.object(workflow, "_publish_manifest"), contextlib.redirect_stdout(io.StringIO()):
+            with owned_workflow_environment(), contextlib.redirect_stdout(io.StringIO()):
                 result = runner.execute(config_path, seed=41, run_id="20260827_210002__analysis__python__theory-test",
-                                        artifact_root=Path(directory) / "artifacts")
+                                        input_root=input_root, context=context)
             summary = load_json(result / "summary.json")
             self.assertEqual(summary["status"], "success", summary)
             self.assertEqual(summary["completed_confirmations"], 1)
@@ -108,6 +135,7 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             self.assertGreater(report["population"][-1]["resolution_mass"], 25000)
             self.assertEqual(len(list((result / "results").glob("*__population*.csv"))), 2)
             self.assertFalse(list((result / "results").glob("*__screen__*__population*.csv")))
+            self._assert_real_scientific_owner(result)
             selection = load_json(result / "results/w3__selection.json")
             screened = selection["rejected_population_records"]
             self.assertTrue(screened)
@@ -130,13 +158,13 @@ class AcceptanceWorkflowTests(unittest.TestCase):
                                      hashlib.sha256(source_bytes).hexdigest().upper())
 
     def test_screen_limit_applies_to_every_width(self):
-        config = load_json(runner.PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")
+        config = load_json(PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")
         config["design"].update(field1_v_per_mm=[250/3.25], center_to_grid1_mm=[2.5],
             grid2_voltage_fraction=[.975], reflectron_stage1_energy_fraction=[v/2000 for v in range(1800, 1901, 5)],
             screened_per_width=1)
         config["full_widths_mm"] = [2.8, 3.0]
         config["numerics"].update(position_order=8, residual_order=4)
-        baseline = load_json(runner.PROJECT_ROOT / config["reference_config"])
+        baseline = load_json(PROJECT_ROOT / config["reference_config"])
         spec = workflow.NumericalSourceSpec(**baseline["source"])
         reference = workflow._working_points(baseline)["three_zone_matched"]
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):

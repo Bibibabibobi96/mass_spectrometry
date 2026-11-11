@@ -32,6 +32,30 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_installed_tof_design_preserves_full_owner_and_host_entry_consumers(self):
+        prefix = "src/msplatform/workflows/oa_tof_design/"
+        owner = "single_reflection_oa_tof_mass_analyzer_static"
+        host = "host_resource_scheduler_tests"
+        for name in ("__init__", "source_comparison", "source_experiment", "numerical_case",
+                     "acceptance_theory", "slope_scan", "figures"):
+            with self.subTest(module=name):
+                stages = self.routed_stages(prefix + name + ".py")
+                self.assertIn(owner, stages)
+                self.assertEqual(host in stages, name == "source_comparison")
+        request, _ = self.plan("-ChangedPath", prefix + "source_comparison.py")
+        actual = [module for row in request["stages"]
+                  if row["name"].startswith(owner)
+                  for module in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
+        tests = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer/tests"
+        expected = {".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
+                    for path in tests.rglob("test_*.py")}
+        self.assertTrue(expected)
+        self.assertCountEqual(actual, expected)
+        self.assertEqual(len(actual), len(set(actual)))
+        selected = [row for row in request["stages"] if row["name"].startswith(host)]
+        self.assertEqual(len(selected), 1)
+        self.assertIn("common.test_host_resource_python", selected[0]["command"]["arguments"])
+
     def test_installed_particle_comparison_selects_both_real_analyzers(self):
         request, _ = self.plan(
             "-ChangedPath", "src/msplatform/analysis/particle_state_comparison.py"

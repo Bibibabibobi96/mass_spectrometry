@@ -109,8 +109,26 @@ mathematics, explicit controls, exception reasons and original scope are retaine
 the four root bodies are retired without aliases. The actual acceptance and slope
 callers record the selected canonical kernel sources through their existing input
 snapshot mechanism. This is audited live execution, not a claim that copied source
-snapshots are executed. Root workflow/controller bodies remain separate P4 work;
-software, ordinary installation and native qualification require their own evidence.
+snapshots are executed. The three reusable ideal-source scientific roles now have
+one installed workflow closure under `msplatform.workflows.oa_tof_design`: residual/
+width comparison, theory-first acceptance and the scalar-reference slope study.
+Their public input bases are explicit; the existing execution owner alone freezes,
+observes, publishes and recovers them. Scientific workers consume selected frozen
+records, never re-resolve original author roots. The six corresponding root bodies
+are retired without aliases. Same-epoch modern resume and the finite original-basic
+reference-only reader are separate contracts; pre-migration modern scientific
+identities are not automatically upgraded. Original snapshots remain unchanged.
+The finite original-basic reader proves its known producer/input witnesses and
+rechecks the original complete CSV with frozen settings and environment. Its older
+input set is not a complete transitive frozen execution closure (including the
+historical constants); no missing historical source is supplied or executed today.
+Four finite provenance associations intentionally map the exact original delegating
+source witnesses to their already-selected canonical implementations, and the
+source-experiment validator's explicit-path revision. Both original and selected
+source SHAs are locked; this is an association-rule migration, not unchanged raw
+identity, a generic source waiver or complete historical execution equivalence.
+Software, ordinary installation and native qualification require their own evidence;
+this solver-free workflow grants no commercial/native or Formal qualification.
 
 质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
 不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。

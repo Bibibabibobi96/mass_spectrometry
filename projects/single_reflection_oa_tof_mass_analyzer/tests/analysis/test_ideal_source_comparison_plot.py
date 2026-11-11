@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 from PIL import Image
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison_plot import (
+from msplatform.workflows.oa_tof_design.figures import (
     build_residual_gain_figure,
     export_comparison_figures,
     prepare_comparison_series,

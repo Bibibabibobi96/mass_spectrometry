@@ -114,9 +114,9 @@ writer-release requirements. This does not authorize rewriting a historical pare
 ## 核心分析
 
 - `msplatform.components.single_reflection_oa_tof.ideal_source_comparison`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
-- `ideal_source_experiment.py`：版本化实验校验、残差优先的确定性case计划和自动科学结论；执行成功不等于假设成立。活动入口和自动续跑说明见下节。
+- `msplatform.workflows.oa_tof_design.source_experiment`: versioned experiment validation, deterministic residual-first case planning and scientific conclusions. Execution success does not establish the hypothesis; the installed entry and resume behavior are described below.
 - `msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory` and `ideal_acceptance_linear_design`: exact time-series diagnostics and the caller-controlled third-order linear focus and fixed-length root equations. These retain every detected valid branch without particle-peak ranking or a continuous-domain completeness claim.
-- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_design`: finite uniform/Gaussian quadrature and exact finite-envelope event checks. `msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment` owns population decomposition, equal-probability source construction and explicit cohort/resolution acceptance; particle confirmation remains in the root workflow. Unequal quadrature weights do not define particle FWHM.
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_design`: finite uniform/Gaussian quadrature and exact finite-envelope event checks. `msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment` owns population decomposition, equal-probability source construction and explicit cohort/resolution acceptance; particle confirmation belongs to the installed `msplatform.workflows.oa_tof_design.acceptance_theory` workflow. Unequal quadrature weights do not define particle FWHM.
 - `msplatform.components.single_reflection_oa_tof.ideal_acceptance_density`: deterministic population pushforward density, residual Jacobian, finite Gaussian-tail probability and certified monotonicity. It reuses the canonical half-height crossing implementation and is distinct from finite-particle KDE.
 
 The theory workflow records the actual selected canonical source for each migrated kernel,
@@ -202,18 +202,55 @@ ID解析统一在`reference_analysis_core.py`：CSV仅将选定ID列保留为原
 
 ## 自动理想场比较
 
-从仓库根使用仓库锁定的 Python 环境运行：
+The three solver-free scientific roles use the sole installed
+`msplatform.workflows.oa_tof_design.source_comparison` entry. Select the scientific
+configuration and the base for its declared analysis/reference paths explicitly:
 
 ```powershell
-.\.venv\Scripts\python.exe -m projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison --seed 20260827
+python -m msplatform.workflows.oa_tof_design.source_comparison `
+  --config '<study.json>' --input-root '<author-input-directory>' --seed 20260827 --plan
 ```
 
-默认一次完成残差扫描、两区/三区束宽比较，逐case输出进度，自动保存粒子终态CSV、峰宽/尾部/模式、
-电压、阶段结论、总报告与schema-v2 manifest。`--plan`只列计划；`--config`选择有版本角色的科学配置。
-科学配置控制源分布、固定几何、扫描轴和科学阈值；峰宽数值口径仍来自项目分析合同；seed/run ID只在
-run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，自动创建新run，校验代码/配置/环境
-及已完成case内容后复用；旧run及失败证据不改写，不需要手工指定下一阶段。未原子发布的case重算。
-数值身份绑定`numerical_case.py`及实际科学依赖；绘图／报告只保来源，不使完成case失效。旧格式仅沿现有具名reference-only迁移及充分冻结设置重验，不能一概追认，也不因缺新键一概重算。
+For execution, omit `--plan` and supply `--workspace`, `--environment` and `--profile`
+for the existing engineering deployment, plus a new `--run-id`. Slope studies also
+require `--receipt-root` for the existing scalar-receipt declaration. Absolute
+scientific references remain absolute; relative references use the selected base.
+Planning does not load engineering deployment or create an owner. The project
+execution profile is an explicit fixed author preset, not a package default.
+For long Windows artifact paths, select a short absolute `policy.execution_root`
+in that deployment. The existing owner manages the temporary execution alias;
+persisted package and scientific run paths remain canonical.
+
+Basic comparison automatically completes the declared residual and two/three-zone
+width scans, reporting per-case progress, complete particle CSV, peak/tail/mode
+metrics, voltages, stage conclusions and the final report/manifest. Scientific
+configuration owns the source, fixed geometry, scan axes and thresholds; its
+selected analysis contract owns peak settings. Seed/run identity remain explicit.
+`--resume-from <previous-run>` creates a new run and verifies matching scientific
+code/config/environment and complete checkpoints before reuse. The previous run and
+failure evidence stay unchanged; incomplete checkpoints are recomputed. Numerical
+identity binds numerical_case and its actual scientific dependencies, while the
+entrypoint and figure source remain provenance outside that identity.
+
+Current modern resume is restricted to the same installed scientific source epoch.
+Pre-migration modern identities are not silently upgraded: their records and CSV
+remain readable, but changed scientific-source identities require a new calculation.
+The separate finite thirteen-function original-basic reader remains reference-only:
+its exact original roles/source witnesses, environment, sealed owner and complete
+CSV checks remain required. It does not supply missing historical source from the
+current package or prove complete historical transitive frozen execution.
+
+The existing managed owner alone creates the run, capacity/source protection,
+execution request, summary, manifest and recovery result. One observed Python
+scientific worker consumes frozen role records and retains its existing ProcessPool
+work; actual child origins and immutable package guards belong to that same process
+family. Case boundaries renew the same owner-bound leases. Scientific failures keep
+their original failed run/checkpoints; transport or publication failures remain errors.
+`--resume-finalization <Result>` with the explicit engineering deployment only resumes
+the original stopped-owner finalization, without new scientific inputs or execution.
+Copied source records are execution provenance; this installed workflow actually
+executes the selected frozen package. The historical audited-live snapshots keep
+their original meaning and bytes. No commercial solver or new qualification is implied.
 
 运行状态为`success/failed/interrupted`，科学状态独立报告`SUPPORTED/NOT_SUPPORTED/INCONCLUSIVE`
 或已表征的接受范围；负结果不阻止另一项低成本比较。技术异常停止并保存`failure_stage`、`failure_reason`

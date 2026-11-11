@@ -2,25 +2,36 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import copy
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from msplatform.contracts.machine_contracts import load_json, validate_schema
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import (
+from msplatform.workflows.oa_tof_design.source_experiment import (
     build_case_plan, summarize_stage, validate_experiment,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import run_comparison as runner
+from msplatform.workflows.oa_tof_design import source_comparison as runner
+
+
+from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.ideal_source_workflow import (
+    copy_input_root, make_context, owned_workflow_environment, retained_workspace,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class IdealExperimentTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.config = load_json(runner.DEFAULT_CONFIG)
+        self.config = load_json(PROJECT_ROOT / "config/experiments/ideal_source_comparison.json")
 
     def test_plan_order_and_pairing_seeds(self) -> None:
         plan = build_case_plan(self.config, 71)
@@ -31,23 +42,32 @@ class IdealExperimentTests(unittest.TestCase):
         self.assertEqual(len({c["case_id"] for c in plan}), 84)
 
     def test_registered_entry_resolves_to_the_science_authority(self) -> None:
-        profiles = load_json(runner.PROJECT_ROOT / "config/execution_profiles.json")
+        profiles = load_json(PROJECT_ROOT / "config/execution_profiles.json")
         validate_schema(profiles, "execution_profiles.schema.json")
         profile = next(p for p in profiles["profiles"] if p["profile_id"] == "ideal_source_comparison")
         self.assertEqual(profile["action"], "analyze")
         self.assertEqual(profile["qualification_support"], ["none"])
         self.assertEqual(profile["tools"], ["python"])
-        self.assertEqual(profile["required_bindings"], ["particle_source_seed"])
-        self.assertEqual(profile["binding_types"], {"particle_source_seed": "integer"})
+        self.assertEqual(profile["required_bindings"],
+                         ["particle_source_seed", "workspace", "execution_environment", "environment_profile"])
+        self.assertEqual(profile["binding_types"], {"particle_source_seed": "integer",
+                         "workspace": "directory", "execution_environment": "file", "environment_profile": "string"})
         self.assertEqual(profile["deliverable_outputs"], ["simulation_results", "validation_report"])
         self.assertEqual(profile["fixed_inputs"]["experiment"], "config/experiments/ideal_source_comparison.json")
         self.assertEqual(profile["fixed_inputs"]["analysis_contract"], "config/analysis_contract.json")
         self.assertEqual(len(profile["steps"]), 1)
         step = profile["steps"][0]
         self.assertEqual((step["kind"], step["shell"]), ("analyze", "python"))
-        self.assertEqual(step["arguments"][2:], ["--seed", "{particle_source_seed}", "--run-id", "{run_id}"])
-        self.assertTrue((runner.PROJECT_ROOT / step["entrypoint"]).is_file())
-        self.assertEqual((runner.REPO_ROOT / step["arguments"][1]).resolve(), runner.DEFAULT_CONFIG)
+        self.assertEqual(step["arguments"][2:], ["--seed", "{particle_source_seed}", "--run-id", "{run_id}",
+                         "--input-root", "projects/single_reflection_oa_tof_mass_analyzer",
+                         "--workspace", "{workspace}", "--environment", "{execution_environment}",
+                         "--profile", "{environment_profile}"])
+        self.assertTrue((PROJECT_ROOT / step["entrypoint"]).is_file())
+        self.assertEqual((PROJECT_ROOT / step["entrypoint"]).resolve(), Path(runner.__file__).resolve())
+        self.assertEqual((PROJECT_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
+                         .with_suffix("").as_posix().replace("/", "."),
+                         "msplatform.workflows.oa_tof_design.source_comparison")
+        self.assertEqual((REPO_ROOT / step["arguments"][1]).resolve(), PROJECT_ROOT / "config/experiments/ideal_source_comparison.json")
 
     def test_contract_rejects_unknown_missing_nonfinite_and_duplicate(self) -> None:
         for key, value in (("three_zone_eta", 0), ("focus_drift_mm", float("nan")), ("extra", 1)):
@@ -106,11 +126,12 @@ class IdealExperimentTests(unittest.TestCase):
     def test_checkpoint_is_only_visible_after_atomic_publish(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "checkpoint.json"
-            with patch.object(Path, "replace", side_effect=OSError("interrupted publish")):
+            with patch("msplatform.execution.recorded_file_removal.os.replace",
+                       side_effect=OSError("interrupted publish")):
                 with self.assertRaises(OSError):
                     runner._write_json(path, {"complete": True})
             self.assertFalse(path.exists())
-            self.assertTrue(path.with_suffix(".json.pending").exists())
+            self.assertFalse(list(path.parent.glob(f".{path.name}.*")))
 
     def test_manifest_arguments_stay_short_for_full_matrix_on_windows(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -119,12 +140,41 @@ class IdealExperimentTests(unittest.TestCase):
             for case in build_case_plan(self.config, 7):
                 for suffix in (".json", "__particles.csv"):
                     (root / "results" / (case["case_id"] + suffix)).touch()
-            with patch.object(runner, "_command", return_value="PASS") as command, contextlib.redirect_stdout(io.StringIO()):
-                runner._publish_manifest(root, "success")
-            arguments = command.call_args_list[0].args[0]
+            request = root / "scientific_request.json"
+            outputs = [str(path.relative_to(root)) for path in (root / "results").iterdir()]
+            request.write_text(json.dumps({"outputs": outputs}), encoding="utf-8")
+            # Transport-only observation stops at the actual managed child call;
+            # no worker completion, process receipt or owner success is fabricated.
+            session = SimpleNamespace(context=SimpleNamespace(powershell_executable="selected-pwsh"))
+            with patch.object(session, "run_process", create=True,
+                              side_effect=RuntimeError("observed managed child boundary")) as command:
+                with self.assertRaisesRegex(RuntimeError, "observed managed child boundary"):
+                    runner._invoke_worker(session, request, [], {"limits": {}})
+            arguments = command.call_args.kwargs["arguments"]
             self.assertLess(len(" ".join(arguments)), 30000)
-            output_arguments = [arguments[i+1] for i, value in enumerate(arguments) if value == "--output"]
-            self.assertTrue(all(not Path(path).is_absolute() for path in output_arguments))
+            self.assertEqual(command.call_args.kwargs["environment"],
+                             {"OA_TOF_SCIENTIFIC_REQUEST": str(request)})
+            self.assertNotIn("--output", arguments)
+            self.assertTrue(all(not Path(path).is_absolute() for path in load_json(request)["outputs"]))
+            self.assertEqual(len(load_json(request)["outputs"]), 168)
+
+    def test_finalization_cli_transports_the_same_no_particle_completion_policy(self) -> None:
+        from msplatform.execution.completion import no_particle_batch_completion_api
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = make_context(root / "study")
+            result = root / "result.json"
+            # CLI dispatch unit only: actual finalization/unknown-writer behavior
+            # remains with the existing owner tests, not this controlled return.
+            with patch("msplatform.execution.context.load_environment", return_value=context) as environment, \
+                    patch("msplatform.execution.owner.resume_finalization", return_value={"status": "success"}) as resume, \
+                    patch.object(runner, "execute", side_effect=AssertionError("finalization cannot rerun science")) as science:
+                self.assertEqual(runner.main(["--workspace", str(context.workspace), "--environment", str(root / "machine.json"),
+                                              "--profile", "explicit-test", "--resume-finalization", str(result)]), 0)
+                resume.assert_called_once_with(context, result_path=result,
+                                               completion_api=no_particle_batch_completion_api)
+                environment.assert_called_once()
+                science.assert_not_called()
 
     def test_run_failure_resume_manifest_and_tamper_detection(self) -> None:
         config = copy.deepcopy(self.config)
@@ -132,51 +182,111 @@ class IdealExperimentTests(unittest.TestCase):
         config["residual_scan"]["residual_sigma_m_per_s"] = [0, 100]
         config["width_scan"]["full_widths_mm"] = [1.0, 2.2]
         config["width_scan"]["residual_sigma_m_per_s"] = [0]
-        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
-            root = Path(directory)
+        with retained_workspace() as root, contextlib.redirect_stdout(io.StringIO()):
+            input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
+            context = make_context(root / "study")
             config_path = root / "experiment.json"
             config_path.write_text(json.dumps(config), encoding="utf-8")
-            original = runner._run_case
+            source_provider = runner._source_package_root()
+            provider = root / "controlled-provider/msplatform"
+            shutil.copytree(source_provider, provider, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            kernel = provider / "workflows/oa_tof_design/numerical_case.py"
+            source = kernel.read_text(encoding="utf-8")
+            original_node = next(node for node in ast.parse(source).body
+                                 if isinstance(node, ast.FunctionDef) and node.name == "_run_case")
+            marker = root / "explicit-case2-fault.json"
+            # Only this TEST provider has the one-shot fault. The marker is outside
+            # every frozen package/input; no production test flag or fake receipt.
+            prologue = (
+                '    if case["case_id"] == "residual_scan__0002":\n'
+                '        from pathlib import Path as _FixturePath\n'
+                f'        _fixture_marker = _FixturePath({str(marker)!r})\n'
+                '        if not _fixture_marker.exists():\n'
+                '            _fixture_marker.write_text("case2 explicit once-only fixture failure", encoding="utf-8")\n'
+                '            raise ArithmeticError("injected exact-model failure")\n'
+            )
+            lines = source.splitlines(keepends=True)
+            lines.insert(original_node.body[0].lineno - 1, prologue)
+            kernel.write_text("".join(lines), encoding="utf-8", newline="\n")
+            controlled_node = next(node for node in ast.parse(kernel.read_text(encoding="utf-8")).body
+                                   if isinstance(node, ast.FunctionDef) and node.name == "_run_case")
+            controlled_node.body = controlled_node.body[1:]
+            self.assertEqual(ast.dump(controlled_node, include_attributes=False),
+                             ast.dump(original_node, include_attributes=False))
+            provider_before = {path.relative_to(provider): path.read_bytes()
+                               for path in provider.rglob("*") if path.is_file()}
+            source_files = runner._source_files
 
-            def fail_second(case, *args):
-                if case["case_id"] == "residual_scan__0002":
-                    raise ArithmeticError("injected exact-model failure")
-                return original(case, *args)
+            def selected_sources(*args):
+                return {name: (provider / path.relative_to(source_provider)
+                               if path.is_relative_to(source_provider) else path)
+                        for name, path in source_files(*args).items()}
 
-            with patch.object(runner, "_run_case", side_effect=fail_second):
-                failed = runner.execute(config_path, seed=9, run_id="20260827_010000__test__python__ideal-source-failure", artifact_root=root)
-            self.assertEqual(load_json(failed / "summary.json")["completed_cases"], 1)
-            self.assertEqual(load_json(failed / "run_manifest.json")["status"], "failed")
-            resumed = runner.execute(config_path, seed=9, run_id="20260827_010001__test__python__ideal-source-resume", resume_from=failed, artifact_root=root)
-            summary = load_json(resumed / "summary.json")
-            self.assertEqual(summary["status"], "success")
-            self.assertEqual(summary["completed_cases"], 4)
-            self.assertEqual(summary["reused_cases"], 1)
-            self.assertEqual(len(summary["stages"]), 2)
-            self.assertEqual(load_json(resumed / "run_manifest.json")["schema_version"], 2)
-            self.assertFalse((resumed / "results/resolved_plan.json").exists())
-            self.assertEqual(load_json(resumed / "results/working_points.json"),
-                             {"schema_version": 2, "role": "ideal_source_working_points",
-                              "working_points": {name: point.to_dict() for name, point in runner._working_points(config).items()}})
-            working_points = load_json(resumed / "results/working_points.json")
-            for point in working_points["working_points"].values():
-                self.assertIn("center_extraction_position_mm", point["design_source"])
-                self.assertIn("time_scale_s_sqrt_v_per_mm", point["design_source"])
-                self.assertNotIn("center_x_mm", point["design_source"])
-                self.assertNotIn("time_scale_s_per_mm_sqrt_v", point["design_source"])
-            with self.assertRaisesRegex(ValueError, "differs"):
-                runner.execute(config_path, seed=10, run_id="20260827_010002__test__python__ideal-source-mismatch", resume_from=failed, artifact_root=root)
+            with patch.object(runner, "_source_package_root", return_value=provider), \
+                    patch.object(runner, "_source_files", side_effect=selected_sources), \
+                    owned_workflow_environment():
+                self.assertFalse(marker.exists())
+                failed = runner.execute(config_path, input_root=input_root, context=context, seed=9,
+                    run_id="20260827_010000__test__python__ideal-source-failure")
+                self.assertEqual(load_json(failed / "summary.json")["completed_cases"], 1)
+                self.assertEqual(load_json(failed / "run_manifest.json")["status"], "failed")
+                self.assertIn("ArithmeticError: injected exact-model failure",
+                              load_json(failed / "summary.json")["failure_reason"])
+                self.assertEqual(marker.read_text(encoding="utf-8"), "case2 explicit once-only fixture failure")
+                first_csv = (failed / "results/residual_scan__0001__particles.csv").read_bytes()
+                resumed = runner.execute(config_path, input_root=input_root, context=context, seed=9,
+                    run_id="20260827_010001__test__python__ideal-source-resume", resume_from=failed)
+                summary = load_json(resumed / "summary.json")
+                self.assertEqual(summary["status"], "success")
+                self.assertEqual(summary["completed_cases"], 4)
+                self.assertEqual(summary["reused_cases"], 1)
+                self.assertEqual(len(summary["stages"]), 2)
+                self.assertEqual((resumed / "results/residual_scan__0001__particles.csv").read_bytes(), first_csv)
+                self.assertEqual(load_json(resumed / "run_manifest.json")["schema_version"], 2)
+                frozen = load_json(resumed / "run_config.json")
+                self.assertIn("entrypoint", frozen["input_sha256"])
+                self.assertIn("ideal_source_comparison_plot", frozen["input_sha256"])
+                self.assertNotIn("entrypoint", frozen["numerical_input_sha256"])
+                self.assertNotIn("ideal_source_comparison_plot", frozen["numerical_input_sha256"])
+                self.assertFalse((resumed / "results/resolved_plan.json").exists())
+                self.assertEqual(load_json(resumed / "results/working_points.json"),
+                                 {"schema_version": 2, "role": "ideal_source_working_points",
+                                  "working_points": {name: point.to_dict() for name, point in runner._working_points(config).items()}})
+                working_points = load_json(resumed / "results/working_points.json")
+                for point in working_points["working_points"].values():
+                    self.assertIn("center_extraction_position_mm", point["design_source"])
+                    self.assertIn("time_scale_s_sqrt_v_per_mm", point["design_source"])
+                    self.assertNotIn("center_x_mm", point["design_source"])
+                    self.assertNotIn("time_scale_s_per_mm_sqrt_v", point["design_source"])
+                for run in (failed, resumed):
+                    completion = load_json(run / "results/execution_completion.json")
+                    operations = completion["writer_completion"]["operations"]
+                    self.assertEqual([row["operation_id"] for row in operations], ["scientific_analysis"])
+                    self.assertEqual(operations[0]["observation"]["returncode"], 0)
+                    self.assertGreater(operations[0]["observation"]["process_id"], 0)
+                with self.assertRaisesRegex(ValueError, "differs"):
+                    runner.execute(config_path, input_root=input_root, context=context, seed=10,
+                        run_id="20260827_010002__test__python__ideal-source-mismatch", resume_from=failed)
+                fixed_kernel = kernel.read_bytes()
+                try:
+                    kernel.write_bytes(fixed_kernel + b"\n# Explicit changed scientific-source fixture.\n")
+                    with self.assertRaisesRegex(ValueError, "differs"):
+                        runner.execute(config_path, input_root=input_root, context=context, seed=9,
+                            run_id="20260827_010003__test__python__ideal-source-code-mismatch", resume_from=failed)
+                finally:
+                    kernel.write_bytes(fixed_kernel)
+            self.assertEqual(provider_before, {path.relative_to(provider): path.read_bytes()
+                                              for path in provider.rglob("*") if path.is_file()})
             checkpoint = failed / "results/residual_scan__0001.json"
             data = load_json(checkpoint)
             data["resolution_gain_percent"] = 999999
             checkpoint.write_text(json.dumps(data), encoding="utf-8")
             destination = root / "tampered_child/results"
             destination.mkdir(parents=True)
-            # _reuse_case dispatches through the explicit child context before either reuse path.
-            # This is a fresh child with no legacy projection, matching ordinary execute setup.
             (destination.parent / "run_config.json").write_text(json.dumps({"inputs": {}}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "mismatch"):
                 runner._reuse_case(failed, data["case"], data["identity"], destination)
+
 
 
 if __name__ == "__main__":

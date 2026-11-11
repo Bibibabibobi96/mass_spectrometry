@@ -14,11 +14,14 @@ import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from msplatform.execution.context import ExecutionContext
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.analysis.peak_metrics import AnalysisSettings
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.contracts.particle_count import validate_positive_particle_count
@@ -26,15 +29,13 @@ from msplatform.components.single_reflection_oa_tof.ideal_source_comparison impo
     NumericalSourceSpec, build_numerical_source,
     propagate_ideal_source,
 )
-from msplatform.components.single_reflection_oa_tof import ideal_acceptance_linear_design as _linear_design
 from msplatform.components.single_reflection_oa_tof.ideal_acceptance_linear_design import (
     solve_linear_third_order_design,
 )
 from msplatform.components.single_reflection_oa_tof.three_zone_ideal_theory import (
     ReflectronGeometry,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (
-    REPO_ROOT, _prepare_run, _publish_manifest, _frozen_settings,
+from msplatform.workflows.oa_tof_design.source_comparison import (
     _write_json,
 )
 
@@ -93,15 +94,18 @@ def validate_slope_scan_config(config: dict[str, Any]) -> None:
         validate_positive_particle_count(value)
     if config["sampling"]["particle_count"] < 3:
         raise ValueError("at least three particles are required")
-    if config["analysis_contract"] != "config/analysis_contract.json":
-        raise ValueError("use the canonical analysis contract")
+    if not isinstance(config["analysis_contract"], str) or not config["analysis_contract"].strip():
+        raise ValueError("analysis_contract must declare an explicit input path")
     if not isinstance(config["scope"], str) or not config["scope"].strip():
         raise ValueError("scope is required")
 
 
-def _receipt_path(config: dict[str, Any]) -> Path:
+def _receipt_path(config: dict[str, Any], *, receipt_root: Path) -> Path:
     """Resolve and verify the declared historical scalar provenance input."""
-    receipt = REPO_ROOT.parent / config["historical_slope_receipt"]["path"]
+    receipt = Path(config["historical_slope_receipt"]["path"])
+    if not receipt.is_absolute():
+        receipt = receipt_root / receipt
+    receipt = receipt.resolve()
     if not receipt.is_file():
         raise ValueError(f"historical slope receipt is unavailable: {receipt}")
     if file_sha256(receipt).lower() != config["historical_slope_receipt"]["sha256"].lower():
@@ -165,24 +169,16 @@ def _record_case(config: dict[str, Any], slope: float, seed: int, result_dir: Pa
             "particles": {"path": csv_path.name, "bytes": csv_path.stat().st_size, "sha256": file_sha256(csv_path)}}
 
 
-def execute_slope_scan(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None,
-                       artifact_root: Path) -> Path:
-    """Freeze, run and publish the declared synthetic affine-slope mechanism scan."""
-    config = load_json(config_path)
-    validate_slope_scan_config(config)
-    if resume_from is not None:
-        raise ValueError("slope scan does not support resume; publish a new immutable run")
-    receipt = _receipt_path(config)
-    run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id, resume_from=None,
-        artifact_root=artifact_root, mode="ideal_source_slope_scan", extra_inputs={
-            "slope_scan_workflow": Path(__file__), "historical_slope_receipt": receipt,
-            "ideal_acceptance_linear_design": Path(_linear_design.__file__).resolve()})
+def _run_slope_cases(config: dict[str, Any], *, seed: int, run_dir: Path,
+                     identity: str, settings: AnalysisSettings) -> dict[str, Any]:
+    """Run the same paired slope cases from already frozen input authority."""
     started, status, error, stage = time.perf_counter(), "success", None, "paired_ideal_propagation"
     records: list[dict[str, Any]] = []
     try:
-        settings = _frozen_settings(run_dir)
         for slope in config["source_slopes_m_per_s_per_mm"]:
             for replicate in range(config["sampling"]["replicate_count"]):
+                from .source_comparison import _renew_worker_capacity
+                _renew_worker_capacity()
                 record = _record_case(config, float(slope), seed + replicate, run_dir / "results", settings=settings)
                 record["numerical_identity"] = identity
                 _write_json(run_dir / "results" / f"slope_{slope:g}__seed{seed + replicate}.json", record)
@@ -203,11 +199,19 @@ def execute_slope_scan(config_path: Path, *, seed: int, run_id: str, resume_from
                "failure_stage": stage if error else None, "failure_reason": error, "groups": groups,
                "claim": "Synthetic affine source, exact one-dimensional static fields. Each nonzero source slope is compared with a zero-slope-derived and matching-slope-derived working point; no 3D, source-production, transmission or global-optimum claim.",
                "historical_slope_used_as_scalar_reference_only": config["historical_slope_receipt"]}
-    _write_json(run_dir / "summary.json", summary)
     lines = ["# Synthetic affine-source slope scan", "", summary["claim"], "", "|k (m/s/mm)|Seed|R zero-slope design|R matching design|Gain (%)|", "|---:|---:|---:|---:|---:|"]
     for record in records:
         lines.append(f"|{record['source_slope_m_per_s_per_mm']}|{record['seed']}|{record['arms']['zero_slope_design']['resolution']}|{record['arms']['matching_slope_design']['resolution']}|{record['resolution_gain_percent']}|")
     (run_dir / "results" / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    _publish_manifest(run_dir, status)
     print(f"IDEAL_SLOPE_SCAN STATUS={status} RUN={run_dir} REASON={error or 'all declared slopes completed'}", flush=True)
-    return run_dir
+    return {"summary": summary}
+
+
+def execute_slope_scan(config_path: Path, *, input_root: Path, receipt_root: Path,
+                       context: ExecutionContext, seed: int, run_id: str,
+                       resume_from: Path | None) -> Path:
+    """Run the explicit slope study using one observed scientific worker."""
+    from .source_comparison import _execute_role
+    return _execute_role(config_path, input_root=input_root, receipt_root=receipt_root,
+                         context=context, seed=seed, run_id=run_id,
+                         resume_from=resume_from, expected_role="ideal_source_slope_scan")

@@ -214,7 +214,7 @@ listed in metadata, not silently promoted into full-cohort acceptance evidence.
                                        for arm, values in record["arms"].items()}} for record in records],
         "plot_data": {"residual_gain": residual, "width_resolution": panels},
         "files": [{"path": path.name, "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in outputs],
-        "provenance_authority": "Parent run_config and run_manifest freeze source contracts, code, git identity, inputs and these outputs.",
+        "provenance_authority": "Parent run_config and run_manifest bind source contracts, code, inputs and these outputs.",
     }
     path = result_dir / "ideal-source-comparison__figures.json"
     if path.exists():

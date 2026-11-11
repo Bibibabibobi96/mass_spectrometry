@@ -4,10 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 import copy
 import json
+import platform
 from pathlib import Path
 from msplatform.contracts.machine_contracts import ContractError
 from types import MappingProxyType
 from typing import Mapping
+
+
+def python_runtime_version() -> str:
+    """Return the actual current Python version for execution metadata/identity."""
+    return platform.python_version()
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -12,12 +12,14 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
 from math import ceil
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from msplatform.execution.context import ExecutionContext
 
 import numpy as np
 
 from msplatform.analysis.peak_metrics import AnalysisSettings
-from msplatform.contracts.machine_contracts import load_json
 from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.components.single_reflection_oa_tof.ideal_acceptance_design import DesignDomainError, prepare_source_quadrature
 from msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment import (
@@ -27,16 +29,12 @@ from msplatform.components.single_reflection_oa_tof.ideal_acceptance_linear_desi
     solve_linear_third_order_design, find_fixed_length_designs,
 )
 from msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory import coefficient_report
-from msplatform.components.single_reflection_oa_tof import ideal_acceptance_theory as _acceptance_theory
-from msplatform.components.single_reflection_oa_tof import ideal_acceptance_design as _acceptance_design
-from msplatform.components.single_reflection_oa_tof import ideal_acceptance_linear_design as _acceptance_linear_design
-from msplatform.components.single_reflection_oa_tof import ideal_acceptance_experiment as _acceptance_experiment
 from msplatform.components.single_reflection_oa_tof.ideal_source_comparison import (
     NumericalSourceSpec, build_numerical_source, propagate_ideal_source,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_experiment import _keys, _numbers
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (
-    PROJECT_ROOT, _prepare_run, _publish_manifest, _frozen_settings, _working_points, _write_json,
+from msplatform.workflows.oa_tof_design.source_experiment import _keys, _numbers
+from msplatform.workflows.oa_tof_design.source_comparison import (
+    _working_points, _write_json,
 )
 
 
@@ -68,6 +66,9 @@ def _solve_control_chunk(config: dict[str, Any], baseline: dict[str, Any], refer
                          spec: NumericalSourceSpec,
                          controls_chunk: list[tuple[int, float, float, float, float | None]]) -> list[dict[str, Any]]:
     """Solve independent fixed-control roots; all output publication stays in parent."""
+    from .source_comparison import _verify_scientific_worker_origin, _renew_worker_capacity
+    _verify_scientific_worker_origin()
+    _renew_worker_capacity()
     design, num = config["design"], config["numerics"]
     fixed_length = design.get("total_acceleration_length_mm")
     voltage_grid = [value*baseline["outer"]["nominal_energy_per_charge_v"]
@@ -105,8 +106,8 @@ def validate_theory_config(config: dict[str, Any]) -> None:
     _keys(config, "schema_version role reference_config residual_sigma_m_per_s minimum_resolution design full_widths_mm numerics sampling scope", "acceptance theory")
     if config["schema_version"] != 1 or config["role"] != "ideal_acceptance_theory":
         raise ValueError("unsupported acceptance theory schema")
-    if config["reference_config"] != "config/experiments/ideal_source_comparison.json":
-        raise ValueError("reference must be the canonical ideal-source comparison config")
+    if not isinstance(config["reference_config"], str) or not config["reference_config"].strip():
+        raise ValueError("reference_config must declare an explicit input path")
     _numbers([config["residual_sigma_m_per_s"]], "residual")
     _numbers([config["minimum_resolution"]], "resolution", positive=True)
     design = config["design"]
@@ -191,7 +192,10 @@ def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
     workers = _resolve_parallel_workers(max_workers, len(controls))
     chunks = _balanced_chunks(controls, workers)
     solved: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    from . import source_comparison
+    with ProcessPoolExecutor(max_workers=workers,
+            initializer=source_comparison._bind_scientific_worker_request,
+            initargs=(source_comparison._BOUND_SCIENTIFIC_REQUEST,)) as executor:
         futures = [executor.submit(_solve_control_chunk, config, baseline, reference, spec, chunk)
                    for chunk in chunks]
         for future in as_completed(futures):
@@ -341,6 +345,9 @@ def _confirm_width_task(config: dict[str, Any], spec: NumericalSourceSpec, refer
                         width: float, screened: list[dict[str, Any]], seed: int,
                         result_dir_text: str, settings: AnalysisSettings) -> dict[str, Any]:
     """Run one width's dependent density-selection and particle-confirmation chain."""
+    from .source_comparison import _verify_scientific_worker_origin, _renew_worker_capacity
+    _verify_scientific_worker_origin()
+    _renew_worker_capacity()
     result_dir = Path(result_dir_text)
     reports: list[dict[str, Any]] = []
     original_supported = _is_original_width_supported(spec, reference_point, width)
@@ -381,7 +388,10 @@ def _confirm_widths_parallel(config: dict[str, Any], spec: NumericalSourceSpec, 
     tasks = sorted(widths, key=lambda width: (-_width_work_units(
         config, len(screened[width]), _is_original_width_supported(spec, reference_point, width)), width))
     completed: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    from . import source_comparison
+    with ProcessPoolExecutor(max_workers=workers,
+            initializer=source_comparison._bind_scientific_worker_request,
+            initargs=(source_comparison._BOUND_SCIENTIFIC_REQUEST,)) as executor:
         futures = {executor.submit(_confirm_width_task, config, spec, reference_point, width,
                                   screened[width], seed, str(result_dir), settings): width for width in tasks}
         for done, future in enumerate(as_completed(futures), 1):
@@ -397,31 +407,15 @@ def _confirm_widths_parallel(config: dict[str, Any], spec: NumericalSourceSpec, 
         "estimated_work_units": sum(item["estimated_work_units"] for item in completed)}
 
 
-def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None,
-                    artifact_root: Path, max_workers: int | None = None) -> Path:
-    config = load_json(config_path)
-    validate_theory_config(config)
-    if resume_from is not None:
-        raise ValueError("theory redesign does not reuse selected designs from prior evidence; run a new frozen theory calculation")
-    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-        raise ValueError("seed must be a nonnegative integer")
-    baseline_path = PROJECT_ROOT / config["reference_config"]
-    baseline = load_json(baseline_path)
-    canonical_sources = {"ideal_acceptance_theory": _acceptance_theory,
-                         "ideal_acceptance_design": _acceptance_design,
-                         "ideal_acceptance_linear_design": _acceptance_linear_design,
-                         "ideal_acceptance_experiment": _acceptance_experiment}
-    if "density" in config["numerics"]:
-        from msplatform.components.single_reflection_oa_tof import ideal_acceptance_density as _acceptance_density
-        canonical_sources["ideal_acceptance_density"] = _acceptance_density
-    run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id, resume_from=None,
-        artifact_root=artifact_root, mode="ideal_acceptance_theory", extra_inputs={"theory_workflow": Path(__file__),
-        "reference_config": baseline_path, **{name: Path(module.__file__).resolve() for name, module in canonical_sources.items()}})
+def _run_theory_cases(config: dict[str, Any], baseline: dict[str, Any], *, seed: int,
+                      run_dir: Path, identity: str, max_workers: int | None,
+                      settings: AnalysisSettings) -> dict[str, Any]:
+    """Run the original numerical pipeline using already bound frozen authorities."""
     started, status, error = time.perf_counter(), "success", None
     reports = []
+    execution = {}
     stage = "baseline_theory_audit"
     try:
-        settings = _frozen_settings(run_dir)
         spec = NumericalSourceSpec(**baseline["source"])
         point = _working_points(baseline)["three_zone_matched"]
         _write_json(run_dir / "results/reference_theory.json", {"point": point.to_dict(), "widths": [
@@ -434,11 +428,9 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
         stage = "independent_confirmation"
         reports, confirmation_dispatch = _confirm_widths_parallel(
             config, spec, point, screened, seed, run_dir / "results", max_workers, settings=settings)
-        run_config = load_json(run_dir / "run_config.json")
-        run_config["execution"] = {"requested_max_workers": max_workers,
-                                   "resolved_stages": [equation_dispatch, confirmation_dispatch],
-                                   "scientific_inputs_changed": False}
-        _write_json(run_dir / "run_config.json", run_config)
+        execution = {"requested_max_workers": max_workers,
+                     "resolved_stages": [equation_dispatch, confirmation_dispatch],
+                     "scientific_inputs_changed": False}
     except (Exception, KeyboardInterrupt) as exc:
         status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
         error = f"{type(exc).__name__}: {exc}"
@@ -455,7 +447,6 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
                "largest_jointly_verified_width_mm": jointly_verified,
                "global_maximum_proved": False, "formal_gate_passed": False,
                "scope": config["scope"], "next_action": "inspect verified widths, rejected equations and search boundary before expanding theory family"}
-    _write_json(run_dir / "summary.json", summary)
     lines = ["# Theory-first ideal-field acceptance", "", config["scope"], "", f"Execution: {status}; failure: {error}", "",
              "|Design|Width mm|Population R (last grid)|Population convergence|All particle seeds pass|Particle R range|",
              "|---|---:|---:|---|---|---|"]
@@ -465,6 +456,15 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
         pop = _population_resolution(report["population"][-1])
         lines.append(f"|{report['design_id']}|{report['full_width_mm']}|{pop}|{report['population_converged']}|{report['independent_particle_pass']}|{min(rs) if rs else None} – {max(rs) if rs else None}|")
     (run_dir / "results/report.md").write_text("\n".join(lines)+"\n", encoding="utf-8")
-    _publish_manifest(run_dir, status)
     print(f"ACCEPTANCE_THEORY STATUS={status} RUN={run_dir} REASON={error or 'theory and independent confirmation completed'}", flush=True)
-    return run_dir
+    return {"summary": summary, "execution": execution}
+
+
+def execute_theory(config_path: Path, *, input_root: Path, context: ExecutionContext, seed: int,
+                   run_id: str, resume_from: Path | None,
+                   max_workers: int | None = None) -> Path:
+    """Run explicit theory inputs through the single existing execution owner."""
+    from .source_comparison import _execute_role
+    return _execute_role(config_path, input_root=input_root, context=context, seed=seed,
+                         run_id=run_id, resume_from=resume_from, max_workers=max_workers,
+                         expected_role="ideal_acceptance_theory")

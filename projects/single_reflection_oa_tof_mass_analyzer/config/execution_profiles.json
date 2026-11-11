@@ -26,14 +26,17 @@
         "validation_report"
       ],
       "required_bindings": [
-        "particle_source_seed"
+        "particle_source_seed",
+        "workspace",
+        "execution_environment",
+        "environment_profile"
       ],
       "steps": [
         {
           "step_id": "ideal_source_comparison",
           "kind": "analyze",
           "shell": "python",
-          "entrypoint": "workflows/ideal_source_comparison/run_comparison.py",
+          "entrypoint": "../../src/msplatform/workflows/oa_tof_design/source_comparison.py",
           "run_id_template": null,
           "arguments": [
             "--config",
@@ -41,17 +44,29 @@
             "--seed",
             "{particle_source_seed}",
             "--run-id",
-            "{run_id}"
+            "{run_id}",
+            "--input-root",
+            "projects/single_reflection_oa_tof_mass_analyzer",
+            "--workspace",
+            "{workspace}",
+            "--environment",
+            "{execution_environment}",
+            "--profile",
+            "{environment_profile}"
           ]
         }
       ],
       "limitations": [
         "Exact axial ideal fields and synthetic sources only; no commercial solver or Formal qualification",
         "Residual scan recomputes mirror voltages at fixed accelerator fields and geometry; width scan compares the declared same-outer two-zone control and three-zone anchor, not global optima",
-        "Science is owned by config/experiments/ideal_source_comparison.json; numerical peak settings by config/analysis_contract.json; seed and run identity are explicit run bindings"
+        "Science is owned by config/experiments/ideal_source_comparison.json; numerical peak settings by config/analysis_contract.json; seed and run identity are explicit run bindings",
+        "Execution uses the sole installed owner and an explicitly selected engineering deployment; the fixed author preset supplies its input base, while the package API requires an explicit input_root."
       ],
       "binding_types": {
-        "particle_source_seed": "integer"
+        "particle_source_seed": "integer",
+        "workspace": "directory",
+        "execution_environment": "file",
+        "environment_profile": "string"
       },
       "purpose": "source_comparison",
       "action": "analyze",

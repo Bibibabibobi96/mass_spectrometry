@@ -46,6 +46,10 @@
         {
           "prefix": "src/msplatform/execution/",
           "reason": "installed_execution_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/oa_tof_design/source_comparison.py",
+          "reason": "installed_tof_host_entry_consumer_changed"
         }
       ],
       "command": {
@@ -3143,6 +3147,10 @@
         {
           "prefix": "src/msplatform/components/single_reflection_oa_tof/",
           "reason": "installed_tof_provider_changed"
+        },
+        {
+          "prefix": "src/msplatform/workflows/oa_tof_design/",
+          "reason": "installed_tof_design_workflow_changed"
         },
         {
           "prefix": "src/msplatform/backends/simion/",

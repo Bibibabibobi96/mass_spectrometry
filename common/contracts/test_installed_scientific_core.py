@@ -3205,6 +3205,321 @@ for tof_acceptance_name in ('ideal_acceptance_design','ideal_acceptance_density'
 print('INSTALLED_TOF_ACCEPTANCE_KERNELS=PASS')
 # TOF_ACCEPTANCE_KERNELS_INSTALLED_END
 
+# TOF_WORKFLOW_INSTALLED_BEGIN
+tof_workflow_script=root/('installed-tof-workflow-'+sys.argv[2]+'.py')
+tof_workflow_script.write_text(r"""import copy,csv,hashlib,importlib,importlib.abc,json,os,pathlib,sys,sysconfig
+
+def main():
+    authors=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+    def guard(event,args):
+        if event=='open' and args and isinstance(args[0],str):
+            path=pathlib.Path(args[0]).resolve()
+            if any(path.is_relative_to(value) for value in authors):raise AssertionError('TOF workflow read checkout '+str(path))
+        if event=='subprocess.Popen' and args and pathlib.Path(str(args[0])).name.lower() in ('git','git.exe'):
+            raise AssertionError('installed TOF workflow attempted Git lookup')
+    sys.addaudithook(guard)
+    class InstalledOnly(importlib.abc.MetaPathFinder):
+        def find_spec(self,fullname,path=None,target=None):
+            if any(fullname==value or fullname.startswith(value+'.') for value in ('common','projects','integrations','tools')):
+                raise AssertionError('installed TOF workflow imported forbidden owner '+fullname)
+    sys.meta_path.insert(0,InstalledOnly())
+    fixture=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))
+    module_names=('source_comparison','numerical_case','source_experiment','acceptance_theory','slope_scan','figures')
+    modules={name:importlib.import_module('msplatform.workflows.oa_tof_design.'+name) for name in module_names}
+    purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve();origins={}
+    for name,module in modules.items():
+        source=pathlib.Path(module.__file__).resolve()
+        assert source==purelib/'msplatform/workflows/oa_tof_design'/(name+'.py')
+        raw=source.read_bytes();expected=fixture['sources'][name]
+        assert len(raw)==expected['bytes'] and hashlib.sha256(raw).hexdigest()==expected['sha256']
+        origins[name]=str(source)
+    if sys.argv[4]=='origins':
+        print('TOF_WORKFLOW_REPORT='+json.dumps(dict(status='ORIGINS_ONLY',origins=origins)));return
+    from msplatform.execution.context import load_environment
+    from msplatform.execution.resources import resource_path as execution_resource_path
+    from msplatform.execution.capacity_protection import load_capacity_protection_leases
+    from msplatform.io.manifest_records import verify_record
+    case_root=pathlib.Path(sys.argv[3]);case_root.mkdir(parents=True,exist_ok=False)
+    input_root=case_root/'explicit-authoring';input_root.mkdir()
+    receipt_root=case_root/'explicit-receipts';receipt_root.mkdir()
+    analysis=input_root/'analysis/custom-analysis.json';analysis.parent.mkdir();analysis.write_bytes(bytes.fromhex(fixture['analysis_hex']))
+    receipt=receipt_root/'scalar/custom-scalar.json';receipt.parent.mkdir();receipt.write_bytes(bytes.fromhex(fixture['receipt_hex']))
+    assert hashlib.sha256(receipt.read_bytes()).hexdigest().upper()==fixture['receipt_sha256']
+    assert json.loads(receipt.read_text(encoding='utf-8'))['role']=='test_owned_scalar_reference'
+    reference=copy.deepcopy(fixture['reference']);reference['analysis_contract']='analysis/custom-analysis.json'
+    reference_path=input_root/'reference/custom-reference.json';reference_path.parent.mkdir();reference_path.write_text(json.dumps(reference),encoding='utf-8')
+    configs={};config_paths={}
+    for name,value in fixture['configs'].items():
+        value=copy.deepcopy(value)
+        if value['role']=='ideal_acceptance_theory':value['reference_config']='reference/custom-reference.json'
+        else:value['analysis_contract']='analysis/custom-analysis.json'
+        if value['role']=='ideal_source_slope_scan':value['historical_slope_receipt']['path']='scalar/custom-scalar.json'
+        path=input_root/(name+'.json');path.write_text(json.dumps(value),encoding='utf-8');configs[name]=value;config_paths[name]=path
+    input_before={str(path):path.read_bytes() for parent in (input_root,receipt_root) for path in parent.rglob('*') if path.is_file()}
+    host_policy=case_root/'host-policy.json';host_policy.write_bytes(bytes.fromhex(fixture['host_policy_hex']))
+    assert hashlib.sha256(host_policy.read_bytes()).hexdigest()==fixture['host_policy_sha256']
+    capacity_resource=execution_resource_path('artifact_capacity_policy.json');capacity_original=capacity_resource.read_bytes()
+    capacity_policy=json.loads(capacity_original);capacity_policy.update(target_gib=1,minimum_free_gib=64/1024)
+    capacity_path=case_root/'test-capacity-policy.json';capacity_path.write_text(json.dumps(capacity_policy),encoding='utf-8')
+    stage_path=case_root/'stages.json'
+    stage_path.write_text(json.dumps(dict(schema_version=1,role='execution_stage_policy',stages={role:dict(
+        limits=dict(wall_clock_seconds=120,transient_run_directory_bytes=268435456,process_tree_working_set_bytes=2147483648,
+                    minimum_system_available_memory_bytes=1073741824,compact_final_retained_bytes=67108864,automatic_retry_count=0),
+        artifact_retention=dict(policy_version=1,**{'class':'compact','reason':None}))
+        for role in ('ideal_source_comparison','ideal_source_slope_scan','ideal_acceptance_theory')})),encoding='utf-8')
+    workspace=case_root/'workspace'
+    deployment=case_root/'environment.json'
+    deployment.write_text(json.dumps(dict(schema_version=1,role='execution_environment',tools=dict(python=sys.executable,powershell=fixture['powershell']),
+        policy=dict(host_state_path=fixture['host_state_path'],policy_path=str(host_policy),capacity_policy_path=str(capacity_path)),
+        profiles=dict(installed_tof_test=dict(stage_policy_path=str(stage_path))))),encoding='utf-8')
+    context=load_environment(deployment,workspace=workspace,profile='installed_tof_test')
+    assert context.capacity_policy_path==capacity_path and context.stage_policy_path==stage_path
+    api=modules['source_comparison'];project='single_reflection_oa_tof_mass_analyzer'
+    def run_id(label):return '20261111_220000__test__python__installed-tof-'+case_root.name+'-'+label.replace('_','-')
+    def result_path(identity):return workspace/'artifacts/projects'/project/'scratch/workflow_results'/identity/'result.json'
+    def assert_owner(run,identity,*,success=True):
+        result=json.loads(result_path(identity).read_text(encoding='utf-8'))
+        assert result['status']==('success' if success else 'failed') and result['writers_confirmed'] is True
+        assert result['resume_action'] is None and result['capacity_session']['status']=='released'
+        verify_record('installed TOF terminal manifest',result['manifest'])
+        selected_capacity=result['capacity_session']['capacity_policy']
+        assert pathlib.Path(selected_capacity['source_record']['path'])==capacity_path
+        assert selected_capacity['snapshot']==capacity_policy
+        verify_record('installed TOF TEST capacity source',selected_capacity['source_record'])
+        verify_record('installed TOF frozen capacity policy',selected_capacity['frozen_record'])
+        assert json.loads(pathlib.Path(selected_capacity['frozen_record']['path']).read_text(encoding='utf-8'))==capacity_policy
+        manifest=json.loads((run/'run_manifest.json').read_text(encoding='utf-8'))
+        assert manifest['run_id']==identity and manifest['status']==result['status']
+        for record in manifest['outputs']:verify_record('installed TOF manifest output',record)
+        completion=json.loads((run/'results/execution_completion.json').read_text(encoding='utf-8'))
+        operations=completion['writer_completion']['operations']
+        releases={row['release_id']:row['completion_receipt']['host_release'] for row in completion['writer_completion']['resource_releases']}
+        if success:
+            assert [row['operation_id'] for row in operations]==['scientific_analysis']
+            observation=operations[0]['observation']
+            assert observation['exit_confirmed'] is True and observation['returncode']==0
+            assert observation['process_id']>0 and observation['process_started_at_utc_ticks']>0
+            release=releases[operations[0]['resource_release_id']]
+            assert release['inherited'] is False and release['error'] is None and release['result']==dict(status='released',token=release['token'])
+        else:assert operations==[] and releases=={}
+        assert load_capacity_protection_leases(workspace/'artifacts')['audit']==[]
+        return result,completion
+    inherited={key:os.environ.get(key) for key in ('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE')}
+    records=[]
+    retained=os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
+    def retain_case(run,label):
+        if not retained:return
+        evidence=pathlib.Path(retained)/'tof-workflow-cases'/case_root.name/label
+        evidence.mkdir(parents=True,exist_ok=False)
+        for relative in ('run_config.json','summary.json','run_manifest.json',
+                         'inputs/scientific_request.json','results/execution_completion.json',
+                         'results/scientific_completion.json','results/scientific_environment.json',
+                         'logs/capacity_session.json','logs/scientific_module.stdout.log'):
+            source=run/relative
+            if source.is_file():
+                destination=evidence/relative;destination.parent.mkdir(parents=True,exist_ok=True)
+                destination.write_bytes(source.read_bytes())
+    try:
+        for key in inherited:os.environ[key]=''
+        if sys.argv[4]=='resource_missing':
+            identity=run_id('missing-resource')
+            try:api.execute(config_paths['basic'],input_root=input_root,context=context,seed=9,run_id=identity)
+            except FileNotFoundError as error:
+                assert 'frozen_python_package.ps1' in str(error)
+            else:raise AssertionError('missing selected frozen executor resource accepted')
+            run=workspace/'artifacts/projects'/project/'runs'/identity
+            retain_case(run,'missing-resource')
+            result,completion=assert_owner(run,identity,success=False)
+            assert completion['exception']['type']=='FileNotFoundError'
+            assert 'frozen_python_package.ps1' in completion['exception']['message']
+            print('TOF_WORKFLOW_REPORT='+json.dumps(dict(status='RESOURCE_MISSING_REJECTED',origins=origins,failed_run=str(run),operations=0)));return
+        basic_parent=None;parent_before=None
+        cases=(('basic',9,None),('resume',9,None),('single_candidate',41,2),('fixed_length',41,2),('slope',73,None))
+        for name,seed,workers in cases:
+            selected='basic' if name=='resume' else name
+            identity=run_id(name)
+            arguments=dict(input_root=input_root,context=context,seed=seed,run_id=identity)
+            if workers is not None:arguments['max_workers']=workers
+            if name=='slope':arguments['receipt_root']=receipt_root
+            if name=='resume':arguments['resume_from']=basic_parent
+            run=api.execute(config_paths[selected],**arguments)
+            retain_case(run,name)  # Actual producer bytes before any consumer assertion.
+            assert run==workspace/'artifacts/projects'/project/'runs'/identity
+            result,owner_completion=assert_owner(run,identity)
+            config=json.loads((run/'run_config.json').read_text(encoding='utf-8'))
+            assert config['run_instance']['seed']==seed and config['formal_gate_passed'] is False
+            assert config['parameters']['scientific_role']==configs[selected]['role']
+            scientific_request=json.loads((run/'inputs/scientific_request.json').read_text(encoding='utf-8'))
+            assert scientific_request['schema_version']==1 and scientific_request['role']=='oa_tof_design_scientific_request'
+            assert scientific_request['module']=='msplatform.workflows.oa_tof_design.source_comparison'
+            for role,record in scientific_request['scientific_inputs'].items():
+                verify_record('installed TOF frozen '+role,record)
+                assert pathlib.Path(record['path']).is_relative_to(run/'inputs')
+                assert record['sha256']==config['input_sha256'][role]
+            assert pathlib.Path(config['selected_scientific_sources']['analysis_contract']['source_path'])==analysis
+            if name in ('single_candidate','fixed_length'):
+                assert pathlib.Path(config['selected_scientific_sources']['reference_config']['source_path'])==reference_path
+            if name=='slope':assert pathlib.Path(config['selected_scientific_sources']['historical_slope_receipt']['source_path'])==receipt
+            package=json.loads(pathlib.Path(scientific_request['package_receipt']['path']).read_text(encoding='utf-8'))
+            verify_record('installed TOF frozen package receipt',scientific_request['package_receipt'])
+            verify_record('installed TOF selected frozen executor',scientific_request['executor'])
+            files={str(pathlib.Path(row['path']).resolve()):row for row in package['files']}
+            for path,row in files.items():assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest().upper()==row['sha256']
+            execution=json.loads(pathlib.Path(scientific_request['outputs']['environment']).read_text(encoding='utf-8'))
+            # Actual sole executor schema1: returned only after module success and
+            # final immutable-package verification; no RF schema2/status wrapper.
+            assert execution['schema_version']==1 and execution['module_invoked'] is True
+            assert execution['module']==scientific_request['module']
+            assert pathlib.Path(execution['working_directory'])==pathlib.Path(scientific_request['working_directory'])
+            assert [pathlib.Path(value).resolve() for value in execution['package_roots']]==[pathlib.Path(value).resolve() for value in package['package_roots']]
+            assert execution['python_no_user_site'] is True and execution['python_no_bytecode'] is True
+            assert pathlib.Path(execution['python_executable']).resolve()==pathlib.Path(sys.executable).resolve()
+            assert pathlib.Path(execution['python_prefix']).resolve()==pathlib.Path(sys.prefix).resolve()
+            assert {row['name'] for row in execution['third_party']}==set(scientific_request['distribution_names'])
+            assert {row['name'] for row in execution['frozen_modules']}==set(scientific_request['required_modules'])
+            for row in execution['frozen_modules']:
+                assert str(pathlib.Path(row['origin']).resolve()) in files
+            stdout=pathlib.Path(scientific_request['outputs']['stdout']).read_text(encoding='utf-8')
+            worker_origins=[json.loads(line.split('=',1)[1]) for line in stdout.splitlines() if line.startswith('OA_TOF_WORKER_ORIGIN=')]
+            assert worker_origins and all(type(row['pid']) is int and row['pid']>0 for row in worker_origins)
+            for row in worker_origins:
+                for origin in row['modules'].values():assert str(pathlib.Path(origin).resolve()) in files
+            if name in ('single_candidate','fixed_length'):
+                assert len({row['pid'] for row in worker_origins})>=2
+                assert any('msplatform.workflows.oa_tof_design.acceptance_theory' in row['modules'] for row in worker_origins)
+            scientific=json.loads(pathlib.Path(scientific_request['outputs']['completion']).read_text(encoding='utf-8'))
+            assert scientific['request_sha256']==hashlib.sha256((run/'inputs/scientific_request.json').read_bytes()).hexdigest().upper()
+            assert scientific['result']['summary']['status']=='success'
+            summary=json.loads((run/'summary.json').read_text(encoding='utf-8'))
+            assert summary['status']=='success'
+            if name!='slope':assert summary['formal_gate_passed'] is False
+            if name in ('basic','resume'):
+                assert summary['completed_cases']==summary['planned_cases']==4
+                assert summary['reused_cases']==(4 if name=='resume' else 0)
+            case_rows=0
+            for path in (run/'results').glob('*.csv'):
+                with path.open(encoding='utf-8-sig',newline='') as stream:
+                    rows=list(csv.DictReader(stream))
+                if rows and 'particle_id' in rows[0]:
+                    ids=[int(row['particle_id']) for row in rows]
+                    assert len(ids)==100 and sorted(ids)==list(range(1,101)),path.name
+                    case_rows+=1
+            assert case_rows>0
+            if name in ('basic','resume'):
+                assert list((run/'results').glob('*.png')) and list((run/'results').glob('*.svg'))
+            if name in ('single_candidate','fixed_length'):
+                assert summary['completed_confirmations']>0 and summary['global_maximum_proved'] is False
+                assert (run/'results/all_theory_equations.csv').is_file()
+                if name=='fixed_length':assert list((run/'results').glob('*__population*.csv'))
+            if name=='slope':
+                assert len(summary['groups'])==len(configs['slope']['source_slopes_m_per_s_per_mm'])
+                assert all(row['completed_replicates']==1 for row in summary['groups'])
+            if name=='basic':
+                basic_parent=run
+                parent_before={str(path):path.read_bytes() for path in run.rglob('*') if path.is_file()}
+            if name=='resume':
+                assert all(pathlib.Path(path).read_bytes()==body for path,body in parent_before.items())
+            records.append(dict(case=name,run=str(run),operations=1,worker_pids=sorted({row['pid'] for row in worker_origins}),source_csv_files=case_rows))
+        # Input-resolution refusals preserve the existing run set; no fake owner or fallback inputs.
+        before_runs={path.name for path in (workspace/'artifacts/projects'/project/'runs').iterdir()}
+        try:api.execute(config_paths['basic'],context=context,seed=9,run_id=run_id('no-input-root'))
+        except TypeError:pass
+        else:raise AssertionError('required input_root silently defaulted')
+        sibling=case_root/'wrong-sibling';sibling.mkdir()
+        try:api.execute(config_paths['basic'],input_root=sibling,context=context,seed=9,run_id=run_id('wrong-input-root'))
+        except FileNotFoundError:pass
+        else:raise AssertionError('wrong explicit input_root used fallback')
+        for name,target,extra in (('analysis',analysis,{}),('reference',reference_path,{}),('receipt',receipt,{'receipt_root':receipt_root})):
+            role='single_candidate' if name=='reference' else 'slope' if name=='receipt' else 'basic'
+            held=target.with_name(target.name+'.held');assert not held.exists();target.rename(held)
+            try:
+                try:api.execute(config_paths[role],input_root=input_root,context=context,seed=9,run_id=run_id('missing-'+name),**extra)
+                except (FileNotFoundError,ValueError) as error:
+                    if name=='receipt':
+                        assert type(error) is ValueError and 'historical slope receipt is unavailable:' in str(error) and str(target) in str(error)
+                    else:assert type(error) is FileNotFoundError and pathlib.Path(error.filename)==target
+                else:raise AssertionError('missing explicit '+name+' accepted')
+            finally:held.rename(target)
+        raw_receipt=receipt.read_bytes();receipt.write_bytes(raw_receipt+b'\n')
+        try:
+            try:api.execute(config_paths['slope'],input_root=input_root,receipt_root=receipt_root,context=context,seed=73,run_id=run_id('tampered-receipt'))
+            except ValueError:pass
+            else:raise AssertionError('tampered scalar receipt accepted')
+        finally:receipt.write_bytes(raw_receipt)
+        assert {path.name for path in (workspace/'artifacts/projects'/project/'runs').iterdir()}==before_runs
+        assert all(pathlib.Path(path).read_bytes()==body for path,body in input_before.items())
+        assert capacity_resource.read_bytes()==capacity_original
+        assert load_capacity_protection_leases(workspace/'artifacts')['audit']==[]
+        print('TOF_WORKFLOW_REPORT='+json.dumps(dict(status='PASS',origins=origins,cases=records,native_executions=0)))
+    finally:
+        for key,value in inherited.items():
+            if value is None:os.environ.pop(key,None)
+            else:os.environ[key]=value
+
+if __name__=='__main__':main()
+""",encoding='utf-8')
+tof_workflow_fixture_path=root/('installed-tof-workflow-fixture-'+sys.argv[2]+'.json')
+tof_workflow_fixture_path.write_text(json.dumps(fixture['tof_workflow']),encoding='utf-8')
+tof_workflow_args=[sys.executable,'-X','utf8','-I','-B',str(tof_workflow_script),
+    json.dumps([str(value) for value in blocked_source_roots]),str(tof_workflow_fixture_path)]
+# SOFTWARE-only five owners. Keep the existing whole-client 900 s bound; the
+# bounded child includes observed worker startup/freezing and two actual pools.
+tof_workflow_child=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-'+sys.argv[2])),'run'],
+    cwd=root,capture_output=True,timeout=480,check=False)
+tof_workflow_retained=os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
+if tof_workflow_retained:
+    tof_workflow_diagnostics=pathlib.Path(tof_workflow_retained)/('tof-workflow-client-'+sys.argv[2])
+    tof_workflow_diagnostics.mkdir(exist_ok=False)
+    (tof_workflow_diagnostics/'stdout.log').write_bytes(tof_workflow_child.stdout)
+    (tof_workflow_diagnostics/'stderr.log').write_bytes(tof_workflow_child.stderr)
+tof_workflow_child.stdout=tof_workflow_child.stdout.decode('utf-8')
+tof_workflow_child.stderr=tof_workflow_child.stderr.decode('utf-8')
+assert tof_workflow_child.returncode==0,tof_workflow_child.stdout+tof_workflow_child.stderr
+tof_workflow_reports=[line.removeprefix('TOF_WORKFLOW_REPORT=') for line in tof_workflow_child.stdout.splitlines() if line.startswith('TOF_WORKFLOW_REPORT=')]
+assert len(tof_workflow_reports)==1,tof_workflow_child.stdout
+tof_workflow_report=json.loads(tof_workflow_reports[0])
+assert tof_workflow_report['status']=='PASS' and tof_workflow_report['native_executions']==0
+assert [row['case'] for row in tof_workflow_report['cases']]==['basic','resume','single_candidate','fixed_length','slope']
+assert all(row['operations']==1 for row in tof_workflow_report['cases'])
+for tof_workflow_name in ('source_comparison','numerical_case','source_experiment','acceptance_theory','slope_scan','figures'):
+    tof_workflow_selected=pathlib.Path(tof_workflow_report['origins'][tof_workflow_name])
+    tof_workflow_original=tof_workflow_selected.read_bytes()
+    tof_workflow_held=tof_workflow_selected.with_name(tof_workflow_selected.name+'.missing-installed-test-held')
+    assert not tof_workflow_held.exists()
+    tof_workflow_selected.rename(tof_workflow_held)
+    try:
+        tof_workflow_missing=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-'+sys.argv[2])),'origins'],
+            cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert tof_workflow_missing.returncode!=0 and 'ModuleNotFoundError' in tof_workflow_missing.stderr and ('msplatform.workflows.oa_tof_design.'+tof_workflow_name) in tof_workflow_missing.stderr,tof_workflow_missing.stderr
+        missing_rejected.append('tof_workflow_'+tof_workflow_name)
+    finally:tof_workflow_held.rename(tof_workflow_selected)
+    assert tof_workflow_selected.read_bytes()==tof_workflow_original
+tof_workflow_executor=pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/execution/resources/frozen_python_package.ps1'
+tof_workflow_executor_original=tof_workflow_executor.read_bytes()
+tof_workflow_executor_held=tof_workflow_executor.with_name(tof_workflow_executor.name+'.missing-installed-test-held')
+assert not tof_workflow_executor_held.exists()
+tof_workflow_executor.rename(tof_workflow_executor_held)
+try:
+    tof_workflow_resource_missing=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-resource-'+sys.argv[2])),'resource_missing'],
+        cwd=root,capture_output=True,timeout=90,check=False)
+    if tof_workflow_retained:
+        tof_workflow_resource_diagnostics=pathlib.Path(tof_workflow_retained)/('tof-workflow-resource-client-'+sys.argv[2])
+        tof_workflow_resource_diagnostics.mkdir(exist_ok=False)
+        (tof_workflow_resource_diagnostics/'stdout.log').write_bytes(tof_workflow_resource_missing.stdout)
+        (tof_workflow_resource_diagnostics/'stderr.log').write_bytes(tof_workflow_resource_missing.stderr)
+    tof_workflow_resource_missing.stdout=tof_workflow_resource_missing.stdout.decode('utf-8')
+    tof_workflow_resource_missing.stderr=tof_workflow_resource_missing.stderr.decode('utf-8')
+    assert tof_workflow_resource_missing.returncode==0,tof_workflow_resource_missing.stdout+tof_workflow_resource_missing.stderr
+    tof_workflow_missing_reports=[line.removeprefix('TOF_WORKFLOW_REPORT=') for line in tof_workflow_resource_missing.stdout.splitlines() if line.startswith('TOF_WORKFLOW_REPORT=')]
+    assert len(tof_workflow_missing_reports)==1,tof_workflow_resource_missing.stdout
+    assert json.loads(tof_workflow_missing_reports[0])['status']=='RESOURCE_MISSING_REJECTED'
+    missing_rejected.append('tof_workflow_frozen_executor')
+finally:tof_workflow_executor_held.rename(tof_workflow_executor)
+assert tof_workflow_executor.read_bytes()==tof_workflow_executor_original
+print('INSTALLED_TOF_DESIGN_WORKFLOW=PASS')
+# TOF_WORKFLOW_INSTALLED_END
+
+
 print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=distribution.metadata['Name'],
                      version=distribution.version, module_origins=origins, schema_count=len(schemas),
                      schema_reference_count=reference_count, source_count=len(states),
@@ -3228,6 +3543,51 @@ print(json.dumps(dict(executable=sys.executable, cwd=str(root), distribution=dis
 
 
 class InstalledScientificCoreTests(unittest.TestCase):
+    def tof_workflow_probe_fixture(self) -> dict:
+        """Explicit original scientific inputs and test-only deployment; no new oracle."""
+        project = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+        experiments = project / "config/experiments"
+        reference = json.loads((experiments / "ideal_source_comparison.json").read_text(encoding="utf-8"))
+        basic = json.loads(json.dumps(reference))
+        basic["sampling"] = dict(particle_count=100, replicate_count=1)
+        basic["residual_scan"]["residual_sigma_m_per_s"] = [0.0, 100.0]
+        basic["width_scan"].update(full_widths_mm=[1.0, 2.2], residual_sigma_m_per_s=[0.0])
+        theory = json.loads((experiments / "ideal_acceptance_theory.json").read_text(encoding="utf-8"))
+        theory["design"].update(field1_v_per_mm=[250 / 3.25],
+            center_to_grid1_mm=[3.25 - 1.498375640839315],
+            grid2_voltage_fraction=[0.868348002459428],
+            reflectron_stage1_energy_fraction=[1701.7426470174573 / 2000], selected_per_width=1)
+        theory["full_widths_mm"] = [2.8]
+        theory["numerics"].update(position_order=8, residual_order=4,
+            population_orders=[[8, 8], [16, 16]], population_resolution_relative_tolerance=0.9)
+        theory["sampling"] = dict(particle_count=100, replicate_count=1)
+        fixed = json.loads((experiments / "ideal_acceptance_fixed_length.json").read_text(encoding="utf-8"))
+        fixed["design"].update(field1_v_per_mm=[250 / 3.25], center_to_grid1_mm=[2.5],
+            grid2_voltage_fraction=[0.975], reflectron_stage1_energy_fraction=[value / 2000 for value in range(1800, 1901, 5)])
+        fixed["full_widths_mm"] = [3.0]
+        fixed["numerics"].update(position_order=8, residual_order=4,
+            population_orders=[[8, 201], [16, 401]], population_resolution_relative_tolerance=0.9)
+        fixed["sampling"] = dict(particle_count=100, replicate_count=1)
+        slope = json.loads((experiments / "ideal_source_affine_slope_scan.json").read_text(encoding="utf-8"))
+        slope["sampling"] = dict(particle_count=100, replicate_count=1)
+        # SOFTWARE scalar fixture, identical to the real managed-slope test;
+        # no historical population, external artifacts or measured receipt claim.
+        receipt = json.dumps({"role": "test_owned_scalar_reference", "source_state": {
+            "ols_slope_vz_m_per_s_per_mm": slope["historical_slope_receipt"]["slope_m_per_s_per_mm"]}}).encode("utf-8")
+        slope["historical_slope_receipt"]["sha256"] = hashlib.sha256(receipt).hexdigest().upper()
+        host = json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"])
+        host_policy = Path(host["policy_path"]).read_bytes()
+        sources = {}
+        for name in ("source_comparison", "numerical_case", "source_experiment", "acceptance_theory", "slope_scan", "figures"):
+            source = REPO_ROOT / "src/msplatform/workflows/oa_tof_design" / (name + ".py")
+            raw = source.read_bytes()
+            sources[name] = dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+        return dict(reference=reference, configs=dict(basic=basic, single_candidate=theory, fixed_length=fixed, slope=slope),
+            analysis_hex=(project / "config/analysis_contract.json").read_bytes().hex(),
+            receipt_hex=receipt.hex(), receipt_sha256=slope["historical_slope_receipt"]["sha256"].upper(), sources=sources,
+            host_policy_hex=host_policy.hex(), host_policy_sha256=hashlib.sha256(host_policy).hexdigest(),
+            host_state_path=os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"], powershell=shutil.which("pwsh"))
+
     @staticmethod
     def tof_acceptance_kernels_probe_fixture():
         """Original explicit fixture inputs; portable assertions keep original budgets."""
@@ -4599,6 +4959,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               mr_stripe=self.stripe_probe_fixture(),
                                               mr_operating_pa=self.operating_pa_probe_fixture(),
                                               tof_acceptance_kernels=self.tof_acceptance_kernels_probe_fixture(),
+                                              tof_workflow=self.tof_workflow_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from msplatform.execution.artifact_naming import validate_run_id
+from msplatform.execution.context import python_runtime_version
 from msplatform.io.manifest_records import file_record, _json_bytes
 from msplatform.execution.file_lock import process_file_lock
 from msplatform.execution.recorded_file_removal import write_json_atomic
@@ -143,7 +144,7 @@ def build_run_manifest(
         "status": status,
         "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         "host": platform.node(),
-        "python": platform.python_version(),
+        "python": python_runtime_version(),
         "software": software or [],
         "run_config": file_record(
             run_config_path,

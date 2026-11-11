@@ -1,4 +1,4 @@
-"""Pure protocol checks and Windows bridge fixtures without a real host ledger."""
+"""Protocol/Windows bridge fixtures and solver-free public-owner consumer checks."""
 
 import json
 import importlib
@@ -449,8 +449,6 @@ class HeavyConsumerEntryTests(unittest.TestCase):
             "projects.rf_multipole_ion_optics.runtime.run_ideal_transport": [
                 "--project-root", "missing", "--design-profile-id", "hexapole_no_acceleration_full_length"
             ],
-            "projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison":
-                ["--seed", "1", "--config", "missing.json"],
         }
         for name, arguments in consumers.items():
             with self.subTest(module=name):
@@ -462,48 +460,97 @@ class HeavyConsumerEntryTests(unittest.TestCase):
                     self.assertEqual(raised.exception.code, 77)
                     self.assertEqual(enter.call_args.args[0], name)
 
-    def test_oa_plan_does_not_request_heavy_permission(self):
-        module = importlib.import_module(
-            "projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison"
+        # TOF now admits through its actual managed owner, before worker/science.
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.ideal_source_workflow import (
+            copy_input_root, make_context, retained_workspace,
         )
-        with patch.object(module, "load_json", return_value={}), \
-                patch.object(module, "build_case_plan", return_value=[]), \
-                patch.object(adapter, "ensure_heavy_entry") as enter, patch("builtins.print"):
-            self.assertEqual(module.main(["--plan", "--seed", "1"]), 0)
-            enter.assert_not_called()
+        module = importlib.import_module("msplatform.workflows.oa_tof_design.source_comparison")
+        project = Path(__file__).resolve().parents[1] / "projects/single_reflection_oa_tof_mass_analyzer"
+        with self.subTest(module=module.__name__), retained_workspace() as root:
+            inputs = copy_input_root(project, root / "author")
+            context = make_context(root / "workspace")
+            with patch("msplatform.execution.owner.run_managed_stage", side_effect=SystemExit(77)) as enter, \
+                    patch.object(module, "_invoke_worker") as worker, \
+                    patch.object(module, "_working_points") as compute:
+                with self.assertRaises(SystemExit) as raised:
+                    module.execute(inputs / "config/experiments/ideal_source_comparison.json",
+                                   input_root=inputs, context=context, seed=1,
+                                   run_id="20260914_180000__analysis__python__host-entry-admission")
+                self.assertEqual(raised.exception.code, 77)
+                enter.assert_called_once()
+                self.assertIs(enter.call_args.args[0], context)
+                self.assertEqual(enter.call_args.kwargs["descriptor"]["mode"], "ideal_source_comparison")
+                self.assertEqual(enter.call_args.kwargs["expected_operation_ids"], ["scientific_analysis"])
+                worker.assert_not_called()
+                compute.assert_not_called()
+
+    def test_oa_plan_does_not_request_heavy_permission(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.ideal_source_workflow import copy_input_root
+        module = importlib.import_module("msplatform.workflows.oa_tof_design.source_comparison")
+        project = Path(__file__).resolve().parents[1] / "projects/single_reflection_oa_tof_mass_analyzer"
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = copy_input_root(project, Path(directory) / "author")
+            with patch("msplatform.execution.context.load_environment") as environment, \
+                    patch("msplatform.execution.owner.run_managed_stage") as enter, \
+                    patch.object(module, "_invoke_worker") as worker, patch("builtins.print"):
+                self.assertEqual(module.main(["--plan", "--seed", "1", "--config",
+                    str(inputs / "config/experiments/ideal_source_comparison.json"),
+                    "--input-root", str(inputs)]), 0)
+                environment.assert_not_called()
+                enter.assert_not_called()
+                worker.assert_not_called()
 
     def test_execution_policy_provenance_does_not_change_oa_numerical_identity(self):
-        module = importlib.import_module(
-            "projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison"
+        from dataclasses import replace
+        from msplatform.io.file_identity import file_sha256
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.ideal_source_workflow import (
+            copy_input_root, make_context, owned_workflow_environment, retained_workspace,
         )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "common").mkdir()
-            for name in ("host_resource_python.py", "host_resource_python.ps1", "host_execution_lease.ps1",
-                         "host_resource_scheduler.py"):
-                (root / "common" / name).write_text("fixture-original", encoding="utf-8")
-            policy = root / "src/msplatform/execution/resources/host_resource_policy.json"
-            policy.parent.mkdir(parents=True)
-            policy.write_text("fixture-original", encoding="utf-8")
-            config = root / "config.json"
-            config.write_text('{"scope":"fixture"}', encoding="utf-8")
-            with patch.object(module, "REPO_ROOT", root), \
-                    patch.object(module, "_inputs", return_value={"experiment": config,
-                        "numerical_case": Path(module.__file__).with_name("numerical_case.py")}), \
-                    patch.object(module, "_command", return_value="fixture"):
-                first, identity = module._prepare_run(
-                    config, seed=1, run_id="20260914_180000__analysis__python__host-entry-a",
-                    resume_from=None, artifact_root=root / "artifacts",
-                )
-                policy.write_text("fixture-updated", encoding="utf-8")
-                second, resumed_identity = module._prepare_run(
-                    config, seed=1, run_id="20260914_180001__analysis__python__host-entry-b",
-                    resume_from=first, artifact_root=root / "artifacts",
-                )
-                self.assertEqual(identity, resumed_identity)
-                first_config = json.loads((first / "run_config.json").read_text(encoding="utf-8"))
-                second_config = json.loads((second / "run_config.json").read_text(encoding="utf-8"))
-                self.assertNotEqual(first_config["execution_source_sha256"], second_config["execution_source_sha256"])
+        module = importlib.import_module("msplatform.workflows.oa_tof_design.source_comparison")
+        project = Path(__file__).resolve().parents[1] / "projects/single_reflection_oa_tof_mass_analyzer"
+        with retained_workspace() as root:
+            inputs = copy_input_root(project, root / "author")
+            config_path = inputs / "config/experiments/ideal_source_comparison.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            # Same small original complete-cohort fixture used by the legacy consumer.
+            config["sampling"] = {"particle_count": 31, "replicate_count": 1}
+            config["residual_scan"]["residual_sigma_m_per_s"] = [1.0, 3.0]
+            config["width_scan"]["residual_sigma_m_per_s"] = [3.0]
+            config["width_scan"]["full_widths_mm"] = [1.0]
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            context = make_context(root / "workspace")
+            with owned_workflow_environment():
+                first = module.execute(config_path, input_root=inputs, context=context, seed=1,
+                    run_id="20260914_180000__analysis__python__host-entry-a")
+                first_bytes = (first / "run_config.json").read_bytes()
+                first_config = json.loads(first_bytes)
+                policy = json.loads(context.stage_policy_path.read_text(encoding="utf-8"))
+                policy["stages"]["ideal_source_comparison"]["limits"]["wall_clock_seconds"] += 1
+                selected_policy = root / "updated-test-stage-policy.json"
+                selected_policy.write_text(json.dumps(policy), encoding="utf-8")
+                # Select new engineering authority; do not mutate the old run's bound policy.
+                second_context = replace(context, stage_policy_path=selected_policy)
+                second = module.execute(config_path, input_root=inputs, context=second_context, seed=1,
+                    run_id="20260914_180001__analysis__python__host-entry-b", resume_from=first)
+            second_config = json.loads((second / "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(first_config["numerical_identity"], second_config["numerical_identity"])
+            self.assertEqual(first_config["numerical_input_sha256"], second_config["numerical_input_sha256"])
+            self.assertNotEqual(first_config["execution_source_sha256"], second_config["execution_source_sha256"])
+            self.assertEqual(first_config["execution_source_sha256"]["stage_policy"],
+                             file_sha256(context.stage_policy_path))
+            self.assertEqual(second_config["execution_source_sha256"]["stage_policy"],
+                             file_sha256(selected_policy))
+            # Frozen-package paths differ per run; that transport must not enter science identity.
+            self.assertNotEqual(file_sha256(Path(first_config["inputs"]["analysis_package"])),
+                                file_sha256(Path(second_config["inputs"]["analysis_package"])))
+            self.assertNotEqual(first, second)
+            self.assertEqual((first / "run_config.json").read_bytes(), first_bytes)
+            first_summary = json.loads((first / "summary.json").read_text(encoding="utf-8"))
+            second_summary = json.loads((second / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(first_summary["completed_cases"], first_summary["planned_cases"])
+            self.assertEqual(second_summary["reused_cases"], first_summary["planned_cases"])
+            self.assertEqual(second_summary["completed_cases"], first_summary["planned_cases"])
+
 
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell 7 bridge fixture")
