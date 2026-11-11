@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from threading import RLock
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -18,24 +17,23 @@ from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import verify_record
 
 
-class InertSession:
-    declare_file = RunSession.declare_file
-    add_input = RunSession.add_input
-    classify_file = RunSession.classify_file
-
+class InertSession(RunSession):
     def __init__(self, root, mode="success"):
-        self.run_dir = self.artifact_run_dir = root
-        self.input_dir, self.result_dir, self.log_dir = (root / name for name in ("inputs", "results", "logs"))
+        super().__init__(
+            context=SimpleNamespace(python_executable=Path(sys.executable)),
+            artifact_root=root.parent,
+            run_id=root.name,
+            project="cad_execution_transport_test",
+            mode=mode,
+            package={"run_dir": root, "artifact_run_dir": root},
+            capacity_session={"test_boundary": "inert_transport_no_capacity_admission"},
+            execution_request=root / "execution_request.json",
+            result_path=root / "Result.json",
+            expected_operation_ids=("export_step",),
+        )
         self.log_dir.mkdir()
-        self.run_config = root / "run_config.json"
         self.run_config.write_text('{"inputs":{}}', encoding="utf-8")
-        self.context = SimpleNamespace(python_executable=Path(sys.executable))
-        self.expected_operation_ids = ("export_step",)
-        self.file_roles, self.calls, self._lock = {}, [], RLock()
-        self.mode = mode
-
-    def canonical_path(self, path):
-        return Path(path).resolve()
+        self.calls = []
 
     def run_process(self, operation_id, **kwargs):
         self.calls.append((operation_id, kwargs))
