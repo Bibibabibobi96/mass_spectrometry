@@ -1293,6 +1293,47 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         if path.endswith("/inputs.py"):
                             self.assertIn("common/contracts/test_frozen_inputs.py", common)
 
+    def test_rf_event_and_axis_exporter_select_actual_consumers(self) -> None:
+        rf_paths = (
+            "src/msplatform/components/rf_multipole/event_table.py",
+            "src/msplatform/backends/simion/rf_ion11_source.py",
+            "src/msplatform/workflows/rf_event_table_validation.py",
+        )
+        axis = "src/msplatform/backends/simion/resources/export_axis_basis.lua"
+        with tempfile.TemporaryDirectory(prefix="rf_event_consumer_plans_") as directory:
+            for index, path in enumerate((*rf_paths, axis)):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    common = stages["common_contracts"]["command"]["arguments"]
+                    self.assertIn("common/contracts/test_installed_scientific_core.py", common)
+                    if path in rf_paths:
+                        self.assertIn("common/contracts/test_particle_state.py", common)
+                        rf = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
+                        for name in ("test_rf_event_original_witness", "test_frozen_particle_policy_package",
+                                     "test_cross_solver_gate_contract"):
+                            self.assertIn(f"projects.rf_multipole_ion_optics.tests.analysis.{name}",
+                                          rf["ChangedTestModules"])
+                        if path == rf_paths[0]:
+                            ip = stages["dual_pressure_rectilinear_ion_processor_static"]
+                            self.assertEqual(ip["command"]["script"],
+                                "projects/dual_pressure_rectilinear_ion_processor/verify_project.ps1")
+                            ip_gate = (REPO_ROOT / ip["command"]["script"]).read_text(encoding="utf-8")
+                            self.assertIn("common.gate_unittest discover", ip_gate)
+                            self.assertTrue((REPO_ROOT / "projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py").is_file())
+                            modules = set()
+                            for name, stage in stages.items():
+                                if name.startswith("instrument_assembly_integration"):
+                                    modules.update(stage["command"]["parameters"].get("SelectedTestModules", []))
+                            self.assertIn("integrations.tests.test_multipole_ip_prepare", modules)
+                    else:
+                        tof = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
+                        for name in ("test_reflectron_voltage_compensation", "test_compensation_powershell_adapter"):
+                            self.assertIn(f"projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.{name}",
+                                          tof["SelectedTestModules"])
+
     def test_canonical_file_identity_selects_frozen_project_consumers(self) -> None:
         with tempfile.TemporaryDirectory(prefix="file_identity_project_plan_") as directory:
             request = Path(directory) / "plan.json"

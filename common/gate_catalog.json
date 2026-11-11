@@ -593,6 +593,18 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/components/rf_multipole/event_table.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/rf_ion11_source.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_event_table_validation.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
           "exact": "common/paths/workspace_paths.py",
           "reason": "workspace_path_transport_changed"
         },
@@ -802,6 +814,26 @@
           "common/contracts/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/rf_multipole/event_table.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/rf_ion11_source.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/rf_event_table_validation.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_particle_state.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -1979,6 +2011,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/components/rf_multipole/event_table.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/analysis/field_comparison.py",
           "reason": "installed_field_comparison_dependency_changed"
         },
@@ -2222,6 +2258,18 @@
         "scope": "integrations/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/rf_multipole/event_table.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_multipole_ip_prepare.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -3251,6 +3299,10 @@
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/resources/export_axis_basis.lua",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/io/file_identity.py",
           "reason": "canonical_file_identity_consumer_changed"
         },
@@ -3359,6 +3411,19 @@
         "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/resources/export_axis_basis.lua",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_compensation.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -3544,6 +3609,18 @@
         "rf_multipole_generated_publications"
       ],
       "matches": [
+        {
+          "exact": "src/msplatform/components/rf_multipole/event_table.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/rf_ion11_source.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_event_table_validation.py",
+          "reason": "rf_event_or_axis_actual_consumer_changed"
+        },
         {
           "exact": "src/msplatform/io/file_identity.py",
           "reason": "canonical_file_identity_consumer_changed"
@@ -3740,6 +3817,32 @@
         "scope": "projects/rf_multipole_ion_optics/tests/",
         "preserve_command": true,
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/rf_multipole/event_table.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/rf_ion11_source.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/rf_event_table_validation.py",
+                "reason": "rf_event_or_axis_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_rf_event_original_witness.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_generate_interface_particle_table.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_interface_public_owner.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_interface_postprocess_child.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -4261,6 +4364,10 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
+        {
+          "exact": "src/msplatform/components/rf_multipole/event_table.py",
+          "reason": "ip_functional_event_validation_changed"
+        },
         {
           "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py",
           "reason": "ip_section_geometry_changed"

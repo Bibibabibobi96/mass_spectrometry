@@ -335,6 +335,145 @@ if sys.argv[2]=='resource': owner.materialize_measured_source(pathlib.Path(sys.a
         finally: mr_held.rename(mr_missing_path)
         assert mr_missing_path.read_bytes() == mr_original
 # MR_MEASURED_SOURCE_INSTALLED_END
+# RF_EVENT_PROTOCOL_INSTALLED_BEGIN
+with section_timing('rf_event_protocol', sys.argv[2]):
+    import errno
+    from msplatform.components.rf_multipole import event_table as rfe_events
+    from msplatform.backends.simion import rf_ion11_source as rfe_ion11
+    from msplatform.contracts import particle_physics as rfe_physics
+    from msplatform.backends.simion.resources import native_resource_path as rfe_resource
+    rfe_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    rfe_names = ('msplatform.components.rf_multipole.event_table', 'msplatform.backends.simion.rf_ion11_source',
+                 'msplatform.workflows.rf_event_table_validation')
+    rfe_modules = [importlib.import_module(name) for name in rfe_names]
+    rfe_files = [pathlib.Path(module.__file__).resolve() for module in rfe_modules]
+    for name, path in zip(rfe_names, rfe_files, strict=True):
+        assert path == rfe_purelib.joinpath(*name.split('.')).with_suffix('.py'), (name, path)
+    assert rf_observations.event_table is rfe_events
+    assert not hasattr(rf_observations, 'PARTICLE_STATE_COLUMNS')
+    assert rfe_events.PARTICLE_STATE_COLUMNS[0] == 'particle_id'
+    assert rfe_events.kinetic_energy_ev is rfe_physics.kinetic_energy_ev
+    assert not hasattr(rfe_ion11, 'read_canonical_rf_source_expectations')
+    for relative in ('common/contracts/particle_state.py', 'projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py',
+                     'projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py'):
+        assert not (rfe_purelib/relative).exists(), relative
+    rfe_witness = fixture['rf_event_old_capture']
+    rfe_records = {record['case']: record for record in rfe_witness['records']}
+    assert len(rfe_records) == len(rfe_witness['records']) == 32
+    assert all(row['matches_expected'] and row['inputs_unchanged'] for row in rfe_records.values())
+    rfe_root = root / ('rf-event-original-'+sys.argv[2]); rfe_root.mkdir()
+    for item in rfe_witness['inputs']:
+        raw = bytes.fromhex(item['raw_hex'])
+        assert hashlib.sha256(raw).hexdigest() == item['sha256']
+        target = rfe_root/pathlib.PureWindowsPath(item['path']).name
+        assert not target.exists(); target.write_bytes(raw)
+    rfe_before = {path.name: path.read_bytes() for path in rfe_root.iterdir()}
+    rfe_sources = {int(key): value for key, value in rfe_records['canonical_valid']['value'].items()}
+    rfe_operations = {
+        'ion11_valid_offset': lambda: rfe_ion11.read_ion11_source_states(rfe_root/'source.ion', 7.0),
+        'ion11_bom': lambda: rfe_ion11.read_ion11_source_states(rfe_root/'source_bom.ion', 7.0),
+        'canonical_valid': lambda: rfe_events.read_canonical_rf_source_expectations(rfe_root/'source.csv'),
+        'canonical_explicit_mass': lambda: rfe_events.read_canonical_rf_source_expectations(rfe_root/'fallback.csv', 28.0),
+        'canonical_missing_file': lambda: rfe_events.read_canonical_rf_source_expectations(rfe_root/'absent.csv'),
+        'event_valid': lambda: rfe_events.validate_rf_event_table(rfe_root/'state_valid.csv', rfe_sources, 1.1e6, 0.),
+        'event_valid_explicit_columns_enums': lambda: rfe_events.validate_rf_event_table(rfe_root/'state_valid.csv',
+            rfe_sources, 1.1e6, 0., columns=rfe_events.PARTICLE_STATE_COLUMNS, enums=rfe_events.ENUMS),
+    }
+    for name in ('ion_bad_count','ion_bad_mass','ion_bad_energy','ion_bad_number'):
+        rfe_operations[name] = lambda name=name: rfe_ion11.read_ion11_source_states(rfe_root/(name+'.ion'))
+    for name in ('canonical_duplicate','canonical_missing_mass','canonical_bad_mass'):
+        rfe_operations[name] = lambda name=name: rfe_events.read_canonical_rf_source_expectations(rfe_root/(name+'.csv'))
+    for name, planes in (('event_valid_planes',(9,12)),('event_bad_rod_plane',(10,12)),('event_bad_handoff_plane',(9,13))):
+        rfe_operations[name] = lambda planes=planes: rfe_events.validate_rf_event_table(rfe_root/'state_planes.csv', rfe_sources, 1.1e6, 0., *planes)
+    for name in ('duplicate','missing_terminal','unknown_id','invalid_status','nonfinite','bad_phase','negative_energy','source_drift','bad_header'):
+        rfe_operations['event_'+name] = lambda name=name: rfe_events.validate_rf_event_table(rfe_root/('state_'+name+'.csv'), rfe_sources, 1.1e6, 0.)
+    assert set(rfe_operations) == {name for name in rfe_records if not name.startswith('cli_')}
+    for name, call in rfe_operations.items():
+        record = rfe_records[name]
+        if record['expected'] == 'success':
+            assert json.loads(json.dumps(call())) == record['value'], name
+        else:
+            try: call()
+            except Exception as exc:
+                assert type(exc).__module__+'.'+type(exc).__qualname__ == record['exception_type'], name
+                if name == 'canonical_missing_file':
+                    assert exc.errno == errno.ENOENT and pathlib.Path(exc.filename) == rfe_root/'absent.csv'
+                else: assert str(exc) == record['exception_message'], name
+            else: raise AssertionError('RF case unexpectedly passed: '+name)
+    rfe_child = r"""import importlib,importlib.abc,importlib.util,json,os,pathlib,runpy,sys,sysconfig
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(p))
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,Deny())
+name=sys.argv[2]
+if name=='cli':
+ pure=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+ for module in ('msplatform.components.rf_multipole.event_table','msplatform.backends.simion.rf_ion11_source'):
+  assert pathlib.Path(importlib.import_module(module).__file__).resolve().is_relative_to(pure)
+ spec=importlib.util.find_spec('msplatform.workflows.rf_event_table_validation')
+ assert pathlib.Path(spec.origin).resolve().is_relative_to(pure)
+ sys.argv=['msplatform.workflows.rf_event_table_validation',*sys.argv[3:]]
+ runpy.run_module('msplatform.workflows.rf_event_table_validation',run_name='__main__')
+else: importlib.import_module(name)
+"""
+    rfe_blocked = json.dumps([str(path) for path in blocked_source_roots])
+    for label, state, particles, format_name, extra in (
+        ('canonical','state_valid.csv','source.csv','canonical',[]),
+        ('ion11','state_ion11.csv','source.ion','ion11',['--axial-offset-mm','7']),
+        ('bad_header','state_bad_header.csv','source.csv','canonical',[])):
+        records = [row for row in rfe_records.values() if row['case'].startswith('cli_'+label+'_')]
+        assert len(records) == 2
+        args = ['--state',str(rfe_root/state),'--particles',str(rfe_root/particles),'--source-format',format_name,
+                '--frequency-hz','1100000','--phase-rad','0','--solver','fixture',*extra]
+        result = subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rfe_child,rfe_blocked,'cli',*args],
+                                cwd=rfe_root,capture_output=True,timeout=30,check=False)
+        for record in records:
+            assert result.returncode == record['returncode'] and result.stdout.hex() == record['stdout_hex'], (label,result.stderr)
+            last = result.stderr.decode('utf-8').splitlines()[-1] if result.stderr else ''
+            assert last == record['stderr_last_line'], (label,result.stderr)
+        if result.stderr: print('RF_EVENT_CLI_STDERR_HEX='+json.dumps(dict(case=label,stderr_hex=result.stderr.hex())),flush=True)
+    assert {path.name:path.read_bytes() for path in rfe_root.iterdir()} == rfe_before
+    for name, path in zip(rfe_names, rfe_files, strict=True):
+        original=path.read_bytes(); held=path.with_suffix(path.suffix+'.rf-event-held')
+        assert not held.exists(); path.rename(held)
+        try:
+            missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rfe_child,rfe_blocked,name],
+                                   cwd=rfe_root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+            assert missing.returncode != 0 and 'ModuleNotFoundError' in missing.stderr and name in missing.stderr, missing.stderr
+        finally: held.rename(path)
+        assert path.read_bytes() == original
+    rfe_export = pathlib.Path(rfe_resource('export_axis_basis.lua')).resolve()
+    assert rfe_export == rfe_purelib/'msplatform/backends/simion/resources/export_axis_basis.lua'
+    rfe_export_bytes = rfe_export.read_bytes()
+    assert hashlib.sha256(rfe_export_bytes).hexdigest() == '940fe56c42b6ffb066096ffc570adeb3d724b1d34826b35fb91ccec174822ec1'
+    rfe_resource_child = r"""import importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(p))
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,Deny())
+from msplatform.backends.simion.resources import native_resource_path
+native_resource_path('export_axis_basis.lua')
+"""
+    rfe_held=rfe_export.with_suffix('.lua.rf-export-held');assert not rfe_held.exists();rfe_export.rename(rfe_held)
+    try:
+        missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rfe_resource_child,rfe_blocked],
+                               cwd=rfe_root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert missing.returncode != 0 and 'FileNotFoundError' in missing.stderr and 'export_axis_basis.lua' in missing.stderr, missing.stderr
+    finally: rfe_held.rename(rfe_export)
+    assert rfe_export.read_bytes() == rfe_export_bytes
+# RF_EVENT_PROTOCOL_INSTALLED_END
 # Recorded local analysis: synthetic logs, no solver or owner.
 from msplatform.workflows.local_frontend import analyze as local_analyzer, focus as local_focus, figures as local_figures
 from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
@@ -1633,7 +1772,7 @@ mpip_states = load_component_particle_state_csv(mpip_run/'results/multipole_ip/s
 assert len(mpip_states.rows) == 1 and mpip_states.rows[0]['particle_id'] == 2
 assert mpip_states.rows[0]['particle_birth_time_us'] == 2 * 1e-7 * 1e6
 assert mpip_states.rows[0]['particle_weight'] == 1.
-assert rf_observations.PARTICLE_STATE_COLUMNS[0] == 'particle_id'
+assert rf_observations.event_table.PARTICLE_STATE_COLUMNS[0] == 'particle_id'
 import msplatform.workflows.multipole_ip.prepare as mpip_module
 assert pathlib.Path(mpip_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
 assert mpip_module.SCHEMA.is_file()
@@ -4754,10 +4893,13 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def test_installed_rf_prehook_runtime_failure_preserves_primary_diagnostic(self) -> None:
         """Synthetic diagnostic branches; no owner, process or OS-cause claim."""
         import ast
+        from contextlib import contextmanager
         from types import SimpleNamespace
         from unittest.mock import patch
 
         tree = ast.parse(INSTALLED_PROBE)
+        timing = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                      and node.name == 'section_timing')
         case = next(node for node in ast.walk(tree) if isinstance(node, ast.For)
                     and isinstance(node.target, ast.Name) and node.target.id == 'rf_l1_case')
         initialization = next(node for node in case.body if isinstance(node, ast.Assign)
@@ -4769,7 +4911,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                       and any(isinstance(target, ast.Name) and target.id == 'session' for target in node.targets))
         # Execute the actual invocation/handler and following mandatory lookup,
         # not a copied approximation of the exception-handling policy.
-        code = compile(ast.Module(body=[initialization, invocation, lookup], type_ignores=[]),
+        code = compile(ast.Module(body=[timing, initialization, invocation, lookup], type_ignores=[]),
                        '<actual-installed-rf-handler>', 'exec')
         primary = RuntimeError('CONTROLLED_PREHOOK_DIAGNOSTIC')
         primary.add_note('Synthetic diagnostic sentinel; not a measured OS failure')
@@ -4777,7 +4919,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             raise primary
         selected = SimpleNamespace(_invoke_frozen_stage=object(), run=fail_before_hook)
         seen = {}
-        namespace = dict(rf_l1_patch=patch, rf_l1=selected, rf_l1_seen=seen,
+        namespace = dict(contextmanager=contextmanager, time=time, json=json, sys=sys, rf_l1_case='controlled',
+            rf_l1_patch=patch, rf_l1=selected, rf_l1_seen=seen,
             rf_l1_observe=lambda *args, **kwargs: None,
             rf_l1_kernel=SimpleNamespace(simulate_mass=object()), rf_l1_context=object(),
             rf_l1_paths={key: Path(key+'.json') for key in ('baseline','resolved','mode','source')},
@@ -6052,6 +6195,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
+                                              rf_event_old_capture=json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
                                               mr_measured_handoff=str(mr_measured_fixture.handoff),
                                               mr_measured_callback=mr_callbacks[0],
                                               mr_measured_source_old_witness=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
