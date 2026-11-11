@@ -38,6 +38,7 @@ class RunSession:
     _completed: dict[str, int] = field(default_factory=dict, repr=False)
     _attempted: set[str] = field(default_factory=set, repr=False)
     _lock: Any = field(default_factory=RLock, repr=False)
+    _input_binding_active: bool = field(default=False, init=False, repr=False)
 
     @property
     def run_dir(self) -> Path:
@@ -134,31 +135,39 @@ class RunSession:
         saves the accepted prefix; a failed prefix save annotates the primary.
         The original single-input API retains its per-record durability.
         The existing lock covers verification and the whole batch commit.
+        Iterators may declare files, but must not recursively bind inputs on this
+        session: nested add_input/add_inputs fail before consuming their records.
         """
         with self._lock:
-            config = None
-            added = False
+            if self._input_binding_active:
+                raise RuntimeError("Input binding cannot be nested on the same RunSession")
+            self._input_binding_active = True
             try:
-                for name, record in records:
-                    if not isinstance(name, str) or not name or name == "execution_request":
-                        raise ValueError("Input name is missing or reserved")
-                    verify_record(name, dict(record))
-                    target = self.declare_file(Path(record["path"]), record["retention_role"])
-                    if config is None:
-                        config = json.loads(self.run_config.read_text(encoding="utf-8-sig"))
-                    if name in config["inputs"]:
-                        raise ValueError("Run input name already exists")
-                    config["inputs"][name] = str(target)
-                    added = True
-            except BaseException as primary:
+                config = None
+                added = False
+                try:
+                    for name, record in records:
+                        if not isinstance(name, str) or not name or name == "execution_request":
+                            raise ValueError("Input name is missing or reserved")
+                        verify_record(name, dict(record))
+                        target = self.declare_file(Path(record["path"]), record["retention_role"])
+                        if config is None:
+                            config = json.loads(self.run_config.read_text(encoding="utf-8-sig"))
+                        if name in config["inputs"]:
+                            raise ValueError("Run input name already exists")
+                        config["inputs"][name] = str(target)
+                        added = True
+                except BaseException as primary:
+                    if added:
+                        try:
+                            write_json_atomic(self.run_config, config)
+                        except BaseException as secondary:
+                            primary.add_note(f"Validated input prefix preservation failed: {secondary!r}")
+                    raise
                 if added:
-                    try:
-                        write_json_atomic(self.run_config, config)
-                    except BaseException as secondary:
-                        primary.add_note(f"Validated input prefix preservation failed: {secondary!r}")
-                raise
-            if added:
-                write_json_atomic(self.run_config, config)
+                    write_json_atomic(self.run_config, config)
+            finally:
+                self._input_binding_active = False
 
     def classify_file(self, path: Path, **_options: Any) -> str:
         """Classify only this action's explicit records and owner-created metadata."""

@@ -139,6 +139,82 @@ class RunSessionInputBindingTests(unittest.TestCase):
             self.assertEqual(session.run_config.read_bytes(), before)
             self.assertEqual(session.file_roles, {record["path"]: "required_evidence"})
 
+    def test_reentrant_input_binding_is_rejected_before_inner_records_are_consumed(self):
+        from msplatform.execution import run_session
+        for nested_api in ("single", "batch"):
+            with self.subTest(nested_api=nested_api), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                session = self._session(root)
+                first = self._record(root, "first.txt")
+                nested = self._record(root, "nested.txt")
+                last = self._record(root, "last.txt")
+                visited = []
+
+                def inner():
+                    visited.append("inner-consumed")
+                    yield "nested", nested
+
+                def records():
+                    # The two real package generators declare inside iteration.
+                    session.declare_file(first["path"], "required_evidence")
+                    yield "first", first
+                    visited.append("nested-attempted")
+                    if nested_api == "single":
+                        session.add_input("nested", nested)
+                    else:
+                        session.add_inputs(inner())
+                    visited.append("last-consumed")
+                    yield "last", last
+
+                with patch.object(run_session, "verify_record", wraps=run_session.verify_record) as verifier, \
+                     patch.object(run_session, "write_json_atomic", wraps=run_session.write_json_atomic) as writer:
+                    with self.assertRaisesRegex(RuntimeError, "cannot be nested"):
+                        session.add_inputs(records())
+                self.assertEqual(visited, ["nested-attempted"])
+                self.assertEqual([call.args[0] for call in verifier.call_args_list], ["first"])
+                self.assertEqual(writer.call_count, 1)
+                self.assertEqual(json.loads(session.run_config.read_text())["inputs"], {"first": first["path"]})
+                self.assertEqual(session.file_roles, {first["path"]: "required_evidence"})
+                # The failed outer binding released its guard; no inner success
+                # is claimed, and a later ordinary binding retains that prefix.
+                session.add_input("last", last)
+                self.assertEqual(json.loads(session.run_config.read_text())["inputs"],
+                                 {"first": first["path"], "last": last["path"]})
+
+    def test_input_binding_guard_resets_after_empty_and_write_failure_boundaries(self):
+        from msplatform.execution import run_session
+        for boundary in ("empty", "first-invalid", "prefix-save", "final-save"):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                session = self._session(root)
+                first = self._record(root, "first.txt")
+                last = self._record(root, "last.txt")
+                if boundary == "empty":
+                    session.add_inputs(iter(()))
+                elif boundary == "first-invalid":
+                    with self.assertRaises(ValueError):
+                        session.add_input("", first)
+                elif boundary == "prefix-save":
+                    original = RuntimeError("ORIGINAL_ITERATOR_FAILURE")
+
+                    def records():
+                        yield "first", first
+                        raise original
+
+                    with patch.object(run_session, "write_json_atomic", side_effect=OSError("PREFIX_SAVE_SECONDARY")):
+                        with self.assertRaises(RuntimeError) as caught:
+                            session.add_inputs(records())
+                    self.assertIs(caught.exception, original)
+                    self.assertTrue(any("PREFIX_SAVE_SECONDARY" in note for note in original.__notes__))
+                else:
+                    original = OSError("FINAL_SAVE_FAILURE")
+                    with patch.object(run_session, "write_json_atomic", side_effect=original):
+                        with self.assertRaises(OSError) as caught:
+                            session.add_input("first", first)
+                    self.assertIs(caught.exception, original)
+                session.add_input("last", last)
+                self.assertEqual(json.loads(session.run_config.read_text())["inputs"], {"last": last["path"]})
+
 
 class ExecutionRuntimeTests(unittest.TestCase):
     def test_primary_admission_and_native_failure_survive_release_and_close_secondary(self):

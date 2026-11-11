@@ -125,6 +125,9 @@ validation for one item and retains its per-record commit behavior. The existing
 reentrant owner lock now also covers verification and iterator advancement for the
 entire batch. Package callers keep their lazy declaration/stat order; all immutable
 input guards, writer completion and publication checks remain in place.
+Iterators may declare files through the same session, but nested add_input/add_inputs
+calls are rejected before consuming their records. The binding guard is released on
+empty input and every success or failure path, so subsequent ordinary bindings work.
 
 RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_comsol.ps1)也消费此公共 PowerShell owner：正常计算、受保护CSV新分析与显式已解MPH冷提取共享真实完成／收尾机制，原CLI可仅恢复原Result。项目提供冻结科学上下文、原生／Python完成与科学判断，不将保存文件或执行成功当作科学资格；参数、真实验证及限制见[RF状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
 
