@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from threading import RLock
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.capacity_session import renew_capacity_session
 from msplatform.io.manifest_records import verify_record
@@ -123,17 +123,42 @@ class RunSession:
         return target
 
     def add_input(self, name: str, record: Mapping[str, Any]) -> None:
-        """Bind an actual record and its role into the existing run configuration."""
-        if not isinstance(name, str) or not name or name == "execution_request":
-            raise ValueError("Input name is missing or reserved")
-        verify_record(name, dict(record))
-        target = self.declare_file(Path(record["path"]), record["retention_role"])
+        """Bind one actual record with its original per-record durability."""
+        self.add_inputs(((name, record),))
+
+    def add_inputs(self, records: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
+        """Bind one ordered batch, committing once or saving its validated prefix.
+
+        This batch is the durability boundary: a crash before its commit does not
+        preserve each item separately. A handled iteration/validation failure
+        saves the accepted prefix; a failed prefix save annotates the primary.
+        The original single-input API retains its per-record durability.
+        The existing lock covers verification and the whole batch commit.
+        """
         with self._lock:
-            config = json.loads(self.run_config.read_text(encoding="utf-8-sig"))
-            if name in config["inputs"]:
-                raise ValueError("Run input name already exists")
-            config["inputs"][name] = str(target)
-            write_json_atomic(self.run_config, config)
+            config = None
+            added = False
+            try:
+                for name, record in records:
+                    if not isinstance(name, str) or not name or name == "execution_request":
+                        raise ValueError("Input name is missing or reserved")
+                    verify_record(name, dict(record))
+                    target = self.declare_file(Path(record["path"]), record["retention_role"])
+                    if config is None:
+                        config = json.loads(self.run_config.read_text(encoding="utf-8-sig"))
+                    if name in config["inputs"]:
+                        raise ValueError("Run input name already exists")
+                    config["inputs"][name] = str(target)
+                    added = True
+            except BaseException as primary:
+                if added:
+                    try:
+                        write_json_atomic(self.run_config, config)
+                    except BaseException as secondary:
+                        primary.add_note(f"Validated input prefix preservation failed: {secondary!r}")
+                raise
+            if added:
+                write_json_atomic(self.run_config, config)
 
     def classify_file(self, path: Path, **_options: Any) -> str:
         """Classify only this action's explicit records and owner-created metadata."""

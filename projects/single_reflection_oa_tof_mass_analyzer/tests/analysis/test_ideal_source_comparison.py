@@ -391,7 +391,8 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 session = SimpleNamespace(input_dir=run / "inputs", result_dir=run / "results",
                     log_dir=run / "logs", run_dir=run, artifact_run_dir=run, run_config=run_config, capacity_session={},
                     context=SimpleNamespace(python_executable=Path("selected-python")),
-                    declare_file=declare, add_input=lambda name, record: records.update({name: record}))
+                    declare_file=declare, add_input=lambda name, record: records.update({name: record}),
+                    add_inputs=records.update)
                 with patch.object(run_comparison, "_source_package_root", return_value=provider), \
                         patch.object(run_comparison, "_invoke_worker", side_effect=AssertionError("preparation cannot launch")) as invoke:
                     if mutate:

@@ -19,6 +19,127 @@ from msplatform.execution.processes import run_observed_process, ProcessExecutio
 from msplatform.execution import recovery as batch_continuation
 
 
+class RunSessionInputBindingTests(unittest.TestCase):
+    @staticmethod
+    def _session(root):
+        from msplatform.execution.run_session import RunSession
+        context = ExecutionContext(workspace=root, python_executable=Path(sys.executable),
+            powershell_executable=root / "not-started-pwsh.exe", tools={},
+            host_state_path=root / "unused-state.sqlite3", policy_path=root / "unused-policy.json")
+        (root / "run_config.json").write_text(json.dumps(dict(inputs={}, parameters={"unchanged": 7})), encoding="utf-8")
+        return RunSession(context=context, artifact_root=root, run_id="input-binding-only",
+            project="fixture", mode="software", package=dict(run_dir=str(root), artifact_run_dir=str(root)),
+            capacity_session={}, execution_request=root / "unused-request.json", result_path=root / "unused-result.json")
+
+    @staticmethod
+    def _record(root, name, content=b"source"):
+        from msplatform.io.manifest_records import file_record
+        path = root / name
+        path.write_bytes(content)
+        return file_record(path, "required_evidence")
+
+    def test_bulk_input_binding_commits_once_and_single_calls_keep_record_durability(self):
+        from msplatform.execution import run_session
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = [(f"source{index}", self._record(root, f"source{index}.txt")) for index in range(4)]
+            session = self._session(root)
+            with patch.object(run_session, "write_json_atomic", wraps=run_session.write_json_atomic) as writer, \
+                 patch.object(run_session, "verify_record", wraps=run_session.verify_record) as verifier:
+                session.add_inputs(iter(records))
+            self.assertEqual(writer.call_count, 1)
+            self.assertEqual([call.args[0] for call in verifier.call_args_list], [name for name, _ in records])
+            bulk = session.run_config.read_bytes()
+            roles = dict(session.file_roles)
+            session = self._session(root)
+            with patch.object(run_session, "write_json_atomic", wraps=run_session.write_json_atomic) as writer:
+                for index, (name, record) in enumerate(records):
+                    session.add_input(name, record)
+                    self.assertEqual(len(json.loads(session.run_config.read_text())["inputs"]), index + 1)
+            self.assertEqual(writer.call_count, len(records))
+            self.assertEqual(session.run_config.read_bytes(), bulk)
+            self.assertEqual(session.file_roles, roles)
+            self.assertEqual(json.loads(bulk)["parameters"], {"unchanged": 7})
+
+    def test_input_validation_failure_preserves_only_verified_prefix_in_original_order(self):
+        from msplatform.execution import run_session
+        for failure in ("missing", "tampered", "role", "duplicate", "reserved"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                session = self._session(root)
+                first = self._record(root, "first.txt")
+                bad = self._record(root, "bad.txt")
+                future = self._record(root, "future.txt")
+                name = "bad"
+                if failure == "missing":Path(bad["path"]).unlink()
+                if failure == "tampered":Path(bad["path"]).write_bytes(b"SOurce")
+                if failure == "role":bad["retention_role"] = "invalid"
+                if failure == "duplicate":name = "first"
+                if failure == "reserved":name = "execution_request"
+                visited = []
+                def records():
+                    for key, record in (("first", first), (name, bad), ("future", future)):
+                        visited.append(key)
+                        yield key, record
+                expected = AssertionError if failure in ("missing", "tampered") else ValueError
+                with patch.object(run_session, "write_json_atomic", wraps=run_session.write_json_atomic) as writer:
+                    with self.assertRaises(expected):session.add_inputs(records())
+                self.assertEqual(writer.call_count, 1)
+                self.assertEqual(visited, ["first", name])
+                self.assertEqual(json.loads(session.run_config.read_text())["inputs"], {"first": first["path"]})
+                self.assertNotIn(future["path"], session.file_roles)
+
+    def test_lazy_iterator_stat_failure_and_secondary_prefix_save_keep_original_exception(self):
+        from msplatform.execution import run_session
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = self._session(root)
+            first = self._record(root, "first.txt")
+            future = root / "future.txt"
+            def records():
+                yield "first", first
+                (root / "missing-stat.txt").stat()
+                session.declare_file(future, "required_evidence")
+                yield "future", {}
+            with self.assertRaises(FileNotFoundError):session.add_inputs(records())
+            self.assertEqual(json.loads(session.run_config.read_text())["inputs"], {"first": first["path"]})
+            self.assertNotIn(str(future), session.file_roles)
+            session = self._session(root)
+            original = RuntimeError("ORIGINAL_ITERATOR_FAILURE")
+            def broken():
+                yield "first", first
+                raise original
+            before = session.run_config.read_bytes()
+            with patch.object(run_session, "write_json_atomic", side_effect=OSError("PREFIX_SAVE_SECONDARY")) as writer:
+                with self.assertRaises(RuntimeError) as caught:session.add_inputs(broken())
+            self.assertIs(caught.exception, original)
+            self.assertEqual(writer.call_count, 1)
+            self.assertTrue(any("PREFIX_SAVE_SECONDARY" in note for note in original.__notes__))
+            self.assertEqual(session.run_config.read_bytes(), before)
+
+    def test_empty_first_failure_and_final_commit_failure_do_not_add_retries(self):
+        from msplatform.execution import run_session
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = self._session(root)
+            record = self._record(root, "source.txt")
+            before = session.run_config.read_bytes()
+            with patch.object(run_session, "write_json_atomic", wraps=run_session.write_json_atomic) as writer:
+                session.add_inputs(iter(()))
+                with self.assertRaisesRegex(ValueError, "missing or reserved"):
+                    session.add_inputs((("", record),))
+            writer.assert_not_called()
+            self.assertEqual(session.run_config.read_bytes(), before)
+            self.assertEqual(session.file_roles, {})
+            original = OSError("COMMIT_FAILURE")
+            with patch.object(run_session, "write_json_atomic", side_effect=original) as writer:
+                with self.assertRaises(OSError) as caught:session.add_inputs((("source", record),))
+            self.assertIs(caught.exception, original)
+            self.assertEqual(writer.call_count, 1)
+            self.assertEqual(session.run_config.read_bytes(), before)
+            self.assertEqual(session.file_roles, {record["path"]: "required_evidence"})
+
+
 class ExecutionRuntimeTests(unittest.TestCase):
     def test_primary_admission_and_native_failure_survive_release_and_close_secondary(self):
         with tempfile.TemporaryDirectory() as directory:

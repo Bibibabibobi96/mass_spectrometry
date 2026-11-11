@@ -485,12 +485,14 @@ def _freeze_worker_package(session: Any, frozen: dict[str, dict], *, seed: int,
     code_root = session.artifact_run_dir / "inputs/analysis_code"
     package = freeze_python_package(provider.parent, code_root, relative_paths=selected)
     guards = []
-    for index, entry in enumerate(package["files"]):
-        path = session.declare_file(entry["path"], "required_evidence")
-        record = dict(path=str(path), exists=True, bytes=path.stat().st_size,
-                      sha256=entry["sha256"], retention_role="required_evidence")
-        session.add_input(f"analysis_code_{index:04d}", record)
-        guards.append(record)
+    def package_inputs():
+        for index, entry in enumerate(package["files"]):
+            path = session.declare_file(entry["path"], "required_evidence")
+            record = dict(path=str(path), exists=True, bytes=path.stat().st_size,
+                          sha256=entry["sha256"], retention_role="required_evidence")
+            yield f"analysis_code_{index:04d}", record
+            guards.append(record)
+    session.add_inputs(package_inputs())
     selected_members = {Path(record["path"]): record for record in guards}
     for name, scientific in frozen.items():
         source = Path(scientific.get("source_path", scientific["path"])).resolve()

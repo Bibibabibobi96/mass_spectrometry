@@ -208,12 +208,14 @@ def _prepare_frozen_request(session: RunSession, scientific_records: dict) -> tu
     code_root = session.input_dir / 'analysis_code'
     package = freeze_python_package(source_root, code_root, relative_paths=selected)
     code_records = []
-    for index, entry in enumerate(package['files']):
-        path = session.declare_file(Path(entry['path']), 'required_evidence')
-        record = dict(path=str(path), exists=True, bytes=path.stat().st_size,
-                      sha256=entry['sha256'], retention_role='required_evidence')
-        session.add_input(f'analysis_code_{index:04d}', record)
-        code_records.append(record)
+    def package_inputs():
+        for index, entry in enumerate(package['files']):
+            path = session.declare_file(Path(entry['path']), 'required_evidence')
+            record = dict(path=str(path), exists=True, bytes=path.stat().st_size,
+                          sha256=entry['sha256'], retention_role='required_evidence')
+            yield f'analysis_code_{index:04d}', record
+            code_records.append(record)
+    session.add_inputs(package_inputs())
     package_path = session.declare_file(session.input_dir / 'analysis_package.json', 'required_evidence')
     write_json_atomic(package_path, dict(schema_version=2, role='rf_mass_filter_l1_frozen_package',
         package=package, provider=str(provider)))

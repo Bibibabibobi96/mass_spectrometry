@@ -116,6 +116,16 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 
 ### Python工作流的公共生命周期owner
 
+RunSession.add_inputs accepts an ordered iterable of actual input records. It verifies
+and declares each item through the existing owner, then commits the batch with the
+same atomic JSON writer. Handled failures preserve the validated prefix; a secondary
+prefix-save failure is attached to the original exception. A hard crash before the
+batch commit does not provide per-record durability. add_input uses this same
+validation for one item and retains its per-record commit behavior. The existing
+reentrant owner lock now also covers verification and iterator advancement for the
+entire batch. Package callers keep their lazy declaration/stat order; all immutable
+input guards, writer completion and publication checks remain in place.
+
 RF finite COMSOL 的[正常无碰撞入口](../../projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_comsol.ps1)也消费此公共 PowerShell owner：正常计算、受保护CSV新分析与显式已解MPH冷提取共享真实完成／收尾机制，原CLI可仅恢复原Result。项目提供冻结科学上下文、原生／Python完成与科学判断，不将保存文件或执行成功当作科学资格；参数、真实验证及限制见[RF状态](../../projects/rf_multipole_ion_optics/docs/PROJECT.md#当前结论)。
 
 `run_artifact_workflow.ps1 -RequestPath <request> -ResultPath <result>`是项目CLI调用的内部adapter，
