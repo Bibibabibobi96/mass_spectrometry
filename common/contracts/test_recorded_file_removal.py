@@ -12,6 +12,34 @@ from msplatform.execution import recorded_file_removal as removal
 
 
 class AtomicJsonPublicationTest(unittest.TestCase):
+    def test_finite_json_option_preserves_existing_valid_serialization(self):
+        value = {"source": "microsecond \u03bc", "nested": [None, 1.25, {"count": 100}]}
+        expected = (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            default, strict = root / "default.json", root / "strict.json"
+            removal.write_json_atomic(default, value)
+            removal.write_json_atomic(strict, value, allow_nan=False)
+            self.assertEqual(default.read_bytes(), expected)
+            self.assertEqual(strict.read_bytes(), expected)
+
+    def test_finite_json_rejects_nonfinite_before_replace_and_cleans_candidate(self):
+        for value in (float("nan"), float("inf"), float("-inf")):
+            for exists in (False, True):
+                with self.subTest(value=value, exists=exists), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    destination = root / "evidence.json"
+                    original = b'{"original":true}\n'
+                    if exists:
+                        destination.write_bytes(original)
+                    with patch.object(removal.os, "replace") as replace:
+                        with self.assertRaises(ValueError):
+                            removal.write_json_atomic(destination, {"nested": [value]}, allow_nan=False)
+                        replace.assert_not_called()
+                    self.assertEqual(list(root.iterdir()), [destination] if exists else [])
+                    if exists:
+                        self.assertEqual(destination.read_bytes(), original)
+
     @staticmethod
     def _windows_error(code: int) -> OSError:
         error = OSError("fixture replace conflict")

@@ -13,13 +13,13 @@ from typing import Any, Iterable, Iterator
 from msplatform.io.file_identity import file_sha256
 
 
-def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
-    """Flush a complete JSON record before atomically publishing it."""
+def write_json_atomic(path: Path, value: dict[str, Any], *, allow_nan: bool = True) -> None:
+    """Atomically publish JSON; callers may require finite numbers with allow_nan=False."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(value, stream, indent=2, ensure_ascii=False)
+            json.dump(value, stream, indent=2, ensure_ascii=False, allow_nan=allow_nan)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())

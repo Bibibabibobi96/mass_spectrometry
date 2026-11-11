@@ -683,6 +683,8 @@ maintenance 默认只返回聚合 receipt：`resident_bytes`、`free_bytes`、`c
 [Windows 官方错误码](https://learn.microsoft.com/zh-cn/windows/win32/debug/system-error-codes--0-499-)
 分别定义拒绝访问、共享冲突和锁冲突；错误 5 不保证是瞬态，上述有界重试是本项目策略。
 
+`write_json_atomic(..., allow_nan=False)` lets scientific callers reject NaN and infinity through this same writer. Serialization failure preserves any existing destination and removes the temporary candidate; the existing default remains unchanged.
+
 增量台账由本入口及既有发布/删除/终态收尾入口维护，而不是新建第二套治理工具。台账最小记录为：
 `artifact_root`身份、对象路径/角色、字节数、不可变代际身份、状态、最后一次成功发布/删除收据、活动峰值承诺
 和待核对标记；台账缺失、版本不符或存在待核对标记时，startup只能阻塞并请求maintenance校准。台账不能用
