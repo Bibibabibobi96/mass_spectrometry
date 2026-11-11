@@ -108,10 +108,20 @@ qualified wall-collision physics.
 
 禁止外推；整个 `z=-5..120 mm, r=0..23.5 mm` 域必须覆盖。圆四极杆在 `z=108.00 mm` 结束，孔板位于 `z=110.22..110.72 mm`，板后保留 `9.28 mm` 观察段；为防止 SDS 在终止步越过气体场，离子终止采样面设在 `z=119.75 mm`。后续飞行 Program 必须通过官方
 `collision_sds.lua` 注入这些函数，并通过共享 RF kernel 驱动电极；不得用 Python 阻尼积分器替代。
-规则网格的切割单元继续按有效流体角点归一化插值；若一步推进完全离开流体支持但尚未由粗 PA 表面
-终止，Program 将其记录为边界代理损失码 `3` 并停止该离子；均匀场的声明域边缘也就是规定气体包络边缘，越出时采用同一损失码。该码与锥壁或包络边界位置一致，但受 `0.1 mm`
-流场网格、`0.5 mm` PA 网格和未确认锥口圆角限制，不能单独解释为精确实机撞壁率。真正越出治理坐标域
-以外的其他气场执行错误仍是运行错误，不能按损失吞掉。
+Cut cells continue to interpolate using renormalized valid-fluid corner weights.
+For CFD queries inside the governed domain, `no_data` causes the Program to
+flush terminal code 3 and stop the ion. A prescribed uniform field uses the
+same code when its declared coverage is left. Under the existing strict CFD
+outside-domain policy, `outside_domain` raises the original error; it is not
+converted to code 3. No-data and coverage loss do not independently establish
+a physical wall collision. Their interpretation remains limited by the 0.1 mm
+gas grid, 0.5 mm PA grid and unconfirmed aperture rounding.
+
+The trajectory projection separates terminal-plane arrival (1), time limit (2),
+gas-support loss (3), and unknown termination (0 or missing terminal record).
+The existing codes do not separately prove physical wall loss. The plot counts
+only particles with trajectory samples and reports terminal records without
+tracks; it is not a complete mother cohort or transmission-rate estimate.
 
 原型粒子数和当前资格见 [PROJECT](PROJECT.md#当前资格)，束斑统计与原记录的限制见
 [原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。

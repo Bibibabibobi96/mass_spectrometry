@@ -58,6 +58,29 @@ def trajectory_tracks(path: Path, placement) -> dict[int, tuple[list[float], lis
     return tracks
 
 
+def classify_terminal_states(path: Path, track_ids: set[int]) -> tuple[dict[str, set[int]], int]:
+    """Classify sampled tracks by Program code; count terminal rows without tracks.
+
+    Code 0 is unknown, 1 reached the terminal plane, 2 hit the time limit and
+    3 lost gas support. No code separately identifies physical wall loss.
+    Missing final rows remain unknown; duplicate IDs and unknown codes fail.
+    """
+    codes: dict[int, int] = {}
+    with path.open(encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            particle_id, code = int(row["ion_number"]), int(row["splat"])
+            if particle_id in codes:
+                raise ValueError(f"duplicate terminal ion number: {particle_id}")
+            if code not in (0, 1, 2, 3):
+                raise ValueError(f"unknown terminal code: {code}")
+            codes[particle_id] = code
+    groups: dict[str, set[int]] = {name: set() for name in ("arrived", "unknown", "timeout", "coverage_loss")}
+    names = {0: "unknown", 1: "arrived", 2: "timeout", 3: "coverage_loss"}
+    for particle_id in track_ids:
+        groups[names[codes.get(particle_id, 0)]].add(particle_id)
+    return groups, len(codes.keys() - track_ids)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trajectory", required=True, type=Path)
@@ -87,45 +110,21 @@ def main() -> int:
     plate_down = float(plate["downstream_face_z_mm"])
     endpoint = float(plate["downstream_observation_end_z_mm"])
 
-    passed: set[int] = set()
-    with args.final_state.open(encoding="utf-8", newline="") as stream:
-        for row in csv.DictReader(stream):
-            if int(row["splat"]) == 1:
-                passed.add(int(row["ion_number"]))
-
     tracks = trajectory_tracks(args.trajectory, placement)
+    groups, unsampled_terminal_count = classify_terminal_states(args.final_state, set(tracks))
 
     full_limits = (-2.0, endpoint)
     figure, axes = plt.subplots(3, 1, figsize=(11, 9.5), constrained_layout=True)
     for axis, limits in zip(axes[:2], [full_limits, (100.0, endpoint)]):
-        passed_segments = [
-            list(zip(z, radius))
-            for ion, (z, radius) in tracks.items()
-            if ion in passed
-        ]
-        lost_segments = [
-            list(zip(z, radius))
-            for ion, (z, radius) in tracks.items()
-            if ion not in passed
-        ]
-        axis.add_collection(
-            LineCollection(
-                passed_segments,
-                colors="#0072B2",
-                linestyles="solid",
-                alpha=0.32,
-                linewidths=0.65,
-            )
-        )
-        axis.add_collection(
-            LineCollection(
-                lost_segments,
-                colors="#D55E00",
-                linestyles="dashed",
-                alpha=0.32,
-                linewidths=0.65,
-            )
-        )
+        for name, label, color, style in (
+            ("arrived", "terminal plane", "#0072B2", "solid"),
+            ("unknown", "unknown or missing final state", "#777777", "dotted"),
+            ("timeout", "time limit", "#E69F00", "dashed"),
+            ("coverage_loss", "gas-support loss", "#D55E00", "dashdot"),
+        ):
+            segments = [list(zip(*tracks[ion])) for ion in sorted(groups[name])]
+            axis.add_collection(LineCollection(segments, colors=color, linestyles=style,
+                alpha=0.32, linewidths=0.65, label=label))
         axis.axvline(stage_2_end, color="#555555", linestyle="--", linewidth=1.0)
         axis.axvspan(plate_up, plate_down, color="#756bb1", alpha=0.25)
         axis.axhline(float(plate["aperture_radius_mm"]), color="#756bb1",
@@ -135,9 +134,11 @@ def main() -> int:
         axis.grid(alpha=0.2)
         axis.set_ylabel("radial distance r (mm)")
     axes[0].set_title(
-        f"SIMION N2/SDS trajectories (N={len(tracks)}): blue solid reaches terminal plane; "
-        "orange dashed is lost"
+        f"SIMION N2/SDS sampled trajectories (N={len(tracks)}; "
+        f"terminal rows without tracks={unsampled_terminal_count}); "
+        "physical wall loss is not separately identified"
     )
+    axes[0].legend()
     axes[1].set_title("Downstream detail: rod end 108 mm, aperture plate 110.22–110.72 mm")
     reach_edges, reach_counts = axial_reach_profile(tracks, *full_limits)
     axes[2].stairs(reach_counts, reach_edges, color="#0072B2", linewidth=1.5)
