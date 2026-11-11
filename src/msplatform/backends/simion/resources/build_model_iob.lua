@@ -29,7 +29,9 @@ local function time(value)
   if not seen[value] then times[#times+1]=value;seen[value]=true end
 end
 local domains={}
-for _,row in ipairs(spec.instances) do domains[row.role=='accelerator' and 'parent' or row.role]=true end
+for _,row in ipairs(spec.instances) do
+  domains[spec.role=='single_reflection_iob_build' and row.role=='accelerator' and 'parent' or row.role]=true
+end
 local bound={}
 for _,row in ipairs(description.groups) do
   assert(type(row.instance_id)=='string' and type(row.electrode_group_id)=='string','model scientific identity missing')

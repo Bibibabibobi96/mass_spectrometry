@@ -816,7 +816,9 @@ Canonical provider drive projection and validation retain scientific group IDs, 
 frequency/phase/amplitude, DC/common mode and grounded enclosure behavior. Targets are per-instance
 (domain, native label) pairs, so equal native labels in different PAs do not alias scientific groups.
 The declared assembly frame and the original poses remain bound; no TOF frame or fake component is
-introduced.
+introduced. The model cold-readback alias `accelerator` → `parent` applies only to the
+actual single-reflection IOB specification. An independent RF instance named `accelerator`
+retains that exact native domain, like any other caller-selected RF instance ID.
 
 The one existing managed model action materializes guarded, independent raw `.pa#` inputs, their
 fractional companions and required surface-witness CSVs. The same structural seeds, zero-beam format

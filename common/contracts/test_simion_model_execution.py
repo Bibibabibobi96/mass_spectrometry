@@ -89,12 +89,21 @@ def _clock_authority_reference(root):
                 data_root=str(directory))
 
 
-def model_plan(root, *, independent_oa=False, independent_rf=False):
+def model_plan(root, *, independent_oa=False, independent_rf=False, rf_instance_id=None):
     if independent_rf:
         from common.contracts.test_simion_geometry_compiler import independent_rf_inputs
         from msplatform.backends.simion import compile_geometry
         from msplatform.backends.simion.model import project_resolved_drive
         assembly, numerics = independent_rf_inputs()
+        if rf_instance_id is not None:
+            from msplatform.assembly import assemble
+            import copy
+            recipe = copy.deepcopy(assembly.composition_plan['recipe'])
+            recipe['instances'][0]['instance_id'] = rf_instance_id
+            recipe['connections'][0]['upstream']['instance_id'] = rf_instance_id
+            assembly = assemble(recipe, {rf_instance_id: assembly.components['first'],
+                                         'second': assembly.components['second']})
+            numerics['component_domains'][rf_instance_id] = numerics['component_domains'].pop('first')
         compiled = compile_geometry(assembly, numerics=numerics)
         drive = project_resolved_drive(compiled, assembly.components_resolved,
             clock=dict(clock_epoch_id='model_fixture_epoch', authority_sha256='A'*64,
@@ -390,10 +399,17 @@ class ModelExecutionTests(unittest.TestCase):
     def test_real_model_wrapper_consumer_and_preload_guards_with_indexed_userdata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for independent_oa, failure in ((oa, fail) for oa in (False, True) for fail in ('none', 'missing', 'wgem', 'hook', 'beam', 'missing_control', 'ambient_fly2')):
-                case = root/(str(independent_oa)+'-'+failure)
+            profiles = [(oa, False, None, fail) for oa in (False, True)
+                        for fail in ('none', 'missing', 'wgem', 'hook', 'beam', 'missing_control', 'ambient_fly2')]
+            profiles.extend((False, True, name, 'none') for name in (None, 'accelerator'))
+            for independent_oa, independent_rf, rf_instance_id, failure in profiles:
+                case = root/(str(independent_oa)+'-'+str(independent_rf)+'-'+str(rf_instance_id)+'-'+failure)
                 case.mkdir()
-                model, _, _, plan = model_plan(case, independent_oa=independent_oa)
+                model, _, _, plan = model_plan(case, independent_oa=independent_oa,
+                                               independent_rf=independent_rf, rf_instance_id=rf_instance_id)
+                if independent_rf:
+                    self.assertEqual({row['native_targets'][0]['domain'] for row in model.document['native_drive_rows']},
+                                     {rf_instance_id or 'first', 'second'})
                 for path, text in plan.materializations.items():
                     Path(path).parent.mkdir(parents=True, exist_ok=True)
                     Path(path).write_text(text, encoding='utf-8')
@@ -408,7 +424,10 @@ class ModelExecutionTests(unittest.TestCase):
                 (case/'run/results').mkdir(exist_ok=True)
                 spec = case/'run/inputs/geometry_iob.lua'
                 script = case/'check.lua'
-                program = 'local independent_oa='+lua_value(independent_oa)+'\n'+'local spec=dofile('+json.dumps(spec.as_posix())+')\n' + 'local failure='+lua_value(failure)+'\n'+r'''
+                program = ('local independent_oa='+lua_value(independent_oa)+'\n'
+                           +'local independent_rf='+lua_value(independent_rf)+'\n'
+                           +'local spec=dofile('+json.dumps(spec.as_posix())+')\n'
+                           +'local failure='+lua_value(failure)+'\n')+r'''
 local commands,changes=0,0
 local zero_loaded=false
 local function norm(s) return s:gsub('\\','/') end
@@ -485,17 +504,26 @@ end
 arg={SPEC,'build_model',NATIVE_PATH}
 local okay,message=pcall(function() dofile(WRAPPER) end)
 if failure=='none' then
- assert(okay,message);assert(changes==(independent_oa and 2 or 4))
+ assert(okay,message);assert(changes==((independent_oa or independent_rf) and 2 or 4))
  arg[2]='verify_model';dofile(WRAPPER)
  local file=assert(io.open(spec.model.report,'rb'));local text=file:read('*a');file:close()
  assert(text:find('PA_ELECTRODE_LABELS_ARE_NOT_VOLTAGES=True',1,true))
- if independent_oa then
+ if independent_rf then
+  assert(text:find('frequency_hz=',1,true) and not text:find('reflectron_midgrid',1,true))
+  for _,row in ipairs(spec.instances) do
+   assert(text:find('domain="'..row.role..'"',1,true),'independent RF domain identity changed')
+  end
+ elseif independent_oa then
   assert(text:find('grounded_shield',1,true) and text:find('intermediate_grid_2',1,true))
   assert(not text:find('frequency_hz=',1,true) and not text:find('reflectron_midgrid',1,true))
  else
   assert(text:find('reflectron_midgrid',1,true) and text:find('frequency_hz=',1,true))
  end
- assert(text:find('not_solved',1,true) and text:find('pulse_mode=',1,true))
+ if independent_rf then
+  assert(text:find('not_solved',1,true) and not text:find('pulse_mode=',1,true))
+ else
+  assert(text:find('not_solved',1,true) and text:find('pulse_mode=',1,true))
+ end
 else
  assert(not okay,'dangerous profile was accepted');assert(commands==0 and changes==0)
  local needle=failure=='missing' and 'missing before workbench' or failure=='beam' and 'contains a particle'
