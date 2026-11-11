@@ -837,7 +837,7 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 ## 粒子状态与坐标
 
 粒子状态分为两个不同边界。RF的规范领域入口
-`projects.rf_multipole_ion_optics.analysis.rf_event_table_validation`验证单个多极杆组件内部的17列
+`msplatform.components.rf_multipole.event_table`验证单个多极杆组件内部的17列
 `source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。这四个值是事件
 角色而不是四个可互换平面：`source`记录从粒子源合同在源释放面产生的初始事件，`rod_exit`记录杆端
 事件，`handoff`记录跨组件交接事件，`terminal`记录求解器终止、撞壁、超时等最终分类。公共事件

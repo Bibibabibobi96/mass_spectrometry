@@ -424,7 +424,7 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
 import csv, json, pathlib, sys
 sys.path[:0] = json.loads(sys.argv[2])
 from msplatform.analysis import particle_census as c
-from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
+from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS
 from msplatform.backends.simion.rf_observations import validate_exit_observations
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 source, state = pathlib.Path("mother.csv"), pathlib.Path("terminal.csv")

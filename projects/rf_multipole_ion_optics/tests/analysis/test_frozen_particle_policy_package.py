@@ -218,9 +218,9 @@ Invoke-Expression $node.Extent.Text
 $paths={variable}
 $package=New-FrozenPythonPackage -Python $python -SourceRoot $repoRoot -CodeRoot {_ps(Path(directory) / str(index))} -RelativePaths $paths
 $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
- -Module 'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation' -Arguments @('--help') `
- -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
- 'projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics') `
+ -Module 'msplatform.workflows.rf_event_table_validation' -Arguments @('--help') `
+ -RequiredModuleNames @('msplatform.workflows.rf_event_table_validation',
+ 'msplatform.components.rf_multipole.event_table','msplatform.backends.simion.rf_ion11_source','msplatform.contracts.particle_physics') `
  -ForbiddenRoots @($repoRoot)
 @{{files=@($package.files.relative_path);executed=$execution.module_invoked}}|ConvertTo-Json -Depth 8 -Compress
 """
@@ -229,7 +229,7 @@ $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     document = json.loads(result.stdout[result.stdout.index('{'):])
                     self.assertTrue(document['executed'])
-                    self.assertIn('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py', document['files'])
+                    self.assertIn('src/msplatform/backends/simion/rf_ion11_source.py', document['files'])
 
     def test_comsol_canonical_state_to_response_uses_one_frozen_analysis_package(self) -> None:
         runner = PROJECT_ROOT / "workflows/mass_filter_reference/run_comsol.ps1"
@@ -340,7 +340,6 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
             root = Path(directory)
             paths = enumerate_python_sources(REPO_ROOT, package_roots=(
                 'common/contracts', 'projects/rf_multipole_ion_optics/analysis', 'src/msplatform'),
-                module_paths=('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py',),
                 resource_suffixes=('.schema.json',))
             for relative in paths:
                 target = root / relative
@@ -353,14 +352,23 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
             origins = json.loads((root / 'unused').read_text(encoding='utf-8'))
             self.assertTrue(all(Path(path).is_relative_to(root) for path in origins.values()))
             self.assertTrue(Path(origins['msplatform.contracts.particle_physics']).is_relative_to(root / 'src'))
-            adapter = root / 'projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py'
-            self.assertEqual(Path(origins['projects.rf_multipole_ion_optics.simion.ion11_source_adapter']), adapter)
+            event_owner = root / 'src/msplatform/components/rf_multipole/event_table.py'
+            self.assertEqual(Path(origins['msplatform.components.rf_multipole.event_table']), event_owner)
+            event_bytes = event_owner.read_bytes()
+            event_owner.unlink()
+            missing_event = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                           encoding='utf-8', timeout=60, check=False)
+            self.assertNotEqual(missing_event.returncode, 0)
+            self.assertIn('event_table', missing_event.stderr)
+            event_owner.write_bytes(event_bytes)
+            adapter = root / 'src/msplatform/backends/simion/rf_ion11_source.py'
+            self.assertEqual(Path(origins['msplatform.backends.simion.rf_ion11_source']), adapter)
             adapter_bytes = adapter.read_bytes()
             adapter.unlink()
             missing_adapter = subprocess.run(command, cwd=root, capture_output=True, text=True,
                                              encoding='utf-8', timeout=60, check=False)
             self.assertNotEqual(missing_adapter.returncode, 0)
-            self.assertIn('ion11_source_adapter', missing_adapter.stderr)
+            self.assertIn('rf_ion11_source', missing_adapter.stderr)
             adapter.write_bytes(adapter_bytes)
             shutil.rmtree(root / 'src')
             missing = subprocess.run(command, cwd=root, capture_output=True, text=True,
@@ -413,8 +421,8 @@ $results+=@{{files=@($package.files.relative_path);paths=$paths;executed=$execut
                 self.assertTrue(result['executed'])
                 self.assertEqual(result['paths'], ['inputs/code/' + path for path in files])
                 self.assertIn('src/msplatform/components/rf_multipole/paired_particle_source_bundle.py', files)
-                self.assertIn('projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py', files)
-                self.assertIn('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py', files)
+                self.assertIn('src/msplatform/workflows/rf_event_table_validation.py', files)
+                self.assertIn('src/msplatform/backends/simion/rf_ion11_source.py', files)
                 self.assertNotIn('projects/rf_multipole_ion_optics/analysis/__init__.py', files)
                 self.assertFalse(any('/tests/' in path or Path(path).name.startswith('test_') for path in files))
 

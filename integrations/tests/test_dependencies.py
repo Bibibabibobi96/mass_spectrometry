@@ -418,7 +418,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                 return output / "runtime_snapshot"
 
             fixture.snapshot = freeze("first")
-            event_module = "projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py"
+            event_module = "src/msplatform/components/rf_multipole/event_table.py"
             self.assertEqual(sum(row["source_repo_path"] == event_module
                                  for row in load(root / "first/code_inventory.json")["dependencies"]), 1)
             current = fixture._current_workbench()

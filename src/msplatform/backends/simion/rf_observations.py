@@ -9,6 +9,7 @@ from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
+from msplatform.components.rf_multipole import event_table
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.io.file_identity import file_sha256
@@ -18,12 +19,7 @@ from msplatform.components.rf_multipole.interface_geometry import transport_nume
 
 
 
-PARTICLE_STATE_COLUMNS = [
-    "particle_id", "event", "status", "terminal_reason", "time_us", "elapsed_time_us",
-    "rf_phase_rad", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
-    "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV",
-    "radial_position_mm", "divergence_angle_deg", "max_rod_radius_mm",
-]
+
 
 
 def prepare_exit_observation_inputs(run: Path, resolved: Mapping[str, Any], *, design_profile_id: str, cell_z_mm: float) -> dict[str, Any]:
@@ -67,7 +63,7 @@ def prepare_exit_observation_inputs(run: Path, resolved: Mapping[str, Any], *, d
         numerical_guard_z_mm=last_observation+cell_z_mm, numerical_domain_end_z_mm=domain_end,
         guard_offset_axial_cells=1, minimum_domain_extension_axial_cells=2, cell_z_mm=cell_z_mm,
         guard_implementation="native_callback_stop_inside_PA__no_absorbing_electrode",
-        state_columns=PARTICLE_STATE_COLUMNS, crossing_event="mechanical_exit", terminal_event="terminal",
+        state_columns=event_table.PARTICLE_STATE_COLUMNS, crossing_event="mechanical_exit", terminal_event="terminal",
         native_bracket_events=["mechanical_exit_step_before", "mechanical_exit_step_after"],
         interpolation="actual_native_step_bracket_linear_state__no_handoff_extrapolation",
         terminal_state_scope="native_terminate_or_last_other_actions__not_exact_surface_contact",
@@ -90,7 +86,7 @@ def validate_exit_observations(state_path: Path, source_path: Path, plan: Mappin
     source = dict(zip(source_ids, source_rows, strict=True))
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames != PARTICLE_STATE_COLUMNS:
+        if reader.fieldnames != event_table.PARTICLE_STATE_COLUMNS:
             raise ContractError("mechanical exit state columns differ from the frozen canonical projection")
         rows = list(reader)
     exits, terminals, brackets = {}, {}, {}
@@ -98,7 +94,7 @@ def validate_exit_observations(state_path: Path, source_path: Path, plan: Mappin
         particle = int(row["particle_id"])
         if particle not in source:
             raise ContractError("mechanical exit record contains an ID outside the original cohort")
-        values = {k: float(row[k]) for k in PARTICLE_STATE_COLUMNS if k not in {"particle_id", "event", "status", "terminal_reason"}}
+        values = {k: float(row[k]) for k in event_table.PARTICLE_STATE_COLUMNS if k not in {"particle_id", "event", "status", "terminal_reason"}}
         if not all(math.isfinite(v) for v in values.values()):
             raise ContractError("mechanical exit record contains nonfinite state")
         birth = float(source[particle]["birth_time_s"])*1e6

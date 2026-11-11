@@ -472,15 +472,16 @@ IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付c
 `common.contracts.component_particle_state`旧桥已退役；IP、MR及integration的准备、交接、分析、
 测试与旧CLI直接使用`msplatform.contracts.particle_state`，冻结输入和状态合同不变。
 
-`common.contracts.particle_state`仍是RF事件表／ION11旧协议入口，规范所有者为RF
-`analysis/rf_event_table_validation.py`及`simion/ion11_source_adapter.py`，不可错接中立状态。
-当前未发现活动生产Python直调；RF/IP交接fixture及公共旧CLI行为测试仍消费它。
-该RF旧协议入口只服务具名fixture、旧CLI及冻结库存，不拥有第二套算法。
-RF的`runtime/run_simion_finite_3d_transport.ps1`及`runtime/run_finite_3d_transport.ps1`已显式冻结census安装实现；
-integration的`runtime_dependencies.json`公共provider整包声明间接携带该旧协议入口，不等于直接算法调用。
-最迟P4由各活动消费者所有者迁移上述调用和测试／CLI边界，同步清理旧源码声明及库存；
-保留真实冻结来源／缺依赖拒绝及原CSV、ID、单位、共同钟、权重／母群、失败语义回归后移除旧桥。
-历史冻结快照不追改；本清单不声称未知外部消费者不存在。
+The RF-specific `common.contracts.particle_state` bridge has been removed. The 17-column
+event protocol and canonical source CSV reader belong to
+`msplatform.components.rf_multipole.event_table`; SIMION ION11 decoding belongs to
+`msplatform.backends.simion.rf_ion11_source`. The real CLI is
+`python -m msplatform.workflows.rf_event_table_validation`. These RF events remain
+distinct from neutral handoff states. Active callers and frozen selectors use the
+installed owners; historical frozen snapshots retain their original bytes.
+The migration retains the original energy helper, angle arithmetic, IDs and failure
+semantics. Candidate witness, frozen-consumer and ordinary-install checks must be
+reported for their actual version; source relocation grants no native qualification.
 
 仓库当前未包含 LICENSE 文件或声明项目开源许可证；本次本机发行不新增许可证授权，也不上传 PyPI。
 第三方依赖由声明与锁文件获取，未把商业求解器或其许可证、模型、原生载荷装入发行包。

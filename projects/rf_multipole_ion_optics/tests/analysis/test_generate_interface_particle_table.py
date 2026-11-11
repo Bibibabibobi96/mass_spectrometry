@@ -16,7 +16,10 @@ from msplatform.contracts.particle_count_policy import POLICY_PATH
 import numpy as np
 
 from msplatform.execution.inputs import enumerate_python_sources
-from common.contracts.particle_state import canonical_sources, ion11_sources
+from msplatform.components.rf_multipole.event_table import read_canonical_rf_source_expectations as canonical_sources
+from msplatform.backends.simion.rf_ion11_source import (
+    read_ion11_source_states as ion11_sources,
+)
 from projects.rf_multipole_ion_optics.analysis.generate_official_particle_table import (
     generate as generate_official_table,
 )

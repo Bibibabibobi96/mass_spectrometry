@@ -221,7 +221,7 @@ function Invoke-TestParticleState {
 }
 $python='Invoke-TestParticleState';$particleStateCsv='state';$particlePath='particles';$frozenInterface='interface';$stateContractReport='report'
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'projects/rf_multipole_ion_optics/workflows/mass_filter_reference/run_simion.ps1'),[ref]$null,[ref]$null)
-$command=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.CommandAst]-and$node.Extent.Text.Contains('-m projects.rf_multipole_ion_optics.analysis.rf_event_table_validation')},$true))
+$command=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.CommandAst]-and$node.Extent.Text.Contains('-m msplatform.workflows.rf_event_table_validation')},$true))
 if($command.Count-ne1){throw 'Missing mass-analysis boundary'}
 . ([scriptblock]::Create($command[0].Extent.Text))
 $coreConfig.phase_rad=0.38

@@ -601,17 +601,7 @@
           ]
         }
       ],
-      "python_modules": [
-        {
-          "source_repo_path": "projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py",
-          "consumers": [
-            "local_frontend",
-            "multipole_ip",
-            "paired_accelerator_static_field",
-            "single_reflection_flight"
-          ]
-        }
-      ]
+      "python_modules": []
     },
     {
       "provider_scope": "repository_core",

@@ -1,0 +1,492 @@
+{
+  "role": "rf_event_original_software_witness",
+  "capture_sha256": "da87e4901ab0bbab21b5668a894581e21e7447baa2b84b90687ddd137f66456e",
+  "python_version": "3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]",
+  "source_sha256": {
+    "rf_event_table_validation.py": "c3ab4b7ec1de75998f3838f4d2ac6bd3110656d2ae8b04ed0894d901898edaf3",
+    "ion11_source_adapter.py": "dd9e3e82ecc7e63b69323b0171fb9fcaae7a7048565ddb6a0c08346238c6300b",
+    "particle_state.py": "5bd25c8a4f196f21abc34a105cfff2671550cb37a69a704a6d331d27b8ac7c05",
+    "rf_observations.py": "17f8fdb0a224f088d0270b79d15d429279937d7cfff1e27bde5982bf932476c7"
+  },
+  "inputs": [
+    {
+      "path": "inputs\\canonical_bad_mass.csv",
+      "sha256": "58de092035fc2097dbb8118d2fdf1f17371b951f697d7e8bc31540bc3cba84c1",
+      "raw_hex": "7061727469636c655f69642c62697274685f74696d655f732c785f6d6d2c795f6d6d2c7a5f6d6d2c76785f6d5f732c76795f6d5f732c767a5f6d5f732c6d6173735f616d750a372c302c302c302c302c302c302c312c300a"
+    },
+    {
+      "path": "inputs\\canonical_duplicate.csv",
+      "sha256": "36100267623984fa2fb28475a238faf3c16aed688eedc3835fa2a59d6af63862",
+      "raw_hex": "7061727469636c655f69642c62697274685f74696d655f732c785f6d6d2c795f6d6d2c7a5f6d6d2c76785f6d5f732c76795f6d5f732c767a5f6d5f732c6d6173735f616d750a372c302c302c302c302c302c302c312c310a372c302c302c302c302c302c302c312c310a"
+    },
+    {
+      "path": "inputs\\canonical_missing_mass.csv",
+      "sha256": "f820ebfcd2fdb346bd0a14d9c6f5ee43bde72efd5008430be4f6acdfa8ec15c7",
+      "raw_hex": "7061727469636c655f69642c62697274685f74696d655f732c785f6d6d2c795f6d6d2c7a5f6d6d2c76785f6d5f732c76795f6d5f732c767a5f6d5f730a372c302c302c302c302c302c302c310a"
+    },
+    {
+      "path": "inputs\\fallback.csv",
+      "sha256": "f820ebfcd2fdb346bd0a14d9c6f5ee43bde72efd5008430be4f6acdfa8ec15c7",
+      "raw_hex": "7061727469636c655f69642c62697274685f74696d655f732c785f6d6d2c795f6d6d2c7a5f6d6d2c76785f6d5f732c76795f6d5f732c767a5f6d5f730a372c302c302c302c302c302c302c310a"
+    },
+    {
+      "path": "inputs\\ion_bad_count.ion",
+      "sha256": "7a8988e95e356e2b5b8fecf5e31f7c2e7e8fb44a5cd9d89ebb0d1e60b1f5c689",
+      "raw_hex": "312c322c330a"
+    },
+    {
+      "path": "inputs\\ion_bad_energy.ion",
+      "sha256": "41d29540c9629999d0bacb45bf393c16b37a21ac6b808ad12c9749323807b43a",
+      "raw_hex": "302c312c312c302c302c302c302c302c2d312c312c310a"
+    },
+    {
+      "path": "inputs\\ion_bad_mass.ion",
+      "sha256": "aaa45e8f13ee5575b1680dc514e1256482ca18ae91cdb8d1a68c6a48ea27fd32",
+      "raw_hex": "302c302c312c302c302c302c302c302c312c312c310a"
+    },
+    {
+      "path": "inputs\\ion_bad_number.ion",
+      "sha256": "71a985ead1a9420e0ab02b39116940076e53228d8156989f891a1fbb9f11284c",
+      "raw_hex": "782c312c312c302c302c302c302c302c312c312c310a"
+    },
+    {
+      "path": "inputs\\source.csv",
+      "sha256": "f5510fae86e21484cd674892a7a13687c94bf1177c1abd2ab193aeef06f42851",
+      "raw_hex": "7061727469636c655f69642c62697274685f74696d655f732c785f6d6d2c795f6d6d2c7a5f6d6d2c76785f6d5f732c76795f6d5f732c767a5f6d5f732c6d6173735f616d750a372c302e303030303739352c312c2d322c332c342c352c362c3130300a"
+    },
+    {
+      "path": "inputs\\source.ion",
+      "sha256": "a1b07459ed85089b6117b349c92f44c2c416e9e966d7c73d4638074129ca92ac",
+      "raw_hex": "31322e352c312c312c342c352c362c33302c33302c312c312c310a31392c322c312c2d302c322c332c302c302c302c2d312c310a"
+    },
+    {
+      "path": "inputs\\source_bom.ion",
+      "sha256": "63200a52ad1e57dc63d6bf774f4fa232a6e6d2fd6a5bdcb67ca6547ffd8f5ae2",
+      "raw_hex": "efbbbf31322e352c312c312c342c352c362c33302c33302c312c312c310a31392c322c312c2d302c322c332c302c302c302c2d312c310a"
+    },
+    {
+      "path": "inputs\\state_bad_header.csv",
+      "sha256": "119f7733016c3731f507fd0df35c4a64fd3378141f5dab5779649f97bb8798ac",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465670d0a"
+    },
+    {
+      "path": "inputs\\state_bad_phase.csv",
+      "sha256": "de0d66aa968973d42c00560803c74ac7f5e7f0f206c07f47d4d4d8250d4f21b4",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c39392c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_duplicate.csv",
+      "sha256": "7a04e80386748cb1949de5ea0e1d2afe2e7ba8dcdbf308f68daeecfa9b386fda",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_invalid_status.csv",
+      "sha256": "f745a5a8912f43146c7bc044faba80f9db2677029efdd8dabe168b59b62d8b51",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c626f6775732c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_ion11.csv",
+      "sha256": "5e40e99862c3f0a56f828a3d9581fdd90503e9ba62a8672cdb41922f154a00a8",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a312c736f757263652c616c6976652c6e6f6e652c31322e352c302e302c342e3731323338383938303338343639352c31312e302c362e302c2d352e302c31303431382e35343131303131343433392c2d363031352e3134373530393330383839322c2d363934352e3639343036373432393539312c312e302c302c302c300d0a312c7465726d696e616c2c616c6976652c6e6f6e652c31322e352c302e302c342e3731323338383938303338343639352c31312e302c362e302c2d352e302c31303431382e35343131303131343433392c2d363031352e3134373530393330383839322c2d363934352e3639343036373432393539312c312e302c302c302c300d0a322c736f757263652c616c6976652c6e6f6e652c31392e302c302e302c352e3635343836363737363436313633312c372e302c332e302c2d322e302c302e302c2d302e302c2d302e302c302e302c302c302c300d0a322c7465726d696e616c2c616c6976652c6e6f6e652c31392e302c302e302c352e3635343836363737363436313633312c372e302c332e302c2d322e302c302e302c2d302e302c2d302e302c302e302c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_missing_terminal.csv",
+      "sha256": "c5ed1b3c8aebed76ff8912877dab915862dd39aa91fd31b883eab43945b01479",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_negative_energy.csv",
+      "sha256": "3d12ad2e085fbc0ebfef2a1d050ae615c67fa1238df8700f6fbb054c112bbc57",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c2d312c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_nonfinite.csv",
+      "sha256": "9f4f31316acfd5974ae6a644e92cc42a154270c663c5faf84178e0699391c567",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c6e616e2c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_planes.csv",
+      "sha256": "fe149d4a5d1974c9c10649e79b1c02ac8204eaf83a25bf15eae927f8e989d773",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c726f645f657869742c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c392c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c68616e646f66662c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c31322c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_source_drift.csv",
+      "sha256": "6cf436c4f987da52647196beadc25e8250fbdb9b8cc4a7c7185f3e25a2f46287",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c302c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_unknown_id.csv",
+      "sha256": "335a8bfe18de936c72366f3b12c22b29066fc0353c502162a3d4bee796f548af",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a382c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    },
+    {
+      "path": "inputs\\state_valid.csv",
+      "sha256": "f1879eff2f35834edb593ca891b1168370f6c1c6454faea145ced502cef8ee24",
+      "raw_hex": "7061727469636c655f69642c6576656e742c7374617475732c7465726d696e616c5f726561736f6e2c74696d655f75732c656c61707365645f74696d655f75732c72665f70686173655f7261642c617869616c5f7a5f6d6d2c7472616e7376657273655f785f6d6d2c7472616e7376657273655f795f6d6d2c76656c6f636974795f617869616c5f6d5f732c76656c6f636974795f785f6d5f732c76656c6f636974795f795f6d5f732c6b696e657469635f656e657267795f65562c72616469616c5f706f736974696f6e5f6d6d2c646976657267656e63655f616e676c655f6465672c6d61785f726f645f7261646975735f6d6d0d0a372c736f757263652c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a372c7465726d696e616c2c616c6976652c6e6f6e652c37392e352c302e302c322e38323734333333383832333037382c332e302c312e302c2d322e302c362e302c342e302c352e302c332e393930323433383136323831393934652d30352c302c302c300d0a"
+    }
+  ],
+  "records": [
+    {
+      "case": "ion11_valid_offset",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "1": {
+          "time_us": 12.5,
+          "elapsed_time_us": 0.0,
+          "axial_z_mm": 11.0,
+          "transverse_x_mm": 6.0,
+          "transverse_y_mm": -5.0,
+          "velocity_axial_m_s": 10418.54110114439,
+          "velocity_x_m_s": -6015.147509308892,
+          "velocity_y_m_s": -6945.694067429591,
+          "kinetic_energy_eV": 1.0
+        },
+        "2": {
+          "time_us": 19.0,
+          "elapsed_time_us": 0.0,
+          "axial_z_mm": 7.0,
+          "transverse_x_mm": 3.0,
+          "transverse_y_mm": -2.0,
+          "velocity_axial_m_s": 0.0,
+          "velocity_x_m_s": -0.0,
+          "velocity_y_m_s": -0.0,
+          "kinetic_energy_eV": 0.0
+        }
+      }
+    },
+    {
+      "case": "canonical_valid",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "7": {
+          "time_us": 79.5,
+          "elapsed_time_us": 0.0,
+          "axial_z_mm": 3.0,
+          "transverse_x_mm": 1.0,
+          "transverse_y_mm": -2.0,
+          "velocity_axial_m_s": 6.0,
+          "velocity_x_m_s": 4.0,
+          "velocity_y_m_s": 5.0,
+          "kinetic_energy_eV": 3.990243816281994e-05
+        }
+      }
+    },
+    {
+      "case": "ion11_bom",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "1": {
+          "time_us": 12.5,
+          "elapsed_time_us": 0.0,
+          "axial_z_mm": 11.0,
+          "transverse_x_mm": 6.0,
+          "transverse_y_mm": -5.0,
+          "velocity_axial_m_s": 10418.54110114439,
+          "velocity_x_m_s": -6015.147509308892,
+          "velocity_y_m_s": -6945.694067429591,
+          "kinetic_energy_eV": 1.0
+        },
+        "2": {
+          "time_us": 19.0,
+          "elapsed_time_us": 0.0,
+          "axial_z_mm": 7.0,
+          "transverse_x_mm": 3.0,
+          "transverse_y_mm": -2.0,
+          "velocity_axial_m_s": 0.0,
+          "velocity_x_m_s": -0.0,
+          "velocity_y_m_s": -0.0,
+          "kinetic_energy_eV": 0.0
+        }
+      }
+    },
+    {
+      "case": "canonical_explicit_mass",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "7": {
+          "time_us": 0.0,
+          "elapsed_time_us": 0.0,
+          "axial_z_mm": 0.0,
+          "transverse_x_mm": 0.0,
+          "transverse_y_mm": 0.0,
+          "velocity_axial_m_s": 1.0,
+          "velocity_x_m_s": 0.0,
+          "velocity_y_m_s": 0.0,
+          "kinetic_energy_eV": 1.4509977513752708e-07
+        }
+      }
+    },
+    {
+      "case": "canonical_missing_file",
+      "expected": "builtins.FileNotFoundError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.FileNotFoundError",
+      "exception_message": "__ABSENT_PATH__"
+    },
+    {
+      "case": "ion_bad_count",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "row 1 has 3 columns, expected 11"
+    },
+    {
+      "case": "ion_bad_mass",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "row 1 has invalid mass or kinetic energy"
+    },
+    {
+      "case": "ion_bad_energy",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "row 1 has invalid mass or kinetic energy"
+    },
+    {
+      "case": "ion_bad_number",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "could not convert string to float: 'x'"
+    },
+    {
+      "case": "canonical_duplicate",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "duplicate canonical particle_id: 7"
+    },
+    {
+      "case": "canonical_missing_mass",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "canonical particle source requires a mass_amu column or --mass-amu"
+    },
+    {
+      "case": "canonical_bad_mass",
+      "expected": "builtins.ValueError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.ValueError",
+      "exception_message": "particle 7 has non-positive mass_amu"
+    },
+    {
+      "case": "event_valid",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "status": "PASS",
+        "particles": 1,
+        "rows": 2,
+        "event_counts": {
+          "source": 1,
+          "rod_exit": 0,
+          "handoff": 0,
+          "terminal": 1
+        },
+        "source_identity": "PASS",
+        "plane_identity": "PASS"
+      }
+    },
+    {
+      "case": "event_valid_explicit_columns_enums",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "status": "PASS",
+        "particles": 1,
+        "rows": 2,
+        "event_counts": {
+          "source": 1,
+          "rod_exit": 0,
+          "handoff": 0,
+          "terminal": 1
+        },
+        "source_identity": "PASS",
+        "plane_identity": "PASS"
+      }
+    },
+    {
+      "case": "event_valid_planes",
+      "expected": "success",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "value": {
+        "status": "PASS",
+        "particles": 1,
+        "rows": 4,
+        "event_counts": {
+          "source": 1,
+          "rod_exit": 1,
+          "handoff": 1,
+          "terminal": 1
+        },
+        "source_identity": "PASS",
+        "plane_identity": "PASS"
+      }
+    },
+    {
+      "case": "event_bad_rod_plane",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "rod-exit plane: actual=9 expected=10"
+    },
+    {
+      "case": "event_bad_handoff_plane",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "handoff plane: actual=12 expected=13"
+    },
+    {
+      "case": "event_duplicate",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "duplicate event source for particle 7"
+    },
+    {
+      "case": "event_missing_terminal",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "particle 7 lacks source or terminal event"
+    },
+    {
+      "case": "event_unknown_id",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "particle IDs do not match the input table"
+    },
+    {
+      "case": "event_invalid_status",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "invalid event/status/reason for particle 7"
+    },
+    {
+      "case": "event_nonfinite",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "non-finite state value for particle 7 event terminal"
+    },
+    {
+      "case": "event_bad_phase",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "RF phase outside [0, 2pi)"
+    },
+    {
+      "case": "event_negative_energy",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "negative energy or radius"
+    },
+    {
+      "case": "event_source_drift",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "particle 7 source time_us: actual=0 expected=79.5"
+    },
+    {
+      "case": "event_bad_header",
+      "expected": "builtins.AssertionError",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "exception_type": "builtins.AssertionError",
+      "exception_message": "particle-state columns differ: ['particle_id', 'event', 'status', 'terminal_reason', 'time_us', 'elapsed_time_us', 'rf_phase_rad', 'axial_z_mm', 'transverse_x_mm', 'transverse_y_mm', 'velocity_axial_m_s', 'velocity_x_m_s', 'velocity_y_m_s', 'kinetic_energy_eV', 'radial_position_mm', 'divergence_angle_deg']"
+    },
+    {
+      "case": "cli_canonical_projects.rf_multipole_ion_optics.analysis.rf_event_table_validation",
+      "expected": "zero",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "returncode": 0,
+      "stdout_hex": "7b22737461747573223a202250415353222c20227061727469636c6573223a20312c2022726f7773223a20322c20226576656e745f636f756e7473223a207b22736f75726365223a20312c2022726f645f65786974223a20302c202268616e646f6666223a20302c20227465726d696e616c223a20317d2c2022736f757263655f6964656e74697479223a202250415353222c2022706c616e655f6964656e74697479223a202250415353222c2022736f6c766572223a202266697874757265227d0d0a",
+      "stderr_last_line": ""
+    },
+    {
+      "case": "cli_ion11_projects.rf_multipole_ion_optics.analysis.rf_event_table_validation",
+      "expected": "zero",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "returncode": 0,
+      "stdout_hex": "7b22737461747573223a202250415353222c20227061727469636c6573223a20322c2022726f7773223a20342c20226576656e745f636f756e7473223a207b22736f75726365223a20322c2022726f645f65786974223a20302c202268616e646f6666223a20302c20227465726d696e616c223a20327d2c2022736f757263655f6964656e74697479223a202250415353222c2022706c616e655f6964656e74697479223a202250415353222c2022736f6c766572223a202266697874757265227d0d0a",
+      "stderr_last_line": ""
+    },
+    {
+      "case": "cli_bad_header_projects.rf_multipole_ion_optics.analysis.rf_event_table_validation",
+      "expected": "nonzero",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "returncode": 1,
+      "stdout_hex": "",
+      "stderr_last_line": "AssertionError: particle-state columns differ: ['particle_id', 'event', 'status', 'terminal_reason', 'time_us', 'elapsed_time_us', 'rf_phase_rad', 'axial_z_mm', 'transverse_x_mm', 'transverse_y_mm', 'velocity_axial_m_s', 'velocity_x_m_s', 'velocity_y_m_s', 'kinetic_energy_eV', 'radial_position_mm', 'divergence_angle_deg']"
+    },
+    {
+      "case": "cli_canonical_common.contracts.particle_state",
+      "expected": "zero",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "returncode": 0,
+      "stdout_hex": "7b22737461747573223a202250415353222c20227061727469636c6573223a20312c2022726f7773223a20322c20226576656e745f636f756e7473223a207b22736f75726365223a20312c2022726f645f65786974223a20302c202268616e646f6666223a20302c20227465726d696e616c223a20317d2c2022736f757263655f6964656e74697479223a202250415353222c2022706c616e655f6964656e74697479223a202250415353222c2022736f6c766572223a202266697874757265227d0d0a",
+      "stderr_last_line": ""
+    },
+    {
+      "case": "cli_ion11_common.contracts.particle_state",
+      "expected": "zero",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "returncode": 0,
+      "stdout_hex": "7b22737461747573223a202250415353222c20227061727469636c6573223a20322c2022726f7773223a20342c20226576656e745f636f756e7473223a207b22736f75726365223a20322c2022726f645f65786974223a20302c202268616e646f6666223a20302c20227465726d696e616c223a20327d2c2022736f757263655f6964656e74697479223a202250415353222c2022706c616e655f6964656e74697479223a202250415353222c2022736f6c766572223a202266697874757265227d0d0a",
+      "stderr_last_line": ""
+    },
+    {
+      "case": "cli_bad_header_common.contracts.particle_state",
+      "expected": "nonzero",
+      "matches_expected": true,
+      "inputs_unchanged": true,
+      "returncode": 1,
+      "stdout_hex": "",
+      "stderr_last_line": "AssertionError: particle-state columns differ: ['particle_id', 'event', 'status', 'terminal_reason', 'time_us', 'elapsed_time_us', 'rf_phase_rad', 'axial_z_mm', 'transverse_x_mm', 'transverse_y_mm', 'velocity_axial_m_s', 'velocity_x_m_s', 'velocity_y_m_s', 'kinetic_energy_eV', 'radial_position_mm', 'divergence_angle_deg']"
+    }
+  ],
+  "scope": "old software oracle; original full stderr/argv retained separately; CLI stack locations change during migration"
+}

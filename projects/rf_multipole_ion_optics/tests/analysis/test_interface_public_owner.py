@@ -107,7 +107,8 @@ foreach($ignored in @('ReleaseConstructionGate','NumericalExperimentId','Startup
             self.assertEqual(result.read_bytes(), original)
 
     def test_frozen_metrics_and_state_contract_execute_actual_cli_modules(self):
-        from common.contracts.particle_state import PARTICLE_STATE_COLUMNS, ion11_sources
+        from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS
+        from msplatform.backends.simion.rf_ion11_source import read_ion11_source_states as ion11_sources
         repo = PROJECT.parents[1]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

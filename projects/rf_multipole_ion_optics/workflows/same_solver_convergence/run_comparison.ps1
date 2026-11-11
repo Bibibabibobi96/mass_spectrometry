@@ -53,7 +53,7 @@ try {
             'projects/rf_multipole_ion_optics/core',
             'projects/rf_multipole_ion_optics/runtime'
         ) `
-        -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
+        -PythonModules @('src/msplatform/backends/simion/rf_ion11_source.py') `
     -RelativePaths @(
             'src\msplatform\contracts\particle_count_policy.json'
         )
@@ -224,8 +224,9 @@ try {
             'msplatform.analysis.particle_state_comparison',
             'msplatform.components.rf_multipole.particle_source_binding',
             'msplatform.components.rf_multipole.paired_particle_source_bundle',
-            'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
-            'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
+            'msplatform.workflows.rf_event_table_validation',
+            'msplatform.components.rf_multipole.event_table',
+            'msplatform.backends.simion.rf_ion11_source',
             'msplatform.contracts.particle_physics',
             'msplatform.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',
@@ -270,8 +271,9 @@ try {
             'msplatform.analysis.particle_state_comparison',
             'msplatform.components.rf_multipole.particle_source_binding',
             'msplatform.components.rf_multipole.paired_particle_source_bundle',
-            'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
-            'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
+            'msplatform.workflows.rf_event_table_validation',
+            'msplatform.components.rf_multipole.event_table',
+            'msplatform.backends.simion.rf_ion11_source',
             'msplatform.contracts.particle_physics',
             'msplatform.contracts.particle_count_policy',
             'projects.rf_multipole_ion_optics.core',

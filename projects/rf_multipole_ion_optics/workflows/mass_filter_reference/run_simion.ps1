@@ -135,7 +135,7 @@ try {
             'common/simion',
             'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
         ) `
-        -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
+        -PythonModules @('src/msplatform/backends/simion/rf_ion11_source.py') `
     -RelativePaths @(
             'src/msplatform/components/rf_multipole/family_contract.json',
             'src\msplatform\contracts\particle_count_policy.json'
@@ -548,7 +548,7 @@ Set-RfSimionExecutionPhase -Context $execution -Name analysis
     $dataValidity='valid_raw_outputs'
     Push-Location $repoRoot
     try {
-        & $python -m projects.rf_multipole_ion_optics.analysis.rf_event_table_validation `
+        & $python -m msplatform.workflows.rf_event_table_validation `
             --state $particleStateCsv --particles $particlePath --source-format ion11 `
             --contract $frozenInterface --axial-offset-mm 0 `
             --frequency-hz ([double]$coreConfig.frequency_hz) `

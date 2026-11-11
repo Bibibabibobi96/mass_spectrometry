@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
+from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS
 from msplatform.execution.retention import file_record
 from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs, validate_exit_observations

@@ -20,7 +20,7 @@ from msplatform.execution.retention import classify_file
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from common.simion.workbench_seed import freeze_workbench_seed
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
+from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
 from msplatform.workflows.ion_processor import preparation
 from msplatform.workflows.ion_processor import field_reference
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing

@@ -7,18 +7,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.analysis.rf_event_table_validation import (
+from msplatform.components.rf_multipole.event_table import (
     PARTICLE_STATE_COLUMNS, validate_rf_event_table as validate_particle_state,
 )
-from projects.rf_multipole_ion_optics.simion.ion11_source_adapter import (
-    AMU_KG, E_CHARGE_C, read_canonical_rf_source_expectations as canonical_sources,
-    read_ion11_source_states as ion11_sources,
+from msplatform.components.rf_multipole.event_table import read_canonical_rf_source_expectations as canonical_sources
+from msplatform.backends.simion.rf_ion11_source import (
+    AMU_KG, E_CHARGE_C, read_ion11_source_states as ion11_sources,
 )
 
 
 class CanonicalSourceTests(unittest.TestCase):
     def test_native_workbench_decode_and_same_rigid_rotation_have_independent_6d_oracle(self):
-        from projects.rf_multipole_ion_optics.simion.ion11_source_adapter import (
+        from msplatform.backends.simion.rf_ion11_source import (
             _decode_ion11_workbench_row, _transform_workbench_to_rf_source,
         )
         energy = .5 * AMU_KG * 100.**2 / E_CHARGE_C
@@ -38,11 +38,8 @@ class CanonicalSourceTests(unittest.TestCase):
         self.assertEqual(rf["kinetic_energy_eV"], energy)
 
     def test_projection_origin_nonzero_angles_offset_and_row_identity(self):
-        from common.contracts import particle_state as bridge
-        self.assertIs(bridge.ion11_sources, ion11_sources)
-        self.assertIs(bridge.validate_particle_state, validate_particle_state)
-        self.assertEqual(ion11_sources.__module__, "projects.rf_multipole_ion_optics.simion.ion11_source_adapter")
-        self.assertEqual(validate_particle_state.__module__, "projects.rf_multipole_ion_optics.analysis.rf_event_table_validation")
+        self.assertEqual(ion11_sources.__module__, "msplatform.backends.simion.rf_ion11_source")
+        self.assertEqual(validate_particle_state.__module__, "msplatform.components.rf_multipole.event_table")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "source.ion"
             energy = .5 * AMU_KG * 100.**2 / E_CHARGE_C
@@ -139,8 +136,7 @@ class UnknownTerminalStateTests(unittest.TestCase):
                     self.assertEqual(rows[-1]["particle_id"], 7)
                     self.assertEqual(rows[-1]["elapsed_time_us"], .5)
             outputs = []
-            for module in ("common.contracts.particle_state",
-                           "projects.rf_multipole_ion_optics.analysis.rf_event_table_validation"):
+            for module in ("msplatform.workflows.rf_event_table_validation",):
                 result = subprocess.run([sys.executable, "-m", module, "--state", str(state),
                                          "--particles", str(source_path), "--source-format", "canonical",
                                          "--frequency-hz", "1100000", "--phase-rad", "0", "--solver", "fixture"],
@@ -148,7 +144,6 @@ class UnknownTerminalStateTests(unittest.TestCase):
                                         text=True, encoding="utf-8", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 outputs.append(json.loads(result.stdout))
-            self.assertEqual(outputs[0], outputs[1])
             self.assertEqual(outputs[0]["status"], "PASS")
 
 

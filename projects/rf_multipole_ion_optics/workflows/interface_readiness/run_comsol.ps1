@@ -76,7 +76,7 @@ $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $r
         'projects/rf_multipole_ion_optics/runtime',
         'projects/rf_multipole_ion_optics/workflows/interface_readiness'
     ) `
-    -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
+    -PythonModules @('src/msplatform/backends/simion/rf_ion11_source.py') `
     -RelativePaths @(
         'src\msplatform\contracts\particle_count_policy.json'
     )
@@ -352,11 +352,11 @@ sys.path[:0]=[str(root/'src'),str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0]=python_import_roots(root)
 metadata,state,summary,particles,contract,frequency,phase,report,origins=sys.argv[2:]
-modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','projects.rf_multipole_ion_optics.analysis.rf_event_table_validation','projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics']
+modules=['projects.rf_multipole_ion_optics.analysis.analyze_comsol_particle_state_metrics','msplatform.workflows.rf_event_table_validation','msplatform.components.rf_multipole.event_table','msplatform.backends.simion.rf_ion11_source','msplatform.contracts.particle_physics']
 paths={name:str(pathlib.Path(importlib.import_module(name).__file__).resolve()) for name in modules}
 if any(not pathlib.Path(path).is_relative_to(root) for path in paths.values()): raise RuntimeError('analysis escaped frozen source: '+','.join(name+'='+path for name,path in paths.items() if not pathlib.Path(path).is_relative_to(root)))
 pathlib.Path(origins).write_text(json.dumps(paths,indent=2)+'\n',encoding='utf-8')
-from projects.rf_multipole_ion_optics.simion.ion11_source_adapter import read_ion11_source_states
+from msplatform.backends.simion.rf_ion11_source import read_ion11_source_states
 raw=json.loads(pathlib.Path(metadata).read_text(encoding='utf-8-sig'))
 source_ids=sorted(read_ion11_source_states(pathlib.Path(particles),float(raw['source_axial_offset_mm'])))
 if raw['source_ids'] != source_ids or sorted(raw['native_order']) != source_ids: raise ValueError('native mapping does not close frozen source cohort')
@@ -963,11 +963,11 @@ $frozenCountPolicy = Get-FrozenPythonPackageFile -Package $frozenPythonPackage -
 
     $failureStage = 'particle_state_contract'
     $stateContractExecution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPythonPackage `
-        -Module 'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation' `
+        -Module 'msplatform.workflows.rf_event_table_validation' `
         -Arguments @('--state',$particleStatePath,'--particles',$particleTable,'--source-format','ion11',
             '--contract',$frozenInterface,'--axial-offset-mm','0','--frequency-hz',([string]$resolved.drive.frequency_Hz),
             '--phase-rad',([string]$resolved.drive.phase_rad),'--solver','COMSOL','--output',$stateContractReport) `
-        -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.rf_event_table_validation','projects.rf_multipole_ion_optics.simion.ion11_source_adapter','msplatform.contracts.particle_physics') -ForbiddenRoots @($repoRoot)
+        -RequiredModuleNames @('msplatform.workflows.rf_event_table_validation','msplatform.components.rf_multipole.event_table','msplatform.backends.simion.rf_ion11_source','msplatform.contracts.particle_physics') -ForbiddenRoots @($repoRoot)
     $runConfig.frozen_python.particle_state_contract=$stateContractExecution
     Write-RunJson -Value $runConfig -Path $package.run_config
 

@@ -14,7 +14,7 @@ import math
 from pathlib import Path
 
 from msplatform.contracts.particle_physics import (
-    AMU_KG, ELEMENTARY_CHARGE_C as E_CHARGE_C, kinetic_energy_ev,
+    AMU_KG, ELEMENTARY_CHARGE_C as E_CHARGE_C,
 )
 
 
@@ -65,41 +65,4 @@ def read_ion11_source_states(path: Path, axial_offset_mm: float = 0.0) -> dict[i
     for particle_id, row in enumerate(rows, start=1):
         result[particle_id] = _transform_workbench_to_rf_source(
             _decode_ion11_workbench_row(row, particle_id), axial_offset_mm)
-    return result
-
-
-def read_canonical_rf_source_expectations(path: Path, mass_amu: float | None = None) -> dict[int, dict[str, float]]:
-    """Read canonical source rows, requiring mass in the table or explicit argument."""
-    result: dict[int, dict[str, float]] = {}
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
-            particle_id = int(row["particle_id"])
-            if particle_id in result:
-                raise ValueError(f"duplicate canonical particle_id: {particle_id}")
-            row_mass = row.get("mass_amu")
-            if row_mass in (None, "") and mass_amu is None:
-                raise ValueError("canonical particle source requires a mass_amu column or --mass-amu")
-            particle_mass_amu = float(row_mass) if row_mass not in (None, "") else float(mass_amu)
-            if particle_mass_amu <= 0:
-                raise ValueError(f"particle {particle_id} has non-positive mass_amu")
-            velocity_x_m_s = float(row["vx_m_s"])
-            velocity_y_m_s = float(row["vy_m_s"])
-            velocity_z_m_s = float(row["vz_m_s"])
-            energy_ev = kinetic_energy_ev(
-                particle_mass_amu,
-                velocity_x_m_s,
-                velocity_y_m_s,
-                velocity_z_m_s,
-            )
-            result[particle_id] = {
-                "time_us": float(row["birth_time_s"]) * 1e6,
-                "elapsed_time_us": 0.0,
-                "axial_z_mm": float(row["z_mm"]),
-                "transverse_x_mm": float(row["x_mm"]),
-                "transverse_y_mm": float(row["y_mm"]),
-                "velocity_axial_m_s": velocity_z_m_s,
-                "velocity_x_m_s": velocity_x_m_s,
-                "velocity_y_m_s": velocity_y_m_s,
-                "kinetic_energy_eV": energy_ev,
-            }
     return result

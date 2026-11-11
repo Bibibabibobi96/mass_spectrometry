@@ -109,12 +109,21 @@ P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产�
 实际范围、记录值等价、pulse结束覆盖缺口和GUI限制见[集成状态](../../../integrations/docs/INTEGRATION.md#当前边界)。
 不由该功能证据推定全场、收敛或Formal资格。
 
-RF完整17列事件协议已迁至`analysis.rf_event_table_validation.validate_rf_event_table`，
-`msplatform.backends.simion.rf_observations`直接消费该领域列合同；中立交接状态另归`msplatform.contracts.particle_state`。
-`simion.ion11_source_adapter`分开ION11解码与完整6D变换：WB位置映为RF的(z,−y,x+offset)，
-速度仅旋转为(vz,−vy,vx)，时间与能量保持；原角度算序和最终数值不改，不是已证物理错误的修正。
-协议与提供者联合补验12项通过（1.460秒，无skip）；独立非零位置/速度/平移oracle及旧CLI桥保持原协议。
-实际PS调用和冻结库存迁移仍在验收，旧`common.contracts.particle_state`仅单向适配，最迟P4退出活动消费。
+The complete RF 17-column event protocol and canonical source CSV reader belong to
+`msplatform.components.rf_multipole.event_table`. SIMION observations consume that
+qualified owner; neutral handoff states remain in `msplatform.contracts.particle_state`.
+`msplatform.backends.simion.rf_ion11_source` owns ION11 decoding and its original 6D
+transform: WB positions map to RF `(z,-y,x+offset)`, velocities to `(vz,-vy,vx)`,
+with time and energy unchanged. The original angle arithmetic and energy helper
+are retained. The CLI is `python -m msplatform.workflows.rf_event_table_validation`.
+Active PowerShell callers and frozen selectors use these installed owners; the
+three former RF protocol/adapter/CLI bridge files are removed. The original 32-case
+capture remains separate from candidate validation. Its portable witness compares
+API results/errors and CLI stdout/status/final error lines; complete traceback
+bytes are not claimed identical. The original witness, selected frozen consumers,
+IP analysis and integration regressions passed guarded software checks. Ordinary
+installation of this successor remains pending; the migration grants no native or
+scientific qualification.
 
 资源限制类型运输夹具沿用既有90秒总调用边界，避免非目标10秒阈值影响JSON／字典比较；生产观测与告警政策不变。
 三项既有回归通过（公开墙钟34.810秒），保留严格receipt／告警断言及健康进程越限不杀行为；原联合轮FAIL仍保留。
