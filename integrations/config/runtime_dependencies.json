@@ -1111,6 +1111,21 @@
           "consumers": [
             "local_frontend"
           ]
+        },
+        {
+          "id": "msplatform_simion_mrtof_measured_source_runtime",
+          "source_repo_path": "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "msplatform_execution_frozen_python_package",
+          "source_repo_path": "src/msplatform/execution/resources/frozen_python_package.ps1",
+          "consumers": [
+            "prepared_joint"
+          ]
         }
       ],
       "python_packages": [

@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
+from msplatform.workflows.prepared_joint.source import (
     materialize_measured_source, materialize_measured_source_slice,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs

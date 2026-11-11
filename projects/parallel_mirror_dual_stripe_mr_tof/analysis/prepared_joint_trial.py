@@ -21,9 +21,9 @@ from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import verified_successful_run_reference
 from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
-    RUNTIME_LUA, materialize_measured_source_slice, materialize_centroid_probe,
-)
+import msplatform.workflows.prepared_joint.source as measured_source
+from msplatform.workflows.prepared_joint.source import materialize_measured_source_slice, materialize_centroid_probe
+from msplatform.backends.simion.resources import native_resource_path
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
     ION_PROCESSOR, validate_execution_contract,
 )
@@ -32,7 +32,8 @@ from msplatform.backends.simion.mr_prepared_field import (
     collision_workbench_layout, compile_memory_consumer_crops,
     validate_candidate_binding, native_projection,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_ip_mr_transform
+from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, render_measured_operating_point
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
@@ -158,13 +159,14 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                 freeze_file(path, source_copy / path.name)
     # Canonical CSV/clock/ordinal projection remain byte-identical; executable
     # adapters are frozen from current code, never the obsolete sealed helper.
-    (source_copy / "source_runtime.lua").write_text(RUNTIME_LUA, encoding="utf-8", newline="\n")
+    freeze_file(native_resource_path("mrtof_measured_source_runtime.lua"), source_copy / "source_runtime.lua")
     runtime_implementation = inputs / "measured_source_implementation.py"
-    freeze_file(Path(__file__).with_name("measured_component_source.py"), runtime_implementation)
+    freeze_file(Path(measured_source.__file__), runtime_implementation)
     current_source_receipt = dict(source_receipt)
     current_source_receipt["inputs"] = dict(source_receipt["inputs"],
         prepared_source_receipt=file_record(historical_source_receipt),
-        runtime_implementation=file_record(runtime_implementation))
+        runtime_implementation=file_record(runtime_implementation),
+        runtime_resource=file_record(native_resource_path("mrtof_measured_source_runtime.lua")))
     current_source_receipt["outputs"] = {path.stem: file_record(path)
         for path in sorted(source_copy.iterdir())}
     _write(source_copy / "source_receipt.json", current_source_receipt)

@@ -25,6 +25,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # This runs with -I in a clean installed environment, without repository imports.
 INSTALLED_PROBE = r'''
 import copy, csv, hashlib, importlib, importlib.metadata, json, math, os, pathlib, shutil, subprocess, sys, sysconfig
+
+from contextlib import contextmanager
+import time
+
+@contextmanager
+def section_timing(section, case):
+    started = time.perf_counter_ns()
+    try:
+        yield
+    finally:
+        try:
+            print('INSTALLED_SECTION_TIMING='+json.dumps(dict(section=section, case=case,
+                elapsed_ns=time.perf_counter_ns()-started, exception=sys.exc_info()[0] is not None)), flush=True)
+        except BaseException:
+            pass  # Timing output must never mask the observed operation.
+
 import numpy as np
 from urllib.parse import urljoin
 from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
@@ -92,6 +108,233 @@ class RejectRepositoryImports(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'common','projects','integrations'}:
             raise AssertionError('installed action imported a repository owner: ' + fullname)
 sys.meta_path.insert(0, RejectRepositoryImports())
+# STRICT_JSON_INSTALLED_BEGIN
+with section_timing('strict_json', sys.argv[2]):
+    import base64
+    from msplatform.io import strict_json as sj_owner
+    sj_path = pathlib.Path(sj_owner.__file__).resolve()
+    assert sj_path == pathlib.Path(sysconfig.get_path('purelib')).resolve() / 'msplatform/io/strict_json.py'
+    sj_fixture = fixture['strict_json_old_witness']
+    sj_root = root / ('strict-json-' + sys.argv[2])
+    sj_root.mkdir()
+    def sj_observe(call):
+        try:
+            value = call()
+            return dict(return_type=type(value).__module__ + '.' + type(value).__qualname__, **{'return': value})
+        except Exception as exc:
+            cause = exc.__cause__
+            return dict(exception_type=type(exc).__module__ + '.' + type(exc).__qualname__, exception_message=str(exc),
+                cause_type=None if cause is None else type(cause).__module__ + '.' + type(cause).__qualname__,
+                cause_message=None if cause is None else str(cause))
+    def sj_expected(result, path=None):
+        result = dict(result)
+        if result.get('exception_type') == 'common.contracts.strict_json.StrictJsonError':
+            result['exception_type'] = 'msplatform.io.strict_json.StrictJsonError'
+        for key in ('exception_message', 'cause_message'):
+            if path is not None and result.get(key) is not None:
+                result[key] = result[key].replace('<PATH_REPR>', repr(str(path))).replace('<PATH>', str(path))
+        return result
+    assert len(sj_fixture['files']) == 10 and len(sj_fixture['methods']) == 11
+    for sj_case in sj_fixture['files']:
+        sj_input = sj_root / (sj_case['name'] + '.json')
+        if not sj_case.get('absent'):
+            sj_raw = base64.b64decode(sj_case['input_base64'], validate=True)
+            assert len(sj_raw) == sj_case['bytes'] and hashlib.sha256(sj_raw).hexdigest() == sj_case['sha256']
+            sj_input.write_bytes(sj_raw)
+        assert sj_observe(lambda: sj_owner.load_json_object(sj_input)) == sj_expected(sj_case['result'], sj_input)
+        if not sj_case.get('absent'):
+            assert sj_input.read_bytes() == sj_raw
+        else:
+            assert not sj_input.exists()
+    sj_calls = dict(exact_keys=lambda: sj_owner.require_exact_keys({'extra': 1}, {'required'}, 'contract'),
+        dict=lambda: sj_owner.require_dict([], 'item'), bool=lambda: sj_owner.require_bool(1, 'flag'),
+        string=lambda: sj_owner.require_string('', 'label'), number_bool=lambda: sj_owner.require_number(True, 'value'),
+        number_overflow=lambda: sj_owner.require_number(10**1000, 'value'),
+        number_minimum=lambda: sj_owner.require_number(0, 'value', minimum=0, strict_minimum=True),
+        number_maximum=lambda: sj_owner.require_number(3, 'value', maximum=2.0),
+        number_valid=lambda: sj_owner.require_number(-2, 'value'),
+        integer_bool=lambda: sj_owner.require_positive_integer(True, 'count'),
+        integer_valid=lambda: sj_owner.require_positive_integer(3, 'count'))
+    assert set(sj_calls) == {case['name'] for case in sj_fixture['methods']}
+    for sj_case in sj_fixture['methods']:
+        assert sj_observe(sj_calls[sj_case['name']]) == sj_expected(sj_case['result'])
+    sj_owned = sj_path.read_bytes()
+    sj_held = sj_path.with_suffix('.strict-json-held')
+    assert not sj_held.exists()
+    sj_path.rename(sj_held)
+    try:
+        sj_missing_code = r"""import importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(p))
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,Deny())
+import msplatform.io.strict_json
+"""
+        sj_missing = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', '-c', sj_missing_code,
+            json.dumps([str(path) for path in blocked_source_roots])], cwd=root, capture_output=True,
+            text=True, encoding='utf-8', timeout=30, check=False)
+        assert sj_missing.returncode != 0 and "No module named 'msplatform.io.strict_json'" in sj_missing.stderr, sj_missing.stderr
+    finally:
+        sj_held.rename(sj_path)
+    assert sj_path.read_bytes() == sj_owned
+# STRICT_JSON_INSTALLED_END
+# MR_MEASURED_SOURCE_INSTALLED_BEGIN
+with section_timing('mr_measured_source', sys.argv[2]):
+    from msplatform.workflows.prepared_joint import source as mr_source_owner
+    from msplatform.backends.simion.resources import native_resource_path as mr_resource_path
+    from msplatform.contracts.particle_physics import kinetic_energy_ev as mr_kinetic_energy
+    mr_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    mr_owner_file = pathlib.Path(mr_source_owner.__file__).resolve()
+    assert mr_owner_file == mr_purelib / 'msplatform/workflows/prepared_joint/source.py'
+    for mr_dependency in ('msplatform.workflows.prepared_joint.ip_mr_connection', 'msplatform.io.strict_json',
+            'msplatform.execution.clock_authority', 'msplatform.contracts.particle_state',
+            'msplatform.backends.simion.source', 'msplatform.backends.simion.resources'):
+        assert pathlib.Path(sys.modules[mr_dependency].__file__).resolve().is_relative_to(mr_purelib), mr_dependency
+    mr_lua_file = pathlib.Path(mr_resource_path('mrtof_measured_source_runtime.lua')).resolve()
+    assert mr_lua_file.is_relative_to(mr_purelib)
+    mr_lua_bytes = mr_lua_file.read_bytes()
+    assert hashlib.sha256(mr_lua_bytes).hexdigest() == '251daa47d2fe1aa219c1bc6c24a5f2e464f3db4335298507ade475fb072a4343'
+    mr_witness = fixture['mr_measured_source_old_witness']
+    mr_handoff = pathlib.Path(fixture['mr_measured_handoff'])
+    mr_original_root = mr_handoff.parent.parent
+    mr_arm_root = root / ('mr-measured-' + sys.argv[2]); mr_arm_root.mkdir()
+    mr_population_dir = mr_arm_root / 'source_prepared'
+    def mr_verify_record(record, path):
+        assert set(record) == {'path', 'bytes', 'sha256'}, record
+        assert pathlib.Path(record['path']).resolve() == path.resolve()
+        data = path.read_bytes()
+        assert record['bytes'] == len(data) and record['sha256'].lower() == hashlib.sha256(data).hexdigest(), record
+    def mr_verify_stage(stage, report, directory, input_paths, source_receipt=None):
+        expected = mr_witness['stages'][stage]
+        expected_keys = set(expected['semantic_report']) | {'outputs'}
+        if expected['input_record_keys'] is not None:
+            expected_keys.add('inputs')
+            assert set(report['inputs']) == set(expected['input_record_keys']) == set(input_paths)
+            for key, path in input_paths.items(): mr_verify_record(report['inputs'][key], path)
+        else:
+            assert not input_paths
+        if expected['has_source_receipt']:
+            expected_keys.add('source_receipt'); mr_verify_record(report['source_receipt'], source_receipt)
+        assert set(report) == expected_keys
+        assert {k: report[k] for k in expected['semantic_report']} == expected['semantic_report']
+        artifacts = expected['artifacts']
+        assert set(path.name for path in directory.iterdir()) == set(artifacts) | {'source_receipt.json'}
+        assert set(report['outputs']) == set(expected['output_record_keys'])
+        by_stem = {pathlib.Path(name).stem: directory/name for name in artifacts}
+        assert set(by_stem) == set(report['outputs'])
+        for key, record in report['outputs'].items(): mr_verify_record(record, by_stem[key])
+        for name, original in artifacts.items():
+            data = (directory/name).read_bytes()
+            assert data == base64.b64decode(original['base64'], validate=True), (stage, name)
+            assert len(data) == original['bytes'] and hashlib.sha256(data).hexdigest() == original['sha256']
+        assert json.loads((directory/'source_receipt.json').read_text(encoding='utf-8')) == report
+    mr_handoff_document = json.loads(mr_handoff.read_text(encoding='utf-8'))
+    mr_handoff_inputs = {'component_receipt': 'component_exit_receipt.json', 'trajectory_contract': 'trajectory.json',
+        'accelerator_provider_receipt': 'provider.json', 'request': 'request.json', 'composition_plan': 'recipe.json'}
+    mr_handoff_outputs = {'component_particle_state': 'prepared/component_particle_state.csv',
+        'source_census': 'prepared/source_census.csv', 'matching_request_resolved': 'prepared/matching_request_resolved.json'}
+    assert set(mr_handoff_document['inputs']) == set(mr_handoff_inputs)
+    assert set(mr_handoff_document['outputs']) == set(mr_handoff_outputs)
+    for key, name in mr_handoff_inputs.items(): mr_verify_record(mr_handoff_document['inputs'][key], mr_original_root/name)
+    for key, name in mr_handoff_outputs.items(): mr_verify_record(mr_handoff_document['outputs'][key], mr_original_root/name)
+    mr_producer = json.loads((mr_original_root/'component_exit_receipt.json').read_text(encoding='utf-8'))
+    mr_producer_inputs = {'inputs/resolved_model.json': 'resolved_model.json',
+        'inputs/clock_authority.json': 'inputs/clock_authority.json', 'inputs/instrument_epoch.json': 'inputs/instrument_epoch.json'}
+    mr_producer_outputs = {'component_states': 'source.csv', 'mother_census': 'census.csv'}
+    assert set(mr_producer['inputs']) == set(mr_producer_inputs) and set(mr_producer['outputs']) == set(mr_producer_outputs)
+    for key, name in mr_producer_inputs.items(): mr_verify_record(mr_producer['inputs'][key], mr_original_root/name)
+    for key, name in mr_producer_outputs.items(): mr_verify_record(mr_producer['outputs'][key], mr_original_root/name)
+    mr_population = mr_source_owner.materialize_measured_source(mr_handoff, mr_population_dir)
+    mr_verify_stage('population', mr_population, mr_population_dir,
+        {'handoff_receipt': mr_handoff, 'upstream_clock': mr_original_root/'inputs/clock_authority.json'})
+    assert (mr_population_dir/'source_runtime.lua').read_bytes() == mr_lua_bytes
+    mr_lua_provider = fixture['scalar_adapter']['executable']
+    mr_lua_executable = pathlib.Path(mr_lua_provider['path'])
+    mr_provider_bytes = mr_lua_executable.read_bytes()
+    assert len(mr_provider_bytes) == mr_lua_provider['bytes'] and hashlib.sha256(mr_provider_bytes).hexdigest() == mr_lua_provider['sha256']
+    mr_callback = mr_arm_root/'original_read_only_tof_fixture.lua'
+    mr_callback.write_text(fixture['mr_measured_callback'], encoding='utf-8', newline='\n')
+    mr_run = subprocess.run([str(mr_lua_executable), str(mr_callback), str(mr_population_dir)], cwd=mr_arm_root,
+        capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+    assert mr_run.returncode == 0 and 'READ_ONLY_TOF=PASS' in mr_run.stdout, mr_run.stdout + mr_run.stderr
+    mr_state = mr_population_dir/'component_particle_state.csv'
+    with mr_state.open(encoding='utf-8', newline='') as stream: mr_rows = list(csv.DictReader(stream))
+    for row in mr_rows: row['position_z_mm'] = '0.0'
+    mr_rows[0]['velocity_x_m_s'] = '321'
+    mr_rows[0]['kinetic_energy_eV'] = str(mr_kinetic_energy(float(mr_rows[0]['mass_amu']),
+        *(float(mr_rows[0][f'velocity_{axis}_m_s']) for axis in 'xyz')))
+    write_component_particle_state_csv(mr_state, mr_rows)
+    mr_receipt = mr_population_dir/'source_receipt.json'
+    mr_receipt_data = json.loads(mr_receipt.read_text(encoding='utf-8'))
+    mr_receipt_data['outputs']['component_particle_state'] = dict(path=str(mr_state), bytes=mr_state.stat().st_size,
+        sha256=hashlib.sha256(mr_state.read_bytes()).hexdigest().upper())
+    mr_receipt.write_text(json.dumps(mr_receipt_data)+'\n', encoding='utf-8')
+    mr_centroid_dir = mr_arm_root/'probe'
+    mr_centroid = mr_source_owner.materialize_centroid_probe(mr_population_dir, mr_centroid_dir)
+    mr_verify_stage('centroid', mr_centroid, mr_centroid_dir, {'mother_source_receipt': mr_receipt})
+    mr_slice_dir = mr_arm_root/'slice'
+    mr_slice = mr_source_owner.materialize_measured_source_slice(mr_population_dir, mr_slice_dir, 2, 2)
+    mr_verify_stage('slice', mr_slice, mr_slice_dir, {}, mr_receipt)
+    def mr_observe(call):
+        try: call()
+        except Exception as exc: return {'type': type(exc).__module__+'.'+type(exc).__qualname__, 'message': str(exc)}
+        raise AssertionError('expected measured-source failure')
+    mr_negative = mr_witness['negatives']
+    def mr_expect(name, call, expected_path=None):
+        expected = dict(mr_negative[name]['exception'])
+        if expected['type'] == 'common.contracts.strict_json.StrictJsonError': expected['type'] = 'msplatform.io.strict_json.StrictJsonError'
+        if expected_path is not None: expected['message'] = expected['message'].replace('<INPUT_ROOT>'+expected_path[0], str(expected_path[1]))
+        assert mr_observe(call) == expected
+    mr_expect('existing_output', lambda: mr_source_owner.materialize_measured_source(mr_handoff, mr_population_dir),
+        ('\\source_prepared', mr_population_dir))
+    mr_expect('invalid_ordinal', lambda: mr_source_owner.materialize_measured_source_slice(mr_population_dir, mr_arm_root/'bad_slice', 0, 1))
+    mr_handoff_bytes = mr_handoff.read_bytes()
+    try:
+        mr_handoff.write_bytes(b'{"schema_version":3,' + mr_handoff_bytes.lstrip()[1:])
+        mr_expect('duplicate_json', lambda: mr_source_owner.materialize_measured_source(mr_handoff, mr_arm_root/'bad_json'),
+            ('\\prepared\\handoff_receipt.json', mr_handoff))
+    finally: mr_handoff.write_bytes(mr_handoff_bytes)
+    mr_state_bytes = mr_state.read_bytes()
+    try:
+        mr_state.write_bytes(mr_state_bytes+b'tamper')
+        mr_expect('tampered_state', lambda: mr_source_owner.materialize_centroid_probe(mr_population_dir, mr_arm_root/'bad_probe'),
+            ('\\source_prepared\\component_particle_state.csv', mr_state))
+    finally: mr_state.write_bytes(mr_state_bytes)
+    mr_child = r"""import importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(p))
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,Deny())
+import msplatform.workflows.prepared_joint.source as owner
+if sys.argv[2]=='resource': owner.materialize_measured_source(pathlib.Path(sys.argv[3]),pathlib.Path(sys.argv[4]))
+"""
+    mr_connection_file = pathlib.Path(sys.modules['msplatform.workflows.prepared_joint.ip_mr_connection'].__file__).resolve()
+    for mr_missing_path, mr_kind in ((mr_owner_file, 'owner'), (mr_connection_file, 'connection'), (mr_lua_file, 'resource')):
+        mr_original = mr_missing_path.read_bytes(); mr_held = mr_missing_path.with_suffix(mr_missing_path.suffix+'.held')
+        assert not mr_held.exists(); mr_missing_path.rename(mr_held)
+        try:
+            mr_missing = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', '-c', mr_child,
+                json.dumps([str(path) for path in blocked_source_roots]), mr_kind, str(mr_handoff), str(mr_arm_root/'missing-resource')],
+                cwd=mr_arm_root, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+            assert mr_missing.returncode != 0
+            if mr_kind == 'owner': assert "No module named 'msplatform.workflows.prepared_joint.source'" in mr_missing.stderr, mr_missing.stderr
+            elif mr_kind == 'connection': assert "No module named 'msplatform.workflows.prepared_joint.ip_mr_connection'" in mr_missing.stderr, mr_missing.stderr
+            else: assert 'mrtof_measured_source_runtime.lua' in mr_missing.stderr and ('FileNotFoundError' in mr_missing.stderr), mr_missing.stderr
+        finally: mr_held.rename(mr_missing_path)
+        assert mr_missing_path.read_bytes() == mr_original
+# MR_MEASURED_SOURCE_INSTALLED_END
 # Recorded local analysis: synthetic logs, no solver or owner.
 from msplatform.workflows.local_frontend import analyze as local_analyzer, focus as local_focus, figures as local_figures
 from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
@@ -3081,8 +3324,9 @@ try:
         try:
             with rf_l1_patch.object(rf_l1,'_invoke_frozen_stage',side_effect=rf_l1_observe),\
                  rf_l1_patch.object(rf_l1_kernel,'simulate_mass',side_effect=RuntimeError('INSTALLED_LIVE_PARENT_KERNEL_USED')):
-                rf_l1.run(rf_l1_context,baseline_path=rf_l1_paths['baseline'],resolved_path=rf_l1_paths['resolved'],
-                    mode_path=rf_l1_paths['mode'],source_path=rf_l1_paths['source'],run_id=rf_l1_id)
+                with section_timing('rf_owner',rf_l1_case):
+                    rf_l1.run(rf_l1_context,baseline_path=rf_l1_paths['baseline'],resolved_path=rf_l1_paths['resolved'],
+                        mode_path=rf_l1_paths['mode'],source_path=rf_l1_paths['source'],run_id=rf_l1_id)
         except RuntimeError as error:
             if 'session' not in rf_l1_seen:
                 raise
@@ -3896,6 +4140,21 @@ print('INSTALLED_TOF_ACCEPTANCE_KERNELS=PASS')
 tof_workflow_script=root/('installed-tof-workflow-'+sys.argv[2]+'.py')
 tof_workflow_script.write_text(r"""import copy,csv,hashlib,importlib,importlib.abc,json,os,pathlib,sys,sysconfig
 
+from contextlib import contextmanager
+import time
+
+@contextmanager
+def section_timing(section, case):
+    started = time.perf_counter_ns()
+    try:
+        yield
+    finally:
+        try:
+            print('INSTALLED_SECTION_TIMING='+json.dumps(dict(section=section, case=case,
+                elapsed_ns=time.perf_counter_ns()-started, exception=sys.exc_info()[0] is not None)), flush=True)
+        except BaseException:
+            pass  # Timing output must never mask the observed operation.
+
 def main():
     authors=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
     def guard(event,args):
@@ -4029,7 +4288,8 @@ def main():
             if workers is not None:arguments['max_workers']=workers
             if name=='slope':arguments['receipt_root']=receipt_root
             if name=='resume':arguments['resume_from']=basic_parent
-            run=api.execute(config_paths[selected],**arguments)
+            with section_timing('tof_owner',name):
+                run=api.execute(config_paths[selected],**arguments)
             retain_case(run,name)  # Actual producer bytes before any consumer assertion.
             assert run==workspace/'artifacts/projects'/project/'runs'/identity
             result,owner_completion=assert_owner(run,identity)
@@ -4151,8 +4411,9 @@ tof_workflow_args=[sys.executable,'-X','utf8','-I','-B',str(tof_workflow_script)
     json.dumps([str(value) for value in blocked_source_roots]),str(tof_workflow_fixture_path)]
 # SOFTWARE-only five owners. Keep the existing whole-client 900 s bound; the
 # bounded child includes observed worker startup/freezing and two actual pools.
-tof_workflow_child=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-'+sys.argv[2])),'run'],
-    cwd=root,capture_output=True,timeout=480,check=False)
+with section_timing('tof_child',sys.argv[2]):
+    tof_workflow_child=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-'+sys.argv[2])),'run'],
+        cwd=root,capture_output=True,timeout=480,check=False)
 tof_workflow_retained=os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
 if tof_workflow_retained:
     tof_workflow_diagnostics=pathlib.Path(tof_workflow_retained)/('tof-workflow-client-'+sys.argv[2])
@@ -4187,8 +4448,9 @@ tof_workflow_executor_held=tof_workflow_executor.with_name(tof_workflow_executor
 assert not tof_workflow_executor_held.exists()
 tof_workflow_executor.rename(tof_workflow_executor_held)
 try:
-    tof_workflow_resource_missing=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-resource-'+sys.argv[2])),'resource_missing'],
-        cwd=root,capture_output=True,timeout=90,check=False)
+    with section_timing('tof_missing_resource_child',sys.argv[2]):
+        tof_workflow_resource_missing=subprocess.run([*tof_workflow_args,str(root/('tof-workflow-resource-'+sys.argv[2])),'resource_missing'],
+            cwd=root,capture_output=True,timeout=90,check=False)
     if tof_workflow_retained:
         tof_workflow_resource_diagnostics=pathlib.Path(tof_workflow_retained)/('tof-workflow-resource-client-'+sys.argv[2])
         tof_workflow_resource_diagnostics.mkdir(exist_ok=False)
@@ -5762,6 +6024,17 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             mr_operator_root = root / 'mr-prepared-field-operator'
             mr_operator_root.mkdir()
             _, mr_operator_binding_path, _ = IonProcessorNativeBindingTest().fixture(mr_operator_root)
+            import ast
+            from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_source import MeasuredComponentSourceTests
+            mr_measured_fixture = MeasuredComponentSourceTests('test_irregular_ids_birth_offsets_and_exact_six_dimensions')
+            mr_measured_fixture.setUp()
+            self.addCleanup(mr_measured_fixture.doCleanups)
+            mr_measured_inputs = {path: path.read_bytes() for path in mr_measured_fixture.root.rglob('*') if path.is_file()}
+            mr_test_path = REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_component_source.py'
+            mr_test_ast = ast.parse(mr_test_path.read_text(encoding='utf-8'))
+            mr_callbacks = [node.value for node in ast.walk(mr_test_ast) if isinstance(node, ast.Constant)
+                            and isinstance(node.value, str) and 'READ_ONLY_TOF=PASS' in node.value and 'setfenv(chunk' in node.value]
+            self.assertEqual(len(mr_callbacks), 1)
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
                                               author_source_roots=[str(REPO_ROOT)],
@@ -5779,6 +6052,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
+                                              mr_measured_handoff=str(mr_measured_fixture.handoff),
+                                              mr_measured_callback=mr_callbacks[0],
+                                              mr_measured_source_old_witness=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
+                                              strict_json_old_witness=json.loads((REPO_ROOT / 'common/contracts/fixtures/strict_json_old_witness.json').read_text(encoding='utf-8')),
                                               mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
                                               ion_reader_old_witness=json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/ion_reader_old_witness.json').read_text(encoding='utf-8')),
                                               mr_interface_coverage_vectors=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_interface_coverage_vectors.json').read_text(encoding='utf-8')),
@@ -5831,6 +6108,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
+                self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))
             if retained:
                 files = []
                 for label, artifact in (('wheel', wheel), ('sdist', sdist), ('sdist-rebuilt-wheel', rebuilt_wheel)):

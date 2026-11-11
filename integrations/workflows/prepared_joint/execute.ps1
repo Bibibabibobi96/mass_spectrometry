@@ -47,15 +47,47 @@ if($PSCmdlet.ParameterSetName-eq'Flight'){
 
 $script:preparedPackage=$null
 function Invoke-ProjectPython {
-  param([string[]]$Arguments)
+  param([string[]]$Arguments,$FrozenPackage=$null)
+  $authorRoot=$repoRoot
   $root=$script:pythonRoot;$environment=@{}
   if($null-ne$script:preparedPackage){
     $execution=Get-RunNativeExecutionContext -Package $script:preparedPackage -Paths @($root) -Tool Python
     $root=[string]$execution.projected_paths[0];$environment=$execution.environment
   }
   Invoke-RunToolRootContext -RepoRoot $root -Environment $environment -Operation {
-    & $python -B @Arguments
-    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
+    if($null-eq$FrozenPackage){
+      & $python -B @Arguments
+      if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
+    }else{
+      if($Arguments.Count-lt3-or$Arguments[0]-cne'-m'){throw 'Frozen prepared-joint invocation requires a module and arguments.'}
+      $files=@(foreach($identity in @($FrozenPackage.identities)+@($FrozenPackage.dependency_contract_identity)){
+        $relative=[IO.Path]::GetRelativePath([string]$FrozenPackage.execution_root,[string]$identity.snapshot_path)
+        if([IO.Path]::IsPathRooted($relative)-or$relative-eq'..'-or$relative.StartsWith('..'+[IO.Path]::DirectorySeparatorChar)){throw 'Frozen dependency is outside the selected execution root.'}
+        [pscustomobject]@{path=(Join-Path $root $relative);relative_path=$relative.Replace('\','/');sha256=([string]$identity.sha256).ToUpperInvariant()}
+      })
+      $roots=@(foreach($packageRoot in $FrozenPackage.import_roots){
+        $relative=[IO.Path]::GetRelativePath([string]$FrozenPackage.execution_root,[string]$packageRoot)
+        if([IO.Path]::IsPathRooted($relative)-or$relative-eq'..'-or$relative.StartsWith('..'+[IO.Path]::DirectorySeparatorChar)){throw 'Frozen import root escapes the selected execution root.'}
+        if($relative-eq'.'){$root}else{Join-Path $root $relative}
+      })
+      $view=[pscustomobject]@{code_root=$root;package_roots=$roots;files=$files}
+      $helperRelative='src/msplatform/execution/resources/frozen_python_package.ps1'
+      $helper=@($files|Where-Object{$_.relative_path-ceq$helperRelative})
+      if($helper.Count-ne1-or-not(Test-Path -LiteralPath $helper[0].path -PathType Leaf)-or
+          (Get-FileHash -LiteralPath $helper[0].path -Algorithm SHA256).Hash-cne$helper[0].sha256){throw 'Frozen Python executor identity differs.'}
+      . $helper[0].path
+      try{
+        $result=Invoke-IsolatedFrozenPythonModule -Python $python -Package $view -Module $Arguments[1] -Arguments @($Arguments[2..($Arguments.Count-1)]) -WorkingDirectory $root -ForbiddenRoots @($authorRoot)
+        if($result.module_stdout){Write-Output $result.module_stdout}
+      }catch{
+        if($_.Exception.Data.Contains('exit_code')){
+          $failure=[InvalidOperationException]::new("Python stage failed: $($Arguments -join ' ')",$_.Exception)
+          $failure.Data['exit_code']=[int]$_.Exception.Data['exit_code']
+          throw $failure
+        }
+        throw
+      }
+    }
   }
 }
 
@@ -130,7 +162,7 @@ function Invoke-PreparedJointTrial {
     if($FieldBindingPath){$prepareArguments+=@('--field-binding',(Resolve-Path -LiteralPath $FieldBindingPath).Path)}
     if($TrajectoryEquivalenceReferenceRunPath){$prepareArguments+=@('--equivalence-reference-run',(Resolve-Path -LiteralPath $TrajectoryEquivalenceReferenceRunPath).Path)}
     if($parentManifest){$prepareArguments+=@('--continuation-predecessor-manifest',$parentManifest)}
-    Invoke-ProjectPython -Arguments $prepareArguments
+    Invoke-ProjectPython -Arguments $prepareArguments -FrozenPackage $frozen
     $preparationPath=Join-Path $resultDir 'prepared_joint_trial.json'
     $trial=Get-Content -LiteralPath $preparationPath -Raw|ConvertFrom-Json -Depth 60
     $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity `

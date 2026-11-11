@@ -1342,6 +1342,38 @@ $results|ConvertTo-Json -Depth 8 -Compress
                           parameters["ChangedTestModules"])
             self.assertTrue(any(name.startswith("instrument_assembly_integration") for name in stages))
 
+    def test_measured_source_dependencies_select_their_real_consumers(self) -> None:
+        paths = (
+            "src/msplatform/workflows/prepared_joint/source.py",
+            "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+            "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
+            "src/msplatform/io/strict_json.py",
+            "src/msplatform/execution/resources/frozen_python_package.ps1",
+        )
+        with tempfile.TemporaryDirectory(prefix="measured_source_consumer_plans_") as directory:
+            for index, path in enumerate(paths):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    mr = stages["parallel_mirror_dual_stripe_mr_tof_static"]["command"]["parameters"]
+                    self.assertIn(
+                        "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_trial",
+                        mr["ChangedTestModules"])
+                    integration = set()
+                    for name, stage in stages.items():
+                        if name.startswith("instrument_assembly_integration"):
+                            integration.update(stage["command"]["parameters"].get("SelectedTestModules", []))
+                    self.assertIn("integrations.tests.test_prepared_joint_execute", integration)
+                    if path.endswith("strict_json.py"):
+                        self.assertIn("rf_multipole_domain_tests", stages)
+                    if not path.endswith("frozen_python_package.ps1"):
+                        self.assertIn(
+                            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_source",
+                            mr["ChangedTestModules"])
+                        self.assertIn("integrations.tests.test_accelerator_interface", integration)
+
     def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
         paths = ("src/msplatform/results/ip_continuation.py",
                  "src/msplatform/backends/simion/ip_exit.py")

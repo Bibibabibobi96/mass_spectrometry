@@ -15,7 +15,8 @@ from msplatform.contracts.particle_state import write_component_particle_state_c
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import RigidTransform
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff, resolve_ip_mr_connection, resolve_matching_request
+from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff, resolve_matching_request
 
 
 def handoff_plan(recipe):

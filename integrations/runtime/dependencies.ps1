@@ -389,6 +389,7 @@ print(json.dumps(records, ensure_ascii=False))
     import_roots = @(Get-RunPythonImportRoots -RepoRoot (Join-Path $InputDir 'runtime_snapshot'))
     code_inventory_path = $publication.code_inventory_path
     dependency_contract_path = $publication.dependency_contract_path
+    dependency_contract_identity = $publication.dependency_contract_identity
     identities = $identities
     source_count = $identities.Count
     source_bytes = [long](($identities | Measure-Object -Property bytes -Sum).Sum)

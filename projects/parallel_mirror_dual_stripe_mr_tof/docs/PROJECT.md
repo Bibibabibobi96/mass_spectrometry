@@ -920,3 +920,12 @@ The first-match IP fine-field coverage and native gradient-halo check used by
 interface audit preparation is owned by the SIMION prepared-field backend. The
 root audit preparation remains its consumer; this does not qualify a native field,
 flight, or physical match.
+
+### Installed measured-source preparation
+
+The measured population, constructed centroid and scheduler ordinal slice are prepared
+by `msplatform.workflows.prepared_joint.source`; IP/MR source binding and connection
+policy are owned by `msplatform.workflows.prepared_joint.ip_mr_connection`. The
+source runtime is an installed SIMION resource. The real accelerator-interface and
+prepared-joint consumers use these implementations; the remaining trial lifecycle
+continues in its original entry. This does not establish native flight or qualification.

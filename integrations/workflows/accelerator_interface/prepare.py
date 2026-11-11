@@ -44,7 +44,7 @@ verified_preparation_reference = partial(
 def preflight_joint_analysis(design_run: Path, source_run: Path, contract_path: Path) -> None:
     """Validate the selected analysis and measured source before a new field solve."""
     from msplatform.contracts.particle_state import load_component_particle_state_csv
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import validate_component_exit_binding
+    from msplatform.workflows.prepared_joint.ip_mr_connection import validate_component_exit_binding
     from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_source_reference
 
     design_run, source_run, contract_path = map(Path, (design_run, source_run, contract_path))
@@ -95,7 +95,8 @@ def _resolve_ip_matching(*, source_run: Path, results: Path, inputs: Path,
             or dependency.get("provider_module") != expected):
         raise ValueError("unsupported ion processor provider API")
     from msplatform.backends.simion.ip_exit import export_component_exit
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_matching_request
+    from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_matching_request
     request = _read(Path(frozen['accelerator_request']['path']))
     plan = derive_assembly_scope(_read(Path(frozen['composition_plan']['path'])), local_scope=request.get('local_scope'))
     connection = resolve_ip_mr_connection(plan)
@@ -186,7 +187,8 @@ def _joint_binding_inputs(*, design_run: Path, field_run: Path, source_run: Path
     request = _read(request_path)
     Draft202012Validator(_read(CONFIG / "ion_processor_matching_request.schema.json")).validate(request)
     plan = derive_assembly_scope(_read(plan_path), local_scope=request.get("local_scope"))
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_ip_mr_transform
+    from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
     connection = resolve_ip_mr_connection(plan)
     registration = resolve_ip_mr_transform(plan, connection).to_contract()
     if (assembly["composition_plan"] != plan
@@ -244,7 +246,7 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
     Readiness means asset/configuration identity only. Energy acceptance, full
     phase-space matching and time focus remain explicitly unqualified.
     """
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
+    from msplatform.workflows.prepared_joint.source import materialize_measured_source
 
     if output_directory.exists():
         raise FileExistsError(output_directory)

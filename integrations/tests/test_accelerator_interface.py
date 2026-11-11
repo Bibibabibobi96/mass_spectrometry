@@ -353,7 +353,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ion_processor_assembly import AssemblyTests
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
         from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
+        from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 
         fixture = AssemblyTests("test_seed_target_geometry_and_oa_removed")
         fixture.setUp()
@@ -456,7 +456,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
                         counts=dict(source=3, transferred=0, not_transferred=3))
             connection = dict(upstream=dict(instance_id="ip"), downstream=dict(instance_id="mr"))
             with patch('integrations.workflows.accelerator_interface.prepare.derive_assembly_scope', return_value={}), \
-                 patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_ip_mr_connection', return_value=connection), \
+                 patch('msplatform.workflows.prepared_joint.ip_mr_connection.resolve_ip_mr_connection', return_value=connection), \
                  patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_matching_request', side_effect=AssertionError('must not match')), \
                  patch('msplatform.backends.simion.ip_exit.export_component_exit', return_value=zero):
                 self.assertEqual(_resolve_ip_matching(source_run=root, results=root, inputs=root, frozen=frozen), zero)
@@ -658,7 +658,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                     path = design/"inputs"/(name+".json")
                     write(path, value)
                     paths[name] = str(path)
-                from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
+                from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
                 plan = json.loads((REPO/"integrations/config/recipes/ip_mr_y_minus55_plan.json").read_text())
                 connection = resolve_ip_mr_connection(plan)
                 pose = plan["recipe"]["instances"][0]["transform"]
@@ -704,7 +704,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                         patch.object(module, "verified_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch.object(module, "verified_preparation_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
-                        patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source", side_effect=source_projection), \
+                        patch("msplatform.workflows.prepared_joint.source.materialize_measured_source", side_effect=source_projection), \
                         patch.object(module, "collision_workbench_layout", return_value=dict(seed=str(seed), priority={})), \
                         patch.object(module, "render_measured_operating_point", return_value="return {}"), \
                         patch.object(module, "prepare_interface_field_audit", return_value={}):
@@ -1084,7 +1084,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         module = 'integrations.workflows.accelerator_interface.prepare'
         with patch(module+'.freeze_field_reference',return_value=references) as freeze, \
              patch('integrations.workflows.accelerator_interface.geometry.prepare_ion_processor_assembly',side_effect=geometry_boundary), \
-             patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source',
+             patch('msplatform.workflows.prepared_joint.source.materialize_measured_source',
                    side_effect=AssertionError('design must not materialize a draft flight source')):
             receipt = prepare_joint_flight(reference_run=reference,
                 interface_results=result,frozen_inputs=inputs,lua_executable=Path(lua),matching=matching)
@@ -1139,7 +1139,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         exported = json.loads((result / "ion_processor_exit/component_exit_receipt.json").read_text())
         self.assertEqual(exported["source_project"], "dual_pressure_rectilinear_ion_processor")
         self.assertEqual(exported["producer_result"]["source_scientific_status"], "failed")
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
+        from msplatform.workflows.prepared_joint.source import materialize_measured_source
         materialized = materialize_measured_source(result / "mrtof_handoff/handoff_receipt.json", result / "measured")
         self.assertEqual(materialized["counts"], handoff["counts"])
 
@@ -1161,7 +1161,7 @@ import json,sys
 from pathlib import Path
 from integrations.workflows.accelerator_interface.prepare import _resolve_ip_matching
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
+from msplatform.workflows.prepared_joint.source import materialize_measured_source
 source,authorities,output=map(Path,sys.argv[1:])
 output.mkdir()
 matching=_resolve_ip_matching(source_run=source,results=output,inputs=output,frozen=json.loads(authorities.read_text()))

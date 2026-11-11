@@ -15,12 +15,12 @@ from unittest.mock import patch
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.io.file_identity import file_sha256
-from common.contracts.strict_json import StrictJsonError
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import measured_component_source as source_module
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
+from msplatform.io.strict_json import StrictJsonError
+from msplatform.workflows.prepared_joint import source as source_module
+from msplatform.workflows.prepared_joint.source import (
     materialize_measured_source, materialize_measured_source_slice, materialize_centroid_probe,
-    author_measured_centroid_prism_target,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import author_measured_centroid_prism_target
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_ion_processor_handoff as fixtures
 
 

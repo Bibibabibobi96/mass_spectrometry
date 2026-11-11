@@ -1833,6 +1833,10 @@
         {
           "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
           "reason": "installed_rf_finite_extraction_changed"
+        },
+        {
+          "exact": "src/msplatform/io/strict_json.py",
+          "reason": "checkpoint_strict_json_dependency_changed"
         }
       ],
       "command": {
@@ -2117,6 +2121,26 @@
         {
           "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/prepared_joint/source.py",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/io/strict_json.py",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+          "reason": "prepared_joint_frozen_executor_changed"
         }
       ],
       "command": {
@@ -2198,6 +2222,44 @@
         "scope": "integrations/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+                "reason": "prepared_joint_frozen_executor_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_prepared_joint_execute.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/prepared_joint/source.py",
+                "reason": "installed_measured_source_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+                "reason": "installed_measured_source_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
+                "reason": "installed_measured_source_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/io/strict_json.py",
+                "reason": "installed_measured_source_consumer_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_accelerator_interface.py",
+              "integrations/tests/test_accelerator_interface_geometry.py",
+              "integrations/tests/test_prepared_joint_execute.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -2556,6 +2618,26 @@
         {
           "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
           "reason": "installed_standalone_pa_authority_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/prepared_joint/source.py",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/io/strict_json.py",
+          "reason": "installed_measured_source_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+          "reason": "prepared_joint_frozen_executor_changed"
         }
       ],
       "command": {
@@ -2685,6 +2767,49 @@
         "module_parameter": "ChangedTestModules",
         "preserve_command": true,
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+                "reason": "prepared_joint_frozen_executor_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/prepared_joint/source.py",
+                "reason": "installed_measured_source_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+                "reason": "installed_measured_source_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
+                "reason": "installed_measured_source_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/io/strict_json.py",
+                "reason": "installed_measured_source_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_component_source.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_component_analysis.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_diagnostics.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_handoff.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_assembly.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_runtime_adapter.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_joint_flight_preparation.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

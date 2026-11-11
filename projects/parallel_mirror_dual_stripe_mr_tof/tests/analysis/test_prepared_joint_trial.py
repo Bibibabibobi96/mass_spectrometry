@@ -96,6 +96,103 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                 "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_trial.PreparedJointBatchTests.test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states"],
                 cwd=snapshot, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+            # Each removal is exercised by a fresh interpreter and fixture/output
+            # directory. The ambient checkout remains on PYTHONPATH throughout.
+            dependencies = (
+                ("src/msplatform/workflows/prepared_joint/source.py", "msplatform.workflows.prepared_joint.source"),
+                ("src/msplatform/workflows/prepared_joint/ip_mr_connection.py", "msplatform.workflows.prepared_joint.ip_mr_connection"),
+                ("src/msplatform/io/strict_json.py", "msplatform.io.strict_json"),
+                ("src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua", None),
+            )
+            for relative, module_name in dependencies:
+                selected = snapshot / relative
+                ambient_file = repo / relative
+                self.assertTrue(selected.is_file(), relative)
+                self.assertTrue(ambient_file.is_file(), relative)
+                original = selected.read_bytes()
+                try:
+                    selected.unlink()
+                    missing = subprocess.run(child.args, cwd=snapshot, env=env, capture_output=True,
+                        text=True, encoding="utf-8", errors="replace", timeout=120)
+                    self.assertNotEqual(missing.returncode, 0, relative)
+                    if module_name:
+                        self.assertIn("ModuleNotFoundError: No module named '" + module_name + "'", missing.stderr)
+                    else:
+                        self.assertIn("FileNotFoundError: installed SIMION native resource is missing: " + selected.name,
+                                      missing.stderr)
+                finally:
+                    selected.write_bytes(original)
+                self.assertEqual(selected.read_bytes(), original)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_public_prepare_invoker_rejects_changed_frozen_source(self):
+        repo = Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "check.ps1"
+            script.write_text(r"""param($Repo,$Destination,$Python)
+$repoRoot=$Repo
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
+$source=Get-Content -LiteralPath (Join-Path $Repo 'integrations/workflows/prepared_joint/execute.ps1') -Raw
+$tokens=$null;$errors=$null
+$tree=[System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'launcher parser errors'}
+$function=$tree.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Invoke-ProjectPython'},$true)
+if($function.Count-ne1){throw 'launcher invoker not unique'}
+. ([scriptblock]::Create($function[0].Extent.Text))
+$script:pythonRoot=[string]$frozen.execution_root;$script:preparedPackage=$null
+$module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial'
+$help=@('-m',$module,'--help')
+$good=@(Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen)-join "`n"
+if($good-notmatch 'usage:'){throw 'real selected module did not return help'}
+$identity=@($frozen.identities|Where-Object {$_.source_repo_path-ceq 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py'})
+if($identity.Count-ne1){throw 'selected source identity missing'}
+$target=[string]$identity[0].snapshot_path;$original=[IO.File]::ReadAllBytes($target)
+try{
+  Remove-Item -LiteralPath $target
+  try{Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen|Out-Null;throw 'missing source accepted'}catch{if($_.Exception.Message-notmatch 'Frozen Python dependency is missing'){throw}}
+  [IO.File]::WriteAllBytes($target,($original+[byte[]](1)))
+  try{Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen|Out-Null;throw 'changed source accepted'}catch{if($_.Exception.Message-notmatch 'Frozen Python dependency hash differs'){throw}}
+}finally{[IO.File]::WriteAllBytes($target,$original)}
+try{Invoke-ProjectPython -Arguments @('-m',$module,'--invalid-option') -FrozenPackage $frozen|Out-Null;throw 'bad arguments accepted'}catch{if($_.Exception.Message-notmatch '^Python stage failed:' -or $_.Exception.Data['exit_code'] -ne 2 -or $null -eq $_.Exception.InnerException){throw}}
+# A junction is an execution alias for the same frozen tree; do not copy it.
+$alias=Join-Path (Split-Path -Parent $Destination) 'projected_snapshot'
+$null=New-Item -ItemType Junction -Path $alias -Target $frozen.execution_root
+try{
+  $script:preparedPackage=[pscustomobject]@{}
+  function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) [pscustomobject]@{projected_paths=@($alias);environment=@{}}}
+  $aliasHelp=@(Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen)-join "`n"
+  if($aliasHelp-notmatch 'usage:'){throw 'projected selected module did not return help'}
+  [IO.File]::WriteAllBytes($target,($original+[byte[]](1)))
+  try{Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen|Out-Null;throw 'projected changed source accepted'}catch{if($_.Exception.Message-notmatch 'Frozen Python dependency hash differs'){throw}}
+}finally{
+  [IO.File]::WriteAllBytes($target,$original)
+  Remove-Item -LiteralPath $alias
+  $script:preparedPackage=$null
+}
+Write-Output 'FROZEN_PREPARE_INVOKER=PASS'
+""", encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(repo),
+                                     str(root / "inputs"), sys.executable], cwd=root, capture_output=True,
+                                    text=True, encoding="utf-8", errors="replace", timeout=180)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_PREPARE_INVOKER=PASS", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_public_invoker_prepares_complete_97_state_cohort(self):
+        """Run the existing cohort fixture through the actual frozen PS invoker."""
+        repo = Path(__file__).resolve().parents[4]
+        env = dict(os.environ, MR_TEST_PUBLIC_97="1", PYTHONDONTWRITEBYTECODE="1")
+        env.pop("MR_TEST_FROZEN_PARENT", None)
+        env.pop("MASS_SPECTROMETRY_RUN_DIRECTORY", None)
+        env.pop("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY", None)
+        result = subprocess.run([sys.executable, "-B", "-m", "unittest",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_trial.PreparedJointBatchTests.test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states"],
+            cwd=repo, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PUBLIC_97_PREPARATION=PASS", result.stdout)
 
     def test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states(self):
         import copy
@@ -195,6 +292,148 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                        records=dict(scalar_pa=dict(sha256="A"*64)))
         binding["instances"][0]["pa_path"] = binding["sources"]["scalar_pa"]
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        if os.environ.get("MR_TEST_PUBLIC_97"):
+            # Reuse the real 97-state source fixture above. Field PA bytes below
+            # are inert software fixtures and are never opened by SIMION.
+            from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
+            from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+            from msplatform.backends.comsol.static_field_binding import load_binding as load_real_binding
+            field_root = root / "sealed_software_field"
+            field_root.mkdir()
+            factory = IonProcessorNativeBindingTest()
+            descriptor, descriptor_path, field_owner = factory.fixture(field_root)
+            registration = resolve_ip_mr_transform(assembly_plan, resolve_ip_mr_connection(assembly_plan)).to_contract()
+            geometry_path = field_root / "assembly_geometry.json"
+            geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
+            geometry["frame_id"] = registration["to_frame_id"]
+            geometry_path.write_text(json.dumps(geometry), encoding="utf-8")
+            replacement_path = field_root / "replacement.json"
+            replacement = json.loads(replacement_path.read_text(encoding="utf-8"))
+            replacement["assembly_coordinate_transform"] = registration
+            replacement_path.write_text(json.dumps(replacement), encoding="utf-8")
+            replacement_record = factory.record(replacement_path)
+            design_owner = field_root / "design_manifest.json"
+            design_owner.write_text(json.dumps(dict(status="success", outputs=[factory.record(path) for path in
+                (replacement_path, field_root / "point.json", geometry_path)])), encoding="utf-8")
+            for level in (descriptor["parent"], descriptor["refinement_windows"][0]):
+                Path(level["geometry_authority_path"]).write_text(json.dumps(geometry), encoding="utf-8")
+                authority_path = Path(level["voltage_authority_path"])
+                authority = json.loads(authority_path.read_text(encoding="utf-8"))
+                authority["assembly"].update(ion_processor_registration=registration,
+                    replacement_assembly=replacement_record, replacement_assembly_manifest=factory.record(design_owner))
+                authority_path.write_text(json.dumps(authority), encoding="utf-8")
+            descriptor["replacement_assembly"] = replacement_record
+            factory.seal(field_root, field_owner)
+            descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
+            selected = load_real_binding(descriptor_path)
+            self.assertEqual(selected["authority"]["assembly"]["ion_processor_registration"], registration)
+            self.assertEqual([row["role"] for row in selected["instances"]],
+                             ["global_fallback", "native_corridor", "ion_processor_collision", "detector"])
+            self.assertEqual(selected["refinement_windows"][0]["name"], "ion_processor_local")
+            binding_path = source.parent / "static_field_binding.json"
+            binding_path.write_bytes(descriptor_path.read_bytes())
+            # Seal every file actually consumed from the prepared parent once.
+            parent_manifest = dict(project="instrument_assembly", mode="accelerator_interface_preparation",
+                status="success", inputs={}, outputs=[file_record(path) for path in sorted(prepared.rglob("*"))
+                if path.is_file() and path != prepared / "run_manifest.json"])
+            manifest_path = prepared / "run_manifest.json"
+            manifest_path.write_text(json.dumps(parent_manifest), encoding="utf-8")
+            bad_binding = copy.deepcopy(descriptor)
+            bad_binding["instances"][2]["role"] = "accelerator"
+            bad_path = root / "bad_field_binding.json"
+            bad_path.write_text(json.dumps(bad_binding), encoding="utf-8")
+            ps = root / "public-prepare-97.ps1"
+            ps.write_text(r"""param($Repo,$Destination,$Python,$Prepared,$Contract,$Output,$BadBinding)
+$ErrorActionPreference='Stop';$repoRoot=$Repo
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
+$source=Get-Content -LiteralPath (Join-Path $Repo 'integrations/workflows/prepared_joint/execute.ps1') -Raw
+$tokens=$null;$errors=$null;$tree=[System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'launcher parser errors'}
+$function=@($tree.FindAll({param($node)$node-is[System.Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Invoke-ProjectPython'},$true))
+if($function.Count-ne1){throw 'launcher invoker not unique'}
+. ([scriptblock]::Create($function[0].Extent.Text))
+$script:pythonRoot=[string]$frozen.execution_root;$script:preparedPackage=$null
+$module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial'
+function Invoke-Prepare([string]$run){
+ # The public owner normally creates this destination identity before prepare.
+ $null=New-Item -ItemType Directory -Path $run
+ $destination=@{project='instrument_assembly';mode='prepared_joint';run_id=(Split-Path -Leaf $run)}
+ [IO.File]::WriteAllText((Join-Path $run 'run_config.json'),($destination|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+ Invoke-ProjectPython -Arguments @('-m',$module,'prepare','--prepared-run',$Prepared,'--contract',$Contract,'--run-directory',$run) -FrozenPackage $frozen | Out-Null
+}
+function Require-ChildFailure([string]$run){
+ try{Invoke-Prepare $run;throw 'Invalid parent or field accepted'}catch{if($_.Exception.Message-notmatch '^Python stage failed:'-or$_.Exception.Data['exit_code']-ne1){throw}}
+ if(Test-Path -LiteralPath (Join-Path $run 'results/prepared_joint_trial.json')){throw 'Failed preparation published a trial'}
+}
+Invoke-Prepare $Output
+$parentReceipt=Join-Path $Prepared 'results/accelerator_interface_preparation.json';$parentBytes=[IO.File]::ReadAllBytes($parentReceipt)
+try{[IO.File]::WriteAllBytes($parentReceipt,($parentBytes+[byte[]](32)));Require-ChildFailure ($Output+'-bad-parent')}
+finally{[IO.File]::WriteAllBytes($parentReceipt,$parentBytes)}
+$binding=Join-Path $Prepared 'results/joint_workbench/static_field_binding.json';$manifest=Join-Path $Prepared 'run_manifest.json'
+$bindingBytes=[IO.File]::ReadAllBytes($binding);$manifestBytes=[IO.File]::ReadAllBytes($manifest)
+try{
+ [IO.File]::WriteAllBytes($binding,[IO.File]::ReadAllBytes($BadBinding))
+ $m=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+ $rows=@($m.outputs|Where-Object{[IO.Path]::GetFullPath([string]$_.path)-eq[IO.Path]::GetFullPath($binding)})
+ if($rows.Count-ne1){throw 'binding record not unique'}
+ $rows[0].bytes=(Get-Item -LiteralPath $binding).Length;$rows[0].sha256=(Get-FileHash -LiteralPath $binding -Algorithm SHA256).Hash
+ [IO.File]::WriteAllText($manifest,($m|ConvertTo-Json -Depth 100),[Text.UTF8Encoding]::new($false))
+ Require-ChildFailure ($Output+'-bad-binding')
+}finally{[IO.File]::WriteAllBytes($binding,$bindingBytes);[IO.File]::WriteAllBytes($manifest,$manifestBytes)}
+foreach($case in @(@{path='src/msplatform/workflows/prepared_joint/source.py';kind='tamper'},@{path='src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua';kind='missing'})){
+ $identity=@($frozen.identities|Where-Object{([string]$_.source_repo_path).Replace('\','/')-ceq$case.path})
+ if($identity.Count-ne1){throw 'selected frozen dependency not unique'}
+ $target=[string]$identity[0].snapshot_path;$saved=[IO.File]::ReadAllBytes($target)
+ try{
+  if($case.kind-eq'missing'){Remove-Item -LiteralPath $target}else{[IO.File]::WriteAllBytes($target,($saved+[byte[]](1)))}
+  try{Invoke-Prepare ($Output+'-'+$case.kind);throw 'Frozen invalid dependency accepted'}catch{
+   $pattern=if($case.kind-eq'missing'){'Frozen Python dependency is missing'}else{'Frozen Python dependency hash differs'}
+   if($_.Exception.Message-notmatch$pattern){throw}
+  }
+  if(Test-Path -LiteralPath (Join-Path ($Output+'-'+$case.kind) 'results/prepared_joint_trial.json')){throw 'Invalid dependency published trial'}
+ }finally{[IO.File]::WriteAllBytes($target,$saved)}
+}
+Write-Output ('FROZEN_ROOT='+$frozen.execution_root)
+Write-Output 'PUBLIC_97_PREPARATION=PASS'
+""", encoding="utf-8")
+            output = root / "public_97"
+            run = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(ps), str(Path(__file__).resolve().parents[4]),
+                str(root / "public_frozen_inputs"), sys.executable, str(prepared), str(original_path), str(output), str(bad_path)],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn("PUBLIC_97_PREPARATION=PASS", run.stdout)
+            frozen_root = Path(next(line.partition("=")[2] for line in run.stdout.splitlines() if line.startswith("FROZEN_ROOT=")))
+            published = json.loads((output / "results/prepared_joint_trial.json").read_text(encoding="utf-8"))
+            self.assertEqual(published["expected_particle_ids"], selected_ids)
+            self.assertEqual((published["mother_particle_count"], published["launched_particle_count"]), (100, 97))
+            self.assertEqual(set(range(1, 101)) - set(published["expected_particle_ids"]), {24, 64, 80})
+            self.assertEqual(published["source_mode"], "measured_population")
+            self.assertEqual(published["assembly_scope"], assembly_plan["scope"])
+            self.assertFalse(published["candidate_iob_rebuild"])
+            self.assertEqual(published["dispatch_request"]["particle_count"], 97)
+            self.assertEqual(published["solver_epoch_instrument_time_us"], source_receipt["solver_epoch_instrument_time_us"])
+            for filename in ("component_particle_state.csv", "source.fly2", "source_states.lua", "source_projection.lua", "source_census.csv"):
+                self.assertEqual((Path(published["measured_source_directory"]) / filename).read_bytes(), (source / filename).read_bytes())
+            receipt = json.loads(Path(published["source_receipt"]["path"]).read_text(encoding="utf-8"))
+            frozen_module = frozen_root / "src/msplatform/workflows/prepared_joint/source.py"
+            frozen_lua = frozen_root / "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua"
+            self.assertEqual(Path(receipt["inputs"]["runtime_implementation"]["path"]).read_bytes(), frozen_module.read_bytes())
+            self.assertEqual(Path(receipt["inputs"]["runtime_resource"]["path"]).resolve(), frozen_lua.resolve())
+            self.assertEqual(receipt["inputs"]["runtime_resource"], file_record(frozen_lua))
+            self.assertEqual((Path(published["measured_source_directory"]) / "source_runtime.lua").read_bytes(), frozen_lua.read_bytes())
+            from msplatform.io.manifest_records import verify_record
+            for record in [*receipt["inputs"].values(), *receipt["outputs"].values()]:
+                verify_record("public 97-state source receipt", record)
+            self.assertEqual(Path(published["trajectory_contract"]["path"]).read_bytes(), original_path.read_bytes())
+            self.assertEqual(Path(published["parent_composition_plan"]["path"]).read_bytes(),
+                             (prepared / "inputs/composition_plan.json").read_bytes())
+            self.assertEqual(published["field_binding"]["sha256"], file_record(binding_path)["sha256"])
+            self.assertEqual(set(published["guard_paths"]), {item["pa_path"] for item in selected["instances"]} | {selected["sources"]["scalar_pa"], selected["refinement_windows"][0]["sources"]["scalar_pa"], selected["sources"]["surface"], selected["refinement_windows"][0]["sources"]["surface"]})
+            print("PUBLIC_97_PREPARATION=PASS")
+            return
         if os.environ.get("MR_TEST_FROZEN_PARENT"):
             # Reuse the original immutable prepared fixture and the actual trial.
             import hashlib
@@ -202,10 +441,17 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             import msplatform.backends.simion.resources as resources
             import msplatform.backends.comsol.static_field_binding as source_owner
             import msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage as voltage_owner
+            import msplatform.workflows.prepared_joint.source as measured_owner
+            import msplatform.workflows.prepared_joint.ip_mr_connection as connection_owner
+            import msplatform.io.strict_json as json_owner
             snapshot = Path(os.environ["MR_TEST_FROZEN_PARENT"]).resolve()
-            for selected in (owner, resources, source_owner, voltage_owner):
+            for selected in (owner, resources, source_owner, voltage_owner, measured_owner, connection_owner, json_owner):
                 Path(selected.__file__).resolve().relative_to(snapshot)
+            selected_lua = resources.native_resource_path("mrtof_measured_source_runtime.lua")
+            selected_lua.resolve().relative_to(snapshot)
             ambient = Path(os.environ["MR_TEST_AMBIENT_SRC"]).resolve()
+            self.assertEqual(selected_lua.read_bytes(),
+                             (ambient / "msplatform/backends/simion/resources" / selected_lua.name).read_bytes())
             self.assertTrue((ambient / "msplatform/backends/simion/resources/4_instance_seed.iob").is_file())
             overlay = copy.deepcopy(binding)
             overlay.update(source_descriptor_path=str(root / "overlay_source.json"), collision_overlay=dict(
@@ -314,6 +560,15 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                         result = prepare_trial(prepared, path, output)
                 published = json.loads((output / "results/prepared_joint_trial.json").read_text())
                 self.assertEqual(result, published)
+                from msplatform.workflows.prepared_joint import source as selected_source
+                from msplatform.backends.simion.resources import native_resource_path
+                current_source = json.loads(Path(result["source_receipt"]["path"]).read_text(encoding="utf-8"))
+                runtime_origin = native_resource_path("mrtof_measured_source_runtime.lua")
+                self.assertEqual(current_source["inputs"]["runtime_resource"], file_record(runtime_origin))
+                implementation = current_source["inputs"]["runtime_implementation"]
+                self.assertEqual(Path(implementation["path"]).read_bytes(), Path(selected_source.__file__).read_bytes())
+                self.assertEqual((Path(result["measured_source_directory"]) / "source_runtime.lua").read_bytes(),
+                                 runtime_origin.read_bytes())
                 self.assertEqual(result["assembly_scope"], assembly_plan["scope"])
                 self.assertEqual(Path(result["parent_composition_plan"]["path"]).read_bytes(),
                                  (prepared / "inputs/composition_plan.json").read_bytes())
@@ -596,7 +851,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
         component = root/"final_component.json"
         component.write_text(json.dumps(dict(source_run=str(actual))))
         handoff = root/"final_handoff.json"
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
+        from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
         handoff.write_text(json.dumps(dict(connection=resolve_ip_mr_connection(assembly_plan), inputs=dict(component_receipt=file_record(component)))))
         selected = copy.deepcopy(original)
         selected["simion"]["trajectory_profiles"]["center_screening"]["maximum_step_us"] = .002
@@ -608,7 +863,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
         compiler = "integrations.workflows.accelerator_interface.prepare"
         with patch(compiler+".verified_reference",side_effect=lambda run,relative,**kwargs:run/relative), patch(compiler+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
              patch("msplatform.backends.comsol.static_field_binding.load_binding",return_value=bound_field), \
-             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source",side_effect=source_projection), \
+             patch("msplatform.workflows.prepared_joint.source.materialize_measured_source",side_effect=source_projection), \
              patch(compiler+".prepare_interface_field_audit",return_value={}):
             finalized = bind_joint_workbench(design_run=design,field_run=fields,source_run=actual,
                 handoff_receipt=handoff,energy_comparison=dict(role="mrtof_measured_exit_energy_comparison",
@@ -763,7 +1018,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
 
     def test_probe_analysis_preserves_constructed_source_and_observed_collision(self):
         from msplatform.execution.retention import file_record
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_centroid_probe
+        from msplatform.workflows.prepared_joint.source import materialize_centroid_probe
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_analysis import _terminal
         fixture=source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         fixture.setUp();self.addCleanup(fixture.doCleanups);receipt=fixture._materialize()

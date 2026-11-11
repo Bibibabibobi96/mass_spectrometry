@@ -1,0 +1,233 @@
+{
+  "role": "original_strict_json_software_witness",
+  "source_sha256": "9552bc588fb0726cb0dcc178f39aa27a068a31b66a827d152eecec82bfc08ff5",
+  "runtime": "3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]",
+  "files": [
+    {
+      "name": "valid",
+      "bytes": 57,
+      "sha256": "82cf57953e0a346a664b6e23359292e486ec8eee9003513cfdd12ec19317c6c9",
+      "result": {
+        "return": {
+          "nested": {
+            "a": 1
+          },
+          "x": [
+            true,
+            null,
+            1.2
+          ],
+          "unicode": "脉冲"
+        },
+        "return_type": "builtins.dict"
+      },
+      "input_base64": "eyJuZXN0ZWQiOnsiYSI6MX0sIngiOlt0cnVlLG51bGwsMS4yXSwidW5pY29kZSI6IuiEieWGsiJ9"
+    },
+    {
+      "name": "bom",
+      "bytes": 13,
+      "sha256": "33852efecc3cd2ebd1be0f8b38e367879e2e40d1e5ea99cf0dd6e6207d8dc0d6",
+      "result": {
+        "return": {
+          "x": -2.5
+        },
+        "return_type": "builtins.dict"
+      },
+      "input_base64": "77u/eyJ4IjotMi41fQ=="
+    },
+    {
+      "name": "duplicate",
+      "bytes": 23,
+      "sha256": "6a6326e1e2a5378cb1ded9489bb633c97f840a185b7f24a2bc3b638ebc439231",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "<PATH>: duplicate JSON key 'x'",
+        "cause_type": null,
+        "cause_message": null
+      },
+      "input_base64": "eyJvdXRlciI6eyJ4IjoxLCJ4IjoyfX0="
+    },
+    {
+      "name": "nan",
+      "bytes": 11,
+      "sha256": "0b6f38ce3fd5fb5c4253a980da1f80e0d4170887bf26a9657575482529299ac2",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "<PATH>: non-finite JSON number NaN",
+        "cause_type": null,
+        "cause_message": null
+      },
+      "input_base64": "eyJ2IjpbTmFOXX0="
+    },
+    {
+      "name": "inf",
+      "bytes": 14,
+      "sha256": "504a7fad8d7687a0ca0c9eace25c99c63e8e3cf1ad8f4945644c781e4605c02d",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "<PATH>: non-finite JSON number Infinity",
+        "cause_type": null,
+        "cause_message": null
+      },
+      "input_base64": "eyJ4IjpJbmZpbml0eX0="
+    },
+    {
+      "name": "overflow",
+      "bytes": 11,
+      "sha256": "cb013dcc16fe0e5ca4b3588e94fedb08d57d0671c0bc216f27e5cd61b59d77b0",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "<PATH>: non-finite JSON number 1e999",
+        "cause_type": null,
+        "cause_message": null
+      },
+      "input_base64": "eyJ4IjoxZTk5OX0="
+    },
+    {
+      "name": "non_object",
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "<PATH> must be an object",
+        "cause_type": null,
+        "cause_message": null
+      },
+      "input_base64": "W10="
+    },
+    {
+      "name": "syntax",
+      "bytes": 6,
+      "sha256": "dde93f1100e4f08c4ded6dfc33ab6ce1ac1c0c3a353f8195ae02b683f4746586",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "cannot read <PATH>: Expecting value: line 1 column 6 (char 5)",
+        "cause_type": "json.decoder.JSONDecodeError",
+        "cause_message": "Expecting value: line 1 column 6 (char 5)"
+      },
+      "input_base64": "eyJ4Ijp9"
+    },
+    {
+      "name": "invalid_utf8",
+      "bytes": 9,
+      "sha256": "36781faac995a68b69aab7d540747e0c70efed427e66a608cdf64fc4feaaff12",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "cannot read <PATH>: 'utf-8' codec can't decode byte 0xff in position 6: invalid start byte",
+        "cause_type": "builtins.UnicodeDecodeError",
+        "cause_message": "'utf-8' codec can't decode byte 0xff in position 6: invalid start byte"
+      },
+      "input_base64": "eyJ4Ijoi/yJ9"
+    },
+    {
+      "name": "absent",
+      "absent": true,
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "cannot read <PATH>: [Errno 2] No such file or directory: <PATH_REPR>",
+        "cause_type": "builtins.FileNotFoundError",
+        "cause_message": "[Errno 2] No such file or directory: <PATH_REPR>"
+      }
+    }
+  ],
+  "methods": [
+    {
+      "name": "exact_keys",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "contract keys mismatch; missing=['required'], unknown=['extra']",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "dict",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "item must be an object",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "bool",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "flag must be boolean",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "string",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "label must be a non-empty string",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "number_bool",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "value must be numeric",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "number_overflow",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "value must be finite",
+        "cause_type": "builtins.OverflowError",
+        "cause_message": "int too large to convert to float"
+      }
+    },
+    {
+      "name": "number_minimum",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "value must be > 0",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "number_maximum",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "value must be <= 2.0",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "number_valid",
+      "result": {
+        "return": -2.0,
+        "return_type": "builtins.float"
+      }
+    },
+    {
+      "name": "integer_bool",
+      "result": {
+        "exception_type": "common.contracts.strict_json.StrictJsonError",
+        "exception_message": "count must be a positive integer",
+        "cause_type": null,
+        "cause_message": null
+      }
+    },
+    {
+      "name": "integer_valid",
+      "result": {
+        "return": 3,
+        "return_type": "builtins.int"
+      }
+    }
+  ],
+  "source_unchanged": true,
+  "capture_sha256": "2c9041a82f9878257f01bd7e893dc9ad6905d581a4b5840c3aabac4fd8fb5e21",
+  "capture_provenance": "Actual original common/contracts/strict_json.py, before owner migration; input paths replaced only in two path-bearing diagnostic fields."
+}

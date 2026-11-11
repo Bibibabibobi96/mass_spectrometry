@@ -6,6 +6,8 @@ an executable replacement for the existing OA-specific MR flight adapter.
 """
 from __future__ import annotations
 
+from msplatform.workflows.prepared_joint import ip_mr_connection
+
 import csv
 import json
 import math
@@ -139,38 +141,6 @@ def _reference_exit(reference_mr_run: Path) -> tuple[float, dict[str, Any], dict
     return target, reference, identities
 
 
-def validate_component_exit_binding(component: dict[str, Any]) -> tuple[str, str]:
-    """Return the explicit instance pair separately from project provenance."""
-    source, target = component.get("source_instance_id"), component.get("target_instance_id")
-    if (component.get("schema_version") != 2 or component.get("role") != "ion_processor_component_exit_export"
-            or component.get("status") != "prepared"
-            or component.get("source_project") != "dual_pressure_rectilinear_ion_processor"
-            or not isinstance(source, str) or not source
-            or not isinstance(target, str) or not target or source == target):
-        raise ValueError("Unsupported measured component instance binding")
-    return source, target
-
-
-def resolve_ip_mr_connection(plan: dict[str, Any]) -> dict[str, Any]:
-    """Select the supported IP/MR connection from the frozen actual scope."""
-    recipe = plan["recipe"]
-    selected = set(plan["scope"]["instance_ids"])
-    by_id = {item["instance_id"]: item for item in recipe["instances"] if item["instance_id"] in selected}
-    edges = [edge for edge in recipe["connections"] if edge["connection_id"] in plan["scope"]["connection_ids"]]
-    if len(selected) != 2 or len(edges) != 1:
-        raise ValueError("IP/MR selected scope requires two distinct instances and one connection")
-    edge = edges[0]
-    upstream, downstream = edge["upstream"], edge["downstream"]
-    source, target = upstream["instance_id"], downstream["instance_id"]
-    if (source == target or source not in by_id or target not in by_id
-            or by_id[source]["project_id"] != "dual_pressure_rectilinear_ion_processor"
-            or by_id[target]["project_id"] != "parallel_mirror_dual_stripe_mr_tof"
-            or upstream["port_id"] != "extraction_exit" or downstream["port_id"] != "accelerator_entry"
-            or edge["coupling_mode"] != "monolithic_joint_solve"):
-        raise ValueError("IP/MR preparation requires one extraction_exit to accelerator_entry monolithic_joint_solve connection")
-    return edge
-
-
 def resolve_ip_mr_transform(plan: dict[str, Any], connection: dict[str, Any]) -> RigidTransform:
     """Return the supported native-IP to provider-local MR registration."""
     poses = {item["instance_id"]: RigidTransform.from_contract(item["transform"])
@@ -191,7 +161,7 @@ def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run:
     PASS. This function reads only manifest/receipt-bound light evidence.
     """
     component = _read(component_receipt_path)
-    validate_component_exit_binding(component)
+    ip_mr_connection.validate_component_exit_binding(component)
     for record in component["inputs"].values():
         _bound_file(record, component_receipt_path.parent)
     state_path = _bound_file(component["outputs"]["component_states"], component_receipt_path.parent)
@@ -266,13 +236,13 @@ def resolve_matching_request(
     composition_plan: dict[str, Any], connection: dict[str, Any],
 ) -> dict[str, Any]:
     """Read and validate matching science once, before geometry or state output."""
-    if resolve_ip_mr_connection(composition_plan) != connection:
+    if ip_mr_connection.resolve_ip_mr_connection(composition_plan) != connection:
         raise ValueError("Matching connection differs from the frozen composition scope")
     request = _read(request_path)
     schema_path = Path(__file__).parents[1] / "config/ion_processor_matching_request.schema.json"
     Draft202012Validator(_read(schema_path)).validate(request)
     exported = _read(component_receipt)
-    validate_component_exit_binding(exported)
+    ip_mr_connection.validate_component_exit_binding(exported)
     bound_inputs = {name: _bound_file(identity, component_receipt.parent)
                     for name, identity in exported["inputs"].items()}
     trajectory = _read(trajectory_contract)

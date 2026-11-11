@@ -471,7 +471,7 @@ print('OA_BUILDER_MOCK=PASS')
                        side_effect=lambda run, relative, **kwargs: run / relative), patch(
                     "integrations.workflows.accelerator_interface.prepare.verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), patch(
                     "msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), patch(
-                    "projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source",
+                    "msplatform.workflows.prepared_joint.source.materialize_measured_source",
                     side_effect=source_projection), patch(
                     "integrations.workflows.accelerator_interface.prepare.prepare_interface_field_audit",
                     return_value={"mock": "separately_tested_audit_compiler"}):

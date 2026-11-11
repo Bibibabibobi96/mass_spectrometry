@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.strict_json import (
+from msplatform.io.strict_json import (
     StrictJsonError,
     load_json_object,
     require_bool,

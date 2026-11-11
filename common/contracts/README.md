@@ -306,7 +306,7 @@ PowerShell 消费者可用`Enter-RunTerminalConsumptionGuard -RunDirectory <sour
 再从manifest的inputs／outputs选择唯一匹配路径并校验其原始字节；不读取其他载荷或把run config当第二记录权威。
 接口准备与MR组件直接使用这一校验，组件不再为了消费记录而导入integration命令入口。
 
-`strict_json.py`提供机器JSON的公共表示检查：`load_json_object`读取UTF-8（可带BOM）对象，
+[`msplatform.io.strict_json`](../../src/msplatform/io/strict_json.py)提供机器JSON的公共表示检查：`load_json_object`读取UTF-8（可带BOM）对象，
 拒绝任意层级的重复键、NaN／Infinity及浮点溢出；`require_number`拒绝bool、数值字符串和非有限值，
 超大整数的浮点转换失败也归为`StrictJsonError`。边界值只由调用方显式传入，不推断单位、物种或科学资格。
 MR实测源与共同场有限脉冲准备已复用同一入口，原有文件身份、物理约束和CSV解析仍由各自owner负责。

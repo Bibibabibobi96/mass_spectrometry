@@ -836,6 +836,13 @@ diagnostics; this is not a controlled performance comparison. Full Repository
 and the 15-minute target remain open.
 ### Installed prepared-joint source admission
 
+Measured population, centroid and batch-source materialization now use the installed
+`msplatform.workflows.prepared_joint.source` owner and its packaged SIMION runtime;
+the research target author remains project-owned. The selected prepare call uses the existing
+isolated frozen executor with the actual copied dependency identities, including its contract.
+It checks before and after execution and excludes the live repository; this is not a held
+immutability lock. Full owner/native acceptance remains separate from source preparation.
+
 The post-hoc source-admission CLI is
 `python -m msplatform.workflows.prepared_joint.analysis_inputs --source-run <run>
 --contract <author.json> --output-inputs <managed-run-inputs>`.

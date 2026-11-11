@@ -1,7 +1,7 @@
 """Exercise the real MR callback core with measured source projection in plain Lua."""
 from __future__ import annotations
 
-import ast
+from msplatform.backends.simion.resources import native_resource_path
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,11 +22,7 @@ class MeasuredRuntimeAdapterTest(unittest.TestCase):
             lua = str(installed) if installed.exists() else None
         if lua is None:
             self.skipTest("plain Lua interpreter unavailable; no solver fallback")
-        tree = ast.parse((PROJECT / "analysis/measured_component_source.py").read_text(encoding="utf-8"))
-        runtime = next(ast.literal_eval(node.value) for node in tree.body
-                       if isinstance(node, ast.Assign)
-                       and any(isinstance(target, ast.Name) and target.id == "RUNTIME_LUA"
-                               for target in node.targets))
+        runtime = native_resource_path("mrtof_measured_source_runtime.lua").read_text(encoding="utf-8")
         with TemporaryDirectory(prefix="mr-measured-runtime-") as temporary:
             root = Path(temporary)
             (root / "source_runtime.lua").write_text(runtime, encoding="utf-8")

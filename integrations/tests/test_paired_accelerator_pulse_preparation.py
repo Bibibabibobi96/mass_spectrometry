@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.contracts.particle_physics import AMU_KG, kinetic_energy_ev
-from common.contracts.strict_json import StrictJsonError
+from msplatform.io.strict_json import StrictJsonError
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
 from integrations.tests import test_paired_accelerator_static_field_execute as static_tests
