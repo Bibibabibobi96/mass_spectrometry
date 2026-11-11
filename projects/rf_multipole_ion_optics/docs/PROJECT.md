@@ -121,9 +121,15 @@ three former RF protocol/adapter/CLI bridge files are removed. The original 32-c
 capture remains separate from candidate validation. Its portable witness compares
 API results/errors and CLI stdout/status/final error lines; complete traceback
 bytes are not claimed identical. The original witness, selected frozen consumers,
-IP analysis and integration regressions passed guarded software checks. Ordinary
-installation of this successor remains pending; the migration grants no native or
-scientific qualification.
+IP analysis and integration regressions passed guarded software checks. Both ordinary
+package arms passed for the ownership migration at `d70bb091`; this grants no native
+or scientific qualification.
+
+A later deterministic API/CLI reproduction found that a NaN source expectation
+could bypass identity comparison against a finite event. The comparator now requires
+both operands to be finite, retaining the original finite tolerances and diagnostics.
+This corrects invalid-input admission; it does not establish that historical results
+were affected. The separate paired-source admission already rejects these inputs.
 
 资源限制类型运输夹具沿用既有90秒总调用边界，避免非目标10秒阈值影响JSON／字典比较；生产观测与告警政策不变。
 三项既有回归通过（公开墙钟34.810秒），保留严格receipt／告警断言及健康进程越限不杀行为；原联合轮FAIL仍保留。

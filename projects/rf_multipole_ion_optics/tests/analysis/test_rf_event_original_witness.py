@@ -89,6 +89,37 @@ class OriginalRFEventWitnessTests(unittest.TestCase):
                     self.assertEqual(last, record["stderr_last_line"])
             self.assertEqual({p.name: p.read_bytes() for p in root.iterdir()}, before)
 
+    def test_canonical_nonfinite_expected_source_values_are_rejected(self):
+        capture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        raw = {Path(item["path"]).name: bytes.fromhex(item["raw_hex"]) for item in capture["inputs"]}
+        with tempfile.TemporaryDirectory(prefix="rf_nonfinite_source_") as temporary:
+            root = Path(temporary)
+            state = root / "state.csv"
+            state.write_bytes(raw["state_valid.csv"])
+            rows = list(csv.DictReader(raw["source.csv"].decode("utf-8-sig").splitlines()))
+            for field, expected_field in (("x_mm", "transverse_x_mm"), ("birth_time_s", "time_us"),
+                                          ("vx_m_s", "velocity_x_m_s"), ("mass_amu", "kinetic_energy_eV")):
+                with self.subTest(field=field):
+                    row = dict(rows[0])
+                    row[field] = "nan"
+                    source_path = root / (field + ".csv")
+                    with source_path.open("w", encoding="utf-8", newline="") as stream:
+                        writer = csv.DictWriter(stream, fieldnames=list(row), lineterminator="\n")
+                        writer.writeheader()
+                        writer.writerow(row)
+                    sources = event_table.read_canonical_rf_source_expectations(source_path)
+                    with self.assertRaisesRegex(AssertionError, "source " + expected_field):
+                        event_table.validate_rf_event_table(state, sources, 1.1e6, 0.)
+                    if field == "x_mm":
+                        command = [sys.executable, "-B", "-X", "utf8", "-m", "msplatform.workflows.rf_event_table_validation",
+                                   "--state", str(state), "--particles", str(source_path), "--source-format", "canonical",
+                                   "--frequency-hz", "1100000", "--phase-rad", "0", "--solver", "fixture"]
+                        result = subprocess.run(command, cwd=Path(__file__).resolve().parents[4],
+                                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("particle 7 source transverse_x_mm", result.stderr)
+                        self.assertNotIn('"source_identity": "PASS"', result.stdout)
+
     def test_cli_help_keeps_original_description(self):
         result = subprocess.run([sys.executable, "-B", "-m", "msplatform.workflows.rf_event_table_validation", "--help"],
                                 cwd=Path(__file__).resolve().parents[4], capture_output=True,

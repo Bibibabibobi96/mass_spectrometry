@@ -30,7 +30,7 @@ ENUMS = {
 }
 
 def _close(actual: float, expected: float, tolerance: float, label: str) -> None:
-    if not math.isfinite(actual) or abs(actual - expected) > tolerance:
+    if not math.isfinite(actual) or not math.isfinite(expected) or abs(actual - expected) > tolerance:
         raise AssertionError(f"{label}: actual={actual:.15g} expected={expected:.15g}")
 
 def validate_rf_event_table(
