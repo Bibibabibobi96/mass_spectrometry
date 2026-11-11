@@ -1,5 +1,6 @@
 """Synthetic admission contracts only; no solver flight or physical claims."""
 from __future__ import annotations
+from msplatform.workflows.ion_processor import analysis as ip_analysis
 from msplatform.workflows.ion_processor import preparation
 from msplatform.backends.simion import ip_handoff
 
@@ -11,6 +12,9 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
+    to_project_position, to_project_vector,
+)
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
@@ -402,7 +406,7 @@ class AdmissionTests(unittest.TestCase):
         consumer, config = self.prepare_consumer()
         self.assertEqual(config["source"]["particle_count"], 0)
         with patch.object(preparation, "generate_release_states", side_effect=AssertionError("must not resample")), patch.object(ip_handoff, "generate_release_states", side_effect=AssertionError("must not resample")):
-            summary = functional.analyze(consumer)
+            summary = ip_analysis.analyze(consumer)
         self.assertEqual(summary["status"], "success")
         self.assertFalse(summary["solver_executed"])
         self.assertEqual(summary["mother_particle_count"], 3)
@@ -430,18 +434,18 @@ class AdmissionTests(unittest.TestCase):
         sources = release_states(self.load())
         events = []
         for source in sources:
-            position = functional.to_project_position(config, [source[f"{a}_mm"] for a in "xyz"])
-            velocity = functional.to_project_vector(config, [source[f"v{a}_m_s"]/1000 for a in "xyz"])
+            position = to_project_position(config, [source[f"{a}_mm"] for a in "xyz"])
+            velocity = to_project_vector(config, [source[f"v{a}_m_s"]/1000 for a in "xyz"])
             row = dict(particle_id=source["particle_id"], event="source", reason="none",
                 t_us=source["arrival_time_us"], **dict(zip(("x_mm", "y_mm", "z_mm"), position)),
                 **dict(zip(("vx_mm_us", "vy_mm_us", "vz_mm_us"), velocity)))
             events.extend([row, dict(row, event="terminal", reason="solver_stop", t_us=row["t_us"]+.1)])
         batching._csv(consumer/"simion/events.csv", list(events[0]), events)
         with patch.object(preparation, "generate_release_states", side_effect=AssertionError("must not resample")), patch.object(ip_handoff, "generate_release_states", side_effect=AssertionError("must not resample")), \
-                patch("projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics.export_diagnostics"), \
-                patch("projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics.export_field_diagnostics"), \
-                patch("projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget.export_force_budget"):
-            summary = functional.analyze(consumer)
+                patch("msplatform.workflows.ion_processor.diagnostics.export_diagnostics"), \
+                patch("msplatform.workflows.ion_processor.field_diagnostics.export_field_diagnostics"), \
+                patch("msplatform.workflows.ion_processor.extraction_force_budget.export_force_budget"):
+            summary = ip_analysis.analyze(consumer)
         self.assertEqual(summary["status"], "failed")  # Both prescribed stops fail physical capture.
         self.assertEqual(summary["actual_particle_count"], 2)
         self.assertEqual(summary["mother_particle_count"], 3)

@@ -16,7 +16,8 @@ from matplotlib import pyplot as plt
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import (
+from msplatform.workflows.ion_processor import diagnostics as diagnostics_owner
+from msplatform.workflows.ion_processor.diagnostics import (
     build_figures, census, export_diagnostics, prepare_data, state_at,
     pulse_timing_context,
     project_geometry, cooling_statistics,
@@ -57,7 +58,7 @@ class DiagnosticsTests(unittest.TestCase):
 
     def test_interpolation_limits_and_loss_not_alive(self) -> None:
         from msplatform.analysis import particle_census
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import diagnostics
+        from msplatform.workflows.ion_processor import diagnostics
 
         for name in ("partition_cohort", "subset_efficiency", "lifetime_position"):
             self.assertIs(getattr(diagnostics, name), getattr(particle_census, name))
@@ -96,7 +97,7 @@ class DiagnosticsTests(unittest.TestCase):
 
     def test_injected_initial_state_means_admission_not_a_new_birth(self) -> None:
         from msplatform.contracts import particle_state
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import diagnostics
+        from msplatform.workflows.ion_processor import diagnostics
 
         self.assertIs(diagnostics.load_component_particle_state_csv, particle_state.load_component_particle_state_csv)
         self.assertEqual(diagnostics.load_component_particle_state_csv.__module__, "msplatform.contracts.particle_state")
@@ -350,7 +351,7 @@ class DiagnosticsTests(unittest.TestCase):
             for name in ("plane","common_time"):
                 (out/f"post_extraction_{name}_states.csv").write_text("particle_id\n",encoding="utf-8")
             return {"packet_status":"synthetic"}
-        module="projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics"
+        module="msplatform.workflows.ion_processor.diagnostics"
         with patch(module+".export_sections",side_effect=sections),patch(module+".export_post_extraction",side_effect=packet):
             result=export_diagnostics(self.run)
         self.assertEqual(result["source_particle_count"],3)
@@ -361,6 +362,8 @@ class DiagnosticsTests(unittest.TestCase):
             metadata=json.loads((self.run/f"results/{role}.metadata.json").read_text())
             self.assertEqual(metadata["source_particle_count"],3)
             self.assertFalse(metadata["numerical_or_GUI_qualification"])
+            self.assertEqual(metadata["code_source_path"], str(diagnostics_owner.PRODUCER_SOURCE_PATH))
+            self.assertEqual(metadata["code_sha256"], diagnostics_owner.PRODUCER_SOURCE_SHA256)
             self.assertEqual(metadata["git"]["sha"],"frozen-test-sha")
             self.assertEqual(metadata["git"]["source"],"frozen inputs/source_context.json")
             self.assertIn("not every integration step",metadata["display_claim"])

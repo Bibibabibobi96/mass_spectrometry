@@ -374,7 +374,7 @@ def finalize_replay(run: Path, manual_gui_confirmed: bool = False) -> dict:
     Headless replay never proves manual visual review. Caller must explicitly
     confirm an actual manual GUI Fly; terminal manifest publication is external.
     """
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import analyze
+    from msplatform.workflows.ion_processor.analysis import analyze
 
     run = run.resolve()
     plan = _read(run / "inputs/gui_replay_plan.json")

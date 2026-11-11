@@ -359,7 +359,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
         with (self.run / "simion/samples.csv").open("a", encoding="utf-8") as stream:
             stream.write("1,1.1,2.1,0,0,1,0,0\n")
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "functional"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "functional"}):
             result = finalize_replay(self.run)
         self.assertFalse(result["numerical_equivalence"])
         self.assertFalse(result["exact_trajectory_match_required"])
@@ -438,7 +438,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             for kind in ("events", "samples"):
                 (self.run/f"simion/repeat_{index}_{kind}.csv").write_bytes((self.baseline/f"simion/{kind}.csv").read_bytes())
         with patch.object(gui_replay, "_compare_tables", wraps=gui_replay._compare_tables) as compare:
-            with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
+            with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
                 self.assertTrue(finalize_replay(self.run)["numerical_equivalence"])
         sample_calls = [call for call in compare.call_args_list if call.args[0].name.endswith("samples.csv")]
         self.assertEqual(len(sample_calls), 3)
@@ -448,7 +448,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.prepare_native()
         source = self.baseline/"simion/samples.csv"
         source.write_bytes(source.read_bytes()+b"1,2,3,0,0,1,0,0\n")
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze") as analyze:
+        with patch("msplatform.workflows.ion_processor.analysis.analyze") as analyze:
             with self.assertRaises(AssertionError):
                 finalize_replay(self.run)
             analyze.assert_not_called()
@@ -478,7 +478,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         plan["baseline_samples_record"] = file_record(local)
         plan.pop("baseline_trajectory_storage")
         plan_path.write_text(json.dumps(plan), encoding="utf-8")
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
             self.assertTrue(finalize_replay(self.run)["numerical_equivalence"])
 
     def test_local_basis_mutation_rejected_before_analysis(self) -> None:
@@ -514,7 +514,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         (self.run / "simion/processor.pa0").write_bytes(b"GUI saved adjusted initial state")
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
             result = finalize_replay(self.run)
         self.assertTrue(result["gui_pa0_changed"])
         self.assertTrue(result["local_immutable_basis_verified"])
@@ -526,7 +526,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.prepare_native()
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
             result = finalize_replay(self.run)
             self.assertTrue(result["numerical_equivalence"])
             self.assertFalse(result["gui_visual_review"])
@@ -552,12 +552,12 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertEqual(plan["source_profile"], "exploration")
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "success", "functional_status": "exploration_pass", "source_profile": "exploration"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "exploration_pass", "source_profile": "exploration"}):
             result = finalize_replay(self.run)
         self.assertEqual(result["qualification"], "unqualified_exploration_replay_no_Candidate_or_Formal")
         self.assertEqual(result["measured_functional_status"], "exploration_pass")
         self.assertFalse(result["gui_visual_review"])
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "exploration"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "exploration"}):
             with self.assertRaisesRegex(ValueError, "upgrade"):
                 finalize_replay(self.run)
 
@@ -566,7 +566,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
         (self.run / "simion/samples.csv").write_text("particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n1,0,1,0,0,1,0,0\n1,1,2.25,0,0,1,0,0\n", encoding="utf-8")
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
             result = finalize_replay(self.run)
         self.assertFalse(result["numerical_equivalence"])
         self.assertFalse(result["sampled_trajectory"]["passed"])
@@ -714,7 +714,7 @@ class GuiReplayPlanTests(unittest.TestCase):
                 (self.run / f"simion/repeat_{index}_{kind}.csv").write_bytes((self.baseline / f"simion/{kind}.csv").read_bytes())
         path = self.run / "simion/repeat_1_samples.csv"
         path.write_text(path.read_text(encoding="utf-8").replace("1,1,2,0,0", "1,1,2.5,0,0"), encoding="utf-8")
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.functional.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
             result = finalize_replay(self.run)
         self.assertFalse(result["numerical_equivalence"])
         self.assertEqual(len(result["repeated_fly_comparisons"]), 2)

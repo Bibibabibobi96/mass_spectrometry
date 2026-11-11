@@ -17,7 +17,7 @@ from unittest import mock
 
 import numpy as np
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis import field_diagnostics as diagnostics
+from msplatform.workflows.ion_processor import field_diagnostics as diagnostics
 from msplatform.workflows.ion_processor.preparation import lua_literal
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
@@ -109,23 +109,60 @@ class FieldDiagnosticsTests(unittest.TestCase):
     def test_frozen_source_context_avoids_git_lookup_in_frozen_code_directory(self) -> None:
         with tempfile.TemporaryDirectory(prefix="native_field_source_context_") as temporary:
             run=Path(temporary);(run/"inputs").mkdir()
-            (run/"inputs/source_context.json").write_text(json.dumps({"git_sha":"a"*40,"worktree_dirty":True}),encoding="utf-8")
-            with mock.patch.object(diagnostics.subprocess,"run",side_effect=AssertionError("Git must not be invoked")):
+            (run/"inputs/source_context.json").write_text(json.dumps({"git_sha":"a"*40,"worktree_dirty":True,"worktree_porcelain":"M tracked.py"}),encoding="utf-8")
+            with mock.patch.object(subprocess,"run",side_effect=AssertionError("Git must not be invoked")):
                 context=diagnostics.source_context(run)
             self.assertEqual(context["origin"],"frozen_inputs_source_context")
             self.assertEqual(context["git_sha"],"a"*40)
             self.assertTrue(context["worktree_dirty"])
+            self.assertEqual(context["worktree_porcelain"],"M tracked.py")
             self.assertTrue(context["available"])
+
+    def test_frozen_unavailable_git_marker_preserves_raw_dirty_observation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="native_field_unavailable_marker_") as temporary:
+            run = Path(temporary)
+            (run / "inputs").mkdir()
+            source = run / "inputs/source_context.json"
+            source.write_text(json.dumps({"git_sha": "unavailable", "worktree_dirty": True,
+                                          "worktree_porcelain": "unavailable"}), encoding="utf-8")
+            before = source.read_bytes()
+            with mock.patch.object(subprocess, "run", side_effect=AssertionError("Git must not be invoked")) as invoke:
+                context = diagnostics.source_context(run)
+            self.assertEqual(source.read_bytes(), before)
+            self.assertEqual(context["origin"], "frozen_inputs_source_context")
+            self.assertEqual(context["git_sha"], "unavailable")
+            self.assertFalse(context["available"])
+            self.assertIsNone(context["worktree_dirty"])
+            self.assertIs(context["frozen_worktree_dirty"], True)
+            self.assertEqual(context["worktree_porcelain"], "unavailable")
+            invoke.assert_not_called()
+
+    def test_frozen_unavailable_status_preserves_valid_sha_and_raw_dirty(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="native_field_unavailable_status_") as temporary:
+            run = Path(temporary)
+            (run / "inputs").mkdir()
+            source = run / "inputs/source_context.json"
+            source.write_text(json.dumps({"git_sha": "a" * 40, "worktree_dirty": True,
+                                          "worktree_porcelain": "unavailable"}), encoding="utf-8")
+            before = source.read_bytes()
+            with mock.patch.object(subprocess, "run", side_effect=AssertionError("Git must not be invoked")) as invoke:
+                context = diagnostics.source_context(run)
+            self.assertEqual(source.read_bytes(), before)
+            self.assertEqual(context["git_sha"], "a" * 40)
+            self.assertTrue(context["available"])
+            self.assertIsNone(context["worktree_dirty"])
+            self.assertIs(context["frozen_worktree_dirty"], True)
+            self.assertEqual(context["worktree_porcelain"], "unavailable")
+            invoke.assert_not_called()
 
     def test_unavailable_live_git_is_explicit_without_failing_export_context(self) -> None:
         with tempfile.TemporaryDirectory(prefix="native_field_no_git_") as temporary:
-            result=subprocess.CompletedProcess([],128,stdout="",stderr="not a repository")
-            with mock.patch.object(diagnostics.subprocess,"run",return_value=result) as invoke:
+            with mock.patch.object(subprocess,"run",side_effect=AssertionError("Git must not be invoked")) as invoke:
                 context=diagnostics.source_context(Path(temporary))
             self.assertFalse(context["available"])
             self.assertIsNone(context["git_sha"])
             self.assertIsNone(context["worktree_dirty"])
-            self.assertTrue(all(call.kwargs["check"] is False for call in invoke.call_args_list))
+            invoke.assert_not_called()
 
     def test_producer_identity_distinguishes_actual_missing_and_different_frozen_code(self) -> None:
         with tempfile.TemporaryDirectory(prefix="native_field_producer_identity_") as temporary:

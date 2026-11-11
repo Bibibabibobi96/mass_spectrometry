@@ -11,7 +11,8 @@ import unittest
 import numpy as np
 
 from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg
-from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import (
+from msplatform.workflows.ion_processor import extraction_force_budget as force_owner
+from msplatform.workflows.ion_processor.extraction_force_budget import (
     IMPULSE_COLUMNS, STEP_COLUMNS, build_force_budget_figure, covariance_budget,
     export_force_budget, extraction_surfaces, prepare_force_budget, spatial_fractions,
 )
@@ -225,6 +226,8 @@ class ForceBudgetTests(unittest.TestCase):
         self.assertTrue(any("Cov(vx" in label for label in labels))
         figure.clear()
         result = export_force_budget(self.run)
+        self.assertEqual(result["producer_source_path"], str(force_owner.PRODUCER_SOURCE_PATH))
+        self.assertEqual(result["producer_sha256"], force_owner.PRODUCER_SHA256)
         self.assertEqual(result["source_particle_count"], 100)
         output = self.run/"results/extraction_force_budget"
         for name in ("budget.json", "particles.csv", "electrodes.csv", "spatial.csv", "steps.csv", "losses.csv", "variance_terms.csv", "impulse_phase_space.png", "impulse_phase_space.svg"):

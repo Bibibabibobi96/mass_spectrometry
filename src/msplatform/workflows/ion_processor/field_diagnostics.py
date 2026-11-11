@@ -6,7 +6,6 @@ import csv
 import json
 import math
 from pathlib import Path
-import subprocess
 from typing import Any
 
 import numpy as np
@@ -25,32 +24,24 @@ PRODUCER_SOURCE_SHA256 = file_sha256(PRODUCER_SOURCE_PATH)
 
 
 def source_context(run: Path) -> dict[str, Any]:
-    """Read frozen repository context, or report a bounded live Git observation."""
+    """Read frozen repository context, or explicitly report it unavailable."""
     path = run/"inputs/source_context.json"
     if path.exists():
         value = json.loads(path.read_text(encoding="utf-8"))
         if "git_sha" not in value or "worktree_dirty" not in value:
             raise ValueError("frozen source_context lacks Git identity fields")
+        if value["git_sha"] == "unavailable" or value.get("worktree_porcelain") == "unavailable":
+            return {**value, "frozen_worktree_dirty": value["worktree_dirty"], "worktree_dirty": None,
+                    "origin": "frozen_inputs_source_context",
+                    "available": bool(value["git_sha"]) and value["git_sha"] != "unavailable"}
         return {**value, "origin": "frozen_inputs_source_context", "available": bool(value["git_sha"])}
-    root = PRODUCER_SOURCE_PATH.parents[3]
-    try:
-        revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
-                                  text=True, timeout=10, check=False)
-        status = subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True,
-                                text=True, timeout=10, check=False)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return {"origin": "live_git_fallback", "available": False, "git_sha": None,
-                "worktree_dirty": None, "unavailable_reason": str(error)}
-    if revision.returncode != 0 or status.returncode != 0:
-        return {"origin": "live_git_fallback", "available": False, "git_sha": None,
-                "worktree_dirty": None, "unavailable_reason": "Git identity unavailable at executing module root"}
-    return {"origin": "live_git_fallback", "available": True, "git_sha": revision.stdout.strip(),
-            "worktree_dirty": bool(status.stdout.strip())}
+    return {"origin": "frozen_context_unavailable", "available": False, "git_sha": None,
+            "worktree_dirty": None, "unavailable_reason": "no frozen source context"}
 
 
 def producer_identity(run: Path) -> dict[str, Any]:
     """Separate actually imported producer identity from its frozen run copy."""
-    relative = Path("inputs/code/projects/dual_pressure_rectilinear_ion_processor/analysis/field_diagnostics.py")
+    relative = Path("inputs/code/src/msplatform/workflows/ion_processor/field_diagnostics.py")
     frozen = run/relative
     frozen_hash = file_sha256(frozen) if frozen.is_file() else None
     return {"actual_source_path": str(PRODUCER_SOURCE_PATH), "actual_source_sha256": PRODUCER_SOURCE_SHA256,
@@ -303,7 +294,7 @@ def export_field_diagnostics(run: Path, output_directory: Path | None = None) ->
     metadata_path = output/"field_diagnostics.json"
     if metadata_path.exists():
         raise FileExistsError("native field diagnostics already exported; use a new run")
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record, native_field_sample_path
+    from msplatform.results.ip_continuation import analysis_source_record, native_field_sample_path
     source = native_field_sample_path(run)
     rows = read_field_samples(source, config)
     fits = []

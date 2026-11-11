@@ -9,7 +9,6 @@ from itertools import chain
 import json
 import math
 from pathlib import Path
-import subprocess
 from typing import Any
 
 import matplotlib
@@ -25,14 +24,15 @@ from msplatform.analysis.particle_census import (
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from projects.rf_multipole_ion_optics.analysis.exit_state_plot import prepare_visual_style_map
+from msplatform.analysis.particle_styles import prepare_visual_style_map
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position
 # Top-level imports are deliberate: prepare() freezes loaded repository modules
 # before Fly, so these mandatory default producers travel with the same run.
-from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import export_sections
-from projects.dual_pressure_rectilinear_ion_processor.analysis.post_extraction_diagnostics import export_post_extraction
+from msplatform.workflows.ion_processor.section_diagnostics import export_sections
+from msplatform.workflows.ion_processor.post_extraction_diagnostics import export_post_extraction
 
-PRODUCER_SOURCE_SHA256 = file_sha256(Path(__file__))
+PRODUCER_SOURCE_PATH = Path(__file__).resolve()
+PRODUCER_SOURCE_SHA256 = file_sha256(PRODUCER_SOURCE_PATH)
 
 STATES = ("alive", "extracted", "lost", "notborn", "unknown")
 CLASSIFICATION_SEMANTICS = dict(
@@ -542,18 +542,13 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
     losses = [dict(particle_id=particle,**row) for particle,row in sorted(data["terminals"].items()) if row["reason"] != "acceptance_surface"]
     _write_csv(results / "diagnostic_losses.csv",losses,["particle_id","t_us",*VALUES,"kinetic_energy_ev","reason","electrode_id"])
     (results / "cooling_distributions.json").write_text(json.dumps(cooling_statistics(data,snapshots),indent=2,allow_nan=False)+"\n",encoding="utf-8")
-    repo = Path(__file__).resolve().parents[3]
     context_path=run/"inputs/source_context.json"
     if context_path.is_file():
         context=_json(context_path)
         git=dict(sha=context.get("git_sha",context.get("sha","unavailable")),worktree=context.get("worktree_porcelain",context.get("worktree","unavailable")),source="frozen inputs/source_context.json",source_sha256=file_sha256(context_path))
     else:
-        git = {}
-        for key,args in (("sha",["rev-parse","HEAD"]),("worktree",["status","--porcelain"])):
-            result = subprocess.run(["git","-C",str(repo),*args],capture_output=True,text=True,encoding="utf-8",errors="replace",check=False,cwd=repo,timeout=10)
-            git[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
-        git["source"]="live repository fallback; frozen source context absent"
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record
+        git = dict(sha="unavailable", worktree="unavailable", source="frozen source context absent")
+    from msplatform.results.ip_continuation import analysis_source_record
     from msplatform.results.ip_continuation import native_data_directory
     native = native_data_directory(run)
     source_paths = [run/relative for relative in ("inputs/resolved_model.json","inputs/diagnostics.json","results/particle_state.csv")]
@@ -561,7 +556,7 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
     source_paths.extend(data["census_source_paths"])
     if context_path.is_file():
         source_paths.append(context_path)
-    metadata = dict(schema_version=1, role="ion_processor_diagnostic_figure", source_run=str(run), source_profile=data["config"].get("source_profile"), source_particle_count=len(data["sources"]), displayed_particle_ids=sorted(data["sources"]), source_records=[analysis_source_record(run,path) for path in source_paths], git=git, code_sha256=PRODUCER_SOURCE_SHA256, frame_id=data["config"].get("coordinate_transform", {}).get("to_frame_id",data["config"]["baseline"]["clock"]["frame_id"]), coordinate_transform=data["config"].get("coordinate_transform"), sigma_csv_compatibility="new frames use sigma_slow_mm/lp_sigma_slow_mm with explicit sigma_axis; sigma_x aliases exist only for legacy local-axis runs", units=dict(position="mm",velocity="mm/us in CSV; m/s phase-space display",time="instrument absolute us",energy="eV"), selection="full-range views preserve all source IDs; explicitly conditional LP zoom and per-stage alive energy details accompany full-cohort views; no KDE, smoothing, fitting or subsampling", display_bounds=display_bounds(data), interpolation="display only; linear between adjacent recorded positions/velocities within frozen bracket limit; energy recomputed from interpolated velocity", maximum_used_interpolation_gap_us=maximum_used_gap, pulse_timing=pulse_timing_context(data), snapshot_census=[dict(label=label,**census(data,time)[0]) for label,time in data["snapshots"]], lp_conditioning="alive with guide_length+hp_length < slow_coordinate < guide_length+hp_length+lp_length; slow=project y for transformed runs, local x for legacy; no detector-outcome selection; global sigma includes HP-retained ions", geometry_provenance="statistical panels contain no projected electrode boxes; separate section panels consume frozen CSG solids/cutouts and declare any projected E9 footprints explicitly", geometry_sha256=file_sha256(run/"inputs/resolved_model.json"), display_claim="all recorded trajectories and bounded display interpolation, not every integration step; lost/extracted points are last positions, never alive clouds", uncertainty="none; N10 exploration or N100 functional only", numerical_or_GUI_qualification=False)
+    metadata = dict(schema_version=1, role="ion_processor_diagnostic_figure", source_run=str(run), source_profile=data["config"].get("source_profile"), source_particle_count=len(data["sources"]), displayed_particle_ids=sorted(data["sources"]), source_records=[analysis_source_record(run,path) for path in source_paths], git=git, code_sha256=PRODUCER_SOURCE_SHA256, code_source_path=str(PRODUCER_SOURCE_PATH), frame_id=data["config"].get("coordinate_transform", {}).get("to_frame_id",data["config"]["baseline"]["clock"]["frame_id"]), coordinate_transform=data["config"].get("coordinate_transform"), sigma_csv_compatibility="new frames use sigma_slow_mm/lp_sigma_slow_mm with explicit sigma_axis; sigma_x aliases exist only for legacy local-axis runs", units=dict(position="mm",velocity="mm/us in CSV; m/s phase-space display",time="instrument absolute us",energy="eV"), selection="full-range views preserve all source IDs; explicitly conditional LP zoom and per-stage alive energy details accompany full-cohort views; no KDE, smoothing, fitting or subsampling", display_bounds=display_bounds(data), interpolation="display only; linear between adjacent recorded positions/velocities within frozen bracket limit; energy recomputed from interpolated velocity", maximum_used_interpolation_gap_us=maximum_used_gap, pulse_timing=pulse_timing_context(data), snapshot_census=[dict(label=label,**census(data,time)[0]) for label,time in data["snapshots"]], lp_conditioning="alive with guide_length+hp_length < slow_coordinate < guide_length+hp_length+lp_length; slow=project y for transformed runs, local x for legacy; no detector-outcome selection; global sigma includes HP-retained ions", geometry_provenance="statistical panels contain no projected electrode boxes; separate section panels consume frozen CSG solids/cutouts and declare any projected E9 footprints explicitly", geometry_sha256=file_sha256(run/"inputs/resolved_model.json"), display_claim="all recorded trajectories and bounded display interpolation, not every integration step; lost/extracted points are last positions, never alive clouds", uncertainty="none; N10 exploration or N100 functional only", numerical_or_GUI_qualification=False)
     metadata.update(classification_semantics=CLASSIFICATION_SEMANTICS,
                     census_weighting="relative" if data["census_weights"] is not None else "unit",
                     moment_weighting="unit; relative weights currently affect census and efficiency only",

@@ -8,7 +8,7 @@ import sys
 from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import (
     section, subtract, parts, section_centroid, world_bounds,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import SectionDiagnostics
+from msplatform.workflows.ion_processor.section_diagnostics import SectionDiagnostics
 
 
 def wedge():
@@ -77,7 +77,7 @@ class EquatorialSectionTests(unittest.TestCase):
     def test_polygon_render_and_field_outlines_are_headless_and_not_bounds(self):
         from matplotlib import pyplot as plt
         from matplotlib.patches import Polygon
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics import add_electrode_outlines
+        from msplatform.workflows.ion_processor.field_diagnostics import add_electrode_outlines
         electrode=dict(electrode_id=9,solids=[wedge()],cutouts=[])
         context=SectionDiagnostics();context.ELECTRODES=[electrode];context.origin_z_mm=9.8
         figure,axes=plt.subplots(1,3)
@@ -94,7 +94,7 @@ class EquatorialSectionTests(unittest.TestCase):
 
     def test_polygon_cut_outlines_rotate_vertices_not_bounding_rectangles(self):
         from matplotlib import pyplot as plt
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics import add_electrode_outlines
+        from msplatform.workflows.ion_processor.field_diagnostics import add_electrode_outlines
         config=dict(coordinate_transform=dict(schema_version=1,role='rigid_transform',
             from_frame_id='dual_pressure_ion_processor_local_v1',to_frame_id='fixture_world',
             rotation=[[0,0,-1],[1,0,0],[0,-1,0]],translation_mm=[0,0,9.8]))
@@ -121,7 +121,7 @@ class FrozenSectionGeometryTests(unittest.TestCase):
         owner = closure / "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py"
         from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry
         self.assertEqual(owner.read_bytes(), Path(section_geometry.__file__).read_bytes())
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import section_diagnostics as renderer
+        from msplatform.workflows.ion_processor import section_diagnostics as renderer
         self.assertFalse(hasattr(renderer, 'parts'))
         self.assertFalse(hasattr(renderer, 'section'))
         code = """from pathlib import Path

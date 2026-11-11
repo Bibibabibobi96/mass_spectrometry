@@ -33,7 +33,8 @@ IMPULSE_COLUMNS = ("particle_id", "step_index", "electrode_id", "start_t_us", "e
                   *(f"unit_integral_e{a}_us_per_mm" for a in AXES))
 REGIONS = ("upstream_E5", "E5_slab", "E5_to_E14_gap", "E14_slab", "downstream_E14")
 TERMS = tuple(f"E{i}" for i in range(1, 16)) + ("collision", "field_residual")
-PRODUCER_SHA256 = file_sha256(Path(__file__))
+PRODUCER_SOURCE_PATH = Path(__file__).resolve()
+PRODUCER_SHA256 = file_sha256(PRODUCER_SOURCE_PATH)
 
 
 def _table(path: Path, fields: tuple[str, ...] | None = None) -> Iterable[dict[str, str]]:
@@ -315,7 +316,7 @@ def _aggregate(steps: dict, sources: dict, terminals: dict, exits: dict, surface
 def prepare_force_budget(run: Path) -> dict:
     """Validate both raw audit tables and full census, then calculate unadjusted budgets."""
     run = Path(run)
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record
+    from msplatform.results.ip_continuation import analysis_source_record
     from msplatform.results.ip_continuation import native_data_directory
     native = native_data_directory(run)
     paths = [run/"inputs/resolved_model.json", *(native/name for name in ("events.csv", "extraction_steps.csv", "extraction_impulses.csv"))]
@@ -420,7 +421,7 @@ def export_force_budget(run: Path, *, output_directory: Path | None = None) -> d
     metadata = dict(schema_version=1, role="ion_processor_extraction_force_budget", source_run=str(run),
                     source_particle_count=data["source_count"], available_particle_count=data["covariance"]["count"],
                     audit_window_start_us=data["audit_window_start_us"],
-                    frame_id=data["frame_id"], source_records=data["source_records"], producer_sha256=PRODUCER_SHA256,
+                    frame_id=data["frame_id"], source_records=data["source_records"], producer_sha256=PRODUCER_SHA256, producer_source_path=str(PRODUCER_SOURCE_PATH),
                     surfaces=data["surfaces"], covariance=data["covariance"], spatial_covariance=data["spatial_covariance"],
                     phase_space=data["phase_space"],
                     units=dict(velocity="m/s", position="mm", time="absolute instrument us", covariance="m2/s2"),

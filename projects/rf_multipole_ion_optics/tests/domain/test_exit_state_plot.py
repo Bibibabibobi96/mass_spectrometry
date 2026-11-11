@@ -12,6 +12,8 @@ from unittest.mock import patch
 
 import numpy as np
 
+from msplatform.analysis.particle_styles import prepare_visual_style_map
+
 from projects.rf_multipole_ion_optics.analysis.exit_state_plot import (
     HISTOGRAMS,
     NoExitState,
@@ -21,7 +23,6 @@ from projects.rf_multipole_ion_optics.analysis.exit_state_plot import (
     export_figure,
     prepare_scales,
     prepare_shared_scale_contract,
-    prepare_visual_style_map,
     render_four_domain_comparison,
     render_exit_state_figure,
     validate_comparison_states,

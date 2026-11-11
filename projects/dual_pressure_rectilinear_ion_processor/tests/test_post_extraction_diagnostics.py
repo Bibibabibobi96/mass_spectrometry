@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis import post_extraction_diagnostics as m
+from msplatform.workflows.ion_processor import post_extraction_diagnostics as m
 
 def row(pid,t):
     return dict(particle_id=pid,t_us=t,x_mm=.1*pid,y_mm=170,z_mm=1-t,vx_mm_us=0,vy_mm_us=0,vz_mm_us=-1)
@@ -60,7 +60,10 @@ class AutomaticTimeTests(unittest.TestCase):
                     self.assertEqual(len(list(out.iterdir())),6)
                     for name in ('post_extraction_common_time_states.csv','post_extraction_plane_states.csv'):
                         self.assertEqual(len((out/name).read_text().splitlines()),2 if extracted else 1)
-                    self.assertEqual(json.loads((out/'post_extraction_packet.metadata.json').read_text())['cohort']['extracted_count'],int(extracted))
+                    metadata=json.loads((out/'post_extraction_packet.metadata.json').read_text())
+                    self.assertEqual(metadata['cohort']['extracted_count'],int(extracted))
+                    self.assertEqual(metadata['producer']['path'],str(m.PRODUCER_SOURCE_PATH))
+                    self.assertEqual(metadata['producer']['sha256'],m.PRODUCER_SOURCE_SHA256)
                     with self.assertRaises(FileExistsError):m.export_post_extraction(run,out)
 
 if __name__=='__main__':unittest.main(verbosity=2)

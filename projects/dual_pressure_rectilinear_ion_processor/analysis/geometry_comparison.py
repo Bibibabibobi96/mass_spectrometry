@@ -262,7 +262,7 @@ def export_recorded_force_budgets(cases: list[dict], output: Path) -> list[dict]
     historical diagnostic does not justify another particle flight or rewriting
     that source. Only declared, manifest-bound force evidence is consumed.
     """
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import export_force_budget
+    from msplatform.workflows.ion_processor.extraction_force_budget import export_force_budget
     records=[]
     for index,case in enumerate(cases):
         if "extraction_force_audit" not in case["config"]:

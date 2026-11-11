@@ -112,8 +112,8 @@ Original IP HP/LP geometry, all fifteen electrodes, HS1 and historical run data 
 Exact plane sections, rectangle/convex cutout subtraction and section centroids are owned by
 `msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`. The
 fixed IP/project axis convention and existing curved-Boolean refusal remain explicit;
-this is not a general freely rotated section renderer. IP diagnostics and the retained local guide/OA figures consume this same geometry. The project `section_diagnostics`
-continues to own its recorded-run rendering/export and producer record; its former
+this is not a general freely rotated section renderer. IP diagnostics and the retained local guide/OA figures consume this same geometry. The installed `msplatform.workflows.ion_processor.section_diagnostics`
+owns recorded-run rendering/export and producer identity; its former
 pure geometry bodies and import aliases are absent. Software/cold-install evidence
 for this migration does not add native impact or field qualification.
 
@@ -436,7 +436,7 @@ The sole IP source/profile/scientific-input and observation-boundary checks now 
 `msplatform.workflows.ion_processor.preparation`, together with the existing diagnostic
 control validators. Their original bodies and rejection semantics are preserved. The
 root functional workflow delegates scientific compilation/materialization, while retaining
-its genuine repository snapshot, seed provision, field adoption, analysis and CLI duties;
+its genuine repository snapshot, seed provision, field adoption and CLI duties;
 that whole workflow has not yet been retired or qualified as an installed native operation.
 
 `compile_source(config, *, admission=None)` accepts an explicit in-memory research request
@@ -536,7 +536,7 @@ does not draw collision randomness, and out-of-domain queries fail. Its direct v
 does not validate the Program's configured seed or native random sequence. It does not establish
 native collisions, boundary-resolved integration,
 P11 arbitrary IP placement, new field/flight qualification or whole installed IP orchestration.
-The existing root workflow still owns its genuine snapshot/seed/field/admission/analysis duties.
+The existing root workflow still owns its genuine snapshot, seed, field and admission duties.
 
 Independent review accepted the thirteen-file software slice, including unchanged
 HS1 source/adapter and Program callback bodies. Focused private direct-wheel and
@@ -570,3 +570,26 @@ plain-Lua/software evidence, not native propagation or scientific qualification.
 The composed successor also passed all seventeen drive/replay/workbench-path
 parents in 2.383 seconds without skips. The other four modules retain the scoped
 private evidence above; the complete Repository was not rerun for this selector slice.
+
+### P4 installed analysis and diagnostic consumers
+
+The existing event analysis and its diagnostics run from `msplatform.workflows.ion_processor`;
+the root functional CLI and GUI replay delegate to that same owner. Continuation source
+selection and already-bound diagnostic records use `msplatform.results.ip_continuation`.
+RF and IP figures use the same deterministic `msplatform.analysis.particle_styles` map.
+No event arithmetic, output order, terminal classifications, or physical qualification is
+changed by the owner move. Historical runs continue to execute their own frozen closure.
+
+New diagnostics record the executing producer source identity. Field diagnostics compare it
+with `inputs/code/src/msplatform/workflows/ion_processor/field_diagnostics.py` in the selected
+run. Existing frozen source context remains the Git authority; if it is absent, Git identity
+is explicitly unavailable rather than inferred from an installed package's parent directory.
+For a frozen Git SHA failure marker `unavailable`, the original marker and raw dirty
+observation remain recorded; availability is false and the interpreted dirty state
+is unknown (`null`). A separate unavailable worktree-status marker leaves a valid
+SHA available but the dirty state unknown. Valid frozen contexts are unchanged.
+Ordinary direct-wheel and sdist-rebuilt-wheel consumers exercised the actual legacy and
+empty-upstream analyzer, all five diagnostic exporters, source origins and missing-owner
+refusals against the captured software inputs. The coherent prepared analyzer with all
+diagnostics and its native qualification remain OPEN P4; these checks do not establish
+a new HS1 trajectory, GUI result or complete Repository acceptance.

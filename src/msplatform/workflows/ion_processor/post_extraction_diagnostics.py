@@ -15,6 +15,11 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev
 VARS=('x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us')
 def sha(p):
     with p.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+
+
+PRODUCER_SOURCE_PATH = Path(__file__).resolve()
+PRODUCER_SOURCE_SHA256 = sha(PRODUCER_SOURCE_PATH)
+
 def table(path):
     with path.open(encoding='utf-8-sig',newline='') as stream:
         for raw in csv.DictReader(stream):
@@ -103,7 +108,7 @@ def export_post_extraction(run: Path, output_directory: Path) -> dict:
         (OUT/'post_extraction_statistics.json').write_text(json.dumps(status,indent=2)+'\n', encoding="utf-8")
         write_csv(OUT/'post_extraction_plane_states.csv',[],['particle_id','t_us',*VARS,'Ex_eV','Ey_eV','Ez_eV','Etotal_eV'])
         write_csv(OUT/'post_extraction_common_time_states.csv',[],['particle_id','t_us',*VARS,'bracket_start_us','bracket_end_us','bracket_gap_us','upper_is_acceptance'])
-        metadata=dict(role='post_extraction_recorded_state_diagnostics',source_run=str(RUN),source_records=[dict(path=str(p),sha256=hashes[str(p)]) for p in paths],outputs=outputs,producer=dict(path=str(Path(__file__)),sha256=sha(Path(__file__))),cohort=status,new_simulation=False,qualification='diagnostic_only')
+        metadata=dict(role='post_extraction_recorded_state_diagnostics',source_run=str(RUN),source_records=[dict(path=str(p),sha256=hashes[str(p)]) for p in paths],outputs=outputs,producer=dict(path=str(PRODUCER_SOURCE_PATH),sha256=PRODUCER_SOURCE_SHA256),cohort=status,new_simulation=False,qualification='diagnostic_only')
         (OUT/'post_extraction_packet.metadata.json').write_text(json.dumps(metadata,indent=2)+'\n', encoding="utf-8")
         print('No extracted ions: explicit diagnostic figure generated.');return status
     for pid,row in crossings.items():
@@ -187,7 +192,7 @@ def export_post_extraction(run: Path, output_directory: Path) -> dict:
         if path.exists():raise FileExistsError(path)
         fig.savefig(path,dpi=210,facecolor='white');outputs.append(dict(path=str(path),sha256=sha(path)))
     plt.close(fig)
-    metadata=dict(role='post_extraction_recorded_state_diagnostics',source_run=str(RUN),source_records=[dict(path=str(p),sha256=hashes[str(p)]) for p in paths],outputs=outputs,producer=dict(path=str(Path(__file__)),sha256=sha(Path(__file__))),cohort=stats,new_simulation=False,qualification='diagnostic_only',crossing_scope='Runtime recorded crossing interpolation at z=0; not every integration-step bracket is retained in samples.csv',common_time_scope='Automatic common time from this run first arrival and recorded cadence; no post-terminal samples used')
+    metadata=dict(role='post_extraction_recorded_state_diagnostics',source_run=str(RUN),source_records=[dict(path=str(p),sha256=hashes[str(p)]) for p in paths],outputs=outputs,producer=dict(path=str(PRODUCER_SOURCE_PATH),sha256=PRODUCER_SOURCE_SHA256),cohort=stats,new_simulation=False,qualification='diagnostic_only',crossing_scope='Runtime recorded crossing interpolation at z=0; not every integration-step bracket is retained in samples.csv',common_time_scope='Automatic common time from this run first arrival and recorded cadence; no post-terminal samples used')
     (OUT/'post_extraction_packet.metadata.json').write_text(json.dumps(metadata,indent=2)+'\n', encoding="utf-8")
     print(json.dumps(stats),flush=True)
     return stats

@@ -43,10 +43,10 @@ class FrozenPrepareResourceTests(unittest.TestCase):
         # Derive the Python set from the same imports used by production prepare.
         for name in (
             "projects.dual_pressure_rectilinear_ion_processor.analysis.functional",
-            "projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics",
-            "projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics",
+            "msplatform.workflows.ion_processor.diagnostics",
+            "msplatform.workflows.ion_processor.field_diagnostics",
             "projects.dual_pressure_rectilinear_ion_processor.analysis.batching",
-            "projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget",
+            "msplatform.workflows.ion_processor.extraction_force_budget",
             "msplatform.execution.retention",
             "msplatform.analysis.population_moments",
             "msplatform.analysis.beam_focus_diagnostics",

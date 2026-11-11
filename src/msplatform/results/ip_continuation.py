@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path, verify_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 
@@ -97,3 +98,39 @@ def native_data_directory(run: Path) -> Path:
     if len(matches) != 1 or matches[0].parent.name != "simion":
         raise ValueError("IP continuation events reference differs")
     return matches[0].parent
+
+
+def native_field_sample_path(run: Path) -> Path:
+    """Use locally measured field samples, otherwise the verified predecessor record."""
+    local = run/"simion/native_field_samples.csv"
+    if local.is_file():
+        return local
+    record_pathname = run/"inputs/partial_batch_replay/field_source.json"
+    if record_pathname.is_file():
+        return Path(_read(record_pathname)["path"])
+    plan_path = run/"inputs/simion_whole_unit_replay_plan.json"
+    if plan_path.is_file():
+        outputs = _read(plan_path)["units"][0]["terminal_outputs"]
+        matches = [Path(item["path"]) for item in outputs if Path(item["path"]).name == "native_field_samples.csv"]
+        if len(matches) != 1:
+            raise ValueError("continuation field sample reference differs")
+        return matches[0]
+    return native_data_directory(run)/"native_field_samples.csv"
+
+
+def analysis_source_record(run: Path, path: Path) -> dict:
+    """Reuse the already verified continuation identity for diagnostic provenance."""
+    path = path.resolve()
+    field_record = run/"inputs/partial_batch_replay/field_source.json"
+    if field_record.is_file():
+        record = _read(field_record)
+        if Path(record["path"]).resolve() == path:
+            return record
+    plan_path = run / "inputs/simion_whole_unit_replay_plan.json"
+    if plan_path.is_file():
+        outputs = _read(plan_path)["units"][0]["terminal_outputs"]
+        matches = [row for row in outputs if Path(row["path"]).resolve() == path]
+        if len(matches) != 1 or not path.is_file():
+            raise ValueError("IP continuation diagnostic source is not bound")
+        return dict(path=str(path), bytes=path.stat().st_size, sha256=matches[0]["sha256"])
+    return dict(path=str(path), bytes=path.stat().st_size, sha256=file_sha256(path))

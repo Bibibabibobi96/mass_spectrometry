@@ -3,7 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 from matplotlib import pyplot as plt
-from projects.dual_pressure_rectilinear_ion_processor.analysis import diagnostics as d
+from msplatform.workflows.ion_processor import diagnostics as d
 from projects.dual_pressure_rectilinear_ion_processor.tests import test_diagnostics as fixtures
 
 class DefaultDiagnosticsIntegrationTests(unittest.TestCase):

@@ -7,6 +7,7 @@ particle simulations or evidence for the device's physical performance.
 from __future__ import annotations
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.resources import native_resource_path
+from msplatform.workflows.ion_processor import analysis as ip_analysis
 from msplatform.workflows.ion_processor import preparation
 from msplatform.workflows.ion_processor import field_reference
 
@@ -285,7 +286,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
             preparation.validate_configs(self.config)
         self.write_events(event_fixture(self.config))
         with self.assertRaisesRegex(ValueError, "standard particle count"):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_exploration_is_exact_common_source_prefix(self) -> None:
         exploration = functional.read_json(PROJECT / "config/source_exploration.json")
@@ -303,7 +304,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
         preparation.validate_configs(self.config)
         rows = event_fixture(self.config)
         self.write_events(rows)
-        result = functional.analyze(self.run)
+        result = ip_analysis.analyze(self.run)
         self.assertEqual(result["functional_status"], "exploration_pass")
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["source_profile"], "exploration")
@@ -313,7 +314,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
             if row["event"] in {"extraction_exit", "terminal"}:
                 row["vy_mm_us"] *= 0.9
         self.write_events(rows)
-        result = functional.analyze(self.run)
+        result = ip_analysis.analyze(self.run)
         self.assertEqual(result["functional_status"], "exploration_incomplete")
         self.assertEqual(result["status"], "failed")
         self.assertFalse(result["checks"]["extraction_energy"])
@@ -551,7 +552,7 @@ sys.path[:0] = [str(root / 'src'), str(root)]
 from msplatform.execution.inputs import python_import_roots
 sys.path[:0] = python_import_roots(root)
 from msplatform.analysis import particle_census as c
-from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import census
+from msplatform.workflows.ion_processor.diagnostics import census
 assert pathlib.Path(c.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 row = dict(t_us=0., kinetic_energy_ev=0., x_mm=0., y_mm=0., z_mm=0.,
            vx_mm_us=0., vy_mm_us=0., vz_mm_us=0.)
@@ -647,7 +648,7 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
                 self.assertAlmostEqual(value, state[name], places=12)
             for value, name in zip(map(float, direction.split(",")), ("vx_m_s", "vy_m_s", "vz_m_s")):
                 self.assertAlmostEqual(value, state[name], places=9)
-            expected_energy=functional.kinetic_energy_ev(state["mass_amu"],*(state[key] for key in ("vx_m_s","vy_m_s","vz_m_s")))
+            expected_energy=ip_analysis.kinetic_energy_ev(state["mass_amu"],*(state[key] for key in ("vx_m_s","vy_m_s","vz_m_s")))
             self.assertAlmostEqual(energy, expected_energy, places=10)
         with (self.run / "inputs/release.csv").open(encoding="utf-8", newline="") as handle:
             released = list(csv.DictReader(handle))
@@ -699,7 +700,7 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
             vx, vy, vz = (row[k] for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us"))
             row.update(x_mm=-z, y_mm=x, z_mm=9.8-y, vx_mm_us=-vz, vy_mm_us=vx, vz_mm_us=-vy)
         self.write_events(rows)
-        result = functional.analyze(self.run)
+        result = ip_analysis.analyze(self.run)
         self.assertEqual(result["functional_status"], "functional_pass")
         self.assertEqual(result["status"], "success")
         self.assertTrue(result["checks"]["lp_occupation"])
@@ -725,7 +726,7 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
             if row["event"] == "capture":
                 row["y_mm"] = 170
         self.write_events(rows)
-        self.assertFalse(functional.analyze(self.run)["checks"]["capture_fraction"])
+        self.assertFalse(ip_analysis.analyze(self.run)["checks"]["capture_fraction"])
 
     def test_frozen_closure_performs_actual_prepare_without_active_source_fallback(self) -> None:
         _, vendor = self.make_prepare_fixture()
@@ -796,9 +797,9 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
     if ($LASTEXITCODE -ne 0) { throw "Prepared Python boundary failed: $LASTEXITCODE" }
 }
 ''', encoding="utf-8")
-        def run_analyzer() -> subprocess.CompletedProcess[str]:
+        def run_analyzer(selected_run: Path | None = None) -> subprocess.CompletedProcess[str]:
             return subprocess.run([pwsh, "-NoProfile", "-File", str(driver), str(support),
-                                   str(closure), sys.executable, str(self.run)],
+                                   str(closure), sys.executable, str(selected_run or self.run)],
                                   cwd=self.run, capture_output=True, text=True,
                                   encoding="utf-8", timeout=60)
         # No events are fabricated: the unchanged prepared model must reach the
@@ -814,6 +815,26 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
         # tolerate its repr escaping of Windows separators.
         self.assertIn(str(frozen.resolve()).replace("\\", "/").lower(),
                       present.stderr.replace("\\\\", "/").replace("\\", "/").lower())
+        # A separate explicit legacy fixture proves the same selected analyzer can
+        # succeed; it does not replace the unchanged genuinely prepared model.
+        prepared_run = self.run
+        legacy = Path(self.temporary.name) / "legacy_synthetic_run"
+        for folder in ("inputs", "simion", "results"):
+            (legacy / folder).mkdir(parents=True)
+        try:
+            self.run = legacy
+            self.write_events(event_fixture(self.config))
+        finally:
+            self.run = prepared_run
+        success = run_analyzer(legacy)
+        self.assertEqual(success.returncode, 0, success.stdout + success.stderr)
+        self.assertEqual(json.loads((legacy / "summary.json").read_text(encoding="utf-8"))["functional_status"], "functional_pass")
+        self.assertTrue((legacy / "results/particle_state.csv").is_file())
+        self.assertIn(str(frozen.resolve()).replace("\\", "/").lower(),
+                      success.stderr.replace("\\\\", "/").replace("\\", "/").lower())
+        selected_analysis = closure / "src/msplatform/workflows/ion_processor/analysis.py"
+        self.assertIn(str(selected_analysis.resolve()).replace("\\", "/").lower(),
+                      success.stderr.replace("\\\\", "/").replace("\\", "/").lower())
         frozen.unlink()
         missing = run_analyzer()
         self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
@@ -821,6 +842,20 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
         self.assertIn("ModuleNotFoundError", missing.stderr)
         self.assertNotIn("FileNotFoundError", missing.stderr)
         self.assertTrue(live.is_file())
+        frozen.write_bytes(live.read_bytes())
+        frozen_analysis = closure / "src/msplatform/workflows/ion_processor/analysis.py"
+        live_analysis = PROJECT.parents[1] / "src/msplatform/workflows/ion_processor/analysis.py"
+        self.assertTrue(live_analysis.is_file())
+        self.assertEqual(frozen_analysis.read_bytes(), live_analysis.read_bytes())
+        self.assertIn(str(frozen_analysis.resolve()).replace("\\", "/").lower(),
+                      present.stderr.replace("\\\\", "/").replace("\\", "/").lower())
+        frozen_analysis.unlink()
+        missing_analysis = run_analyzer()
+        self.assertNotEqual(missing_analysis.returncode, 0, missing_analysis.stdout + missing_analysis.stderr)
+        self.assertIn("msplatform.workflows.ion_processor.analysis", missing_analysis.stderr)
+        self.assertIn("ModuleNotFoundError", missing_analysis.stderr)
+        self.assertNotIn("FileNotFoundError", missing_analysis.stderr)
+        self.assertTrue(live_analysis.is_file())
 
     def test_frozen_closure_loads_particle_count_policy_in_independent_python(self) -> None:
         # Use the real loaded repository closure but inert vendor input. A fresh
@@ -883,10 +918,10 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
             vx, vy, vz = (row[k] for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us"))
             row.update(x_mm=-z, y_mm=x, z_mm=9.8-y, vx_mm_us=-vz, vy_mm_us=vx, vz_mm_us=-vy)
         self.write_events(rows)
-        result = functional.analyze(self.run)
+        result = ip_analysis.analyze(self.run)
         self.assertEqual(result["terminal_reasons"]["downstream_domain_exit"], 1)
         self.assertEqual(result["identity_validation"]["status"], "PASS")
-        self.assertNotIn("downstream_domain_exit", functional.ENUMS["terminal_reason"])
+        self.assertNotIn("downstream_domain_exit", ip_analysis.ENUMS["terminal_reason"])
 
     def test_downstream_exit_rejects_false_plane_direction_and_missing_authority(self) -> None:
         for mutation in ("position", "velocity", "missing", "unbound", "event"):
@@ -905,7 +940,7 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
                     rows[-1]["t_us"] = self.config["baseline"]["schedule"]["transfer_end_us"]
                 self.write_events(rows)
                 with self.assertRaisesRegex(ValueError, "downstream"):
-                    functional.analyze(self.run)
+                    ip_analysis.analyze(self.run)
 
     def test_downstream_derivation_rejects_lens_outside_domain(self) -> None:
         projection = native_projection(self.config["baseline"], self.config["numerics"])
@@ -948,10 +983,10 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
                     rows[-1]["t_us"]=self.config["baseline"]["schedule"]["transfer_end_us"]
                 self.write_events(rows)
                 if mutation is None:
-                    self.assertEqual(functional.analyze(self.run)["terminal_reasons"]["backward_escape"],1)
+                    self.assertEqual(ip_analysis.analyze(self.run)["terminal_reasons"]["backward_escape"],1)
                 else:
                     with self.assertRaisesRegex(ValueError,"upstream"):
-                        functional.analyze(self.run)
+                        ip_analysis.analyze(self.run)
 
     def test_prepare_exploration_freezes_selected_profile_and_source(self) -> None:
         project, vendor = self.make_prepare_fixture()
@@ -972,7 +1007,7 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
 
     def test_analyze_accepts_complete_synthetic_cohort(self) -> None:
         self.write_events(event_fixture(self.config))
-        result = functional.analyze(self.run)
+        result = ip_analysis.analyze(self.run)
         self.assertEqual(result["identity_validation"]["status"], "PASS")
         self.assertEqual(result["actual_particle_count"], self.config["source"]["particle_count"])
         self.assertEqual(result["capture_fraction"], 1)
@@ -999,7 +1034,7 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
                        "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": 0, "vz_mm_us": 0}
             selected.append(row)
         self.write_events(selected)
-        result = functional.analyze(self.run)
+        result = ip_analysis.analyze(self.run)
         with (self.run / "results/particle_state.csv").open(encoding="utf-8", newline="") as stream:
             canonical = list(csv.DictReader(stream))
         terminal = {int(row["particle_id"]): row for row in canonical if row["event"] == "terminal"}
@@ -1019,21 +1054,21 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
         rows.pop()
         self.write_events(rows)
         with self.assertRaisesRegex(AssertionError, "lacks source or terminal"):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_analyze_rejects_duplicate_particle_event(self) -> None:
         rows = event_fixture(self.config)
         rows.append(copy.deepcopy(rows[-1]))
         self.write_events(rows)
         with self.assertRaisesRegex(AssertionError, "duplicate event"):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_analyze_rejects_changed_source_identity(self) -> None:
         rows = event_fixture(self.config)
         rows[0]["x_mm"] += 0.01
         self.write_events(rows)
         with self.assertRaisesRegex(AssertionError, "source axial_z_mm"):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_analyze_rejects_foreign_particle_id(self) -> None:
         rows = event_fixture(self.config)
@@ -1042,28 +1077,28 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
                 row["particle_id"] = 999999
         self.write_events(rows)
         with self.assertRaisesRegex(AssertionError, "particle IDs"):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_analyze_rejects_event_outside_stage_clock(self) -> None:
         rows = event_fixture(self.config)
         next(row for row in rows if row["event"] == "capture")["t_us"] = 0
         self.write_events(rows)
         with self.assertRaises((ValueError, AssertionError)):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_analyze_rejects_exit_off_acceptance_plane(self) -> None:
         rows = event_fixture(self.config)
         next(row for row in rows if row["event"] == "extraction_exit")["y_mm"] = 0
         self.write_events(rows)
         with self.assertRaises((ValueError, AssertionError)):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
     def test_analyze_rejects_nonfinite_raw_state(self) -> None:
         rows = event_fixture(self.config)
         next(row for row in rows if row["event"] == "capture")["x_mm"] = float("nan")
         self.write_events(rows)
         with self.assertRaises((ValueError, AssertionError)):
-            functional.analyze(self.run)
+            ip_analysis.analyze(self.run)
 
 
 class NativeFieldReferenceTests(unittest.TestCase):

@@ -18,13 +18,8 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-
-
-
-
-
-
-
+PRODUCER_SOURCE_PATH = Path(__file__).resolve()
+PRODUCER_SOURCE_SHA256 = sha(PRODUCER_SOURCE_PATH)
 
 class SectionDiagnostics:
     """One run-local rendering context; exports never share mutable model or particle state."""
@@ -226,7 +221,7 @@ class SectionDiagnostics:
         self.origin_z_mm = self.C['coordinate_transform']['translation_mm'][2]
         source_paths = [self.RUN / p for p in ('inputs/resolved_model.json', 'inputs/diagnostics.json', 'simion/events.csv', 'simion/samples.csv', 'results/particle_state.csv')]
         self.SOURCE_RECORDS = [dict(path=str(p), sha256=sha(p)) for p in source_paths]
-        self.PRODUCER_RECORD = dict(path=str(Path(__file__)), sha256=sha(Path(__file__)))
+        self.PRODUCER_RECORD = dict(path=str(PRODUCER_SOURCE_PATH), sha256=PRODUCER_SOURCE_SHA256)
         with (self.RUN / 'simion/events.csv').open(newline='', encoding='utf-8-sig') as stream:
             self.RETAINED_IDS = {r['particle_id'] for r in csv.DictReader(stream) if r['event'] == 'terminal' and r['reason'] != 'acceptance_surface'}
         self.SNAPSHOT_PATH = Path(snapshot_table).resolve() if snapshot_table else self.OUT / 'diagnostic_snapshots.csv'

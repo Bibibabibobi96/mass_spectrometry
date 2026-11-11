@@ -163,7 +163,7 @@ def prepare_completed_reanalysis(run: Path, predecessor: Path) -> dict:
         "simion/events.csv", "simion/samples.csv", "simion/collision_rng_seeds.csv",
         "simion/hs1_bound_parameters.csv", "simion/extraction_steps.csv", "simion/extraction_impulses.csv",
         "logs/flight.log")]
-    required.append(native_field_sample_path(predecessor).resolve())
+    required.append(ip_continuation.native_field_sample_path(predecessor).resolve())
     plan = build_whole_unit_replay_plan(predecessor_run_dir=predecessor, output_dir=run / "inputs",
         units=[WholeUnitReplayUnit("complete_population", tuple(required), True)])
     if plan["reusable_unit_count"] != 1:
@@ -238,7 +238,7 @@ def prepare_partial_batch_replay(run: Path, predecessor: Path) -> dict:
     batches = _read(batch_path)
     if batches.get("particle_count") != current["source"]["particle_count"]:
         raise ValueError("IP predecessor batch population differs")
-    field_sample = native_field_sample_path(predecessor).resolve()
+    field_sample = ip_continuation.native_field_sample_path(predecessor).resolve()
     field_record = records.get(field_sample)
     if field_record is not None:
         verify_record("IP predecessor field samples", field_record, base_dir=predecessor)
@@ -338,24 +338,6 @@ def prepare_partial_batch_replay(run: Path, predecessor: Path) -> dict:
     return plan
 
 
-def native_field_sample_path(run: Path) -> Path:
-    """Use locally measured field samples, otherwise the verified predecessor record."""
-    local = run/"simion/native_field_samples.csv"
-    if local.is_file():
-        return local
-    record_pathname = run/"inputs/partial_batch_replay/field_source.json"
-    if record_pathname.is_file():
-        return Path(_read(record_pathname)["path"])
-    plan_path = run/"inputs/simion_whole_unit_replay_plan.json"
-    if plan_path.is_file():
-        outputs = _read(plan_path)["units"][0]["terminal_outputs"]
-        matches = [Path(item["path"]) for item in outputs if Path(item["path"]).name == "native_field_samples.csv"]
-        if len(matches) != 1:
-            raise ValueError("continuation field sample reference differs")
-        return matches[0]
-    return ip_continuation.native_data_directory(run)/"native_field_samples.csv"
-
-
 def restore_reusable_batches(run: Path) -> dict:
     """Reference raw workers; extract only archived CSVs required by the merger."""
     run = run.resolve()
@@ -410,24 +392,6 @@ def restore_reusable_batches(run: Path) -> dict:
                 require_bound(name)
         restored.append(index)
     return {"restored_batch_indices": restored}
-
-
-def analysis_source_record(run: Path, path: Path) -> dict:
-    """Reuse the already verified continuation identity for diagnostic provenance."""
-    path = path.resolve()
-    field_record = run/"inputs/partial_batch_replay/field_source.json"
-    if field_record.is_file():
-        record = _read(field_record)
-        if Path(record["path"]).resolve() == path:
-            return record
-    plan_path = run / "inputs/simion_whole_unit_replay_plan.json"
-    if plan_path.is_file():
-        outputs = _read(plan_path)["units"][0]["terminal_outputs"]
-        matches = [row for row in outputs if Path(row["path"]).resolve() == path]
-        if len(matches) != 1 or not path.is_file():
-            raise ValueError("IP continuation diagnostic source is not bound")
-        return dict(path=str(path), bytes=path.stat().st_size, sha256=matches[0]["sha256"])
-    return dict(path=str(path), bytes=path.stat().st_size, sha256=file_sha256(path))
 
 
 def prepare_request(run: Path, native_pa0_record: dict | None = None) -> dict:
@@ -662,7 +626,7 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
     partial = _read(partial_path) if partial_path.exists() else None
     reused = {item["key"]: item for item in partial["units"] if item["action"] == "reuse"} if partial else {}
     events, samples, seeds, audits, log_parts = [], [], [], [], []
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
+    from msplatform.workflows.ion_processor.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
     force_headers = {"extraction_steps.csv":STEP_COLUMNS, "extraction_impulses.csv":IMPULSE_COLUMNS}
     force_sources = {name:[] for name in force_headers}
     original_fields = None

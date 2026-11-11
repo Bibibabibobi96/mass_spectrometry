@@ -18,6 +18,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+from msplatform.analysis import particle_styles
 from msplatform.io.file_identity import file_sha256
 
 
@@ -41,22 +42,6 @@ HISTOGRAMS = (
     ("kinetic_energy_eV", "Kinetic energy (eV)"),
     ("elapsed_time_us", "Elapsed time (us)"),
 )
-COLORS = (
-    "#000000",
-    "#E69F00",
-    "#56B4E9",
-    "#009E73",
-    "#7F3C8D",
-    "#0072B2",
-    "#D55E00",
-    "#CC79A7",
-    "#6B6B6B",
-    "#7A3E9D",
-)
-MARKERS = ("o", "s", "^", "D", "v", "P", "X", "<", ">", "*")
-COMPARISON_COLORS = COLORS
-LINESTYLES = ("-", "--", "-.", ":")
-MAX_AUTO_STYLE_SERIES = min(len(COMPARISON_COLORS), len(MARKERS))
 
 
 @dataclass(frozen=True)
@@ -263,26 +248,6 @@ def validate_comparison_states(
     }
 
 
-def prepare_visual_style_map(labels: Sequence[str]) -> dict[str, dict[str, str]]:
-    """Return deterministic, non-repeating styles for a readable combined figure."""
-
-    ordered = sorted(labels)
-    if any(not label for label in ordered) or len(set(ordered)) != len(ordered):
-        raise ValueError("Plot series labels must be non-empty and unique.")
-    if len(ordered) > MAX_AUTO_STYLE_SERIES:
-        raise ValueError(
-            "Combined figure exceeds the non-repeating automatic style capacity; "
-            "split the comparison into smaller figure groups."
-        )
-    return {
-        label: {
-            "color": COMPARISON_COLORS[index],
-            "marker": MARKERS[index],
-            "linestyle": LINESTYLES[index % len(LINESTYLES)],
-        }
-        for index, label in enumerate(ordered)
-    }
-
 
 def prepare_shared_scale_contract(
     states: Sequence[ExitState],
@@ -291,7 +256,7 @@ def prepare_shared_scale_contract(
     require_paired_ids: bool = False,
 ) -> dict:
     labels = sorted(state.label for state in states)
-    styles = prepare_visual_style_map(labels)
+    styles = particle_styles.prepare_visual_style_map(labels)
     scales = prepare_scales(states, bin_count=bin_count)
     return {
         "comparison": validate_comparison_states(states, require_paired_ids=require_paired_ids),
@@ -342,9 +307,9 @@ def validate_shared_scale_contract(
             or not matplotlib.colors.is_color_like(style["color"])
             or (
                 "marker" in style
-                and style["marker"] not in MARKERS
+                and style["marker"] not in particle_styles.MARKERS
             )
-            or style["linestyle"] not in LINESTYLES
+            or style["linestyle"] not in particle_styles.LINESTYLES
         ):
             raise ValueError(f"Shared scale contract style is invalid for {state.label}.")
         active_styles.append(
@@ -394,8 +359,8 @@ def _plot_histograms(
         edges = np.asarray(edges_by_column[column], dtype=float)
         for index, state in enumerate(states):
             style = styles[state.label] if styles else {
-                "color": COLORS[index % len(COLORS)],
-                "marker": MARKERS[index % len(MARKERS)],
+                "color": particle_styles.COLORS[index % len(particle_styles.COLORS)],
+                "marker": particle_styles.MARKERS[index % len(particle_styles.MARKERS)],
                 "linestyle": "-",
             }
             label = state.label
@@ -424,7 +389,7 @@ def render_exit_state_figure(
     *,
     style_map: dict[str, dict[str, str]] | None = None,
 ) -> tuple[plt.Figure, np.ndarray]:
-    styles = style_map or prepare_visual_style_map(
+    styles = style_map or particle_styles.prepare_visual_style_map(
         [state.label for state in states]
     )
     figure, axes = plt.subplots(2, 3, figsize=(14.5, 7.2))
@@ -648,7 +613,7 @@ def export_figure(
     if scale_contract is None:
         comparison = validate_comparison_states(states)
         scales = prepare_scales(states, bin_count=bin_count)
-        styles = prepare_visual_style_map([state.label for state in states])
+        styles = particle_styles.prepare_visual_style_map([state.label for state in states])
         figure, _ = render_exit_state_figure(
             states, scales, title, style_map=styles
         )

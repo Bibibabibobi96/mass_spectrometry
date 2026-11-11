@@ -12,8 +12,10 @@
 - 执行输入：[numerics](config/numerics.json)、[公共执行登记](config/execution_profiles.json)、[内部运行预算](config/runtime_profiles.json)、[项目身份](config/project.json)。
 - 仓库规则：[根入口](../../README.md)。
 
-生产入口为[`simion/run_functional.ps1`](simion/run_functional.ps1)，准备与分析由
-[`analysis/functional.py`](analysis/functional.py)承担。按任务查[执行与验收边界](docs/SIMION.md#执行与验收边界)、
+生产入口为[`simion/run_functional.ps1`](simion/run_functional.ps1)；
+[`analysis/functional.py`](analysis/functional.py)负责运行准备与命令分派，实际分析和诊断由
+[`msplatform.workflows.ion_processor`](../../src/msplatform/workflows/ion_processor/analysis.py)承担。
+按任务查[执行与验收边界](docs/SIMION.md#执行与验收边界)、
 [原生场复用与分批](docs/SIMION.md#自动分批与单工作台重放)或[GUI准备](docs/SIMION.md#gui准备与批处理区别)。
 [`verify_project.ps1`](verify_project.ps1)只执行轻量测试；真实功能及用户确认结论由PROJECT维护。
 该门禁通过公共计时runner即时报告失败及逐测试耗时，保持原完整测试发现范围。
@@ -25,7 +27,10 @@
 
 ## 所有权
 
-`config/`拥有科学与数值权威，`analysis/`拥有准备及分析，`simion/`拥有求解器投影，`tests/`拥有静态回归。
+`config/`拥有科学与数值权威；项目`analysis/`负责运行准备及项目入口，已安装的
+`msplatform.workflows.ion_processor`拥有分析和诊断。续跑记录读取由
+`msplatform.results.ip_continuation`负责，共享粒子图形样式由`msplatform.analysis.particle_styles`负责。
+`simion/`拥有求解器投影，`tests/`拥有静态回归。
 旧解析规定场已退出活动源码，历史只读记录保留其解释。COMSOL后续消费同一科学配置；
 上游器件提供真实几何／出口，跨组件装配和状态交接由[统一集成](../../integrations/README.md)维护。
 本器件的抽象引导段不表示已消费真实上游端口。

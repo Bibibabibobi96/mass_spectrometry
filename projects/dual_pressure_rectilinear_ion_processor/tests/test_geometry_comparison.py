@@ -369,7 +369,7 @@ class GeometryComparisonTests(unittest.TestCase):
             manifest["outputs"].append(file_record(path))
         write_json(source/"run_manifest.json",manifest)
         before={p.relative_to(source):p.read_bytes() for p in source.rglob('*') if p.is_file()}
-        target="projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget.export_force_budget"
+        target="msplatform.workflows.ion_processor.extraction_force_budget.export_force_budget"
         with patch(target,return_value={"available_particle_count":2}) as export:
             result=geometry.export_recorded_force_budgets([case],output)
             export.assert_called_once_with(source,output_directory=output/"recovered_force_budget_00")

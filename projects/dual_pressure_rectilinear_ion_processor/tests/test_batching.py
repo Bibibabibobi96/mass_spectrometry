@@ -28,7 +28,7 @@ from msplatform.backends.simion.particle_batching import batch_plan_from_dispatc
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
-from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
+from msplatform.workflows.ion_processor.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
 
 PROJECT=Path(__file__).resolve().parents[1]
 
@@ -61,6 +61,31 @@ class BatchingTests(unittest.TestCase):
     def save_config(self) -> None:
         functional.write_json(self.run/"inputs/resolved_model.json",self.config)
 
+    def test_diagnostic_source_reuses_selected_frozen_identity_without_rehash(self) -> None:
+        source = Path(self.temp.name) / "native_field_samples.csv"
+        source.write_bytes(b"inert field sample\n")
+        partial = self.run / "inputs/partial_batch_replay/field_source.json"
+        partial.parent.mkdir(parents=True)
+        record = {"path": str(source), "bytes": source.stat().st_size, "sha256": "A" * 64}
+        partial.write_text(json.dumps(record), encoding="utf-8-sig")
+        self.assertEqual(ip_continuation.native_field_sample_path(self.run), source)
+        with patch.object(ip_continuation, "file_sha256", side_effect=AssertionError("must reuse source identity")):
+            self.assertEqual(ip_continuation.analysis_source_record(self.run, source), record)
+        local = self.run / "simion/native_field_samples.csv"
+        local.write_bytes(b"local first\n")
+        self.assertEqual(ip_continuation.native_field_sample_path(self.run), local)
+        local.unlink()
+        partial.unlink()
+        plan = self.run / "inputs/simion_whole_unit_replay_plan.json"
+        plan.write_text(json.dumps({"units": [{"terminal_outputs": [record]}]}), encoding="utf-8-sig")
+        self.assertEqual(ip_continuation.native_field_sample_path(self.run), source)
+        with patch.object(ip_continuation, "file_sha256", side_effect=AssertionError("must reuse plan identity")):
+            self.assertEqual(ip_continuation.analysis_source_record(self.run, source), record)
+        plan.write_text(json.dumps({"units": [{"terminal_outputs": [record, record]}]}), encoding="utf-8-sig")
+        with self.assertRaisesRegex(ValueError, "field sample reference differs"):
+            ip_continuation.native_field_sample_path(self.run)
+        with self.assertRaisesRegex(ValueError, "diagnostic source is not bound"):
+            ip_continuation.analysis_source_record(self.run, source)
     def test_partial_replay_restores_raw_and_archived_workers_and_replays_missing(self) -> None:
         parent = Path(self.temp.name)/"parent"
         for name in ("inputs", "results", "logs", "simion_batch_0001", "simion_batch_0002", "simion_batch_0003"):
@@ -547,7 +572,7 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
                 seeds.append(dict(particle_id=local,global_particle_id=global_id,seed=41+global_id))
             batching._csv(folder/"events.csv",fields,rows)
             batching._csv(folder/"samples.csv",sample_fields,samples)
-            from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
+            from msplatform.workflows.ion_processor.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
             batching._csv(folder/"extraction_steps.csv", list(STEP_COLUMNS), [])
             batching._csv(folder/"extraction_impulses.csv", list(IMPULSE_COLUMNS), [])
             batching._csv(folder/"collision_rng_seeds.csv",["particle_id","global_particle_id","seed"],seeds)
