@@ -28,7 +28,7 @@ from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, prepare_fixed_partition_dispatch
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import derive_candidate_source_closure, freeze_candidate_source_closure
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import derive_candidate_source_closure, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_contract, resolve_contract_documents
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
@@ -344,6 +344,19 @@ def _plan(run: Path) -> dict[str, Any]:
     return _load(run / "inputs/compensation_plan.json")
 
 
+AXIS_EXPORTER_SOURCE = "src/msplatform/backends/simion/resources/export_axis_basis.lua"
+HISTORICAL_AXIS_EXPORTER_SOURCE = f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"
+
+
+def _predecessor_axis_exporter(closure: dict[str, Any]) -> Path:
+    """Select the one explicitly declared exporter identity in parent evidence."""
+    declared = [item["source_id"] for item in closure["sources"]]
+    selected = [name for name in (AXIS_EXPORTER_SOURCE, HISTORICAL_AXIS_EXPORTER_SOURCE) if name in declared]
+    if len(selected) != 1:
+        raise ValueError("predecessor must declare exactly one axis basis exporter")
+    return Path(frozen_source_path(closure, selected[0]))
+
+
 def freeze_inputs(run: Path) -> dict[str, Any]:
     plan = _plan(run)
     verify_record("source manifest", plan["source_manifest"])
@@ -360,7 +373,7 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
         extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
             "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
             "common/simion/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
-            f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua") + authoring_sources)
+            AXIS_EXPORTER_SOURCE) + authoring_sources)
     if plan.get("regularization_authoring_source"):
         frozen_default = run / "inputs/code/src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json"
         frozen_record = file_record(frozen_default)
@@ -387,8 +400,8 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
         # not on compensation strength, plotting or native Fly controls.
         if _basis_identity(plan) != _basis_identity(previous):
             raise ValueError("compensation PA basis inputs differ from explicit predecessor")
-        previous_export = evidence / "code" / f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"
-        current_export = run / "inputs/code" / f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"
+        previous_export = _predecessor_axis_exporter(derived["closure"])
+        current_export = Path(frozen_source_path(closure, AXIS_EXPORTER_SOURCE))
         if previous_export.resolve().read_bytes() != current_export.read_bytes():
             raise ValueError("axis basis exporter differs from predecessor")
         source_basis = parent / "results/axis_basis.csv"
@@ -413,8 +426,13 @@ def _basis_identity(plan: dict[str, Any]) -> dict[str, Any]:
 
 def export_specification(run: Path) -> dict[str, Any]:
     plan = _plan(run)
+    closure = _load(run / "inputs/source_closure.json")
+    if Path(closure.get("code_root", "")).resolve() != (run / "inputs/code").resolve():
+        raise ValueError("axis basis exporter closure differs from run frozen code")
+    verify_candidate_source_closure(closure)
+    exporter = frozen_source_path(closure, AXIS_EXPORTER_SOURCE)
     return {"name": "reflectron_axis_basis", "file_path": plan["simion_executable"]["path"],
-            "argument_list": ["--nogui", "--noprompt", "lua", str(run / "inputs/code" / f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"),
+            "argument_list": ["--nogui", "--noprompt", "lua", exporter,
                               str(run / "simion/reflectron"), str(plan["maximum_electrode"]),
                               str(run / "results/axis_basis.csv"), format(plan["maximum_x_mm"], ".17g")],
             "working_directory": str(run / "simion"), "stdout_path": str(run / "logs/basis_export.stdout.log"),

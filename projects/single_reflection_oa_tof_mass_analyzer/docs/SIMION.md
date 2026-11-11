@@ -134,3 +134,6 @@ Candidate、PA/IOB、脉冲计划和数值身份，并把CSV及资源记录发�
   Refine，最后fast-adjust；恢复已有半成品时也必须逐个重新Refine，不能只凭文件存在判断收敛。
 - 已关闭的PA网格相位、跳转距离、Ez替换、宽质量timeout及性能缩放实验只从同日history快照与来源
   manifest追溯，不保留在current实施说明。
+
+The backend-owned axis-basis exporter and its frozen predecessor identity rules
+are described in [PROJECT](PROJECT.md#canonical-exported-axis-local-transport).

@@ -281,11 +281,33 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertNotIn("regularization_authoring_source", plan)
         self.assertFalse((code / "src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json").exists())
         command = ("import sys,json;from pathlib import Path;sys.path[:0]=json.loads(sys.argv.pop(1));import "+study.MODULE+
-                   " as m;assert Path(m.__file__).is_relative_to(Path(sys.argv[1]));"
+                   " as m;assert Path(m.__file__).resolve()==Path(sys.argv[1])/'projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/run_compensation.py';"
                    "assert all(Path(v.__file__).resolve().is_relative_to(Path(sys.argv[1])/'src') for k,v in sys.modules.items() if k.startswith('msplatform') and getattr(v,'__file__',None));"
-                   "assert m.export_specification(Path(sys.argv[2]))['name']=='reflectron_axis_basis'")
-        subprocess.run([sys.executable, "-I", "-c", command,json.dumps(python_import_roots(code)), str(code), str(run)], cwd=code, timeout=60,
+                   "spec=m.export_specification(Path(sys.argv[2]));"
+                   "assert spec['name']=='reflectron_axis_basis';"
+                   "assert Path(spec['argument_list'][3])==Path(sys.argv[1])/m.AXIS_EXPORTER_SOURCE")
+        subprocess.run([sys.executable, "-I", "-B", "-c", command,json.dumps(python_import_roots(code)), str(code), str(run)], cwd=code, timeout=60,
                        check=True, capture_output=True, text=True, encoding="utf-8")
+        exporter = code / study.AXIS_EXPORTER_SOURCE
+        self.assertTrue(exporter.is_file())
+        self.assertEqual(Path(study.export_specification(run)["argument_list"][3]), exporter)
+        self.assertFalse((code / study.HISTORICAL_AXIS_EXPORTER_SOURCE).exists())
+        original = exporter.read_bytes()
+        exporter.unlink()
+        with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+            study.export_specification(run)
+        for replacement in (None, original + b"tampered"):
+            if replacement is not None:
+                exporter.write_bytes(replacement)
+            rejected = subprocess.run([sys.executable, "-I", "-B", "-c", command, json.dumps(python_import_roots(code)), str(code), str(run)],
+                                      cwd=code, timeout=60, capture_output=True, text=True, encoding="utf-8")
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("frozen candidate source changed", rejected.stderr)
+            if replacement is not None:
+                with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                    study.export_specification(run)
+        exporter.write_bytes(original)
+        self.assertEqual(Path(study.export_specification(run)["argument_list"][3]), exporter)
         self.assertTrue(result["basis_export_required"])
         self.assertFalse((run / "simion").exists())
 
@@ -364,6 +386,63 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertEqual(Path(derived["code_root"]), evidence / "code")
         self.assertFalse(list((evidence / "code").rglob("*.pyc")))
         self.assertEqual(before, {p: p.read_bytes() for p in before})
+
+    def test_historical_declared_exporter_reuses_manifest_bound_basis(self) -> None:
+        case, executable = self.published_source()
+        plan = study.inspect_source(case, executable, 8, 1e-4, particle_count=100)
+        parent = self.root / "historical-parent"
+        self.write(parent / "inputs/compensation_plan.json", plan)
+        study.freeze_inputs(parent)
+        closure_path = parent / "inputs/source_closure.json"
+        closure = study._load(closure_path)
+        code = Path(closure["code_root"])
+        current = code / study.AXIS_EXPORTER_SOURCE
+        historical = code / study.HISTORICAL_AXIS_EXPORTER_SOURCE
+        historical.parent.mkdir(parents=True, exist_ok=True)
+        current.replace(historical)
+        record = next(item for item in closure["sources"] if item["source_id"] == study.AXIS_EXPORTER_SOURCE)
+        record["source_id"] = study.HISTORICAL_AXIS_EXPORTER_SOURCE
+        self.write(closure_path, closure)
+        basis = parent / "results/axis_basis.csv"
+        basis.parent.mkdir(parents=True, exist_ok=True)
+        basis.write_bytes(b"historical-basis")
+        self.terminal(parent, [p for p in (parent / "inputs").rglob("*") if p.is_file()], [basis])
+        before = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
+        child = self.root / "historical-child"
+        (child / "results").mkdir(parents=True)
+        self.write(child / "inputs/compensation_plan.json", {**plan, "predecessor_manifest": file_record(parent / "run_manifest.json")})
+        self.assertFalse(study.freeze_inputs(child)["basis_export_required"])
+        self.assertEqual((child / "results/axis_basis.csv").read_bytes(), b"historical-basis")
+        self.assertEqual(before, {p: p.read_bytes() for p in before})
+        original = historical.read_bytes()
+        for name, replacement in (("missing", None), ("tampered", original + b"tampered")):
+            if replacement is None:
+                historical.unlink()
+            else:
+                historical.write_bytes(replacement)
+            rejected = self.root / ("historical-child-" + name)
+            self.write(rejected / "inputs/compensation_plan.json", {**plan, "predecessor_manifest": file_record(parent / "run_manifest.json")})
+            with self.assertRaises((FileNotFoundError, ValueError, AssertionError)):
+                study.freeze_inputs(rejected)
+            historical.write_bytes(original)
+        self.assertEqual(before, {p: p.read_bytes() for p in before})
+        historical.write_bytes(original + b"-- different historical exporter\n")
+        identity = file_record(historical)
+        record.update(bytes=identity["bytes"], sha256=identity["sha256"], source_sha256=identity["sha256"])
+        self.write(closure_path, closure)
+        self.terminal(parent, [p for p in (parent / "inputs").rglob("*") if p.is_file()], [basis])
+        different = self.root / "historical-child-different"
+        self.write(different / "inputs/compensation_plan.json", {**plan, "predecessor_manifest": file_record(parent / "run_manifest.json")})
+        with self.assertRaisesRegex(ValueError, "axis basis exporter differs"):
+            study.freeze_inputs(different)
+
+    def test_predecessor_exporter_identity_requires_one_declared_source(self) -> None:
+        closure = {"schema_version": 2, "role": "candidate_execution_source_closure", "code_root": str(self.root), "sources": []}
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            study._predecessor_axis_exporter(closure)
+        closure["sources"] = [{"source_id": name} for name in (study.AXIS_EXPORTER_SOURCE, study.HISTORICAL_AXIS_EXPORTER_SOURCE)]
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            study._predecessor_axis_exporter(closure)
 
     def test_analysis_failure_leaves_complete_native_units_reusable(self) -> None:
         parent = self.parent({1, 2, 3, 4, 5})

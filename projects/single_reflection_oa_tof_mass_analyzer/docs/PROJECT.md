@@ -1137,3 +1137,5 @@ oracle. Candidate/source/cohort guards and the consumers' original one/five-perc
 research criteria remain with those analyzers. No PA, native export, solver
 process or historical record is changed. Ordinary installation and native
 qualification are separate acceptance boundaries.
+
+The reflectron axis-basis exporter is a SIMION backend resource frozen into each compensation run. A predecessor basis is reused only when its declared frozen exporter bytes match the current exporter; historical project-path source identities remain explicit in their original records.
