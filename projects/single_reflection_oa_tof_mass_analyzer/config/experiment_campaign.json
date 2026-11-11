@@ -11,7 +11,7 @@
     "capability_id": "single_reflection_mass_analysis",
     "authority": {
       "path": "config/execution_profiles.json",
-      "sha256": "F89520C1A3AC87EBF8165224E0EC9ACA783ADED93C5001663F47558C178EAD23"
+      "sha256": "D9D3B1BDFCAF4A630B1F28756769D5B2A343486BD69604E789EE6BB620AD39C7"
     }
   },
   "base_request": {
