@@ -26,6 +26,7 @@ on:
         default: '1800'
 
 env:
+  PYTHONFAULTHANDLER: '1'
   PUBLIC_GATE_WORKERS: ${{ inputs.workers || '4' }}
   PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS: ${{ inputs.resource_wait_timeout_seconds || '1800' }}
   PUBLIC_GATE_OWNER: ${{ inputs.owner || '' }}
