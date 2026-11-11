@@ -739,6 +739,7 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/4_instance_seed.iob",
           "consumers": [
             "accelerator_interface",
+            "prepared_joint",
             "oa_mr",
             "single_reflection_flight"
           ]
@@ -748,6 +749,7 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/5_instance_seed.iob",
           "consumers": [
             "accelerator_interface",
+            "prepared_joint",
             "single_reflection_flight"
           ]
         },

@@ -9,12 +9,13 @@ from unittest.mock import patch
 import json
 import os
 
+from msplatform.backends.simion.mr_prepared_field import audit_field_coverage
 from msplatform.execution.retention import file_record
 from msplatform.io.file_identity import file_sha256
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import (
     _lua, render_measured_operating_point, freeze_field_reference,
-    audit_field_coverage, prepare_interface_field_audit, summarize_interface_field_audit,
+    prepare_interface_field_audit, summarize_interface_field_audit,
     prepare_event_field_audit, summarize_event_field_audit,
 )
 

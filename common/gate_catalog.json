@@ -2450,6 +2450,10 @@
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/mr_prepared_field.py",
+          "reason": "installed_mr_prepared_field_changed"
+        },
+        {
           "exact": "src/msplatform/exporters/mr_cad_parts.py",
           "reason": "installed_complete_mr_oa_cad_parts_changed"
         },
@@ -2681,6 +2685,19 @@
         "module_parameter": "ChangedTestModules",
         "preserve_command": true,
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/mr_prepared_field.py",
+                "reason": "installed_mr_prepared_field_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_joint_flight_preparation.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

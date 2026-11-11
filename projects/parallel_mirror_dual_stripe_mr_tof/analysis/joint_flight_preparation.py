@@ -10,6 +10,7 @@ import re
 import subprocess
 from typing import Any
 
+from msplatform.backends.simion import mr_prepared_field
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
 
@@ -115,33 +116,6 @@ print('MRTOF_INTERFACE_FIELD_AUDIT=PASS samples='..#r.points)
 '''
 
 
-def audit_field_coverage(points: list[dict], windows: list[dict]) -> dict:
-    """Prove the actual first-match route and native gradient halo for every point."""
-    winners = []
-    for point in points:
-        position = point["position_mm"]
-        winner = next(((rank, window) for rank, window in enumerate(windows)
-                       if all(lo <= x <= hi for x, (lo, hi) in zip(position, window["active_box_mm"]))), None)
-        if winner is None or winner[1]["name"] != "ion_processor_local":
-            raise ValueError("interface audit is not entirely routed through the IP fine field")
-        rank, window = winner
-        grid = window["grid"]
-        for axis, x in enumerate(position):
-            q = (x-grid["origin_mm"][axis])/grid["pitch_mm"][axis]
-            if axis == 0:
-                if grid["symmetry"] != "x" or grid["origin_mm"][0] != 0:
-                    raise ValueError("IP fine audit requires its declared x symmetry")
-                q = abs(q)
-            if ((axis != 0 and math.floor(q)-1 < 0)
-                    or math.ceil(q)+1 >= grid["dimensions"][axis]):
-                raise ValueError("interface audit lacks the flight adapter gradient halo")
-        winners.append(rank)
-    if not winners or len(set(winners)) != 1:
-        raise ValueError("interface audit requires one actual flight field route")
-    return dict(first_match_rank_zero_based=winners[0], field_name="ion_processor_local",
-                sample_count=len(points), active_box_and_gradient_halo_verified=True)
-
-
 def prepare_interface_field_audit(*, source_run: Path, handoff: dict, source_directory: Path,
                                 binding: dict, native: dict, runtime: Path, output: Path) -> dict:
     """Freeze source field authors and compile same-point, actual-clock queries."""
@@ -172,7 +146,7 @@ def prepare_interface_field_audit(*, source_run: Path, handoff: dict, source_dir
             inverse.from_frame_id, point["position_mm"])).coordinates_mm)
         point["kinetic_energy_per_charge_ev"] = kinetic_energy_ev(mass, *point["velocity_m_s"])/charge
     points.append(centroid)
-    coverage = audit_field_coverage(points, binding["refinement_windows"])
+    coverage = mr_prepared_field.audit_field_coverage(points, binding["refinement_windows"])
     level = native["refinement_windows"][coverage["first_match_rank_zero_based"]]
     manifest = _read(source_run / "run_manifest.json")
     records = {}
@@ -476,26 +450,6 @@ def summarize_event_field_audit(directory: Path) -> dict:
         samples=ledger,source_centroid_h_over_q_v=baseline)
     _write(directory / "event_energy_field_audit.json",result)
     return result
-
-
-def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
-    """Project the loader-verified IP collision topology without changing fields."""
-    roles = ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]
-    overlay = binding.get("collision_overlay")
-    if overlay is not None:
-        if (overlay.get("schema_version") != 1 or overlay.get("role") != "mrtof_analyzer_collision_overlay"
-                or not binding.get("source_descriptor_path")):
-            raise ValueError("Collision patch requires the verified overlay descriptor")
-        roles.append("analyzer_collision_patch")
-    if [item["role"] for item in binding["instances"]] != roles:
-        raise ValueError("IP collision instances differ from the verified four/five-role topology")
-    priority = dict(schema_version=1, role="mrtof_native_corridor_iob_priority_contract",
-        accelerator_provider="dual_pressure_rectilinear_ion_processor",
-        instances=[dict(role=role, priority_number=index) for index, role in enumerate(roles, 1)])
-    if overlay is not None:
-        priority["collision_overlay"] = dict(overlay, pa_path=binding["instances"][4]["pa_path"])
-    return dict(roles=roles, priority=priority,
-        seed=str(REPO / "src/msplatform/backends/simion/resources" / f"{len(roles)}_instance_seed.iob"))
 
 
 def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *, numerics: dict[str, float],

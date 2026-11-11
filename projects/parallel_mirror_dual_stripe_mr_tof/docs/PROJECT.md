@@ -904,3 +904,19 @@ back with its complete original result and cache key, without generator lookup.
 These are software and installation evidence; no new native composition, field,
 flight, GUI or scientific qualification is claimed. Original failure evidence
 remains separate from successor acceptance.
+
+
+### Prepared-joint field consumer ownership
+
+The prepared-joint field crop, candidate binding and native projection now use the
+installed SIMION prepared-field adapter, which consumes the existing COMSOL binding owner. The shared collision topology
+projection uses the canonical SIMION structural seed resource. The trial lifecycle
+remains in its existing research entry; this slice does not establish full prepared-joint
+installation, native field or flight qualification.
+
+### Interface field coverage ownership
+
+The first-match IP fine-field coverage and native gradient-halo check used by
+interface audit preparation is owned by the SIMION prepared-field backend. The
+root audit preparation remains its consumer; this does not qualify a native field,
+flight, or physical match.

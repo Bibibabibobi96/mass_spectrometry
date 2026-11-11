@@ -1,0 +1,1436 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "kind": "synthetic software witness; old implementation results",
+    "capture_sha256": "eedaffee6bbca84756b8e1085e7e79dc4cb96fea2b6f0b734fc3731cf0a6a19c",
+    "seed_projection": "old seed absolute paths replaced by basename; installed path independently verified under purelib"
+  },
+  "cases": {
+    "crop_valid": {
+      "inputs": [
+        {
+          "simion": {
+            "numerical_profiles": {
+              "native_static_field": {
+                "target_layout": {
+                  "windows": [
+                    {
+                      "pitch_mm": [
+                        0.04,
+                        0.2,
+                        0.04
+                      ],
+                      "stored_xmax_mm": 1.28
+                    },
+                    {
+                      "pitch_mm": [
+                        0.04,
+                        0.2,
+                        0.04
+                      ],
+                      "stored_xmax_mm": 1.28
+                    },
+                    {
+                      "pitch_mm": [
+                        0.25,
+                        0.25,
+                        0.1
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "field_binding": {
+            "refinement_windows": [
+              {
+                "name": "positive_integer_grid_a"
+              },
+              {
+                "name": "negative_integer_grid_a"
+              },
+              {
+                "name": "covered_local"
+              }
+            ]
+          }
+        },
+        {
+          "refinement_windows": [
+            {
+              "name": "ion_processor_local"
+            },
+            {
+              "name": "positive_integer_grid_a",
+              "grid": {
+                "origin_mm": [
+                  0,
+                  -65,
+                  90
+                ],
+                "pitch_mm": [
+                  0.04,
+                  0.2,
+                  0.04
+                ],
+                "dimensions": [
+                  51,
+                  2126,
+                  11701
+                ]
+              },
+              "active_box_mm": [
+                [
+                  -1,
+                  1
+                ],
+                [
+                  -64.75,
+                  359.75
+                ],
+                [
+                  90.25,
+                  323.75
+                ]
+              ]
+            },
+            {
+              "name": "negative_integer_grid_a",
+              "grid": {
+                "origin_mm": [
+                  0,
+                  -65,
+                  -324
+                ],
+                "pitch_mm": [
+                  0.04,
+                  0.2,
+                  0.04
+                ],
+                "dimensions": [
+                  51,
+                  2126,
+                  11701
+                ]
+              },
+              "active_box_mm": [
+                [
+                  -1,
+                  1
+                ],
+                [
+                  -64.75,
+                  359.75
+                ],
+                [
+                  90.25,
+                  323.75
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "old": {
+        "return": {
+          "positive_integer_grid_a": {
+            "source_dimensions": [
+              51,
+              2126,
+              11701
+            ],
+            "consumer_dimensions": [
+              33,
+              2126,
+              11701
+            ],
+            "start_grid": [
+              0,
+              0,
+              0
+            ],
+            "width_grid": [
+              32,
+              2125,
+              11700
+            ]
+          },
+          "negative_integer_grid_a": {
+            "source_dimensions": [
+              51,
+              2126,
+              11701
+            ],
+            "consumer_dimensions": [
+              33,
+              2126,
+              11701
+            ],
+            "start_grid": [
+              0,
+              0,
+              0
+            ],
+            "width_grid": [
+              32,
+              2125,
+              11700
+            ]
+          }
+        }
+      }
+    },
+    "candidate_role": {
+      "inputs": [
+        {
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "geometry": {
+            "IP": "same"
+          },
+          "authority": {
+            "analyzer_electrode_voltages_v": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              0.0,
+              3.0,
+              4.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "component_voltages_v": [
+              {
+                "namespace": "ion_processor",
+                "id": 1,
+                "value_v": 1
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 2,
+                "value_v": 2
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 3,
+                "value_v": 3
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 4,
+                "value_v": 4
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 5,
+                "value_v": 5
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 6,
+                "value_v": 6
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 7,
+                "value_v": 7
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 8,
+                "value_v": 8
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 9,
+                "value_v": 9
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 10,
+                "value_v": 10
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 11,
+                "value_v": 11
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 12,
+                "value_v": 12
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 13,
+                "value_v": 13
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 14,
+                "value_v": 14
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 15,
+                "value_v": 15
+              }
+            ],
+            "assembly": {
+              "native_operating_point": {
+                "lift_v": 4480.04379
+              }
+            }
+          },
+          "sources": {
+            "scalar_pa": "new_parent.pa"
+          },
+          "grid": {
+            "origin_mm": [
+              0,
+              0,
+              0
+            ]
+          },
+          "instances": [
+            {
+              "role": "global_fallback",
+              "pa_path": "new_parent.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "bad",
+              "pa_path": "native_corridor.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "ion_processor_collision",
+              "pa_path": "ion_processor_collision.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "detector",
+              "pa_path": "detector.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "geometry": {
+            "IP": "same"
+          },
+          "authority": {
+            "analyzer_electrode_voltages_v": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "component_voltages_v": [
+              {
+                "namespace": "ion_processor",
+                "id": 1,
+                "value_v": 1
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 2,
+                "value_v": 2
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 3,
+                "value_v": 3
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 4,
+                "value_v": 4
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 5,
+                "value_v": 5
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 6,
+                "value_v": 6
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 7,
+                "value_v": 7
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 8,
+                "value_v": 8
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 9,
+                "value_v": 9
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 10,
+                "value_v": 10
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 11,
+                "value_v": 11
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 12,
+                "value_v": 12
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 13,
+                "value_v": 13
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 14,
+                "value_v": 14
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 15,
+                "value_v": 15
+              }
+            ],
+            "assembly": {
+              "native_operating_point": {
+                "lift_v": 4480.04379
+              }
+            }
+          },
+          "sources": {
+            "scalar_pa": "old_parent.pa"
+          },
+          "grid": {
+            "origin_mm": [
+              0,
+              0,
+              0
+            ]
+          },
+          "instances": [
+            {
+              "role": "global_fallback",
+              "pa_path": "old_parent.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "native_corridor",
+              "pa_path": "native_corridor.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "ion_processor_collision",
+              "pa_path": "ion_processor_collision.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "detector",
+              "pa_path": "detector.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            }
+          ]
+        }
+      ],
+      "old": {
+        "exception": {
+          "type": "builtins.ValueError",
+          "message": "IP collision instances differ from the verified four/five-role topology"
+        }
+      }
+    },
+    "projection_four": {
+      "inputs": [
+        {
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "geometry": {
+            "IP": "same"
+          },
+          "authority": {
+            "analyzer_electrode_voltages_v": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              0.0,
+              3.0,
+              4.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "component_voltages_v": [
+              {
+                "namespace": "ion_processor",
+                "id": 1,
+                "value_v": 1
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 2,
+                "value_v": 2
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 3,
+                "value_v": 3
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 4,
+                "value_v": 4
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 5,
+                "value_v": 5
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 6,
+                "value_v": 6
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 7,
+                "value_v": 7
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 8,
+                "value_v": 8
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 9,
+                "value_v": 9
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 10,
+                "value_v": 10
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 11,
+                "value_v": 11
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 12,
+                "value_v": 12
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 13,
+                "value_v": 13
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 14,
+                "value_v": 14
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 15,
+                "value_v": 15
+              }
+            ],
+            "assembly": {
+              "native_operating_point": {
+                "lift_v": 4480.04379
+              }
+            }
+          },
+          "sources": {
+            "scalar_pa": "new_parent.pa"
+          },
+          "grid": {
+            "origin_mm": [
+              0,
+              0,
+              0
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              2,
+              2,
+              2
+            ]
+          },
+          "instances": [
+            {
+              "role": "global_fallback",
+              "pa_path": "new_parent.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "native_corridor",
+              "pa_path": "native_corridor.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "ion_processor_collision",
+              "pa_path": "ion_processor_collision.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "detector",
+              "pa_path": "detector.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "refinement_windows": []
+        }
+      ],
+      "old": {
+        "return": {
+          "mode": "native_static_pa",
+          "scalar_pa": "new_parent.pa",
+          "origin_mm": [
+            0,
+            0,
+            0
+          ],
+          "pitch_mm": [
+            0.1,
+            0.1,
+            0.1
+          ],
+          "dimensions": [
+            2,
+            2,
+            2
+          ],
+          "symmetry": "x",
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "assembly_scope": "full_c0_ion_processor_replacement",
+          "analyzer_voltages_v": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            2.0,
+            2.0,
+            0.0,
+            3.0,
+            4.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "collision_pa_path": "native_corridor.pa",
+          "collision_geometry_pa_paths": [
+            "ion_processor_collision.pa",
+            "detector.pa"
+          ],
+          "refinement_windows": []
+        }
+      }
+    },
+    "projection_five": {
+      "inputs": [
+        {
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "geometry": {
+            "IP": "same"
+          },
+          "authority": {
+            "analyzer_electrode_voltages_v": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              0.0,
+              3.0,
+              4.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "component_voltages_v": [
+              {
+                "namespace": "ion_processor",
+                "id": 1,
+                "value_v": 1
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 2,
+                "value_v": 2
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 3,
+                "value_v": 3
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 4,
+                "value_v": 4
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 5,
+                "value_v": 5
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 6,
+                "value_v": 6
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 7,
+                "value_v": 7
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 8,
+                "value_v": 8
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 9,
+                "value_v": 9
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 10,
+                "value_v": 10
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 11,
+                "value_v": 11
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 12,
+                "value_v": 12
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 13,
+                "value_v": 13
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 14,
+                "value_v": 14
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 15,
+                "value_v": 15
+              }
+            ],
+            "assembly": {
+              "native_operating_point": {
+                "lift_v": 4480.04379
+              }
+            }
+          },
+          "sources": {
+            "scalar_pa": "new_parent.pa"
+          },
+          "grid": {
+            "origin_mm": [
+              0,
+              0,
+              0
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              2,
+              2,
+              2
+            ]
+          },
+          "instances": [
+            {
+              "role": "global_fallback",
+              "pa_path": "new_parent.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "native_corridor",
+              "pa_path": "native_corridor.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "ion_processor_collision",
+              "pa_path": "ion_processor_collision.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "detector",
+              "pa_path": "detector.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "analyzer_collision_patch",
+              "pa_path": "patch.pa",
+              "origin_mm": [
+                0,
+                -4,
+                -100
+              ]
+            }
+          ],
+          "refinement_windows": [],
+          "source_descriptor_path": "sealed_source.json",
+          "collision_overlay": {
+            "schema_version": 1,
+            "role": "mrtof_analyzer_collision_overlay",
+            "patch_plan_path": "sealed_plan.json"
+          }
+        }
+      ],
+      "old": {
+        "return": {
+          "mode": "native_static_pa",
+          "scalar_pa": "new_parent.pa",
+          "origin_mm": [
+            0,
+            0,
+            0
+          ],
+          "pitch_mm": [
+            0.1,
+            0.1,
+            0.1
+          ],
+          "dimensions": [
+            2,
+            2,
+            2
+          ],
+          "symmetry": "x",
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "assembly_scope": "full_c0_ion_processor_replacement",
+          "analyzer_voltages_v": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            2.0,
+            2.0,
+            0.0,
+            3.0,
+            4.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "collision_pa_path": "native_corridor.pa",
+          "collision_geometry_pa_paths": [
+            "ion_processor_collision.pa",
+            "detector.pa"
+          ],
+          "refinement_windows": [],
+          "collision_overlay": {
+            "schema_version": 1,
+            "role": "mrtof_analyzer_collision_overlay",
+            "patch_plan_path": "sealed_plan.json",
+            "pa_path": "patch.pa"
+          }
+        }
+      }
+    },
+    "layout_four": {
+      "inputs": [
+        {
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "geometry": {
+            "IP": "same"
+          },
+          "authority": {
+            "analyzer_electrode_voltages_v": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              0.0,
+              3.0,
+              4.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "component_voltages_v": [
+              {
+                "namespace": "ion_processor",
+                "id": 1,
+                "value_v": 1
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 2,
+                "value_v": 2
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 3,
+                "value_v": 3
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 4,
+                "value_v": 4
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 5,
+                "value_v": 5
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 6,
+                "value_v": 6
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 7,
+                "value_v": 7
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 8,
+                "value_v": 8
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 9,
+                "value_v": 9
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 10,
+                "value_v": 10
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 11,
+                "value_v": 11
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 12,
+                "value_v": 12
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 13,
+                "value_v": 13
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 14,
+                "value_v": 14
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 15,
+                "value_v": 15
+              }
+            ],
+            "assembly": {
+              "native_operating_point": {
+                "lift_v": 4480.04379
+              }
+            }
+          },
+          "sources": {
+            "scalar_pa": "new_parent.pa"
+          },
+          "grid": {
+            "origin_mm": [
+              0,
+              0,
+              0
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              2,
+              2,
+              2
+            ]
+          },
+          "instances": [
+            {
+              "role": "global_fallback",
+              "pa_path": "new_parent.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "native_corridor",
+              "pa_path": "native_corridor.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "ion_processor_collision",
+              "pa_path": "ion_processor_collision.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "detector",
+              "pa_path": "detector.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "refinement_windows": []
+        }
+      ],
+      "old": {
+        "return": {
+          "roles": [
+            "global_fallback",
+            "native_corridor",
+            "ion_processor_collision",
+            "detector"
+          ],
+          "priority": {
+            "schema_version": 1,
+            "role": "mrtof_native_corridor_iob_priority_contract",
+            "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+            "instances": [
+              {
+                "role": "global_fallback",
+                "priority_number": 1
+              },
+              {
+                "role": "native_corridor",
+                "priority_number": 2
+              },
+              {
+                "role": "ion_processor_collision",
+                "priority_number": 3
+              },
+              {
+                "role": "detector",
+                "priority_number": 4
+              }
+            ]
+          },
+          "seed": "4_instance_seed.iob"
+        }
+      }
+    },
+    "layout_five": {
+      "inputs": [
+        {
+          "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+          "geometry": {
+            "IP": "same"
+          },
+          "authority": {
+            "analyzer_electrode_voltages_v": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              2.0,
+              2.0,
+              0.0,
+              3.0,
+              4.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "component_voltages_v": [
+              {
+                "namespace": "ion_processor",
+                "id": 1,
+                "value_v": 1
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 2,
+                "value_v": 2
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 3,
+                "value_v": 3
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 4,
+                "value_v": 4
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 5,
+                "value_v": 5
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 6,
+                "value_v": 6
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 7,
+                "value_v": 7
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 8,
+                "value_v": 8
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 9,
+                "value_v": 9
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 10,
+                "value_v": 10
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 11,
+                "value_v": 11
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 12,
+                "value_v": 12
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 13,
+                "value_v": 13
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 14,
+                "value_v": 14
+              },
+              {
+                "namespace": "ion_processor",
+                "id": 15,
+                "value_v": 15
+              }
+            ],
+            "assembly": {
+              "native_operating_point": {
+                "lift_v": 4480.04379
+              }
+            }
+          },
+          "sources": {
+            "scalar_pa": "new_parent.pa"
+          },
+          "grid": {
+            "origin_mm": [
+              0,
+              0,
+              0
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              2,
+              2,
+              2
+            ]
+          },
+          "instances": [
+            {
+              "role": "global_fallback",
+              "pa_path": "new_parent.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "native_corridor",
+              "pa_path": "native_corridor.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "ion_processor_collision",
+              "pa_path": "ion_processor_collision.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "detector",
+              "pa_path": "detector.pa",
+              "origin_mm": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "role": "analyzer_collision_patch",
+              "pa_path": "patch.pa",
+              "origin_mm": [
+                0,
+                -4,
+                -100
+              ]
+            }
+          ],
+          "refinement_windows": [],
+          "source_descriptor_path": "sealed_source.json",
+          "collision_overlay": {
+            "schema_version": 1,
+            "role": "mrtof_analyzer_collision_overlay",
+            "patch_plan_path": "sealed_plan.json"
+          }
+        }
+      ],
+      "old": {
+        "return": {
+          "roles": [
+            "global_fallback",
+            "native_corridor",
+            "ion_processor_collision",
+            "detector",
+            "analyzer_collision_patch"
+          ],
+          "priority": {
+            "schema_version": 1,
+            "role": "mrtof_native_corridor_iob_priority_contract",
+            "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+            "instances": [
+              {
+                "role": "global_fallback",
+                "priority_number": 1
+              },
+              {
+                "role": "native_corridor",
+                "priority_number": 2
+              },
+              {
+                "role": "ion_processor_collision",
+                "priority_number": 3
+              },
+              {
+                "role": "detector",
+                "priority_number": 4
+              },
+              {
+                "role": "analyzer_collision_patch",
+                "priority_number": 5
+              }
+            ],
+            "collision_overlay": {
+              "schema_version": 1,
+              "role": "mrtof_analyzer_collision_overlay",
+              "patch_plan_path": "sealed_plan.json",
+              "pa_path": "patch.pa"
+            }
+          },
+          "seed": "5_instance_seed.iob"
+        }
+      }
+    }
+  }
+}

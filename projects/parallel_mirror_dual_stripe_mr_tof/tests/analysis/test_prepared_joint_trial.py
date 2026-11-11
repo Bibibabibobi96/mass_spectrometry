@@ -1,6 +1,7 @@
 """Measured joint batch identity/clock tests; no commercial solver."""
 
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+from msplatform.backends.simion.mr_prepared_field import compile_memory_consumer_crops, validate_candidate_binding
 import csv
 import os
 import json
@@ -15,8 +16,8 @@ from msplatform.execution.inputs import freeze_file
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import (
-    compare_trajectory_representation, compile_memory_consumer_crops, materialize_batch,
-    validate_candidate_binding, analyze_centroid_probe, prepare_trial,
+    compare_trajectory_representation, materialize_batch,
+    analyze_centroid_probe, prepare_trial,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_measured_component_source as source_fixtures
 
@@ -52,6 +53,49 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                                 text=True, encoding="utf-8", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_frozen_parent_uses_selected_seed_and_rejects_missing_or_tampered(self):
+        """Public freezer plus real trial; an ambient source tree cannot supply its seeds."""
+        from msplatform.execution.inputs import python_import_roots
+        repo = Path(__file__).resolve().parents[4]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "inputs"
+            script = root / "freeze.ps1"
+            script.write_text("""param($Repo,$Destination,$Python)
+. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
+""", encoding="utf-8")
+            frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(repo), str(inputs), sys.executable],
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+            snapshot = inputs / "runtime_snapshot"
+            # Test-only fixture sources and immutable fixture inputs are explicitly
+            # copied; production imports remain selected from the frozen tree.
+            for relative in (
+                "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py",
+                "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_component_source.py",
+                "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_handoff.py",
+                "integrations/config/recipes/ip_mr_y_minus55_plan.json",
+                "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.json",
+                "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.schema.json",
+            ):
+                target = snapshot / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not target.exists():
+                    shutil.copyfile(repo / relative, target)
+            for relative in ("src/msplatform/backends/simion/mr_prepared_field.py",
+                             "src/msplatform/backends/simion/resources/4_instance_seed.iob",
+                             "src/msplatform/backends/simion/resources/5_instance_seed.iob"):
+                self.assertTrue((snapshot / relative).is_file(), relative)
+            env = dict(os.environ, PYTHONNOUSERSITE="1", MR_TEST_FROZEN_PARENT=str(snapshot),
+                       MR_TEST_AMBIENT_SRC=str(repo / "src"),
+                       PYTHONPATH=os.pathsep.join([*python_import_roots(snapshot), str(repo / "src")]))
+            child = subprocess.run([sys.executable, "-B", "-s", "-m", "unittest",
+                "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_trial.PreparedJointBatchTests.test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states"],
+                cwd=snapshot, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
 
     def test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states(self):
         import copy
@@ -151,6 +195,59 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
                        records=dict(scalar_pa=dict(sha256="A"*64)))
         binding["instances"][0]["pa_path"] = binding["sources"]["scalar_pa"]
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        if os.environ.get("MR_TEST_FROZEN_PARENT"):
+            # Reuse the original immutable prepared fixture and the actual trial.
+            import hashlib
+            import msplatform.backends.simion.mr_prepared_field as owner
+            import msplatform.backends.simion.resources as resources
+            import msplatform.backends.comsol.static_field_binding as source_owner
+            import msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage as voltage_owner
+            snapshot = Path(os.environ["MR_TEST_FROZEN_PARENT"]).resolve()
+            for selected in (owner, resources, source_owner, voltage_owner):
+                Path(selected.__file__).resolve().relative_to(snapshot)
+            ambient = Path(os.environ["MR_TEST_AMBIENT_SRC"]).resolve()
+            self.assertTrue((ambient / "msplatform/backends/simion/resources/4_instance_seed.iob").is_file())
+            overlay = copy.deepcopy(binding)
+            overlay.update(source_descriptor_path=str(root / "overlay_source.json"), collision_overlay=dict(
+                schema_version=1, role="mrtof_analyzer_collision_overlay", patch_plan_path=str(root / "patch_plan.json"),
+                box_mm=[0,-4,-100,2,0,-92], pitch_mm=[.05,.05,.05], dimensions=[41,81,161],
+                symmetry="x", priority_probes=[]))
+            overlay["instances"].append(dict(role="analyzer_collision_patch", pa_path="fine_patch.pa",
+                                               origin_mm=[0,-4,-100], manifest=str(root/"patch_owner/run_manifest.json")))
+            overlay_path = root / "overlay_frozen_test.json"
+            overlay_path.write_text('{}')
+            for count, selected in ((4, binding), (5, overlay)):
+                seed = Path(owner.collision_workbench_layout(selected)["seed"]).resolve()
+                seed.relative_to(snapshot)
+                original_seed = seed.read_bytes()
+                self.assertEqual((len(original_seed), hashlib.sha256(original_seed).hexdigest()),
+                                 resources.STRUCTURAL_SEEDS[count])
+                self.assertTrue((ambient / "msplatform/backends/simion/resources" / seed.name).is_file())
+                def loader(path):
+                    return selected if Path(path) == overlay_path else binding
+                def run_trial(label):
+                    with patch(module+".verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), \
+                         patch(module+".load_binding", side_effect=loader), \
+                         patch("msplatform.backends.simion.mr_prepared_field.load_binding", return_value=binding), \
+                         patch("msplatform.backends.simion.mr_prepared_field.native_response_operator", return_value={}):
+                        return prepare_trial(prepared, original_path, root / f"frozen_{count}_{label}",
+                                             field_binding_path=overlay_path if count == 5 else None)
+                good = run_trial("good")
+                self.assertTrue((root / f"frozen_{count}_good/results/prepared_joint_trial.json").is_file())
+                priority = (Path(good["frozen_runtime_directory"]) / "joint.priority.lua").read_text()
+                self.assertEqual("analyzer_collision_patch" in priority, count == 5)
+                try:
+                    seed.unlink()
+                    with self.assertRaises(FileNotFoundError):
+                        run_trial("missing")
+                    seed.write_bytes(original_seed + b"tampered")
+                    with self.assertRaisesRegex(ValueError, "seed identity differs"):
+                        run_trial("tampered")
+                finally:
+                    seed.write_bytes(original_seed)
+                for label in ("missing", "tampered"):
+                    self.assertFalse((root / f"frozen_{count}_{label}/results/prepared_joint_trial.json").exists())
+            return
         frozen_original = original_path.read_bytes()
         for name in ("unchanged", "observation", "budget", "budget_and_observation", "selected_step", "budget_and_selected_step",
                      "energy", "step", "advance", "smaller_budget", "quality", "mixed_physics", "mixed_timeout", "selector",
@@ -430,7 +527,8 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
             return overlay if Path(path)==overlay_path else binding
         with patch(module+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
              patch(module+".load_binding",side_effect=overlay_loader), \
-             patch(module+".native_response_operator",return_value={}):
+             patch("msplatform.backends.simion.mr_prepared_field.load_binding",return_value=binding), \
+             patch("msplatform.backends.simion.mr_prepared_field.native_response_operator",return_value={}):
             patched = prepare_trial(prepared,original_path,root/"five_role_prepared",field_binding_path=overlay_path)
         self.assertIn("five_instances",patched["dispatch_request"]["workload_topology_id"])
         self.assertIn("fine_patch.pa",patched["guard_paths"])
@@ -635,7 +733,7 @@ print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
         candidate["authority"] = candidate_authority(authority, dict(s1=1,s2=2,p1=3,p2=4))
         candidate["sources"]["scalar_pa"]="new_parent.pa"
         candidate["instances"][0]["pa_path"]="new_parent.pa"
-        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        module="msplatform.backends.simion.mr_prepared_field"
         overlay = copy.deepcopy(candidate)
         overlay["instances"].append(dict(role="analyzer_collision_patch",pa_path="patch.pa",origin_mm=[0,-4,-100]))
         with self.assertRaisesRegex(ValueError,"topology"):

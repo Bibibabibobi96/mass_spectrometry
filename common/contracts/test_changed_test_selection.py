@@ -1329,6 +1329,18 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
 
+    def test_mr_prepared_field_selects_its_actual_project_consumer(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mr_prepared_field_plan_") as directory:
+            request = Path(directory) / "plan.json"
+            write_planned_request(REPO_ROOT, request, ["src/msplatform/backends/simion/mr_prepared_field.py"])
+            stages = {row["name"]: row for row in json.loads(
+                request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+            parameters = stages["parallel_mirror_dual_stripe_mr_tof_static"]["command"]["parameters"]
+            self.assertIn("projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_trial",
+                          parameters["ChangedTestModules"])
+            self.assertIn("projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_joint_flight_preparation",
+                          parameters["ChangedTestModules"])
+            self.assertTrue(any(name.startswith("instrument_assembly_integration") for name in stages))
 
     def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
         paths = ("src/msplatform/results/ip_continuation.py",

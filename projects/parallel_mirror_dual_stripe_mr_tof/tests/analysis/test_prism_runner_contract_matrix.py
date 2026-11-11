@@ -264,7 +264,9 @@ ConvertTo-Json -InputObject @($reports) -Depth 8 -Compress
                         "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\prism_l0.py"])
                     stripe_path = "src\\msplatform\\components\\parallel_mirror_dual_stripe_mr_tof\\dual_stripe_l0.py"
                     self.assertEqual(paths.count(stripe_path), 1)
-                    self.assertEqual(paths[{'run_dual_stripe_operating_seed.ps1': 2, 'run_mirror_exact_k_operating_point.ps1': 25, 'run_two_prism_segmented_continuation.ps1': 14, 'run_two_prism_segmented_coverage.ps1': 13}[report["runner"]]], stripe_path)
+                    stripe_rows = [row for row in report["rows"] if row["relative"] == stripe_path]
+                    self.assertEqual(len(stripe_rows), 1)
+                    self.assertEqual(stripe_rows[0]["key"], f"analytic_source_{paths.index(stripe_path) + 1:02d}")
                     self.assertEqual(report["input_count"], len(paths))
                     self.assertEqual(report["check_count"], len(paths))
                     self.assertEqual(len(report["rows"]), len(paths))

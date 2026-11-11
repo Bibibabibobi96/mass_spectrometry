@@ -20,8 +20,9 @@ from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
     CONFIG, ION_PROCESSOR, REPO, verified_reference, validate_execution_contract,
 )
+from msplatform.backends.simion.mr_prepared_field import collision_workbench_layout
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import (
-    _lua, collision_workbench_layout, freeze_field_reference, prepare_interface_field_audit,
+    _lua, freeze_field_reference, prepare_interface_field_audit,
     project_provider_voltages, render_measured_operating_point,
 )
 

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 from functools import partial
 import re
 from msplatform.execution.run_paths import project_native_run_path
@@ -29,8 +28,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_in
     ION_PROCESSOR, validate_execution_contract,
 )
 from msplatform.backends.comsol.static_field_binding import load_binding, native_response_operator
+from msplatform.backends.simion.mr_prepared_field import (
+    collision_workbench_layout, compile_memory_consumer_crops,
+    validate_candidate_binding, native_projection,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_ip_mr_transform
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout, render_measured_operating_point
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, render_measured_operating_point
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
 from msplatform.io.scientific_csv import iter_csv_rows
@@ -49,91 +52,6 @@ def _read(path: Path) -> dict[str, Any]:
 
 def _write(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False)+"\n", encoding="utf-8", newline="\n")
-
-
-def compile_memory_consumer_crops(contract: dict[str, Any], reference: dict[str, Any],
-                                  binding: dict[str, Any]) -> dict[str, Any]:
-    """Project frozen stored-x authority into in-memory views of full solved mirrors."""
-    targets = contract["simion"]["numerical_profiles"]["native_static_field"]["target_layout"]["windows"]
-    reference_windows = reference["field_binding"]["refinement_windows"]
-    if len(targets) != len(reference_windows):
-        raise ValueError("Frozen MR window policy order differs from its reference")
-    available = {window["name"]: window for window in binding["refinement_windows"]}
-    crops = {}
-    for reference_window, target in zip(reference_windows, targets):
-        if "stored_xmax_mm" not in target:
-            continue
-        name = reference_window["name"]
-        if name not in {"positive_integer_grid_a", "negative_integer_grid_a"}:
-            raise ValueError("In-memory crop is restricted to mirror field windows")
-        level = available[name]
-        grid = level["grid"]
-        if grid["pitch_mm"][0] != target["pitch_mm"][0]:
-            raise ValueError("Memory consumer x pitch differs from the frozen window policy")
-        xmax, origin, pitch = (Decimal(str(value)) for value in (
-            target["stored_xmax_mm"], grid["origin_mm"][0], grid["pitch_mm"][0]))
-        points = (xmax-origin)/pitch
-        if origin != 0 or points != points.to_integral_value():
-            raise ValueError("Stored mirror x limit must align with its x-mirror grid")
-        source_dimensions = list(grid["dimensions"])
-        dimensions = [int(points)+1, *source_dimensions[1:]]
-        if not 1 < dimensions[0] <= source_dimensions[0]:
-            raise ValueError("Mirror consumer crop exceeds the source grid")
-        active_xmax = max(Decimal(str(abs(value))) for value in level["active_box_mm"][0])
-        if active_xmax+pitch > xmax:
-            raise ValueError("Mirror consumer crop lacks the existing gradient halo")
-        crops[name] = dict(source_dimensions=source_dimensions, consumer_dimensions=dimensions,
-                           start_grid=[0, 0, 0], width_grid=[value-1 for value in dimensions])
-    return crops
-
-
-def validate_candidate_binding(binding: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
-    """Keep the actual IP operator fixed while allowing only four P/S coordinates."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority, PS_GROUPS
-    collision_workbench_layout(binding)
-    if baseline.get("collision_overlay") and not binding.get("collision_overlay"):
-        raise ValueError("Candidate cannot silently remove the prepared collision overlay")
-    if binding.get("collision_overlay"):
-        # The public loader verifies the complete overlay and its original four
-        # instances. Compare only its source field operator, not collision pitch.
-        source = load_binding(Path(binding["source_descriptor_path"]))
-        baseline_source = (load_binding(Path(baseline["source_descriptor_path"]))
-                           if baseline.get("collision_overlay") else baseline)
-        return validate_candidate_binding(source, baseline_source)
-    roles = ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]
-    if (binding.get("accelerator_provider") != ION_PROCESSOR
-            or [r["role"] for r in binding["instances"]] != roles
-            or binding["geometry"] != baseline["geometry"]
-            or binding["authority"].get("assembly") != baseline["authority"].get("assembly")):
-        raise ValueError("Candidate field must retain the prepared IP replacement geometry and four roles")
-    values = binding["authority"]["analyzer_electrode_voltages_v"]
-    candidate = {key: values[ids[0]-1] for key, ids in PS_GROUPS.items()}
-    if binding["authority"] != candidate_authority(baseline["authority"], candidate):
-        raise ValueError("Candidate field changed fixed non-P/S or IP15 voltage authority")
-    if native_response_operator(binding, baseline["authority"]) != native_response_operator(baseline, baseline["authority"]):
-        raise ValueError("Candidate field changed the prepared actual numerical IP operator")
-    if (binding["instances"][0]["pa_path"] != binding["sources"]["scalar_pa"]
-            or binding["instances"][0]["origin_mm"] != binding["grid"]["origin_mm"]):
-        raise ValueError("Candidate global collision instance must reuse its new scalar parent")
-    return candidate
-
-
-def _native_projection(binding: dict[str, Any]) -> dict[str, Any]:
-    def level(item):
-        grid = item["grid"]
-        return dict(mode="native_static_pa", scalar_pa=item["sources"]["scalar_pa"],
-                    origin_mm=grid["origin_mm"], pitch_mm=grid["pitch_mm"], dimensions=grid["dimensions"], symmetry="x")
-    result = level(binding)
-    result.update(accelerator_provider=ION_PROCESSOR, assembly_scope="full_c0_ion_processor_replacement",
-                  analyzer_voltages_v=binding["authority"]["analyzer_electrode_voltages_v"],
-                  collision_pa_path=binding["instances"][1]["pa_path"],
-                  collision_geometry_pa_paths=[item["pa_path"] for item in binding["instances"]
-                                               if item["role"] in ("ion_processor_collision", "detector")],
-                  refinement_windows=[dict(level(item), name=item["name"], active_box_mm=item["active_box_mm"])
-                                      for item in binding["refinement_windows"]])
-    if binding.get("collision_overlay"):
-        result["collision_overlay"] = collision_workbench_layout(binding)["priority"]["collision_overlay"]
-    return result
 
 
 def _prepared_assembly(prepared_run: Path, parent: dict, manifest: dict) -> tuple[dict, dict, dict]:
@@ -321,7 +239,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                     maximum_step_us=trajectory_profile["maximum_step_us"])
     freeze_file(resource_path("native_run_path.lua"), frozen_runtime / "native_run_path.lua")
     sidecar = render_measured_operating_point(frozen_runtime / reference.name, source_copy,
-        _native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True,
+        native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True,
         native_path_projection=True)
     sidecar = sidecar.replace("\nreturn t\n", "\nlocal crops="+_lua(memory_crops)+"\n"
         "for _,window in ipairs(t.static_field.refinement_windows) do\n"

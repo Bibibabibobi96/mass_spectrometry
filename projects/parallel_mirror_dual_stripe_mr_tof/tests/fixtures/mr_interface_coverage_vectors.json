@@ -1,0 +1,641 @@
+{
+  "role": "synthetic_non_native_mr_interface_coverage_vectors",
+  "provenance": {
+    "input_vectors_sha256": "cfb0ca62c15d9993bef563924f1aa2f0b53b38f69a6ba933026a8e6085e5b592",
+    "original_test": "JointPreparationTests.test_interface_audit_rejects_shadowed_route_or_missing_gradient_halo",
+    "expected": "fixed pre-migration test contract and reviewed boundary vectors"
+  },
+  "cases": [
+    {
+      "case": "positive_center",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "return": {
+          "first_match_rank_zero_based": 0,
+          "field_name": "ion_processor_local",
+          "sample_count": 1,
+          "active_box_and_gradient_halo_verified": true
+        }
+      }
+    },
+    {
+      "case": "x_mirror",
+      "points": [
+        {
+          "position_mm": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "position_mm": [
+            1,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "return": {
+          "first_match_rank_zero_based": 0,
+          "field_name": "ion_processor_local",
+          "sample_count": 2,
+          "active_box_and_gradient_halo_verified": true
+        }
+      }
+    },
+    {
+      "case": "shadow",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "covered_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        },
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit is not entirely routed through the IP fine field"
+      }
+    },
+    {
+      "case": "no_window",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit is not entirely routed through the IP fine field"
+      }
+    },
+    {
+      "case": "empty",
+      "points": [],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit requires one actual flight field route"
+      }
+    },
+    {
+      "case": "symmetry",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "none"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP fine audit requires its declared x symmetry"
+      }
+    },
+    {
+      "case": "origin",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0.1,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP fine audit requires its declared x symmetry"
+      }
+    },
+    {
+      "case": "y_lower_halo",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            -2,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -2,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit lacks the flight adapter gradient halo"
+      }
+    },
+    {
+      "case": "z_upper_halo",
+      "points": [
+        {
+          "position_mm": [
+            0,
+            0,
+            2
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              2
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit lacks the flight adapter gradient halo"
+      }
+    },
+    {
+      "case": "x_upper_halo",
+      "points": [
+        {
+          "position_mm": [
+            2,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -2,
+              2
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit lacks the flight adapter gradient halo"
+      }
+    },
+    {
+      "case": "mixed_rank",
+      "points": [
+        {
+          "position_mm": [
+            -0.5,
+            0,
+            0
+          ]
+        },
+        {
+          "position_mm": [
+            0.5,
+            0,
+            0
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              -1,
+              0
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        },
+        {
+          "name": "ion_processor_local",
+          "grid": {
+            "origin_mm": [
+              0,
+              -2,
+              -2
+            ],
+            "pitch_mm": [
+              0.1,
+              0.1,
+              0.1
+            ],
+            "dimensions": [
+              21,
+              41,
+              41
+            ],
+            "symmetry": "x"
+          },
+          "active_box_mm": [
+            [
+              0.2,
+              1
+            ],
+            [
+              -1,
+              1
+            ],
+            [
+              -1,
+              1
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "interface audit requires one actual flight field route"
+      }
+    }
+  ]
+}
