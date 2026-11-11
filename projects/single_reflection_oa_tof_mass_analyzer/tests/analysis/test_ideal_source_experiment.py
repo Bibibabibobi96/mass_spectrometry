@@ -162,7 +162,8 @@ class IdealExperimentTests(unittest.TestCase):
         from msplatform.execution.completion import no_particle_batch_completion_api
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            context = make_context(root / "study")
+            # This dispatch-only context requires no host policy or lease.
+            context = SimpleNamespace(workspace=root / "study")
             result = root / "result.json"
             # CLI dispatch unit only: actual finalization/unknown-writer behavior
             # remains with the existing owner tests, not this controlled return.
@@ -283,9 +284,10 @@ class IdealExperimentTests(unittest.TestCase):
             checkpoint.write_text(json.dumps(data), encoding="utf-8")
             destination = root / "tampered_child/results"
             destination.mkdir(parents=True)
-            (destination.parent / "run_config.json").write_text(json.dumps({"inputs": {}}), encoding="utf-8")
+            frozen_analysis = Path(load_json(failed / "run_config.json")["inputs"]["analysis_contract"])
             with self.assertRaisesRegex(ValueError, "mismatch"):
-                runner._reuse_case(failed, data["case"], data["identity"], destination)
+                runner._reuse_case(failed, data["case"], data["identity"], destination,
+                    frozen_inputs={}, settings=runner._settings(frozen_analysis))
 
 
 

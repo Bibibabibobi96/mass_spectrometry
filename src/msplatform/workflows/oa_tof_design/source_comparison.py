@@ -125,15 +125,6 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def _frozen_settings(run_dir: Path) -> AnalysisSettings:
-    """Read the once-frozen analysis authority for every supported comparison role."""
-    frozen_config = load_json(run_dir / "run_config.json")
-    contract = Path(frozen_config["inputs"]["analysis_contract"])
-    if file_sha256(contract) != frozen_config["input_sha256"]["analysis_contract"]:
-        raise ValueError("frozen analysis contract changed after freezing")
-    return _settings(contract)
-
-
 def _legacy_ideal_parent(previous: Path | None) -> bool:
     if previous is None:
         return False
@@ -262,8 +253,8 @@ def _legacy_csv_analysis(previous: Path, document: dict[str, Any], config: dict[
 
 
 def _reuse_case(previous: Path | None, case: dict[str, Any], identity: str, destination: Path, *,
-                frozen_inputs: dict | None = None,
-                settings: AnalysisSettings | None = None) -> dict[str, Any] | None:
+                frozen_inputs: dict,
+                settings: AnalysisSettings) -> dict[str, Any] | None:
     if previous is None:
         return None
     projected = _reuse_legacy_ideal_case(previous, case, identity, destination,
@@ -286,12 +277,11 @@ def _reuse_case(previous: Path | None, case: dict[str, Any], identity: str, dest
 
 
 def _reuse_legacy_ideal_case(previous: Path, case: dict[str, Any], identity: str, destination: Path, *,
-                            frozen_inputs: dict | None = None,
-                            settings: AnalysisSettings | None = None) -> dict[str, Any] | None:
-    config_path = destination.parent / "run_config.json"
-    child_config = ({"inputs": {name: row["path"] for name, row in frozen_inputs.items()}}
-                    if frozen_inputs is not None else load_json(config_path))
-    proof_value = child_config.get("inputs", {}).get("legacy_numerical_projection")
+                            frozen_inputs: dict,
+                            settings: AnalysisSettings) -> dict[str, Any] | None:
+    if "legacy_numerical_projection" not in frozen_inputs:
+        return None
+    proof_value = frozen_inputs["legacy_numerical_projection"]["path"]
     if not proof_value:
         return None
     proof = load_json(Path(proof_value))
@@ -313,9 +303,8 @@ def _reuse_legacy_ideal_case(previous: Path, case: dict[str, Any], identity: str
     if (record["bytes"], record["sha256"]) != (document["particles"]["bytes"], document["particles"]["sha256"]):
         raise ValueError("legacy checkpoint CSV and original manifest identity differ")
     verify_record("legacy checkpoint CSV", document["particles"], base_dir=path.parent)
-    frozen_experiment = load_json(Path(child_config["inputs"]["experiment"]))
-    _legacy_csv_analysis(original, document, frozen_experiment,
-                         _frozen_settings(destination.parent) if settings is None else settings)
+    frozen_experiment = load_json(Path(frozen_inputs["experiment"]["path"]))
+    _legacy_csv_analysis(original, document, frozen_experiment, settings)
     # Canonical state/events remain the original complete CSV. No row is
     # resampled, renumbered, copied, filtered or rewritten in this child.
     derived = {**document, "identity": identity,

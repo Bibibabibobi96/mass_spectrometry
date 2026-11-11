@@ -240,6 +240,11 @@ its exact original roles/source witnesses, environment, sealed owner and complet
 CSV checks remain required. It does not supply missing historical source from the
 current package or prove complete historical transitive frozen execution.
 
+The canonical comparison worker supplies checkpoint reuse with its already-bound
+frozen input records and parsed analysis settings explicitly. Reuse does not
+reopen a child run configuration as an alternative authority. Original legacy
+CSV/manifest hashes, numerical projection and provenance checks remain unchanged.
+
 The existing managed owner alone creates the run, capacity/source protection,
 execution request, summary, manifest and recovery result. One observed Python
 scientific worker consumes frozen role records and retains its existing ProcessPool

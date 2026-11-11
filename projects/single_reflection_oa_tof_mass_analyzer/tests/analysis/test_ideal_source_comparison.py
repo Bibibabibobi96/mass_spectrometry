@@ -612,9 +612,9 @@ class IdealSourceComparisonTests(unittest.TestCase):
             child_identity = run_comparison._numerical_identity(changed, seed=7)
             child = root/'child'
             (child/'results').mkdir(parents=True)
-            (child/'run_config.json').write_text(json.dumps(dict(inputs={})), encoding='utf-8')
             self.assertEqual(child_identity, identity)
-            self.assertEqual(run_comparison._reuse_case(parent, case, child_identity, child/'results'), document)
+            self.assertEqual(run_comparison._reuse_case(parent, case, child_identity, child/'results',
+                frozen_inputs={}, settings=self.settings), document)
             self.assertEqual((child/'results/fixture.csv').read_bytes(), particles.read_bytes())
             self.assertIn('entrypoint', changed)
             self.assertIn('ideal_source_comparison_plot', changed)
@@ -627,7 +627,8 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 {name: file_sha256(path) for name, path in inputs.items()}, seed=7)
             self.assertNotEqual(different, child_identity)
             with self.assertRaisesRegex(ValueError, 'checkpoint identity/content mismatch'):
-                run_comparison._reuse_case(parent, case, different, child/'results')
+                run_comparison._reuse_case(parent, case, different, child/'results',
+                    frozen_inputs={}, settings=self.settings)
             self.assertEqual({path: path.read_bytes() for path in before}, before)
 
 
