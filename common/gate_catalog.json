@@ -2450,6 +2450,10 @@
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
+          "exact": "src/msplatform/exporters/mr_cad_parts.py",
+          "reason": "installed_complete_mr_oa_cad_parts_changed"
+        },
+        {
           "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/mirror_l0.py",
           "reason": "installed_mr_l0_math_changed"
         },
@@ -2836,6 +2840,18 @@
             ],
             "modules": [
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider_runner.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/exporters/mr_cad_parts.py",
+                "reason": "installed_complete_mr_oa_cad_parts_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_resolved_cad_export.py"
             ],
             "dependency_profile": "locked"
           },

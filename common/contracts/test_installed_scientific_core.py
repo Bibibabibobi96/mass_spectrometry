@@ -1154,6 +1154,47 @@ assert hashlib.sha256(exported_axis_path.read_bytes()).hexdigest()==exported_axi
 print('INSTALLED_EXPORTED_AXIS_TRANSPORT=PASS')
 # EXPORTED_AXIS_TRANSPORT_INSTALLED_END
 
+# MR_CAD_PARTS_INSTALLED_BEGIN
+from msplatform.exporters import mr_cad_parts as mr_cad_api
+mr_cad_fixture=fixture['mr_cad_parts']
+mr_cad_path=pathlib.Path(mr_cad_api.__file__).resolve()
+assert mr_cad_path==pathlib.Path(sysconfig.get_path('purelib')).resolve()/'msplatform/exporters/mr_cad_parts.py'
+assert mr_cad_path.stat().st_size==mr_cad_fixture['module_bytes']
+assert hashlib.sha256(mr_cad_path.read_bytes()).hexdigest()==mr_cad_fixture['module_sha256']
+mr_cad_inputs=copy.deepcopy((mr_cad_fixture['geometry'],mr_cad_fixture['authority']))
+mr_cad_parts=mr_cad_api.compile_parts(*mr_cad_inputs)
+assert mr_cad_inputs==(mr_cad_fixture['geometry'],mr_cad_fixture['authority'])
+assert len(mr_cad_parts)==11
+mr_cad_mirror=mr_cad_parts[0]
+assert mr_cad_mirror['solids']==[dict(x=[-5,5],polygon_yz_mm=[[-10,10],[10,10],[10,12],[-10,12]])]
+assert mr_cad_mirror['cuts']==[dict(x=[-1,1],polygon_yz_mm=[[-9,9],[9,9],[9,13],[-9,13]])]
+assert mr_cad_mirror['voltage_v']==1
+mr_cad_repeller=next(mr_cad_part for mr_cad_part in mr_cad_parts if mr_cad_part['name']=='oa_repeller')
+assert mr_cad_repeller['solids']==[dict(x=[-2,2],polygon_yz_mm=[[-12,3],[-8,3],[-8,4],[-12,4]])]
+assert mr_cad_repeller['voltage_v']==300
+mr_cad_enclosure=next(mr_cad_part for mr_cad_part in mr_cad_parts if mr_cad_part['name']=='oa_enclosure')
+assert len(mr_cad_enclosure['cuts'])==1 and mr_cad_enclosure['declared_redundant_cuts'][0]['reason']=='fully_contained_in_declared_cavity'
+mr_cad_references=[mr_cad_part for mr_cad_part in mr_cad_parts if mr_cad_part['electrode_namespace']=='boundary']
+assert len(mr_cad_references)==6
+assert all(mr_cad_part['geometry_kind']=='reference_sheet' and any(mr_cad_part['solids'][0]['box_mm'][mr_cad_axis]==mr_cad_part['solids'][0]['box_mm'][mr_cad_axis+3] for mr_cad_axis in range(3)) for mr_cad_part in mr_cad_references)
+for mr_cad_invalid in ('voltage','detector'):
+    mr_cad_geometry,mr_cad_authority=copy.deepcopy(mr_cad_inputs)
+    if mr_cad_invalid=='voltage':mr_cad_authority['analyzer_electrode_voltages_v'][0]=float('nan')
+    else:mr_cad_authority['assembly']['detector']=dict(id=25,box=[0]*6)
+    try:mr_cad_api.compile_parts(mr_cad_geometry,mr_cad_authority)
+    except ValueError:pass
+    else:raise AssertionError('installed MR CAD planner accepted invalid '+mr_cad_invalid)
+mr_cad_missing_path=mr_cad_path.with_suffix('.missing')
+mr_cad_path.rename(mr_cad_missing_path)
+try:
+    mr_cad_missing=subprocess.run([sys.executable,'-I','-B','-c','import msplatform.exporters.mr_cad_parts'],cwd=root,capture_output=True,timeout=30)
+    assert mr_cad_missing.returncode!=0 and b'msplatform.exporters.mr_cad_parts' in mr_cad_missing.stderr,mr_cad_missing.stderr
+finally:
+    mr_cad_missing_path.rename(mr_cad_path)
+assert hashlib.sha256(mr_cad_path.read_bytes()).hexdigest()==mr_cad_fixture['module_sha256']
+print('INSTALLED_MR_CAD_PARTS=PASS')
+# MR_CAD_PARTS_INSTALLED_END
+
 # Reuse the repository's manifest-bound comparison fixture as plain data.
 # All identities/records below are newly bound to consumer-owned small files.
 comparison = fixture['comparison']
@@ -4158,6 +4199,16 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
         return cases
 
+    def mr_cad_parts_probe_fixture(self) -> dict:
+        """Original tiny CAD input fixture; expected coordinates remain independent."""
+        from msplatform.exporters import mr_cad_parts
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_resolved_cad_export import fixture as mr_cad_original_fixture
+
+        mr_cad_geometry, mr_cad_authority = mr_cad_original_fixture()
+        mr_cad_raw = Path(mr_cad_parts.__file__).read_bytes()
+        return dict(geometry=mr_cad_geometry, authority=mr_cad_authority,
+                    module_bytes=len(mr_cad_raw), module_sha256=hashlib.sha256(mr_cad_raw).hexdigest())
+
     def exported_axis_transport_probe_fixture(self) -> dict:
         """Original constant-acceleration oracle; no new-code-derived expected value."""
         from msplatform.analysis import axis_field_transport
@@ -5046,6 +5097,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
+                                              mr_cad_parts=self.mr_cad_parts_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               scalar_adapter=self.scalar_adapter_probe_fixture(),

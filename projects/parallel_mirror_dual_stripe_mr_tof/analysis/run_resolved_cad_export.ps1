@@ -134,6 +134,18 @@ try{
   -RunDirectory $package.artifact_run_dir -CommittedNewBytes $committedBytes -Owner "mrtof-cad:$RunId" -ProtectedPaths @($field,$assembly,$reuse,$original,$pose,$publish,$overview,$overviewManifest,$holeAudit,$electrical,$individual|Where-Object {$_})
  $source=Copy-VerifiedRunInput -Source (Join-Path $PSScriptRoot 'export_resolved_cad.py') -Destination (Join-Path $package.input_dir 'cad_exporter.py')
  $null=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'launcher.ps1')
+ # CAD_PARTS_SOURCE_AUDIT_BEGIN
+ # Resolve the actual selected provider in the same Python/root context as CAD.
+ $cadPartsSelectedSource=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  $selected=& $python -B -c 'import json;from pathlib import Path;from msplatform.exporters import mr_cad_parts;print(json.dumps(str(Path(mr_cad_parts.__file__).resolve(strict=True))))'
+  if($LASTEXITCODE-ne0){throw 'Selected canonical CAD parts source is unavailable.'}
+  $selected|ConvertFrom-Json
+ }
+ $cadPartsSnapshotIdentity=$null
+ $cadPartsSnapshot=Copy-VerifiedRunInput -Source $cadPartsSelectedSource -Destination (Join-Path $package.input_dir 'mr_cad_parts.py') -VerifiedIdentity ([ref]$cadPartsSnapshotIdentity)
+ $cadPartsSourceIdentity=@{module='msplatform.exporters.mr_cad_parts';path=[string]$cadPartsSelectedSource;exists=$true;
+  bytes=$cadPartsSnapshotIdentity.bytes;sha256=$cadPartsSnapshotIdentity.sha256}
+ # CAD_PARTS_SOURCE_AUDIT_END
  $geometry=Copy-VerifiedRunInput -Source $geometry -Destination (Join-Path $package.input_dir 'resolved_geometry.json')
  $authority=Copy-VerifiedRunInput -Source $authority -Destination (Join-Path $package.input_dir 'frozen_input.json')
  $materialization=Copy-VerifiedRunInput -Source $materialization -Destination (Join-Path $package.input_dir 'assembly_materialization.json')
@@ -182,7 +194,7 @@ try{
  $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
  $config.inputs=@{geometry=$geometry;authority=$authority;materialization=$materialization;exporter=$source;
   field_manifest=$fieldManifest;assembly_manifest=$assemblyManifest;launcher=(Join-Path $package.input_dir 'launcher.ps1');
-  reused_cad_manifest=$reusedManifest}
+  reused_cad_manifest=$reusedManifest;cad_parts=$cadPartsSnapshot}
  if($publish){
   if($overview){
    $config.inputs.english_overview=$overview
@@ -214,6 +226,7 @@ try{
   frozen_mirror_pose=[bool]$FrozenMirrorPose;
   step_exchange_tolerance_mm=$(if($electrical){0.005}else{$null});step_exchange_user_approved_date=$(if($electrical){'2026-10-13'}else{$null});step_volume_deviations_reported_separately=[bool]$electrical;
   original_stripe_run=$original;stripe_pose_run=$pose;exchange_format=$ExchangeFormat;curve_representation=$(if($publish-or$electrical){'published_original_native_bspline_and_features'}elseif($original){'original_native_bspline_and_features'}else{'frozen_resolved_polyline'})}
+ $config.parameters.cad_parts_source=$cadPartsSourceIdentity
  Write-RunJson -Path $package.run_config -Depth 100 -Value $config
  $cadStage=if($publish){'cad_delivery_publication'}else{'cad_export'}
  $cadBudget=Get-HostResourceBudget -Role GATE -Stage $cadStage
@@ -235,10 +248,31 @@ if($individual){$arguments+=@('--individual-step-delivery-run',$individual)}
 if($ConnectedStepContacts){$arguments+='--connected-step-contacts'}
 if($FrozenMirrorPose){$arguments+='--frozen-mirror-pose'}
 if($electrical-and$overview){$arguments+=@('--english-overview',$overview,'--overview-manifest',$overviewManifest)}
- Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-  & $python @arguments 1> (Join-Path $package.log_dir 'cad_stdout.log') 2> (Join-Path $package.log_dir 'cad_stderr.log')
-  if($LASTEXITCODE-ne0){throw "CAD export/publication failed; see $($package.log_dir)."}
+ # CAD_PARTS_EXECUTION_AUDIT_BEGIN
+ if(-not(Test-RunFilesIdentical -Left $cadPartsSelectedSource -Right $cadPartsSnapshot)){
+  throw 'Selected CAD parts source changed before execution.'
  }
+ $cadPartsExecutionError=$null
+ try{
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+   & $python @arguments 1> (Join-Path $package.log_dir 'cad_stdout.log') 2> (Join-Path $package.log_dir 'cad_stderr.log')
+   $cadExitCode=$LASTEXITCODE
+   if($cadExitCode-ne0){throw "CAD export/publication failed; see $($package.log_dir)."}
+  }
+ }catch{
+  $cadPartsExecutionError=$_
+  throw
+ }finally{
+  try{
+   if(-not(Test-RunFilesIdentical -Left $cadPartsSelectedSource -Right $cadPartsSnapshot)){
+    throw 'Selected CAD parts source changed during execution.'
+   }
+  }catch{
+   if($null-eq$cadPartsExecutionError){throw}
+   $cadPartsExecutionError.Exception.Data['cad_parts_source_audit_error']=$_.Exception.Message
+  }
+ }
+ # CAD_PARTS_EXECUTION_AUDIT_END
  if($publish){
   $validation=Get-Content -LiteralPath (Join-Path $package.artifact_run_dir 'delivery_publication.json') -Raw|ConvertFrom-Json
   Write-RunJson -Path $package.summary -Value @{status='success';part_count=$validation.part_count;assembly_count=$validation.assembly_count;

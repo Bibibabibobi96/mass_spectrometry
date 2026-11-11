@@ -62,7 +62,7 @@ def _namespace_error(module: str) -> str | None:
         return f"undeclared component provider or infrastructure module: {module}"
     if parts[1] == "backends" and len(parts) > 2 and parts[2] not in {"simion", "comsol"}:
         return f"undeclared installed backend: {module}"
-    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution", "operations"}:
+    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution", "operations", "mr_cad_parts"}:
         return f"undeclared installed exporter: {module}"
     if parts[1] == "applications" and len(parts) > 2 and parts[2] not in {
             "solidworks", "solidworks_worker", "model_execution", "simion", "simion_model_execution", "operations"}:

@@ -4,6 +4,10 @@ import copy
 import hashlib
 import json
 import math
+import os
+import shutil
+import subprocess
+import sys
 import struct
 import tempfile
 import unittest
@@ -12,8 +16,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from xml.sax.saxutils import escape
+
+from msplatform.exporters.mr_cad_parts import compile_parts, rectangle
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import (
-    compile_parts,rectangle,member,bounds_mm,verify_assembly_leaves,PROJECT_TRANSFORM,reopen_owned_part,close_owned_parts,
+    member,bounds_mm,verify_assembly_leaves,PROJECT_TRANSFORM,reopen_owned_part,close_owned_parts,
     open_reference_document,save_step_document,original_stripe_instances,save_exchange_document,inspect_exchange_geometry,
     delivery_paths,publish_validated_delivery,verify_preserved_bspline_edges,omit_mounting_holes,electrical_step_groups,mass_property_volume_levels,save_trimmed_curve_samples,compare_trimmed_curve_samples,individual_step_groups,connected_step_groups)
 
@@ -527,6 +533,94 @@ class CadPlanTests(unittest.TestCase):
         g['stripe_slot']=[-2,0,-10,2,10,10]
         p=next(x for x in compile_parts(g,a) if x['group']=='stripe')
         self.assertEqual(p['solids'][0]['polygon_yz_mm'],poly)
+
+
+
+    def test_selected_cad_parts_copy_and_live_source_guard_preserve_primary_failure(self):
+        # Execute the actual launcher audit blocks, with a real inert Python child.
+        # The package directories are test-owned; no CAD/owner receipt is invented.
+        from msplatform.exporters import mr_cad_parts
+        repo = Path(__file__).resolve().parents[4]
+        launcher = repo/'projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_resolved_cad_export.ps1'
+        launcher_text = launcher.read_text(encoding='utf-8')
+        def selected_block(name):
+            begin, end = '# '+name+'_BEGIN', '# '+name+'_END'
+            self.assertEqual(launcher_text.count(begin), 1)
+            self.assertEqual(launcher_text.count(end), 1)
+            return launcher_text.split(begin, 1)[1].split(end, 1)[0]
+        preparation = selected_block('CAD_PARTS_SOURCE_AUDIT')
+        execution = selected_block('CAD_PARTS_EXECUTION_AUDIT')
+        pwsh = shutil.which('pwsh')
+        self.assertIsNotNone(pwsh, 'PowerShell is required for the actual source-audit boundary')
+        module_bytes = Path(mr_cad_parts.__file__).read_bytes()
+        for case in ('success', 'before', 'during', 'child_failure', 'during_failure', 'missing'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                provider = root/'selected'; selected = provider/'src/msplatform/exporters/mr_cad_parts.py'
+                selected.parent.mkdir(parents=True)
+                for directory in (selected.parent, selected.parent.parent):
+                    (directory/'__init__.py').write_text('', encoding='utf-8')
+                selected.write_bytes(module_bytes)
+                competitor = root/'competitor/msplatform/exporters'
+                competitor.mkdir(parents=True)
+                for directory in (competitor, competitor.parent):
+                    (directory/'__init__.py').write_text('', encoding='utf-8')
+                (competitor/'mr_cad_parts.py').write_text("raise RuntimeError('competing provider must not load')\n", encoding='utf-8')
+                if case == 'missing':
+                    selected.unlink()
+                package = root/'audit'; (package/'inputs').mkdir(parents=True); (package/'logs').mkdir()
+                header = r'''
+param([string]$PublicRoot,[string]$Python,[string]$Provider,[string]$PackageRoot,[string]$Case)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $PublicRoot 'common/contracts/run_artifact_support.ps1')
+$repoRoot=$Provider
+$python=$Python
+$package=[pscustomobject]@{input_dir=(Join-Path $PackageRoot 'inputs');log_dir=(Join-Path $PackageRoot 'logs')}
+try{
+'''
+                child = "import pathlib,sys; p=pathlib.Path(sys.argv[1]); print('inert stdout'); print('inert stderr',file=sys.stderr); "
+                if case in ('during', 'during_failure'):
+                    child += "p.write_bytes(p.read_bytes()+b'\\n# changed in owned fixture\\n'); "
+                child += 'sys.exit('+('7' if case in ('child_failure', 'during_failure') else '0')+')'
+                setup = "\nif($Case-eq'before'){[IO.File]::AppendAllText($cadPartsSelectedSource, \"`n# changed before use`n\")}\n"
+                setup += '$arguments=@(\'-B\',\'-c\','+"'"+child.replace("'", "''")+"',"+'$cadPartsSelectedSource)\n'
+                footer = r'''
+ [pscustomobject]@{status='success';source=$cadPartsSourceIdentity;snapshot=$cadPartsSnapshot}|ConvertTo-Json -Compress
+}catch{
+ [pscustomobject]@{status='rejected';message=$_.Exception.Message;secondary=$_.Exception.Data['cad_parts_source_audit_error'];native_exit=$LASTEXITCODE}|ConvertTo-Json -Compress
+}
+exit 0
+'''
+                script = root/'actual-source-audit.ps1'
+                script.write_text(header+preparation+setup+execution+footer, encoding='utf-8')
+                environment = dict(os.environ, PYTHONPATH=str(competitor.parent.parent))
+                result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(repo), sys.executable,
+                    str(provider), str(package), case], cwd=root, env=environment,
+                    capture_output=True, text=True, encoding='utf-8', timeout=60)
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                observed = json.loads(result.stdout)
+                if case == 'success':
+                    self.assertEqual(observed['status'], 'success')
+                    self.assertEqual(Path(observed['source']['path']), selected)
+                    self.assertEqual(observed['source']['bytes'], len(module_bytes))
+                    self.assertEqual(observed['source']['sha256'].lower(), hashlib.sha256(module_bytes).hexdigest())
+                    self.assertEqual(Path(observed['snapshot']).read_bytes(), module_bytes)
+                elif case == 'missing':
+                    self.assertEqual(observed['status'], 'rejected')
+                    self.assertIn('Selected canonical CAD parts source is unavailable', observed['message'])
+                    self.assertFalse((package/'inputs/mr_cad_parts.py').exists())
+                elif case in ('child_failure', 'during_failure'):
+                    self.assertEqual(observed['status'], 'rejected')
+                    self.assertIn('CAD export/publication failed', observed['message'])
+                    self.assertEqual(observed['native_exit'], 7)
+                    self.assertEqual(bool(observed['secondary']), case == 'during_failure')
+                else:
+                    self.assertEqual(observed['status'], 'rejected')
+                    self.assertIn('Selected CAD parts source changed', observed['message'])
+                if case not in ('before', 'missing'):
+                    self.assertIn('inert stdout', (package/'logs/cad_stdout.log').read_text(encoding='utf-8-sig'))
+                    self.assertIn('inert stderr', (package/'logs/cad_stderr.log').read_text(encoding='utf-8-sig'))
 
 
 class ConnectedStepContactsTests(unittest.TestCase):

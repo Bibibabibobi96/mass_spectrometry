@@ -41,7 +41,14 @@ SolidWorks API使用米，项目使用毫米，转换只在边界施加一次；
 ## 唯一活动生成入口
 
 使用[run_resolved_cad_export](../analysis/run_resolved_cad_export.ps1)，其
-[生成器](../analysis/export_resolved_cad.py)调用共享SolidWorks桥接。运行环境与工作副本规则见
+[生成器](../analysis/export_resolved_cad.py)调用共享SolidWorks桥接。
+完整 MR＋OA／探测器／C0 的纯部件计划由
+[`msplatform.exporters.mr_cad_parts`](../../../src/msplatform/exporters/mr_cad_parts.py)唯一实现；
+它消费冻结几何与显式电压，不是 MR-only provider，不创建 CAD／求场／轨迹或运行 owner。
+启动器在同一显式 Python 环境中解析实际模块路径，通过现有 verified-copy 机制保存
+`inputs/mr_cad_parts.py`，将其列入 run config 输入并记录实际源路径、大小和 SHA；
+执行前后与该副本比较。当前仍以 live `-m` 执行，副本是源码审计证据，不是冻结执行。
+原始 native 曲线、商业 CAD 构建与冷读、发布／恢复仍由原入口承担；这部分 P4 收口保持开放。运行环境与工作副本规则见
 [操作指南](../../../docs/OPERATIONS.md)，几何同步验收见[仓库架构](../../../docs/REPOSITORY_ARCHITECTURE.md#gui-与-cad-门禁)。
 
 从仓库根执行以下模板；尖括号为需替换的已封存来源，不是可直接执行的路径。

@@ -782,7 +782,17 @@ with the three RF/TOF modules: 38 parents and 87 successful records in 2.808 sec
 without skips. The other MR parents retain the private full-module evidence above;
 neither of the native opt-in checks was enabled by this run.
 
-### Explicit neutral MR geometry authority
+### 完整装配 CAD 部件计划的规范归属
+
+完整 MR＋OA／探测器／C0 的纯 `rectangle`、镜体／槽投影和 `compile_parts` 归
+`msplatform.exporters.mr_cad_parts`，原 CAD 生成器只作具名调用，不保留同体或转发别名。
+原二十槽电压、独立实体、冻结倾镜多边形、OA 位移和零厚参考面语义不变；
+这不新增 MR-only catalog／通用 STEP 支持或商业 CAD 资格。
+实际源选择、verified copy 和 live 执行审计见 [CAD 实施说明](CAD.md#唯一活动生成入口)。
+剩余原生 CAD／原始曲线证据／发布生命周期仍在根入口，本切片不宣称其已完整迁入安装树。
+软件、普通安装、原生及科学证据分别验收，源码提案不继承原运行 PASS。
+
+## Explicit neutral MR geometry authority
 
 `msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry` owns the physical
 resolver and curve helpers. Geometry construction requires the selected complete OA requirements,
