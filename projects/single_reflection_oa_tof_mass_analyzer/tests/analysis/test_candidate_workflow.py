@@ -3,6 +3,7 @@ from __future__ import annotations
 import msplatform.execution.retention as _canonical_retention
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 
+import hashlib
 import json
 import os
 import shutil
@@ -456,6 +457,48 @@ def execute_prepared_run(*args):
             with mock.patch.object(module, "RELATIVE_PATHS", (*module.RELATIVE_PATHS, policy_source)):
                 with self.assertRaisesRegex(ValueError, "duplicate candidate source id: " + policy_source):
                     freeze_candidate_source_closure(root / "duplicate", root / "artifacts")
+
+    def test_freezer_payload_records_and_write_corruption(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            records = {item["source_id"]: item for item in closure["sources"]}
+            plain_id = "src/msplatform/contracts/particle_count_policy.json"
+            bound_id = "common/host_execution_lease.ps1"
+            original = (REPO_ROOT / bound_id).read_bytes().decode("utf-8")
+            escaped = str(Path(sys.executable).resolve()).replace("'", "''")
+            expected_bound = original.replace(module.HOST_PYTHON_ASSIGNMENT,
+                f"$legacyPython = '{escaped}' # frozen candidate runtime binding").encode("utf-8")
+            self.assertEqual(original.count(module.HOST_PYTHON_ASSIGNMENT), 1)
+            for source_id, expected, transformations in (
+                (plain_id, (REPO_ROOT / plain_id).read_bytes(), []),
+                (bound_id, expected_bound, ["python_runtime_binding"]),
+            ):
+                with self.subTest(source=source_id):
+                    path = Path(frozen_source_path(closure, source_id))
+                    self.assertEqual(path.read_bytes(), expected)
+                    self.assertEqual(records[source_id], {"source_id": source_id,
+                        "source_sha256": sha256(REPO_ROOT / source_id), "sha256": hashlib.sha256(expected).hexdigest().upper(),
+                        "bytes": len(expected), "transformations": transformations})
+            verify_candidate_source_closure(closure)
+
+            corrupt_id = RELATIVE_PATHS[0]
+            corrupt_path = (root / "corrupt" / corrupt_id).resolve()
+            write_bytes = Path.write_bytes
+            def corrupt_after_write(path, payload):
+                result = write_bytes(path, payload)
+                if path.resolve() == corrupt_path:
+                    self.assertTrue(payload)
+                    write_bytes(path, bytes([payload[0] ^ 1]) + payload[1:])
+                    self.assertEqual(path.stat().st_size, len(payload))
+                return result
+            with mock.patch.object(Path, "write_bytes", corrupt_after_write), \
+                    mock.patch.object(module, "verify_candidate_source_closure", wraps=verify_candidate_source_closure) as verifier:
+                with self.assertRaisesRegex(ValueError, "frozen candidate source changed: " + corrupt_id):
+                    freeze_candidate_source_closure(root / "corrupt", root / "artifacts")
+                verifier.assert_called_once()
 
     def test_frozen_sources_import_managed_build_and_lifecycle_without_live_repo(self):
         with tempfile.TemporaryDirectory() as directory:

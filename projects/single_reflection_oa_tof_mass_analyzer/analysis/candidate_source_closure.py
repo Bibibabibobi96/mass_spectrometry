@@ -297,7 +297,7 @@ def freeze_candidate_source_closure(
             {
                 "source_id": source_id,
                 "source_sha256": source_digest,
-                "sha256": sha256(target),
+                "sha256": hashlib.sha256(payload).hexdigest().upper(),
                 "bytes": target.stat().st_size,
                 "transformations": transformations,
             }
