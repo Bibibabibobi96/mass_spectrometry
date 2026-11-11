@@ -93,16 +93,16 @@ def compile_gas_runtime(field: GasField, *, placement: RigidTransform | None = N
         "field.source.reference=" + ("nil" if source.reference is None else
             "{path=" + _text(source.reference["path"]) + ",exists=true,bytes="
             + lua_value(source.reference["bytes"]) + ",sha256=" + _text(source.reference["sha256"]) + "}"),
-        "local kb=" + format(BOLTZMANN_CONSTANT_J_K, ".17g")]
+        "local kb=" + format(BOLTZMANN_CONSTANT_J_K, ".17g"),
+        _LEGACY_RADIUS if spec.sampling_profile == "legacy_sqrt_v1" else _CANONICAL_RADIUS]
     if spec.representation == "axisymmetric_rz_grid":
         data = field.data
         parts.extend(["field.interpolation_policy=" + _text(spec.interpolation_policy),
             "field.axis_projection_policy=" + _text(data.axis_projection_policy),
             "field.applicability='geometry_support_not_separately_proved'",
             f"local nr,nz={len(data.r_values_mm)},{len(data.z_values_mm)}",
-            "local r0,z0,dr,dz=" + ",".join(format(v, ".17g") for v in
-                (data.r_values_mm[0], data.z_values_mm[0], data.r_values_mm[1]-data.r_values_mm[0],
-                 data.z_values_mm[1]-data.z_values_mm[0])),
+            "local r_axis={" + ",".join(format(v, ".17g") for v in data.r_values_mm) + "}",
+            "local z_axis={" + ",".join(format(v, ".17g") for v in data.z_values_mm) + "}",
             "local p=" + _chunks(data.pressure_pa), "local t=" + _chunks(data.temperature_k),
             "local ur=" + _chunks(data.radial_velocity_m_s), "local uz=" + _chunks(data.axial_velocity_m_s),
             _GRID])
@@ -132,7 +132,7 @@ def compile_gas_runtime(field: GasField, *, placement: RigidTransform | None = N
         lookup = ("local values=background; for _,region in ipairs(axial_regions) do "
                   "if (z>region.lo or (region.lower and z==region.lo)) and "
                   "(z<region.hi or (region.upper and z==region.hi)) then values=region.values; "
-                  "region_id=region.id; break end end; local r=math.sqrt(x*x+y*y); "
+                  "region_id=region.id; break end end; local r=radius(x,y); "
                   "vx,vy,vz=0,0,values.uz; if r~=0 then "
                   "vx,vy=values.ur*x/r,values.ur*y/r end; "
                   "status,pressure,temperature=values.status,values.pressure_pa,values.temperature_k")
@@ -193,7 +193,7 @@ def materialize_gas_runtime(
 _COMMON = """
 local function inside(d,x,y,z)
   if d.kind=='unbounded' then return true end
-  if d.kind=='cylinder' then local r=math.sqrt(x*x+y*y); return z>=d.lo and z<=d.hi and r>=d.inner_radius and r<=d.radius end
+  if d.kind=='cylinder' then local r=radius(x,y); return z>=d.lo and z<=d.hi and r>=d.inner_radius and r<=d.radius end
   local values={x,y,z}
   for i,v in ipairs(values) do
     if not ((v>d.lo[i] or (d.lower[i] and v==d.lo[i])) and
@@ -217,13 +217,20 @@ local function value(a,i)
   local chunk=math.floor((i-1)/8192)+1
   return a[chunk][i-(chunk-1)*8192]
 end
+local function axis_cell(axis,coordinate)
+  -- Binary-search stored .17g nodes; exact equality alone has zero neighbor weight.
+  local lo,hi=1,#axis
+  while lo<hi do
+    local middle=math.floor((lo+hi)/2)
+    if axis[middle]<=coordinate then lo=middle+1 else hi=middle end
+  end
+  local index=math.min(lo-1,#axis-1)
+  return index-1,(coordinate-axis[index])/(axis[index+1]-axis[index])
+end
 local function grid(x,y,z)
-  local r=math.sqrt(x*x+y*y)
-  local xr,xz=(r-r0)/dr,(z-z0)/dz
-  local ir,iz=math.floor(xr),math.floor(xz)
-  if ir>=nr-1 then ir=nr-2; xr=nr-1 end
-  if iz>=nz-1 then iz=nz-2; xz=nz-1 end
-  local fr,fz=xr-ir,xz-iz
+  local r=radius(x,y)
+  local ir,fr=axis_cell(r_axis,r)
+  local iz,fz=axis_cell(z_axis,z)
   local first=iz*nr+ir+1
   local indices={first,first+1,first+nr,first+nr+1}
   local weights={(1-fr)*(1-fz),fr*(1-fz),(1-fr)*fz,fr*fz}
@@ -243,5 +250,126 @@ local function grid(x,y,z)
   local vx,vy=0,0
   if r~=0 then vx,vy=vr*x/r,vr*y/r end
   return 'gas',pressure/total,temperature/total,vx,vy,vz
+end
+"""
+
+
+_LEGACY_RADIUS = "local function radius(x,y) return math.sqrt(x*x+y*y) end"
+
+# Finite 2-D adaptation of CPython 3.11 vector_norm (PSF License v2):
+# https://github.com/python/cpython/blob/v3.11.9/Modules/mathmodule.c#L2387-L2477
+# Power-of-two scaling, compensated squares and sqrt correction preserve the
+# selected canonical Python hypot behavior in tested binary64 vectors. Simple
+# scaled sqrt is not an equivalent boundary predicate. No universal bitwise
+# equivalence across libm/Python/Lua builds is claimed; legacy sqrt stays separate.
+_CANONICAL_RADIUS = """
+--[=[
+Finite two-dimensional Lua adaptation of CPython 3.11.9 vector_norm:
+https://github.com/python/cpython/blob/v3.11.9/Modules/mathmodule.c#L2387-L2477
+Changes: restrict the existing algorithm to two finite coordinates; translate
+its power-of-two scaling, compensated square sums and square-root correction
+to Lua 5.1; retain a subnormal fallback. Python object/error handling is omitted
+because the gas query already rejects nonfinite coordinates. This is not an
+endorsement by the Python Software Foundation.
+
+The following license and copyright notice are retained from CPython 3.11.9:
+https://github.com/python/cpython/blob/v3.11.9/LICENSE
+
+PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
+--------------------------------------------
+1. This LICENSE AGREEMENT is between the Python Software Foundation
+("PSF"), and the Individual or Organization ("Licensee") accessing and
+otherwise using this software ("Python") in source or binary form and
+its associated documentation.
+2. Subject to the terms and conditions of this License Agreement, PSF hereby
+grants Licensee a nonexclusive, royalty-free, world-wide license to reproduce,
+analyze, test, perform and/or display publicly, prepare derivative works,
+distribute, and otherwise use Python alone or in any derivative version,
+provided, however, that PSF's License Agreement and PSF's notice of copyright,
+i.e., "Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023 Python Software Foundation;
+All Rights Reserved" are retained in Python alone or in any derivative version
+prepared by Licensee.
+3. In the event Licensee prepares a derivative work that is based on
+or incorporates Python or any part thereof, and wants to make
+the derivative work available to others as provided herein, then
+Licensee hereby agrees to include in any such work a brief summary of
+the changes made to Python.
+4. PSF is making Python available to Licensee on an "AS IS"
+basis.  PSF MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR
+IMPLIED.  BY WAY OF EXAMPLE, BUT NOT LIMITATION, PSF MAKES NO AND
+DISCLAIMS ANY REPRESENTATION OR WARRANTY OF MERCHANTABILITY OR FITNESS
+FOR ANY PARTICULAR PURPOSE OR THAT THE USE OF PYTHON WILL NOT
+INFRINGE ANY THIRD PARTY RIGHTS.
+5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON
+FOR ANY INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS
+A RESULT OF MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON,
+OR ANY DERIVATIVE THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
+
+6. This License Agreement will automatically terminate upon a material
+breach of its terms and conditions.
+7. Nothing in this License Agreement shall be deemed to create any
+relationship of agency, partnership, or joint venture between PSF and
+Licensee.  This License Agreement does not grant permission to use PSF
+trademarks or trade name in a trademark sense to endorse or promote
+products or services of Licensee, or any third party.
+
+8. By copying, installing or otherwise using Python, Licensee
+agrees to be bound by the terms and conditions of this License
+Agreement.
+]=]
+local function radius(x,y)
+  x,y=math.abs(x),math.abs(y)
+  local maximum=math.max(x,y)
+  if maximum==0 then return 0 end
+  local _,exponent=math.frexp(maximum)
+  local csum,frac1,frac2,frac3=1,0,0,0
+  if exponent>=-1023 then
+    local scale=math.ldexp(1,-exponent)
+    for index=1,2 do
+      local coordinate=index==1 and x or y
+      local v=coordinate*scale
+      local split=v*134217729
+      local hi=split-(split-v)
+      local lo=v-hi
+      v=hi*hi
+      local previous=csum
+      csum=csum+v
+      frac1=frac1+((previous-csum)+v)
+      v=2*hi*lo
+      previous=csum
+      csum=csum+v
+      frac2=frac2+((previous-csum)+v)
+      frac3=frac3+lo*lo
+    end
+    local h=math.sqrt(csum-1+(frac1+frac2+frac3))
+    local split=h*134217729
+    local hi=split-(split-h)
+    local lo=h-hi
+    local v=-hi*hi
+    local previous=csum
+    csum=csum+v
+    frac1=frac1+((previous-csum)+v)
+    v=-2*hi*lo
+    previous=csum
+    csum=csum+v
+    frac2=frac2+((previous-csum)+v)
+    v=-lo*lo
+    previous=csum
+    csum=csum+v
+    frac3=frac3+((previous-csum)+v)
+    v=csum-1+(frac1+frac2+frac3)
+    return (h+v/(2*h))/scale
+  end
+  -- Subnormals cannot use the overflowing inverse power-of-two scale.
+  for index=1,2 do
+    local coordinate=index==1 and x or y
+    local v=coordinate/maximum
+    v=v*v
+    local previous=csum
+    csum=csum+v
+    frac1=frac1+((previous-csum)+v)
+  end
+  return maximum*math.sqrt(csum-1+frac1)
 end
 """

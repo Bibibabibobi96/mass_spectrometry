@@ -235,3 +235,45 @@ class GasSamplingTests(unittest.TestCase):
         self.assertEqual({(pid, time) for pid, time, _ in requests}, {(7, 10)})
         self.assertEqual(tuple(sample_gas(field, position).state.pressure_pa
                                for _, _, position in requests), (0, 1, 0))
+
+    def decimal_grid(self, profile, missing_r, missing_z):
+        axes = (0., .1, .2, .3)
+        mask = tuple((ir, iz) != (missing_r, missing_z)
+                     for iz in range(4) for ir in range(4))
+        fields = [tuple(value if supported else None for supported in mask)
+                  for value in (100., 300., 0., 10.)]
+        data = AxisymmetricRZData(axes, axes, mask, *fields)
+        return prepare_gas_field(spec("axisymmetric_rz_grid",
+            domain=CylindricalDomain(0, .3, .3), sampling_profile=profile,
+            interpolation_policy="bilinear_fluid_corner_weight_renormalization_v1"), data=data)
+
+    def test_decimal_stored_nodes_do_not_borrow_nextafter_support(self):
+        for profile in ("canonical_static_v1", "legacy_sqrt_v1"):
+            for ir, iz in ((3, 0), (0, 3), (3, 3), (1, 2), (2, 1)):
+                with self.subTest(profile=profile, node=(ir, iz)):
+                    field = self.decimal_grid(profile, ir, iz)
+                    r, z = field.data.r_values_mm[ir], field.data.z_values_mm[iz]
+                    self.assertEqual(sample_gas(field, point(r, 0, z)).state.status, "no_data")
+                    # Only exact equality has zero neighbor weight. A one-ULP
+                    # move inside the domain must retain genuine positive support.
+                    for axis in (0, 2):
+                        if (r, z)[axis // 2] == 0:
+                            continue
+                        moved = [r, 0., z]
+                        moved[axis] = math.nextafter(moved[axis], 0.)
+                        result = sample_gas(field, point(*moved))
+                        self.assertEqual(result.state.status, "gas")
+                        self.assertEqual(result.state.pressure_pa, 100.)
+                    if ir < 3:
+                        # The preserved legacy radius squares the smallest
+                        # subnormal to zero: this radial point is still the axis.
+                        expected = ("no_data" if profile == "legacy_sqrt_v1" and r == 0
+                                    else "gas")
+                        self.assertEqual(sample_gas(field, point(math.nextafter(r, math.inf), 0, z)).state.status, expected)
+
+    def test_canonical_radius_boundary_differs_from_explicit_legacy_sqrt(self):
+        radius = math.hypot(.2, .3)
+        self.assertLess(radius, math.sqrt(.2*.2 + .3*.3))
+        for profile, expected in (("canonical_static_v1", "gas"), ("legacy_sqrt_v1", "outside_domain")):
+            field = prepare_gas_field(spec(domain=CylindricalDomain(0, 1, radius), sampling_profile=profile))
+            self.assertEqual(sample_gas(field, point(.2, .3, .5)).state.status, expected)

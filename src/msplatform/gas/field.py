@@ -1,5 +1,6 @@
 """Pure static uniform, piecewise and legacy-policy r-z gas sampling."""
 from __future__ import annotations
+from bisect import bisect_right
 from dataclasses import dataclass
 import math
 from msplatform.contracts.gas import (AxisymmetricRZData, BoxDomain, CylindricalDomain,
@@ -72,18 +73,20 @@ def prepare_gas_field(spec: GasFieldSpec, *, data: AxisymmetricRZData | None = N
     return GasField(spec, data)
 
 
+def _axis_cell(axis, coordinate):
+    # Stored nodes own their exact binary64 positions. A uniform-step quotient
+    # can round a stored endpoint below its integer index (.3/.1), inventing
+    # positive support from a masked node's neighbor. Never snap nearby points.
+    index = min(bisect_right(axis, coordinate) - 1, len(axis) - 2)
+    return index, (coordinate - axis[index]) / (axis[index + 1] - axis[index])
+
+
 def _grid_state(data: AxisymmetricRZData, point, profile) -> GasState:
     x, y, z = point
     r = _radius(x, y, profile)
-    nr, nz = len(data.r_values_mm), len(data.z_values_mm)
-    xr = (r-data.r_values_mm[0])/(data.r_values_mm[1]-data.r_values_mm[0])
-    xz = (z-data.z_values_mm[0])/(data.z_values_mm[1]-data.z_values_mm[0])
-    ir, iz = math.floor(xr), math.floor(xz)
-    if ir >= nr-1:
-        ir, xr = nr-2, nr-1
-    if iz >= nz-1:
-        iz, xz = nz-2, nz-1
-    fr, fz = xr-ir, xz-iz
+    nr = len(data.r_values_mm)
+    ir, fr = _axis_cell(data.r_values_mm, r)
+    iz, fz = _axis_cell(data.z_values_mm, z)
     indices = (iz*nr+ir, iz*nr+ir+1, (iz+1)*nr+ir, (iz+1)*nr+ir+1)
     weights = ((1-fr)*(1-fz), fr*(1-fz), (1-fr)*fz, fr*fz)
     total = sum(w for i, w in zip(indices, weights) if data.fluid_mask[i])

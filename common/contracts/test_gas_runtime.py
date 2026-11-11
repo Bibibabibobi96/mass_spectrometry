@@ -201,3 +201,51 @@ for _,channel in ipairs{'pressure','temperature','velocity'} do
  local ok,err=pcall(f._sample_sds,channel,ARGS);assert(not ok and string.find(err,MESSAGE,1,true),tostring(err))
 end""".replace('ARGS',arguments).replace('MESSAGE',lua_value(message))
                 self.run_lookup(prepare_gas_field(definition),[],placement=placement,extra=extra)
+
+    def test_decimal_stored_nodes_and_sds_keep_exact_vs_nextafter_support(self):
+        factory = fixtures.GasSamplingTests()
+        for profile in ("canonical_static_v1", "legacy_sqrt_v1"):
+            for ir, iz in ((3, 0), (0, 3), (3, 3), (1, 2), (2, 1)):
+                with self.subTest(profile=profile, node=(ir, iz)):
+                    field = factory.decimal_grid(profile, ir, iz)
+                    r, z = field.data.r_values_mm[ir], field.data.z_values_mm[iz]
+                    positions = [(r, 0., z)]
+                    if ir:
+                        positions.append((math.nextafter(r, 0), 0., z))
+                    if iz:
+                        positions.append((r, 0., math.nextafter(z, 0)))
+                    self.assert_matches(field, positions)
+                    args = ','.join(format(v, '.17g') for v in (r, 0., z)) + ",'local'"
+                    self.run_lookup(field, [], extra=(
+                        "assert(f.sample(" + args + ").status=='no_data'); "
+                        "for _,channel in ipairs{'pressure','temperature','velocity'} do "
+                        "local status=f._sample_sds(channel," + args + "); assert(status=='no_data') end"))
+
+    def test_canonical_radius_actual_hypot_boundaries_and_extreme_finite_inputs(self):
+        vectors = ((.2, .3), (.3, .4), (-.2, .3), (.2, -.3), (1., 1.),
+                   (1e308, 1e308), (1e-300, 1e-300), (5e-324, 5e-324),
+                   (1e308, 1e-300), (0., 1.), (1.7e308, 1.7e308))
+        for x, y in vectors:
+            radius = math.hypot(x, y)
+            boundaries = ((math.nextafter(radius, 0), radius, math.nextafter(radius, math.inf))
+                          if math.isfinite(radius) else (1.7e308,))
+            for boundary in boundaries:
+                if not (math.isfinite(boundary) and boundary > 0):
+                    continue
+                for inner in (False, True):
+                    if inner and not math.isfinite(boundary * 2):
+                        continue
+                    domain = (CylindricalDomain(0, 1, boundary * 2, boundary) if inner
+                              else CylindricalDomain(0, 1, boundary))
+                    with self.subTest(point=(x, y), boundary=boundary, inner=inner):
+                        field = prepare_gas_field(fixtures.spec(domain=domain))
+                        self.assert_matches(field, [(x, y, .5), (0., 0., .5)])
+                        expected = sample_gas(field, fixtures.point(x, y, .5)).state.status
+                        args = ','.join(format(v, '.17g') for v in (x, y, .5)) + ",'local'"
+                        self.run_lookup(field, [], extra=(
+                            "for _,channel in ipairs{'pressure','temperature','velocity'} do "
+                            "local status=f._sample_sds(channel," + args + "); assert(status==" + lua_value(expected) + ") end"))
+        # Explicit historical profile keeps sqrt(x*x+y*y), including this ULP boundary.
+        legacy = prepare_gas_field(fixtures.spec(domain=CylindricalDomain(0, 1, math.hypot(.2, .3)),
+                                                sampling_profile='legacy_sqrt_v1'))
+        self.assert_matches(legacy, [(.2, .3, .5), (0., 0., .5)])

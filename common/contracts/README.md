@@ -1065,3 +1065,29 @@ Four targeted main-checkout tests passed in 1.712 s. Original remote failures re
 recorded; this is not a new full-Repository or native solver acceptance. Official
 CLOC 2.10, 33139db3 to this test-only repair: total +31 code lines, production 0,
 tests +31, zero unclassified files; full language counts/filter remain in task evidence.
+
+
+### Static gas stored-node and radius corrections
+
+The r-z sampler locates cells against the actual validated stored axis nodes,
+serialized to Lua with `.17g`, rather than reconstructing their locations from
+the first spacing. This corrects decimal endpoint division that could assign
+positive weight to a valid neighbor of an exactly masked node. Exact equality
+alone owns a node; adjacent `nextafter` points retain positive support. Existing
+uniform-axis validation, mask semantics, `.9g` field values and 8192 chunks remain.
+The spacing correction applies to both existing sampling profiles; it can change
+previously incorrect masked-node classifications/interpolants and therefore the
+compiled runtime/source identity. Historical outputs are not rewritten.
+
+`canonical_static_v1` continues to use Python `math.hypot` for radius. Generated
+Lua uses a finite two-dimensional adaptation of CPython 3.11 `vector_norm` under
+[PSF License v2](https://docs.python.org/3/license.html), with power-of-two scaling,
+compensated squares and square-root correction, instead of the legacy direct
+square/sum/sqrt. [Original implementation](https://github.com/python/cpython/blob/v3.11.9/Modules/mathmodule.c#L2387-L2477).
+This repairs cross-language domain classification at ULP boundaries, overflow and
+subnormal inputs; it is an intentional generated-runtime numerical correction,
+not a universal bitwise-hypot guarantee across builds or scientific qualification.
+`legacy_sqrt_v1` keeps its exact direct sqrt radius policy, including its boundary
+rounding and overflow behavior. Python, actual generated Lua and the existing
+numeric SDS projection share the tested query classifications; no epsilon,
+collision, RNG, stepping or domain expansion is introduced.
