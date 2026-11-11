@@ -205,12 +205,8 @@ try {
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     $runtimeRoot = Join-Path $inputDir 'runtime'
     $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
-        -PythonPackages @(
-            'common/contracts',
-            'projects/rf_multipole_ion_optics/analysis',
-            'projects/rf_multipole_ion_optics/core',
-            'projects/rf_multipole_ion_optics/runtime',
-            'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
+        -PythonModules @(
+            'src/msplatform/workflows/rf_mass_filter/response_comparison.py'
         ) `
         -RelativePaths @(
             'src/msplatform/components/rf_multipole/family_contract.json'
@@ -237,11 +233,8 @@ try {
     }
     $module = 'msplatform.workflows.rf_mass_filter.response_comparison'
     $requiredModules = @(
-        'projects.rf_multipole_ion_optics.workflows',
-        'projects.rf_multipole_ion_optics.workflows.mass_filter_reference',
         $module,
         'msplatform.workflows.rf_mass_filter.reference',
-        'projects.rf_multipole_ion_optics.core',
         'msplatform.components.rf_multipole.family_contract',
         'msplatform.analysis.mass_response',
         'msplatform.ion_release.paired_mass_scan',

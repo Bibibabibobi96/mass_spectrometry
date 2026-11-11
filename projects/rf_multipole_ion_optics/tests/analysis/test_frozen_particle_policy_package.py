@@ -865,10 +865,9 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                         "msplatform.analysis.peak_metrics",
                     ):
                         self.assertIn(module, origins)
-                    if runner_name != "compare_responses.ps1":
-                        frozen_python = {Path(entry["path"]).resolve() for entry in record["package"]["files"]
-                                         if entry["relative_path"].endswith(".py")}
-                        self.assertLessEqual(set(origins.values()), frozen_python)
+                    frozen_python = {Path(entry["path"]).resolve() for entry in record["package"]["files"]
+                                     if entry["relative_path"].endswith(".py")}
+                    self.assertLessEqual(set(origins.values()), frozen_python)
                     self.assertTrue(all(origin.is_relative_to(code_root) for origin in origins.values()))
                     self.assertEqual(record["execution"]["python_path"], os.pathsep.join(python_import_roots(code_root)))
                     self.assertTrue(record["execution"]["module_invoked"])
@@ -950,7 +949,17 @@ try {{
 }} finally {{
  if([IO.File]::Exists($withheld)){{[IO.File]::Move($withheld,$selectedPath)}}
 }}
-@{{execution=$execution;selected_path=$selectedPath;missing=$missing}}|ConvertTo-Json -Depth 12|Set-Content -LiteralPath {_ps(result_path)} -Encoding UTF8
+$originalBytes=[IO.File]::ReadAllBytes($selectedPath)
+$tampered=$null
+try {{
+ [IO.File]::AppendAllText($selectedPath,"`n# tampered")
+ try {{
+  Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenAnalysisPackage `
+   -Module $analysisModule -Arguments $arguments -DistributionNames $analysisDistributions `
+   -RequiredModuleNames $analysisRequiredModules -ForbiddenRoots @($repoRoot,$projectRoot)|Out-Null
+ }} catch {{ $tampered=$_.Exception.Message }}
+}} finally {{ [IO.File]::WriteAllBytes($selectedPath,$originalBytes) }}
+@{{execution=$execution;package=$frozenAnalysisPackage;selected_path=$selectedPath;missing=$missing;tampered=$tampered}}|ConvertTo-Json -Depth 20|Set-Content -LiteralPath {_ps(result_path)} -Encoding UTF8
 """
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -969,7 +978,12 @@ try {{
             self.assertTrue(selected_path.is_relative_to(input_directory))
             self.assertEqual(selected_path.read_bytes(), Path(comparison.__file__).read_bytes())
             self.assertTrue(result["execution"]["module_invoked"])
+            paths = [row["relative_path"].replace("\\", "/") for row in result["package"]["files"]]
+            self.assertFalse(any(path.startswith(("common/", "projects/")) for path in paths))
+            self.assertIn("src/msplatform/workflows/rf_mass_filter/response_comparison.py", paths)
+            self.assertIn("src/msplatform/components/rf_multipole/family_contract.json", paths)
             self.assertIn("missing or outside", result["missing"])
+            self.assertIn("hash differs", result["tampered"])
             self.assertFalse((selected_path.with_name(selected_path.name + ".withheld")).exists())
 
 

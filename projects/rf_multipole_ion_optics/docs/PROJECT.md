@@ -384,6 +384,10 @@ RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及
 完整质量响应比较正文归`msplatform.workflows.rf_mass_filter.response_comparison`，原根Python实现退出；
 现有`compare_responses.ps1`仍负责显式三来源选择、既有冻结与发布，不据此宣称整个finite3D／接口／campaign外层已安装。
 比较API／CLI只消费显式CSV、metrics、baseline、mode与实际源N，无项目默认回退；原七点／29点、资格与PNG输出保持。
+Its selected-source inventory now contains the canonical provider, required schemas
+and explicit RF family JSON, without the former common/project Python copies.
+The actual frozen CLI retains its original N=1000 outputs and rejects missing or
+altered canonical code. This inventory reduction is not a measured speedup.
 
 质量响应的L1、SIMION、COMSOL及响应比较共用`msplatform.analysis.mass_response`准备结果，再直接复用
 `msplatform.analysis.peak_metrics.half_height_width`计算`sampled_mass_response_linear_half_height_v1`；旧峰形桥已退役。旧
