@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.ion_release.release import generate_release_states, validate_release_spec
 from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,

@@ -184,7 +184,7 @@ try {
     'src\msplatform\backends\simion\bare_three_zone_component.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
     'src\msplatform\contracts\particle_physics.py',
-    'common\contracts\file_identity.py',
+    'src\msplatform\io\file_identity.py',
     'src\msplatform\execution\manifest_verification.py',
     'common\host_resource_python.py',
     'common\host_resource_python.ps1',

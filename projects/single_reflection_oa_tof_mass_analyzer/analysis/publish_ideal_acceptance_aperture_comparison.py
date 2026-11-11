@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 import shutil
 import subprocess
 import sys

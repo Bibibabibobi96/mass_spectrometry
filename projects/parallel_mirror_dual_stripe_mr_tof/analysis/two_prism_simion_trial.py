@@ -28,7 +28,7 @@ from msplatform.contracts import trajectory_recording as _trajectory_recording
 
 
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,

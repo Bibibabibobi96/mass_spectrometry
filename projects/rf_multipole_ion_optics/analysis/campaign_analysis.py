@@ -10,7 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
 from msplatform.io.manifest_records import record_path
 from projects.rf_multipole_ion_optics.analysis.campaign_status import _verify_manifest as verify_campaign_manifest

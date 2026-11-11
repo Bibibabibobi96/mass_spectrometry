@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.simion.resource_profile import (
     discover_case_resource_profiles,
     discover_resource_profiles,

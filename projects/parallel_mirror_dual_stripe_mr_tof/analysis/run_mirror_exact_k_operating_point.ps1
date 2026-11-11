@@ -83,7 +83,6 @@ try {
   $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest `
     -Destination (Join-Path $inputDir 'parent_mirror_run_manifest.json')
   $sourcePaths = @(
-    'common\contracts\file_identity.py',
     'src\msplatform\execution\manifest_verification.py',
     # Current record-validation provenance; execution still uses the selected current package.
     'src\msplatform\__init__.py',

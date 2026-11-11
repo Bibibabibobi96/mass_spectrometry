@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.rf_multipole_ion_optics.runtime.phase_matched_particle_source import (
     COLUMNS,
     derive_phase_matched_source,

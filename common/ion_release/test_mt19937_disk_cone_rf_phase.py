@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.ion_release.mt19937_disk_cone_rf_phase import (
     IDEAL_TRANSPORT_STRATEGY,
     STRATEGY,

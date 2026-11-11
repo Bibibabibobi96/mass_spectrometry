@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from msplatform.execution.clock_authority import validate_clock_authority
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 class CanonicalClockAuthorityTests(unittest.TestCase):

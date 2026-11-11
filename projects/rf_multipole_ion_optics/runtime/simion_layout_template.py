@@ -11,7 +11,7 @@ from common.contracts.artifact_identity_archive import (
     relocated_manifest_path,
     resolve_legacy_artifact_root,
 )
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 
 
 EXPECTED_TRANSFORM = {

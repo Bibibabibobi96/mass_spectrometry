@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
     native_bank_identity,
 )

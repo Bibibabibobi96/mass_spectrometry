@@ -28,7 +28,7 @@ from common.contracts import capacity_protection as protection
 from msplatform.execution.retention import classify_file
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic as _write_json_atomic
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.retention import verify_record
 
 GIB = 1024**3

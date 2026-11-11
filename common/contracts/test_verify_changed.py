@@ -322,7 +322,7 @@ foreach($case in $cases){{
 . ./common/gate_catalog_support.ps1
 $items = @(
     [pscustomobject]@{Run=$true;Command=[pscustomobject]@{
-        runner='python';arguments=@('-m','msplatform.analysis.peak_metrics','common.contracts.file_identity')
+        runner='python';arguments=@('-m','msplatform.analysis.peak_metrics','common.contracts.capacity_ledger')
     }},
     [pscustomobject]@{Run=$false;Command=[pscustomobject]@{
         runner='python';arguments=@('-m','msplatform.unselected')
@@ -336,7 +336,7 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         paths = json.loads(result.stdout)
         self.assertIn("src/msplatform/analysis/peak_metrics.py", paths)
-        self.assertIn("common/contracts/file_identity.py", paths)
+        self.assertIn("common/contracts/capacity_ledger.py", paths)
         self.assertNotIn("msplatform/analysis/peak_metrics.py", paths)
         self.assertNotIn("src/msplatform/unselected.py", paths)
         self.assertEqual(len(paths), len(set(paths)))

@@ -20,7 +20,7 @@ from common.contracts import capacity_protection as protection
 from common.contracts.execution_aliases import execution_alias_root_is_valid
 from common.contracts.historical_source_scratch_retirement import apply as apply_source_scratch_disposition
 from common.contracts.historical_source_scratch_retirement import plan as plan_source_scratch_disposition
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
 
 GIB = 1024**3

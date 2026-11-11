@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_fixed_grid_voltage_point import (
     build_fixed_grid_point_receipt,
 )

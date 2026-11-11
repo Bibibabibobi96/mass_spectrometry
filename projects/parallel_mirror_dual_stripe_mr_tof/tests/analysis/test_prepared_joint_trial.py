@@ -1009,7 +1009,7 @@ print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
     def test_public_manifest_and_stopped_payload_seal_above_light_budget(self):
         from msplatform.backends.simion.native_completion import apply_retention
         from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         from msplatform.execution.run_capacity_lifecycle import finalize_ready, register_writing, seal_checkpoint
         from msplatform.execution.manifest_publication import build_run_manifest
         for status in ("success", "failed"):

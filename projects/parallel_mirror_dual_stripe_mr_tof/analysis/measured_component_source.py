@@ -20,7 +20,7 @@ from msplatform.contracts.particle_state import (
     ComponentParticleStateTable, load_component_particle_state_csv, write_component_particle_state_csv,
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_number
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from msplatform.backends.simion.source import project_direct_velocity, render_source_states, render_standard_beams

@@ -1042,7 +1042,7 @@ def continue_y_zero_branch(
 
 
 def main() -> None:
-    from common.contracts.file_identity import file_sha256
+    from msplatform.io.file_identity import file_sha256
     from common.host_resource_python import ensure_heavy_entry
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_transport_source import (
         materialize_accelerator_exit_transport_source,

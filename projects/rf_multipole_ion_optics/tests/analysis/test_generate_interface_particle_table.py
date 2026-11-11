@@ -353,10 +353,6 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     code_root / "src" / "msplatform" / "contracts" / "particle_count_policy.json",
                 ),
                 (
-                    REPOSITORY_ROOT / "common" / "contracts" / "file_identity.py",
-                    code_root / "common" / "contracts" / "file_identity.py",
-                ),
-                (
                     REPOSITORY_ROOT / "projects/rf_multipole_ion_optics/core/__init__.py",
                     code_root / "projects/rf_multipole_ion_optics/core/__init__.py",
                 ),

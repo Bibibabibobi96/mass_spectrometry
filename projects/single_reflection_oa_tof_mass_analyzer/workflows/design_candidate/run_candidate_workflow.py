@@ -19,7 +19,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_compl
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.contracts.machine_contracts import load_json, sha256
-from common.contracts.file_identity import FileIdentityGuard, guarded_file_identity
+from msplatform.io.file_identity import FileIdentityGuard, guarded_file_identity
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.retention import verify_record

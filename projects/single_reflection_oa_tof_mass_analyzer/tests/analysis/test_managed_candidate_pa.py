@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 REPO = Path(__file__).resolve().parents[4]
@@ -617,7 +617,7 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                     "common/host_execution_lease.ps1", "common/host_resource_python.py",
                     "common/contracts/run_artifact_support.ps1", "common/require_powershell7.ps1",
                     "common/resource_budget_support.ps1", "common/simion/short_pa_path_support.ps1",
-                    "common/simion/process_observation.py", "common/contracts/file_identity.py",
+                    "common/simion/process_observation.py",
                     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
                 )
                 for relative in relatives:
@@ -729,7 +729,8 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
             root = Path(directory)
             fixture_repo = root / "observer_failure_repo"
             for relative in ("common/host_resource_python.py", "common/simion/__init__.py", "common/simion/process_observation.py",
-                             "common/contracts/file_identity.py"):
+                             "src/msplatform/__init__.py", "src/msplatform/io/__init__.py",
+                             "src/msplatform/io/file_identity.py"):
                 target = fixture_repo / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / relative, target)

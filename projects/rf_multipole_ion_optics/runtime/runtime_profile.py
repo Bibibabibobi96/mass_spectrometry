@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.build_project_registry import pointer_value
 from projects.rf_multipole_ion_optics.core.compile_design_request import (

@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 from typing import Any, Iterable
 
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 from projects.rf_multipole_ion_optics.analysis.followup_analysis import load_resolution, paired_report
 from projects.rf_multipole_ion_optics.analysis.numerical_observables import (
     load_json,

@@ -24,7 +24,7 @@ from msplatform.execution.artifact_naming import (
     validate_task_id,
 )
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.contracts.execution_aliases import execution_alias_root_is_valid
 
 from msplatform.backends.simion.pa_family_cache import (

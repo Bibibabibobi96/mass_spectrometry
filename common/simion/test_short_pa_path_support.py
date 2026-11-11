@@ -296,9 +296,13 @@ try {
             payload_resource = frozen / "src/msplatform/execution/resources/payload_file_support.ps1"
             payload_resource.parent.mkdir(parents=True)
             shutil.copyfile(HELPER.parents[2] / "src/msplatform/execution/resources/payload_file_support.ps1", payload_resource)
-            identity_module = frozen / "common/contracts/file_identity.py"
-            identity_module.parent.mkdir()
-            shutil.copyfile(HELPER.parents[1] / "contracts/file_identity.py", identity_module)
+            identity_module = frozen / "src/msplatform/io/file_identity.py"
+            identity_module.parent.mkdir(parents=True)
+            shutil.copyfile(HELPER.parents[2] / "src/msplatform/io/file_identity.py", identity_module)
+            ambient = root / "ambient"
+            ambient_module = ambient / "msplatform/io/file_identity.py"
+            ambient_module.parent.mkdir(parents=True)
+            ambient_module.write_text("raise RuntimeError('ambient module must not execute')\n", encoding="utf-8")
             source = root / "source.pa"
             payload = b"frozen-identity\0" * ((8 * 1024 * 1024) // 16)
             payload += b"\0" * (8 * 1024 * 1024 - len(payload))
@@ -319,7 +323,7 @@ try{
 if((Get-Location).Path-ne$before){throw 'Verification leaked the working directory'}
 [pscustomobject]@{sha=$digest;length=(Get-Item -LiteralPath $env:PA_SOURCE).Length}|ConvertTo-Json -Compress
 """
-            common_env = {**os.environ, "PA_SOURCE": str(source)}
+            common_env = {**os.environ, "PA_SOURCE": str(source), "PYTHONPATH": str(ambient)}
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=root,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -330,6 +334,41 @@ if((Get-Location).Path-ne$before){throw 'Verification leaked the working directo
             result = json.loads(completed.stdout.strip().splitlines()[-1])
             self.assertEqual(result["sha"], hashlib.sha256(payload).hexdigest().upper())
             self.assertEqual(result["length"], 8 * 1024 * 1024)
+            # Exercise the existing OA parent source-closure verifier on the
+            # actual selected files, before either missing or tampered launch.
+            from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+                ROLE, verify_candidate_source_closure,
+            )
+            frozen_files = (frozen_helper, payload_resource, identity_module)
+            closure = {
+                "schema_version": 2, "role": ROLE, "code_root": str(frozen),
+                "runtime": {"python_executable": sys.executable,
+                            "python_sha256": hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest()},
+                "sources": [{"source_id": path.relative_to(frozen).as_posix(),
+                             "bytes": path.stat().st_size,
+                             "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                            for path in frozen_files],
+            }
+            verify_candidate_source_closure(closure)
+            original_identity = identity_module.read_bytes()
+            identity_module.write_bytes(original_identity + b"\n# tampered\n")
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed: src/msplatform/io/file_identity.py"):
+                verify_candidate_source_closure(closure)
+            identity_module.write_bytes(original_identity)
+            verify_candidate_source_closure(closure)
+            identity_module.unlink()
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed: src/msplatform/io/file_identity.py"):
+                verify_candidate_source_closure(closure)
+            missing = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**common_env, "PA_HELPER": str(frozen_helper), "SIMULATION_PYTHON_EXE": sys.executable},
+                timeout=30,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Frozen file identity module is unavailable", missing.stdout + missing.stderr)
+            self.assertIn(str(identity_module), missing.stdout + missing.stderr)
+            self.assertNotIn("ambient module must not execute", missing.stdout + missing.stderr)
             # The real helper has a valid repo .venv fallback; an explicit bad
             # override must fail rather than silently selecting that runtime.
             invalid = subprocess.run(
@@ -1126,7 +1165,7 @@ $ErrorActionPreference='Stop'
 . $env:PA_HELPER
 $copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
   -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA -GuardDestinationReadOnly
-$observed=& $env:PYTHON -c 'import sys; from common.contracts.file_identity import file_sha256; print(file_sha256(sys.argv[1]))' $copy
+$observed=& $env:PYTHON -c 'import sys; from msplatform.io.file_identity import file_sha256; print(file_sha256(sys.argv[1]))' $copy
 if($LASTEXITCODE-ne0){throw 'Independent Python hash failed.'}
 Remove-ShortPaCopy -Path $copy
 [pscustomobject]@{observed_sha256=($observed|Select-Object -Last 1);removed=-not(Test-Path -LiteralPath $copy)}|ConvertTo-Json -Compress

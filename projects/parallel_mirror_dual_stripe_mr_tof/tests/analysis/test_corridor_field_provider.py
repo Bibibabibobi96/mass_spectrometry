@@ -637,14 +637,14 @@ class RefinementWindowProviderTest(unittest.TestCase):
             compile_request(self.request)
 
     def test_one_solve_exports_all_windows_without_pa_hash_in_compile(self):
-        with patch("common.contracts.file_identity.file_sha256", side_effect=AssertionError("No source hash")):
+        with patch("msplatform.io.file_identity.file_sha256", side_effect=AssertionError("No source hash")):
             self.assertEqual(len(compile_request(self.request)["refinement_windows"]), 2)
         self.assertEqual(TASK_SOURCE.count(".runAll;"), 1)
         self.assertIn("for k = 1:numel(p.refinement_windows)", TASK_SOURCE)
         self.assertIn("window.export_grid,string(window.output_directory)", TASK_SOURCE)
 
     def test_local_pa_is_hashed_once_and_parent_retention_scans_nested_payload(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         run, plan = self.candidate()
         with patch("msplatform.io.manifest_records.file_sha256", wraps=file_sha256) as hashing:
             self.assertEqual(self.publish(run)["status"], "success")
@@ -732,7 +732,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
         run, _ = self.candidate()
         self.assertEqual(self.publish(run)["status"], "success")
         manifest = run / "run_manifest.json"
-        with patch("common.contracts.file_identity.file_sha256", side_effect=AssertionError("No PA/MPH hash")):
+        with patch("msplatform.io.file_identity.file_sha256", side_effect=AssertionError("No PA/MPH hash")):
             self.assertEqual(resolve_completed_provider(self.request, manifest),
                              str((run / "inputs/field_binding.json").resolve()))
             changed = copy.deepcopy(self.request)

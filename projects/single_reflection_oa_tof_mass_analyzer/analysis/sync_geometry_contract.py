@@ -15,7 +15,7 @@ import math
 import re
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import RESOLVED_PATH, resolve_contract, resolve_physical_geometry, serialized
 
 

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.standalone_pa_response_set import ResponseExport, write_standalone_pa_response_set
 from projects.orthogonal_accelerator.analysis.component_focus_pa_cache import identity
 from projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt import (

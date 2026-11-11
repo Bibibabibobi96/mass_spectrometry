@@ -145,6 +145,7 @@ class ParticleTableIdentityTests(unittest.TestCase):
         simion_config: Path,
         output_root: Path,
         explicit: Path | None = None,
+        check_binding_closure: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update(
@@ -158,11 +159,16 @@ class ParticleTableIdentityTests(unittest.TestCase):
                 "RF_PYTHON": sys.executable,
                 "RF_CODE_ROOT": str(output_root / "frozen-code"),
                 "RF_EXPLICIT_PARTICLES": "" if explicit is None else str(explicit),
+                "RF_CHECK_BINDING_CLOSURE": "1" if check_binding_closure else "0",
             }
         )
         command = (
             ". (Join-Path $env:RF_REPO_ROOT 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $env:RF_REPO_ROOT 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
-            "$package=New-FrozenPythonPackage -Python $env:RF_PYTHON -SourceRoot $env:RF_REPO_ROOT -CodeRoot $env:RF_CODE_ROOT -PythonPackages @('common/contracts') -PythonModules @('src/msplatform/workflows/rf_transport_comparison.py') -RelativePaths @('src/msplatform/contracts/particle_count_policy.json'); "
+            "$t=$null;$e=$null;$entry=Join-Path $env:RF_REPO_ROOT 'projects/rf_multipole_ion_optics/workflows/cross_solver/compare_cross_solver.ps1'; "
+            "$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e);if($e.Count){throw 'Cross-solver entry did not parse'}; "
+            "$selection=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'},$true); "
+            "$repoRoot=$env:RF_REPO_ROOT;$python=$env:RF_PYTHON;$frozen=[pscustomobject]@{module_root=$env:RF_CODE_ROOT};Invoke-Expression $selection.Extent.Text;$package=$frozenPackage; "
+            "if(Test-Path -LiteralPath (Join-Path $env:RF_CODE_ROOT 'common/contracts')){throw 'Unselected common/contracts appeared in child snapshot'}; "
             ". (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
             "$policy=Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/contracts/particle_count_policy.json'; "
             ". $env:RF_IDENTITY_HELPER; "
@@ -174,6 +180,13 @@ class ParticleTableIdentityTests(unittest.TestCase):
             "-ComsolBindingOutput $env:RF_COMSOL_BINDING "
             "-SimionBindingOutput $env:RF_SIMION_BINDING "
             "-ExplicitIon11Path $env:RF_EXPLICIT_PARTICLES; "
+            "if($env:RF_CHECK_BINDING_CLOSURE-eq'1'){ "
+            "$module='msplatform.components.rf_multipole.particle_source_binding'; "
+            "$probe=Invoke-IsolatedFrozenPythonModule -Python $env:RF_PYTHON -Package $package -Module $module -Arguments @('--help') -DistributionNames @('numpy') -RequiredModuleNames @($module,'msplatform.components.rf_multipole.paired_particle_source_bundle','msplatform.io.file_identity') -ForbiddenRoots @($env:RF_REPO_ROOT) -ProbeOnly; "
+            "foreach($row in $probe.frozen_modules){if(-not ([IO.Path]::GetFullPath([string]$row.origin)).StartsWith([IO.Path]::GetFullPath($env:RF_CODE_ROOT)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Binding origin escaped child snapshot'}}; "
+            "$path=Join-Path $env:RF_CODE_ROOT 'src/msplatform/components/rf_multipole/particle_source_binding.py';$bytes=[IO.File]::ReadAllBytes($path); "
+            "try { Remove-Item -LiteralPath $path;try{Invoke-IsolatedFrozenPythonModule -Python $env:RF_PYTHON -Package $package -Module $module -Arguments @('--help') -DistributionNames @('numpy') -ForbiddenRoots @($env:RF_REPO_ROOT) -ProbeOnly;throw 'Missing binding accepted'}catch{if($_.Exception.Message-notlike'Frozen Python dependency is missing*'){throw}}; "
+            "[IO.File]::WriteAllBytes($path,($bytes+[byte[]](10)));try{Invoke-IsolatedFrozenPythonModule -Python $env:RF_PYTHON -Package $package -Module $module -Arguments @('--help') -DistributionNames @('numpy') -ForbiddenRoots @($env:RF_REPO_ROOT) -ProbeOnly;throw 'Tampered binding accepted'}catch{if($_.Exception.Message-notlike'Frozen Python dependency hash differs:*'){throw}} }finally{[IO.File]::WriteAllBytes($path,$bytes)};Assert-FrozenPythonPackage -Package $package }; "
             "$identity | ConvertTo-Json -Compress"
         )
         return subprocess.run(
@@ -193,7 +206,7 @@ class ParticleTableIdentityTests(unittest.TestCase):
             comsol = self.write_config(root, "COMSOL", self.primary)
             simion = self.write_config(root, "SIMION", self.primary)
 
-            result = self.run_identity(comsol, simion, root)
+            result = self.run_identity(comsol, simion, root, check_binding_closure=True)
 
             self.assertEqual(result.returncode, 0, result.stderr)
             identity = json.loads(result.stdout.splitlines()[-1])

@@ -23,7 +23,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional

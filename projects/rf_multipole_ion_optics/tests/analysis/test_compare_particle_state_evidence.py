@@ -296,6 +296,15 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
     def test_actual_cross_solver_frozen_path_requires_canonical_core(self) -> None:
         self.run_analyzer(INTERFACE, 100, set(range(1, 81)), set(range(1, 81)))
         case = self.root / "case_0"
+        self.run_analyzer(NO_COLLISION, 100, set(range(1, 81)), set(range(1, 81)))
+        no_case = self.root / "case_1"
+        no_arguments = ["--comsol", str(no_case / "comsol.csv"), "--simion", str(no_case / "simion.csv"),
+                        "--mode-contract", str(self.no_collision_mode), "--particles", str(no_case / "particles.dat"),
+                        "--particle-count", "100", "--resolved", str(self.resolved),
+                        "--particle-count-policy", str(PARTICLE_COUNT_POLICY), "--output", str(no_case / "cold.json"),
+                        "--census-output", str(no_case / "cold.csv")]
+        no_args_path = self.root / "no_arguments.json"
+        no_args_path.write_text(json.dumps(no_arguments), encoding="utf-8")
         arguments = ["--comsol", str(case / "comsol.csv"), "--simion", str(case / "simion.csv"),
                      "--mode-contract", str(self.interface_mode), "--particles", str(case / "particles.dat"),
                      "--particle-count", "100", "--output", str(case / "cold.json"),
@@ -326,6 +335,7 @@ $frozen=New-CrossSolverFrozenPathSet -InputDir {literal(self.root / 'frozen-inpu
 $selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'}},$true)
 $liveRoot=$repoRoot;$repoRoot=$selectedRoot
 Invoke-Expression $selection.Extent.Text
+if(Test-Path -LiteralPath (Join-Path $frozen.module_root 'common/contracts')){{throw 'Unselected common/contracts appeared in child snapshot'}}
 Assert-FrozenPythonPackage -Package $frozenPackage
 . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $arguments=@(Get-Content -Raw -LiteralPath {literal(args_path)}|ConvertFrom-Json)
@@ -334,6 +344,10 @@ $parameters=@{{Python=$python;AnalyzerModule='{ANALYZER_MODULE}';
  Stdout={literal(self.root / 'stdout.txt')};Stderr={literal(self.root / 'stderr.txt')};
  RequiredOutputs=@({literal(case / 'cold.json')},{literal(case / 'cold.csv')})}}
 Invoke-CrossSolverAnalyzer @parameters
+$noParameters=$parameters.Clone()
+$noParameters.Arguments=@(Get-Content -Raw -LiteralPath {literal(no_args_path)}|ConvertFrom-Json)
+$noParameters.RequiredOutputs=@({literal(no_case / 'cold.json')},{literal(no_case / 'cold.csv')})
+Invoke-CrossSolverAnalyzer @noParameters
 $probe=Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module '{ANALYZER_MODULE}' `
  -Arguments $arguments -RequiredModuleNames @('{ANALYZER_MODULE}','msplatform.io.file_identity','msplatform.analysis.particle_state_comparison') `
  -ForbiddenRoots @($repoRoot,$liveRoot) -ProbeOnly
@@ -363,6 +377,9 @@ exit 0
         actual = json.loads((case / "cold.json").read_text(encoding="utf-8"))
         self.assertEqual(actual, expected)
         self.assertEqual((case / "cold.csv").read_bytes(), (case / "census.csv").read_bytes())
+        self.assertEqual(json.loads((no_case / "cold.json").read_text(encoding="utf-8")),
+                         json.loads((no_case / "result.json").read_text(encoding="utf-8")))
+        self.assertEqual((no_case / "cold.csv").read_bytes(), (no_case / "census.csv").read_bytes())
 
     def test_cross_solver_failure_stdout_bytes_survive_isolated_exit(self) -> None:
         source = self.root / "source"
@@ -447,7 +464,7 @@ exit 0
         self.assertTrue((REPO_ROOT / "src/msplatform/execution/resources/frozen_python_package.ps1").is_file())
 
     def test_hash_source_is_the_existing_canonical_implementation(self) -> None:
-        from common.contracts.file_identity import file_sha256 as prior_alias
+        from msplatform.io.file_identity import file_sha256 as prior_alias
         from msplatform.io.file_identity import file_sha256
         from msplatform.workflows import rf_transport_comparison
 

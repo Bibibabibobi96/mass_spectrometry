@@ -11,7 +11,7 @@ from pathlib import Path
 
 from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.workflows.connection_inputs import (
     derive_direct_mating_translation,

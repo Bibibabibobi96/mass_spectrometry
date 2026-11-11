@@ -29,7 +29,6 @@ try{
   $modeFile=Join-Path $projectRoot "config\modes\quadrupole_${Mode}.json"
   $frozen=New-CrossSolverFrozenPathSet -InputDir $inputDir -AnalyzerRelativePath 'src\msplatform\workflows\rf_transport_comparison.py' -ModeFilename 'mode_contract.json'
   $frozenPackage=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot $frozen.module_root -Python $python `
-    -PythonPackages @('common/contracts') `
     -PythonModules @('src/msplatform/workflows/rf_transport_comparison.py') `
     -RelativePaths @('src/msplatform/contracts/particle_count_policy.json')
   . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')

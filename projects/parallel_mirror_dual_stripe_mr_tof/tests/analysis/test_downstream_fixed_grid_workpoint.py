@@ -24,7 +24,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_
     resolve_active_stripe_axes,
     solve_linearized_step,
 )
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.backends.comsol.static_field_binding import scalar_binding_problem
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,

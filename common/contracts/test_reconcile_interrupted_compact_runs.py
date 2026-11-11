@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts import reconcile_interrupted_compact_runs as reconciliation
 from common.contracts.reconcile_interrupted_compact_runs import reconcile, summarize

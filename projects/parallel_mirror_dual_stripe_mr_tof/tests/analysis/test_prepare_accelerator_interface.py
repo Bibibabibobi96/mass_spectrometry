@@ -86,7 +86,7 @@ class InterfacePreparationTests(unittest.TestCase):
         module = 'integrations.workflows.accelerator_interface.prepare'
         field_module = 'msplatform.backends.comsol.static_field_binding'
         from msplatform.backends.comsol.static_field_binding import resolve_native_refine_numerics
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         for strategy in (None, False, True):
             for bad_level in (None, 0, 1, 2, 3, 4):
                 with self.subTest(strategy=strategy, bad_level=bad_level), tempfile.TemporaryDirectory() as directory:
@@ -314,7 +314,7 @@ class InterfacePreparationTests(unittest.TestCase):
             (design/'run_manifest.json').write_text('{}')
             (reference/'simion/trajectory_contract.json').write_text(json.dumps(original))
             (reference/'simion/accelerator_provider_runtime_receipt.json').write_text('{}')
-            from common.contracts.file_identity import file_sha256
+            from msplatform.io.file_identity import file_sha256
             (design/'results/accelerator_interface_preparation.json').write_text(json.dumps(dict(
                 selected_provider=ION_PROCESSOR, joint_preparation=dict(assembly=dict(composition_plan=dict(recipe={}))), inputs=dict(reference_manifest=dict(
                     sha256=file_sha256(reference/'run_manifest.json'))))))

@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.file_identity import repository_text_sha256
 from common.contracts.build_project_registry import pointer_value
 from common.paths.repository_root import REPO_ROOT

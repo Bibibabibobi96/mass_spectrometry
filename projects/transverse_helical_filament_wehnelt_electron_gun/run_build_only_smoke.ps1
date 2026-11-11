@@ -23,7 +23,7 @@ $bootstrapFiles = [ordered]@{
   recorded_file_removal = 'src\msplatform\execution\recorded_file_removal.py'
   manifest_verifier = 'src\msplatform\execution\manifest_verification.py'
   artifact_naming = 'src\msplatform\execution\artifact_naming.py'
-  file_identity = 'common\contracts\file_identity.py'
+  file_identity = 'src\msplatform\io\file_identity.py'
 }
 . (Join-Path $repoRoot $bootstrapFiles.artifact_support)
 $bootstrapIdentity = [ordered]@{}
@@ -307,7 +307,6 @@ try {
     resource_budget_support = 'common\resource_budget_support.ps1'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     capacity_protection = 'common\contracts\capacity_protection.py'
-    file_identity = 'common\contracts\file_identity.py'
     artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
   }

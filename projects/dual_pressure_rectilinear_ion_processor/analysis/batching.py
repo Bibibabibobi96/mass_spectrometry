@@ -18,7 +18,7 @@ import shutil
 import tempfile
 import zipfile
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import remove_recorded_files
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution.manifest_publication import resolve_path

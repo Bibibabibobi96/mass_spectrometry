@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.execution.retention import verify_record
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion import gem_primitives
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority

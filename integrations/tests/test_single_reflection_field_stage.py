@@ -21,7 +21,7 @@ from msplatform.backends.simion.field_identity import frontend_field_identity
 from msplatform.backends.simion.field_audit import audit_input_identity, write_audit_spec, reusable_audit
 from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
 from msplatform.workflows.single_reflection_flight.prepare import prepare
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion import pa_family_cache
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key, publish_pa_family_cache

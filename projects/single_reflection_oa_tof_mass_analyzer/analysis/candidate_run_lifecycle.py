@@ -375,7 +375,7 @@ def finalize_candidate_run(
             raise ValueError("Native phase must retain its original model, saved context and actual build completion")
         model_record = receipt["outputs"]["model"]
         model = (run_root / model_record["path"]).resolve(strict=True)
-        from common.contracts.file_identity import FileIdentityGuard
+        from msplatform.io.file_identity import FileIdentityGuard
         guard = (identity_guards or {}).get(model)
         if type(guard) is not FileIdentityGuard:
             raise ValueError("Producer native completion requires the same live file identity guard")

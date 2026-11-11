@@ -435,7 +435,7 @@ selector的`verify_payload=False`仅供随后有guard的物化选择；小respon
 这复用[既有.NET路径语义](https://learn.microsoft.com/en-us/dotnet/api/system.io.path.getfullpath?view=net-10.0)（2026-10-26核对），不改变长PA运输、复制或哈希协议。
 
 `Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从运行源码根通过
-`python -m common.contracts.file_identity --unbuffered <path>` 调用公共
+`python -m msplatform.io.file_identity --unbuffered <path>` 调用公共
 `file_sha256_unbuffered`。这消除了每次验证额外的整件 `/J` 探针复制与临时 PA 空间；真正需要的运行副本
 仍走原有 `/J` 复制及目标校验。无缓冲读取失败直接失败关闭，不回退普通缓冲读取；小文件行为不变。
 无缓冲身份校验优先使用既有 `SIMULATION_PYTHON_EXE`，未设置时使用运行源码根的 `.venv`；显式路径无效时失败，不回退。

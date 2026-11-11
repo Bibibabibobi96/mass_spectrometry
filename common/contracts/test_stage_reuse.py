@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from common.contracts.file_identity import file_sha256, guarded_file_identity
+from msplatform.io.file_identity import file_sha256, guarded_file_identity
 from common.contracts import stage_reuse
 from msplatform.io import file_identity
 from common.contracts.stage_reuse import (

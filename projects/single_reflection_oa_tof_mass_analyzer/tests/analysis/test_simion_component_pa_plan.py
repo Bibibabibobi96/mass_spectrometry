@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import (

@@ -1376,7 +1376,7 @@ if(($b|ConvertTo-Json -Depth 100 -Compress)-ne$before){throw 'Actual resume rewr
             self.assertTrue(value["pending"].endswith("r03-stage-010"))
             from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _trajectory_physics_identity
             old_path = parent / "inputs/contract.json"
-            from common.contracts.file_identity import file_sha256
+            from msplatform.io.file_identity import file_sha256
             identities = []
             for p in (old_path, contract):
                 sha = file_sha256(p)

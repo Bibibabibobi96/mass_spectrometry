@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
     AffineSource,
     OuterGeometry,

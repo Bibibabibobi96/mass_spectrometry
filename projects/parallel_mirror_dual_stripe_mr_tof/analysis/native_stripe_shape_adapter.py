@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 import math
 from typing import Any
 
-from common.contracts.file_identity import canonical_json_sha256
+from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
     ManufacturedStripeBasisPathScales,
     NativeStripeSpatialReturnNumerics,

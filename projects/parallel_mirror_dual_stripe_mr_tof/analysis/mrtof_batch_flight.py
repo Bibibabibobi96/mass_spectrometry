@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.native_completion import parse_fly_completed_line

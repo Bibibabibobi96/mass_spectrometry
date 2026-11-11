@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import canonical_json_sha256, file_sha256
+from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (

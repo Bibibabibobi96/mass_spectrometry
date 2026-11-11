@@ -213,7 +213,7 @@ def _prune_expired_capacity_protection_leases_unlocked(
 ) -> dict[str, Any]:
     """Receipt-delete expired leases that no pending disposal still references."""
 
-    from common.contracts.file_identity import file_sha256
+    from msplatform.io.file_identity import file_sha256
 
     root = root.absolute()
     if not root.is_dir():

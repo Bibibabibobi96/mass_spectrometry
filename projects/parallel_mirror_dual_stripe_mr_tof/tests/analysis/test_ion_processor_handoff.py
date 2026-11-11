@@ -12,7 +12,7 @@ from jsonschema import ValidationError
 import copy
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.contracts.particle_state import write_component_particle_state_csv
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import RigidTransform
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff, resolve_ip_mr_connection, resolve_matching_request

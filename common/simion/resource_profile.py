@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.simion_dispatch import RESOURCE_IDENTITY_KEYS
 
 

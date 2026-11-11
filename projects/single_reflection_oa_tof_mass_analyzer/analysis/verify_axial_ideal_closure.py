@@ -32,7 +32,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerato
 from msplatform.analysis.peak_metrics import (
     compute_peak_metrics,
 )
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]

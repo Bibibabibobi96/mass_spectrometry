@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
     to_project_position, to_project_vector, transform_from_config,
 )

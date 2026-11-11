@@ -1782,6 +1782,28 @@ for name,origin in tof_source_report['origins'].items():
 print('INSTALLED_TOF_SOURCE_ACCEPTANCE=PASS')
 # TOF_SOURCE_ACCEPTANCE_INSTALLED_END
 
+# FILE_IDENTITY_INSTALLED_BEGIN
+from msplatform.io import file_identity as installed_identity
+installed_identity_origin=pathlib.Path(installed_identity.__file__).resolve()
+assert installed_identity_origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+identity_root=root/('identity-'+sys.argv[2]);identity_root.mkdir()
+identity_left=identity_root/'left.bin';identity_right=identity_root/'right.bin'
+identity_left.write_bytes(b'installed identity fixture\\r\\n');identity_right.write_bytes(identity_left.read_bytes())
+identity_before={p:p.read_bytes() for p in (identity_left,identity_right)}
+identity_digest=hashlib.sha256(identity_before[identity_left]).hexdigest()
+identity_record=dict(name=identity_left.name,bytes=len(identity_before[identity_left]),sha256=identity_digest)
+assert installed_identity.files_have_same_identity(identity_left,identity_right)
+assert installed_identity.files_match_manifest_records(identity_root,[identity_record])
+assert not installed_identity.files_match_manifest_records(identity_root,[identity_record,identity_record])
+identity_manifest=identity_root/'manifest.json';identity_manifest.write_text(json.dumps(dict(files=[identity_record])),encoding='utf-8')
+identity_manifest_before=identity_manifest.read_bytes()
+for identity_args,identity_expected in ((['--left',str(identity_left),'--right',str(identity_right)],'FILE_IDENTITY_PAIR=PASS'),(['--manifest',str(identity_manifest),'--root',str(identity_root)],'FILE_IDENTITY_RECORDS=PASS COUNT=1')):
+    identity_run=subprocess.run([sys.executable,'-I','-B','-m','msplatform.io.file_identity',*identity_args],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert identity_run.returncode==0 and identity_run.stdout.strip()==identity_expected,identity_run.stdout+identity_run.stderr
+assert all(p.read_bytes()==data for p,data in identity_before.items()) and identity_manifest.read_bytes()==identity_manifest_before
+print('INSTALLED_FILE_IDENTITY=PASS')
+# FILE_IDENTITY_INSTALLED_END
+
 # RF_PARTICLE_COMPARISON_INSTALLED_BEGIN
 rf_comparison_child = r"""import importlib.abc,json,math,os,sys,sysconfig
 from pathlib import Path

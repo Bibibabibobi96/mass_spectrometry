@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.stage_formal_simion_runtime import (
     PROJECT_ID,
     stage_runtime,

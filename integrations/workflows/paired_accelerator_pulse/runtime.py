@@ -15,7 +15,7 @@ from pathlib import Path
 from msplatform.execution.resources import resource_path
 
 from msplatform.analysis.particle_events import group_particle_events, iter_particle_event_fields
-from common.contracts.file_identity import canonical_json_sha256
+from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record

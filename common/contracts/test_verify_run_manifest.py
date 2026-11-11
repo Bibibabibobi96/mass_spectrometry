@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution import manifest_publication as write_run_manifest
 from msplatform.io import manifest_records
 from msplatform.execution import manifest_publication

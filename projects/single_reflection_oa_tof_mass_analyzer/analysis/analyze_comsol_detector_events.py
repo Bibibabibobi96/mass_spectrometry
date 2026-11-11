@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import (
     analyze_single,
 )

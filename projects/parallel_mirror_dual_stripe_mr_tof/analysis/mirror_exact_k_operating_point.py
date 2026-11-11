@@ -24,7 +24,7 @@ from typing import Any
 import numpy as np
 from scipy.optimize import brentq, least_squares
 
-from common.contracts.file_identity import canonical_json_sha256, file_sha256
+from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from common.host_resource_python import ensure_heavy_entry

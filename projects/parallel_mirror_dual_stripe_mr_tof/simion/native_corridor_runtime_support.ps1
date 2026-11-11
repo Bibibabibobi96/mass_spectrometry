@@ -189,7 +189,7 @@ function Get-NativeRuntimeInventory {
   $code=@'
 import json,sys
 from pathlib import Path
-from common.contracts.file_identity import file_sha256_unbuffered
+from msplatform.io.file_identity import file_sha256_unbuffered
 p=Path(sys.argv[1]); names=[f'mrtof_analyzer_corridor.pa{i}' for i in range(9)]
 assert sorted(x.name for x in p.iterdir())==sorted(names), 'native runtime must contain exactly nine arrays'
 print(json.dumps([dict(name=n,bytes=(p/n).stat().st_size,sha256=file_sha256_unbuffered(p/n)) for n in names]))

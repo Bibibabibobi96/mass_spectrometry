@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.simion.workbench_seed import freeze_workbench_seed
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record

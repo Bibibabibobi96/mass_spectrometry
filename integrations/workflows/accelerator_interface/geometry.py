@@ -5,7 +5,7 @@ from pathlib import Path
 import copy
 import itertools
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.gem_primitives import format_number
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
 from msplatform.execution.retention import verify_record

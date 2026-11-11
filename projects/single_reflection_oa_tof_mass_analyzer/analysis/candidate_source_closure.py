@@ -92,7 +92,6 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
     "common/paths/workspace_paths.m",
     "common/paths/resolve_path_identity.m",
-    "common/contracts/file_identity.py",
     "src/msplatform/contracts/particle_count_policy.json",
     "common/require_powershell7.ps1",
     "common/solidworks/import_step_to_solidworks.m",
@@ -567,7 +566,9 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     analysis_names += tuple(name for name in sources if (
         name == "src/msplatform/__init__.py"
         or name.startswith(("src/msplatform/analysis/", "src/msplatform/io/"))))
-    analysis_names += ("common/contracts/file_identity.py",prefix+"config/analysis_contract.json")
+    # Historical closures retain the source authority they actually froze.
+    analysis_names += tuple(name for name in sources if name == "common/contracts/file_identity.py")
+    analysis_names += (prefix+"config/analysis_contract.json",)
     sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
                   prefix+"load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     import ast

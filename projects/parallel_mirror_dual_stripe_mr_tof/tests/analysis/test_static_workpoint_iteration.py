@@ -266,7 +266,7 @@ class StaticFieldIdentityTest(unittest.TestCase):
             field_binding={"mode":"comsol_static_scalar_v", "path":str(run / "inputs/field_binding.json")},
             stripe_biases_v=[-27,54], prism_voltages_v=[191,-190],
             analyzer_electrode_voltages_v=json.loads((run / "inputs/frozen_input.json").read_text())["analyzer_electrode_voltages_v"])
-        with patch("common.contracts.file_identity.file_sha256", side_effect=AssertionError("No asset rehash")):
+        with patch("msplatform.io.file_identity.file_sha256", side_effect=AssertionError("No asset rehash")):
             identity = _static_field_problem(materialization)
         self.assertEqual(identity["solver_numerics"]["iterative_solver"], "cg")
         self.assertEqual(identity["export_grid"]["pitch_mm"], [.5]*3)

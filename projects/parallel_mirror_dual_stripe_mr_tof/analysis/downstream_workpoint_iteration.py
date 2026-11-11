@@ -22,7 +22,7 @@ from scipy.optimize import linprog
 
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
     RESIDUAL_NAMES,
@@ -2883,7 +2883,7 @@ def main() -> int:
     prior = _load(args.prior, "prior workpoint")
     child = assert_trial_matches_jacobian(prior, args.child_manifest)
     records = child["consumer_projection"]["records"]
-    from common.contracts.file_identity import file_sha256
+    from msplatform.io.file_identity import file_sha256
     for name, path in (("two_prism_trial_observation.json", args.observation),
                        ("two_prism_trial_materialization.json", args.materialization)):
         if file_sha256(path).lower() != str(records[name]["sha256"]).lower():

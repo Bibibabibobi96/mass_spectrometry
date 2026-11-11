@@ -11,10 +11,7 @@ from typing import Iterator
 
 from msplatform.execution.artifact_naming import validate_archive_id
 
-try:
-    from common.contracts.file_identity import file_sha256
-except ModuleNotFoundError:
-    from file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 SCHEMA_VERSION = 2

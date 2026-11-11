@@ -35,7 +35,7 @@ ARTIFACT_ROOT = (
 PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 from msplatform.execution.artifact_naming import validate_run_id
-from common.contracts.file_identity import canonical_json_sha256
+from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.execution.inputs import freeze_file, python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count

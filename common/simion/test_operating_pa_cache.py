@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.operating_pa_cache import (
     CacheDisposition,

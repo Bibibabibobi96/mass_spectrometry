@@ -10,9 +10,11 @@ function Invoke-LegacyPaUnbufferedIdentity {
     Join-Path $identityRepoRoot '.venv\Scripts\python.exe'
   }
   if(-not(Test-Path -LiteralPath $identityPython -PathType Leaf)){throw "Repository Python is unavailable: $identityPython"}
+  $identityModule=Join-Path $identityRepoRoot 'src/msplatform/io/file_identity.py'
+  if(-not(Test-Path -LiteralPath $identityModule -PathType Leaf)){throw "Frozen file identity module is unavailable: $identityModule"}
   Push-Location -LiteralPath $identityRepoRoot
   try{
-    $digest=@(& $identityPython -m common.contracts.file_identity --unbuffered $Source)
+    $digest=@(& $identityPython -I -S -B -X utf8 $identityModule --unbuffered $Source)
     if($LASTEXITCODE-ne0){throw 'Unbuffered immutable PA source verification failed.'}
     return $digest
   }finally{Pop-Location}

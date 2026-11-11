@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_fixed_grid_voltage_correction import (
     NATIVE_GAMMA_OPERATOR_ID,
     SAMPLED_GAMMA_OPERATOR_ID,

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_local_diagnostics as local
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_transport_snapshots as lifecycle
 

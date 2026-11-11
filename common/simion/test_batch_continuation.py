@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.execution import recovery as batch_continuation
 from msplatform.execution.recovery import (

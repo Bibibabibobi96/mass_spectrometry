@@ -5,7 +5,7 @@ from unittest import mock
 from pathlib import Path
 
 from common.contracts import capacity_ledger
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.contracts.historical_source_scratch_retirement import apply, plan
 
 

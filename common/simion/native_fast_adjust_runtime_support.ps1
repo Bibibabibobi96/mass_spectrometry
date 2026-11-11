@@ -41,7 +41,7 @@ function New-NativeFastAdjustRuntimeFamily {
   $code=@'
 import json,stat,sys
 from pathlib import Path
-from common.contracts.file_identity import file_sha256_unbuffered
+from msplatform.io.file_identity import file_sha256_unbuffered
 from common.contracts.capacity_protection import load_capacity_protection_leases, path_is_protected
 from msplatform.backends.simion.pa_family_cache import validate_pa_family_cache_generation, load_pa_family_cache_transaction
 from msplatform.backends.simion.standalone_pa_response_set import validate_standalone_pa_response_set

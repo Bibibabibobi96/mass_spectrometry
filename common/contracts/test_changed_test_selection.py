@@ -1293,6 +1293,19 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         if path.endswith("/inputs.py"):
                             self.assertIn("common/contracts/test_frozen_inputs.py", common)
 
+    def test_canonical_file_identity_selects_frozen_project_consumers(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="file_identity_project_plan_") as directory:
+            request = Path(directory) / "plan.json"
+            write_planned_request(REPO_ROOT, request, ["src/msplatform/io/file_identity.py"])
+            stages = {row["name"]: row for row in json.loads(
+                request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+            rf = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
+            self.assertIn("projects.rf_multipole_ion_optics.tests.analysis.test_frozen_particle_policy_package",
+                          rf["ChangedTestModules"])
+            tof = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
+            self.assertIn("projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_publish_ideal_acceptance_aperture_comparison",
+                          tof["SelectedTestModules"])
+
     def test_installed_rf_convergence_selects_source_and_comparison_consumers(self) -> None:
         expected = {f"{RF}.tests.analysis.{name}".replace("/", ".") for name in (
             "test_cross_solver_gate_contract", "test_frozen_particle_policy_package",
@@ -1315,6 +1328,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     common = stages["common_contracts"]["command"]["arguments"]
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
+
 
     def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
         paths = ("src/msplatform/results/ip_continuation.py",

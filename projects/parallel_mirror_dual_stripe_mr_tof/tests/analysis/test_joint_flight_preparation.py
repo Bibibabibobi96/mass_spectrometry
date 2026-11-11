@@ -10,7 +10,7 @@ import json
 import os
 
 from msplatform.execution.retention import file_record
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import (
     _lua, render_measured_operating_point, freeze_field_reference,

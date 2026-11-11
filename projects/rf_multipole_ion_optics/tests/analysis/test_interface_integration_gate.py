@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.rf_multipole_ion_optics.analysis import plot_transport_phase_diagnostics as phase
 
 SCRIPT = (

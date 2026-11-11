@@ -333,7 +333,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 # This explicit software callback has a separate import root;
                 # copy the common handshake bootstrap from the frozen closure.
                 (root / "common/contracts").mkdir(parents=True)
-                for relative in ("common/host_resource_python.py", "common/contracts/file_identity.py"):
+                for relative in ("common/host_resource_python.py",):
                     shutil.copyfile(Path(request["prepared"]["import_root"]) / relative, root / relative)
                 helper_relative = Path("projects") / PROJECT_ROOT.name / "tests/analysis/test_support/candidate_fixtures.py"
                 helper = root / "fixture_source" / helper_relative
@@ -3645,6 +3645,38 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                     'environment["OATOF_CANDIDATE_CONTRACT_PATH"]="different-science"\n    return "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m", environment'))
             task_changed=candidate_comsol_source_phases(closure)
             self.assertNotEqual(task_changed['native']['dispatch'],field_changed['native']['dispatch'])
+
+    def test_analysis_phase_preserves_only_recorded_historical_identity_source(self):
+        from msplatform.contracts.machine_contracts import sha256
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        with tempfile.TemporaryDirectory() as temporary:
+            _, path = self.native_workflow_plan(Path(temporary), '20261031_213010')
+            closure = load_json(path)['execution_source_closure']
+            old_id = 'common/contracts/file_identity.py'
+            new_id = 'src/msplatform/io/file_identity.py'
+            actual = {row['source_id'] for row in closure['sources']}
+            self.assertIn(new_id, actual)
+            self.assertNotIn(old_id, actual)
+            fresh = candidate_comsol_source_phases(closure)
+            ids = {row['source_id'] for row in fresh['analysis']['sources']}
+            self.assertIn(new_id, ids)
+            self.assertNotIn(old_id, ids)
+            # Inert test-owned record, not an authentic archived source.
+            old_file = Path(closure['code_root']) / old_id
+            old_file.parent.mkdir(parents=True, exist_ok=True)
+            old_file.write_bytes(b'# inert historical provenance fixture\n')
+            old_hash = sha256(old_file)
+            closure['sources'].append(dict(source_id=old_id, source_sha256=old_hash,
+                                           sha256=old_hash, bytes=old_file.stat().st_size,
+                                           transformations=[]))
+            before = old_file.read_bytes()
+            historical = candidate_comsol_source_phases(closure)
+            old_rows = [row for row in historical['analysis']['sources'] if row['source_id'] == old_id]
+            self.assertEqual(old_rows, [dict(source_id=old_id, bytes=len(before), sha256=old_hash)])
+            self.assertEqual(old_file.read_bytes(), before)
+            old_file.unlink()
+            with self.assertRaisesRegex(ValueError, 'frozen candidate source changed'):
+                candidate_comsol_source_phases(closure)
 
     def test_real_normal_native_and_sync_commands_consume_unique_task_environment_builders(self):
         from types import SimpleNamespace

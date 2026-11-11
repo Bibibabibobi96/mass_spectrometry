@@ -38,7 +38,7 @@ from msplatform.analysis.peak_metrics import (
     compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
 )
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 ANALYSIS_DIR = Path(__file__).resolve().parent

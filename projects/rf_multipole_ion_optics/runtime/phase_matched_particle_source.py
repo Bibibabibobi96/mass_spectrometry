@@ -21,7 +21,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_count_policy import (
     load_particle_count_policy,

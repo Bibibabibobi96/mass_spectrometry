@@ -13,7 +13,7 @@ import stat
 import sys
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from common.contracts.strict_json import load_json_object, require_exact_keys, require_number
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record

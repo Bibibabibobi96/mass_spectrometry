@@ -350,7 +350,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "manifest_writer = 'src\\msplatform\\execution\\manifest_publication.py'",
             "manifest_verifier = 'src\\msplatform\\execution\\manifest_verification.py'",
             "artifact_naming = 'src\\msplatform\\execution\\artifact_naming.py'",
-            "file_identity = 'common\\contracts\\file_identity.py'",
+            "file_identity = 'src\\msplatform\\io\\file_identity.py'",
         )
         for token in required:
             with self.subTest(token=token):
@@ -657,7 +657,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/contracts/capacity_protection.py",
             "src/msplatform/execution/manifest_verification.py",
             "src/msplatform/execution/artifact_naming.py",
-            "common/contracts/file_identity.py",
+            "src/msplatform/io/file_identity.py",
             "common/contracts/artifact_identity_archive.py",
             "common/contracts/build_project_registry.py",
             "src/msplatform/execution/inputs.py",

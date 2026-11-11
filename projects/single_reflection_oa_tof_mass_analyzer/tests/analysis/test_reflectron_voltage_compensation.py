@@ -347,7 +347,7 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         parent = self.root / "parent"
         self.write(parent / "inputs/compensation_plan.json", plan)
         study.freeze_inputs(parent)
-        source = parent / "inputs/code/common/contracts/file_identity.py"
+        source = parent / "inputs/code/src/msplatform/io/file_identity.py"
         py_compile.compile(str(source), doraise=True)
         self.terminal(parent, [p for p in (parent / "inputs").rglob("*") if p.is_file()], [])
         before = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}

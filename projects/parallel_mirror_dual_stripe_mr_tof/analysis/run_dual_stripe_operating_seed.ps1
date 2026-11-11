@@ -123,7 +123,7 @@ try {
   $sourceDir = Join-Path $inputDir 'source'
   New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
   $sourcePaths = @(
-    'common\contracts\file_identity.py',
+    'src\msplatform\io\file_identity.py',
     'src\msplatform\execution\manifest_verification.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',

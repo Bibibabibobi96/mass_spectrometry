@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 
 

@@ -11,7 +11,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import verified_successful_run_reference

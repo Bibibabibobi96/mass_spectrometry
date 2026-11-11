@@ -398,7 +398,14 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
                 "recovery_reason": "stale_capacity_ledger_atomic_temp_requires_recovery",
                 "review_deadline": "2026-10-22",
             }])
-            with patch("common.contracts.file_identity.file_sha256", side_effect=AssertionError("payload hash")):
+            original_open = Path.open
+            def deny_payload_open(path, *args, **kwargs):
+                if path == target:
+                    raise AssertionError("payload read forbidden")
+                return original_open(path, *args, **kwargs)
+            with patch.object(Path, "open", deny_payload_open):
+                with self.assertRaisesRegex(AssertionError, "payload read forbidden"):
+                    target.read_bytes()
                 outcome = capacity_ledger.recover_stale_atomic_ledger_temps(root)
             self.assertEqual(outcome["retired_count"], 1)
             self.assertEqual(outcome["removed_bytes"], len(b"truncated ledger"))

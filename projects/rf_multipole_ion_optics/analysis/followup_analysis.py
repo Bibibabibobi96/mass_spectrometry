@@ -18,7 +18,7 @@ from projects.rf_multipole_ion_optics.analysis.numerical_observables import (
     observable_differences,
     run_data,
 )
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.rf_multipole_ion_optics.analysis.numerical_qualification import (
     evaluate,
     load_engineering_progression_contract,

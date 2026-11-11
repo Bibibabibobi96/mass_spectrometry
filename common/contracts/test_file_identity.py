@@ -12,10 +12,10 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from common.contracts.file_identity import HASH_CHUNK_BYTES, canonical_json_sha256, file_sha256, file_sha256_unbuffered, files_have_same_identity, files_match_manifest_records
+from msplatform.io.file_identity import HASH_CHUNK_BYTES, canonical_json_sha256, file_sha256, file_sha256_unbuffered, files_have_same_identity, files_match_manifest_records
 from msplatform.io.file_identity import repository_text_sha256
 from common.contracts import write_formal_asset_manifest
-from common.contracts import file_identity
+from msplatform.io import file_identity
 from msplatform.io import file_identity as execution_file_identity
 
 
@@ -34,7 +34,7 @@ class FileIdentityTest(unittest.TestCase):
             path = Path(directory) / "cli file.bin"
             payload = b"cli unbuffered identity" * 257
             path.write_bytes(payload)
-            command = [sys.executable, "-m", "common.contracts.file_identity", "--unbuffered"]
+            command = [sys.executable, "-m", "msplatform.io.file_identity", "--unbuffered"]
             repo_root = Path(__file__).resolve().parents[2]
             result = subprocess.run(command + [str(path)], cwd=repo_root, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -44,6 +44,20 @@ class FileIdentityTest(unittest.TestCase):
             self.assertEqual(missing.stdout, "")
             conflict = subprocess.run(command + [str(path), "--left", str(path)], cwd=repo_root, capture_output=True, text=True, timeout=30)
             self.assertNotEqual(conflict.returncode, 0)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
+    def test_selected_cli_preserves_non_ascii_missing_path_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "不存在的文件.bin"
+            repo_root = Path(__file__).resolve().parents[2]
+            command = [sys.executable, "-I", "-S", "-B", "-X", "utf8",
+                       str(repo_root / "src/msplatform/io/file_identity.py"), "--unbuffered", str(missing)]
+            result = subprocess.run(command, cwd=repo_root, capture_output=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, b"")
+            diagnostic = result.stderr.decode("utf-8", errors="strict")
+            self.assertIn(str(missing), diagnostic)
+            self.assertIn("WinError 2", diagnostic)
 
     @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
     def test_unbuffered_matches_hashlib_at_sector_and_chunk_boundaries(self) -> None:

@@ -19,7 +19,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.experiment_campaign import (

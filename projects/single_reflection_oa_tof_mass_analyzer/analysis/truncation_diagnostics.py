@@ -21,7 +21,7 @@ from msplatform.analysis.peak_metrics import (
     bootstrap_resolution_distribution,
     compute_peak_metrics,
 )
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import read_particle_table
 
 

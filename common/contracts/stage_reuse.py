@@ -9,7 +9,7 @@ from typing import Any, Mapping, TypeAlias
 
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.execution.artifact_retention import validate_retention
-from common.contracts.file_identity import FileIdentityGuard, file_sha256
+from msplatform.io.file_identity import FileIdentityGuard, file_sha256
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.execution.retention import classify_file as classify_run_file
 

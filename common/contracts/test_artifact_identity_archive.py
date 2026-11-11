@@ -21,7 +21,7 @@ from common.contracts.artifact_identity_archive import (
     validate_pruning_journal,
     verify_pruned_inventory,
 )
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 CURRENT = "current_project"
@@ -151,7 +151,7 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             source = Path(__file__).resolve().parent
             scripts = repository / "common/contracts"
             scripts.mkdir(parents=True)
-            for name in ("artifact_identity_archive.py", "file_identity.py"):
+            for name in ("artifact_identity_archive.py",):
                 shutil.copyfile(source / name, scripts / name)
             ledger = fixture / "artifacts/common/fixture.sqlite3"
             ledger.parent.mkdir(parents=True)

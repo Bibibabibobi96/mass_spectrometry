@@ -1210,10 +1210,15 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["files"][0]["bytes"] = 999
             _write_json(manifest_path, manifest)
-            with mock.patch(
-                "common.contracts.file_identity.file_sha256",
-                side_effect=AssertionError("payload hashing is forbidden"),
-            ):
+            payload = manifest_path.parent / "field.pa0"
+            original_open = Path.open
+            def deny_payload_open(path, *args, **kwargs):
+                if path == payload:
+                    raise AssertionError("payload read forbidden")
+                return original_open(path, *args, **kwargs)
+            with mock.patch.object(Path, "open", deny_payload_open):
+                with self.assertRaisesRegex(AssertionError, "payload read forbidden"):
+                    payload.read_bytes()
                 inventory = build_calibration_inventory(
                     root, review_deadline="2026-09-27",
                 )

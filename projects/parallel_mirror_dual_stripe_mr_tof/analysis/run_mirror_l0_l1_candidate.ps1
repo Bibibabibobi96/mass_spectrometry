@@ -77,7 +77,7 @@ try {
     'common\host_execution_lease.ps1',
     'common\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
-    'common\contracts\file_identity.py',
+    'src\msplatform\io\file_identity.py',
     'projects\orthogonal_accelerator\analysis\accelerator_time_focus.py',
     'projects\orthogonal_accelerator\analysis\two_zone_geometry.py',
     'projects\orthogonal_accelerator\analysis\two_zone_theory.py',

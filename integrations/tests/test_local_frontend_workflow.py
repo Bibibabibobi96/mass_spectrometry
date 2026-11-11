@@ -166,7 +166,7 @@ class LocalFrontendTests(unittest.TestCase):
         self.request["source"]["producer_manifest"].update(bytes=record["bytes"], sha256=record["sha256"])
 
     def test_real_frozen_geometry_keeps_native_cache_fingerprint(self):
-        from common.contracts.file_identity import canonical_json_sha256
+        from msplatform.io.file_identity import canonical_json_sha256
 
         original = REPO.parent / "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_190350__sim__simion__local-bare-guide-oa/inputs/local_frontend_pa_cache_identity.json"
         if not original.is_file():

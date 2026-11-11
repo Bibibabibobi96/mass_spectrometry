@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_voltage_family import (
     GROUPS,
 )

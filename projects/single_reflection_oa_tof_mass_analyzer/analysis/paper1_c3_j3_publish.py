@@ -21,7 +21,7 @@ import tempfile
 from typing import Any, Mapping, Sequence
 
 from msplatform.execution.artifact_naming import validate_run_id
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.contracts.machine_contracts import SCHEMA_DIR

@@ -103,7 +103,7 @@ def restore_retired_disposition_paths(
     preserves malformed input bytes only for comparison; the candidate must encode
     as strict UTF-8 and pass the complete existing ledger validator.
     """
-    from common.contracts.file_identity import file_sha256
+    from msplatform.io.file_identity import file_sha256
 
     root = root.resolve(strict=False)
     expected = expected_ledger_sha256.upper()

@@ -18,7 +18,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 NUMERIC_COLUMNS = (

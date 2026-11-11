@@ -18,7 +18,6 @@ CODE_PATHS = (
     f"{PREFIX}/analysis/reference_analysis_core.py",
     f"{PREFIX}/analysis/solver_diagnostics.py",
     "src/msplatform/analysis/peak_metrics.py",
-    "common/contracts/file_identity.py",
     "src/msplatform/execution/inputs.py",
 )
 

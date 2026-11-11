@@ -20,7 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_co
     run_coverage,
     validate_accelerator_exit_source_binding,
 )
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 class TwoPrismSegmentedCoverageTests(unittest.TestCase):

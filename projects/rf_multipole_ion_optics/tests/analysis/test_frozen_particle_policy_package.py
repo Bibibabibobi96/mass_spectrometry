@@ -36,7 +36,6 @@ RELATIVE_PATHS = (
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\generate_particle_table.py",
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\particle_source_policy.py",
     r"src\msplatform\contracts\particle_count_policy.json",
-    r"common\contracts\file_identity.py",
     r"projects\rf_multipole_ion_optics\core\__init__.py",
     r"projects\rf_multipole_ion_optics\core\interface_geometry.py",
 )
@@ -52,7 +51,7 @@ REQUIRED_MODULES = (
     "msplatform.components.rf_multipole.paired_particle_source_bundle",
     "msplatform.contracts.particle_physics",
     "msplatform.contracts.particle_count_policy",
-    "common.contracts.file_identity",
+    "msplatform.io.file_identity",
     "msplatform.ion_release",
     "msplatform.ion_release.mt19937_disk_cone_rf_phase",
     "msplatform.ion_release.numpy_box_cone",
@@ -449,7 +448,7 @@ $two=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(REPO_ROOT)} `
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 result = json.loads(completed.stdout)
                 self.assertEqual(result['one'], result['two'])
-                self.assertIn('common/contracts/file_identity.py', result['one'])
+                self.assertIn('common/contracts/capacity_ledger.py', result['one'])
                 self.assertTrue(result['restored'])
             finally:
                 # Remove only this verified directory junction, never its source target.

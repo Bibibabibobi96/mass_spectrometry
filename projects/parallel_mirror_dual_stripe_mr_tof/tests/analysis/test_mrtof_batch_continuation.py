@@ -9,7 +9,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import ContractError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation import (
     REQUIRED_INPUT_ROLES,

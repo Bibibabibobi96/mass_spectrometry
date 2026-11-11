@@ -12,7 +12,7 @@ from pathlib import Path
 
 import scipy
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     continue_fixed_e_l0_family_to_gamma,

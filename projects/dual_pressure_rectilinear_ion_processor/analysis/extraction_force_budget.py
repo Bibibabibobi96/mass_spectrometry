@@ -16,7 +16,7 @@ import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds

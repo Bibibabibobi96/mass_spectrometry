@@ -73,7 +73,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     reduced_period,
 )
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 
 
 PROJECT = Path(__file__).resolve().parents[2]

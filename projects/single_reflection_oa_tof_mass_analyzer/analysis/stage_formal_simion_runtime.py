@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record as verify_run_record
 from msplatform.execution.manifest_verification import _select_consumed_output

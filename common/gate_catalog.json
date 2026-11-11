@@ -601,7 +601,7 @@
           "reason": "workspace_path_transport_changed"
         },
         {
-          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
+          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py))$",
           "reason": "installed_scientific_core_changed"
         },
         {
@@ -1096,7 +1096,7 @@
                 "reason": "optional_cad_dependency_lock_changed"
               },
               {
-                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py|contracts/file_identity\\.py))$",
+                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py))$",
                 "reason": "installed_scientific_core_changed"
               }
             ],
@@ -3109,6 +3109,10 @@
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
+          "exact": "src/msplatform/io/file_identity.py",
+          "reason": "canonical_file_identity_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/analysis/peak_metrics.py",
           "reason": "shared_peak_metrics_changed"
         },
@@ -3213,6 +3217,18 @@
         "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/io/file_identity.py",
+                "reason": "canonical_file_identity_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_publish_ideal_acceptance_aperture_comparison.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -3386,6 +3402,10 @@
         "rf_multipole_generated_publications"
       ],
       "matches": [
+        {
+          "exact": "src/msplatform/io/file_identity.py",
+          "reason": "canonical_file_identity_consumer_changed"
+        },
         {
           "exact": "src/msplatform/analysis/particle_state_comparison.py",
           "reason": "installed_particle_state_comparison_changed"
@@ -3578,6 +3598,18 @@
         "scope": "projects/rf_multipole_ion_optics/tests/",
         "preserve_command": true,
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/io/file_identity.py",
+                "reason": "canonical_file_identity_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

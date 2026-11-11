@@ -366,7 +366,7 @@ import json,re,sys
 from pathlib import Path
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from common.contracts.file_identity import file_sha256
+from msplatform.io.file_identity import file_sha256
 def admit(path,reextract,allow_cold=True,require_native_payload=True):
     path=path.resolve(strict=True);root=path.parent
     require_completed_terminal_publication(path)

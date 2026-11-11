@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256 as _sha256
+from msplatform.io.file_identity import file_sha256 as _sha256
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

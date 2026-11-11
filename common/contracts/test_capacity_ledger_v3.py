@@ -28,7 +28,7 @@ WRITING_RANGE = {
 
 class CapacityLedgerV3Test(unittest.TestCase):
     def key_recovery_fixture(self, root, *, ready_class=False, authority_role="capacity_ledger_retired_path_recovery"):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         from msplatform.execution.recorded_file_removal import write_json_atomic
         record = (dict(path="projects/example/runs/evidence", **{"class": "light_evidence"},
                        bytes=17, status="ready", pin=True, pin_reason="retain evidence", owner="example")
@@ -64,7 +64,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
             self.assertTrue(capacity_ledger.restore_ledger_object_key(root, **args, apply=True)["replayed"])
 
     def test_path_key_restore_rejects_other_changes_and_reappeared_payload(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         for mode in ("resident", "record", "live", "bytes", "two_keys", "reappeared", "receipt", "backup"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
@@ -137,7 +137,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                     self.assertEqual({item:item.read_bytes() for item in snapshots}, snapshots)
 
     def test_path_key_replay_rederives_exact_candidate_instead_of_trusting_journal_digest(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         for damaged in ("ledger_and_journal", "replay_backup"):
             with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
@@ -186,7 +186,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 self.assertEqual({p:p.read_bytes() for p in evidence}, snapshots)
 
     def test_ready_class_key_restore_rejects_other_drift_multiple_bad_and_valid_ledger(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         for mode in ('owner', 'bytes', 'pin', 'resident', 'status', 'extra_unknown', 'two_objects',
                      'two_missing', 'valid', 'unauthenticated'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
@@ -242,7 +242,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                     self.assertEqual(capacity_ledger.load_capacity_ledger(root), original)
 
     def test_object_key_restore_rejects_authenticated_same_path_conflicts(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         from msplatform.execution.recorded_file_removal import write_json_atomic
         for ready_class in (False, True):
             for changed in ('owner', 'class'):
@@ -270,7 +270,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                         self.assertEqual(ledger.read_bytes(), before)
 
     def recovery_fixture(self, root):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         from msplatform.execution.recorded_file_removal import write_json_atomic
         relative = "projects/example/runs/retired"
         disposition = dict(id="A"*64, generation="B"*64, manifest_path="run_config.json",
@@ -335,7 +335,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 self.assertEqual(ledger.read_bytes(),before)
 
     def test_restore_retired_path_rejects_other_damage_and_identity_changes(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         mutations = {
             "owner": lambda d: d["objects"][0].update(owner="other"),
             "active": lambda d: d["objects"][0].update(status="ready"),
@@ -375,7 +375,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 self.assertEqual(ledger.read_bytes(),before)
 
     def test_restore_retired_path_rejects_receipt_conflicts_and_locked_cas_change(self):
-        from common.contracts.file_identity import file_sha256
+        from msplatform.io.file_identity import file_sha256
         from msplatform.execution.recorded_file_removal import write_json_atomic
         changes = {
             "owner": lambda r: r["owner_disposition_authorization"].update(owner="other"),

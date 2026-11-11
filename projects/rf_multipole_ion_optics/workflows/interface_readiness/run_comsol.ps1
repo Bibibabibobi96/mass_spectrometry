@@ -611,7 +611,7 @@ $frozenCountPolicy = Get-FrozenPythonPackageFile -Package $frozenPythonPackage -
             'msplatform.components.rf_multipole.paired_particle_source_bundle',
             'msplatform.contracts.particle_physics',
         'msplatform.contracts.particle_count_policy',
-        'common.contracts.file_identity',
+        'msplatform.io.file_identity',
         'msplatform.ion_release',
         'msplatform.ion_release.numpy_ion11_box',
         'projects.rf_multipole_ion_optics.core',
