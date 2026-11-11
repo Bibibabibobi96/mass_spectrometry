@@ -664,6 +664,66 @@ print('FROZEN_ION_CONSUMER_PASS')
                 self.assertEqual(before[phase], after[phase])
 
 
+    def test_comsol_mesh_phase_selects_frozen_historical_or_current_identity(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts",
+                resolved_contract=PROJECT_ROOT / "config/resolved_geometry.json",
+                analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
+            code = Path(closure["code_root"])
+            old = "common/comsol/add_comsol_size_feature.m"
+            current = "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m"
+            reader = "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m"
+            new_projection = source.candidate_comsol_source_phases(closure)
+            new_rows = {row["source_id"]: row for row in new_projection["native"]["sources"]}
+            self.assertIn(current, new_rows)
+            self.assertIn(reader, new_rows)
+            self.assertNotIn(old, new_rows)
+            declared = {item["source_id"]: item for item in closure["sources"]}
+            for name in (current, reader):
+                self.assertEqual(new_rows[name], {key: declared[name][key] for key in ("source_id", "bytes", "sha256")})
+            saved_records = closure["sources"]
+            closure["sources"] = [*saved_records, {**declared[current], "source_id": old}]
+            with self.assertRaisesRegex(ValueError, "both historical and current mesh helpers"):
+                source.candidate_comsol_source_phases(closure)
+            closure["sources"] = saved_records
+            reader_path = code / reader
+            reader_bytes = reader_path.read_bytes()
+            reader_path.unlink()
+            closure["sources"] = [item for item in saved_records if item["source_id"] != reader]
+            with self.assertRaisesRegex(ValueError, "COMSOL phase lacks declared frozen sources"):
+                source.candidate_comsol_source_phases(closure)
+            closure["sources"] = saved_records
+            reader_path.write_bytes(reader_bytes)
+            reader_path.unlink()
+            try:
+                with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                    source.candidate_comsol_source_phases(closure)
+            finally:
+                reader_path.write_bytes(reader_bytes)
+            old_path = code / old
+            old_path.parent.mkdir(parents=True, exist_ok=True)
+            (code / current).replace(old_path)
+            reader_path.unlink()
+            closure["sources"] = [item for item in closure["sources"] if item["source_id"] != reader]
+            record = next(item for item in closure["sources"] if item["source_id"] == current)
+            record["source_id"] = old
+            historical = source.candidate_comsol_source_phases(closure)
+            old_rows = {row["source_id"]: row for row in historical["native"]["sources"]}
+            expected = dict(new_rows)
+            expected.pop(reader)
+            expected[old] = {**expected.pop(current), "source_id": old}
+            self.assertEqual(old_rows, expected)
+            self.assertNotIn(current, old_rows)
+            self.assertNotIn(reader, old_rows)
+            self.assertEqual({k: v for k, v in historical["native"].items() if k != "sources"},
+                             {k: v for k, v in new_projection["native"].items() if k != "sources"})
+            self.assertNotEqual(historical["native"], new_projection["native"])
+            old_path.unlink()
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                source.candidate_comsol_source_phases(closure)
+
     def test_comsol_phase_projection_uses_one_fresh_verified_snapshot_per_operation(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source
         with tempfile.TemporaryDirectory() as temporary:
@@ -1770,7 +1830,8 @@ print('FROZEN_ION_CONSUMER_PASS')
 
     def test_candidate_source_closure_freezes_shared_n100_transport_mechanism(self):
         required = {
-            "common/comsol/add_comsol_size_feature.m",
+            "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+            "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
             "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1",
             "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
             "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",

@@ -84,7 +84,8 @@ RELATIVE_PATHS = (
     "common/host_resource_scheduler.py",
     "src/msplatform/execution/resources/host_resource_policy.json",
     "common/resource_budget_support.ps1",
-    "common/comsol/add_comsol_size_feature.m",
+    "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+    "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
     "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
     "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1",
     "src/msplatform/backends/comsol/matlab/comsolstartup.m",
@@ -547,8 +548,13 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         "comsol/oatof_build_grid_geometry.m", "comsol/oatof_build_mesh.m",
         "comsol/oatof_build_reflectron_geometry.m", "comsol/oatof_configure_particle_model.m",
         "comsol/oatof_parse_field_idealization.m"))
-    native_names += ("common/comsol/add_comsol_size_feature.m",
-        "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
+    old_mesh = "common/comsol/add_comsol_size_feature.m"
+    new_mesh = ("src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+                "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m")
+    if old_mesh in sources and any(name in sources for name in new_mesh):
+        raise ValueError("COMSOL phase declares both historical and current mesh helpers")
+    native_names += (old_mesh,) if old_mesh in sources else new_mesh
+    native_names += ("src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
         "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
         "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
         "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",

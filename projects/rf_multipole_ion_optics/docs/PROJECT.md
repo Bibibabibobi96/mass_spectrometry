@@ -1,5 +1,16 @@
 # RF多极杆离子光学项目状态
 
+## COMSOL mesh resource ownership
+
+The three shared mesh Size helpers are installed COMSOL MATLAB resources and are
+frozen at their canonical backend paths by the active RF consumers. Their function
+names, mesh settings and typed readbacks remain unchanged; historical frozen runs
+retain their recorded paths. This ownership move grants no new native qualification.
+The unchanged helpers passed all 16 MATLAB R2025b recorder cases with canonical
+function origins and restored path/cwd. The focused RF/TOF/paired/freezer/Changed
+consumer check passed 20 parents; ordinary wheel and sdist-rebuilt-wheel acceptance
+passed at the same frozen source epoch. No COMSOL solve or native trajectory was run.
+
 ## Installed RF source validation
 
 The dual-backend campaign and COMSOL owner fixtures explicitly copy the canonical

@@ -1607,6 +1607,46 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
                 self.assertTrue(all(cases[name]["selected"].values()))
         self.assertFalse(any(cases["docs"]["selected"].values()))
 
+    def test_installed_mesh_resources_select_only_actual_owner_modules(self) -> None:
+        script = r"""
+. __SUPPORT__
+$routes=@(Read-GateCatalog -RepoRoot $PWD.Path)
+$roots=@($routes|Where-Object{$null-ne$_.PSObject.Properties['test_selection']}|ForEach-Object{@($_.test_selection.roots)})
+$base='src/msplatform/backends/comsol/matlab/'
+$names=@('configure_comsol_mesh.m','add_comsol_size_feature.m','read_comsol_mesh_size_controls.m')
+$result=@(foreach($name in $names){
+ $path=$base+$name;$owners=@{}
+ foreach($stage in @('common_contracts','rf_multipole_quadrupole_static','single_reflection_oa_tof_mass_analyzer_static','instrument_assembly_integration','rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static','transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static')){
+  $route=$routes|Where-Object stage -eq $stage
+  $selected=[bool](Get-ChangedRouteReason -Route $route -Paths @($path));$modules=@()
+  if($selected){$paths=@(Get-GateOwnerChangedPaths -Route $route -ChangedPaths @($path));$tests=Get-GateChangedTests -Route $route -ChangedPaths $paths -KnownTestRoots $roots -RepoRoot $PWD.Path;if($null-ne$tests){$modules=@($tests.Modules)}}
+  $owners[$stage]=@{selected=$selected;modules=$modules}
+ }
+ @{name=$name;owners=$owners}
+})
+ConvertTo-Json -InputObject $result -Depth 12 -Compress
+""".replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
+        outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+        for case in json.loads(outcome.stdout):
+            with self.subTest(name=case['name']):
+                owners = case['owners']; shared = case['name'] != 'configure_comsol_mesh.m'
+                self.assertEqual(owners['common_contracts']['modules'], ['common/contracts/test_installed_scientific_core.py'])
+                self.assertCountEqual(owners['rf_multipole_quadrupole_static']['modules'], [
+                    f"{RF}/tests/analysis/test_frozen_matlab_closure.py", f"{RF}/tests/analysis/test_comsol_mesh_report.py"])
+                for stage in ('rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static',
+                              'transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static'):
+                    self.assertFalse(owners[stage]['selected'], stage)
+                self.assertEqual(owners['single_reflection_oa_tof_mass_analyzer_static']['selected'], shared)
+                self.assertEqual(owners['instrument_assembly_integration']['selected'], shared)
+                if shared:
+                    self.assertCountEqual(owners['single_reflection_oa_tof_mass_analyzer_static']['modules'], [
+                        'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py',
+                        'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paired_accelerator_field_adapters.py'])
+                    self.assertEqual(owners['instrument_assembly_integration']['modules'],
+                                     ['integrations/tests/test_paired_accelerator_static_field_execute.py'])
+
     def test_common_mesh_helpers_select_real_consumers_and_unknown_stays_conservative(self) -> None:
         script = r"""
 . __SUPPORT__
@@ -1647,7 +1687,15 @@ ConvertTo-Json -InputObject $results -Depth 12 -Compress
                     self.assertFalse(selected[nonconsumer], (name, nonconsumer))
                 self.assertEqual(selected["single_reflection_oa_tof_mass_analyzer_static"], name == "size")
                 self.assertEqual(selected["instrument_assembly_integration"], name == "size")
-                self.assertEqual(sorted(cases[name]["modules"]), expected)
+                if name in ("configure", "size", "typed"):
+                    # Retired source authorities intentionally select the full owner.
+                    # Deleted files must never regain a stale leaf-only mapping.
+                    retired = {"configure": "configure_comsol_mesh.m", "size": "add_comsol_size_feature.m",
+                               "typed": "read_comsol_mesh_size_controls.m"}[name]
+                    self.assertFalse((REPO_ROOT / "common/comsol" / retired).exists())
+                    self.assertIsNone(cases[name]["modules"])
+                else:
+                    self.assertEqual(sorted(cases[name]["modules"]), expected)
         for name in ("unknown", "renamed"):
             with self.subTest(case=name):
                 selected = cases[name]["selected"]

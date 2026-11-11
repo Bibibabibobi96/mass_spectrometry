@@ -7,6 +7,7 @@ projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
 repoRoot=fileparts(fileparts(projectRoot));
 addpath(fullfile(repoRoot,'common','comsol'));
+addpath(fullfile(repoRoot,'src','msplatform','backends','comsol','matlab'));
 addpath(fullfile(projectRoot,'comsol'));
 assert(nargin>=1 && nargin<=2 && isstruct(runConfig), ...
     'A fully compiled run-config struct is required.');

@@ -177,7 +177,9 @@ ConvertTo-Json -InputObject ($results.ToArray()) -Depth 10 -Compress
             with self.subTest(consumer=name):
                 source = (PROJECT / "comsol" / name).read_text(encoding="utf-8")
                 self.assertIn("configure_comsol_mesh(mesh,", source)
-        helper = (ROOT / "common/comsol/configure_comsol_mesh.m").read_text(encoding="utf-8")
+                self.assertIn("'common','comsol'", source)
+                self.assertIn("'src','msplatform','backends','comsol','matlab'", source)
+        helper = (ROOT / "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m").read_text(encoding="utf-8")
         self.assertIn("add_comsol_size_feature(mesh,", helper)
 
     def test_real_finite_call_derives_strategy_from_frozen_numerics(self):

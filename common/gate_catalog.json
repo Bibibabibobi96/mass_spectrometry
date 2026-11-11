@@ -795,6 +795,18 @@
         {
           "exact": "src/msplatform/backends/simion/dual_cone_stages.py",
           "reason": "dual_cone_independent_stage_projection_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
         }
       ],
       "command": {
@@ -1476,6 +1488,26 @@
             "modules": [
               "common/contracts/test_oa_tracking.py",
               "common/contracts/test_simion_rf_tracking.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py"
             ],
             "dependency_profile": "locked"
           }
@@ -2193,6 +2225,18 @@
         {
           "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
           "reason": "prepared_joint_frozen_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "common/comsol/add_comsol_size_feature.m",
+          "reason": "retired_comsol_mesh_source_changed"
         }
       ],
       "command": {
@@ -2481,6 +2525,26 @@
             "modules": [
               "integrations/tests/test_local_frontend_field_support.py",
               "integrations/tests/test_dependencies.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "common/comsol/add_comsol_size_feature.m",
+                "reason": "retired_comsol_mesh_source_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_paired_accelerator_static_field_execute.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3421,6 +3485,14 @@
         {
           "exact": "src/msplatform/analysis/axis_field_transport.py",
           "reason": "installed_axis_field_transport_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
         }
       ],
       "command": {
@@ -3577,6 +3649,23 @@
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_fit.py",
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_compensation.py",
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paired_accelerator_field_adapters.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3852,6 +3941,18 @@
         {
           "exact": "src/msplatform/workflows/rf_convergence_comparison.py",
           "reason": "installed_rf_convergence_comparison_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+          "reason": "installed_comsol_mesh_consumer_changed"
         }
       ],
       "command": {
@@ -4134,6 +4235,27 @@
               "projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_simion_transport_runner_source.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_workflow_architecture_contract.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+                "reason": "installed_comsol_mesh_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_matlab_closure.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_mesh_report.py"
             ],
             "dependency_profile": "locked"
           }

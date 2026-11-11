@@ -12,8 +12,8 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 
 OA-only配对静态场的MATLAB构建/导出器及加速器实体、仪器投影和零厚栅helper的唯一实现位于
 `msplatform.backends.comsol/matlab/`。活动静态场任务通过`native_resource_directory()`安装路径调用；
-候选与Formal几何继续使用同一组helper，项目旧副本已退役。公共`common/comsol/add_comsol_size_feature.m`
-保持共享网格依赖。本次只迁移源码与软件接线，不新增MPH、原生求解、保存重开、GUI/CAD或科学资格。
+候选与Formal几何继续使用同一组helper，项目旧副本已退役。Shared mesh helpers have their sole executable sources in `msplatform.backends.comsol/matlab/`;
+the old common copies are retired.本次只迁移源码与软件接线，不新增MPH、原生求解、保存重开、GUI/CAD或科学资格。
 
 paired静态场SIMION采样器和paired脉冲SIMION回调现唯一保存在`msplatform.backends.simion/resources/`。
 当前缓存验证、Lua任务、Program及dispatch代码身份直接消费安装资源，旧项目文件已退役；

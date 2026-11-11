@@ -17,6 +17,7 @@ NATIVE_RESOURCES = frozenset({
     "verify_wehnelt_model.m",
     "ms_stage1_ei_source.m", "load_ei_source_contract.m", "comsolstartup.m",
     "verify_ei_source_model.m", "verify_ei_source_parameter_bindings.m", "ei_source_unit_text.m",
+    "add_comsol_size_feature.m", "configure_comsol_mesh.m", "read_comsol_mesh_size_controls.m",
     "build_accelerator_grids.m",
     "build_and_export_paired_accelerator_field.m",
     "build_sectioned_geometry.m",

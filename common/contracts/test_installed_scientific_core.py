@@ -1362,6 +1362,48 @@ for name in NATIVE_RESOURCES | LAUNCHER_RESOURCES:
     assert resource.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
     assert resource.read_bytes() == native_resource_text(name).encode('utf-8')
     assert resource.stat().st_size > 0
+# COMSOL_MESH_RESOURCES_INSTALLED_BEGIN
+# The ordinary resolver loop above already checks registered resource origins.
+# These original-byte pins and fresh-child refusals cover lookup only.
+cmesh_records = (
+    ('add_comsol_size_feature.m', 1642, '8c7c4bf86c2c9682eff7e05e10fe9d34fbb1873d40b9e391735cec94135cbf7c'),
+    ('configure_comsol_mesh.m', 2374, '83897fb44a6791025fa3474783c563bfe33f21529cd881306593145ac01dedb5'),
+    ('read_comsol_mesh_size_controls.m', 794, '91daaee31fcb5977675c6ff6c0f42e7b0eb065a5bff3260c1325889cf305dff2'),
+)
+assert {name for name, _, _ in cmesh_records} <= NATIVE_RESOURCES
+cmesh_child = r"""import importlib.abc,json,os,pathlib,sys,sysconfig
+blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(source) for source in blocked): raise AssertionError('author access: '+str(path))
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,Deny())
+import msplatform.backends.comsol.resources as resources
+pure=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+assert pathlib.Path(resources.__file__).resolve()==pure/'msplatform/backends/comsol/resources.py'
+resources.native_resource_path(sys.argv[2])
+"""
+for cmesh_name,cmesh_size,cmesh_sha in cmesh_records:
+    cmesh_path = comsol_resource_path(cmesh_name).resolve()
+    assert cmesh_path == matlab_directory/cmesh_name
+    cmesh_bytes = cmesh_path.read_bytes()
+    assert len(cmesh_bytes)==cmesh_size and hashlib.sha256(cmesh_bytes).hexdigest()==cmesh_sha
+    cmesh_held = cmesh_path.with_suffix(cmesh_path.suffix+'.mesh-held')
+    assert not cmesh_held.exists(); cmesh_path.rename(cmesh_held)
+    try:
+        cmesh_missing = subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',cmesh_child,
+            json.dumps([str(source) for source in blocked_source_roots]),cmesh_name],
+            cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert cmesh_missing.returncode != 0 and not cmesh_missing.stdout,cmesh_missing.stderr
+        assert cmesh_missing.stderr.splitlines()[-1] == 'FileNotFoundError: installed COMSOL native resource is missing: '+cmesh_name,cmesh_missing.stderr
+    finally:
+        cmesh_held.rename(cmesh_path)
+    assert cmesh_path.read_bytes()==cmesh_bytes
+# COMSOL_MESH_RESOURCES_INSTALLED_END
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 assert callable(load_contract)
 candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict(s1=1., s2=2., p1=3., p2=4.))

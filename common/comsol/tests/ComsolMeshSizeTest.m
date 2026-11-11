@@ -7,6 +7,8 @@ classdef ComsolMeshSizeTest < matlab.unittest.TestCase
         function configurePath(testCase)
             folder = fileparts(mfilename('fullpath'));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fileparts(folder)));
+            root = fileparts(fileparts(fileparts(folder)));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'src','msplatform','backends','comsol','matlab')));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(folder,'test_support')));
         end
     end

@@ -146,13 +146,6 @@
           "consumers": [
             "oa_mr"
           ]
-        },
-        {
-          "id": "common_comsol_add_comsol_size_feature_m",
-          "source_repo_path": "common/comsol/add_comsol_size_feature.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
         }
       ],
       "python_packages": [
@@ -1115,6 +1108,20 @@
           "source_repo_path": "src/msplatform/execution/resources/frozen_python_package.ps1",
           "consumers": [
             "prepared_joint"
+          ]
+        },
+        {
+          "id": "msplatform_comsol_add_comsol_size_feature_m",
+          "source_repo_path": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "msplatform_comsol_read_comsol_mesh_size_controls_m",
+          "source_repo_path": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
+          "consumers": [
+            "paired_accelerator_static_field"
           ]
         }
       ],

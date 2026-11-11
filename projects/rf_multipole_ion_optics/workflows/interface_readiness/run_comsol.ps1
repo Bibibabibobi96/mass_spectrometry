@@ -534,9 +534,9 @@ try {
         -Destination (Join-Path $inputDir 'particle_source_distribution.json')
     $frozenMatlabRelativePaths=@(
         'common/comsol/create_multipole_round_rods.m',
-        'common/comsol/configure_comsol_mesh.m',
-        'common/comsol/add_comsol_size_feature.m',
-        'common/comsol/read_comsol_mesh_size_controls.m',
+        'src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m',
+        'src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m',
+        'src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m',
         'projects/rf_multipole_ion_optics/load_rf_quadrupole_contract.m',
         'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
         'projects/rf_multipole_ion_optics/comsol/compare_rf_gui_observations.m',

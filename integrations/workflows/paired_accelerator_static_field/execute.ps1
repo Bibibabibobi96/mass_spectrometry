@@ -69,6 +69,25 @@ function Invoke-PairedPython {
     return Get-Content -LiteralPath $stdout -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   }
 }
+function Assert-PairedFrozenMatlabSources {
+  $root=[IO.Path]::GetFullPath([string]$frozen.execution_root).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
+  $selected=@($frozen.identities|Where-Object{[IO.Path]::GetExtension([string]$_.source_repo_path) -ieq '.m'})
+  if($selected.Count-eq0){throw 'Paired frozen MATLAB dependency inventory is empty.'}
+  $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach($record in $selected){
+    $relative=[string]$record.source_repo_path
+    $path=[IO.Path]::GetFullPath([string]$record.frozen_path)
+    $expected=[IO.Path]::GetFullPath((Join-Path $root $relative))
+    if([IO.Path]::IsPathRooted($relative)-or-not$path.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-or
+       -not$path.Equals($expected,[StringComparison]::OrdinalIgnoreCase)-or-not$seen.Add($path)){
+      throw "Paired frozen MATLAB dependency identity differs: $relative"
+    }
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)-or (Get-Item -LiteralPath $path).Length-ne[long]$record.bytes-or
+       (Get-RunFileSha256 -Path $path)-cne[string]$record.sha256){
+      throw "Paired frozen MATLAB dependency changed: $relative"
+    }
+  }
+}
 function Register-PairedInputs {
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   foreach($file in Get-ChildItem -LiteralPath $package.input_dir -Recurse -File){
@@ -198,6 +217,7 @@ try{
       -RemainingCommittedNewBytes ([long]$budget.committed_new_bytes) -ProtectedCacheKeys @($cache.cache_key) -ProtectedPaths $protected
     $capacity=$update.session
     Set-PairedStage 'prepare_comsol_task'
+    if(-not$completedComsolExports){Assert-PairedFrozenMatlabSources}
     $taskArguments=@($package.run_dir,$frozen.execution_root,$(if($savedModel){$savedModel}else{''}),
       $(if($savedModel){$comsolSourceStage}else{'solved_saved'}),$(if($completedComsolExports){'false'}else{'true'}))
     $taskCode='print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),None,saved_model=Path(sys.argv[3]) if sys.argv[3] else None,saved_model_stage=sys.argv[4],comsol_required=sys.argv[5]=="true",simion_required=False)))'
@@ -257,6 +277,7 @@ try{
     if($completedComsolExports){
       $comsolSamples=[string]$completedComsolExports.samples.path
     }else{
+      Assert-PairedFrozenMatlabSources
       Set-PairedStage 'comsol_field';$comsolNativeExecuted=$true
       $comsolCompletion=Join-Path $package.artifact_run_dir 'logs/comsol_completion.json';$writersStopped=$false;$comsolFailure=$null
       try{
@@ -278,6 +299,7 @@ try{
       }
       if($comsolFailure){throw $comsolFailure}
       if($LASTEXITCODE-ne0){throw 'COMSOL field build/export failed; any solved/saved MPH is retained.'}
+      Assert-PairedFrozenMatlabSources
       $null=Invoke-PairedPython 'validate_samples(read(Path(sys.argv[1])),Path(sys.argv[2]));print("{}")' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'),$comsolSamples)
     }
     Set-PairedStage 'diagnostic_comparison'

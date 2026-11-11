@@ -1169,6 +1169,38 @@ $result|ConvertTo-Json -Compress
                     with self.subTest(package=package["source_repo_path"], suffix=suffix):
                         self.assertIn("instrument_assembly_integration", self.routed_stages(package["source_repo_path"] + "/" + suffix))
 
+    def test_installed_mesh_resources_real_plan_selects_exact_owner_modules(self) -> None:
+        base = 'src/msplatform/backends/comsol/matlab/'
+        for name in ('configure_comsol_mesh.m','add_comsol_size_feature.m','read_comsol_mesh_size_controls.m'):
+            with self.subTest(name=name):
+                request, _ = self.plan('-ChangedPath', base + name)
+                selected = [row for row in request['stages'] if row['selected']]
+                def rows_for(stage):
+                    return [row for row in selected if row['name'] == stage or row['name'].startswith(stage + '__tests_')]
+                contracts = rows_for('common_contracts')
+                self.assertTrue(contracts)
+                self.assert_complete_contract_modules(contracts, {'common.contracts.test_installed_scientific_core'})
+                quad = rows_for('rf_multipole_quadrupole_static')
+                self.assertTrue(quad)
+                rf_modules = [value for row in quad for value in row['command'].get('parameters', {}).get('ChangedTestModules', [])]
+                self.assertCountEqual(rf_modules, [
+                    'projects.rf_multipole_ion_optics.tests.analysis.test_frozen_matlab_closure',
+                    'projects.rf_multipole_ion_optics.tests.analysis.test_comsol_mesh_report'])
+                shared = name != 'configure_comsol_mesh.m'
+                oa = rows_for('single_reflection_oa_tof_mass_analyzer_static')
+                integration = rows_for('instrument_assembly_integration')
+                self.assertEqual(bool(oa), shared); self.assertEqual(bool(integration), shared)
+                if shared:
+                    oa_modules = [value for row in oa for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
+                    self.assertCountEqual(oa_modules, [
+                        'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_workflow',
+                        'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_paired_accelerator_field_adapters'])
+                    integration_modules = [value for row in integration for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
+                    self.assertEqual(integration_modules, ['integrations.tests.test_paired_accelerator_static_field_execute'])
+                for stage in ('rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static',
+                              'transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static'):
+                    self.assertFalse(rows_for(stage), stage)
+
     def test_runtime_dependency_paths_select_the_real_integration_plan(self) -> None:
         # These newly consumed geometry/export paths previously escaped L1 routing.
         paths = [

@@ -281,7 +281,7 @@ def materialize_tasks(run: Path, code: Path, pa: Path | None, *, saved_model: Pa
         raise ValueError('explicit prepared/saved or solved/saved model stage required')
     stage_argument = ", 'prepared_saved'" if saved_model_stage == 'prepared_saved' else ''
     task_path.write_text(
-        f"addpath({matlab(native_resource_directory())},{matlab(code/'common/comsol')});\n"
+        f"addpath({matlab(native_resource_directory())});\n"
         f"build_and_export_paired_accelerator_field({matlab(plan_path)},{matlab(run/'comsol')},"
         f"{matlab(saved_model) if saved_model is not None else chr(39)+chr(39)}{stage_argument});\n", encoding='utf-8', newline='\n')
     return dict(lua=str(lua_path) if simion_required else None, matlab=str(task_path))

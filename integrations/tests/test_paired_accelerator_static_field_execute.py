@@ -364,7 +364,8 @@ if(-not(Test-Path -LiteralPath $context.python_executable -PathType Leaf)-or$con
 [IO.File]::WriteAllText($CompletionPath,'{"operations":[],"host_release":{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{"status":"released","token":"TEST_ONLY_NO_NATIVE"},"error":null}}')
 $global:nativeCalls++;$global:LASTEXITCODE=0
 '@ | Set-Content -LiteralPath $launcher
-$global:nativeCalls=0
+$global:nativeCalls=0;$script:meshGuardCalls=0
+function Assert-PairedFrozenMatlabSources {$script:meshGuardCalls++}
 function Invoke-PairedPython {param($Code,$Arguments) $script:taskInvocation=@($Code,$Arguments);@{lua='inert.lua';matlab='inert.m'}}
 function Set-PairedStage {param($Name);$script:stage=$Name}
 foreach($completed in @($true,$false)){
@@ -382,10 +383,10 @@ foreach($completed in @($true,$false)){
  . ([scriptblock]::Create($summaryNode.Extent.Text))
  $publishedSummary=$summary
  if($completed){
-  if($global:nativeCalls-ne0-or$comsolSamples-ne'borrowed-original.csv'){throw 'Completed exports invoked native or changed sample ownership'}
+  if($global:nativeCalls-ne0-or$script:meshGuardCalls-ne0-or$comsolSamples-ne'borrowed-original.csv'){throw 'Completed exports invoked native or changed sample ownership'}
   if(-not$publishedSummary.comsol_reused_exports-or$publishedSummary.comsol_native_executed){throw 'Reused COMSOL summary scope differs'}
  }else{
-  if($global:nativeCalls-ne1-or-not$publishedSummary.comsol_native_executed){throw 'Cold/native branch silently skipped'}
+  if($global:nativeCalls-ne1-or$script:meshGuardCalls-ne2-or-not$publishedSummary.comsol_native_executed){throw 'Cold/native branch silently skipped'}
  }
  if(-not$publishedSummary.native_executed){throw 'SIMION diagnostic execution must not be relabelled as wholly nonnative'}
 }
@@ -411,6 +412,149 @@ foreach($completed in @($true,$false)){
             source.write_text('{}')
             with self.assertRaises((ValueError,AssertionError)):
                 runtime.prepare_run(run)
+
+    def test_actual_owner_post_exit_guard_preserves_release_and_launcher_failure(self):
+        script = r'''param($Source,$Directory,$Public,$Python)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $Public 'common/contracts/run_artifact_support.ps1')
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Actual owner parse failed'}
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$completedComsolExports'-and$n.Extent.Text-like'*comsol_bootstrap.txt*'},$true)
+$guard=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-PairedFrozenMatlabSources'},$true)
+if($null-eq$branch-or$null-eq$guard){throw 'Actual COMSOL branch or guard is missing'}
+. ([scriptblock]::Create($guard.Extent.Text))
+$workflowTokens=$null;$workflowErrors=$null
+$workflowAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Public 'common/contracts/run_artifact_workflow.ps1'),[ref]$workflowTokens,[ref]$workflowErrors)
+$release=$workflowAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Add-RunArtifactResourceRelease'},$true)
+if($workflowErrors.Count-or$null-eq$release){throw 'Actual release recorder unavailable'}
+. ([scriptblock]::Create($release.Extent.Text))
+$relative='src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m'
+$sourcePath=Join-Path $Public $relative
+$sourceBytes=[IO.File]::ReadAllBytes($sourcePath)
+$selected=Join-Path $Directory $relative
+$null=New-Item -ItemType Directory -Force -Path (Split-Path -Parent $selected)
+[IO.File]::WriteAllBytes($selected,$sourceBytes)
+$identity=@{source_repo_path=$relative;frozen_path=$selected;bytes=$sourceBytes.Length;sha256=(Get-RunFileSha256 -Path $selected)}
+$frozen=@{execution_root=$Directory;identities=@($identity)}
+$RepoRoot=$Directory;$RunId='inert';$completedComsolExports=$null
+$package=@{run_dir=$Directory;artifact_run_dir=$Directory;log_dir=(Join-Path $Directory 'logs');result_dir=(Join-Path $Directory 'results')}
+$null=New-Item -ItemType Directory -Force -Path $package.log_dir,$package.result_dir
+$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$tasks=@{matlab='inert task'}
+$launcher=Join-Path $Directory 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
+$null=New-Item -ItemType Directory -Force -Path (Split-Path -Parent $launcher)
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path -Parent $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Directory 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Directory 'TEST_ONLY_MATLAB'
+$null=New-Item -ItemType Directory -Force -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64')
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Directory;python_executable=$Python;host_state_path=(Join-Path $Directory 'host.sqlite3');policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
+$launcherLines=@(
+ 'param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)',
+ '$bytes=[IO.File]::ReadAllBytes($env:PAIRED_TEST_SELECTED);$bytes[0]=$bytes[0] -bxor 1;[IO.File]::WriteAllBytes($env:PAIRED_TEST_SELECTED,$bytes)',
+ '$exitCode=if($env:PAIRED_TEST_MODE-eq''failure''){7}else{0}',
+ '$receipt=@{operations=@(@{operation_id=''comsol_field'';observation=@{exit_confirmed=$true;returncode=$exitCode;process_id=12345;process_started_at_utc_ticks=123456}});host_release=@{inherited=$false;token=''TEST_ONLY'';result=@{status=''released'';token=''TEST_ONLY''};error=$null}}',
+ '[IO.File]::WriteAllText($CompletionPath,($receipt|ConvertTo-Json -Depth 10 -Compress))',
+ '$global:LASTEXITCODE=$exitCode',
+ 'if($exitCode-ne0){throw ''INERT_LAUNCHER_FAILURE''}'
+)
+[IO.File]::WriteAllText($launcher,($launcherLines-join"`n"))
+function Set-PairedStage {param($Name);$script:stage=$Name}
+function Invoke-PairedPython {throw 'Scientific validation must not run after a failed post-exit guard'}
+$env:PAIRED_TEST_SELECTED=$selected
+foreach($mode in @('success','failure')){
+ [IO.File]::WriteAllBytes($selected,$sourceBytes)
+ $env:PAIRED_TEST_MODE=$mode;$writersStopped=$true;$script:writerUnknown=$false;$script:hostReleaseUnknown=$false
+ $nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
+ $global:LASTEXITCODE=0;$failure=$null
+ try{. ([scriptblock]::Create($branch.Extent.Text));throw 'Expected post-exit failure was not raised'}catch{$failure=$_}
+ if($mode-eq'success'){
+  if(-not$failure.Exception.Message.Contains('Paired frozen MATLAB dependency changed:')){throw $failure}
+ }elseif(-not$failure.Exception.Message.Contains('INERT_LAUNCHER_FAILURE')){throw $failure}
+ if(-not$writersStopped-or$script:writerUnknown-or$script:hostReleaseUnknown){throw 'Known process/release state was lost'}
+ if($nativeOperations.Count-ne1-or$resourceReleases.Count-ne1){throw 'Actual process/release observations were not retained'}
+ if($nativeOperations[0].observation.exit_confirmed-ne$true-or$nativeOperations[0].observation.returncode-ne$(if($mode-eq'failure'){7}else{0})){throw 'Actual exit observation differs'}
+ if($resourceReleases[0].completion_receipt.host_release.result.status-ne'released'){throw 'Actual release observation differs'}
+ if((Get-Item -LiteralPath $selected).Length-ne$sourceBytes.Length){throw 'Injected corruption changed size'}
+ if((Get-RunFileSha256 -Path $sourcePath)-cne$identity.sha256){throw 'Author source changed'}
+}
+'PAIRED_POST_EXIT_GUARD=PASS'
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);wrapper=root/'post-exit-guard.ps1'
+            wrapper.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(WORKFLOW/'execute.ps1'),
+                str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,text=True,
+                encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('PAIRED_POST_EXIT_GUARD=PASS',result.stdout)
+
+    def test_real_owner_guard_and_frozen_materializer_reject_changed_matlab_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = self.prepared(root)
+            script = root / 'owner-matlab-guard.ps1'
+            script.write_text(r'''param([string]$RepoRoot,[string]$Run,[string]$Python)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
+$tokens=$null;$errors=$null
+$owner=Join-Path $RepoRoot 'integrations/workflows/paired_accelerator_static_field/execute.ps1'
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($owner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Actual owner did not parse'}
+$text=[IO.File]::ReadAllText($owner)
+$prepare=$text.IndexOf("Set-PairedStage 'prepare_comsol_task'")
+$first=$text.IndexOf('Assert-PairedFrozenMatlabSources',$prepare)
+$materialize=$text.IndexOf('$tasks=Invoke-PairedPython $taskCode $taskArguments',$prepare)
+$second=$text.IndexOf('Assert-PairedFrozenMatlabSources',$materialize)
+$launch=$text.IndexOf('-TaskScript $tasks.matlab',$second)
+$third=$text.IndexOf('Assert-PairedFrozenMatlabSources',$launch)
+if($prepare-lt0-or$first-lt$prepare-or$materialize-lt$first-or$second-lt$materialize-or$launch-lt$second-or$third-lt$launch){throw 'Actual owner guard ordering differs'}
+foreach($name in @('Invoke-PairedPython','Assert-PairedFrozenMatlabSources')){
+  $definition=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq$name},$true))
+  if($definition.Count-ne1){throw "Actual owner function missing or ambiguous: $name"}
+  . ([scriptblock]::Create($definition[0].Extent.Text))
+}
+foreach($name in @('header','taskArguments','taskCode')){
+  $assignment=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq$name},$true))
+  if($assignment.Count-ne1){throw "Actual owner assignment missing or ambiguous: $name"}
+  Set-Variable -Name ('actual_'+$name) -Value $assignment[0].Extent.Text
+}
+$package=@{run_dir=$Run;log_dir=(Join-Path $Run 'logs')}
+$null=New-Item -ItemType Directory -Force -Path $package.log_dir
+$stage='prepare_comsol_task';$savedModel='';$comsolSourceStage='';$completedComsolExports=$null
+$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json') -InputDir (Join-Path $Run 'inputs') -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field
+Invoke-Expression $actual_header
+$plan=Invoke-PairedPython 'print(json.dumps(prepare_run(Path(sys.argv[1]))))' @($package.run_dir)
+Invoke-Expression $actual_taskArguments
+Invoke-Expression $actual_taskCode
+$selected=@($frozen.identities|Where-Object{[IO.Path]::GetExtension([string]$_.source_repo_path)-ieq'.m'})
+if($selected.Count-eq0){throw 'No real frozen MATLAB identities'}
+$original=@{};foreach($record in $selected){$original[[string]$record.source_repo_path]=(Get-RunFileSha256 -Path (Join-Path $RepoRoot $record.source_repo_path))}
+Assert-PairedFrozenMatlabSources
+$tasks=Invoke-PairedPython $taskCode $taskArguments
+if(-not(Test-Path -LiteralPath $tasks.matlab -PathType Leaf)){throw 'Real frozen materializer did not create the task'}
+$marker=Join-Path $Run 'fake-launch-marker'
+foreach($record in $selected){
+  $path=[string]$record.frozen_path;$body=[IO.File]::ReadAllBytes($path)
+  foreach($kind in @('missing','tamper')){
+    if($kind-eq'missing'){Remove-Item -LiteralPath $path}else{$copy=[byte[]]$body.Clone();if($copy.Length-eq0){throw 'Empty MATLAB fixture'};$copy[0]=$copy[0] -bxor 1;[IO.File]::WriteAllBytes($path,$copy);if((Get-Item -LiteralPath $path).Length-ne$body.Length){throw 'Tamper changed length'}}
+    try{
+      try{Assert-PairedFrozenMatlabSources; $null=Invoke-PairedPython $taskCode $taskArguments; [IO.File]::WriteAllText($marker,'must not launch'); throw 'changed file accepted'}
+      catch{if(-not$_.Exception.Message.Contains('Paired frozen MATLAB dependency changed:')){throw}}
+      if(Test-Path -LiteralPath $marker){throw 'Fake launch marker created on rejected input'}
+    }finally{[IO.File]::WriteAllBytes($path,$body)}
+  }
+}
+Assert-PairedFrozenMatlabSources
+foreach($record in $selected){if((Get-RunFileSha256 -Path (Join-Path $RepoRoot $record.source_repo_path))-cne$original[[string]$record.source_repo_path]){throw 'Original source changed'}}
+'PAIRED_FROZEN_MATLAB_GUARD=PASS'
+''',encoding='utf-8',newline='\n')
+            result = subprocess.run(['pwsh','-NoProfile','-File',str(script),str(ROOT),str(run),sys.executable],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=120)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('PAIRED_FROZEN_MATLAB_GUARD=PASS',result.stdout)
 
     def test_real_frozen_closure_prepares_and_materializes_tasks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -444,13 +588,28 @@ foreach($completed in @($true,$false)){
             self.assertIn('FROZEN_PREPARE_AND_TASKS=PASS',result.stdout)
             resources=snapshot/'src/msplatform/backends/comsol/matlab'
             for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
-                         'build_sectioned_geometry.m','build_accelerator_grids.m'):
+                         'build_sectioned_geometry.m','build_accelerator_grids.m',
+                         'add_comsol_size_feature.m','read_comsol_mesh_size_controls.m'):
                 self.assertEqual((resources/name).read_bytes(),
                     (ROOT/'src/msplatform/backends/comsol/matlab'/name).read_bytes())
             task=(run/'inputs/run_comsol_field.m').read_text(encoding='utf-8')
             self.assertIn(resources.as_posix(),task)
-            self.assertIn((snapshot/'common/comsol').as_posix(),task)
+            self.assertNotIn((snapshot/'common/comsol').as_posix(),task)
             self.assertIn("build_and_export_paired_accelerator_field(",task)
+            for name in ('add_comsol_size_feature.m', 'read_comsol_mesh_size_controls.m'):
+                selected = resources / name
+                held = selected.with_suffix('.held')
+                selected.rename(held)
+                try:
+                    missing=subprocess.run([sys.executable,'-B','-s','-c',
+                        "from msplatform.backends.comsol.resources import native_resource_path; "
+                        "native_resource_path(__import__('sys').argv[1])",
+                        name],cwd=snapshot,env=environment,capture_output=True,text=True,
+                        encoding="utf-8",errors="replace",timeout=60)
+                    self.assertNotEqual(missing.returncode,0)
+                    self.assertIn('installed COMSOL native resource is missing: '+name,missing.stderr)
+                finally:
+                    held.rename(selected)
             shutil.rmtree(resources)
             result=subprocess.run([sys.executable,'-B','-s','-c',
                 "from pathlib import Path; from integrations.workflows.paired_accelerator_static_field import runtime; "
@@ -467,9 +626,10 @@ foreach($completed in @($true,$false)){
             task=Path(tasks['matlab']).read_text()
             self.assertIn(",'');",task)
             self.assertIn(runtime.native_resource_directory().as_posix(),task)
-            self.assertIn((ROOT/'common/comsol').as_posix(),task)
+            self.assertNotIn((ROOT/'common/comsol').as_posix(),task)
             for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
-                         'build_sectioned_geometry.m','build_accelerator_grids.m'):
+                         'build_sectioned_geometry.m','build_accelerator_grids.m',
+                         'add_comsol_size_feature.m','read_comsol_mesh_size_controls.m'):
                 self.assertEqual((runtime.native_resource_directory()/name).read_bytes(),
                     (ROOT/'src/msplatform/backends/comsol/matlab'/name).read_bytes())
             build=runtime.field_build_arguments(plan)

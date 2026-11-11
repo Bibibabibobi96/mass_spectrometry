@@ -2,6 +2,7 @@
 
 addpath(fileparts(mfilename('fullpath')));
 addpath(fullfile(fileparts(mfilename('fullpath')),'..','..','..','common','comsol'));
+addpath(fullfile(fileparts(mfilename('fullpath')),'..','..','..','src','msplatform','backends','comsol','matlab'));
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 resolvedDesignPath = getenv('MULTIPOLE_RESOLVED_DESIGN');

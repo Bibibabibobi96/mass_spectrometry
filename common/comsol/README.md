@@ -14,7 +14,7 @@
 |---|---|
 | 圆柱、圆柱壳、开孔板 | [圆柱](create_comsol_cylinder.m)、[圆柱壳](create_comsol_cylindrical_shell.m)、[开孔板](create_comsol_apertured_plate.m) |
 | 圆杆与分段圆杆阵列 | [连续杆](create_multipole_round_rods.m)、[分段杆](create_multipole_segmented_round_rods.m) |
-| 全局网格与局部尺寸节点 | [网格配置](configure_comsol_mesh.m)、[局部 Size](add_comsol_size_feature.m) |
+| 全局网格与局部尺寸节点 | [网格配置](../../src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m)、[局部 Size](../../src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m) |
 
 以上是经实际复用的最小构建原语：圆柱、圆柱壳、开孔板、圆杆多极阵列、全局自动网格和局部
 最大单元尺寸节点。调用方必须显式传入尺寸、轴向、位置、选择和网格值；原语不决定物理设计或收敛资格。
