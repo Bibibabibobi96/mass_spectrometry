@@ -197,12 +197,73 @@ class SimionGeometryTests(unittest.TestCase):
         )
         self.assertIn("trajectory_samples.csv", (PROJECT.parents[1] / "src/msplatform/backends/simion/dual_cone_transport.py").read_text(encoding="utf-8"))
 
-    def test_validated_comsol_gas_compilation_remains_available(self) -> None:
-        compiler = (PROJECT / "workflows/gas_assisted_transport/build_gas_runtime.ps1").read_text(encoding="utf-8")
-        self.assertIn("read_gas_field", compiler)
-        self.assertIn("field = read_gas_field(reference)", compiler)
-        self.assertIn("field.artifact.data_records", compiler)
-        self.assertIn("prepare_cfd_gas_field(field.data", compiler)
+    def test_published_gas_runtime_real_entry_preserves_output_and_rejects_tampering(self) -> None:
+        from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
+        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+        from msplatform.io.manifest_records import file_record
+        from msplatform.results.gas_field import read_gas_field
+        from projects.dual_cone_tandem_quadrupole_ion_interface.tests.test_gas_flow_contract import _write_fixture
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            csv_path, metadata_path = _write_fixture(root)
+            config = PROJECT / "config"
+            paths = dict(science=config / "gas_flow_science.json",
+                numerics=config / "comsol_solver_numerics.json",
+                geometry=config / "resolved_geometry.json", field_csv=csv_path, field_metadata=metadata_path)
+            records = {name: file_record(path, "required_evidence") for name, path in paths.items()}
+            producer = dict(schema_version=2, role="simulation_run_manifest", project=PROJECT.name,
+                run_id="explicit-inert-gas-fixture", mode="axisymmetric_gas_flow_screening", status="success",
+                inputs={name: records[name] for name in ("science", "numerics", "geometry")},
+                outputs=[records["field_csv"], records["field_metadata"]],
+                products=dict(gas_field=dict(schema_version=1, kind="gas_field", status="complete",
+                    metadata=dict(claim_scope="INERT_PREPARATION_FIXTURE_NOT_NATIVE"), data=records)))
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps(producer), encoding="utf-8")
+            reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+            reference_path = root / "reference.json"
+            reference_path.write_text(json.dumps(reference), encoding="utf-8")
+            interface = load(GAS_INTERFACE)
+            interface["runtime_artifact_contract"]["domain"] = dict(
+                minimum_z_mm=0.0, maximum_z_mm=9.0, minimum_radius_mm=0.0, maximum_radius_mm=9.0)
+            interface_path = root / "interface.json"
+            interface_path.write_text(json.dumps(interface), encoding="utf-8")
+            output = root / "runtime"
+            lua, runtime_manifest = output / "gas_field_runtime.lua", output / "gas_field_manifest.json"
+            # The pre-migration composition is the byte oracle, at the exact same output paths.
+            field = read_gas_field(reference)
+            definition, metadata = prepare_cfd_gas_field(field.data, interface=interface,
+                producer_reference=field.artifact.reference, source_records=field.artifact.data_records)
+            materialize_gas_runtime(definition, lua, runtime_manifest, manifest_metadata=metadata)
+            expected = (lua.read_bytes(), runtime_manifest.read_bytes())
+            source_bytes = {name: path.read_bytes() for name, path in paths.items()}
+            script = PROJECT / "workflows/gas_assisted_transport/build_gas_runtime.ps1"
+            shell = shutil.which("pwsh")
+            self.assertIsNotNone(shell)
+            common = ["-InterfacePath", str(interface_path), "-OutputDir", str(output), "-PythonExe", sys.executable]
+            for option, value in (("-ComsolRunDirectory", root), ("-SourceReferencePath", reference_path)):
+                with self.subTest(option=option):
+                    result = subprocess.run([shell, "-NoProfile", "-File", str(script), option, str(value), *common],
+                        cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", check=False)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("SIMION_GAS_FIELD_MANIFEST=" + str(runtime_manifest.resolve()), result.stdout)
+                    self.assertEqual((lua.read_bytes(), runtime_manifest.read_bytes()), expected)
+            for option, value in (("--comsol-run-directory", root), ("--source-reference", reference_path)):
+                with self.subTest(installed_cli=option):
+                    result = subprocess.run([sys.executable, "-I", "-B", "-X", "utf8", "-m",
+                        "msplatform.workflows.dual_cone_transport", option, str(value),
+                        "--interface", str(interface_path), "--output-dir", str(output)],
+                        cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", check=False)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("SIMION_GAS_FIELD_MANIFEST=" + str(runtime_manifest.resolve()), result.stdout)
+                    self.assertEqual((lua.read_bytes(), runtime_manifest.read_bytes()), expected)
+            self.assertEqual({name: path.read_bytes() for name, path in paths.items()}, source_bytes)
+            csv_path.write_bytes(csv_path.read_bytes() + b"tamper")
+            failed = subprocess.run([shell, "-NoProfile", "-File", str(script), "-SourceReferencePath",
+                str(reference_path), *common], cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", check=False)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertNotIn("SIMION_GAS_FIELD_MANIFEST=", failed.stdout)
+            self.assertEqual((lua.read_bytes(), runtime_manifest.read_bytes()), expected)
 
 
 class GasPreparationTests(unittest.TestCase):

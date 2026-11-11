@@ -5,6 +5,7 @@ Independent stage publication and saved-field reuse remain separate P4 work.
 
 from __future__ import annotations
 
+import argparse
 import copy
 from datetime import datetime
 from functools import partial
@@ -102,3 +103,42 @@ def run_gas_assisted_transport(
     return open_artifact(
         {"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result"
     )
+
+
+def prepare_published_gas_runtime(gas_field_reference, *, interface_path, output_dir):
+    """Compile an explicit published field to a SIMION runtime without executing a solver.
+
+    Reads the supplied reference and interface, writes the runtime and manifest
+    in output_dir, and returns the manifest path. Input and compiler errors propagate.
+    """
+    from msplatform.backends.simion.dual_cone_transport import materialize_published_gas_runtime
+
+    field = read_gas_field(gas_field_reference)
+    interface = json.loads(Path(interface_path).read_text(encoding="utf-8-sig"))
+    output = Path(output_dir)
+    manifest = output / "gas_field_manifest.json"
+    materialize_published_gas_runtime(field, interface=interface,
+        output_lua=output / "gas_field_runtime.lua", output_manifest=manifest)
+    return manifest.resolve()
+
+
+def main(argv=None):
+    """Materialize a published gas runtime from one explicit source selection."""
+    parser = argparse.ArgumentParser(description="Materialize a published dual-cone gas runtime")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--source-reference", type=Path)
+    source.add_argument("--comsol-run-directory", type=Path)
+    parser.add_argument("--interface", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    args = parser.parse_args(argv)
+    if args.source_reference is not None:
+        reference = json.loads(args.source_reference.read_text(encoding="utf-8-sig"))
+    else:
+        manifest = args.comsol_run_directory.resolve() / "run_manifest.json"
+        reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+    output = prepare_published_gas_runtime(reference, interface_path=args.interface, output_dir=args.output_dir)
+    print("SIMION_GAS_FIELD_MANIFEST=" + str(output))
+
+
+if __name__ == "__main__":
+    main()

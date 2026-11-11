@@ -407,6 +407,68 @@ assert(installs==1 and seeds==1);print('EXPLICIT_UNIFORM_SDS=PASS')
                         self.assertEqual(child.returncode,0,child.stdout+child.stderr)
                         self.assertIn("EXPLICIT_UNIFORM_SDS=PASS",child.stdout)
                         print("EXPLICIT_UNIFORM_SOFTWARE="+json.dumps(dict(pressure_pa=pressure,lua=str(LUA),lua_sha256=hashlib.sha256(LUA.read_bytes()).hexdigest(),program_sha256=hashlib.sha256(native_resource_path("dual_cone_gas_assisted_transport.lua").read_bytes()).hexdigest())))
+                    if pressure == 125.:
+                        # Exercise real generated no-data/outside states through the
+                        # actual Program and SDS binding; the supplier is inert.
+                        from common.contracts.test_gas_field_sampling import GasSamplingTests
+                        from msplatform.backends.simion.gas_runtime import compile_gas_runtime
+                        missing_field = GasSamplingTests().grid((True, False, False, False))
+                        missing_lua = root / "missing-support.lua"
+                        missing_lua.write_text(compile_gas_runtime(missing_field), encoding="utf8", newline="\n")
+                        loss_harness = root / "coverage-program.lua"
+                        loss_harness.write_text(r'''local load=loadfile;local config=assert(load(arg[1]))()
+config.gas_field_lua=arg[3];config.gas_field_frame_id='local'
+config.gas_outside_domain_policy=arg[4];config.device_placement=nil
+loadfile=function(path)if path==arg[1]then return function()return config end end;return load(path)end
+local installs,seeds=0,0;local SDS={install=function()installs=installs+1 end}
+simion={workbench_program=function()segment={}end,import=function()return SDS end}
+os.getenv=function()return arg[1]end;seed=function(value)assert(value==config.random_seed);seeds=seeds+1 end
+adj_elect={};ion_number=7;ion_time_of_flight=0;ion_time_step=1;ion_splat=0
+ion_px_mm=config.device_x_offset_mm+tonumber(arg[5]);ion_py_mm=config.device_y_offset_mm
+ion_pz_mm=config.device_z_offset_mm+1;ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0
+local f=assert(io.open(arg[2],'rb'));local text=f:read('*a');f:close()
+assert(loadstring(text:gsub('adjustable%s+',''),'@'..arg[2]))()
+segment.initialize_run();segment.initialize()
+local field=assert(load(arg[3]))()
+assert(field.sample(0,0,0,'local').status=='gas','reactivation point must be gas')
+local expected=tonumber(arg[5])==1 and 'no_data' or 'outside_domain'
+assert(field.sample(tonumber(arg[5]),0,1,'local').status==expected,'wrong test state')
+local function final_lines()
+ local h=assert(io.open(config.final_state_csv,'r'));local contents=h:read('*a');h:close()
+ local rows={};for row in contents:gmatch('[^\r\n]+') do rows[#rows+1]=row end
+ return rows
+end
+local fn=assert(SDS[arg[6]]);local ok,value=pcall(fn,ion_px_mm,ion_py_mm,ion_pz_mm)
+if arg[4]=='error' and tonumber(arg[5])==2 then
+ assert(not ok and tostring(value):find('gas-field query outside governed domain',1,true),tostring(value))
+ assert(ion_splat==0);segment.terminate_run()
+ assert(#final_lines()==1,'error must not publish a coverage terminal')
+else
+ assert(ok,'coverage loss must publish before the safe supplier fallback')
+ local immediate=final_lines();assert(#immediate==2 and immediate[2]:match(',3$'),'loss must publish code 3 during callback')
+ segment.other_actions();assert(ion_splat==1)
+ -- Return to the supported gas corner: loss must remain latched.
+ ion_px_mm=config.device_x_offset_mm;ion_pz_mm=config.device_z_offset_mm
+ assert(SDS.pressure(ion_px_mm,ion_py_mm,ion_pz_mm)==0)
+ assert(SDS.temperature(ion_px_mm,ion_py_mm,ion_pz_mm)==300)
+ local x,y,z=SDS.velocity(ion_px_mm,ion_py_mm,ion_pz_mm);assert(x==0 and y==0 and z==0)
+ segment.other_actions();segment.terminate();segment.terminate();segment.terminate_run()
+ local rows=final_lines()
+ assert(#rows==2 and rows[2]:match(',3$'),'expected exactly one code-3 terminal row')
+end
+assert(installs==1 and seeds==1);print('SDS_COVERAGE_PROGRAM=PASS')
+''', encoding="utf8", newline="\n")
+                        for policy, x in (("coverage_loss", 1), ("error", 1),
+                                          ("coverage_loss", 2), ("error", 2)):
+                            for channel in ("pressure", "temperature", "velocity"):
+                                with self.subTest(policy=policy, x=x, channel=channel):
+                                    observed = subprocess.run([str(LUA), str(loss_harness),
+                                        str(output/"solver/simion/run_config.lua"),
+                                        str(native_resource_path("dual_cone_gas_assisted_transport.lua")),
+                                        str(missing_lua), policy, str(x), channel], cwd=output,
+                                        capture_output=True, text=True, encoding="utf8", timeout=30)
+                                    self.assertEqual(observed.returncode, 0, observed.stdout+observed.stderr)
+                                    self.assertIn("SDS_COVERAGE_PROGRAM=PASS", observed.stdout)
                     broken=json.loads(manifest.read_text(encoding="utf8"))
                     broken["source"]["spec_record"]["sha256"]="0"*64
                     manifest.write_text(json.dumps(broken),encoding="utf8")

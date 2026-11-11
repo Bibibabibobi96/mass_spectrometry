@@ -276,13 +276,13 @@ The source migration and the separately frozen installed native acceptance below
 [多极杆理论](../../rf_multipole_ion_optics/docs/theory/index.md)，碰撞模型分级见
 [碰撞模型](../../rf_multipole_ion_optics/docs/theory/collisions.md)。
 
-Dual-cone geometry and the gas runtime compiler are installed in
-`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`; exported gas data validation is owned by `msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation`. Fractional GEM compilation is installed in
+Dual-cone geometry and gas-source projection are installed in
+`msplatform.components.dual_cone_tandem_quadrupole_ion_interface`; exported gas data validation is owned by `msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation`. The joint gas runtime compiler/materializer is `msplatform.backends.simion.gas_runtime`; the published-product workflow composes the existing projection and materializer. Fractional GEM compilation is installed in
 `msplatform.backends.simion.dual_cone_geometry`。杆数组与杆 GEM 分别直接复用
 `msplatform.components.rf_multipole.round_rod_geometry` 和 `msplatform.backends.simion.rf_geometry`，
 旧项目内五个对应模块已退役且无转发桥。resolved JSON、GEM 与均匀场 Lua 已逐字节对照；
-来源哈希、理想气体密度、质量守恒、400 Pa 对照及失败关闭语义不变。本次迁移未运行 COMSOL/SIMION，
-未改变现有气流或轨迹资格，也未把项目 `prepare.py` 整体声明为已安装能力。
+来源哈希、理想气体密度、质量守恒、400 Pa 对照及失败关闭语义不变。该早期迁移未运行 COMSOL/SIMION，
+未改变当时气流或轨迹资格；其后准备能力与原生尝试分别见上文和下文。
 规范组件和backend不保存项目根、默认配置文件或checkout定位逻辑；纯函数与CLI均要求显式输入路径，
 原项目默认体验只由项目verify、prepare和工作流脚本接线提供。
 气流后处理现通过同一运行root机制消费本次`repository_snapshot`；气体轴、坐标容差及密度输入拒绝非有限值，
@@ -331,22 +331,27 @@ Dual-cone geometry and the gas runtime compiler are installed in
 
 ## 当前权威物理链
 
-物理路线由以下两种职责组成；当前 SIMION 原生执行器已退役，保留科学准备：
+物理路线由以下两种职责组成。SIMION fresh 输运及独立阶段已有受管软件实现；其当前原生 Fly 与科学资格仍开放：
 
 1. COMSOL 使用 [`gas_flow_science.json`](../config/gas_flow_science.json) 与
    [`comsol_solver_numerics.json`](../config/comsol_solver_numerics.json) 建立轴对称可压缩气流筛选。
    当前模型只覆盖无杆、无偏置泵口的空包络轴对称近似；它的声明边界是
    `prototype_axisymmetric_empty_enclosure_gas_flow`。
-2. SIMION 几何编译器从同一 resolved 几何生成电极表示；气体场准备只消费由成功 COMSOL run 导出、复制进本次准备目录且
-   通过 SHA-256 和 frame/单位检查的 canonical `r-z` 气体场。气体场至少包含压力、温度、径向与轴向
-   气速以及有效域和插值边界语义。
+2. SIMION 几何编译器从同一 resolved 几何生成电极表示；气体场准备消费显式发布的成功 COMSOL
+   气体场引用或已编译 runtime，核对原始冻结来源、SHA-256、frame 和单位。canonical `r-z` 气体场
+   至少包含压力、温度、径向与轴向气速以及有效域和插值边界语义。
 
 COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMION 消费 COMSOL 场意味着两者是依赖链，
 不得表述为跨求解器轨迹等价。若未来需要独立闭合，必须另建 COMSOL charged-particle workflow，并使
 两个轨迹求解器分别消费同一冻结气体场、源、电极和事件合同。
 
-项目保留 COMSOL 求解、场编译、SIMION 科学输入准备及 Fly Lua。当前只有 COMSOL 空包络气流登记为可执行 profile；SIMION 新运行因 fractional PA 公共隔离能力缺口而阻断，原生运行器及均匀 `400 Pa`／COMSOL 场运行 wrapper 已退役。只有 COMSOL 最终 `400 Pa`、合同明确记录的终态参数解通过独立场校验，并由下游运行冻结全部
-来源哈希后，才可形成 Prototype 证据；任意中间 continuation 解或裸 CSV 都不是可执行证据入口。
+项目保留 COMSOL 求解、场编译、SIMION 科学输入准备及 Fly Lua。COMSOL 空包络气流保留已登记
+执行 profile；原 SIMION 原生运行器及均匀 `400 Pa`／COMSOL 场 wrapper 已退役，现由安装包中的
+fresh 输运和独立几何、模型、场、轨迹阶段组合现有受管 owner。原 fractional PA 隔离缺口不再是
+“没有软件实现”的表述：后继实现及其软件验证见上文，独立原生验收仍开放。两次 fresh 原生尝试
+分别止于 raw 校验和 IOB 创建，当前尚无成功 Fly。只有 COMSOL 最终 `400 Pa`、合同明确记录的终态
+参数解通过独立场校验，并由下游运行冻结全部来源哈希后，才可形成 Prototype 证据；任意中间
+continuation 解或裸 CSV 都不是可执行证据入口。
 
 ## 已退役模型
 
@@ -358,17 +363,17 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 
 ## 当前资格
 
-2026-10-24 缓存边界审查：当前 GEM 使用 `surface=fractional`，而公共 standalone 响应导出明确拒绝 `.pa-surf`。原冷启动分支使用已退出公共 CLI 的 `ensure/publish`，不能发布受管资产；原命中分支把原生 `.paN` 交给供应商，不能满足缓存写隔离。因此整体退役四个不可执行原生入口（C0、共享输运及两个气场 wrapper）和专属死测试，撤下 SIMION transport 执行 profile，不保留旧名转发、阻断 stub 或不可达执行体。纯准备、GEM 编译、源、RF、fractional 数值合同与 COMSOL 气流入口保留；历史成功 run 身份及科学结果不变。
+2026-10-24 历史缓存边界审查：当时 GEM 使用 `surface=fractional`，而公共 standalone 响应导出明确拒绝 `.pa-surf`。原冷启动分支使用已退出公共 CLI 的 `ensure/publish`，不能发布受管资产；原命中分支把原生 `.paN` 交给供应商，不能满足缓存写隔离。因此整体退役四个不可执行原生入口（C0、共享输运及两个气场 wrapper）和专属死测试，撤下 SIMION transport 执行 profile，不保留旧名转发、阻断 stub 或不可达执行体。纯准备、GEM 编译、源、RF、fractional 数值合同与 COMSOL 气流入口保留；历史成功 run 身份及科学结果不变。
 
-重新开放 SIMION 新执行前，必须在公共 PA 机制中验证保留 fractional 表面信息的导出与私有 Fast Adjust 重建路径，并支持真实电极集合 `1,2,3,11,12,21,22`；随后接入公共事务的 build/verify/complete 重入与受管保护，用小模型验证源 generation 不被供应商修改、HIT 与中断重入不重复 Refine。本次仅完成入口退役、纯编译及能力发现回归，未进行真实 SIMION 验证，不能称 PA 复用已接通。
+该审查当时要求保留 fractional 表面信息、支持真实电极集合 `1,2,3,11,12,21,22`，并接入公共事务与受管保护；当时未完成真实 SIMION 验证。后继 fresh 与独立阶段现已实现，软件检查覆盖显式 basis 复用和原始 family 保护，详见上文；它们不把当时的退役入口复活，也不替代独立原生 build/save/reopen/Refine/Fly 验收。两次后继原生尝试及其停止点见下文。
 
 | 层级 | 状态 |
 |---|---|
 | 几何与合同 Static | 可执行 |
 | COMSOL 轴对称空包络气流 | 受管 run `20260914_154800__sim__comsol__dual-cone-gas-flow` success，bootstrap、项目报告、独立字段验证及full manifest均PASS；仍仅为无杆、无孔板、无泵口的Prototype |
 | canonical COMSOL→SIMION 气体场 | 上述成功run已由下游按full manifest、字段SHA-256和冻结三份源合同消费；未提升为Candidate/Formal资产 |
-| SIMION 几何编译 | 纯 GEM 编译可执行；历史 `gem2pa/refine` Prototype 证据保留，新原生执行因 fractional 缓存隔离阻断 |
-| SIMION 气体辅助轨迹 | 当前新执行 BLOCKED；历史 COMSOL场受管run `20260914_162400__sim__simion__dual-cone-comsol-field-n100` success且full manifest PASS，N=100中58个到达末端；均匀400 Pa控制run为0/100，但不是自然压降模型 |
+| SIMION 几何编译 | 纯 GEM 与受管 fresh/独立阶段软件实现可用；历史 `gem2pa/refine` Prototype 证据保留。后继第二次原生尝试完成 geometry、Refine 和 fractional-family audit，随后止于 IOB；独立原生阶段验收仍开放 |
+| SIMION 气体辅助轨迹 | fresh 与 saved-field 轨迹阶段已有软件实现，当前原生 Fly 及资格 OPEN；历史 COMSOL场受管run `20260914_162400__sim__simion__dual-cone-comsol-field-n100` success且full manifest PASS，N=100中58个到达末端；均匀400 Pa控制run为0/100，但不是自然压降模型 |
 | 独立轨迹跨求解器闭合 | 未建立 |
 | Declared CAD STEP / cold BREP | CPU managed and eleven-solid readback passed; profile limits below |
 | GUI / Candidate / Formal | BLOCKED |
@@ -420,8 +425,8 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 ## 产物边界
 
 活动产物位于 `artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`。COMSOL 气流和 SIMION
-轨迹各自使用独立 run 三件套；下游 SIMION run 冻结上游 manifest 和气体场副本。旧 Python run 只读
-保留，不因主链退役而删除或改写。
+轨迹各自使用独立 run 三件套；下游 SIMION run 按所选输入冻结上游 manifest、源合同与编译 runtime
+身份，并保留所引用已发布气体场的原始记录。旧 Python run 只读保留，不因旧路径退役而删除或改写。
 
 ## 普通执行计划
 
@@ -429,8 +434,7 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`显式交安装操作校验和冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
 安装操作调用同一规范geometry解析器，对显式baseline/resolved进行原逐字节新鲜度检查；输入／派生物失配在商业调用前失败。隔离回归核对本次规范包来源，不借作者checkout补缺。气流成功不代表离子传输或新资格。
 
-纯准备的[树外冻结回归](../tests/test_simion_layer.py)通过公共源码枚举交付规范核心，并保留项目prepare、配置和Program快照；隔离解释器`-I`下核对真实模块来源，缺少原生映射模块时明确拒绝，不借作者路径补洞。两种准备模式保持原输入与无PA生成边界。prepare仍是项目编排入口，只有其新几何依赖迁入规范后端，未整体安装。
-这只证明软件源码闭包，不解除上述SIMION原生运行阻断，也不新增轨迹或物理资格。
+早期纯准备的[树外冻结回归](../tests/test_simion_layer.py)通过公共源码枚举交付当时规范核心，并保留项目prepare、配置和Program快照；隔离解释器`-I`下核对真实模块来源，缺少原生映射模块时明确拒绝，不借作者路径补洞。该证据只覆盖当时的两种无PA准备模式。后继完整准备实现已迁至安装包，fresh 与独立阶段另有软件实现；这些证据均不代替当前原生 Fly 或科学资格。
 
 ## 机器能力与解析输入
 
@@ -527,6 +531,17 @@ rejected before native writes. This is software proof; no subsequent native Fly
 or transport qualification is implied by the correction.
 
 Callback completeness: the installed Program now explicitly enables official SIMION global callbacks, retaining outside-PA terminal states as unknown code 0 and existing SDS support-loss code 3 with per-particle deduplication. The actual-Lua dispatcher regression reproduces missing coverage before the fix and complete terminal census after it. SDS8.1.2.7 excludes instance 0 from collision acceleration/diffusion; no external electric/magnetic field is supplied. This software proof is not native Fly qualification; the two earlier native failures remain unchanged.
+
+A scoped T3 standalone-Lua regression exercised twelve combinations of first
+pressure, temperature or velocity callback, `no_data` or `outside_domain`, and
+`coverage_loss` or `error` policy through the actual generated field, Program
+and SDS binding with an inert supplier. Coverage loss flushed one code-3 final
+row during the callback and remained latched at a verified supported gas point;
+the strict outside-domain case raised and did not publish that terminal row.
+The focused software gate passed. This establishes callback wiring and declared
+seed/install calls, not vendor collision physics, native Fly, step crossing or
+random-stream equivalence.
+
 
 ### Explicit PA grid authority
 

@@ -97,7 +97,7 @@ CSV 必须按 `z` 主序、`r` 次序排列，列顺序严格为：
 z_index,r_index,z_mm,r_mm,p_pa,temperature_k,u_z_m_per_s,u_r_m_per_s,rho_kg_per_m3,mach,knudsen_aperture,fluid_mask
 ```
 
-规则矩形网格中流体域外的物理量全部为 `NaN` 且 `fluid_mask=0`。元数据记录 CSV 与三个源合同的 SHA-256、网格轴、坐标系、请求出口压力、进出口质量流量、质量守恒误差、最大马赫数和最大孔径 Knudsen 数。SIMION运行插值遵循`gas_field_interface.json`：普通单元双线性插值，切割单元仅对有效流体角点权重归一化；无有效支撑或越出治理域即拒绝，不作域外外推。轴对称映射采用`r=sqrt(x^2+y^2)`。COMSOL 二维轴对称分量固定为径向 `u`、周向 `v`、轴向 `w`；`u_z_m_per_s` 与质量流量使用 `w`，`u_r_m_per_s` 使用 `u`。
+规则矩形网格中流体域外的物理量全部为 `NaN` 且 `fluid_mask=0`。元数据记录 CSV 与三个源合同的 SHA-256、网格轴、坐标系、请求出口压力、进出口质量流量、质量守恒误差、最大马赫数和最大孔径 Knudsen 数。SIMION运行插值遵循`gas_field_interface.json`：普通单元双线性插值，切割单元仅对有效流体角点权重归一化；无有效支撑与越出治理域均不作域外外推；实际终止与错误行为见 [SIMION 气体场接口](SIMION.md#气体场接口)。轴对称映射采用`r=sqrt(x^2+y^2)`。COMSOL 二维轴对称分量固定为径向 `u`、周向 `v`、轴向 `w`；`u_z_m_per_s` 与质量流量使用 `w`，`u_r_m_per_s` 使用 `u`。
 
 运行后必须执行独立验证：
 
@@ -120,7 +120,7 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
   -OutputDir <explicit_output_directory> -PythonExe <installed_python>
 ```
 
-编译器将径向速度映射到三维笛卡尔分量，切割单元按上述有效角点权重处理；无有效流体支撑或越出治理域时立即报错，不做域外外推或最近邻填充。
+编译器将径向速度映射到三维笛卡尔分量，切割单元按上述有效角点权重处理；无有效流体支撑或越出治理域时不作外推或最近邻填充；具体的终态码与错误行为见 [SIMION 气体场接口](SIMION.md#气体场接口)。
 
 ## 最小验收
 
@@ -145,8 +145,10 @@ transport/ownership and retains the existing physics/API expressions rather than
 
 The existing validation CLI above remains the source-quality owner. Current
 SIMION preparation then uses component `gas_field.prepare_cfd_gas_field` and
-backend `gas_runtime.materialize_gas_runtime`; the PowerShell entry calls these
-same functions. Explicit CSV/metadata/three source records remain supported,
+backend `gas_runtime.materialize_gas_runtime`; the PowerShell entry calls the
+installed `workflows.dual_cone_transport` CLI and its `prepare_published_gas_runtime` composition.
+It accepts the explicit published reference, interface and output directory and does
+not acquire an execution owner or launch COMSOL/SIMION. Explicit CSV/metadata/three source records remain supported,
 without inventing a producer manifest. An optional actual published producer
 reference is retained and checked; malformed or mismatched explicit references
 do not fall back to direct data. Original CFD files, source EOS and raw axis

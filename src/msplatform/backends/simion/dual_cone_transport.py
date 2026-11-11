@@ -35,6 +35,19 @@ def _load(path: Path, role: str) -> dict[str, Any]:
     return value
 
 
+def materialize_published_gas_runtime(opened_gas, *, interface, output_lua, output_manifest):
+    """Project an already-opened gas product and write the specified runtime files.
+
+    The caller owns source validation and output lifecycle; errors propagate unchanged.
+    """
+    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+    from .gas_runtime import materialize_gas_runtime
+
+    field, metadata = prepare_cfd_gas_field(opened_gas.data, interface=interface,
+        producer_reference=opened_gas.artifact.reference, source_records=opened_gas.artifact.data_records)
+    return materialize_gas_runtime(field, output_lua, output_manifest, manifest_metadata=metadata)
+
+
 def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[dict[str, Any], Path]:
     manifest = _load(path, interface["runtime_artifact_contract"]["manifest_role"])
     required = set(interface["runtime_artifact_contract"]["required_manifest_keys"])
@@ -536,15 +549,10 @@ def prepare_transport(
 
     if mode == "gas_assisted_transport":
         if producer is not None:
-            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
-            from .gas_runtime import materialize_gas_runtime
-
             paths = producer.data_locations
-            field, metadata = prepare_cfd_gas_field(opened_gas.data, interface=interface,
-                producer_reference=producer.reference, source_records=producer.data_records)
             gas_field_manifest = frozen / "compiled_gas_field_manifest.json"
-            materialize_gas_runtime(field, solver / "compiled_gas_field.lua", gas_field_manifest,
-                                    manifest_metadata=metadata)
+            materialize_published_gas_runtime(opened_gas, interface=interface,
+                output_lua=solver / "compiled_gas_field.lua", output_manifest=gas_field_manifest)
             validated_gas = validate_runtime_manifest(gas_field_manifest, interface)
             inputs["gas_producer_manifest"] = freeze_file(
                 Path(producer.reference["manifest"]["path"]), frozen / "gas_producer_manifest.json"
