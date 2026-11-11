@@ -173,6 +173,40 @@ class PythonPackageSelectionTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('FileNotFoundError', result.stderr)
 
+    def test_resource_only_selection_is_legal_unless_production_python_is_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "provider/pkg"
+            package.mkdir(parents=True)
+            (root / "provider/__init__.py").write_bytes(b"PARENT = True\n")
+            (package / "model.schema.json").write_bytes(b'{"fixture":42}\n')
+            selection = dict(package_roots=["provider/pkg"], provider_root="provider",
+                             resource_suffixes=[".schema.json", ".py"])
+            self.assertEqual(enumerate_python_sources(root, **selection),
+                             ["provider/__init__.py", "provider/pkg/model.schema.json"])
+            for name in (None, "test_only.py", "only_test.py"):
+                with self.subTest(name=name):
+                    if name is not None:
+                        (package / name).write_bytes(b"TEST = True\n")
+                    with self.assertRaisesRegex(ValueError, "no production sources"):
+                        enumerate_python_sources(root, **selection, require_python_source=True)
+                    if name is not None:
+                        (package / name).unlink()
+            (package / "nested").mkdir()
+            (package / "nested/code.py").write_bytes(b"SOURCE = True\n")
+            visited = []
+            original_iterdir = Path.iterdir
+            def counted_iterdir(path):
+                visited.append(path)
+                return original_iterdir(path)
+            with patch.object(Path, "iterdir", counted_iterdir):
+                actual = enumerate_python_sources(root, **selection, require_python_source=True)
+            self.assertEqual(actual, ["provider/__init__.py", "provider/pkg/model.schema.json",
+                                      "provider/pkg/nested/code.py"])
+            self.assertEqual(visited, [package, package / "nested"])
+            with self.assertRaisesRegex(ValueError, "explicit boolean"):
+                enumerate_python_sources(root, **selection, require_python_source=1)
+
     def test_resource_suffixes_reject_unknown_or_ambiguous_requests(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

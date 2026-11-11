@@ -92,6 +92,63 @@ print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3])
                     finally:
                         target.write_bytes(original)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_python_package_freezer_requires_internal_production_source_with_resources(self) -> None:
+        from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            author = root / "author"
+            copy_scientific_core(REPO_ROOT, author)
+            registry = author / "integrations/registry.json"
+            registry.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO_ROOT / "integrations/registry.json", registry)
+            contract = author / "integrations/config/dependencies.json"
+            contract.parent.mkdir(parents=True)
+            provider = author / "projects/device"
+            provider.mkdir(parents=True)
+            (provider / "__init__.py").write_bytes(b"PARENT = True\n")
+            cases = [({}, False), ({"test_only.py": b"TEST = True\n"}, False),
+                     ({"only_test.py": b"TEST = True\n"}, False),
+                     ({"__init__.py": b"SOURCE = True\n"}, True),
+                     ({"code.py": b"SOURCE = True\n"}, True)]
+            for number, (sources, accepted) in enumerate(cases):
+                with self.subTest(sources=list(sources)):
+                    package = provider / f"pkg{number}"
+                    package.mkdir()
+                    (package / "model.schema.json").write_bytes(b'{"fixture":42}\n')
+                    for name, raw in sources.items():
+                        (package / name).write_bytes(raw)
+                    relative = package.relative_to(author).as_posix()
+                    declaration = dict(schema_version=3, role="integration_runtime_dependencies",
+                        owner_id="instrument_assembly", consumer_ids=["local_frontend"], providers=[
+                            dict(provider_scope="project", provider_project="device", files=[],
+                                 python_packages=[dict(source_repo_path=relative,
+                                     consumers=["local_frontend"], resource_suffixes=[".schema.json", ".py"])],
+                                 python_modules=[])])
+                    contract.write_text(json.dumps(declaration), encoding="utf-8")
+                    destination = root / f"inputs{number}"
+                    script = f""". '{DEPENDENCIES}'
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{contract}' -InputDir '{destination}' -OwnerId instrument_assembly -ConsumerId local_frontend
+"""
+                    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                    if not accepted:
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertIn("no production sources", result.stdout + result.stderr)
+                        self.assertFalse(destination.exists())
+                        continue
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    entries = load(destination / "code_inventory.json")["dependencies"]
+                    expected = {"projects/device/__init__.py", relative + "/model.schema.json",
+                                *(relative + "/" + name for name in sources)}
+                    self.assertEqual({entry["source_repo_path"] for entry in entries}, expected)
+                    self.assertEqual(len(entries), len(expected))
+                    for entry in entries:
+                        self.assertEqual(entry["consumers"], ["local_frontend"])
+                        self.assertEqual((destination / "runtime_snapshot" / entry["source_repo_path"]).read_bytes(),
+                                         (author / entry["source_repo_path"]).read_bytes())
+
     def test_dependency_enumerator_single_package_resources_preserve_exact_inventory(self) -> None:
         from msplatform.execution.inputs import enumerate_python_sources
 

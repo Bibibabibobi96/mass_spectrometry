@@ -107,7 +107,8 @@ def _production_python(path: Path) -> bool:
 def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] = (),
                              module_paths: Sequence[str] = (),
                              provider_root: str | None = None,
-                             resource_suffixes: Sequence[str] = ()) -> list[str]:
+                             resource_suffixes: Sequence[str] = (),
+                             require_python_source: bool = False) -> list[str]:
     """Expand declared Python delivery packages without importing or copying code.
 
     Paths are repository-relative POSIX names. Present parent initializers are
@@ -116,7 +117,11 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
     junctions. Overlapping author selections are errors, not silently deduped.
     Test/history/generated/native-asset trees and bytecode never join a package.
     Named resource suffixes explicitly extend the package's small data closure.
+    require_python_source additionally requires production Python inside every
+    selected package, before parent initializers are supplemented.
     """
+    if type(require_python_source) is not bool:
+        raise ValueError("require_python_source requires an explicit boolean")
     root = Path(source_root).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("Python source root must be a directory")
@@ -175,27 +180,32 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
 
     visited_directories: set[Path] = set()
 
-    def visit(directory: Path) -> int:
+    def visit(directory: Path) -> tuple[int, int]:
         actual_directory = contained(directory)
         if actual_directory in visited_directories:
             raise ValueError(f"Duplicate or cyclic Python package directory: {directory}")
         visited_directories.add(actual_directory)
         count = 0
+        python_count = 0
         for path in sorted(directory.iterdir()):
             relative = path.relative_to(root)
             if any(part in _PYTHON_EXCLUDED_PARTS for part in relative.parts):
                 continue
             actual = contained(path)
             if actual.is_dir():
-                count += visit(path)
+                child_count, child_python_count = visit(path)
+                count += child_count
+                python_count += child_python_count
             elif actual.is_file() and (_production_python(relative)
                                        or any(path.name.endswith(suffix) for suffix in resource_suffixes)):
                 include(path)
                 count += 1
-        return count
+                python_count += int(_production_python(relative))
+        return count, python_count
 
     for path in packages:
-        if not visit(path):
+        count, python_count = visit(path)
+        if not count or (require_python_source and not python_count):
             raise ValueError(f"Python package has no production sources: {path}")
     for path in modules:
         include(path)

@@ -333,13 +333,13 @@ for group in request["providers"]:
     paths = set(enumerate_python_sources(pathlib.Path(request["source_root"]),
         package_roots=[row["source_repo_path"] for row in packages],
         module_paths=[row["source_repo_path"] for row in modules],
-        provider_root=group["provider_repo_path"],
+        provider_root=group["provider_repo_path"], require_python_source=True,
         resource_suffixes=packages[0].get("resource_suffixes", ()) if single_package else ()))
     for row in (() if single_package else packages):
         if "resource_suffixes" in row:
             paths.update(enumerate_python_sources(pathlib.Path(request["source_root"]),
                 package_roots=[row["source_repo_path"]], provider_root=group["provider_repo_path"],
-                resource_suffixes=row["resource_suffixes"]))
+                resource_suffixes=row["resource_suffixes"], require_python_source=True))
     for path in sorted(paths):
         consumers = set()
         source = pathlib.PurePosixPath(path)
