@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import csv
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,10 +17,10 @@ PARTICLE_COUNT_POLICY = (
     REPO_ROOT / "src" / "msplatform" / "contracts" / "particle_count_policy.json"
 )
 ANALYSIS = PROJECT_ROOT / "analysis"
-EVALUATOR = PROJECT_ROOT / "workflows" / "cross_solver" / "evaluate.py"
+EVALUATOR = REPO_ROOT / "src/msplatform/workflows/rf_transport_comparison.py"
 INTERFACE = "transport_interface_readiness"
 NO_COLLISION = "transport_no_collision"
-ANALYZER_MODULE = "projects.rf_multipole_ion_optics.workflows.cross_solver.evaluate"
+ANALYZER_MODULE = "msplatform.workflows.rf_transport_comparison"
 CORE = REPO_ROOT / "src/msplatform/analysis/particle_state_comparison.py"
 STATE_FIELDS = [
     "particle_id",
@@ -301,32 +302,56 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
                      "--census-output", str(case / "cold.csv")]
         args_path = self.root / "arguments.json"
         args_path.write_text(json.dumps(arguments), encoding="utf-8")
+        selected = self.root / "selected-source"
+        shutil.copytree(REPO_ROOT / "src/msplatform", selected / "src/msplatform",
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(REPO_ROOT / "common/contracts", selected / "common/contracts",
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        selected_workflow = selected / "src/msplatform/workflows/rf_transport_comparison.py"
+        selected_workflow.write_bytes(selected_workflow.read_bytes() + b"\n# selected source witness\n")
+        self.assertNotEqual(selected_workflow.read_bytes(), EVALUATOR.read_bytes())
         literal = lambda value: "'" + str(value).replace("'", "''") + "'"
         script = f"""
 $ErrorActionPreference='Stop'
-$repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
+$repoRoot={literal(REPO_ROOT)};$selectedRoot={literal(selected)};$python={literal(sys.executable)}
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $selectedRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
 $t=$null;$e=$null
 $entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/cross_solver/compare_cross_solver.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e)
 if($e.Count){{throw 'Actual cross-solver entry did not parse'}}
 $frozen=New-CrossSolverFrozenPathSet -InputDir {literal(self.root / 'frozen-inputs')} `
- -AnalyzerRelativePath 'projects/rf_multipole_ion_optics/workflows/cross_solver/evaluate.py' -ModeFilename 'mode.json'
+ -AnalyzerRelativePath 'src/msplatform/workflows/rf_transport_comparison.py' -ModeFilename 'mode.json'
 $selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'}},$true)
+$liveRoot=$repoRoot;$repoRoot=$selectedRoot
 Invoke-Expression $selection.Extent.Text
 Assert-FrozenPythonPackage -Package $frozenPackage
 . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $arguments=@(Get-Content -Raw -LiteralPath {literal(args_path)}|ConvertFrom-Json)
 $parameters=@{{Python=$python;AnalyzerModule='{ANALYZER_MODULE}';
- Package=$frozenPackage;ForbiddenRoots=@($repoRoot);Arguments=$arguments;
+ Package=$frozenPackage;ForbiddenRoots=@($repoRoot,$liveRoot);Arguments=$arguments;
  Stdout={literal(self.root / 'stdout.txt')};Stderr={literal(self.root / 'stderr.txt')};
  RequiredOutputs=@({literal(case / 'cold.json')},{literal(case / 'cold.csv')})}}
 Invoke-CrossSolverAnalyzer @parameters
-Remove-Item -LiteralPath $frozen.core
-try{{Invoke-CrossSolverAnalyzer @parameters;throw 'Missing canonical core was accepted'}}
-catch{{if($_.Exception.Message-notlike'Frozen Python dependency is missing*'){{throw}}}}
+$probe=Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module '{ANALYZER_MODULE}' `
+ -Arguments $arguments -RequiredModuleNames @('{ANALYZER_MODULE}','msplatform.io.file_identity','msplatform.analysis.particle_state_comparison') `
+ -ForbiddenRoots @($repoRoot,$liveRoot) -ProbeOnly
+foreach($row in $probe.frozen_modules){{
+ if(-not ([IO.Path]::GetFullPath([string]$row.origin)).StartsWith([IO.Path]::GetFullPath($frozen.module_root)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){{throw 'Probed module escaped frozen source'}}
+}}
+if((Get-RunFileSha256 $frozen.analyzer)-ne(Get-RunFileSha256 (Join-Path $selectedRoot 'src/msplatform/workflows/rf_transport_comparison.py'))){{throw 'Frozen analyzer differs from selected source'}}
+foreach($relative in @('src/msplatform/analysis/particle_state_comparison.py','src/msplatform/workflows/rf_transport_comparison.py','src/msplatform/io/file_identity.py')){{
+ $path=Join-Path $frozen.module_root $relative; $bytes=[IO.File]::ReadAllBytes($path)
+ Remove-Item -LiteralPath $path
+ try{{Invoke-CrossSolverAnalyzer @parameters;throw 'Missing canonical dependency was accepted'}}
+ catch{{if($_.Exception.Message-notlike'Frozen Python dependency is missing*'){{throw}}}}
+ [IO.File]::WriteAllBytes($path,$bytes)
+ [IO.File]::WriteAllBytes($path,($bytes + [byte[]](10)))
+ try{{Invoke-CrossSolverAnalyzer @parameters;throw 'Tampered canonical dependency was accepted'}}
+ catch{{if($_.Exception.Message-notlike'Frozen Python dependency hash differs:*'){{throw}}}}
+ [IO.File]::WriteAllBytes($path,$bytes)
+}}
 Write-Output 'CANONICAL_CORE_MISSING_REJECTED'
 exit 0
 """
@@ -420,6 +445,18 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("MISSING_SELECTED_RESOURCE_REJECTED", result.stdout)
         self.assertTrue((REPO_ROOT / "src/msplatform/execution/resources/frozen_python_package.ps1").is_file())
+
+    def test_hash_source_is_the_existing_canonical_implementation(self) -> None:
+        from common.contracts.file_identity import file_sha256 as prior_alias
+        from msplatform.io.file_identity import file_sha256
+        from msplatform.workflows import rf_transport_comparison
+
+        self.assertIs(prior_alias, file_sha256)
+        self.assertIs(rf_transport_comparison._sha256, file_sha256)
+        self.assertEqual(file_sha256.__module__, "msplatform.io.file_identity")
+        sample = self.root / "identity.bin"
+        sample.write_bytes(b"\x00identity\xff\n")
+        self.assertEqual(prior_alias(sample), file_sha256(sample))
 
     def test_shared_core_has_no_claim_vocabulary(self) -> None:
         source = CORE.read_text(encoding="utf-8").lower()

@@ -1265,6 +1265,9 @@ $results|ConvertTo-Json -Depth 8 -Compress
                   for name in ("__init__", "reference", "finite_length")]
         cases += [("src/msplatform/execution/" + name, executor) for name in (
             "inputs.py", "resources/__init__.py", "resources/frozen_python_package.ps1")]
+        transport = {f"{RF}/tests/analysis/{name}.py" for name in (
+            "test_compare_particle_state_evidence", "test_phase4_design_consumer")}
+        cases.append(("src/msplatform/workflows/rf_transport_comparison.py", transport))
         with tempfile.TemporaryDirectory(prefix="installed_rf_consumer_plans_") as directory:
             for index, (path, expected) in enumerate(cases):
                 with self.subTest(path=path):
@@ -1276,6 +1279,10 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     self.assertEqual(parameters["Level"], "Core")
                     self.assertCountEqual(parameters["ChangedTestModules"],
                         [name[:-3].replace("/", ".") for name in expected])
+                    if expected == transport:
+                        common = stages["common_contracts"]["command"]["arguments"]
+                        self.assertIn("common/contracts/test_installed_scientific_core.py", common)
+                        self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
                     if expected == executor:
                         arguments = stages["rf_multipole_domain_tests"]["command"]["arguments"]
                         self.assertEqual(arguments[:2], ["-m", "common.gate_unittest"])

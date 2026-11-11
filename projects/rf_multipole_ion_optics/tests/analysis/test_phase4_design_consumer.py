@@ -24,7 +24,7 @@ FORBIDDEN_RUNNER_TERMS = {
 class Phase4DesignConsumerTests(unittest.TestCase):
     def test_cross_solver_comparison_separates_physical_and_numerical_authority(self) -> None:
         evaluator = (
-            PROJECT_ROOT / "workflows" / "cross_solver" / "evaluate.py"
+            REPO_ROOT / "src/msplatform/workflows/rf_transport_comparison.py"
         ).read_text(encoding="utf-8")
         runner = (
             PROJECT_ROOT / "workflows" / "cross_solver" / "compare_cross_solver.ps1"

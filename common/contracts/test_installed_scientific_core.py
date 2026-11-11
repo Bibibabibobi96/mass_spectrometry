@@ -1861,6 +1861,75 @@ assert rf_comparison_path.read_bytes()==rf_comparison_bytes
 print('INSTALLED_RF_PARTICLE_COMPARISON=PASS')
 # RF_PARTICLE_COMPARISON_INSTALLED_END
 
+# RF_TRANSPORT_WORKFLOW_INSTALLED_BEGIN
+rf_transport_child = r"""import contextlib,hashlib,importlib.abc,io,json,os,runpy,sys,sysconfig
+from pathlib import Path
+q=json.load(sys.stdin)
+blocked=[Path(value).resolve() for value in q['blocked_roots']]
+def reject(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):raise AssertionError('RF transport accessed author: '+str(path))
+sys.addaudithook(reject)
+class RejectRepository(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('RF transport imported repository owner: '+fullname)
+sys.meta_path.insert(0,RejectRepository())
+name='msplatform.workflows.rf_transport_comparison'
+sys.argv=[name,*q['arguments']]
+with contextlib.redirect_stdout(io.StringIO()):executed=runpy.run_module(name,run_name='__main__',alter_sys=True)
+import msplatform.io.file_identity as identity
+# runpy executes the actual CLI as __main__; loaded dependencies must be installed.
+origins={key:str(Path(sys.modules[key].__file__).resolve()) for key in ('msplatform.analysis.particle_state_comparison','msplatform.io.file_identity')}
+origins[name]=str(Path(executed['__file__']).resolve())
+assert executed['_sha256'] is identity.file_sha256
+purelib=Path(sysconfig.get_path('purelib')).resolve()
+for key,path in origins.items():
+ assert Path(path)==purelib.joinpath(*key.split('.')).with_suffix('.py'),(key,path)
+print(json.dumps({'origins':origins}))
+"""
+rf_transport_witness=fixture['rf_transport_comparison']
+rf_transport_files=rf_transport_witness['files']
+for rf_transport_probe_label,rf_transport_probe_record in rf_transport_files.items():
+    rf_transport_probe_data=bytes.fromhex(rf_transport_probe_record['hex'])
+    assert len(rf_transport_probe_data)==rf_transport_probe_record['bytes'] and hashlib.sha256(rf_transport_probe_data).hexdigest()==rf_transport_probe_record['sha256'],rf_transport_probe_label
+rf_transport_origins=None
+for rf_transport_probe_mode in ('no_collision','interface'):
+    rf_transport_probe_directory=root/('rf-transport-'+sys.argv[2]+'-'+rf_transport_probe_mode);rf_transport_probe_directory.mkdir()
+    rf_transport_probe_keys={'comsol':'comsol.csv','simion':'simion.csv','particles':'particles.dat'}
+    rf_transport_probe_paths={}
+    for rf_transport_probe_key,rf_transport_probe_filename in rf_transport_probe_keys.items():
+        rf_transport_probe_paths[rf_transport_probe_key]=rf_transport_probe_directory/rf_transport_probe_filename
+        rf_transport_probe_paths[rf_transport_probe_key].write_bytes(bytes.fromhex(rf_transport_files[rf_transport_probe_mode+':'+rf_transport_probe_filename]['hex']))
+    for rf_transport_probe_key in (('no_collision_mode','resolved','particle_count_policy') if rf_transport_probe_mode=='no_collision' else ('interface_mode',)):
+        rf_transport_probe_paths[rf_transport_probe_key]=rf_transport_probe_directory/(rf_transport_probe_key+'.json')
+        rf_transport_probe_paths[rf_transport_probe_key].write_bytes(bytes.fromhex(rf_transport_files[rf_transport_probe_key]['hex']))
+    rf_transport_probe_before={rf_transport_probe_key:rf_transport_probe_path.read_bytes() for rf_transport_probe_key,rf_transport_probe_path in rf_transport_probe_paths.items()}
+    rf_transport_probe_output=rf_transport_probe_directory/'result.json';rf_transport_probe_census=rf_transport_probe_directory/'census.csv'
+    rf_transport_probe_arguments=['--comsol',str(rf_transport_probe_paths['comsol']),'--simion',str(rf_transport_probe_paths['simion']),
+        '--particles',str(rf_transport_probe_paths['particles']),'--particle-count','100','--output',str(rf_transport_probe_output),'--census-output',str(rf_transport_probe_census),
+        '--mode-contract',str(rf_transport_probe_paths['no_collision_mode' if rf_transport_probe_mode=='no_collision' else 'interface_mode'])]
+    if rf_transport_probe_mode=='no_collision':rf_transport_probe_arguments+=['--resolved',str(rf_transport_probe_paths['resolved']),'--particle-count-policy',str(rf_transport_probe_paths['particle_count_policy'])]
+    rf_transport_probe_request=dict(arguments=rf_transport_probe_arguments,blocked_roots=[str(rf_transport_probe_path) for rf_transport_probe_path in blocked_source_roots])
+    rf_transport_probe_command=[sys.executable,'-I','-B','-c',rf_transport_child]
+    rf_transport_probe_run=subprocess.run(rf_transport_probe_command,cwd=root,input=json.dumps(rf_transport_probe_request),capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert rf_transport_probe_run.returncode==0,rf_transport_probe_run.stdout+rf_transport_probe_run.stderr
+    rf_transport_probe_origins=json.loads(rf_transport_probe_run.stdout)['origins']
+    assert json.loads(rf_transport_probe_output.read_text(encoding='utf-8'))==json.loads(bytes.fromhex(rf_transport_files[rf_transport_probe_mode+':result.json']['hex']))
+    assert rf_transport_probe_census.read_bytes()==bytes.fromhex(rf_transport_files[rf_transport_probe_mode+':census.csv']['hex'])
+    assert {rf_transport_probe_key:rf_transport_probe_path.read_bytes() for rf_transport_probe_key,rf_transport_probe_path in rf_transport_probe_paths.items()}==rf_transport_probe_before
+    rf_transport_origins=rf_transport_probe_origins
+for rf_transport_probe_name in ('msplatform.workflows.rf_transport_comparison','msplatform.io.file_identity'):
+    rf_transport_probe_path=pathlib.Path(rf_transport_origins[rf_transport_probe_name]);rf_transport_probe_data=rf_transport_probe_path.read_bytes();rf_transport_probe_held=rf_transport_probe_path.with_suffix('.rf-transport-held')
+    assert not rf_transport_probe_held.exists();rf_transport_probe_path.rename(rf_transport_probe_held)
+    try:
+        absent=subprocess.run(rf_transport_probe_command,cwd=root,input=json.dumps(rf_transport_probe_request),capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert absent.returncode!=0 and rf_transport_probe_name in absent.stderr and ('ImportError:' in absent.stderr or 'ModuleNotFoundError:' in absent.stderr),absent.stdout+absent.stderr
+    finally:rf_transport_probe_held.rename(rf_transport_probe_path)
+    assert rf_transport_probe_path.read_bytes()==rf_transport_probe_data
+print('INSTALLED_RF_TRANSPORT_WORKFLOW=PASS')
+# RF_TRANSPORT_WORKFLOW_INSTALLED_END
+
 # MR_INTERFACE_INSTALLED_BEGIN
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface as mr_interface_owner
 mr_owner_path = pathlib.Path(mr_interface_owner.__file__).resolve()
@@ -5213,6 +5282,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               rf_response_comparison=self.rf_response_comparison_probe_fixture(root),
+                                              rf_transport_comparison=json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_transport_comparison_old_witness.json').read_text(encoding='utf-8')),
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
