@@ -438,6 +438,29 @@ else: importlib.import_module(name)
             last = result.stderr.decode('utf-8').splitlines()[-1] if result.stderr else ''
             assert last == record['stderr_last_line'], (label,result.stderr)
         if result.stderr: print('RF_EVENT_CLI_STDERR_HEX='+json.dumps(dict(case=label,stderr_hex=result.stderr.hex())),flush=True)
+    # Original source-matching NaN bypass: fresh variants, no mutation of the 32-case witness.
+    rfe_nan_root = root/('rf-event-nonfinite-'+sys.argv[2]);rfe_nan_root.mkdir()
+    with (rfe_root/'source.csv').open(encoding='utf-8-sig',newline='') as stream:
+        reader=csv.DictReader(stream);rfe_source_columns=reader.fieldnames;rfe_source_rows=list(reader)
+    with (rfe_root/'state_valid.csv').open(encoding='utf-8-sig',newline='') as stream:
+        rfe_source_state=next(row for row in csv.DictReader(stream) if row['particle_id']=='7' and row['event']=='source')
+    for input_field,event_field in (('x_mm','transverse_x_mm'),('birth_time_s','time_us'),
+                                    ('vx_m_s','velocity_x_m_s'),('mass_amu','kinetic_energy_eV')):
+        variant=rfe_nan_root/(input_field+'.csv'); rows=[dict(row) for row in rfe_source_rows]
+        next(row for row in rows if row['particle_id']=='7')[input_field]='nan'
+        with variant.open('w',encoding='utf-8',newline='') as stream:
+            writer=csv.DictWriter(stream,fieldnames=rfe_source_columns,lineterminator='\n');writer.writeheader();writer.writerows(rows)
+        original=variant.read_bytes(); bad_sources=rfe_events.read_canonical_rf_source_expectations(variant)
+        expected=f"particle 7 source {event_field}: actual={float(rfe_source_state[event_field]):.15g} expected=nan"
+        try: rfe_events.validate_rf_event_table(rfe_root/'state_valid.csv',bad_sources,1.1e6,0.)
+        except AssertionError as exc: assert str(exc)==expected,(input_field,str(exc),expected)
+        else: raise AssertionError('nonfinite source passed validator: '+input_field)
+        arguments=['--state',str(rfe_root/'state_valid.csv'),'--particles',str(variant),'--source-format','canonical',
+                   '--frequency-hz','1100000','--phase-rad','0','--solver','fixture']
+        failed=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rfe_child,rfe_blocked,'cli',*arguments],
+                              cwd=rfe_nan_root,capture_output=True,timeout=30,check=False)
+        assert failed.returncode != 0 and not failed.stdout and failed.stderr.decode('utf-8').splitlines()[-1]=='AssertionError: '+expected,failed.stderr
+        assert variant.read_bytes()==original
     assert {path.name:path.read_bytes() for path in rfe_root.iterdir()} == rfe_before
     for name, path in zip(rfe_names, rfe_files, strict=True):
         original=path.read_bytes(); held=path.with_suffix(path.suffix+'.rf-event-held')
@@ -474,6 +497,376 @@ native_resource_path('export_axis_basis.lua')
     finally: rfe_held.rename(rfe_export)
     assert rfe_export.read_bytes() == rfe_export_bytes
 # RF_EVENT_PROTOCOL_INSTALLED_END
+# IP_ANALYZER_INSTALLED_BEGIN
+with section_timing('ip_legacy_analyzer', sys.argv[2]):
+    import base64 as ipa_base64
+    import zlib as ipa_zlib
+    from msplatform.workflows.ion_processor import analysis as ipa_owner
+    ipa_path=pathlib.Path(ipa_owner.__file__).resolve()
+    assert ipa_path==rfe_purelib/'msplatform/workflows/ion_processor/analysis.py'
+    assert all(source not in ipa_path.parents for source in blocked_source_roots)
+    ipa_root=root/('ip-legacy-analyzer-'+sys.argv[2]);ipa_root.mkdir()
+    for ipa_name, ipa_case in fixture['ip_analyzer_old_witness']['cases'].items():
+        ipa_run=ipa_root/ipa_name;ipa_run.mkdir();(ipa_run/'results').mkdir()
+        for ipa_relative, ipa_record in ipa_case['inputs'].items():
+            ipa_data=ipa_zlib.decompress(ipa_base64.b64decode(ipa_record['zlib_base64'],validate=True))
+            assert len(ipa_data)==ipa_record['size'] and hashlib.sha256(ipa_data).hexdigest()==ipa_record['sha256']
+            ipa_dest=ipa_run/ipa_relative;ipa_dest.parent.mkdir(parents=True,exist_ok=True);ipa_dest.write_bytes(ipa_data)
+        try: ipa_value=ipa_owner.analyze(ipa_run)
+        except Exception as ipa_error:
+            ipa_outcome=dict(kind='exception',type=f'{type(ipa_error).__module__}.{type(ipa_error).__qualname__}',message=str(ipa_error))
+        else: ipa_outcome=dict(kind='return',value=ipa_value)
+        assert ipa_outcome==ipa_case['outcome'],(ipa_name,ipa_outcome)
+        ipa_after={p.relative_to(ipa_run).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in ipa_run.rglob('*') if p.is_file()}
+        assert ipa_after==ipa_case['after'],ipa_name
+# IP_ANALYZER_INSTALLED_END
+# IP_FORCE_INSTALLED_BEGIN
+with section_timing('ip_force_budget', sys.argv[2]):
+    from msplatform.workflows.ion_processor import extraction_force_budget as ipf_owner
+    ipf_path=pathlib.Path(ipf_owner.__file__).resolve()
+    assert ipf_path==rfe_purelib/'msplatform/workflows/ion_processor/extraction_force_budget.py'
+    ipf_run=root/('ip-force-'+sys.argv[2]);ipf_run.mkdir();(ipf_run/'results').mkdir()
+    ipf_old=fixture['ip_exporters_old_witness']['force_budget']
+    for ipf_rel,ipf_record in ipf_old['inputs'].items():
+        ipf_bytes=ipa_zlib.decompress(ipa_base64.b64decode(ipf_record['zlib_base64'],validate=True))
+        assert len(ipf_bytes)==ipf_record['size'] and hashlib.sha256(ipf_bytes).hexdigest()==ipf_record['sha256']
+        ipf_input=ipf_run/ipf_rel;ipf_input.parent.mkdir(parents=True,exist_ok=True);ipf_input.write_bytes(ipf_bytes)
+    ipf_result=ipf_owner.export_force_budget(ipf_run)
+    ipf_meta=json.loads((ipf_run/'results/extraction_force_budget/budget.json').read_text(encoding='utf-8'))
+    assert ipf_result==ipf_meta and pathlib.Path(ipf_meta.pop('source_run')).resolve()==ipf_run.resolve()
+    ipf_records=[]
+    for ipf_row in ipf_meta.pop('source_records'):
+        ipf_file=pathlib.Path(ipf_row['path']).resolve();ipf_rel=ipf_file.relative_to(ipf_run.resolve()).as_posix()
+        assert hashlib.sha256(ipf_file.read_bytes()).hexdigest().upper()==ipf_row['sha256'] and ipf_file.stat().st_size==ipf_row['bytes']
+        ipf_records.append(dict(relative=ipf_rel,sha256=ipf_row['sha256'],bytes=ipf_row['bytes']))
+    assert ipf_records==ipf_old['source_records']
+    assert pathlib.Path(ipf_meta.pop('producer_source_path')).resolve()==ipf_path
+    assert ipf_meta.pop('producer_sha256')==hashlib.sha256(ipf_path.read_bytes()).hexdigest().upper()
+    assert ipf_meta==ipf_old['scientific_metadata']
+    ipf_out=ipf_run/'results/extraction_force_budget'
+    assert {p.name for p in ipf_out.iterdir()}==set(ipf_old['output_sha256'])
+    for ipf_name,ipf_sha in ipf_old['output_sha256'].items():
+        ipf_actual=hashlib.sha256((ipf_out/ipf_name).read_bytes()).hexdigest()
+        if ipf_name.endswith('.csv'): assert ipf_actual==ipf_sha,ipf_name
+        elif ipf_name.endswith(('.png','.svg')): print('IP_FORCE_FIGURE_EQUAL='+json.dumps(dict(name=ipf_name,equal=ipf_actual==ipf_sha)),flush=True)
+    for ipf_rel,ipf_record in ipf_old['inputs'].items(): assert hashlib.sha256((ipf_run/ipf_rel).read_bytes()).hexdigest()==ipf_record['sha256']
+    assert {p.relative_to(ipf_run).as_posix() for p in ipf_run.rglob('*') if p.is_file()}==set(ipf_old['inputs'])|{'results/extraction_force_budget/'+name for name in ipf_old['output_sha256']}
+    try: ipf_owner.export_force_budget(ipf_run)
+    except FileExistsError as ipf_error:
+        assert dict(type=f'{type(ipf_error).__module__}.{type(ipf_error).__qualname__}',message=str(ipf_error))==ipf_old['repeat_refusal']
+    else: raise AssertionError('force budget accepted an existing output')
+# IP_FORCE_INSTALLED_END
+# IP_FIELD_INSTALLED_BEGIN
+with section_timing('ip_field_diagnostics', sys.argv[2]):
+    from msplatform.workflows.ion_processor import field_diagnostics as ipd_owner
+    from msplatform.results import ip_continuation as ipd_reader
+    ipd_path=pathlib.Path(ipd_owner.__file__).resolve()
+    assert ipd_path==rfe_purelib/'msplatform/workflows/ion_processor/field_diagnostics.py'
+    assert pathlib.Path(ipd_reader.__file__).resolve()==rfe_purelib/'msplatform/results/ip_continuation.py'
+    ipd_arm=root/('ip-field-'+sys.argv[2]);ipd_arm.mkdir()
+    ipd_run=ipd_arm/'run';ipd_run.mkdir();(ipd_run/'results').mkdir()
+    ipd_old=fixture['ip_exporters_old_witness']['field_diagnostics'];ipd_input_hashes={}
+    for ipd_rel,ipd_record in ipd_old['inputs'].items():
+        ipd_bytes=ipa_zlib.decompress(ipa_base64.b64decode(ipd_record['zlib_base64'],validate=True))
+        assert len(ipd_bytes)==ipd_record['size'] and hashlib.sha256(ipd_bytes).hexdigest()==ipd_record['sha256']
+        if ipd_rel=='inputs/resolved_model.json':
+            ipd_marker=json.dumps('<OWNED_RUN_SIMION>').encode();assert ipd_bytes.count(ipd_marker)==1
+            ipd_bytes=ipd_bytes.replace(ipd_marker,json.dumps(str((ipd_run/'simion').resolve())).encode())
+        ipd_input=ipd_run/ipd_rel;ipd_input.parent.mkdir(parents=True,exist_ok=True);ipd_input.write_bytes(ipd_bytes)
+        ipd_input_hashes[ipd_rel]=hashlib.sha256(ipd_bytes).hexdigest()
+    assert ipd_reader.native_data_directory(ipd_run)==ipd_run/'simion'
+    assert ipd_reader.native_field_sample_path(ipd_run)==ipd_run/'simion/native_field_samples.csv'
+    ipd_result=ipd_owner.export_field_diagnostics(ipd_run)
+    ipd_meta=json.loads((ipd_run/'results/field_diagnostics.json').read_text(encoding='utf-8'));assert ipd_result==ipd_meta
+    ipd_producer=ipd_meta.pop('producer');assert pathlib.Path(ipd_producer['actual_source_path']).resolve()==ipd_path
+    assert ipd_producer['actual_source_sha256']==hashlib.sha256(ipd_path.read_bytes()).hexdigest().upper()
+    assert ipd_producer['actual_source_capture']=='module_import' and ipd_producer['frozen_source_path']=='inputs/code/src/msplatform/workflows/ion_processor/field_diagnostics.py'
+    assert ipd_producer['frozen_source_sha256'] is None and ipd_producer['matches_frozen'] is None
+    assert ipd_meta.pop('resolved_config_sha256')==ipd_input_hashes['inputs/resolved_model.json'].upper()
+    assert ipd_meta['raw_samples_sha256']==ipd_input_hashes['simion/native_field_samples.csv'].upper()
+    assert pathlib.Path(ipd_meta['native_field_identity']['directory']).resolve()==(ipd_run/'simion').resolve()
+    ipd_meta['native_field_identity']['directory']='<OWNED_RUN_SIMION>'
+    ipd_images={}
+    for ipd_row in ipd_meta.pop('outputs'):
+        ipd_rel=pathlib.Path(ipd_row['path']);assert not ipd_rel.is_absolute() and '..' not in ipd_rel.parts
+        ipd_sha=hashlib.sha256((ipd_run/ipd_rel).read_bytes()).hexdigest().upper();assert ipd_sha==ipd_row['sha256']
+        ipd_images[ipd_rel.as_posix()]=ipd_sha
+    assert set(ipd_images)==set(ipd_old['image_sha256']) and ipd_meta==ipd_old['scientific_metadata']
+    print('IP_FIELD_FIGURES_EQUAL='+json.dumps({k:ipd_images[k]==v for k,v in ipd_old['image_sha256'].items()}),flush=True)
+    for ipd_rel,ipd_sha in ipd_input_hashes.items(): assert hashlib.sha256((ipd_run/ipd_rel).read_bytes()).hexdigest()==ipd_sha
+    assert {p.relative_to(ipd_run).as_posix() for p in ipd_run.rglob('*') if p.is_file()}==set(ipd_input_hashes)|set(ipd_images)|{'results/field_diagnostics.json'}
+    try: ipd_owner.export_field_diagnostics(ipd_run)
+    except FileExistsError as ipd_error:
+        assert dict(type=f'{type(ipd_error).__module__}.{type(ipd_error).__qualname__}',message=str(ipd_error))==ipd_old['repeat_refusal']
+    else: raise AssertionError('field diagnostics accepted an existing output')
+# IP_FIELD_INSTALLED_END
+# IP_PACKET_INSTALLED_BEGIN
+with section_timing('ip_post_extraction', sys.argv[2]):
+    from msplatform.workflows.ion_processor import post_extraction_diagnostics as ipp_owner
+    ipp_path=pathlib.Path(ipp_owner.__file__).resolve()
+    assert ipp_path==rfe_purelib/'msplatform/workflows/ion_processor/post_extraction_diagnostics.py'
+    for ipp_case in ('packet_empty','packet_extracted'):
+        ipp_old=fixture['ip_exporters_old_witness'][ipp_case]
+        ipp_case_root=root/('ip-'+ipp_case+'-'+sys.argv[2]);ipp_case_root.mkdir()
+        ipp_run=ipp_case_root/'run';ipp_run.mkdir();ipp_out=ipp_case_root/'out'
+        for ipp_rel,ipp_record in ipp_old['inputs'].items():
+            ipp_bytes=ipa_zlib.decompress(ipa_base64.b64decode(ipp_record['zlib_base64'],validate=True))
+            assert len(ipp_bytes)==ipp_record['size'] and hashlib.sha256(ipp_bytes).hexdigest()==ipp_record['sha256']
+            ipp_file=ipp_run/ipp_rel;ipp_file.parent.mkdir(parents=True,exist_ok=True);ipp_file.write_bytes(ipp_bytes)
+        ipp_result=ipp_owner.export_post_extraction(ipp_run,ipp_out)
+        if 'source_run' in ipp_result:
+            assert pathlib.Path(ipp_result['source_run']).resolve()==ipp_run.resolve();ipp_result['source_run']='<OWNED_RUN>'
+        assert ipp_result==ipp_old['outcome']
+        assert {p.name for p in ipp_out.iterdir()}==set(ipp_old['output_sha256'])
+        for ipp_name in ('post_extraction_plane_states.csv','post_extraction_common_time_states.csv'):
+            assert hashlib.sha256((ipp_out/ipp_name).read_bytes()).hexdigest()==ipp_old['output_sha256'][ipp_name]
+        ipp_stats=json.loads((ipp_out/'post_extraction_statistics.json').read_text(encoding='utf-8'))
+        if 'source_run' in ipp_stats:
+            assert pathlib.Path(ipp_stats['source_run']).resolve()==ipp_run.resolve();ipp_stats['source_run']='<OWNED_RUN>'
+        assert ipp_stats==ipp_old['statistics']
+        ipp_meta=json.loads((ipp_out/'post_extraction_packet.metadata.json').read_text(encoding='utf-8'))
+        assert pathlib.Path(ipp_meta.pop('source_run')).resolve()==ipp_run.resolve();ipp_records=[]
+        for ipp_row in ipp_meta.pop('source_records'):
+            ipp_file=pathlib.Path(ipp_row['path']).resolve();ipp_rel=ipp_file.relative_to(ipp_run.resolve()).as_posix()
+            assert hashlib.sha256(ipp_file.read_bytes()).hexdigest()==ipp_row['sha256'];ipp_records.append(dict(relative=ipp_rel,sha256=ipp_row['sha256']))
+        assert ipp_records==ipp_old['source_records'];ipp_producer=ipp_meta.pop('producer')
+        assert pathlib.Path(ipp_producer['path']).resolve()==ipp_path and ipp_producer['sha256']==hashlib.sha256(ipp_path.read_bytes()).hexdigest()
+        ipp_images={}
+        for ipp_row in ipp_meta.pop('outputs'):
+            ipp_file=pathlib.Path(ipp_row['path']).resolve();assert ipp_file.parent==ipp_out.resolve()
+            ipp_sha=hashlib.sha256(ipp_file.read_bytes()).hexdigest();assert ipp_sha==ipp_row['sha256'];ipp_images[ipp_file.name]=ipp_sha
+        assert set(ipp_images)=={'post_extraction_packet.png','post_extraction_packet.svg'}
+        if 'source_run' in ipp_meta['cohort']:
+            assert pathlib.Path(ipp_meta['cohort']['source_run']).resolve()==ipp_run.resolve();ipp_meta['cohort']['source_run']='<OWNED_RUN>'
+        assert ipp_meta==ipp_old['scientific_metadata']
+        print('IP_PACKET_FIGURES_EQUAL='+json.dumps(dict(case=ipp_case,figures={k:v==ipp_old['output_sha256'][k] for k,v in ipp_images.items()})),flush=True)
+        for ipp_rel,ipp_record in ipp_old['inputs'].items(): assert hashlib.sha256((ipp_run/ipp_rel).read_bytes()).hexdigest()==ipp_record['sha256']
+        assert {p.relative_to(ipp_run).as_posix() for p in ipp_run.rglob('*') if p.is_file()}==set(ipp_old['inputs'])
+        try: ipp_owner.export_post_extraction(ipp_run,ipp_out)
+        except FileExistsError as ipp_error:
+            assert dict(type=f'{type(ipp_error).__module__}.{type(ipp_error).__qualname__}',message=str(ipp_error))==ipp_old['repeat_refusal']
+        else: raise AssertionError('packet export accepted existing output')
+# IP_PACKET_INSTALLED_END
+# IP_SECTION_INSTALLED_BEGIN
+with section_timing('ip_section_diagnostics', sys.argv[2]):
+    from msplatform.workflows.ion_processor import section_diagnostics as ips_owner
+    ips_path=pathlib.Path(ips_owner.__file__).resolve();assert ips_path==rfe_purelib/'msplatform/workflows/ion_processor/section_diagnostics.py'
+    ips_old=fixture['ip_exporters_old_witness']['sections'];ips_root=root/('ip-sections-'+sys.argv[2]);ips_root.mkdir()
+    ips_run=ips_root/'run';ips_run.mkdir();ips_out=ips_root/'figures'
+    for ips_rel,ips_record in ips_old['inputs'].items():
+        ips_bytes=ipa_zlib.decompress(ipa_base64.b64decode(ips_record['zlib_base64'],validate=True))
+        assert len(ips_bytes)==ips_record['size'] and hashlib.sha256(ips_bytes).hexdigest()==ips_record['sha256']
+        ips_file=ips_run/ips_rel;ips_file.parent.mkdir(parents=True,exist_ok=True);ips_file.write_bytes(ips_bytes)
+    assert ips_owner.export_sections(ips_run,ips_out,ips_run/'results/synthetic_recorded_snapshot.csv') is None
+    assert {p.name for p in ips_out.iterdir()}==set(ips_old['output_sha256'])
+    for ips_role,ips_expected in ips_old['roles'].items():
+        ips_meta=json.loads((ips_out/(ips_role+'.metadata.json')).read_text(encoding='utf-8'))
+        assert pathlib.Path(ips_meta.pop('source_run')).resolve()==ips_run.resolve()
+        def ips_check_record(ips_row):
+            ips_file=pathlib.Path(ips_row['path']).resolve();ips_rel=ips_file.relative_to(ips_run.resolve()).as_posix()
+            assert hashlib.sha256(ips_file.read_bytes()).hexdigest()==ips_row['sha256']
+            return dict(relative=ips_rel,sha256=ips_row['sha256'])
+        assert [ips_check_record(row) for row in ips_meta.pop('sources')]==ips_expected['sources']
+        assert ips_check_record(ips_meta.pop('recorded_state_table'))==ips_expected['snapshot']
+        ips_producer=ips_meta.pop('producer');assert pathlib.Path(ips_producer['path']).resolve()==ips_path
+        assert ips_producer['sha256']==hashlib.sha256(ips_path.read_bytes()).hexdigest()
+        ips_images={}
+        for ips_row in ips_meta.pop('outputs'):
+            ips_file=pathlib.Path(ips_row['path']).resolve();assert ips_file.parent==ips_out.resolve()
+            ips_sha=hashlib.sha256(ips_file.read_bytes()).hexdigest();assert ips_sha==ips_row['sha256'];ips_images[ips_file.name]=ips_sha
+        assert set(ips_images)==set(ips_expected['images']) and ips_meta==ips_expected['metadata']
+        print('IP_SECTION_FIGURES_EQUAL='+json.dumps(dict(role=ips_role,figures={k:v==ips_expected['images'][k] for k,v in ips_images.items()})),flush=True)
+    for ips_rel,ips_record in ips_old['inputs'].items(): assert hashlib.sha256((ips_run/ips_rel).read_bytes()).hexdigest()==ips_record['sha256']
+    assert {p.relative_to(ips_run).as_posix() for p in ips_run.rglob('*') if p.is_file()}==set(ips_old['inputs'])
+    try: ips_owner.export_sections(ips_run,ips_out,ips_run/'results/synthetic_recorded_snapshot.csv')
+    except FileExistsError as ips_error:
+        assert f'{type(ips_error).__module__}.{type(ips_error).__qualname__}'==ips_old['repeat_refusal']['type']
+        assert pathlib.Path(str(ips_error)).resolve()==(ips_out/ips_old['repeat_refusal']['output_name']).resolve()
+    else: raise AssertionError('section export accepted existing output')
+# IP_SECTION_INSTALLED_END
+# IP_GENERAL_INSTALLED_BEGIN
+with section_timing('ip_general_diagnostics', sys.argv[2]):
+    from msplatform.workflows.ion_processor import diagnostics as ipg_owner
+    ipg_path=pathlib.Path(ipg_owner.__file__).resolve();assert ipg_path==rfe_purelib/'msplatform/workflows/ion_processor/diagnostics.py'
+    ipg_old=fixture['ip_exporters_old_witness']['general_diagnostics'];ipg_root=root/('ip-general-'+sys.argv[2]);ipg_root.mkdir()
+    ipg_run=ipg_root/'run';ipg_run.mkdir();ipg_out=ipg_root/'figures'
+    for ipg_rel,ipg_record in ipg_old['inputs'].items():
+        ipg_bytes=ipa_zlib.decompress(ipa_base64.b64decode(ipg_record['zlib_base64'],validate=True))
+        assert len(ipg_bytes)==ipg_record['size'] and hashlib.sha256(ipg_bytes).hexdigest()==ipg_record['sha256']
+        ipg_file=ipg_run/ipg_rel;ipg_file.parent.mkdir(parents=True,exist_ok=True);ipg_file.write_bytes(ipg_bytes)
+    assert ipg_owner.export_diagnostics(ipg_run,ipg_out)==ipg_old['outcome']
+    assert {p.name for p in ipg_out.iterdir()}==set(ipg_old['output_sha256'])
+    for ipg_name in ('diagnostic_snapshots.csv','diagnostic_census.csv','diagnostic_losses.csv','post_extraction_plane_states.csv','post_extraction_common_time_states.csv'):
+        assert hashlib.sha256((ipg_out/ipg_name).read_bytes()).hexdigest()==ipg_old['output_sha256'][ipg_name]
+    for ipg_name,ipg_expected in ipg_old['jsons'].items():
+        ipg_actual=json.loads((ipg_out/ipg_name).read_text(encoding='utf-8'))
+        if ipg_name=='post_extraction_statistics.json':
+            assert pathlib.Path(ipg_actual['source_run']).resolve()==ipg_run.resolve();ipg_actual['source_run']='<OWNED_RUN>'
+        assert ipg_actual==ipg_expected,ipg_name
+    for ipg_role,ipg_expected in ipg_old['roles'].items():
+        ipg_meta=json.loads((ipg_out/(ipg_role+'.metadata.json')).read_text(encoding='utf-8'))
+        assert pathlib.Path(ipg_meta.pop('source_run')).resolve()==ipg_run.resolve();ipg_records=[]
+        for ipg_row in ipg_meta.pop('source_records'):
+            ipg_file=pathlib.Path(ipg_row['path']).resolve();ipg_rel=ipg_file.relative_to(ipg_run.resolve()).as_posix()
+            assert hashlib.sha256(ipg_file.read_bytes()).hexdigest().upper()==ipg_row['sha256'] and ipg_file.stat().st_size==ipg_row['bytes']
+            ipg_records.append(dict(relative=ipg_rel,sha256=ipg_row['sha256'],bytes=ipg_row['bytes']))
+        assert ipg_records==ipg_expected['sources']
+        assert pathlib.Path(ipg_meta.pop('code_source_path')).resolve()==ipg_path
+        assert ipg_meta.pop('code_sha256')==hashlib.sha256(ipg_path.read_bytes()).hexdigest().upper();ipg_images={}
+        for ipg_row in ipg_meta.pop('outputs'):
+            ipg_file=pathlib.Path(ipg_row['path']).resolve();assert ipg_file.parent==ipg_out.resolve()
+            ipg_sha=hashlib.sha256(ipg_file.read_bytes()).hexdigest().upper();assert ipg_sha==ipg_row['sha256'] and ipg_row['format']==ipg_file.suffix.lstrip('.')
+            ipg_images[ipg_file.name]=ipg_sha
+        assert set(ipg_images)==set(ipg_expected['images']) and ipg_meta==ipg_expected['metadata']
+        print('IP_GENERAL_FIGURES_EQUAL='+json.dumps(dict(role=ipg_role,figures={k:v==ipg_expected['images'][k] for k,v in ipg_images.items()})),flush=True)
+    for ipg_rel,ipg_record in ipg_old['inputs'].items(): assert hashlib.sha256((ipg_run/ipg_rel).read_bytes()).hexdigest()==ipg_record['sha256']
+    assert {p.relative_to(ipg_run).as_posix() for p in ipg_run.rglob('*') if p.is_file()}==set(ipg_old['inputs'])
+    try: ipg_owner.export_diagnostics(ipg_run,ipg_out)
+    except FileExistsError as ipg_error:
+        assert dict(type=f'{type(ipg_error).__module__}.{type(ipg_error).__qualname__}',message=str(ipg_error))==ipg_old['repeat_refusal']
+    else: raise AssertionError('general diagnostics accepted existing output')
+# IP_GENERAL_INSTALLED_END
+# IP_MISSING_OWNER_INSTALLED_BEGIN
+with section_timing('ip_missing_owners', sys.argv[2]):
+    for ipm_name in ('msplatform.workflows.ion_processor.analysis','msplatform.workflows.ion_processor.diagnostics',
+                     'msplatform.workflows.ion_processor.section_diagnostics','msplatform.workflows.ion_processor.post_extraction_diagnostics',
+                     'msplatform.workflows.ion_processor.field_diagnostics','msplatform.workflows.ion_processor.extraction_force_budget',
+                     'msplatform.results.ip_continuation'):
+        ipm_file=rfe_purelib.joinpath(*ipm_name.split('.')).with_suffix('.py');ipm_original=ipm_file.read_bytes()
+        ipm_held=ipm_file.with_suffix('.py.ip-held');assert not ipm_held.exists();ipm_file.rename(ipm_held)
+        try:
+            ipm_missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rfe_child,rfe_blocked,ipm_name],
+                                       cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+            assert ipm_missing.returncode!=0 and not ipm_missing.stdout,ipm_missing.stderr
+            assert 'ModuleNotFoundError' in ipm_missing.stderr and ipm_name in ipm_missing.stderr,ipm_missing.stderr
+        finally:
+            ipm_held.rename(ipm_file)
+        assert ipm_file.read_bytes()==ipm_original
+    for ipm_legacy in ('diagnostics.py','section_diagnostics.py','post_extraction_diagnostics.py','field_diagnostics.py','extraction_force_budget.py'):
+        assert not (rfe_purelib/'projects/dual_pressure_rectilinear_ion_processor/analysis'/ipm_legacy).exists()
+# IP_MISSING_OWNER_INSTALLED_END
+# TOF_MASS_SPECTRUM_INSTALLED_BEGIN
+with section_timing('tof_mass_spectrum', sys.argv[2]):
+    import base64 as tms_base64
+    import platform as tms_platform
+    import pandas as tms_pd
+    from msplatform.workflows import single_reflection_mass_spectrum as tms_owner
+    from msplatform.results import single_reflection_particle_table as tms_reader
+    tms_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    tms_names = ('msplatform.workflows.single_reflection_mass_spectrum', 'msplatform.results.single_reflection_particle_table')
+    tms_modules = (tms_owner, tms_reader)
+    tms_files = tuple(pathlib.Path(module.__file__).resolve() for module in tms_modules)
+    for name, path in zip(tms_names, tms_files, strict=True):
+        assert path == tms_purelib.joinpath(*name.split('.')).with_suffix('.py'), (name,path)
+    assert tms_owner.particle_table is tms_reader
+    # Exercise the installed reader's real Excel engine and exact lexical IDs.
+    tms_excel_root = root/('tof-mass-spectrum-excel-'+sys.argv[2]);tms_excel_root.mkdir()
+    for label, ids in (
+        ('valid',['9007199254740993.0','9223372036854775807','9.223372036854775806e18']),
+        ('duplicate',['9007199254740993','9007199254740993.0','3']),
+        ('fractional',['1.00000000000000001','2','3']),
+    ):
+        workbook = tms_excel_root/(label+'.xlsx')
+        tms_pd.DataFrame({'Ion':ids,'TofUs':[71.9,72.0,72.1]}).to_excel(workbook,index=False,engine='openpyxl')
+        workbook_before = workbook.read_bytes()
+        table, source_format = tms_reader.read_source_table(workbook)
+        assert source_format == 'Excel human import'
+        if label == 'valid':
+            normalized, metadata = tms_reader.normalize_particle_table(table,source_format,0.0,0.0)
+            assert normalized['particle_id'].tolist() == [9007199254740993,9223372036854775807,9223372036854775806]
+            assert str(normalized['particle_id'].dtype) == 'int64' and not metadata['particle_id_generated']
+            assert normalized['tof_us'].tolist() == [71.9,72.0,72.1]
+        else:
+            try: tms_reader.normalize_particle_table(table,source_format,0.0,0.0)
+            except ValueError as exc:
+                assert ('Duplicate particle_id' if label == 'duplicate' else 'particle IDs') in str(exc)
+            else: raise AssertionError('invalid Excel particle ID accepted: '+label)
+        assert workbook.read_bytes() == workbook_before
+    tms_inputs = fixture['tof_mass_spectrum_inputs']; tms_old = fixture['tof_mass_spectrum_old_witness']
+    tms_mode = pathlib.Path(tms_inputs['mode']); tms_comsol = pathlib.Path(tms_inputs['comsol_dir'])
+    tms_simion = pathlib.Path(tms_inputs['simion']); tms_geometry = pathlib.Path(tms_inputs['geometry'])
+    tms_paths = [tms_mode,tms_simion,tms_geometry,*sorted(tms_comsol.glob('*.csv'))]
+    assert len(tms_paths) == 8 and set(path.name for path in tms_paths) == set(tms_old['inputs'])
+    tms_before = {path:path.read_bytes() for path in tms_paths}
+    for path, data in tms_before.items():
+        record = tms_old['inputs'][path.name]
+        assert data == tms_base64.b64decode(record['base64'],validate=True)
+        assert len(data) == record['bytes'] and hashlib.sha256(data).hexdigest() == record['sha256']
+    tms_root = root/('tof-mass-spectrum-'+sys.argv[2]);tms_root.mkdir()
+    tms_output = tms_root/'output'
+    tms_result = tms_owner.analyze_mass_spectrum(tms_mode,tms_comsol,tms_simion,tms_output,tms_geometry)
+    tms_metrics_raw = (tms_output/'mass_spectrum_metrics.json').read_bytes()
+    assert json.loads(tms_metrics_raw) == tms_result
+    assert tms_result['python'] == tms_platform.python_version()
+    tms_expected = tms_old['result']
+    assert set(tms_result) == set(tms_expected)
+    assert set(tms_result['inputs']) == set(tms_expected['inputs']) | {'resolved_geometry'}
+    assert tms_result['inputs']['resolved_geometry'] == hashlib.sha256(tms_before[tms_geometry]).hexdigest().upper()
+    assert {key:value for key,value in tms_result['inputs'].items() if key != 'resolved_geometry'} == tms_expected['inputs']
+    assert {key:value for key,value in tms_result.items() if key not in {'python','inputs'}} == {key:value for key,value in tms_expected.items() if key not in {'python','inputs'}}
+    tms_canonical = dict(tms_result,python=tms_expected['python'],inputs=tms_expected['inputs'])
+    tms_metrics_record = tms_old['outputs']['mass_spectrum_metrics.json']
+    tms_old_metrics = tms_base64.b64decode(tms_metrics_record['base64'],validate=True)
+    assert len(tms_old_metrics) == tms_metrics_record['bytes'] and hashlib.sha256(tms_old_metrics).hexdigest() == tms_metrics_record['sha256']
+    # The original Windows text-write capture used CRLF; CSV bytes remain unmodified.
+    assert (json.dumps(tms_canonical,indent=2,ensure_ascii=False)+'\n').replace('\n','\r\n').encode('utf-8') == tms_old_metrics
+    assert (json.dumps(tms_result,indent=2,ensure_ascii=False)+'\n').replace('\n',os.linesep).encode('utf-8') == tms_metrics_raw
+    assert set(path.name for path in tms_output.iterdir()) == set(tms_old['outputs'])
+    for name, record in tms_old['outputs'].items():
+        data = (tms_output/name).read_bytes()
+        if name.endswith('.csv'):
+            assert data == tms_base64.b64decode(record['base64'],validate=True), name
+            assert len(data) == record['bytes'] and hashlib.sha256(data).hexdigest() == record['sha256']
+        elif name.endswith('.png'):
+            assert data.startswith(b'\x89PNG\r\n\x1a\n') and len(data)>8
+            print('TOF_MASS_SPECTRUM_PNG_IDENTITY='+json.dumps(dict(name=name,old_sha256=record['sha256'],
+                old_bytes=record['bytes'],actual_sha256=hashlib.sha256(data).hexdigest(),actual_bytes=len(data))),flush=True)
+    print('TOF_MASS_SPECTRUM_PYTHON='+json.dumps(dict(original=tms_expected['python'],installed=tms_result['python'])),flush=True)
+    for name,tof,mz in (('rank',[10.,10.,10.],[1.,4.,9.]),('negative',[1.,2.,3.],[1.,-4.,9.]),
+                        ('overflow',[1e308,1.1e308,1.2e308],[1.,4.,9.])):
+        try: tms_owner.fit_calibration(np.asarray(tof),np.asarray(mz))
+        except Exception as exc:
+            assert {'type':type(exc).__module__+'.'+type(exc).__qualname__,'message':str(exc)} == tms_old['failures'][name]
+        else: raise AssertionError('calibration refusal missing: '+name)
+    try: tms_owner.analyze_mass_spectrum(tms_mode,tms_comsol,tms_simion,tms_root/'missing-geometry-output',tms_root/'missing-geometry.json')
+    except FileNotFoundError as exc: assert pathlib.Path(exc.filename) == tms_root/'missing-geometry.json'
+    else: raise AssertionError('missing explicit geometry accepted')
+    assert not (tms_root/'missing-geometry-output').exists()
+    tms_mode_doc = json.loads(tms_mode.read_text(encoding='utf-8'))
+    for solver in ('COMSOL','SIMION'):
+        tms_case = tms_root/('invalid-id-'+solver); tms_case.mkdir()
+        tms_case_comsol = tms_case/'comsol';shutil.copytree(tms_comsol,tms_case_comsol)
+        tms_case_simion = tms_case/'simion.csv';shutil.copyfile(tms_simion,tms_case_simion)
+        tms_bad = tms_case_comsol/(str(tms_mode_doc['species'][0]['species_id'])+'.csv') if solver == 'COMSOL' else tms_case_simion
+        tms_frame = tms_pd.read_csv(tms_bad,dtype=str);tms_frame.loc[0,'Ion']='1.9';tms_frame.to_csv(tms_bad,index=False)
+        try: tms_owner.analyze_mass_spectrum(tms_mode,tms_case_comsol,tms_case_simion,tms_case/'output',tms_geometry)
+        except ValueError as exc: assert 'particle ID' in str(exc) or 'particle_id' in str(exc),str(exc)
+        else: raise AssertionError('invalid original particle ID accepted: '+solver)
+        assert not (tms_case/'output').exists()
+    assert all(path.read_bytes() == data for path,data in tms_before.items())
+    tms_child = r"""import importlib,importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(path))
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,Deny())
+importlib.import_module(sys.argv[2])
+"""
+    for name,path in zip(tms_names,tms_files,strict=True):
+        original=path.read_bytes();held=path.with_suffix(path.suffix+'.tof-spectrum-held');assert not held.exists();path.rename(held)
+        try:
+            missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',tms_child,
+                json.dumps([str(path) for path in blocked_source_roots]),name],cwd=tms_root,
+                capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+            assert missing.returncode != 0 and 'ModuleNotFoundError' in missing.stderr and name in missing.stderr,missing.stderr
+        finally: held.rename(path)
+        assert path.read_bytes() == original
+# TOF_MASS_SPECTRUM_INSTALLED_END
 # Recorded local analysis: synthetic logs, no solver or owner.
 from msplatform.workflows.local_frontend import analyze as local_analyzer, focus as local_focus, figures as local_figures
 from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
@@ -6178,6 +6571,14 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             mr_callbacks = [node.value for node in ast.walk(mr_test_ast) if isinstance(node, ast.Constant)
                             and isinstance(node.value, str) and 'READ_ONLY_TOF=PASS' in node.value and 'setfenv(chunk' in node.value]
             self.assertEqual(len(mr_callbacks), 1)
+            # Existing five-species software fixture; preserve its explicit selected input bytes.
+            from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_peak_metrics import SourceMappingAndBootstrapTest
+            tof_spectrum_root = root / 'tof-mass-spectrum-inputs'
+            tof_spectrum_root.mkdir()
+            tof_spectrum_mode, tof_spectrum_comsol, tof_spectrum_simion = SourceMappingAndBootstrapTest._mass_spectrum_inputs(tof_spectrum_root)
+            tof_spectrum_geometry = tof_spectrum_root / 'resolved_geometry.json'
+            shutil.copyfile(REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json', tof_spectrum_geometry)
+            tof_spectrum_input_bytes = {path: path.read_bytes() for path in tof_spectrum_root.rglob('*') if path.is_file()}
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
                                               author_source_roots=[str(REPO_ROOT)],
@@ -6195,7 +6596,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
+                                              tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
+                                              tof_mass_spectrum_old_witness=json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/tof_mass_spectrum_old_witness.json').read_text(encoding='utf-8')),
                                               rf_event_old_capture=json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
+                                              ip_analyzer_old_witness=json.loads((REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
+                                              ip_exporters_old_witness=json.loads((REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),
                                               mr_measured_handoff=str(mr_measured_fixture.handoff),
                                               mr_measured_callback=mr_callbacks[0],
                                               mr_measured_source_old_witness=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
@@ -6252,6 +6657,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
+                self.assertTrue(all(path.read_bytes() == data for path, data in tof_spectrum_input_bytes.items()))
                 self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))
             if retained:
                 files = []

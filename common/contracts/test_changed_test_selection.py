@@ -1430,6 +1430,35 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
 
+    def test_migrated_ip_tof_paths_select_real_consumers(self) -> None:
+        project = "projects.single_reflection_oa_tof_mass_analyzer.tests.analysis."
+        consumer_paths = (
+            "src/msplatform/workflows/single_reflection_mass_spectrum.py",
+            "src/msplatform/results/single_reflection_particle_table.py",
+            "src/msplatform/execution/resources/frozen_python_package.ps1",
+        )
+        with tempfile.TemporaryDirectory(prefix="migrated_ip_tof_plans_") as directory:
+            for index, path in enumerate((*consumer_paths, "src/msplatform/analysis/particle_styles.py")):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    if path in consumer_paths:
+                        params = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
+                        selected = set(params["SelectedTestModules"])
+                        expected = {project + "test_mass_spectrum_input_admission", project + "test_candidate_workflow"}
+                        if path != consumer_paths[2]:
+                            expected.add(project + "test_peak_metrics")
+                        if path == consumer_paths[1]:
+                            expected.update({project + "test_analyze_comsol_detector_events",
+                                             project + "test_solver_diagnostics"})
+                        self.assertTrue(expected <= selected, (path, selected))
+                    else:
+                        self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
+                        args = stages["rf_multipole_domain_tests"]["command"]["arguments"]
+                        self.assertIn("projects/rf_multipole_ion_optics/tests/domain/test_exit_state_plot.py", args)
+
     def test_installed_reflectron_fit_selects_its_workflow_and_installation_consumers(self) -> None:
         project = "projects/single_reflection_oa_tof_mass_analyzer"
         expected = [f"{project}.tests.analysis.{name}".replace("/", ".") for name in (

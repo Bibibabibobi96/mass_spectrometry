@@ -1775,6 +1775,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/analysis/particle_styles.py",
+          "reason": "migrated_actual_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/ion_release/paired_mass_scan.py",
           "reason": "installed_paired_mass_response_changed"
         },
@@ -1892,6 +1896,18 @@
           "projects/rf_multipole_ion_optics/tests/__init__.py"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/particle_styles.py",
+                "reason": "migrated_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/domain/test_exit_state_plot.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -3299,6 +3315,18 @@
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/single_reflection_mass_spectrum.py",
+          "reason": "migrated_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/results/single_reflection_particle_table.py",
+          "reason": "migrated_actual_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+          "reason": "migrated_actual_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/resources/export_axis_basis.lua",
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
@@ -3411,6 +3439,50 @@
         "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/results/single_reflection_particle_table.py",
+                "reason": "particle_table_reference_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_analyze_comsol_detector_events.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_solver_diagnostics.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
+                "reason": "migrated_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_mass_spectrum_input_admission.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/single_reflection_mass_spectrum.py",
+                "reason": "migrated_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/results/single_reflection_particle_table.py",
+                "reason": "migrated_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_peak_metrics.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_mass_spectrum_input_admission.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -4364,6 +4436,10 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
+        {
+          "exact": "src/msplatform/analysis/particle_styles.py",
+          "reason": "migrated_actual_consumer_changed"
+        },
         {
           "exact": "src/msplatform/components/rf_multipole/event_table.py",
           "reason": "ip_functional_event_validation_changed"
