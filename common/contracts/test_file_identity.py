@@ -63,10 +63,14 @@ class FileIdentityTest(unittest.TestCase):
                     self.assertEqual(result.stdout, b"")
                     diagnostic = result.stderr.decode("utf-8", errors="strict")
                     self.assertIn("WinError 2", diagnostic)
-                    self.assertIn(ctypes.FormatError(2).strip(), diagnostic)
-                    # ctypes.WinError has no filename; Path.stat includes its repr.
-                    if arguments[0] == "--left":
+                    if arguments[0] == "--unbuffered":
+                        expected_error = ctypes.WinError(2)
+                    else:
+                        with self.assertRaises(FileNotFoundError) as expected:
+                            missing.stat()
+                        expected_error = expected.exception
                         self.assertIn(repr(str(missing)), diagnostic)
+                    self.assertIn(str(expected_error), diagnostic)
 
     @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
     def test_unbuffered_matches_hashlib_at_sector_and_chunk_boundaries(self) -> None:
