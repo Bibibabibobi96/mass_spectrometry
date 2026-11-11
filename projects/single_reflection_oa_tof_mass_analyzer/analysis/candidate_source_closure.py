@@ -566,6 +566,9 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     analysis_names += tuple(name for name in sources if (
         name == "src/msplatform/__init__.py"
         or name.startswith(("src/msplatform/analysis/", "src/msplatform/io/"))))
+    # Preserve the actual selected package and reader records without backfilling old closures.
+    analysis_names += tuple(name for name in sources if name in (
+        "src/msplatform/results/__init__.py", "src/msplatform/results/single_reflection_particle_table.py"))
     # Historical closures retain the source authority they actually froze.
     analysis_names += tuple(name for name in sources if name == "common/contracts/file_identity.py")
     analysis_names += (prefix+"config/analysis_contract.json",)

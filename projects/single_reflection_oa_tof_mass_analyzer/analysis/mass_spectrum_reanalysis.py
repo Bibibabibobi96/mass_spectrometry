@@ -10,15 +10,9 @@ from pathlib import Path
 
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
 PREFIX = f"projects/{PROJECT}"
-ANALYSIS_MODULE = f"projects.{PROJECT}.analysis.mass_spectrum"
+ANALYSIS_MODULE = "msplatform.workflows.single_reflection_mass_spectrum"
 CODE_PATHS = (
     f"{PREFIX}/analysis/mass_spectrum_reanalysis.py",
-    f"{PREFIX}/analysis/mass_spectrum.py",
-    f"{PREFIX}/analysis/reference_analysis.py",
-    f"{PREFIX}/analysis/reference_analysis_core.py",
-    f"{PREFIX}/analysis/solver_diagnostics.py",
-    "src/msplatform/analysis/peak_metrics.py",
-    "src/msplatform/execution/inputs.py",
 )
 
 def read_json(path: Path) -> dict:
@@ -121,11 +115,14 @@ def select_source(source: Path, consumer_artifact_root: Path, stopped: Path | No
 
 def freeze_analysis(repo: Path, destination: Path, selection: dict) -> dict:
     """Freeze just the imported analysis files and the parent's physical resource."""
-    from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+    from msplatform.execution.inputs import enumerate_python_sources, freeze_file, freeze_python_package
     from msplatform.execution.retention import verify_record
 
     for name, record in selection["inputs"].items():
         verify_record(name, record)
+
+    if destination.exists():
+        raise FileExistsError(destination)
 
     paths = set(CODE_PATHS)
     paths.update(enumerate_python_sources(repo, package_roots=("src/msplatform",),
@@ -134,24 +131,40 @@ def freeze_analysis(repo: Path, destination: Path, selection: dict) -> dict:
         for directory in Path(relative).parents:
             if str(directory) != "." and (repo / directory / "__init__.py").is_file():
                 paths.add((directory / "__init__.py").as_posix())
-    inventory = []
-    for relative in sorted(paths):
-        (destination / relative).parent.mkdir(parents=True, exist_ok=True)
-        inventory.append({"path": relative,
-                          "sha256": freeze_file(repo / relative, destination / relative)["sha256"]})
+    paths.add("src/msplatform/execution/resources/frozen_python_package.ps1")
+    inventory = freeze_python_package(repo, destination, relative_paths=sorted(paths))
     resolved = Path(selection["inputs"]["resolved_geometry"]["path"])
-    (destination / PREFIX / "config").mkdir(parents=True, exist_ok=True)
-    inventory.append({"path": f"{PREFIX}/config/resolved_geometry.json",
-                      "sha256": freeze_file(resolved, destination / PREFIX / "config/resolved_geometry.json")["sha256"]})
+    relative = f"{PREFIX}/config/resolved_geometry.json"
+    target = destination / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record = freeze_file(resolved, target)
+    inventory["files"].append({"relative_path": relative, "path": str(target.absolute()),
+                               "sha256": record["sha256"].upper()})
     mode = destination.parent / "mass_spectrum.json"
     freeze_file(Path(selection["inputs"]["mode_config"]["path"]), mode)
-    return {"schema_version": 1, "role": "frozen_code_inventory", "files": inventory}
+    return inventory
 
 
-def run_analysis(selection_path: Path, code_root: Path, output: Path) -> dict:
+def run_analysis(selection_path: Path, code_root: Path, output: Path, inventory_path: Path) -> dict:
     """The sole scientific consumer is the existing mass-spectrum analyzer."""
+    import hashlib
     import sys
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis import mass_spectrum
+    root = code_root.resolve(strict=True)
+    inventory = read_json(inventory_path)
+    entries = inventory.get("files", [])
+    selection = read_json(selection_path)
+    required = ("src/msplatform/workflows/single_reflection_mass_spectrum.py",
+                "src/msplatform/results/single_reflection_particle_table.py",
+                f"{PREFIX}/config/resolved_geometry.json")
+    for relative in required:
+        matches = [item for item in entries if item.get("relative_path") == relative]
+        path = (root / relative).resolve(strict=True)
+        if (len(matches) != 1 or not path.is_relative_to(root)
+                or hashlib.sha256(path.read_bytes()).hexdigest().lower() != str(matches[0].get("sha256", "")).lower()):
+            raise ValueError(f"Frozen mass-spectrum source identity differs: {relative}")
+    if next(item for item in entries if item.get("relative_path") == required[2])["sha256"].lower() != selection["inputs"]["resolved_geometry"]["sha256"].lower():
+        raise ValueError("Frozen selected geometry identity differs")
+    from msplatform.workflows import single_reflection_mass_spectrum as mass_spectrum
 
     root = code_root.resolve(strict=True)
     for module in (mass_spectrum, *(loaded for name, loaded in tuple(sys.modules.items())
@@ -166,7 +179,8 @@ def run_analysis(selection_path: Path, code_root: Path, output: Path) -> dict:
     result = analyze_mass_spectrum(
         code_root.parent / "mass_spectrum.json",
         Path(selection["source_directory"]) / "comsol",
-        Path(selection["exports"]["simion_csv"]["path"]), output)
+        Path(selection["exports"]["simion_csv"]["path"]), output,
+        code_root / PREFIX / "config/resolved_geometry.json")
     # Reuse the analyzer's existing identities; do not reread the CSV payload.
     expected = {"mode_config": selection["inputs"]["mode_config"]["sha256"],
                 "simion_csv": selection["exports"]["simion_csv"]["sha256"]}
@@ -193,13 +207,14 @@ def main() -> None:
     analyze.add_argument("--selection", type=Path, required=True)
     analyze.add_argument("--code-root", type=Path, required=True)
     analyze.add_argument("--output", type=Path, required=True)
+    analyze.add_argument("--inventory", type=Path, required=True)
     args = parser.parse_args()
     if args.action == "select":
         result = select_source(args.source, args.artifact_root, args.stopped_receipt)
     elif args.action == "freeze":
         result = freeze_analysis(args.repo, args.destination, read_json(args.selection))
     else:
-        result = run_analysis(args.selection, args.code_root, args.output)
+        result = run_analysis(args.selection, args.code_root, args.output, args.inventory)
     print(json.dumps(result, allow_nan=False))
 
 

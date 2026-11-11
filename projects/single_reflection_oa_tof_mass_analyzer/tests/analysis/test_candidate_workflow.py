@@ -610,6 +610,37 @@ print('FROZEN_ION_CONSUMER_PASS')
                 validate_artifact_capacity(invalid)
 
 
+    def test_particle_table_reader_changes_only_its_recorded_analysis_projection(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts",
+                resolved_contract=PROJECT_ROOT / "config/resolved_geometry.json",
+                analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
+            reader = "src/msplatform/results/single_reflection_particle_table.py"
+            initializer = "src/msplatform/results/__init__.py"
+            before = candidate_comsol_source_phases(closure)
+            self.assertTrue({initializer, reader}.issubset(
+                {item["source_id"] for item in before["analysis"]["sources"]}))
+            file = Path(closure["code_root"]) / reader
+            file.write_bytes(file.read_bytes() + b"\n# changed particle table reader fixture\n")
+            record = next(item for item in closure["sources"] if item["source_id"] == reader)
+            record.update(bytes=file.stat().st_size, sha256=sha256(file))
+            verify_candidate_source_closure(closure)
+            changed = candidate_comsol_source_phases(closure)
+            self.assertNotEqual(before["analysis"], changed["analysis"])
+            for phase in ("native", "export", "sync"):
+                self.assertEqual(before[phase], changed[phase])
+            # A historical closure cannot borrow the reader from the live tree.
+            closure["sources"].remove(record)
+            file.unlink()
+            historical = candidate_comsol_source_phases(closure)
+            historical_ids = {item["source_id"] for item in historical["analysis"]["sources"]}
+            self.assertNotIn(reader, historical_ids)
+            self.assertIn(initializer, historical_ids)
+            for phase in ("native", "export", "sync"):
+                self.assertEqual(before[phase], historical[phase])
+
     def test_canonical_peak_change_invalidates_only_its_analysis_projection(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:

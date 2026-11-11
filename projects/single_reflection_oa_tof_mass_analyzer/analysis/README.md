@@ -37,7 +37,7 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 | 双级反射器闭式解 | `reflectron_dual_stage_solver.py` | `../docs/theory/dual_stage_reflectron.md` |
 | 加速器—反射器纵向耦合 | `oatof_oaaccelerator_coupling.py` | `../docs/theory/oatof_oaaccelerator_coupling.md` |
 | finite-interval整机设计原子编译 | `finite_interval_design_compiler.py` | 复用上述三层理论，原子发布几何/电压/反射器耦合/rebuild plan |
-| Arm 8轴上全理论解析闭合 | `verify_axial_ideal_closure.py` | 复用上述耦合理论与统一`peak_metrics.py` |
+| Arm 8轴上全理论解析闭合 | `verify_axial_ideal_closure.py` | 复用上述耦合理论与统一`msplatform.analysis.peak_metrics` |
 | 参数候选编译 | `compile_candidate_design.py` | design-variable catalog与优化包络 |
 
 候选只允许修改变量目录登记的连续量或整数离散量。理论派生量由编译器重算，拓扑变量使用专用编译
@@ -125,9 +125,9 @@ including the population experiment implementation; the slope workflow also reco
 selected linear-design implementation. These remain
 source-audited live workflows, not frozen-code execution. Existing run roles and historical
 input bytes are unchanged; root workflow/controller closure remains separate P4 work.
-- `peak_metrics.py`：KDE、直接FWHM和分辨率的唯一参考实现。
+- `msplatform.analysis.peak_metrics`：KDE、直接FWHM和分辨率的唯一参考实现。
 - `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
-- `mass_spectrum.py`：五质量标定、峰形与探测落点比较。
+- `msplatform.workflows.single_reflection_mass_spectrum`：五质量标定、峰形与探测落点比较。
 - `compare_field_profiles.py`：同坐标轴场比较。
 - `compare_vector_field_samples.py`：同坐标三维场分量比较。
 - `compare_particle_trajectories.py`：代表粒子轨迹和关键面到达时间。
@@ -174,7 +174,7 @@ workflow调用；保留依据是[预注册pilot合同](../docs/publication/paper
 不是已标定的m/z轴。通用输入只证明调用者提供了TOF，时钟资格标为`unspecified`；不从列名、
 名义质量或配对ID补造电荷、脉冲epoch或绝对标定资格。冻结`analysis_contract.json`与历史结果不改写。
 
-`mass_spectrum.py`的新`analysis_metadata`登记`sqrt_mz_affine_centroid_fit_v1`：
+`msplatform.workflows.single_reflection_mass_spectrum`的`analysis_metadata`登记`sqrt_mz_affine_centroid_fit_v1`：
 每个求解器以同批物种平均TOF为自变量、`sqrt(m/z)`为响应做等物种权重的一次最小二乘拟合，
 即`sqrt(m/z)=a*tof_us+b`，随后映射同批粒子并报告同批质心残差。它不是独立标定集验证；
 `time_offset_us=-b/a`只是拟合零点，不能当作脉冲epoch。m/z图轴及偏差使用Th、密度使用1/Th，
@@ -188,7 +188,7 @@ workflow调用；保留依据是[预注册pilot合同](../docs/publication/paper
 补齐缺失ID。COMSOL各物种局部ID与SIMION混合源全局ID分别受对应完整母群计数上界约束，不按单物种
 上界误判后续SIMION物种。所有提供的行（含非命中）须落在声明物种及母群上界内；超额、未知物种或
 无效ID在写结果前拒绝，不截断编号、删除行或生成超过100%的传输率。合法非连续ID和整数CSV编码保留。
-ID解析统一在`reference_analysis_core.py`：CSV仅将选定ID列保留为原始文本，按十进制精确校验到
+ID解析统一在`msplatform.results.single_reflection_particle_table`：CSV仅将选定ID列保留为原始文本，按十进制精确校验到
 正int64整数，支持整数小数／指数编码；其他科学数值列沿用既有读取。COMSOL母群校验与命中筛选消费
 同一张源表，避免重复读取把大于2^53的ID先转浮点再贴回。别名、显式列映射、事件列和Hit筛选均保留
 原ID与观测行的对应关系；XLSX文本ID同样精确读取，不能恢复外部表格软件已舍入的数值单元格。
@@ -352,7 +352,7 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
 ## 门禁与维护
 
 - 回归入口：`verify_reference_analysis.ps1`。
-- `R=m/FWHM_m`和直接FWHM只在`peak_metrics.py`维护。
+- `R=m/FWHM_m`和直接FWHM只在`msplatform.analysis.peak_metrics`维护。
 - 修改KDE带宽、网格点数或半高交点算法时，先提升分析合同版本再更新基准。
 - MATLAB图只作GUI展示，正式统计必须与冻结Python实现核对。
 - 修改加速器电压、间距、源宽、无场长度或反射器参数时，必须重新运行理论闭合并按rebuild plan更新

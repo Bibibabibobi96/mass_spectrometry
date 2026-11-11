@@ -95,7 +95,16 @@ if($ReanalyzeOnly-or$ResumeFinalization){
       if($LASTEXITCODE-ne0){throw 'Mass-spectrum analysis closure preparation failed.'}
     }
     $analysisInventory=Join-Path $analysisPackage.input_dir 'code_inventory.json'
-    Write-RunJson -Path $analysisInventory -Value (($frozenText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100) -Depth 100
+    $analysisFrozen=($frozenText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
+    Write-RunJson -Path $analysisInventory -Value $analysisFrozen -Depth 100
+    $helperRelative='src/msplatform/execution/resources/frozen_python_package.ps1'
+    $helperEntry=@($analysisFrozen.files | Where-Object {$_.relative_path-ceq$helperRelative})
+    if($helperEntry.Count-ne1){throw 'Frozen Python helper is missing or duplicated.'}
+    $helperPath=[IO.Path]::GetFullPath([string]$helperEntry[0].path)
+    if($helperPath-cne[IO.Path]::GetFullPath((Join-Path $analysisCode $helperRelative))-or
+       -not(Test-Path -LiteralPath $helperPath -PathType Leaf)-or
+       (Get-FileHash -LiteralPath $helperPath -Algorithm SHA256).Hash-cne[string]$helperEntry[0].sha256){throw 'Frozen Python helper identity differs.'}
+    . $helperPath
     $analysisConfig=Get-Content -LiteralPath $analysisPackage.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     $analysisConfig.inputs.source_selection=$selectionPath;$analysisConfig.inputs.code_inventory=$analysisInventory
     $analysisConfig.inputs.mode_config=Join-Path $analysisPackage.input_dir 'mass_spectrum.json'
@@ -113,16 +122,26 @@ if($ReanalyzeOnly-or$ResumeFinalization){
     # CPython supports the persistent frozen import root. Windows process cwd
     # and this run's actual files use the existing package execution view.
     $analysisNative=Get-RunNativeExecutionContext -Package $analysisPackage -Tool 'mass-spectrum Python analysis' `
-      -Paths @($selectionPath,$analysisPackage.result_dir,$analysisStdout,$analysisStderr,$analysisPackage.artifact_run_dir)
+      -Paths @($selectionPath,$analysisPackage.result_dir,$analysisStdout,$analysisStderr,$analysisPackage.artifact_run_dir,$analysisInventory)
     $analysisEnvironment=@{};foreach($name in $analysisNative.environment.Keys){$analysisEnvironment[$name]=$analysisNative.environment[$name]}
     $analysisEnvironment.PYTHONDONTWRITEBYTECODE='1'
-    $analysisLaunch='import runpy,sys;from pathlib import Path;root=Path(sys.argv.pop(1));sys.path[:0]=[str(root/"src"),str(root)];from msplatform.execution.inputs import python_import_roots;sys.path[:0]=python_import_roots(root);runpy.run_module("'+$analysisModule+'",run_name="__main__")'
-    $analysisArgs=@('-I','-B','-c',$analysisLaunch,$analysisCode,'analyze','--selection',$analysisNative.projected_paths[0],'--code-root',$analysisCode,'--output',$analysisNative.projected_paths[1])
-    $analysisArgs=@($analysisArgs|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
+    $analysisArguments=@('analyze','--selection',$analysisNative.projected_paths[0],
+      '--code-root',$analysisCode,'--output',$analysisNative.projected_paths[1],
+      '--inventory',$analysisNative.projected_paths[5])
+    $analysisProbe=Invoke-IsolatedFrozenPythonModule -Python $analysisPython -Package $analysisFrozen `
+      -Module $analysisModule -Arguments $analysisArguments -ProbeOnly `
+      -WorkingDirectory $analysisNative.projected_paths[4] `
+      -DistributionNames @('numpy','scipy','pandas','matplotlib','openpyxl') `
+      -RequiredModuleNames @($analysisModule,'msplatform.workflows.single_reflection_mass_spectrum',
+         'msplatform.results.single_reflection_particle_table','msplatform.analysis.peak_metrics',
+         'msplatform.backends.simion.ion_table','msplatform.io.file_identity') -ForbiddenRoots @($analysisRepo)
+    $analysisInvocation=$analysisProbe.invocation
+    $analysisArgs=@($analysisInvocation.arguments|ForEach-Object{'"'+([string]$_).Replace('"','\"')+'"'})
+    Assert-FrozenPythonPackage -Package $analysisFrozen
     $analysisStopped=$false
     try{
-      $analysisProcess=Invoke-ResourceBudgetedProcess -Limits $null -RunDir $analysisRun -UsagePath $analysisUsage -FilePath $analysisPython `
-        -ArgumentList $analysisArgs -WorkingDirectory $analysisNative.projected_paths[4] -Environment $analysisEnvironment `
+      $analysisProcess=Invoke-ResourceBudgetedProcess -Limits $null -RunDir $analysisRun -UsagePath $analysisUsage -FilePath $analysisInvocation.file_path `
+        -ArgumentList $analysisArgs -WorkingDirectory $analysisInvocation.working_directory -Environment $analysisEnvironment `
         -RedirectStandardOutput $analysisNative.projected_paths[2] -RedirectStandardError $analysisNative.projected_paths[3]
       $analysisStopped=$true
       $analysisObservation=@{exit_confirmed=$true;returncode=[int]$analysisProcess.exit_code;process_id=[int]$analysisProcess.root_process_id;process_started_at_utc_ticks=[long]$analysisProcess.root_process_started_at_utc_ticks}
@@ -131,6 +150,7 @@ if($ReanalyzeOnly-or$ResumeFinalization){
         $analysisDiagnostic=(Get-Content -LiteralPath (Join-Path $analysisPackage.log_dir 'analysis.stderr.log') -Tail 8)-join[Environment]::NewLine
         throw ('Candidate mass-spectrum reanalysis failed: '+$analysisDiagnostic)
       }
+      Assert-FrozenPythonPackage -Package $analysisFrozen
     }catch{
       $analysisData=$_.Exception.Data
       if($analysisData.Contains('observed_process_exit_confirmed')-and[bool]$analysisData['observed_process_exit_confirmed']-and
@@ -665,8 +685,8 @@ if ([int]$summary.Hit -ne $totalParticles) {
   throw "SIMION detected $($summary.Hit)/$totalParticles mixed-species ions."
 }
 
-& $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum `
-  --mode-config $modePath --comsol-dir $comsolDir --simion-csv $simionCsv --output $resultDir
+& $python -m msplatform.workflows.single_reflection_mass_spectrum `
+  --mode-config $modePath --comsol-dir $comsolDir --simion-csv $simionCsv --output $resultDir --geometry $resolvedPath
 if ($LASTEXITCODE -ne 0) { throw 'Candidate mass-spectrum analysis failed.' }
 
 $runInputs = [ordered]@{

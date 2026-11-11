@@ -165,14 +165,28 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
             code = root / 'inputs/code'
             inventory = freeze_analysis(REPO, code, selected)
-            self.assertIn('src/msplatform/analysis/peak_metrics.py', {item['path'] for item in inventory['files']})
+            frozen_before = {str(p.relative_to(code)): p.read_bytes() for p in code.rglob('*') if p.is_file()}
+            with self.assertRaises(FileExistsError):
+                freeze_analysis(REPO, code, selected)
+            self.assertEqual(frozen_before, {str(p.relative_to(code)): p.read_bytes() for p in code.rglob('*') if p.is_file()})
+            self.assertIn('src/msplatform/analysis/peak_metrics.py', {item['relative_path'] for item in inventory['files']})
+            paths = [item['relative_path'] for item in inventory['files']]
+            for unused in ('reference_analysis.py', 'reference_analysis_core.py', 'solver_diagnostics.py', 'mass_spectrum.py'):
+                self.assertNotIn(f'projects/{PROJECT.name}/analysis/{unused}', paths)
+            self.assertEqual(paths.count('src/msplatform/analysis/peak_metrics.py'), 1)
+            self.assertEqual(paths.count('src/msplatform/execution/inputs.py'), 1)
+            for relative in ('src/msplatform/workflows/single_reflection_mass_spectrum.py',
+                             'src/msplatform/results/single_reflection_particle_table.py'):
+                self.assertIn(relative, {item['relative_path'] for item in inventory['files']})
+            inventory_path = root / 'inputs/code_inventory.json'
+            inventory_path.write_text(json.dumps(inventory), encoding='utf-8')
             schemas = {path.relative_to(REPO).as_posix(): path
                        for path in (REPO/'src/msplatform').rglob('*.schema.json')}
-            frozen = {item['path']: item for item in inventory['files']
-                      if item['path'].endswith('.schema.json')}
+            frozen = {item['relative_path']: item for item in inventory['files']
+                      if item['relative_path'].endswith('.schema.json')}
             self.assertTrue(schemas)
             self.assertEqual(set(frozen), set(schemas))
-            self.assertEqual(len(frozen), sum(item['path'].endswith('.schema.json')
+            self.assertEqual(len(frozen), sum(item['relative_path'].endswith('.schema.json')
                                              for item in inventory['files']))
             for relative, path in schemas.items():
                 with self.subTest(schema=relative):
@@ -184,31 +198,32 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             selection = root / 'inputs/source_selection.json'
             selection.write_text(json.dumps(selected), encoding='utf-8')
             output = root / 'analysis'
-            # Execute the actual public launch expression, not a second bootstrap
-            # that could stay green while the production frozen import drifts.
-            runner = PROJECT / 'workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1'
-            extract = r'''
+            # Obtain the same canonical invocation consumed by the public owner.
+            helper = code/'src/msplatform/execution/resources/frozen_python_package.ps1'
+            arguments = ['analyze', '--selection', str(selection), '--code-root', str(code),
+                         '--output', str(output), '--inventory', str(inventory_path)]
+            probe_args = root/'inputs/probe_args.json'
+            probe_args.write_text(json.dumps(arguments), encoding='utf-8')
+            probe = r"""
 $ErrorActionPreference='Stop'
-$tokens=$null;$errors=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile('RUNNER',[ref]$tokens,[ref]$errors)
-if($errors.Count){throw ($errors|Out-String)}
-$nodes=@($ast.FindAll({param($node)
- $node-is[Management.Automation.Language.AssignmentStatementAst]-and
- $node.Left.Extent.Text-ceq'$analysisLaunch'
-},$true))
-if($nodes.Count-ne1){throw 'Expected one actual mass-spectrum analysis launcher'}
-$analysisModule='projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis'
-Invoke-Expression $nodes[0].Extent.Text
-ConvertTo-Json -InputObject $analysisLaunch -Compress
-'''.replace('RUNNER', str(runner).replace("'", "''"))
-            extracted = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', extract],
+. 'HELPER'
+$package=Get-Content -LiteralPath 'INVENTORY' -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable -Depth 100
+$moduleArgs=@(Get-Content -LiteralPath 'ARGS' -Raw -Encoding UTF8 | ConvertFrom-Json)
+$result=Invoke-IsolatedFrozenPythonModule -Python 'PYTHON' -Package $package `
+  -Module 'projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis' `
+  -Arguments $moduleArgs -ProbeOnly -WorkingDirectory 'WORK' `
+  -RequiredModuleNames @('msplatform.workflows.single_reflection_mass_spectrum',
+                         'msplatform.results.single_reflection_particle_table', 'msplatform.analysis.peak_metrics')
+ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
+"""
+            for key, value in {'HELPER': helper, 'INVENTORY': inventory_path, 'ARGS': probe_args,
+                               'PYTHON': Path(sys.executable), 'WORK': root}.items():
+                probe = probe.replace(key, str(value).replace("'", "''"))
+            extracted = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', probe],
                 cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(extracted.returncode, 0, extracted.stdout + extracted.stderr)
-            launch = json.loads(extracted.stdout)
-            launch += (';import msplatform.analysis.peak_metrics as core;'
-                       'assert Path(core.__file__).resolve().is_relative_to(root/"src")')
-            command = [sys.executable, '-I', '-B', '-c', launch, str(code), 'analyze',
-                       '--selection', str(selection), '--code-root', str(code), '--output', str(output)]
+            invocation = json.loads(extracted.stdout)
+            command = [invocation['file_path'], *invocation['arguments']]
             result = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             with (output/'mass_spectrum_particles.csv').open(encoding='utf-8', newline='') as stream:
@@ -217,6 +232,33 @@ ConvertTo-Json -InputObject $analysisLaunch -Compress
             self.assertTrue(all(abs(float(row['detector_x_mm'])-.1) < 1e-12 for row in rows))
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
             self.assertFalse(list(code.rglob('__pycache__')))
+            # Each selected implementation must exist and match its own frozen bytes.
+            for index, relative in enumerate(('src/msplatform/workflows/single_reflection_mass_spectrum.py',
+                             'src/msplatform/results/single_reflection_particle_table.py',
+                             'projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json')):
+                target = code / relative
+                original = target.read_bytes()
+                try:
+                    for missing in (True, False):
+                        with self.subTest(relative=relative, missing=missing):
+                            if missing:
+                                target.unlink()
+                            else:
+                                target.write_bytes(original + b"\n# tampered\n")
+                            failure_output = root / f"negative-{index}-{missing}"
+                            failure_command = list(command)
+                            failure_command[failure_command.index('--output') + 1] = str(failure_output)
+                            refused = subprocess.run(failure_command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                            self.assertNotEqual(refused.returncode, 0)
+                            if missing:
+                                self.assertIn('FileNotFoundError', refused.stderr)
+                                self.assertIn(target.name, refused.stderr)
+                            else:
+                                self.assertIn(f'Frozen mass-spectrum source identity differs: {relative}', refused.stderr)
+                            self.assertFalse(failure_output.exists())
+                            target.write_bytes(original)
+                finally:
+                    target.write_bytes(original)
             # A scientifically invalid exact ID still fails inside the unchanged analyzer.
             csv_path = source/'results/simion_particles.csv'
             text = csv_path.read_text(encoding='utf-8').replace('1,100,1,', '99,100,1,', 1)
@@ -224,11 +266,48 @@ ConvertTo-Json -InputObject $analysisLaunch -Compress
             bad = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn('exceeds the mixed-species mother population', bad.stderr)
+            output_before = {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}
             (code/'src').rename(root/'removed-core')
             missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertNotEqual(missing.returncode, 0)
             self.assertNotIn('exceeds the mixed-species mother population', missing.stderr)
-            self.assertRegex(missing.stderr, 'escaped its frozen source root|No module named')
+            self.assertIn('FileNotFoundError', missing.stderr)
+            self.assertIn(repr(str(code/'src/msplatform/workflows/single_reflection_mass_spectrum.py')), missing.stderr)
+            self.assertEqual(output_before, {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()})
+
+    def test_public_reanalysis_refuses_changed_frozen_dependencies_before_analysis(self):
+        cases = (
+            ('missing_peak', 'src/msplatform/analysis/peak_metrics.py', True, 'Frozen Python dependency is missing'),
+            ('tampered_peak', 'src/msplatform/analysis/peak_metrics.py', False, 'Frozen Python dependency hash differs'),
+            ('tampered_helper', 'src/msplatform/execution/resources/frozen_python_package.ps1', False, 'Frozen Python helper identity differs'),
+        )
+        for case, relative, missing, expected in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                artifacts, source, _, _ = sealed_mass_source(root)
+                fixture, owner = mass_analysis_fixture(root)
+                text = owner.read_text(encoding='utf-8')
+                marker = "    $helperRelative='src/msplatform/execution/resources/frozen_python_package.ps1'"
+                self.assertEqual(text.count(marker), 1)
+                target = relative.replace('/', '\\')
+                mutation = (f"    Remove-Item -LiteralPath (Join-Path $analysisCode '{target}')\n" if missing else
+                    f"    Add-Content -LiteralPath (Join-Path $analysisCode '{target}') -Value '# altered test fixture'\n")
+                owner.write_text(text.replace(marker, mutation + marker), encoding='utf-8')
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
+                env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
+                           MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
+                           MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
+                run_id = '20261031_100100__analysis__python__mass-child'
+                command = ['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
+                           '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
+                result = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stdout + result.stderr)
+                result_dir = artifacts/f'projects/{PROJECT.name}/runs/{run_id}/results'
+                self.assertFalse((result_dir/'mass_spectrum_metrics.json').exists())
+                self.assertTrue((fixture/'src/msplatform/analysis/peak_metrics.py').is_file())
+                self.assertTrue((fixture/'src/msplatform/execution/resources/frozen_python_package.ps1').is_file())
 
     def test_original_cli_reanalysis_and_resume_use_public_owner_without_formal_or_native(self):
         with tempfile.TemporaryDirectory() as temporary:

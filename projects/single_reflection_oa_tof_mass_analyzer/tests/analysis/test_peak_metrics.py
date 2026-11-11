@@ -30,13 +30,22 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis
     audit_simion_recording,
     read_particle_table,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum import (
-    _normalized_simion_rows,
-    analyze_mass_spectrum,
+from msplatform.workflows.single_reflection_mass_spectrum import (
+    _normalized_simion_rows as canonical_simion_rows,
+    analyze_mass_spectrum as canonical_mass_spectrum,
     fit_calibration,
     load_mode,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.truncation_diagnostics import _common_intersection_masks
+
+
+def _normalized_simion_rows(path):
+    return canonical_simion_rows(path, DEFAULT_DETECTOR_CENTER_X_MM, 0.0)
+
+
+def analyze_mass_spectrum(mode, comsol, simion, output):
+    return canonical_mass_spectrum(mode, comsol, simion, output,
+        ANALYSIS_DIR.parent / "config/resolved_geometry.json")
 
 
 class PeakMetricsTest(unittest.TestCase):
@@ -629,14 +638,44 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
                     frame = pd.concat([frame, pd.DataFrame([extra])])
                 frame.to_csv(simion, index=False)
                 result = subprocess.run([
-                    sys.executable, "-B", "-m", "projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum",
+                    sys.executable, "-B", "-m", "msplatform.workflows.single_reflection_mass_spectrum",
                     "--mode-config", str(mode), "--comsol-dir", str(comsol),
                     "--simion-csv", str(simion), "--output", str(root / "output"),
+                    "--geometry", str(ANALYSIS_DIR.parent / "config/resolved_geometry.json"),
                 ], cwd=ANALYSIS_DIR.parents[2], capture_output=True, text=True, timeout=60)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("MASS_SPECTRUM_ANALYSIS=PASS", result.stdout)
                 self.assertIn("ValueError", result.stderr)
                 self.assertFalse((root / "output").exists())
+
+    def test_mass_spectrum_uses_explicit_selected_geometry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            mode, comsol, simion = self._mass_spectrum_inputs(root)
+            geometry = json.loads((ANALYSIS_DIR.parent / "config/resolved_geometry.json").read_text(encoding="utf-8"))
+            geometry["coordinate_convention"]["detector_x"] = DEFAULT_DETECTOR_CENTER_X_MM + 10.0
+            selected = root / "selected.json"
+            selected.write_text(json.dumps(geometry), encoding="utf-8")
+            result = canonical_mass_spectrum(mode, comsol, simion, root / "selected", selected)
+            import hashlib
+            self.assertEqual(result["inputs"]["resolved_geometry"], hashlib.sha256(selected.read_bytes()).hexdigest().upper())
+            particles = pd.read_csv(root / "selected/mass_spectrum_particles.csv")
+            simion_rows = particles[particles["solver"] == "SIMION"]
+            np.testing.assert_allclose(simion_rows["detector_x_mm"], -10.0, rtol=0, atol=1e-12)
+            comsol_rows = particles[particles["solver"] == "COMSOL"]
+            np.testing.assert_allclose(comsol_rows["detector_x_mm"],
+                                       np.tile([-10.0, -9.9, -10.1], 5), rtol=0, atol=1e-12)
+            from msplatform.results import single_reflection_particle_table as table
+            local = pd.DataFrame({"Ion": [1, 2, 3], "TofUs": [1., 2., 3.],
+                                  "DetectorLocalXmm": [1., 2., 3.],
+                                  "DetectorLocalYmm": [4., 5., 6.],
+                                  "XMm": [500., 500., 500.], "YMm": [600., 600., 600.]})
+            normalized, _ = table.normalize_particle_table(local, "fixture", 100., 200.)
+            np.testing.assert_array_equal(normalized["detector_x_mm"], [1., 2., 3.])
+            np.testing.assert_array_equal(normalized["detector_y_mm"], [4., 5., 6.])
+            with self.assertRaises(FileNotFoundError):
+                canonical_mass_spectrum(mode, comsol, simion, root / "missing", root / "missing.json")
+            self.assertFalse((root / "missing").exists())
 
     def test_wide_mass_spectrum_analysis_writes_candidate_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

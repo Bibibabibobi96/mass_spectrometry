@@ -25,21 +25,12 @@ import pandas as pd
 
 from msplatform.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
 from msplatform.io.file_identity import file_sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import (
-    DEFAULT_DETECTOR_CENTER_X_MM,
-    DEFAULT_DETECTOR_CENTER_Y_MM,
-)
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis_core import (
-    PARTICLE_ID_ALIASES,
-    _find_column,
-    _normalize_particle_table,
-    _read_source_table,
-    _validated_particle_ids,
-)
+from msplatform.results import single_reflection_particle_table as particle_table
 from msplatform.backends.simion import ion_table as simion_ion_table
 
 
 def load_mode(path: Path) -> dict[str, Any]:
+    """Read and validate a candidate mass-spectrum mode and its species."""
     mode = json.loads(path.read_text(encoding="utf-8-sig"))
     if mode.get("role") != "oa_tof_candidate_mass_spectrum_mode":
         raise ValueError("Not an oa-TOF candidate mass-spectrum mode")
@@ -109,7 +100,7 @@ def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
     }
 
 
-def _normalized_simion_rows(path: Path) -> pd.DataFrame:
+def _normalized_simion_rows(path: Path, detector_x: float, detector_y: float) -> pd.DataFrame:
     # Keep integer fields lexical until validation; float inference can round them.
     raw = pd.read_csv(path, dtype={"Ion": "string", "ChargeState": "string"})
     required = {
@@ -121,17 +112,17 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
     hit = raw["Hit"].astype(str).str.lower().isin({"true", "1", "yes"})
     result = pd.DataFrame(
         {
-            "particle_id": _validated_particle_ids(raw["Ion"], "SIMION"),
+            "particle_id": particle_table.validated_particle_ids(raw["Ion"], "SIMION"),
             "mass_amu": pd.to_numeric(raw["MassAmu"], errors="raise"),
             "charge_state": raw["ChargeState"].map(simion_ion_table._validated_charge_state),
             "tof_us": pd.to_numeric(raw["TofUs"], errors="coerce"),
             "detector_x_mm": (
                 pd.to_numeric(raw["XMm"], errors="coerce")
-                - DEFAULT_DETECTOR_CENTER_X_MM
+                - detector_x
             ),
             "detector_y_mm": (
                 pd.to_numeric(raw["YMm"], errors="coerce")
-                - DEFAULT_DETECTOR_CENTER_Y_MM
+                - detector_y
             ),
             "hit": hit,
         }
@@ -147,15 +138,15 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
     return result
 
 
-def _normalized_comsol_rows(path: Path, emitted: int) -> pd.DataFrame:
-    source, source_format = _read_source_table(path)
-    id_column = _find_column(source, PARTICLE_ID_ALIASES, True)
-    ids = _validated_particle_ids(source[id_column], "COMSOL")
+def _normalized_comsol_rows(path: Path, emitted: int, detector_x: float, detector_y: float) -> pd.DataFrame:
+    source, source_format = particle_table.read_source_table(path)
+    id_column = particle_table.find_column(source, particle_table.PARTICLE_ID_ALIASES, True)
+    ids = particle_table.validated_particle_ids(source[id_column], "COMSOL")
     if len(ids) > emitted:
         raise ValueError("COMSOL has more particle rows than emitted particles")
     if (ids > emitted).any():
         raise ValueError("COMSOL particle ID exceeds its species mother population")
-    result, _ = _normalize_particle_table(source, source_format)
+    result, _ = particle_table.normalize_particle_table(source, source_format, detector_x, detector_y)
     return result
 
 
@@ -262,9 +253,18 @@ def analyze_mass_spectrum(
     comsol_dir: Path,
     simion_csv: Path,
     output_dir: Path,
+    geometry_path: Path,
 ) -> dict[str, Any]:
+    """Analyze recorded solver hits using the explicitly selected detector geometry.
+
+    Write six candidate diagnostics and return their metrics with input hashes,
+    including the selected geometry; no scientific qualification is implied.
+    """
+    geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
+    detector_x = float(geometry["coordinate_convention"]["detector_x"])
+    detector_y = 0.0
     mode = load_mode(mode_path)
-    simion = _normalized_simion_rows(simion_csv)
+    simion = _normalized_simion_rows(simion_csv, detector_x, detector_y)
     total_emitted = sum(item["particle_count"] for item in mode["species"])
     if (simion["particle_id"] > total_emitted).any():
         raise ValueError("SIMION particle ID exceeds the mixed-species mother population")
@@ -281,6 +281,7 @@ def analyze_mass_spectrum(
     input_hashes = {
         "mode_config": file_sha256(mode_path),
         "simion_csv": file_sha256(simion_csv),
+        "resolved_geometry": file_sha256(geometry_path),
     }
 
     for item, species_mask in zip(mode["species"], species_masks, strict=True):
@@ -298,7 +299,7 @@ def analyze_mass_spectrum(
         if int(species_mask.sum()) > emitted:
             raise ValueError(f"SIMION {species_id} has more particle rows than emitted particles")
         solver_frames = {
-            "COMSOL": _normalized_comsol_rows(comsol_path, emitted),
+            "COMSOL": _normalized_comsol_rows(comsol_path, emitted, detector_x, detector_y),
             "SIMION": simion[species_mask & simion["hit"]].copy(),
         }
         for solver, frame in solver_frames.items():
@@ -568,10 +569,11 @@ def main() -> None:
     parser.add_argument("--comsol-dir", required=True, type=Path)
     parser.add_argument("--simion-csv", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--geometry", required=True, type=Path)
     args = parser.parse_args()
     result = analyze_mass_spectrum(
         args.mode_config.resolve(), args.comsol_dir.resolve(),
-        args.simion_csv.resolve(), args.output.resolve()
+        args.simion_csv.resolve(), args.output.resolve(), args.geometry.resolve()
     )
     print(
         "MASS_SPECTRUM_ANALYSIS=PASS "
