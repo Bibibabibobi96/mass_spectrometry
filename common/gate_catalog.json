@@ -3266,6 +3266,24 @@
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paper1_c3_j3_real_field_analysis.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py",
+                "reason": "installed_reflectron_voltage_fit_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",
+                "reason": "installed_reflectron_voltage_fit_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_fit.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_compensation.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py"
+            ],
+            "dependency_profile": "locked"
           }
         ]
       },

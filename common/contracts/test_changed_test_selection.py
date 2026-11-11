@@ -1293,6 +1293,28 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         if path.endswith("/inputs.py"):
                             self.assertIn("common/contracts/test_frozen_inputs.py", common)
 
+    def test_installed_reflectron_fit_selects_its_workflow_and_installation_consumers(self) -> None:
+        project = "projects/single_reflection_oa_tof_mass_analyzer"
+        expected = [f"{project}.tests.analysis.{name}".replace("/", ".") for name in (
+            "test_reflectron_voltage_fit", "test_reflectron_voltage_compensation",
+            "test_compensation_powershell_adapter")]
+        paths = (
+            "src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py",
+            "src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",
+        )
+        with tempfile.TemporaryDirectory(prefix="installed_reflectron_consumer_plans_") as directory:
+            for index, path in enumerate(paths):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    parameters = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
+                    self.assertCountEqual(parameters["SelectedTestModules"], expected)
+                    common = stages["common_contracts"]["command"]["arguments"]
+                    self.assertIn("common/contracts/test_installed_scientific_core.py", common)
+                    self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
+
     def test_changed_mixed_deleted_and_shared_inputs_preserve_original_core_contract(self) -> None:
         mr_test = f"{MR}/tests/analysis/test_mirror_fixed_grid_voltage_correction.py"
         rf_test = f"{RF}/tests/analysis/test_mass_filter_l1.py"

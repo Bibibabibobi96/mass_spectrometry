@@ -5,7 +5,7 @@ param(
   [Parameter(ParameterSetName='Run')][string]$SimionExe='',
   [Parameter(ParameterSetName='Run')][string]$NumericsPath='',
   [Parameter(ParameterSetName='Run')][int]$TrajectoryQuality=8,
-  [Parameter(ParameterSetName='Run')][double]$Regularization=0.0001,
+  [Parameter(ParameterSetName='Run')][double]$Regularization,
   [Parameter(ParameterSetName='Run')][string]$ContinuationPredecessorManifestPath='',
   [Parameter(ParameterSetName='Run')][int]$ParticleCount=1000,
   [string]$RunId='', [string]$ResultPath='', [string]$PythonExe='',
@@ -225,8 +225,10 @@ function Convert-CompensationBatch($Batch){
 }
 try{
   $inspect=@('--case-dir',$CaseDirectory,'--simion-exe',$SimionExe,'--trajectory-quality',[string]$TrajectoryQuality,
-    '--regularization',$Regularization.ToString('R',[Globalization.CultureInfo]::InvariantCulture),
     '--particle-count',[string]$ParticleCount)
+  if($PSBoundParameters.ContainsKey('Regularization')){
+    $inspect+=@('--regularization',$Regularization.ToString('R',[Globalization.CultureInfo]::InvariantCulture))
+  }
   if($ContinuationPredecessorManifestPath){$inspect+=@('--resume-from',$ContinuationPredecessorManifestPath)}
   if($NumericsPath){$inspect+=@('--numerics-path',$NumericsPath)}
   $plan=Invoke-CompensationAction inspect $inspect

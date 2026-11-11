@@ -367,6 +367,13 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
 `workflows/reflectron_voltage_compensation/run_compensation.py` 保留原场、补偿、理想反射器三臂；
 Python负责实际源/场输入、单调固定端点拟合、整批恢复投影和分析，私有PowerShell适配调用公共
 SIMION批次、资源及run发布owner。父case只读，所有可写PA/IOB/Program均属于新run。
+The canonical SIMION response-basis fit and Lua profile are provided by
+`msplatform.backends.simion.optimize_reflectron_ring_voltages`. Its versioned authoring
+resource preserves the original regularization default, without claiming optimality.
+Explicit input overrides it and the selected value enters the frozen plan. A new
+`--resume-from` run resolves and freezes that resource only when input is omitted;
+explicit values bypass it and existing reuse checks still reject incompatible flights.
+Fit and `--resume-finalization` consume the original plan without reading current defaults.
 `--particle-count`默认1000；显式100/5000仅消费父case已冻结的同N ION，不重新采样或编号。
 
 ```powershell

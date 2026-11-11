@@ -384,7 +384,7 @@ if(-not$caught-or$script:writersStopped){throw 'Unknown producer writer was acce
 
     def run_fixture(self, mode: str, *, resume: bool = False, timeout: float = 30,
                     delay_action: str = "", delay_seconds: float = 0,
-                    diagnostics_root: Path | None = None) -> tuple[subprocess.CompletedProcess[str], list[str], dict]:
+                    diagnostics_root: Path | None = None, regularization: str | None = None) -> tuple[subprocess.CompletedProcess[str], list[str], dict]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
             target = root / RELATIVE
@@ -446,6 +446,8 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
                 (prior_run / "inputs/execution_request.json").write_text(json.dumps({"package": {"project": "single_reflection_oa_tof_mass_analyzer", "run_id": "fixture", "mode": "reflectron_voltage_compensation"}}), encoding="utf-8")
                 (root / "resume-result.json").write_text(json.dumps({"role": "run_artifact_workflow_result", "run_directory": str(prior_run)}), encoding="utf-8")
                 command += ["-ResultPath", str(root / "resume-result.json")]
+            if regularization is not None:
+                command += ["-Regularization", regularization]
             if mode.startswith("producer"):
                 command += ["-NumericsPath", "explicit-coarse-input"]
             evidence = diagnostics_root
@@ -461,8 +463,22 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
             completion = json.loads((root / "completion.json").read_text(encoding="utf-8-sig")) if (root / "completion.json").exists() else {}
             if (root / "result.json").exists():
                 completion["retained_result"] = json.loads((root / "result.json").read_text(encoding="utf-8-sig"))
+            timeline = root / "timeline.jsonl"
+            completion["fixture_actions"] = [json.loads(line) for line in timeline.read_text(encoding="utf-8").splitlines() if json.loads(line).get("action") == "inspect"] if timeline.exists() else []
             self.assertEqual((root / "source.pa").read_bytes(), b"inert byte transport fixture, no native PA")
             return result, events, completion
+
+    def test_direct_adapter_forwards_only_explicit_regularization(self):
+        for requested in (None, "0", "0.25"):
+            with self.subTest(requested=requested):
+                result, _, completion = self.run_fixture("reuse", regularization=requested)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                begin = next(row for row in completion["fixture_actions"] if row["event"] == "action.begin")
+                argv = begin["argv"]
+                if requested is None:
+                    self.assertNotIn("--regularization", argv)
+                else:
+                    self.assertEqual(float(argv[argv.index("--regularization") + 1]), float(requested))
 
     def test_safe_producer_uses_one_owner_and_no_copy_or_duplicate_iob(self):
         result, events, completed = self.run_fixture("producer")

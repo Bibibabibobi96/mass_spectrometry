@@ -11,7 +11,7 @@ from unittest.mock import patch
 from msplatform.execution.retention import file_record
 from msplatform.execution.inputs import python_import_roots
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages import render_lua_profile
+from msplatform.backends.simion.optimize_reflectron_ring_voltages import render_lua_profile
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation import run_compensation as study
 
 
@@ -277,6 +277,9 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.write(run / "inputs/compensation_plan.json", plan)
         result = study.freeze_inputs(run)
         code = Path(result["frozen_code_root"])
+        # Explicit input does not depend on the authoring default resource.
+        self.assertNotIn("regularization_authoring_source", plan)
+        self.assertFalse((code / "src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json").exists())
         command = ("import sys,json;from pathlib import Path;sys.path[:0]=json.loads(sys.argv.pop(1));import "+study.MODULE+
                    " as m;assert Path(m.__file__).is_relative_to(Path(sys.argv[1]));"
                    "assert all(Path(v.__file__).resolve().is_relative_to(Path(sys.argv[1])/'src') for k,v in sys.modules.items() if k.startswith('msplatform') and getattr(v,'__file__',None));"
@@ -285,6 +288,37 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
                        check=True, capture_output=True, text=True, encoding="utf-8")
         self.assertTrue(result["basis_export_required"])
         self.assertFalse((run / "simion").exists())
+
+    def test_authoring_resource_is_bound_and_frozen_tamper_is_rejected(self) -> None:
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
+
+        case, executable = self.published_source()
+        value, resource, digest = study.load_authoring_default()
+        plan = study.inspect_source(case, executable, 8, value, particle_count=100)
+        plan["regularization_authoring_source"] = file_record(resource)
+        self.assertEqual(plan["regularization_authoring_source"]["sha256"].lower(), digest)
+        run = self.root / "project/runs/20261030_120010__sim__simion__compensation-authoring"
+        self.write(run / "inputs/compensation_plan.json", plan)
+        study.freeze_inputs(run)
+        frozen = run / "inputs/code/src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json"
+        self.assertEqual(frozen.read_bytes(), resource.read_bytes())
+        closure = study._load(run / "inputs/source_closure.json")
+        verify_candidate_source_closure(closure)
+        frozen.write_bytes(frozen.read_bytes() + b" ")
+        with self.assertRaises((ValueError, AssertionError)):
+            verify_candidate_source_closure(closure)
+
+    def test_missing_selected_authoring_source_rejects_freeze(self) -> None:
+        case, executable = self.published_source()
+        plan = study.inspect_source(case, executable, 8, 0.0001, particle_count=100)
+        resource = self.root / "selected-authoring.json"
+        resource.write_text("selected", encoding="utf-8")
+        plan["regularization_authoring_source"] = file_record(resource)
+        resource.unlink()
+        run = self.root / "project/runs/20261030_120011__sim__simion__compensation-missing"
+        self.write(run / "inputs/compensation_plan.json", plan)
+        with self.assertRaises((FileNotFoundError, ValueError, AssertionError)):
+            study.freeze_inputs(run)
 
     def test_formal_first_batch_source_is_retained_after_adaptive_partition(self) -> None:
         from msplatform.execution.simion_dispatch import plan_adaptive_followup
@@ -438,6 +472,90 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertFalse(result["writers_stopped"])
         self.assertFalse(result["iob_ready"])
         self.assertFalse(result["writer_completion"]["operations"][0]["observation"]["exit_confirmed"])
+
+
+class CompensationAuthoringBoundaryTests(unittest.TestCase):
+    def test_inspect_records_default_and_preserves_explicit_zero(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        with tempfile.TemporaryDirectory() as directory:
+            resource = Path(directory) / "authoring.json"
+            resource.write_text("test-authoring", encoding="utf-8")
+            record = file_record(resource)
+            base = ["compensation", "--action", "inspect", "--case-dir", directory]
+            for option, value in (([], 0.0001), (["--regularization", "0"], 0.0),
+                                  (["--regularization", "0.25"], 0.25)):
+                with (self.subTest(option=option), patch.object(sys, "argv", base + option),
+                      patch.object(study, "load_authoring_default",
+                                   return_value=(0.0001, resource, record["sha256"].lower())) as load,
+                      patch.object(study, "inspect_source", return_value={}) as inspect,
+                      redirect_stdout(StringIO()) as output):
+                    study.main()
+                self.assertEqual(inspect.call_args.args[3], value)
+                parsed = json.loads(output.getvalue())
+                if option:
+                    load.assert_not_called()
+                    self.assertNotIn("regularization_authoring_source", parsed)
+                else:
+                    load.assert_called_once()
+                    self.assertEqual(parsed["regularization_authoring_source"]["sha256"], record["sha256"])
+
+    def test_inspect_missing_authoring_resource_fails_closed(self) -> None:
+        with (patch.object(sys, "argv", ["compensation", "--action", "inspect"]),
+              patch.object(study, "load_authoring_default", side_effect=FileNotFoundError("missing")),
+              patch.object(study, "inspect_source") as inspect):
+            with self.assertRaises(FileNotFoundError):
+                study.main()
+            inspect.assert_not_called()
+
+    def test_new_continuation_resolves_current_omitted_authoring(self) -> None:
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        with tempfile.TemporaryDirectory() as directory:
+            resource = Path(directory) / "authoring.json"
+            resource.write_text("authoring", encoding="utf-8")
+            digest = file_record(resource)["sha256"].lower()
+            predecessor = Path(directory) / "run_manifest.json"
+            args = ["compensation", "--action", "inspect", "--case-dir", directory,
+                    "--resume-from", str(predecessor)]
+            with (patch.object(sys, "argv", args),
+                  patch.object(study, "load_authoring_default", return_value=(0.0001, resource, digest)) as load,
+                  patch.object(study, "inspect_source", return_value={}) as inspect,
+                  redirect_stdout(StringIO()) as output):
+                study.main()
+            load.assert_called_once()
+            self.assertEqual(inspect.call_args.args[3:5], (0.0001, predecessor))
+            self.assertEqual(json.loads(output.getvalue())["regularization_authoring_source"]["sha256"].lower(), digest)
+
+    def test_frozen_fit_action_does_not_resolve_current_authoring(self) -> None:
+        with (patch.object(sys, "argv", ["compensation", "--action", "fit", "--run", "."]),
+              patch.object(study, "load_authoring_default", side_effect=AssertionError("unexpected authoring read")),
+              patch.object(study, "fit_and_plan", return_value={}) as fit,
+              patch("builtins.print")):
+            study.main()
+            fit.assert_called_once()
+
+    def test_inspect_rejects_changed_authoring_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            resource = Path(directory) / "authoring.json"
+            resource.write_text("changed", encoding="utf-8")
+            with (patch.object(sys, "argv", ["compensation", "--action", "inspect"]),
+                  patch.object(study, "load_authoring_default",
+                               return_value=(0.0001, resource, "0" * 64)),
+                  patch.object(study, "inspect_source") as inspect):
+                with self.assertRaisesRegex(ValueError, "changed during resolution"):
+                    study.main()
+                inspect.assert_not_called()
+
+    def test_finalization_does_not_load_authoring_resource(self) -> None:
+        with (patch.object(sys, "argv", ["compensation", "--resume-finalization", "--run-id", "existing"]),
+              patch.object(study, "load_authoring_default") as load,
+              patch.object(study.subprocess, "run") as launch):
+            study.main()
+            load.assert_not_called()
+            self.assertIn("-ResumeFinalization", launch.call_args.args[0])
 
 
 if __name__ == "__main__":

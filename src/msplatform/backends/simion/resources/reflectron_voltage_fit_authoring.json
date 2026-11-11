@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "role": "reflectron_voltage_fit_authoring",
+  "regularization": 0.0001
+}

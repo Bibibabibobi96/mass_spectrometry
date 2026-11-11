@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
+from importlib.resources import files
 
 import numpy as np
 from scipy.optimize import LinearConstraint, minimize
@@ -161,14 +163,28 @@ def optimize(
     }
 
 
+def load_authoring_default() -> tuple[float, Path, str]:
+    """Read the versioned original fitting input and its package resource path."""
+    resource = files("msplatform.backends.simion").joinpath(
+        "resources", "reflectron_voltage_fit_authoring.json"
+    )
+    payload = resource.read_bytes()
+    data = json.loads(payload.decode("utf-8"))
+    if data.get("schema_version") != 1 or data.get("role") != "reflectron_voltage_fit_authoring":
+        raise ValueError("unsupported reflectron voltage fit authoring resource")
+    return float(data["regularization"]), Path(str(resource)), hashlib.sha256(payload).hexdigest()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--basis-csv", type=Path, required=True)
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--lua-output", type=Path)
-    parser.add_argument("--regularization", type=float, default=1e-4)
+    parser.add_argument("--regularization", type=float)
     args = parser.parse_args()
+    if args.regularization is None:
+        args.regularization, _, _ = load_authoring_default()
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
     x, basis = _load_basis(args.basis_csv)
     result = optimize(

@@ -2512,6 +2512,83 @@ throw 'Missing selected resource accepted'
 print('INSTALLED_SELECTED_FROZEN_EXECUTOR=PASS')
 # FROZEN_EXECUTOR_INSTALLED_END
 
+# REFLECTRON_FIT_INSTALLED_BEGIN
+from msplatform.backends.simion import optimize_reflectron_ring_voltages as reflectron_fit
+reflectron_fixture = fixture['reflectron_fit']
+reflectron_module = pathlib.Path(reflectron_fit.__file__).resolve()
+assert reflectron_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert hashlib.sha256(reflectron_module.read_bytes()).hexdigest() == reflectron_fixture['module_sha256']
+reflectron_root = root / ('reflectron-fit-' + sys.argv[2]); reflectron_root.mkdir()
+reflectron_files = {}
+for reflectron_probe_name, reflectron_probe_record in reflectron_fixture['files'].items():
+    reflectron_probe_data = bytes.fromhex(reflectron_probe_record['bytes_hex'])
+    assert len(reflectron_probe_data) == reflectron_probe_record['bytes'] and hashlib.sha256(reflectron_probe_data).hexdigest() == reflectron_probe_record['sha256']
+    reflectron_probe_path = reflectron_root / reflectron_probe_name; reflectron_probe_path.write_bytes(reflectron_probe_data); reflectron_files[reflectron_probe_name] = reflectron_probe_path
+reflectron_cli = """import importlib.abc,importlib.util,json,os,pathlib,runpy,sys
+blocked=[pathlib.Path(x).resolve() for x in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(x) for x in blocked):raise AssertionError('author tree accessed')
+class NoRepo(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('repository import attempted')
+sys.addaudithook(deny);sys.meta_path.insert(0,NoRepo())
+name='msplatform.backends.simion.optimize_reflectron_ring_voltages'
+expected=pathlib.Path(sys.argv[2]).resolve()
+spec=importlib.util.find_spec(name)
+if spec is None:raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+assert pathlib.Path(spec.origin).resolve()==expected
+sys.argv=[name,*sys.argv[3:]]
+executed=runpy.run_module(name,run_name='__main__',alter_sys=True)
+assert pathlib.Path(executed['__file__']).resolve()==expected
+if executed.get('__spec__') is not None:
+ assert pathlib.Path(executed['__spec__'].origin).resolve()==expected
+"""
+def reflectron_run(reflectron_probe_label, reflectron_probe_option):
+    reflectron_probe_output=reflectron_root/(reflectron_probe_label+'-actual.json'); reflectron_probe_lua=reflectron_root/(reflectron_probe_label+'-actual.lua')
+    reflectron_probe_args=[sys.executable,'-I','-B','-X','utf8','-c',reflectron_cli,
+          json.dumps([str(p) for p in blocked_source_roots]),str(reflectron_module),
+          '--basis-csv',str(reflectron_files['synthetic_axis_basis.csv']),
+          '--contract',str(reflectron_files['synthetic_contract.json']),
+          '--output',str(reflectron_probe_output),'--lua-output',str(reflectron_probe_lua)]
+    if reflectron_probe_option is not None: reflectron_probe_args.extend(('--regularization',reflectron_probe_option))
+    reflectron_probe_result=subprocess.run(reflectron_probe_args,cwd=reflectron_root,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    return reflectron_probe_result,reflectron_probe_output,reflectron_probe_lua
+for reflectron_probe_label, reflectron_probe_option in (('omitted',None),('zero','0'),('default_explicit','0.0001'),('nondefault','0.25')):
+    reflectron_probe_result,reflectron_probe_output,reflectron_probe_lua=reflectron_run(reflectron_probe_label,reflectron_probe_option)
+    assert reflectron_probe_result.returncode==0,reflectron_probe_result.stdout+reflectron_probe_result.stderr
+    assert json.loads(reflectron_probe_output.read_text(encoding='utf-8'))==json.loads(reflectron_files[reflectron_probe_label+'.json'].read_text(encoding='utf-8'))
+    assert reflectron_probe_lua.read_bytes()==reflectron_files[reflectron_probe_label+'.lua'].read_bytes()
+reflectron_resource=reflectron_module.parent/'resources/reflectron_voltage_fit_authoring.json'
+assert reflectron_resource.is_file()
+reflectron_probe_resource_bytes=reflectron_resource.read_bytes(); reflectron_probe_resource_held=reflectron_resource.with_suffix('.json.withheld')
+try:
+    reflectron_resource.rename(reflectron_probe_resource_held)
+    reflectron_probe_missing,reflectron_probe_missing_output,reflectron_probe_missing_lua=reflectron_run('missing-default',None)
+    assert reflectron_probe_missing.returncode!=0 and not reflectron_probe_missing_output.exists() and not reflectron_probe_missing_lua.exists()
+    assert 'reflectron_voltage_fit_authoring.json' in reflectron_probe_missing.stderr
+    reflectron_probe_explicit,reflectron_probe_explicit_output,reflectron_probe_explicit_lua=reflectron_run('missing-explicit','0')
+    assert reflectron_probe_explicit.returncode==0,reflectron_probe_explicit.stdout+reflectron_probe_explicit.stderr
+    assert json.loads(reflectron_probe_explicit_output.read_text(encoding='utf-8'))==json.loads(reflectron_files['zero.json'].read_text(encoding='utf-8'))
+    assert reflectron_probe_explicit_lua.read_bytes()==reflectron_files['zero.lua'].read_bytes()
+finally: reflectron_probe_resource_held.rename(reflectron_resource)
+assert reflectron_resource.read_bytes()==reflectron_probe_resource_bytes
+reflectron_probe_module_bytes=reflectron_module.read_bytes(); reflectron_probe_module_held=reflectron_module.with_suffix('.py.withheld')
+try:
+    reflectron_module.rename(reflectron_probe_module_held)
+    reflectron_probe_missing,reflectron_probe_missing_output,reflectron_probe_missing_lua=reflectron_run('missing-module','0')
+    assert reflectron_probe_missing.returncode!=0 and not reflectron_probe_missing_output.exists() and not reflectron_probe_missing_lua.exists()
+    assert 'optimize_reflectron_ring_voltages' in reflectron_probe_missing.stderr,reflectron_probe_missing.stdout+reflectron_probe_missing.stderr
+finally: reflectron_probe_module_held.rename(reflectron_module)
+assert reflectron_module.read_bytes()==reflectron_probe_module_bytes
+try:importlib.import_module('projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages')
+except (ModuleNotFoundError,AssertionError):pass
+else:raise AssertionError('retired project fitter imported')
+missing_rejected.append('reflectron_fit')
+print('INSTALLED_REFLECTRON_FIT=PASS')
+# REFLECTRON_FIT_INSTALLED_END
+
 # RF_RESPONSE_COMPARISON_INSTALLED_BEGIN
 from msplatform.workflows.rf_mass_filter import response_comparison as rf_response
 rf_response_fixture=fixture['rf_response_comparison']
@@ -3993,6 +4070,29 @@ class InstalledScientificCoreTests(unittest.TestCase):
         print(f'INSTALLED_CORE_COMMAND_SECONDS={time.perf_counter() - started:.3f} COMMAND={arguments[:3]}')
         return stdout
 
+    def test_reflectron_installed_child_reports_the_full_missing_module(self) -> None:
+        import ast
+
+        tree = ast.parse(INSTALLED_PROBE)
+        child = next(node.value.value for node in tree.body if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "reflectron_cli"
+                             for target in node.targets))
+        module = "msplatform.backends.simion.optimize_reflectron_ring_voltages"
+        with tempfile.TemporaryDirectory(prefix="reflectron_missing_module_") as directory:
+            root = Path(directory)
+            for package in ("msplatform", "msplatform/backends", "msplatform/backends/simion"):
+                path = root / package
+                path.mkdir(parents=True, exist_ok=True)
+                (path / "__init__.py").write_text("", encoding="utf-8")
+            code = "import sys\nsys.path.insert(0, sys.argv.pop(1))\n" + child
+            result = subprocess.run(
+                [sys.executable, "-I", "-S", "-B", "-c", code, str(root),
+                 json.dumps([str(REPO_ROOT)]), str(root.joinpath(*module.split(".")).with_suffix(".py"))],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ModuleNotFoundError", result.stderr)
+            self.assertIn(module, result.stderr)
+
     def test_probe_author_guard_allows_hosted_stdlib_lazy_import_but_denies_checkout(self) -> None:
         import ast
         from types import SimpleNamespace
@@ -5282,6 +5382,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               rf_response_comparison=self.rf_response_comparison_probe_fixture(root),
+                                              reflectron_fit={**json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/reflectron_fit_capture.json').read_text(encoding='utf-8')),
+                                                  'module_sha256': hashlib.sha256((REPO_ROOT / 'src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py').read_bytes()).hexdigest()},
                                               rf_transport_comparison=json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_transport_comparison_old_witness.json').read_text(encoding='utf-8')),
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),

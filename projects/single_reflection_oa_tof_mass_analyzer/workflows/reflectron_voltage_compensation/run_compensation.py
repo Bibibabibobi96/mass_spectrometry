@@ -33,7 +33,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare as prepare_consumers
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages import _load_basis, optimize, render_lua_profile
+from msplatform.backends.simion.optimize_reflectron_ring_voltages import (
+    _load_basis, load_authoring_default, optimize, render_lua_profile,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log, read_ion_table
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import render_program
 
@@ -344,18 +346,26 @@ def _plan(run: Path) -> dict[str, Any]:
 def freeze_inputs(run: Path) -> dict[str, Any]:
     plan = _plan(run)
     verify_record("source manifest", plan["source_manifest"])
+    if plan.get("regularization_authoring_source"):
+        verify_record("regularization authoring source", plan["regularization_authoring_source"])
     for name, destination in (("contract", "candidate_resolved_geometry.json"), ("source", "source.ion"),
                               ("runtime_receipt", "source_runtime_receipt.json"), ("runtime_geometry", "source_runtime_geometry.json"),
                               ("build_completion", "source_build_completion.json")):
         verify_record(name, plan[name])
         freeze_file(Path(plan[name]["path"]), run / "inputs" / ("source_case_resolved_geometry.json" if name == "contract" and plan.get("producer") else destination))
     freeze_file(Path(plan["source_manifest"]["path"]), run / "inputs/source_manifest.json")
+    authoring_sources = ("src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",) if plan.get("regularization_authoring_source") else ()
     closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable),
         extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
             "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
             "common/simion/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
-            f"projects/{PROJECT}/analysis/optimize_reflectron_ring_voltages.py",
-            f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua"))
+            f"projects/{PROJECT}/simion/reflectron/export_axis_basis.lua") + authoring_sources)
+    if plan.get("regularization_authoring_source"):
+        frozen_default = run / "inputs/code/src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json"
+        frozen_record = file_record(frozen_default)
+        authority = plan["regularization_authoring_source"]
+        if (frozen_record["bytes"], frozen_record["sha256"]) != (authority["bytes"], authority["sha256"]):
+            raise ValueError("frozen regularization authoring source differs from request")
     if plan.get("producer"):
         _freeze_producer(run, plan["producer"])
     _write_json(run / "inputs/source_closure.json", closure)
@@ -616,7 +626,7 @@ def main() -> None:
     parser.add_argument("--case-dir", type=Path)
     parser.add_argument("--simion-exe", type=Path, default=Path(r"C:\Program Files\SIMION-2020\simion.exe"))
     parser.add_argument("--trajectory-quality", type=int, default=8)
-    parser.add_argument("--regularization", type=float, default=1e-4)
+    parser.add_argument("--regularization", type=float)
     parser.add_argument("--particle-count", type=int, choices=(100, 1000, 5000), default=1000,
                         help="consume an already frozen same-N parent ION; never resample")
     parser.add_argument("--numerics-path", type=Path, help="explicit solver numerics for same-owner safe field preparation; never changes Formal defaults")
@@ -640,7 +650,15 @@ def main() -> None:
             parser.error("--resume-finalization accepts only the existing --run-id and --result-path")
     if args.action:
         if args.action == "inspect":
+            authoring_source = None
+            if args.regularization is None:
+                args.regularization, authoring_path, authoring_sha256 = load_authoring_default()
+                authoring_source = file_record(authoring_path)
+                if authoring_source["sha256"].lower() != authoring_sha256:
+                    raise ValueError("regularization authoring source changed during resolution")
             result = inspect_source(args.case_dir, args.simion_exe, args.trajectory_quality, args.regularization, args.resume_from, args.particle_count, args.numerics_path)
+            if authoring_source is not None:
+                result["regularization_authoring_source"] = authoring_source
         else:
             run = args.run.resolve()
             functions = {"freeze": freeze_inputs, "export-spec": export_specification, "fit": fit_and_plan, "analyze": analyze}
@@ -672,7 +690,9 @@ def main() -> None:
             command += ["-ResultPath", str(args.result_path)]
     else:
         command += ["-SimionExe", str(args.simion_exe), "-TrajectoryQuality", str(args.trajectory_quality),
-                    "-Regularization", str(args.regularization), "-ParticleCount", str(args.particle_count)]
+                    "-ParticleCount", str(args.particle_count)]
+        if args.regularization is not None:
+            command += ["-Regularization", str(args.regularization)]
         for name, value in (("CaseDirectory", args.case_dir), ("RunId", args.run_id),
                             ("ContinuationPredecessorManifestPath", args.resume_from),
                             ("ResultPath", args.result_path), ("NumericsPath", args.numerics_path)):
