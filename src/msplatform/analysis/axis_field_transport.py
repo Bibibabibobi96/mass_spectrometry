@@ -48,7 +48,7 @@ def load_total_axis_field(path: Path) -> AxisField:
 
 def integrate_axis_to_plane_us(
     field: AxisField, *, z0_mm: float, vz0_mm_per_us: float, z_stop_mm: float,
-    mass_th: float, charge_state: int, dt_us: float = 1.0e-4,
+    mass_to_charge_th: float, charge_sign: int, dt_us: float = 1.0e-4,
     max_elapsed_us: float = 10.0,
 ) -> float:
     """Integrate to the first positive-z crossing of ``z_stop_mm`` with RK4.
@@ -58,12 +58,21 @@ def integrate_axis_to_plane_us(
     Failure to reach the stop plane within the declared local propagation
     horizon is explicit rather than silently clipped or iterated to a generic
     implementation step cap.
+
+    ``mass_to_charge_th`` is unsigned m/|q| in Th (u/e), not physical mass;
+    ``charge_sign`` is the integer -1 or +1, not charge magnitude. Multiply
+    charged species use their measured m/z and sign without another factor z.
+    The existing q/m helper uses a numerical unit-charge representative with
+    mass=mass_to_charge_th and charge=charge_sign, preserving the arithmetic
+    order; this does not reconstruct the species' physical mass or charge.
     """
     if not (field.z_mm[0] <= z0_mm < z_stop_mm <= field.z_mm[-1]):
         raise ValueError("start/stop plane lies outside exported field")
-    if mass_th <= 0 or charge_state == 0 or dt_us <= 0 or max_elapsed_us <= 0:
+    if mass_to_charge_th <= 0 or charge_sign == 0 or dt_us <= 0 or max_elapsed_us <= 0:
         raise ValueError("mass, charge, and time step must be nonzero and positive where applicable")
-    q_over_m_si = charge_to_mass_c_per_kg(mass_th, charge_state)
+    if charge_sign not in (-1, 1):
+        raise ValueError("charge_sign must be -1 or +1")
+    q_over_m_si = charge_to_mass_c_per_kg(mass_to_charge_th, charge_sign)
     # 1 V/mm = 1e3 V/m; 1 m/s^2 = 1e-9 mm/us^2.
     def acceleration(z_mm: float) -> float:
         return q_over_m_si * float(np.interp(z_mm, field.z_mm, field.ez_v_per_mm * 1.0e3)) * 1.0e-9

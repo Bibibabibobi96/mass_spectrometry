@@ -18,7 +18,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.exported_axis_field_integrator import (
+from msplatform.analysis.axis_field_transport import (
     integrate_axis_to_plane_us,
     load_total_axis_field,
 )
@@ -196,7 +196,7 @@ def build_c3_axis_reference(
                 integrate_axis_to_plane_us(
                     field, z0_mm=states[particle_id][0],
                     vz0_mm_per_us=states[particle_id][1], z_stop_mm=exit_plane,
-                    mass_th=species[0], charge_state=species[1], dt_us=dt_us,
+                    mass_to_charge_th=species[0], charge_sign=species[1], dt_us=dt_us,
                 ) * 1000.0
                 for particle_id in sorted(expected_ids)
             ], dtype=float)

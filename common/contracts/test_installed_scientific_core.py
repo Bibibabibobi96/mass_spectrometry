@@ -1117,6 +1117,43 @@ read_only = subprocess.run([sys.executable,'-I','-B','-c',read_only_probe,json.d
     cwd=read_root,capture_output=True,text=True,encoding='utf-8',timeout=30)
 assert read_only.returncode==0,read_only.stdout+read_only.stderr
 assert 'INSTALLED_READ_ONLY_RESULTS=PASS' in read_only.stdout
+# EXPORTED_AXIS_TRANSPORT_INSTALLED_BEGIN
+from msplatform.analysis import axis_field_transport as exported_axis_module
+from msplatform.contracts.particle_physics import mass_to_charge_th as exported_axis_mu, charge_to_mass_c_per_kg as exported_axis_qm
+exported_axis_fixture=fixture['exported_axis_transport']
+exported_axis_path=pathlib.Path(exported_axis_module.__file__).resolve()
+assert exported_axis_path.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert exported_axis_path.stat().st_size==exported_axis_fixture['module_bytes']
+assert hashlib.sha256(exported_axis_path.read_bytes()).hexdigest()==exported_axis_fixture['module_sha256']
+assert exported_axis_mu(200.0,2)==100.0
+assert exported_axis_qm(200.0,2)==exported_axis_qm(100.0,1)
+exported_axis_csv=root/('exported-axis-'+sys.argv[2]+'.csv')
+for exported_axis_case in exported_axis_fixture['cases']:
+    with exported_axis_csv.open('w',newline='',encoding='utf-8') as exported_axis_stream:
+        exported_axis_writer=csv.DictWriter(exported_axis_stream,fieldnames=['z_mm','Ez_V_per_mm'])
+        exported_axis_writer.writeheader()
+        exported_axis_writer.writerows({'z_mm':z,'Ez_V_per_mm':exported_axis_case['field_v_per_mm']} for z in exported_axis_fixture['z_mm'])
+    exported_axis_field=exported_axis_module.load_total_axis_field(exported_axis_csv)
+    exported_axis_elapsed=exported_axis_module.integrate_axis_to_plane_us(exported_axis_field,**exported_axis_case['arguments'])
+    assert abs(exported_axis_elapsed-exported_axis_fixture['expected_elapsed_us'])<=exported_axis_fixture['delta_us'],exported_axis_elapsed
+for exported_axis_sign in (2,-2):
+    try:
+        exported_axis_module.integrate_axis_to_plane_us(exported_axis_field,z0_mm=0.0,vz0_mm_per_us=0.0,z_stop_mm=10.0,mass_to_charge_th=100.0,charge_sign=exported_axis_sign)
+    except ValueError as exported_axis_error:
+        assert 'charge_sign' in str(exported_axis_error)
+    else:
+        raise AssertionError('installed axis transport accepted charge magnitude as sign')
+exported_axis_backup=exported_axis_path.with_suffix('.missing')
+exported_axis_path.rename(exported_axis_backup)
+try:
+    exported_axis_missing=subprocess.run([sys.executable,'-I','-B','-c','from msplatform.analysis.axis_field_transport import integrate_axis_to_plane_us'],cwd=root,capture_output=True,timeout=30)
+    assert exported_axis_missing.returncode!=0 and b'msplatform.analysis.axis_field_transport' in exported_axis_missing.stderr,exported_axis_missing.stderr
+finally:
+    exported_axis_backup.rename(exported_axis_path)
+assert hashlib.sha256(exported_axis_path.read_bytes()).hexdigest()==exported_axis_fixture['module_sha256']
+print('INSTALLED_EXPORTED_AXIS_TRANSPORT=PASS')
+# EXPORTED_AXIS_TRANSPORT_INSTALLED_END
+
 # Reuse the repository's manifest-bound comparison fixture as plain data.
 # All identities/records below are newly bound to consumer-owned small files.
 comparison = fixture['comparison']
@@ -4121,6 +4158,19 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
         return cases
 
+    def exported_axis_transport_probe_fixture(self) -> dict:
+        """Original constant-acceleration oracle; no new-code-derived expected value."""
+        from msplatform.analysis import axis_field_transport
+
+        raw = Path(axis_field_transport.__file__).read_bytes()
+        common = dict(z0_mm=0.0, vz0_mm_per_us=0.0, z_stop_mm=10.0,
+                      dt_us=1e-4, max_elapsed_us=10.0)
+        return dict(module_bytes=len(raw), module_sha256=hashlib.sha256(raw).hexdigest(),
+                    z_mm=list(range(11)), expected_elapsed_us=0.455286, delta_us=2e-5,
+                    cases=[dict(field_v_per_mm=1.0, arguments=dict(common, mass_to_charge_th=1.0, charge_sign=1)),
+                           dict(field_v_per_mm=-1.0, arguments=dict(common, mass_to_charge_th=1.0, charge_sign=-1)),
+                           dict(field_v_per_mm=100.0, arguments=dict(common, mass_to_charge_th=100.0, charge_sign=1))])
+
     def tof_kernel_probe_fixture(self) -> dict:
         """Original high-contrast kernel fixture; no experiment/default selection."""
         from dataclasses import asdict
@@ -4995,6 +5045,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               tof_budget=self.tof_budget_probe_fixture(),
                                               rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
+                                              exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               scalar_adapter=self.scalar_adapter_probe_fixture(),

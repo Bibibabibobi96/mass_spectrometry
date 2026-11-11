@@ -1104,3 +1104,22 @@ The three affected RF/TOF modules passed in one private public-GATE invocation: 
 ### Shared field-sample comparison owner
 
 The pure complete-sample pairing and scale-aware RMS diagnostics are provided by `msplatform.analysis.field_comparison`. Axis, vector and longitudinal saved-data consumers use that one implementation. Their CSV contracts, original coordinate checks, plots and output status semantics remain unchanged; diagnostics do not grant numerical equivalence or scientific qualification.
+
+
+## Canonical exported-axis local transport
+
+`msplatform.analysis.axis_field_transport` owns the original total-axis CSV
+reader and local RK4 plane propagation. The root implementation is retired;
+both square/cylindrical and C3/J3 reference analyzers call that canonical module.
+The API explicitly takes unsigned mass_to_charge_th and integer charge_sign
+(-1 or +1); multiply charged ions are represented by m/z and sign, without
+another charge-magnitude factor. Its existing unit-charge-representative q/m
+calculation preserves arithmetic order and does not reconstruct physical mass.
+
+Original interpolation, adjacent-endpoint tolerance, timestep/horizon defaults
+and local-crossing semantics are unchanged. Negative charge with reversed field
+and 200 u / z=2 represented as 100 Th reuse the original constant-acceleration
+oracle. Candidate/source/cohort guards and the consumers' original one/five-percent
+research criteria remain with those analyzers. No PA, native export, solver
+process or historical record is changed. Ordinary installation and native
+qualification are separate acceptance boundaries.

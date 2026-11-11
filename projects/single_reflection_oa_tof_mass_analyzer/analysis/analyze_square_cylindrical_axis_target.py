@@ -16,7 +16,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.exported_axis_field_integrator import (
+from msplatform.analysis.axis_field_transport import (
     integrate_axis_to_plane_us,
     load_total_axis_field,
 )
@@ -174,7 +174,7 @@ def _integrator_report(axis_run: Mapping[str, Any], trajectory_run: Path | None)
     field = load_total_axis_field(axis_run["field_path"])
     elapsed_by_dt: dict[str, float] = {}
     for dt_us in _DT_US:
-        values = [integrate_axis_to_plane_us(field, z0_mm=z, vz0_mm_per_us=vz, z_stop_mm=exit_plane, mass_th=float(source["mass_to_charge_th"]), charge_state=int(source["charge_sign"]), dt_us=dt_us) for z, vz in states.values()]
+        values = [integrate_axis_to_plane_us(field, z0_mm=z, vz0_mm_per_us=vz, z_stop_mm=exit_plane, mass_to_charge_th=float(source["mass_to_charge_th"]), charge_sign=int(source["charge_sign"]), dt_us=dt_us) for z, vz in states.values()]
         elapsed_by_dt[str(dt_us)] = float(np.mean(values) * 1000.0)
     fine, previous = elapsed_by_dt[str(_DT_US[-1])], elapsed_by_dt[str(_DT_US[-2])]
     return {"status": "RUN", "trajectory_run": trajectory["run_directory"], "particle_count": len(states), "local_exit_z_mm": exit_plane, "mean_pre_pulse_to_local_exit_ns_by_dt_us": elapsed_by_dt, "finest_pair_relative_difference": abs(fine - previous) / max(abs(fine), 1.0e-15)}

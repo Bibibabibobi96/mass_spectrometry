@@ -3175,6 +3175,10 @@
         {
           "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/axis_field_transport.py",
+          "reason": "installed_axis_field_transport_changed"
         }
       ],
       "command": {
@@ -3230,6 +3234,20 @@
             "modules": [
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/axis_field_transport.py",
+                "reason": "installed_axis_field_transport_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_exported_axis_field_integrator.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_square_cylindrical_axis_target.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paper1_c3_j3_real_field_analysis.py"
             ],
             "dependency_profile": "locked"
           }

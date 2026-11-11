@@ -113,6 +113,7 @@ writer-release requirements. This does not authorize rewriting a historical pare
 
 ## 核心分析
 
+- `msplatform.analysis.axis_field_transport`: canonical exported-axis CSV loading and local collisionless RK4 propagation using explicit unsigned m/z in Th plus integer charge sign. It is a local accelerator reference, not whole-instrument TOF or native qualification; the square/cylindrical and C3/J3 analyzers retain their original receipt/cohort and research convergence gates.
 - `msplatform.components.single_reflection_oa_tof.ideal_source_comparison`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
 - `msplatform.workflows.oa_tof_design.source_experiment`: versioned experiment validation, deterministic residual-first case planning and scientific conclusions. Execution success does not establish the hypothesis; the installed entry and resume behavior are described below.
 - `msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory` and `ideal_acceptance_linear_design`: exact time-series diagnostics and the caller-controlled third-order linear focus and fixed-length root equations. These retain every detected valid branch without particle-peak ranking or a continuous-domain completeness claim.
