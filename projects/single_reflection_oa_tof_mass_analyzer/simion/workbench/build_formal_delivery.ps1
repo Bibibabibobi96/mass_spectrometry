@@ -37,7 +37,7 @@ function Copy-ComponentFrozenIon {
     $code=@'
 import math,sys
 from pathlib import Path
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import read_ion_table
+from msplatform.backends.simion.ion_table import read_ion_table
 path=Path(sys.argv[1]);count=int(sys.argv[2]);mass=float(sys.argv[3]);charge=int(sys.argv[4])
 table=read_ion_table(path)
 assert len(table)==count and table.Ion.tolist()==list(range(1,count+1)), 'frozen source count/IDs differ'

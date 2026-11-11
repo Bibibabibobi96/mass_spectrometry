@@ -36,9 +36,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis
     _read_source_table,
     _validated_particle_ids,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import (
-    _validated_charge_state,
-)
+from msplatform.backends.simion import ion_table as simion_ion_table
 
 
 def load_mode(path: Path) -> dict[str, Any]:
@@ -53,7 +51,7 @@ def load_mode(path: Path) -> dict[str, Any]:
         raise ValueError("species_id values must be unique")
     for item in species:
         mass = float(item["mass_amu"])
-        charge = _validated_charge_state(item["charge_state"])
+        charge = simion_ion_table._validated_charge_state(item["charge_state"])
         mz = float(item["mz"])
         if not np.isfinite(mass) or mass <= 0 or not np.isfinite(mz) or mz <= 0:
             raise ValueError(f"Invalid species definition: {item}")
@@ -125,7 +123,7 @@ def _normalized_simion_rows(path: Path) -> pd.DataFrame:
         {
             "particle_id": _validated_particle_ids(raw["Ion"], "SIMION"),
             "mass_amu": pd.to_numeric(raw["MassAmu"], errors="raise"),
-            "charge_state": raw["ChargeState"].map(_validated_charge_state),
+            "charge_state": raw["ChargeState"].map(simion_ion_table._validated_charge_state),
             "tof_us": pd.to_numeric(raw["TofUs"], errors="coerce"),
             "detector_x_mm": (
                 pd.to_numeric(raw["XMm"], errors="coerce")

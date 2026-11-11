@@ -36,7 +36,8 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 from msplatform.backends.simion.optimize_reflectron_ring_voltages import (
     _load_basis, load_authoring_default, optimize, render_lua_profile,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log, read_ion_table
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log
+from msplatform.backends.simion import ion_table as simion_ion_table
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import render_program
 
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
@@ -97,7 +98,7 @@ def inspect_source(case: Path, executable: Path, trajectory_quality: int, regula
     lines = [line for line in source.read_text(encoding="ascii").splitlines() if line.strip()]
     if len(lines) != particle_count:
         raise ValueError("voltage compensation requires its complete frozen source at the declared standard count")
-    source_table = read_ion_table(source)
+    source_table = simion_ion_table.read_ion_table(source)
     if (source_table["Ion"].tolist() != list(range(1, particle_count+1))
             or not all(math.isfinite(float(value)) for line in lines for value in line.split(","))):
         raise ValueError("source IDs or finite native source state differ")

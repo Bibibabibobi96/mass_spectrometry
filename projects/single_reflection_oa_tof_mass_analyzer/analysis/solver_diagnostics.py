@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from decimal import Decimal, InvalidOperation
 import json
 import math
 import re
@@ -14,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from msplatform.analysis.peak_metrics import FWHM_FACTOR
+from msplatform.backends.simion import ion_table as simion_ion_table
 
 
 DETECTOR_PATTERN = re.compile(
@@ -47,43 +47,6 @@ def _correlation(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.corrcoef(left, right)[0, 1])
 
 
-def _validated_charge_state(value: Any) -> int:
-    """Parse a finite nonzero integer charge without truncating source text."""
-    try:
-        number = Decimal(str(value))
-    except InvalidOperation as exc:
-        raise ValueError("charge_state must be a finite nonzero integer") from exc
-    if (isinstance(value, (bool, np.bool_)) or not number.is_finite()
-            or number == 0 or number != number.to_integral_value()):
-        raise ValueError("charge_state must be a finite nonzero integer")
-    return int(number)
-
-
-def read_ion_table(path: Path) -> pd.DataFrame:
-    rows: list[dict[str, float | int]] = []
-    for ion, line in enumerate(path.read_text(encoding="ascii").splitlines(), start=1):
-        if not line.strip():
-            continue
-        columns = line.split(",")
-        if len(columns) < 9:
-            raise ValueError(f"Malformed ION line {ion} in {path}")
-        rows.append(
-            {
-                "Ion": ion,
-                "TobUs": float(columns[0]),
-                "MassAmu": float(columns[1]),
-                "ChargeState": _validated_charge_state(columns[2]),
-                "X0Mm": float(columns[3]),
-                "Y0Mm": float(columns[4]),
-                "Z0Mm": float(columns[5]),
-                "EnergyEv": float(columns[8]),
-            }
-        )
-    if not rows:
-        raise ValueError(f"ION file is empty: {path}")
-    return pd.DataFrame(rows)
-
-
 def analyze_simion_log(
     log_path: Path,
     ion_path: Path,
@@ -100,7 +63,7 @@ def analyze_simion_log(
     """
     if not math.isfinite(detector_radius_mm) or detector_radius_mm <= 0:
         raise ValueError("detector_radius_mm must be finite and positive")
-    initial = read_ion_table(ion_path).set_index("Ion", drop=False)
+    initial = simion_ion_table.read_ion_table(ion_path).set_index("Ion", drop=False)
     if not np.all(np.isfinite(initial.to_numpy(dtype=float))):
         raise ValueError("ION source contains non-finite values")
     rows: list[dict[str, Any]] = []

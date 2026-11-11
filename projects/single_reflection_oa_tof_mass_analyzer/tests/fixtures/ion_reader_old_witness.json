@@ -1,0 +1,337 @@
+{
+  "role": "synthetic_original_ion_reader_software_witness",
+  "provenance": {
+    "old_capture_sha256": "39bec7c1b0c5fc5ad63e08c1dfbe4cddc220710dc3c15505494941716aea39e1",
+    "original_source_sha256": "481ada0f2f4a92cdec6f0265b54e5a240d894190b8de591600f5285407994979",
+    "path_policy": "only exact old input paths in exception messages replaced with {input_path}"
+  },
+  "cases": [
+    {
+      "case": "signed",
+      "bytes": 91,
+      "sha256": "60881a0e4d34f802f567eb6b9078b8d8f6ce6151d418528330626b4b44d984a0",
+      "data_base64": "MCw1MjQsMSwwLDAsMCwwLDAsNSwxLDAKMCw1MjQsMS4wLDAsMCwwLDAsMCw1CjAsNTI0LDFlMCwwLDAsMCwwLDAsNQowLDUyNCwtMmUwLDAsMCwwLDAsMCw1Cg==",
+      "outcome": {
+        "columns": [
+          "Ion",
+          "TobUs",
+          "MassAmu",
+          "ChargeState",
+          "X0Mm",
+          "Y0Mm",
+          "Z0Mm",
+          "EnergyEv"
+        ],
+        "dtypes": [
+          "int64",
+          "float64",
+          "float64",
+          "int64",
+          "float64",
+          "float64",
+          "float64",
+          "float64"
+        ],
+        "rows": [
+          [
+            "1",
+            "0.0",
+            "524.0",
+            "1",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ],
+          [
+            "2",
+            "0.0",
+            "524.0",
+            "1",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ],
+          [
+            "3",
+            "0.0",
+            "524.0",
+            "1",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ],
+          [
+            "4",
+            "0.0",
+            "524.0",
+            "-2",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ]
+        ]
+      }
+    },
+    {
+      "case": "blank_line",
+      "bytes": 42,
+      "sha256": "03d58f14204f1fb314bd150ac24d6ae5a5a66be9450cf25cffdc6453c1c9237b",
+      "data_base64": "MCw1MjQsMSwwLDAsMCwwLDAsNQoKMCw1MjQsLTEsMCwwLDAsMCwwLDUK",
+      "outcome": {
+        "columns": [
+          "Ion",
+          "TobUs",
+          "MassAmu",
+          "ChargeState",
+          "X0Mm",
+          "Y0Mm",
+          "Z0Mm",
+          "EnergyEv"
+        ],
+        "dtypes": [
+          "int64",
+          "float64",
+          "float64",
+          "int64",
+          "float64",
+          "float64",
+          "float64",
+          "float64"
+        ],
+        "rows": [
+          [
+            "1",
+            "0.0",
+            "524.0",
+            "1",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ],
+          [
+            "3",
+            "0.0",
+            "524.0",
+            "-1",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ]
+        ]
+      }
+    },
+    {
+      "case": "extra",
+      "bytes": 33,
+      "sha256": "34363af8a96ff80c2ba8932eba1f38cbd1156280756f39a5bd87551353dfff5f",
+      "data_base64": "MCw1MjQsMSwwLDAsMCwwLDAsNSx1bnVzZWQsZXh0cmEK",
+      "outcome": {
+        "columns": [
+          "Ion",
+          "TobUs",
+          "MassAmu",
+          "ChargeState",
+          "X0Mm",
+          "Y0Mm",
+          "Z0Mm",
+          "EnergyEv"
+        ],
+        "dtypes": [
+          "int64",
+          "float64",
+          "float64",
+          "int64",
+          "float64",
+          "float64",
+          "float64",
+          "float64"
+        ],
+        "rows": [
+          [
+            "1",
+            "0.0",
+            "524.0",
+            "1",
+            "0.0",
+            "0.0",
+            "0.0",
+            "5.0"
+          ]
+        ]
+      }
+    },
+    {
+      "case": "empty",
+      "bytes": 4,
+      "sha256": "294f590e7cbf8735cc114db7352eb0c68f222ba770f243d97ad6dfd42eaf63b5",
+      "data_base64": "CiAgCg==",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "ION file is empty: {input_path}",
+        "path_substitution": "input_path"
+      }
+    },
+    {
+      "case": "short",
+      "bytes": 10,
+      "sha256": "b0b59094148d90dd1fbd0343480dc6408aa1d3eb771a362cdbeaa2977bab62d0",
+      "data_base64": "MCw1MjQsMSwwCg==",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "Malformed ION line 1 in {input_path}",
+        "path_substitution": "input_path"
+      }
+    },
+    {
+      "case": "ascii",
+      "bytes": 21,
+      "sha256": "d320fe50f3ae1e6756372ce1c1f8d3856046e0527a61ea727584a9369bbd27b9",
+      "data_base64": "MCw1MjQsMSwwLDAsMCwwLDAsNf8K",
+      "outcome": {
+        "exception_type": "builtins.UnicodeDecodeError",
+        "exception_message": "'ascii' codec can't decode byte 0xff in position 19: ordinal not in range(128)"
+      }
+    },
+    {
+      "case": "fraction",
+      "bytes": 38,
+      "sha256": "4659ec9f608395f8515737b8ddfee3f33139a41d9b15c56455bd91f150e8ba04",
+      "data_base64": "MCw1MjQsMS4wMDAwMDAwMDAwMDAwMDAwMSwwLDAsMCwwLDAsNQo=",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "case": "zero",
+      "bytes": 20,
+      "sha256": "1363ff627bbf5828a5d048187f84eaa9aba8581d2232fe892082eb463ff93f84",
+      "data_base64": "MCw1MjQsMCwwLDAsMCwwLDAsNQo=",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "case": "nonfinite",
+      "bytes": 22,
+      "sha256": "2e070dc0d9d4a239608e3bdb46d9c7251c6817cee668798c5a8165ebc6fa7745",
+      "data_base64": "MCw1MjQsbmFuLDAsMCwwLDAsMCw1Cg==",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "case": "boolean",
+      "bytes": 23,
+      "sha256": "45092b12461fbb86514dd4d116b5364ca1390293270cde9fae33444489f33f85",
+      "data_base64": "MCw1MjQsVHJ1ZSwwLDAsMCwwLDAsNQo=",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "case": "bad_float",
+      "bytes": 22,
+      "sha256": "6f48889d44732a5b40f572e08cf86bd723514581dff2aa903f1a99bdee12cdda",
+      "data_base64": "YmFkLDUyNCwxLDAsMCwwLDAsMCw1Cg==",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "could not convert string to float: 'bad'"
+      }
+    }
+  ],
+  "charge_cases": [
+    {
+      "input_type": "builtins.int",
+      "input_repr": "1",
+      "outcome": {
+        "return": 1
+      }
+    },
+    {
+      "input_type": "builtins.int",
+      "input_repr": "-2",
+      "outcome": {
+        "return": -2
+      }
+    },
+    {
+      "input_type": "builtins.float",
+      "input_repr": "1.0",
+      "outcome": {
+        "return": 1
+      }
+    },
+    {
+      "input_type": "builtins.float",
+      "input_repr": "1.5",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "input_type": "builtins.bool",
+      "input_repr": "True",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "input_type": "numpy.bool",
+      "input_repr": "np.True_",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "input_type": "numpy.int64",
+      "input_repr": "np.int64(-3)",
+      "outcome": {
+        "return": -3
+      }
+    },
+    {
+      "input_type": "builtins.int",
+      "input_repr": "0",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "input_type": "builtins.float",
+      "input_repr": "inf",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    },
+    {
+      "input_type": "builtins.str",
+      "input_repr": "'1e0'",
+      "outcome": {
+        "return": 1
+      }
+    },
+    {
+      "input_type": "builtins.str",
+      "input_repr": "'1.00000000000000001'",
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "charge_state must be a finite nonzero integer"
+      }
+    }
+  ]
+}

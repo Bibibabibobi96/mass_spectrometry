@@ -505,6 +505,49 @@ def execute_prepared_run(*args):
 
 
 
+    def test_frozen_ion_reader_executes_actual_diagnostics_without_live_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            identifier = "src/msplatform/backends/simion/ion_table.py"
+            frozen = Path(frozen_source_path(closure, identifier))
+            self.assertEqual(frozen.read_bytes(), (REPO_ROOT / identifier).read_bytes())
+            verify_candidate_source_closure(closure)
+            ion = root / "source.ion"
+            ion.write_text("0,524,1,0,0,0,0,0,5,1,0\n", encoding="ascii")
+            log = root / "flight.log"
+            log.write_text("", encoding="utf-8")
+            from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
+            child = _FROZEN_PYTHON_BOOTSTRAP + r"""
+sys.path.extend([str(Path(sys.argv[4])/'src'), sys.argv[4]])  # Live checkout is available but not authority.
+from projects.single_reflection_oa_tof_mass_analyzer.analysis import solver_diagnostics as diagnostics
+from msplatform.backends.simion import ion_table
+assert Path(diagnostics.__file__).resolve()==source_root/'projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py'
+assert Path(ion_table.__file__).resolve()==source_root/'src/msplatform/backends/simion/ion_table.py'
+particles, result=diagnostics.analyze_simion_log(Path(sys.argv[2]),Path(sys.argv[3]),
+    mode='test',distribution='fixed',detector_radius_mm=40.,allow_incomplete_census=True)
+assert particles['Ion'].tolist()==[1] and result['UnobservedParticleIds']==[1]
+assert result['PeakStatus']=='no_hits' and result['ResolutionClaim'] is False
+check_frozen_core()
+print('FROZEN_ION_CONSUMER_PASS')
+"""
+            command = [sys.executable, "-I", "-B", "-c", child, closure["code_root"], str(log), str(ion), str(REPO_ROOT)]
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_ION_CONSUMER_PASS", result.stdout)
+            content = frozen.read_bytes()
+            frozen.unlink()
+            try:
+                with self.assertRaisesRegex(ValueError, "frozen candidate source changed:.*ion_table"):
+                    verify_candidate_source_closure(closure)
+                missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn("ImportError: cannot import name 'ion_table' from 'msplatform.backends.simion'", missing.stderr)
+                self.assertNotIn("FROZEN_ION_CONSUMER_PASS", missing.stdout)
+            finally:
+                frozen.write_bytes(content)
+            verify_candidate_source_closure(closure)
+
     def test_artifact_capacity_requires_explicit_positive_bytes_and_basis(self):
         runtime = load_json(PROJECT_ROOT / "config" / "candidate_runtime.json")
         capacity = validate_artifact_capacity(runtime)

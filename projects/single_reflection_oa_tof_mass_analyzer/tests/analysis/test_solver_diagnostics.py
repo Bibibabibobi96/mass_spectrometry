@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import pandas as pd
+from msplatform.backends.simion.ion_table import read_ion_table
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import (
     analyze_simion_log,
@@ -19,7 +20,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics
     compare_field_reports,
     compare_particle_exports,
     mass_spectrum_max_tof_us,
-    read_ion_table,
 )
 
 

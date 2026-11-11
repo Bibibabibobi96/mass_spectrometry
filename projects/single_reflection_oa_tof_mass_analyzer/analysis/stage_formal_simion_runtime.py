@@ -177,8 +177,8 @@ def stage_diagnostic_inputs(source_run: Path, destination: Path, receipt: Path, 
             frozen = dict(bound, path=str(target))
             verify_run_record('frozen diagnostic input', frozen)
             if relative.startswith('ions/'):
-                from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import read_ion_table
-                if len(read_ion_table(target)) != count:
+                from msplatform.backends.simion import ion_table as simion_ion_table
+                if len(simion_ion_table.read_ion_table(target)) != count:
                     raise ValueError('source diagnostic ION count differs from its frozen run control')
             records[relative] = dict(frozen, source_path=str(source))
         for name, source, bound in (('source_run_config.json', config_path, manifest['run_config']),
