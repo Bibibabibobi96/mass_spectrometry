@@ -2512,6 +2512,156 @@ throw 'Missing selected resource accepted'
 print('INSTALLED_SELECTED_FROZEN_EXECUTOR=PASS')
 # FROZEN_EXECUTOR_INSTALLED_END
 
+# RF_IP_INSTALL_PROBE_BEGIN
+rfconv_probe = fixture['rf_convergence']
+rfconv_child = r"""import contextlib,hashlib,importlib.abc,importlib.util,io,json,os,pathlib,runpy,sys,sysconfig
+q=json.load(sys.stdin)
+blocked=[pathlib.Path(p).resolve() for p in q['blocked']]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked):raise AssertionError('author path accessed')
+sys.addaudithook(deny)
+class DenyRepo(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('author import '+fullname)
+sys.meta_path.insert(0,DenyRepo())
+name='msplatform.workflows.rf_convergence_comparison'
+if importlib.util.find_spec(name) is None:raise ModuleNotFoundError(f"No module named {name!r}",name=name)
+sys.argv=[name,*q['args']]
+with contextlib.redirect_stdout(io.StringIO()):actual=runpy.run_module(name,run_name='__main__',alter_sys=True)
+root=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+assert pathlib.Path(actual['__file__']).resolve()==root/'msplatform/workflows/rf_convergence_comparison.py'
+for name in ('msplatform.components.rf_multipole.paired_particle_source_bundle','msplatform.components.rf_multipole.particle_source_binding'):
+ assert pathlib.Path(sys.modules[name].__file__).resolve()==root.joinpath(*name.split('.')).with_suffix('.py')
+from msplatform.components.rf_multipole.particle_source_binding import resolve_binding
+manifest=json.loads(pathlib.Path(q['manifest']).read_text(encoding='utf-8-sig'))
+config=json.loads(pathlib.Path(manifest['run_config']['path']).read_text(encoding='utf-8-sig'))
+i=config['inputs'];representation='canonical10' if q['solver']=='SIMION' else 'ion11'
+binding=resolve_binding(pathlib.Path(i['particle_bundle_metadata']),pathlib.Path(i['particle_source_family']),
+ pathlib.Path(i['particle_source_distribution']),pathlib.Path(i['resolved_design']),'official_100amu_2eV',100,
+ representation,pathlib.Path(i['particle_table']),policy_path=pathlib.Path(q['policy']))
+for field,role in (('bundle_metadata_path','particle_bundle_metadata'),('consumed_path','particle_table'),
+ ('ion11_path','source_ion11'),('canonical10_path','source_canonical10')):
+ assert pathlib.Path(binding[field]).resolve()==pathlib.Path(i[role]).resolve()
+assert binding['representation_equivalence']=='PASS' and binding['particle_count']==100
+from msplatform.components.rf_multipole.paired_particle_source_bundle import generate_bundle, load_declared_bundle_specification
+rfconv_metadata_path=pathlib.Path(i['particle_bundle_metadata'])
+rfconv_metadata=json.loads(rfconv_metadata_path.read_text(encoding='utf-8-sig'))
+rfconv_spec=load_declared_bundle_specification(rfconv_metadata_path,pathlib.Path(i['particle_source_family']))
+rfconv_generated=pathlib.Path.cwd()/'regenerated-bundle'
+assert not rfconv_generated.exists()
+generate_bundle(pathlib.Path(i['particle_source_family']),pathlib.Path(i['particle_source_distribution']),
+ pathlib.Path(i['resolved_design']),rfconv_generated,policy_path=pathlib.Path(q['policy']),
+ seed=rfconv_metadata['seed'],particle_counts=rfconv_metadata['particle_counts'],**rfconv_spec)
+rfconv_bundle_root=rfconv_metadata_path.parent
+rfconv_selected={p.relative_to(rfconv_bundle_root).as_posix():p.read_bytes() for p in rfconv_bundle_root.rglob('*') if p.is_file()}
+rfconv_written={p.relative_to(rfconv_generated).as_posix():p.read_bytes() for p in rfconv_generated.rglob('*') if p.is_file()}
+assert len(rfconv_selected)==9 and set(rfconv_written)==set(rfconv_selected)
+assert rfconv_written==rfconv_selected
+print('RFCONV_INSTALLED_CHILD=PASS')
+"""
+for rfconv_solver in ('SIMION','COMSOL'):
+    rfconv_run_root=root/('rfconv-installed-'+sys.argv[2]+'-'+rfconv_solver);rfconv_run_root.mkdir()
+    rfconv_out=rfconv_run_root/'result.json';rfconv_census=rfconv_run_root/'census.csv'
+    rfconv_manifests=rfconv_probe['manifests'][rfconv_solver];rfconv_data=rfconv_probe['data']
+    rfconv_args=['--baseline-manifest',rfconv_manifests[0],'--refined-manifest',rfconv_manifests[1],
+        '--contract',rfconv_data['contract'],'--comsol-numerics',rfconv_data['comsol_numerics'],
+        '--simion-numerics',rfconv_data['simion_numerics'],'--particle-count-policy',rfconv_data['policy'],
+        '--output',str(rfconv_out),'--census-output',str(rfconv_census)]
+    rfconv_run=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
+        input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
+        capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    assert rfconv_run.returncode==0,rfconv_run.stdout+rfconv_run.stderr
+    rfconv_actual=json.loads(rfconv_out.read_text(encoding='utf-8'));rfconv_expected=copy.deepcopy(rfconv_probe['oracle']['results'][rfconv_solver]['json'])
+    for rfconv_idx,rfconv_key in enumerate(('baseline_manifest_sha256','refined_manifest_sha256')):
+        rfconv_hash=hashlib.sha256(pathlib.Path(rfconv_manifests[rfconv_idx]).read_bytes()).hexdigest().upper()
+        assert rfconv_actual['inputs'][rfconv_key]==rfconv_hash
+        rfconv_expected['inputs'][rfconv_key]=rfconv_hash
+    assert rfconv_actual==rfconv_expected
+    assert rfconv_census.read_bytes()==bytes.fromhex(rfconv_probe['oracle']['results'][rfconv_solver]['census_hex'])
+rfconv_manifest=json.loads(pathlib.Path(rfconv_manifests[0]).read_text(encoding='utf-8-sig'))
+rfconv_consumed=pathlib.Path(rfconv_manifest['inputs']['particle_table']['path']);rfconv_bytes=rfconv_consumed.read_bytes()
+rfconv_alias_records={name:record for name,record in rfconv_manifest['inputs'].items()
+                      if pathlib.Path(record['path']).resolve()==rfconv_consumed.resolve()}
+assert rfconv_alias_records and all(int(record['bytes'])==len(rfconv_bytes) for record in rfconv_alias_records.values())
+rfconv_expected_integrity_errors={f"ValueError: manifest input {name} byte count changed: {rfconv_consumed.resolve()}"
+                                  for name in rfconv_alias_records}
+try:
+    rfconv_consumed.write_bytes(rfconv_bytes+b'\n')
+    rfconv_bad=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
+        input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
+        capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    assert rfconv_bad.returncode!=0,rfconv_bad.stdout+rfconv_bad.stderr
+    assert rfconv_bad.stderr.rstrip().splitlines()[-1] in rfconv_expected_integrity_errors,rfconv_bad.stdout+rfconv_bad.stderr
+finally:rfconv_consumed.write_bytes(rfconv_bytes)
+assert rfconv_consumed.read_bytes()==rfconv_bytes
+rfconv_module=pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/workflows/rf_convergence_comparison.py'
+rfconv_module_bytes=rfconv_module.read_bytes();rfconv_held=rfconv_module.with_suffix('.rfconv-held')
+assert not rfconv_held.exists();rfconv_module.rename(rfconv_held)
+try:
+    rfconv_absent=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
+        input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
+        capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    assert rfconv_absent.returncode!=0 and rfconv_absent.stderr.rstrip().splitlines()[-1]=="ModuleNotFoundError: No module named 'msplatform.workflows.rf_convergence_comparison'",rfconv_absent.stdout+rfconv_absent.stderr
+finally:rfconv_held.rename(rfconv_module)
+assert rfconv_module.read_bytes()==rfconv_module_bytes
+print('INSTALLED_RF_CONVERGENCE=PASS')
+ipread_probe=fixture['ip_reader']
+ipread_child=r"""import importlib,importlib.abc,json,os,pathlib,sys,sysconfig
+q=json.load(sys.stdin)
+blocked=[pathlib.Path(p).resolve() for p in q['blocked']]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked):raise AssertionError('author path accessed')
+sys.addaudithook(deny)
+class DenyRepo(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('author import '+fullname)
+sys.meta_path.insert(0,DenyRepo())
+reader=importlib.import_module('msplatform.results.ip_continuation')
+assert pathlib.Path(reader.__file__).resolve()==pathlib.Path(sysconfig.get_path('purelib')).resolve()/'msplatform/results/ip_continuation.py'
+try: result={'return':str(reader.native_data_directory(pathlib.Path(q['run'])))}
+except Exception as error: result={'exception_type':type(error).__module__+'.'+type(error).__qualname__,'exception_message':str(error)}
+print(json.dumps(result))
+"""
+ipread_root=root/('ip-reader-installed-'+sys.argv[2]);ipread_root.mkdir()
+ipread_old_ref=next(c['outcome']['return'] for c in ipread_probe['cases'] if c['case']=='valid')
+ipread_new_ref=ipread_root/'reference/simion'
+ipread_old_parent=str(pathlib.Path(ipread_old_ref).parent)
+ipread_new_parent=str(ipread_new_ref.parent)
+for ipread_case in ipread_probe['cases']:
+    ipread_run=ipread_root/ipread_case['case'];(ipread_run/'inputs').mkdir(parents=True)
+    ipread_plan=ipread_run/'inputs/simion_whole_unit_replay_plan.json';ipread_input=ipread_case['input_before']
+    if ipread_input['exists']:
+        import base64
+        ipread_raw=base64.b64decode(ipread_input['base64']);assert hashlib.sha256(ipread_raw).hexdigest()==ipread_input['sha256']
+        ipread_bom=ipread_raw.startswith(b'\xef\xbb\xbf');ipread_text=ipread_raw.decode('utf-8-sig')
+        ipread_text=ipread_text.replace(json.dumps(ipread_old_parent)[1:-1],json.dumps(ipread_new_parent)[1:-1])
+        ipread_raw=(b'\xef\xbb\xbf' if ipread_bom else b'')+ipread_text.encode('utf-8');ipread_plan.write_bytes(ipread_raw)
+    ipread_before=ipread_plan.read_bytes() if ipread_plan.exists() else None
+    ipread_run_result=subprocess.run([sys.executable,'-I','-B','-c',ipread_child],cwd=ipread_run,
+        input=json.dumps(dict(run=str(ipread_run),blocked=[str(p) for p in blocked_source_roots])),
+        capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert ipread_run_result.returncode==0,ipread_run_result.stdout+ipread_run_result.stderr
+    ipread_actual=json.loads(ipread_run_result.stdout);ipread_expected=copy.deepcopy(ipread_case['outcome'])
+    if 'return' in ipread_expected:ipread_expected['return']=str(ipread_run/'simion' if ipread_case['case']=='no_plan' else ipread_new_ref)
+    assert ipread_actual==ipread_expected,(ipread_case['case'],ipread_actual,ipread_expected)
+    assert (ipread_plan.read_bytes() if ipread_plan.exists() else None)==ipread_before
+from msplatform.results import ip_continuation as ipread_module
+ipread_path=pathlib.Path(ipread_module.__file__).resolve();ipread_original=ipread_path.read_bytes();ipread_held=ipread_path.with_suffix('.ipread-held')
+assert not ipread_held.exists()
+ipread_path.rename(ipread_held)
+try:
+    ipread_absent=subprocess.run([sys.executable,'-I','-B','-c',ipread_child],cwd=ipread_root,
+        input=json.dumps(dict(run=str(ipread_root),blocked=[str(p) for p in blocked_source_roots])),
+        capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert ipread_absent.returncode!=0 and ipread_absent.stderr.rstrip().splitlines()[-1]=="ModuleNotFoundError: No module named 'msplatform.results.ip_continuation'",ipread_absent.stdout+ipread_absent.stderr
+finally:ipread_held.rename(ipread_path)
+assert ipread_path.read_bytes()==ipread_original
+print('INSTALLED_IP_CONTINUATION_READER=PASS')
+# RF_IP_INSTALL_PROBE_END
 # REFLECTRON_FIT_INSTALLED_BEGIN
 from msplatform.backends.simion import optimize_reflectron_ring_voltages as reflectron_fit
 reflectron_fixture = fixture['reflectron_fit']
@@ -5353,6 +5503,59 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             paired_request = PairedAcceleratorStaticFieldPrepareTests()._request(root)
             (root/'paired-request.json').write_text(json.dumps(paired_request), encoding='utf-8')
             paired = dict(expected_plan=prepare_paired_field(root/'paired-request.json', root/'paired-installed'))
+            # Construct real synthetic cases before author trees are taken offline.
+            from projects.rf_multipole_ion_optics.tests.analysis.test_same_solver_numerical_convergence import (
+                SameSolverNumericalConvergenceTests, PORTABLE_INPUT_ROLES, PORTABLE_SIMION_OUTPUT_ROLES,
+            )
+            rfconv_oracle = json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_convergence_old_witness.json').read_text(encoding='utf-8'))
+            ipread_oracle = json.loads((REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_reader_old_witness.json').read_text(encoding='utf-8'))
+            rfconv_project = REPO_ROOT / 'projects/rf_multipole_ion_optics'
+            for rfconv_name, rfconv_hash in rfconv_oracle['authorities'].items():
+                self.assertEqual(hashlib.sha256((rfconv_project / rfconv_name).read_bytes()).hexdigest().lower(), rfconv_hash.lower())
+            rfconv_policy = REPO_ROOT / 'src/msplatform/contracts/particle_count_policy.json'
+            self.assertEqual(hashlib.sha256(rfconv_policy.read_bytes()).hexdigest().lower(), rfconv_oracle['policy_sha256'].lower())
+            rfconv_fixture_root = root / 'rf-convergence-fixture'
+            rfconv_fixture_root.mkdir()
+            rfconv_class = SameSolverNumericalConvergenceTests
+            rfconv_class.setUpClass()
+            try:
+                rfconv_builder = rfconv_class()
+                rfconv_manifests = {}
+                for rfconv_solver, rfconv_steps in (('SIMION', (40,80)), ('COMSOL', (80,160))):
+                    rfconv_manifests[rfconv_solver] = []
+                    for rfconv_index, rfconv_step in enumerate(rfconv_steps):
+                        rfconv_id = ('baseline','refined')[rfconv_index]
+                        rfconv_source = rfconv_builder.make_run(rfconv_fixture_root / ('raw-'+rfconv_solver), rfconv_id,
+                            solver=rfconv_solver, steps=rfconv_step, handoff_ids=set(range(1,101)), bundle_root=rfconv_class.primary_bundle)
+                        rfconv_target = rfconv_fixture_root / ('portable-'+rfconv_solver) / rfconv_id
+                        rfconv_inputs = list(PORTABLE_INPUT_ROLES)
+                        rfconv_outputs = dict(PORTABLE_SIMION_OUTPUT_ROLES)
+                        if rfconv_solver == 'COMSOL':
+                            rfconv_inputs = [v for v in rfconv_inputs if v not in ('mode','numerical_contract')] + ['scientific_mode','comsol_solver_numerics']
+                            rfconv_outputs.pop('pa_core_inventory')
+                        rfconv_env = dict(os.environ, RF_REPO=str(REPO_ROOT), RF_PROJECT=str(rfconv_project),
+                            RF_MANIFEST=str(rfconv_source), RF_DESTINATION=str(rfconv_target),
+                            RF_INPUT_ROLES=json.dumps(rfconv_inputs), RF_OUTPUT_ROLES=json.dumps(rfconv_outputs))
+                        rfconv_command = (". (Join-Path $env:RF_REPO 'common/contracts/run_artifact_support.ps1');"
+                            ". (Join-Path $env:RF_PROJECT 'runtime/analysis_run_lifecycle.ps1');"
+                            "$i=ConvertFrom-Json $env:RF_INPUT_ROLES;$o=ConvertFrom-Json $env:RF_OUTPUT_ROLES -AsHashtable;"
+                            "$c=Copy-PortableRunManifestClosure -SourceManifest $env:RF_MANIFEST -Destination $env:RF_DESTINATION "
+                            "-RequiredInputRoles $i -RequiredOutputRoles $o -BundleMetadataInputRole 'particle_bundle_metadata';$c.manifest")
+                        rfconv_copy = subprocess.run(['pwsh','-NoProfile','-NonInteractive','-Command',rfconv_command],
+                            cwd=REPO_ROOT,env=rfconv_env,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+                        self.assertEqual(rfconv_copy.returncode,0,rfconv_copy.stdout+rfconv_copy.stderr)
+                        rfconv_manifests[rfconv_solver].append(str((rfconv_target / 'run_manifest.json').resolve()))
+            finally:
+                rfconv_class.tearDownClass()
+            rfconv_data = {}
+            for rfconv_key, rfconv_path in {'contract':rfconv_project/'variants/quadrupole/config/same_solver_numerical_convergence.json',
+                    'comsol_numerics':rfconv_project/'variants/quadrupole/config/comsol_solver_numerics.json',
+                    'simion_numerics':rfconv_project/'variants/quadrupole/config/simion_solver_numerics.json',
+                    'policy':rfconv_policy}.items():
+                rfconv_copy_path = rfconv_fixture_root / (rfconv_key+'.json')
+                shutil.copyfile(rfconv_path,rfconv_copy_path)
+                rfconv_data[rfconv_key] = str(rfconv_copy_path)
+            rfconv_fixture = dict(manifests=rfconv_manifests,data=rfconv_data,oracle=rfconv_oracle)
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
                                               author_source_roots=[str(REPO_ROOT)],
@@ -5382,6 +5585,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               rf_response_comparison=self.rf_response_comparison_probe_fixture(root),
+                                              rf_convergence=rfconv_fixture, ip_reader=ipread_oracle,
                                               reflectron_fit={**json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/reflectron_fit_capture.json').read_text(encoding='utf-8')),
                                                   'module_sha256': hashlib.sha256((REPO_ROOT / 'src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py').read_bytes()).hexdigest()},
                                               rf_transport_comparison=json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_transport_comparison_old_witness.json').read_text(encoding='utf-8')),

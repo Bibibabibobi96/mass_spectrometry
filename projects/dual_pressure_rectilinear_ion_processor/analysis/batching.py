@@ -34,7 +34,8 @@ from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.backends.simion.ip_handoff import frozen_release_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
-from msplatform.execution.ip_continuation import continuation_ancestry, continuation_protection_paths
+from msplatform.results import ip_continuation
+from msplatform.results.ip_continuation import continuation_ancestry, continuation_protection_paths
 
 
 def _read(path: Path) -> dict:
@@ -202,22 +203,6 @@ def prepare_completed_reanalysis(run: Path, predecessor: Path) -> dict:
     return plan
 
 
-def native_data_directory(run: Path) -> Path:
-    """Read the frozen continuation plan, or use this run's native results."""
-    plan_path = run / "inputs/simion_whole_unit_replay_plan.json"
-    if not plan_path.is_file():
-        return run / "simion"
-    plan = _read(plan_path)
-    if (plan.get("role") != "simion_whole_unit_replay_plan" or plan.get("status") != "ready"
-            or plan.get("reusable_unit_count") != 1 or plan.get("replay_unit_count") != 0):
-        raise ValueError("IP continuation plan does not bind a complete population")
-    outputs = plan["units"][0]["terminal_outputs"]
-    matches = [Path(row["path"]) for row in outputs if Path(row["path"]).name == "events.csv"]
-    if len(matches) != 1 or matches[0].parent.name != "simion":
-        raise ValueError("IP continuation events reference differs")
-    return matches[0].parent
-
-
 def _partial_unit_source(unit: dict) -> Path:
     inputs = [Path(item["path"]).resolve() for item in unit["terminal_outputs"]
               if Path(item["path"]).name == "batch_input.json"]
@@ -368,7 +353,7 @@ def native_field_sample_path(run: Path) -> Path:
         if len(matches) != 1:
             raise ValueError("continuation field sample reference differs")
         return matches[0]
-    return native_data_directory(run)/"native_field_samples.csv"
+    return ip_continuation.native_data_directory(run)/"native_field_samples.csv"
 
 
 def restore_reusable_batches(run: Path) -> dict:

@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256 as sha256
-from projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle import (
+from msplatform.io.file_identity import file_sha256 as sha256
+from msplatform.components.rf_multipole.paired_particle_source_bundle import (
     load_declared_bundle_specification,
     validate_bundle,
 )
@@ -23,6 +23,8 @@ def resolve_binding(
     particle_count: int,
     consumed_representation: str,
     expected_consumed_path: Path,
+    *,
+    policy_path: Path,
 ) -> dict[str, Any]:
     bundle_specification = load_declared_bundle_specification(
         metadata_path,
@@ -33,6 +35,7 @@ def resolve_binding(
         source_family_path,
         distribution_path,
         resolved_design_path,
+        policy_path=policy_path,
         **bundle_specification,
     )
     if consumed_representation not in {"ion11", "canonical10"}:
@@ -82,6 +85,7 @@ def resolve_binding(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--particle-count-policy", required=True, type=Path)
     parser.add_argument("--bundle-metadata", required=True, type=Path)
     parser.add_argument("--source-family", required=True, type=Path)
     parser.add_argument("--distribution", required=True, type=Path)
@@ -105,6 +109,7 @@ def main() -> int:
         args.particle_count,
         args.consumed_representation,
         args.expected_consumed,
+        policy_path=args.particle_count_policy,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

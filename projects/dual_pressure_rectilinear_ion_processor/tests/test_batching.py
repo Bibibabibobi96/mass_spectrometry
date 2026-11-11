@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from msplatform.execution.resources import resource_path
 from msplatform.execution.inputs import python_import_roots
-from msplatform.execution import ip_continuation
+from msplatform.results import ip_continuation
 from msplatform.io import manifest_records
 import tempfile
 import unittest
@@ -181,7 +181,7 @@ class BatchingTests(unittest.TestCase):
             functional.main()
         result = functional.read_json(self.run / "inputs/simion_whole_unit_replay_plan.json")
         self.assertEqual(result["reusable_unit_count"], 1)
-        self.assertEqual(batching.native_data_directory(self.run), prior / "simion")
+        self.assertEqual(ip_continuation.native_data_directory(self.run), prior / "simion")
         self.assertFalse((self.run / "simion/events.csv").exists())
         self.assertEqual(before, {path: path.read_bytes() for path in prior.rglob("*") if path.is_file()})
         self.assertEqual(functional.read_json(self.run / "run_config.json")["parameters"]["continuation_predecessor"], str(prior))
@@ -197,7 +197,7 @@ class BatchingTests(unittest.TestCase):
         config = functional.read_json(grandchild / "run_config.json")
         self.assertEqual(config["parameters"]["continuation_predecessor"], str(self.run))
         self.assertEqual(config["inputs"]["continuation_origin_manifest"], str(prior / "run_manifest.json"))
-        self.assertEqual(batching.native_data_directory(grandchild), prior / "simion")
+        self.assertEqual(ip_continuation.native_data_directory(grandchild), prior / "simion")
         grandchild_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
             run_id=grandchild.name, status="failed", run_config=_canonical_retention.file_record(grandchild / "run_config.json"),
             inputs={"continuation_plan": _canonical_retention.file_record(grandchild / "inputs/simion_whole_unit_replay_plan.json"),

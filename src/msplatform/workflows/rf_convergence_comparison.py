@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256 as sha256
+from msplatform.io.file_identity import file_sha256 as sha256
 from msplatform.analysis.particle_state_comparison import (
     aggregate_handoff,
     event_ids,
@@ -18,7 +18,7 @@ from msplatform.analysis.particle_state_comparison import (
     optional_symmetric_relative_difference,
     residual_values,
 )
-from projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding import (
+from msplatform.components.rf_multipole.particle_source_binding import (
     resolve_binding,
 )
 
@@ -401,7 +401,6 @@ def numerical_pair(
     solver: str,
     matrix: dict[str, Any],
     contract: dict[str, Any],
-    contract_path: Path,
     simion_numerics_path: Path | None,
 ) -> tuple[int, int]:
     if solver != "SIMION":
@@ -411,7 +410,7 @@ def numerical_pair(
         raise ValueError("SIMION solver-numerics contract identity is missing")
     numerics_path = simion_numerics_path
     if numerics_path is None:
-        numerics_path = contract_path.resolve().parents[1] / relative
+        raise ValueError("SIMION solver-numerics authority is required")
     if not numerics_path.is_file():
         raise ValueError("SIMION solver-numerics contract is missing")
     numerics = json.loads(numerics_path.read_text(encoding="utf-8-sig"))
@@ -437,6 +436,7 @@ def config_input_path(config: dict[str, Any], name: str) -> Path:
 def recompute_source_binding(
     config: dict[str, Any],
     expected_representation: str,
+    policy_path: Path,
 ) -> dict[str, Any]:
     required = {
         "particle_table",
@@ -462,6 +462,7 @@ def recompute_source_binding(
         int(config["particles"]),
         expected_representation,
         consumed,
+        policy_path=policy_path,
     )
     if binding["representation_equivalence"] != "PASS":
         raise ValueError("paired particle representation equivalence failed")
@@ -599,7 +600,7 @@ def main() -> None:
     )
     varied = matrix["varied_parameter"]
     baseline_value, refined_value = numerical_pair(
-        solver, matrix, contract, args.contract, args.simion_numerics
+        solver, matrix, contract, args.simion_numerics
     )
     if (
         baseline_config.get(varied) != baseline_value
@@ -652,10 +653,10 @@ def main() -> None:
             "canonical10" if solver == "SIMION" else "ion11"
         )
         baseline_binding = recompute_source_binding(
-            baseline_config, expected_representation
+            baseline_config, expected_representation, args.particle_count_policy
         )
         refined_binding = recompute_source_binding(
-            refined_config, expected_representation
+            refined_config, expected_representation, args.particle_count_policy
         )
         if (
             int(baseline_binding["particle_count"]) != particles

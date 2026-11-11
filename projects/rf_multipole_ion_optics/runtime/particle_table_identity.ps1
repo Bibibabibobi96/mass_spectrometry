@@ -17,6 +17,8 @@ function Assert-RfTransportParticleTableIdentity {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
         [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)]$Package,
+        [Parameter(Mandatory = $true)][string]$ParticleCountPolicyPath,
         [Parameter(Mandatory = $true)]$ComsolRunConfig,
         [Parameter(Mandatory = $true)]$SimionRunConfig,
         [Parameter(Mandatory = $true)][string]$ComsolBindingOutput,
@@ -61,7 +63,7 @@ function Assert-RfTransportParticleTableIdentity {
             throw "$($specification.Solver) particle_table is not its declared consumed file."
         }
         $arguments = @(
-            '-m','projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
+            '--particle-count-policy',$ParticleCountPolicyPath,
             '--bundle-metadata',(Resolve-RfConfigInputPath $config ([string]$config.inputs.particle_bundle_metadata)),
             '--source-family',(Resolve-RfConfigInputPath $config ([string]$config.inputs.particle_source_family)),
             '--distribution',(Resolve-RfConfigInputPath $config ([string]$config.inputs.particle_source_distribution)),
@@ -74,11 +76,12 @@ function Assert-RfTransportParticleTableIdentity {
         )
         Push-Location $RepoRoot
         try {
-            $validationOutput = & $Python @arguments
-            if ($LASTEXITCODE -ne 0) {
-                throw "$($specification.Solver) paired particle binding validation failed."
-            }
-            Write-Verbose ($validationOutput -join [Environment]::NewLine)
+            try {
+                $validation = Invoke-IsolatedFrozenPythonModule -Python $Python -Package $Package `
+                    -Module 'msplatform.components.rf_multipole.particle_source_binding' -Arguments $arguments `
+                    -DistributionNames @('numpy') -ForbiddenRoots @($RepoRoot)
+            } catch { throw [InvalidOperationException]::new("$($specification.Solver) paired particle binding validation failed.", $_.Exception) }
+            Write-Verbose ([string]$validation.module_stdout)
         }
         finally { Pop-Location }
         $binding = Get-Content -LiteralPath $specification.Output -Raw -Encoding UTF8 | ConvertFrom-Json

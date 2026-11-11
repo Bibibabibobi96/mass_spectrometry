@@ -27,6 +27,21 @@ class ParticleCountPolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must be one of"):
                 validate_standard_particle_count(count)
 
+    def test_selected_policy_and_call_time_default(self) -> None:
+        from unittest.mock import patch
+        from msplatform.contracts import particle_count_policy as owner
+        with tempfile.TemporaryDirectory() as directory:
+            selected = Path(directory) / "policy.json"
+            selected.write_bytes(owner.POLICY_PATH.read_bytes())
+            self.assertEqual(owner.load_particle_count_policy(policy_path=selected), owner.load_particle_count_policy())
+            with patch.object(owner, "POLICY_PATH", selected):
+                self.assertEqual(owner.load_particle_count_policy(), owner.load_particle_count_policy(policy_path=selected))
+            selected.write_text('{}', encoding='utf-8')
+            with self.assertRaises(KeyError):
+                owner.load_particle_count_policy(policy_path=selected)
+            with self.assertRaises(FileNotFoundError):
+                owner.load_particle_count_policy(policy_path=selected.parent / 'missing.json')
+
     def test_positive_count_validation_does_not_impose_standard_study_sizes(self) -> None:
         self.assertEqual(validate_positive_particle_count(37), 37)
         for count in (0, -1, True, 1.5):

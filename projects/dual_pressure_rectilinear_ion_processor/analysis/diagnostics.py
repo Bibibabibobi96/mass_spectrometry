@@ -126,7 +126,7 @@ def prepare_data(run: Path) -> dict[str, Any]:
     c = _json(run / "inputs/resolved_model.json")
     contract = _json(run / "inputs/diagnostics.json")
     preparation.validate_diagnostics_config(contract)
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import native_data_directory
+    from msplatform.results.ip_continuation import native_data_directory
     native = native_data_directory(run)
     events = iter_csv_rows(native / "events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})
     samples = iter_csv_rows(native / "samples.csv", {"particle_id", "t_us", *VALUES})
@@ -553,7 +553,8 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
             result = subprocess.run(["git","-C",str(repo),*args],capture_output=True,text=True,encoding="utf-8",errors="replace",check=False,cwd=repo,timeout=10)
             git[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
         git["source"]="live repository fallback; frozen source context absent"
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record, native_data_directory
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record
+    from msplatform.results.ip_continuation import native_data_directory
     native = native_data_directory(run)
     source_paths = [run/relative for relative in ("inputs/resolved_model.json","inputs/diagnostics.json","results/particle_state.csv")]
     source_paths.extend([native / "events.csv", native / "samples.csv"])

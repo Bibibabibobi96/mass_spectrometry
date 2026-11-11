@@ -51,8 +51,7 @@ try {
             'common/contracts',
             'projects/rf_multipole_ion_optics/analysis',
             'projects/rf_multipole_ion_optics/core',
-            'projects/rf_multipole_ion_optics/runtime',
-            'projects/rf_multipole_ion_optics/workflows/same_solver_convergence'
+            'projects/rf_multipole_ion_optics/runtime'
         ) `
         -PythonModules @('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py') `
     -RelativePaths @(
@@ -219,14 +218,12 @@ try {
     $frozenPythonEnvironment = Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenPythonPackage `
         -Module `
-        'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate' `
+        'msplatform.workflows.rf_convergence_comparison' `
         -Arguments @() -DistributionNames @('numpy') -RequiredModuleNames @(
-            'projects.rf_multipole_ion_optics.workflows',
-            'projects.rf_multipole_ion_optics.workflows.same_solver_convergence',
-            'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate',
+            'msplatform.workflows.rf_convergence_comparison',
             'msplatform.analysis.particle_state_comparison',
-            'projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
-            'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
+            'msplatform.components.rf_multipole.particle_source_binding',
+            'msplatform.components.rf_multipole.paired_particle_source_bundle',
             'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
             'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
             'msplatform.contracts.particle_physics',
@@ -258,7 +255,7 @@ try {
     Invoke-IsolatedFrozenPythonModule `
         -Python $python -Package $frozenPythonPackage `
         -Module `
-        'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate' `
+        'msplatform.workflows.rf_convergence_comparison' `
         -Arguments @(
             '--baseline-manifest',$frozenBaselineManifest,
             '--refined-manifest',$frozenRefinedManifest,
@@ -269,12 +266,10 @@ try {
             '--output',$comparison,
             '--census-output',$census
         ) -DistributionNames @('numpy') -RequiredModuleNames @(
-            'projects.rf_multipole_ion_optics.workflows',
-            'projects.rf_multipole_ion_optics.workflows.same_solver_convergence',
-            'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate',
+            'msplatform.workflows.rf_convergence_comparison',
             'msplatform.analysis.particle_state_comparison',
-            'projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
-            'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
+            'msplatform.components.rf_multipole.particle_source_binding',
+            'msplatform.components.rf_multipole.paired_particle_source_bundle',
             'projects.rf_multipole_ion_optics.analysis.rf_event_table_validation',
             'projects.rf_multipole_ion_optics.simion.ion11_source_adapter',
             'msplatform.contracts.particle_physics',

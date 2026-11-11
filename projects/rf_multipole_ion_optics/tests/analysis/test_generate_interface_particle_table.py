@@ -11,6 +11,7 @@ import sysconfig
 import tempfile
 import unittest
 from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
 
 import numpy as np
 
@@ -19,7 +20,7 @@ from common.contracts.particle_state import canonical_sources, ion11_sources
 from projects.rf_multipole_ion_optics.analysis.generate_official_particle_table import (
     generate as generate_official_table,
 )
-from projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle import (
+from msplatform.components.rf_multipole.paired_particle_source_bundle import (
     generate_bundle as generate_neutral_bundle,
     generate_single_table,
 )
@@ -47,25 +48,25 @@ class InterfaceParticleTableTests(unittest.TestCase):
     def test_known_historical_policy_label_reads_without_rewriting_or_weakening_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            generate_bundle(SOURCE_FAMILY,DISTRIBUTION,RESOLVED,root)
+            generate_bundle(SOURCE_FAMILY,DISTRIBUTION,RESOLVED,root, policy_path=POLICY_PATH)
             path = root / "paired_particle_bundle.json"
             data = json.loads(path.read_text())
             self.assertEqual(data["policy"]["source"],"src/msplatform/contracts/particle_count_policy.json")
             data["policy"]["source"] = "common/contracts/particle_count_policy.json"
             path.write_text(json.dumps(data))
             before = path.read_bytes()
-            validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED)
+            validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED, policy_path=POLICY_PATH)
             self.assertEqual(path.read_bytes(),before)
             for key,value in (("source","arbitrary/policy.json"),("sha256","0"*64),("functional_count",99)):
                 changed = json.loads(before)
                 changed["policy"][key] = value
                 path.write_text(json.dumps(changed))
                 with self.subTest(key=key), self.assertRaisesRegex(ValueError,"policy identity differs"):
-                    validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED)
+                    validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED, policy_path=POLICY_PATH)
             missing = json.loads(before);del missing["policy"]["sha256"]
             path.write_text(json.dumps(missing))
             with self.assertRaisesRegex(ValueError,"policy identity differs"):
-                validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED)
+                validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED, policy_path=POLICY_PATH)
 
     def test_fixed_and_uniform_energy_points_preserve_paired_phase_space(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
@@ -100,7 +101,7 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     output,
                     root / f"{point}.json",
                     seed=77,
-                )
+                 policy_path=POLICY_PATH)
                 tables.append(np.loadtxt(output, delimiter=","))
             uniform, fixed = tables
             self.assertTrue(np.array_equal(uniform[:, :8], fixed[:, :8]))
@@ -137,7 +138,7 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     count,
                     output,
                     root / f"n{count}.json",
-                )
+                 policy_path=POLICY_PATH)
                 tables[count] = np.loadtxt(output, delimiter=",")
             self.assertTrue(np.array_equal(tables[100], tables[1000][:100]))
             self.assertTrue(np.array_equal(tables[1000], tables[1001][:1000]))
@@ -154,9 +155,9 @@ class InterfaceParticleTableTests(unittest.TestCase):
     def test_paired_bundle_freezes_prefixes_mapping_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text)
-            metadata = generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, root)
+            metadata = generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, root, policy_path=POLICY_PATH)
             metadata_path = root / "paired_particle_bundle.json"
-            self.assertEqual(validate_bundle(metadata_path, SOURCE_FAMILY, DISTRIBUTION, RESOLVED), metadata)
+            self.assertEqual(validate_bundle(metadata_path, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=POLICY_PATH), metadata)
             self.assertEqual(len(metadata["artifacts"]), 8)
             self.assertEqual(
                 metadata["operating_point_ids"],
@@ -208,10 +209,26 @@ class InterfaceParticleTableTests(unittest.TestCase):
             self.assertTrue(np.array_equal(control[:, 9:], candidate[:, 9:]))
             self.assertFalse(np.array_equal(control[:, 8], candidate[:, 8]))
 
+    def test_bundle_uses_explicit_selected_policy_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = root / "policy.json"
+            policy.write_bytes(POLICY_PATH.read_bytes())
+            bundle = root / "bundle"
+            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle, policy_path=policy)
+            metadata = bundle / "paired_particle_bundle.json"
+            validated = validate_bundle(metadata, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=policy)
+            self.assertEqual(validated["policy"]["sha256"], hashlib.sha256(policy.read_bytes()).hexdigest().upper())
+            policy.write_bytes(policy.read_bytes() + b"\n")
+            with self.assertRaisesRegex(ValueError, "policy identity differs"):
+                validate_bundle(metadata, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=policy)
+            with self.assertRaises(FileNotFoundError):
+                validate_bundle(metadata, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=root / "missing.json")
+
     def test_bundle_validator_rejects_artifact_corruption(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text)
-            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, root)
+            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, root, policy_path=POLICY_PATH)
             source = root / "official_100amu_2eV_n100.ion"
             source.write_bytes(source.read_bytes() + b"1,2,3\n")
             metadata_path = root / "paired_particle_bundle.json"
@@ -230,7 +247,7 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     SOURCE_FAMILY,
                     DISTRIBUTION,
                     RESOLVED,
-                )
+                 policy_path=POLICY_PATH)
 
     def test_bundle_cli_rejects_mixed_branch_arguments(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:
@@ -239,6 +256,7 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     sys.executable,
                     "-m",
                     "projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table",
+                    "--particle-count-policy", str(POLICY_PATH),
                     "--source-family",
                     str(SOURCE_FAMILY),
                     "--distribution",
@@ -267,7 +285,8 @@ class InterfaceParticleTableTests(unittest.TestCase):
                 "-m",
                 "projects.rf_multipole_ion_optics.workflows."
                 "interface_readiness.generate_particle_table",
-                "--source-family",
+                "--particle-count-policy", str(POLICY_PATH),
+                    "--source-family",
                 str(SOURCE_FAMILY),
                 "--distribution",
                 str(DISTRIBUTION),
@@ -297,7 +316,7 @@ class InterfaceParticleTableTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text)
             bundle = root / "bundle"
-            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle)
+            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle, policy_path=POLICY_PATH)
             code_root = root / "code"
             frozen_project = (
                 code_root / "projects" / "rf_multipole_ion_optics"
@@ -327,10 +346,6 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     / "workflows"
                     / "interface_readiness"
                     / "particle_source_policy.py",
-                ),
-                (
-                    PROJECT_ROOT / "analysis" / "paired_particle_source_bundle.py",
-                    frozen_project / "analysis" / "paired_particle_source_bundle.py",
                 ),
                 (
                     REPOSITORY_ROOT
@@ -381,6 +396,7 @@ for name, loaded in tuple(sys.modules.items()):
 """
             result = subprocess.run(
                 [sys.executable, "-I", "-S", "-B", "-c", bootstrap, str(code_root), json.dumps(dependency_roots),
+                    "--particle-count-policy", str(code_root / "src/msplatform/contracts/particle_count_policy.json"),
                     "--source-family",
                     str(SOURCE_FAMILY),
                     "--distribution",
@@ -434,7 +450,7 @@ for name, loaded in tuple(sys.modules.items()):
                     point_specs={POINT_IDS[0]: specs[POINT_IDS[0]]},
                     bundle_role=BUNDLE_ROLE,
                     bundle_version=BUNDLE_VERSION,
-                )
+                 policy_path=POLICY_PATH)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Validate IP continuation ancestry and enumerate its protected run roots."""
+"""Read IP continuation ancestry, protection paths and native data selection."""
 from __future__ import annotations
 
 import json
@@ -81,3 +81,19 @@ def continuation_protection_paths(predecessor: Path) -> list[Path]:
                     raise ValueError("partial provenance ancestry contains a cycle")
                 pending.append(path.parent)
     return result
+
+
+def native_data_directory(run: Path) -> Path:
+    """Read the frozen continuation plan, or use this run's native results."""
+    plan_path = run / "inputs/simion_whole_unit_replay_plan.json"
+    if not plan_path.is_file():
+        return run / "simion"
+    plan = _read(plan_path)
+    if (plan.get("role") != "simion_whole_unit_replay_plan" or plan.get("status") != "ready"
+            or plan.get("reusable_unit_count") != 1 or plan.get("replay_unit_count") != 0):
+        raise ValueError("IP continuation plan does not bind a complete population")
+    outputs = plan["units"][0]["terminal_outputs"]
+    matches = [Path(row["path"]) for row in outputs if Path(row["path"]).name == "events.csv"]
+    if len(matches) != 1 or matches[0].parent.name != "simion":
+        raise ValueError("IP continuation events reference differs")
+    return matches[0].parent

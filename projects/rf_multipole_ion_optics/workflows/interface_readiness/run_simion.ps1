@@ -193,12 +193,14 @@ $frozenBundleMetadata = Join-Path $frozenBundleRoot 'paired_particle_bundle.json
 Copy-VerifiedRunInput -Source $bundleMetadataInput -Destination $frozenBundleMetadata |
     Out-Null
 Assert-FrozenPythonPackage -Package $frozenPythonPackage
+$frozenCountPolicy = Get-FrozenPythonPackageFile -Package $frozenPythonPackage -RelativePath 'src/msplatform/contracts/particle_count_policy.json'
 . (Get-FrozenPythonPackageFile -Package $frozenPythonPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
     -Python $python -Package $frozenPythonPackage `
     -Module `
     'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table' `
     -Arguments @(
+        '--particle-count-policy',$frozenCountPolicy,
         '--source-family',$frozenSourceFamily,
         '--distribution',$frozenDistribution,
         '--resolved-design',$frozenResolved,
@@ -208,7 +210,7 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'projects.rf_multipole_ion_optics.workflows.interface_readiness',
         'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table',
         'projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy',
-        'projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle',
+        'msplatform.components.rf_multipole.paired_particle_source_bundle',
         'msplatform.contracts.particle_physics',
         'msplatform.contracts.particle_count_policy',
         'common.contracts.file_identity',
@@ -226,7 +228,7 @@ $frozenParticleGenerator = Get-FrozenPythonPackageFile `
     'projects/rf_multipole_ion_optics/workflows/interface_readiness/generate_particle_table.py'
 $frozenBundleMechanism = Get-FrozenPythonPackageFile `
     -Package $frozenPythonPackage -RelativePath `
-    'projects/rf_multipole_ion_optics/analysis/paired_particle_source_bundle.py'
+    'src/msplatform/components/rf_multipole/paired_particle_source_bundle.py'
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_include.gem') `
     -Destination (Join-Path $candidateDir 'quad_include.gem') | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') `
@@ -247,7 +249,7 @@ try {
     $sourceFamilySha = Get-RunFileSha256 -Path $frozenSourceFamily
     $requestedParticles = @(Import-Csv -LiteralPath $sourceParticlePath).Count
     $bindingArguments = @(
-        '-m','projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
+        '--particle-count-policy',$frozenCountPolicy,
         '--bundle-metadata',$bundleMetadataInput,
         '--source-family',$frozenSourceFamily,
         '--distribution',$frozenDistribution,
@@ -258,8 +260,10 @@ try {
         '--expected-consumed',$sourceParticlePath,
         '--output',$sourceBinding
     )
-    & $python @bindingArguments
-    if ($LASTEXITCODE -ne 0) { throw 'Paired particle source bundle binding failed.' }
+    try { Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPythonPackage `
+        -Module 'msplatform.components.rf_multipole.particle_source_binding' -Arguments $bindingArguments `
+        -DistributionNames @('numpy') -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null }
+    catch { throw [InvalidOperationException]::new('Paired particle source bundle binding failed.', $_.Exception) }
     $bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
     $canonicalEntry = @($bundleDocument.artifacts | Where-Object {
         $_.operating_point_id -eq $OperatingPoint -and
@@ -277,7 +281,7 @@ try {
     $particlePath = Join-Path $frozenBundleRoot ([string]$canonicalEntry[0].relative_path)
     $frozenIonPath = Join-Path $frozenBundleRoot ([string]$ionEntry[0].relative_path)
     $frozenBindingArguments = @(
-        '-m','projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding',
+        '--particle-count-policy',$frozenCountPolicy,
         '--bundle-metadata',$frozenBundleMetadata,
         '--source-family',$frozenSourceFamily,
         '--distribution',$frozenDistribution,
@@ -288,8 +292,10 @@ try {
         '--expected-consumed',$particlePath,
         '--output',$sourceBinding
     )
-    & $python @frozenBindingArguments
-    if ($LASTEXITCODE -ne 0) { throw 'Frozen paired particle source bundle binding failed.' }
+    try { Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPythonPackage `
+        -Module 'msplatform.components.rf_multipole.particle_source_binding' -Arguments $frozenBindingArguments `
+        -DistributionNames @('numpy') -ForbiddenRoots @($repoRoot,$projectRoot) | Out-Null }
+    catch { throw [InvalidOperationException]::new('Frozen paired particle source bundle binding failed.', $_.Exception) }
     $bindingDocument = Get-Content -LiteralPath $sourceBinding -Raw -Encoding UTF8 | ConvertFrom-Json
     $preflightArguments = @(
         '-m','msplatform.components.rf_multipole.source_validation',

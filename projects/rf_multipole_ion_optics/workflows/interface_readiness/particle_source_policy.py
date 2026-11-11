@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle import (
+from msplatform.components.rf_multipole.paired_particle_source_bundle import (
     generate_bundle,
     validate_bundle,
 )
@@ -87,6 +87,7 @@ def generate_interface_bundle(
     resolved_path: Path,
     output_dir: Path,
     *,
+    policy_path: Path,
     seed: int | None = None,
     particle_counts: Sequence[int] | None = None,
 ) -> dict[str, Any]:
@@ -96,6 +97,7 @@ def generate_interface_bundle(
         distribution_path,
         resolved_path,
         output_dir,
+        policy_path=policy_path,
         point_ids=POINT_IDS,
         point_specs=point_specs,
         bundle_role=BUNDLE_ROLE,
@@ -110,6 +112,8 @@ def validate_interface_bundle(
     source_family_path: Path,
     distribution_path: Path,
     resolved_path: Path,
+    *,
+    policy_path: Path,
 ) -> dict[str, Any]:
     point_specs = load_interface_point_specs(source_family_path)
     return validate_bundle(
@@ -117,6 +121,7 @@ def validate_interface_bundle(
         source_family_path,
         distribution_path,
         resolved_path,
+        policy_path=policy_path,
         point_ids=POINT_IDS,
         point_specs=point_specs,
         bundle_role=BUNDLE_ROLE,

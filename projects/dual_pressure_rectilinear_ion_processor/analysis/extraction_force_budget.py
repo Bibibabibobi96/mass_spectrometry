@@ -315,7 +315,8 @@ def _aggregate(steps: dict, sources: dict, terminals: dict, exits: dict, surface
 def prepare_force_budget(run: Path) -> dict:
     """Validate both raw audit tables and full census, then calculate unadjusted budgets."""
     run = Path(run)
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record, native_data_directory
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import analysis_source_record
+    from msplatform.results.ip_continuation import native_data_directory
     native = native_data_directory(run)
     paths = [run/"inputs/resolved_model.json", *(native/name for name in ("events.csv", "extraction_steps.csv", "extraction_impulses.csv"))]
     for path in paths:

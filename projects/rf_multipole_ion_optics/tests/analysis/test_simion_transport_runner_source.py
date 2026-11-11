@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
@@ -21,7 +22,7 @@ from projects.rf_multipole_ion_optics.analysis.verify_resolved_design import ver
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle as generate_bundle,
 )
-from projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding import (
+from msplatform.components.rf_multipole.particle_source_binding import (
     resolve_binding,
 )
 
@@ -1003,20 +1004,18 @@ exit 0
         self.assertIn("particle_source_metadata.json", source)
         self.assertIn("'--source',$particlePath", source)
         self.assertIn("particle_source_sha256", source)
-        live_binding = source[
-            source.index("$bindingArguments = @(") :
-            source.index("& $python @bindingArguments")
-        ]
+        live_start = source.index("$bindingArguments = @(")
+        live_binding = source[live_start : source.index("$bindingDocument =", live_start)]
         self.assertIn("'--bundle-metadata',$bundleMetadataInput", live_binding)
         self.assertIn("'--expected-consumed',$sourceParticlePath", live_binding)
         self.assertNotIn("$frozenBundleMetadata", live_binding)
-        frozen_binding = source[
-            source.index("$frozenBindingArguments = @(") :
-            source.index("& $python @frozenBindingArguments")
-        ]
+        self.assertIn("-Module 'msplatform.components.rf_multipole.particle_source_binding' -Arguments $bindingArguments", live_binding)
+        frozen_start = source.index("$frozenBindingArguments = @(")
+        frozen_binding = source[frozen_start : source.index("$bindingDocument =", frozen_start)]
         self.assertIn("'--bundle-metadata',$frozenBundleMetadata", frozen_binding)
         self.assertIn("'--expected-consumed',$particlePath", frozen_binding)
         self.assertNotIn("$bundleMetadataInput", frozen_binding)
+        self.assertIn("-Module 'msplatform.components.rf_multipole.particle_source_binding' -Arguments $frozenBindingArguments", frozen_binding)
         for field in (
             "source_ion11",
             "source_canonical10",
@@ -1037,7 +1036,7 @@ exit 0
             root = Path(directory)
             metadata = generate_bundle(
                 SOURCE_FAMILY, distribution, RESOLVED, root
-            )
+            , policy_path=POLICY_PATH)
             canonical = root / "official_100amu_2eV_n100_canonical.csv"
             result = resolve_binding(
                 root / "paired_particle_bundle.json",
@@ -1048,7 +1047,7 @@ exit 0
                 100,
                 "canonical10",
                 canonical,
-            )
+             policy_path=POLICY_PATH)
             entries = {
                 entry["representation"]: entry
                 for entry in metadata["artifacts"]
@@ -1073,7 +1072,7 @@ exit 0
                 1000,
                 "canonical10",
                 root / "official_100amu_2eV_n1000_canonical.csv",
-            )
+             policy_path=POLICY_PATH)
             self.assertEqual(n1000["particle_count"], 1000)
             self.assertIsNone(n1000["n1000_parent"])
             with self.assertRaisesRegex(ValueError, "differs from its bundle artifact"):
@@ -1086,7 +1085,7 @@ exit 0
                     100,
                     "canonical10",
                     root / "official_100amu_2eV_n100.ion",
-                )
+                 policy_path=POLICY_PATH)
 
     def test_exploration_bundle_allows_an_explicit_nonstandard_particle_count(self) -> None:
         distribution = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "official_particle_source.json"
@@ -1094,13 +1093,13 @@ exit 0
             root = Path(directory)
             metadata = generate_bundle(
                 SOURCE_FAMILY, distribution, RESOLVED, root, particle_counts=[3]
-            )
+            , policy_path=POLICY_PATH)
             self.assertEqual(metadata["particle_counts"], [3])
             result = resolve_binding(
                 root / "paired_particle_bundle.json", SOURCE_FAMILY, distribution,
                 RESOLVED, "official_100amu_2eV", 3, "canonical10",
                 root / "official_100amu_2eV_n3_canonical.csv",
-            )
+             policy_path=POLICY_PATH)
             self.assertEqual(result["particle_count"], 3)
             self.assertIsNone(result["n1000_parent"])
         source = RUNNER.read_text(encoding="utf-8")
@@ -1115,7 +1114,7 @@ exit 0
             root = Path(directory)
             live = root / "live"
             frozen = root / "frozen"
-            generate_bundle(SOURCE_FAMILY, distribution, RESOLVED, live)
+            generate_bundle(SOURCE_FAMILY, distribution, RESOLVED, live, policy_path=POLICY_PATH)
             live_metadata = live / "paired_particle_bundle.json"
             live_canonical = live / "official_100amu_2eV_n100_canonical.csv"
             live_result = resolve_binding(
@@ -1127,7 +1126,7 @@ exit 0
                 100,
                 "canonical10",
                 live_canonical,
-            )
+             policy_path=POLICY_PATH)
             shutil.copytree(live, frozen)
             frozen_metadata = frozen / "paired_particle_bundle.json"
             frozen_canonical = (
@@ -1142,7 +1141,7 @@ exit 0
                 100,
                 "canonical10",
                 frozen_canonical,
-            )
+             policy_path=POLICY_PATH)
             self.assertEqual(
                 live_result["consumed_sha256"],
                 frozen_result["consumed_sha256"],
@@ -1159,7 +1158,7 @@ exit 0
                     100,
                     "canonical10",
                     live_canonical,
-                )
+                 policy_path=POLICY_PATH)
 
     def test_real_python_cli_preserves_canonical_coordinate_mapping(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

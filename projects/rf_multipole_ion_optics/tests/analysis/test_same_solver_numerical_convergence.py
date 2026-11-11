@@ -10,14 +10,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
 
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle as generate_bundle,
 )
-from projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding import (
+from msplatform.components.rf_multipole.particle_source_binding import (
     resolve_binding,
 )
-from projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate import (
+from msplatform.workflows.rf_convergence_comparison import (
     normalized_frozen_python_identity,
 )
 
@@ -25,7 +26,7 @@ from projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 ANALYZER = (
-    PROJECT_ROOT / "workflows" / "same_solver_convergence" / "evaluate.py"
+    REPO_ROOT / "src/msplatform/workflows/rf_convergence_comparison.py"
 )
 CONTRACT = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "same_solver_numerical_convergence.json"
 PARTICLE_COUNT_POLICY = (
@@ -142,14 +143,14 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             cls.distribution,
             cls.resolved_design,
             cls.primary_bundle,
-        )
+         policy_path=POLICY_PATH)
         generate_bundle(
             cls.source_family,
             cls.distribution,
             cls.resolved_design,
             cls.alternate_bundle,
             seed=8675309,
-        )
+         policy_path=POLICY_PATH)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -467,7 +468,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             self.particles,
             consumed_representation,
             particles,
-        )
+         policy_path=POLICY_PATH)
         binding_path = run / "particle_source_binding.json"
         binding_path.write_text(json.dumps(binding), encoding="utf-8")
         summary.write_text(
@@ -791,8 +792,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         command = [
                 sys.executable,
                 "-m",
-                "projects.rf_multipole_ion_optics.workflows."
-                "same_solver_convergence.evaluate",
+                "msplatform.workflows.rf_convergence_comparison",
                 "--baseline-manifest",
                 str(baseline),
                 "--refined-manifest",
@@ -830,7 +830,7 @@ Assert-FrozenPythonPackage -Package $package
 . (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $arguments=@(Get-Content -Raw -LiteralPath {literal(arguments_path)}|ConvertFrom-Json)
 $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
- -Module 'projects.rf_multipole_ion_optics.workflows.same_solver_convergence.evaluate' `
+ -Module 'msplatform.workflows.rf_convergence_comparison' `
  -Arguments $arguments -DistributionNames @('numpy') `
  -RequiredModuleNames @('msplatform.analysis.particle_state_comparison') `
  -ForbiddenRoots @($repoRoot)
@@ -1251,8 +1251,7 @@ if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
         analysis_arguments = [
             sys.executable,
             "-m",
-            "projects.rf_multipole_ion_optics.workflows."
-            "same_solver_convergence.evaluate",
+            "msplatform.workflows.rf_convergence_comparison",
             "--baseline-manifest",
             str(manifests[0]),
             "--refined-manifest",
@@ -1447,7 +1446,7 @@ if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
 
     def test_analyzer_reuses_neutral_particle_state_core(self) -> None:
         analyzer = (
-            PROJECT_ROOT / "workflows" / "same_solver_convergence" / "evaluate.py"
+            REPO_ROOT / "src/msplatform/workflows/rf_convergence_comparison.py"
         ).read_text(encoding="utf-8")
         self.assertIn("msplatform.analysis.particle_state_comparison", analyzer)
         self.assertNotIn("def load_event_table", analyzer)

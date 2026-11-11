@@ -9,11 +9,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
 
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle as generate_bundle,
 )
-from projects.rf_multipole_ion_optics.analysis.validate_paired_particle_source_binding import (
+from msplatform.components.rf_multipole.particle_source_binding import (
     resolve_binding,
 )
 
@@ -50,14 +51,14 @@ class ParticleTableIdentityTests(unittest.TestCase):
             cls.distribution,
             cls.resolved,
             cls.primary,
-        )
+         policy_path=POLICY_PATH)
         generate_bundle(
             cls.source_family,
             cls.distribution,
             cls.resolved,
             cls.alternate,
             seed=8675309,
-        )
+         policy_path=POLICY_PATH)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -89,7 +90,7 @@ class ParticleTableIdentityTests(unittest.TestCase):
             100,
             representation,
             consumed,
-        )
+         policy_path=POLICY_PATH)
         provenance = {
             field: binding[field]
             for field in (
@@ -155,15 +156,20 @@ class ParticleTableIdentityTests(unittest.TestCase):
                 "RF_SIMION_BINDING": str(output_root / "simion_binding.json"),
                 "RF_REPO_ROOT": str(REPO_ROOT),
                 "RF_PYTHON": sys.executable,
+                "RF_CODE_ROOT": str(output_root / "frozen-code"),
                 "RF_EXPLICIT_PARTICLES": "" if explicit is None else str(explicit),
             }
         )
         command = (
+            ". (Join-Path $env:RF_REPO_ROOT 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $env:RF_REPO_ROOT 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
+            "$package=New-FrozenPythonPackage -Python $env:RF_PYTHON -SourceRoot $env:RF_REPO_ROOT -CodeRoot $env:RF_CODE_ROOT -PythonPackages @('common/contracts') -PythonModules @('src/msplatform/workflows/rf_transport_comparison.py') -RelativePaths @('src/msplatform/contracts/particle_count_policy.json'); "
+            ". (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
+            "$policy=Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/contracts/particle_count_policy.json'; "
             ". $env:RF_IDENTITY_HELPER; "
             "$comsol = Get-Content $env:RF_COMSOL_CONFIG -Raw | ConvertFrom-Json; "
             "$simion = Get-Content $env:RF_SIMION_CONFIG -Raw | ConvertFrom-Json; "
             "$identity = Assert-RfTransportParticleTableIdentity "
-            "-Python $env:RF_PYTHON -RepoRoot $env:RF_REPO_ROOT "
+            "-Python $env:RF_PYTHON -RepoRoot $env:RF_REPO_ROOT -Package $package -ParticleCountPolicyPath $policy "
             "-ComsolRunConfig $comsol -SimionRunConfig $simion "
             "-ComsolBindingOutput $env:RF_COMSOL_BINDING "
             "-SimionBindingOutput $env:RF_SIMION_BINDING "
@@ -467,7 +473,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         runner = COMSOL_RUNNER.read_text(encoding="utf-8")
         self.assertIn("[string]$ParticleBundleMetadataPath", runner)
         self.assertIn(
-            "validate_paired_particle_source_binding",
+            "msplatform.components.rf_multipole.particle_source_binding",
             runner,
         )
         self.assertIn("'--consumed-representation','ion11'", runner)

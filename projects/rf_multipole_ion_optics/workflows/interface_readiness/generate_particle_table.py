@@ -13,6 +13,7 @@ from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_sou
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--particle-count-policy", type=Path, required=True)
     parser.add_argument("--source-family", type=Path, required=True)
     parser.add_argument("--distribution", type=Path, required=True)
     parser.add_argument("--resolved-design", type=Path, required=True)
@@ -33,6 +34,7 @@ def main() -> None:
             args.source_family,
             args.distribution,
             args.resolved_design,
+            policy_path=args.particle_count_policy,
         )
         print("STATUS=PASS BUNDLE_VALIDATION=true")
         return
@@ -41,6 +43,7 @@ def main() -> None:
         args.distribution,
         args.resolved_design,
         args.bundle_output_dir,
+        policy_path=args.particle_count_policy,
         seed=args.seed,
         particle_counts=args.particle_count,
     )

@@ -1,0 +1,159 @@
+{
+  "role": "ip_reader_derived_portable_path_projection",
+  "original_capture_sha256": "7665a983009378d9923c34abe563e1891988beff0e8380aeef14b94aa77b2536",
+  "original_function_source_module": "projects.dual_pressure_rectilinear_ion_processor.analysis.batching",
+  "original_function_source_file_sha256": "eb65245a9f8e7156e84e666fd891f83e013c3353993b3ec2ac3e9afeaad0bf80",
+  "portable_prefix": "C:\\p4-fixture\\ip-reader",
+  "cases": [
+    {
+      "case": "no_plan",
+      "input_before": {
+        "exists": false
+      },
+      "outcome": {
+        "return": "C:\\p4-fixture\\ip-reader\\cases\\no_plan\\simion"
+      }
+    },
+    {
+      "case": "valid",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifV19XX0=",
+        "sha256": "08c76340fb86767dcad7dac266663f25d7d47dd6c3ebe44a597e603b493d462e",
+        "original_input_sha256": "b06084277852b6e9b947a174e16c763fbb01d20cf97b72116b16d788278bdb54"
+      },
+      "outcome": {
+        "return": "C:\\p4-fixture\\ip-reader\\reference\\simion"
+      }
+    },
+    {
+      "case": "valid_bom",
+      "input_before": {
+        "exists": true,
+        "base64": "77u/eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifV19XX0=",
+        "sha256": "67c7393481cf9b39bbeee8e800bb3b9568712a796bcaa245de056b0660f654c9",
+        "original_input_sha256": "282df407a404aca6d44d4b40b9bce3761339a6c09b600c30088a2c6012d27ef7"
+      },
+      "outcome": {
+        "return": "C:\\p4-fixture\\ip-reader\\reference\\simion"
+      }
+    },
+    {
+      "case": "malformed_json",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjo=",
+        "sha256": "af3836023d6f653e1ac5658edc611212e8790a0aa8ebe73e451ef02d7fb4cd13",
+        "original_input_sha256": "af3836023d6f653e1ac5658edc611212e8790a0aa8ebe73e451ef02d7fb4cd13"
+      },
+      "outcome": {
+        "exception_type": "json.decoder.JSONDecodeError",
+        "exception_message": "Expecting value: line 1 column 9 (char 8)"
+      }
+    },
+    {
+      "case": "wrong_role",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogIndyb25nIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifV19XX0=",
+        "sha256": "ca6116594c16bc6a7e51fabdd4cd9aa407aaaffe332ad2890df44711f666a899",
+        "original_input_sha256": "27309f2702b193a7c4af48e7832c6a06ee4ef013b8e76262d0dd3d5a5db6468b"
+      },
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP continuation plan does not bind a complete population"
+      }
+    },
+    {
+      "case": "wrong_status",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJ3cm9uZyIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifV19XX0=",
+        "sha256": "f99fcf324d5e82ed9380a62a71361708c63186f885076fa5303ed47f69ca2d51",
+        "original_input_sha256": "48df51a5c7fcdc044e6d8cb0720798ad13cfbd68c0963aed6d91119abee37e7e"
+      },
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP continuation plan does not bind a complete population"
+      }
+    },
+    {
+      "case": "wrong_reusable_count",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMCwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifV19XX0=",
+        "sha256": "fc93bf972411373675d0ce85fc27f3e95032186c0cb6993676976635389dadfc",
+        "original_input_sha256": "d2655c1e080760c9e0a590f9becb4560068a306c0da81b43b408c22a7a3e3141"
+      },
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP continuation plan does not bind a complete population"
+      }
+    },
+    {
+      "case": "wrong_replay_count",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMSwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifV19XX0=",
+        "sha256": "cb7e2074725e237baec045f023f8ed9720eeca2b17ed337454fe3aa26f6f21bf",
+        "original_input_sha256": "eb4b23df46b0f4ba24783590ee1c2de17e608aa383ec6e9cbf2a17601aa38060"
+      },
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP continuation plan does not bind a complete population"
+      }
+    },
+    {
+      "case": "missing_units",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMH0=",
+        "sha256": "cd0b570a90e04fac2a9f21548f0f1d380014204867759b0feffcf74aa515c88c",
+        "original_input_sha256": "cd0b570a90e04fac2a9f21548f0f1d380014204867759b0feffcf74aa515c88c"
+      },
+      "outcome": {
+        "exception_type": "builtins.KeyError",
+        "exception_message": "'units'"
+      }
+    },
+    {
+      "case": "missing_outputs",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3t9XX0=",
+        "sha256": "b26da1d6fb9f0fb11f579cf8bdc1f6ddf9beb496f1326d3ea4cf5f55861aa42e",
+        "original_input_sha256": "b26da1d6fb9f0fb11f579cf8bdc1f6ddf9beb496f1326d3ea4cf5f55861aa42e"
+      },
+      "outcome": {
+        "exception_type": "builtins.KeyError",
+        "exception_message": "'terminal_outputs'"
+      }
+    },
+    {
+      "case": "duplicate_events",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxzaW1pb25cXGV2ZW50cy5jc3YifSwgeyJwYXRoIjogIkM6XFxwNC1maXh0dXJlXFxpcC1yZWFkZXJcXHJlZmVyZW5jZVxcc2ltaW9uXFxldmVudHMuY3N2In1dfV19",
+        "sha256": "d71a27425e90205ead2deef73fbc50a615a2800be3e127dc7e82d7f04e247265",
+        "original_input_sha256": "17ff753ea2aa714c1f07523710f7df501320e441d2bfb5ff148982bce6cd6d75"
+      },
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP continuation events reference differs"
+      }
+    },
+    {
+      "case": "wrong_parent",
+      "input_before": {
+        "exists": true,
+        "base64": "eyJyb2xlIjogInNpbWlvbl93aG9sZV91bml0X3JlcGxheV9wbGFuIiwgInN0YXR1cyI6ICJyZWFkeSIsICJyZXVzYWJsZV91bml0X2NvdW50IjogMSwgInJlcGxheV91bml0X2NvdW50IjogMCwgInVuaXRzIjogW3sidGVybWluYWxfb3V0cHV0cyI6IFt7InBhdGgiOiAiQzpcXHA0LWZpeHR1cmVcXGlwLXJlYWRlclxccmVmZXJlbmNlXFxvdGhlclxcZXZlbnRzLmNzdiJ9XX1dfQ==",
+        "sha256": "7dfe0dcb6b93559d0caf8ef029cacebdaea6f035752e2d0ced0110d3b970bfc4",
+        "original_input_sha256": "37d1505c9848687352b9fa2906b072f5a7db7da80ca3aeb44198cd708762f221"
+      },
+      "outcome": {
+        "exception_type": "builtins.ValueError",
+        "exception_message": "IP continuation events reference differs"
+      }
+    }
+  ]
+}

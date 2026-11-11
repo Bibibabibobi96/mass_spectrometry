@@ -34,7 +34,7 @@ MASS_FILTER_MODE = PROJECT_ROOT / "config" / "modes" / "quadrupole_mass_filter_r
 INTERFACE_CONTRACT = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "interface_contract.json"
 SIMION_SOLVER_NUMERICS = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "simion_solver_numerics.json"
 SIMION_GEM = PROJECT_ROOT / "simion" / "geometry" / "quad_monolithic.gem"
-PAIRED_BUNDLE_CORE = PROJECT_ROOT / "analysis" / "paired_particle_source_bundle.py"
+PAIRED_BUNDLE_CORE = REPO_ROOT / "src/msplatform/components/rf_multipole/paired_particle_source_bundle.py"
 INTERFACE_SOURCE_POLICY = (
     PROJECT_ROOT
     / "workflows"
@@ -383,10 +383,10 @@ Get-Content $specification.stdout|Write-Output
         for legacy_option in ("--operating-point", "--particles", "--output", "--metadata"):
             self.assertNotIn(legacy_option, cli)
         for consumer in (
-            PROJECT_ROOT / "analysis" / "validate_paired_particle_source_binding.py",
+            REPO_ROOT / "src/msplatform/components/rf_multipole/particle_source_binding.py",
         ):
             source = _read(consumer)
-            self.assertIn("analysis.paired_particle_source_bundle import", source)
+            self.assertIn("components.rf_multipole.paired_particle_source_bundle import", source)
             self.assertNotIn(".workflows.", source)
         for runner in (
             PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1",

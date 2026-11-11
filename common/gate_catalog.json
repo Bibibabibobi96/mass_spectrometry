@@ -3537,6 +3537,10 @@
         {
           "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
           "reason": "installed_rf_finite_extraction_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_convergence_comparison.py",
+          "reason": "installed_rf_convergence_comparison_changed"
         }
       ],
       "command": {
@@ -3756,6 +3760,31 @@
               "projects/rf_multipole_ion_optics/tests/analysis/test_phase4_design_consumer.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_mass_filter_contract.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/rf_convergence_comparison.py",
+                "reason": "installed_rf_paired_convergence_changed"
+              },
+              {
+                "exact": "src/msplatform/components/rf_multipole/paired_particle_source_bundle.py",
+                "reason": "installed_rf_paired_convergence_changed"
+              },
+              {
+                "exact": "src/msplatform/components/rf_multipole/particle_source_binding.py",
+                "reason": "installed_rf_paired_convergence_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_cross_solver_gate_contract.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_generate_interface_particle_table.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_simion_transport_runner_source.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_workflow_architecture_contract.py"
             ],
             "dependency_profile": "locked"
           }
@@ -4153,6 +4182,14 @@
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
           "reason": "installed_particle_batching_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/results/ip_continuation.py",
+          "reason": "installed_ip_continuation_reader_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/ip_exit.py",
+          "reason": "installed_ip_continuation_reader_changed"
         }
       ],
       "command": {

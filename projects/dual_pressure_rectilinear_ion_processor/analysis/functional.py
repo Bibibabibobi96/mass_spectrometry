@@ -236,7 +236,7 @@ def analyze(run: Path) -> dict[str, Any]:
             upstream_census=census, identity_validation=dict(status="PASS", particles=0))
         write_json(run/"summary.json", summary)
         return summary
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import native_data_directory
+    from msplatform.results.ip_continuation import native_data_directory
     with (native_data_directory(run) / "events.csv").open(encoding="utf-8", newline="") as f:
         raw = list(csv.DictReader(f))
     schedule=b["schedule"]

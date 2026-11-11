@@ -14,9 +14,10 @@ from msplatform.io.file_identity import file_sha256
 POLICY_PATH = Path(__file__).with_name("particle_count_policy.json")
 
 
-def load_particle_count_policy() -> dict[str, Any]:
+def load_particle_count_policy(*, policy_path: Path | None = None) -> dict[str, Any]:
     """Load and validate the shared particle-trajectory count policy."""
-    policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    selected = POLICY_PATH if policy_path is None else policy_path
+    policy = json.loads(selected.read_text(encoding="utf-8"))
     standard = [int(value) for value in policy["standard_particle_counts"]]
     if standard != [100, 1000, 5000]:
         raise ValueError("standard particle counts must be exactly [100, 1000, 5000]")

@@ -1290,14 +1290,22 @@ The same-solver and cross-solver analyzers share the sole installed
 `msplatform.analysis.particle_state_comparison` implementation. Event IDs, complete
 mother population, paired residuals and CSV fields retain their existing definitions;
 Cross-solver gate evaluation uses `msplatform.workflows.rf_transport_comparison`
-with thresholds from the explicit mode contract. Same-solver gate orchestration and
-source binding remain in their research runners pending their own migration.
+with thresholds from the explicit mode contract. Same-solver evaluation uses
+`msplatform.workflows.rf_convergence_comparison`; paired source generation,
+validation and binding use the RF component's canonical implementations with an
+explicitly selected particle-count policy.
 Both frozen entrypoints select the canonical source package and use the existing
 isolated verifier; missing selected code fails without author-tree fallback.
 This ownership slice does not install the full finite-3D runner or grant native qualification.
-The two existing transport modes matched their original complete JSON and census
-witnesses. Frozen-source checks and both ordinary installation routes passed;
-these software results do not establish new native trajectory accuracy.
+The two existing cross-solver transport modes matched their original complete JSON
+and census witnesses. Same-solver SIMION and COMSOL reports and their censuses also
+match captures from the retired implementation; two paired bundles, including an
+alternate seed/count selection, retain all nine original files byte for byte.
+The actual frozen consumers and both ordinary wheel/sdist-rebuilt-wheel routes
+passed, including installed bundle generation, missing-code and altered-input
+refusal. The earlier stale direct-CLI test failure remains recorded separately;
+its original argument checks now exercise the frozen executor call.
+These software results do not establish new native trajectory accuracy.
 
 ## Selected frozen Python execution resource
 

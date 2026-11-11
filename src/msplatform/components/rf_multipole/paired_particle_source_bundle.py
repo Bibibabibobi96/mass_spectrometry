@@ -15,10 +15,9 @@ from typing import Any
 import numpy as np
 
 from msplatform.contracts import particle_physics
-from common.contracts.file_identity import file_sha256 as sha256
+from msplatform.io.file_identity import file_sha256 as sha256
 from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_count_policy import (
-    POLICY_PATH,
     load_particle_count_policy,
 )
 from msplatform.ion_release.numpy_ion11_box import sample_numpy_ion11_box_latent
@@ -50,8 +49,8 @@ def _load_inputs(
     return family, distribution
 
 
-def _policy_counts() -> tuple[dict[str, Any], int, int]:
-    policy = load_particle_count_policy()
+def _policy_counts(policy_path: Path) -> tuple[dict[str, Any], int, int]:
+    policy = load_particle_count_policy(policy_path=policy_path)
     functional = int(policy["functional_check_count"])
     statistical = int(policy["statistical_count"])
     return policy, functional, statistical
@@ -59,10 +58,11 @@ def _policy_counts() -> tuple[dict[str, Any], int, int]:
 
 def _bundle_particle_counts(
     particle_counts: Sequence[int] | None,
+    policy_path: Path,
 ) -> list[int]:
     """Resolve source sizes without applying Formal study-size policy."""
     if particle_counts is None:
-        _, functional, statistical = _policy_counts()
+        _, functional, statistical = _policy_counts(policy_path)
         return [statistical, functional]
     counts = list(particle_counts)
     if not counts or any(
@@ -76,10 +76,10 @@ def _bundle_particle_counts(
 
 
 def _sample_latent(
-    distribution: dict[str, Any], seed: int, count: int
+    distribution: dict[str, Any], seed: int, count: int, policy_path: Path
 ) -> dict[str, np.ndarray]:
     """Request the shared prefix-stable ION11 rectangular release family."""
-    _, _, statistical_count = _policy_counts()
+    _, _, statistical_count = _policy_counts(policy_path)
     return sample_numpy_ion11_box_latent(
         distribution=distribution,
         seed=seed,
@@ -267,12 +267,13 @@ def _generate_table_prefix(
     point_id: str,
     count: int,
     seed: int,
+    policy_path: Path,
 ) -> np.ndarray:
-    _, _, statistical_count = _policy_counts()
+    _, _, statistical_count = _policy_counts(policy_path)
     validate_positive_particle_count(count)
     # Preserve the registered N=100/N=1000 prefixes while allowing a caller
     # to request a larger deterministic realization without silent truncation.
-    latent = _sample_latent(distribution, seed, max(count, statistical_count))
+    latent = _sample_latent(distribution, seed, max(count, statistical_count), policy_path)
     table, _ = _build_ion_table(family["operating_points"][point_id], distribution, latent)
     return table[:count]
 
@@ -301,6 +302,7 @@ def generate_bundle(
     resolved_path: Path,
     output_dir: Path,
     *,
+    policy_path: Path,
     point_ids: Sequence[str],
     point_specs: Mapping[str, Mapping[str, Any]],
     bundle_role: str,
@@ -316,14 +318,14 @@ def generate_bundle(
         bundle_role,
         bundle_version,
     )
-    policy, functional_count, statistical_count = _policy_counts()
-    selected_counts = _bundle_particle_counts(particle_counts)
+    policy, functional_count, statistical_count = _policy_counts(policy_path)
+    selected_counts = _bundle_particle_counts(particle_counts, policy_path)
     selected_seed = (
         int(seed)
         if seed is not None
         else int(family["paired_sampling"]["base_seed"])
     )
-    latent = _sample_latent(distribution, selected_seed, max(selected_counts))
+    latent = _sample_latent(distribution, selected_seed, max(selected_counts), policy_path)
     resolved = json.loads(resolved_path.read_text(encoding="utf-8-sig"))
     output_dir.mkdir(parents=True, exist_ok=True)
     artifacts: list[dict[str, Any]] = []
@@ -360,7 +362,7 @@ def generate_bundle(
     family_identity = {
         "algorithm_version": bundle_version,
         "seed": selected_seed,
-        "policy_sha256": sha256(POLICY_PATH),
+        "policy_sha256": sha256(policy_path),
         "source_family_sha256": sha256(source_family_path),
         "distribution_sha256": sha256(distribution_path),
         "latent_sha256": latent_sha,
@@ -403,6 +405,7 @@ def generate_bundle(
         source_family_path,
         distribution_path,
         resolved_path,
+        policy_path=policy_path,
         point_ids=normalized_ids,
         point_specs=normalized_specs,
         bundle_role=bundle_role,
@@ -417,6 +420,7 @@ def validate_bundle(
     distribution_path: Path,
     resolved_path: Path,
     *,
+    policy_path: Path,
     point_ids: Sequence[str],
     point_specs: Mapping[str, Mapping[str, Any]],
     bundle_role: str,
@@ -436,9 +440,9 @@ def validate_bundle(
         bundle_role,
         bundle_version,
     )
-    policy, functional_count, statistical_count = _policy_counts()
+    policy, functional_count, statistical_count = _policy_counts(policy_path)
     is_legacy_bundle = "particle_counts" not in metadata
-    selected_counts = _bundle_particle_counts(metadata.get("particle_counts"))
+    selected_counts = _bundle_particle_counts(metadata.get("particle_counts"), policy_path)
     if metadata.get("algorithm_version") != bundle_version:
         raise ValueError("paired particle bundle algorithm version differs")
     # Known bundle data keeps its original provenance label. All other policy
@@ -450,7 +454,7 @@ def validate_bundle(
     expected_policy = {
         "source": ("common/contracts/particle_count_policy.json" if old_policy_label else
                    "src/msplatform/contracts/particle_count_policy.json"),
-        "sha256": sha256(POLICY_PATH),
+        "sha256": sha256(policy_path),
         "functional_count": functional_count,
         "statistical_count": statistical_count,
         "standard_particle_counts": policy["standard_particle_counts"],
@@ -468,7 +472,7 @@ def validate_bundle(
         raise ValueError("paired particle bundle input identity differs")
     if metadata.get("operating_point_ids") != normalized_ids:
         raise ValueError("paired particle bundle operating points differ")
-    latent = _sample_latent(distribution, int(metadata["seed"]), max(selected_counts))
+    latent = _sample_latent(distribution, int(metadata["seed"]), max(selected_counts), policy_path)
     latent_sha = _latent_sha256(latent)
     family_identity = {
         "algorithm_version": bundle_version,
@@ -557,6 +561,7 @@ def generate_single_table(
     output_path: Path,
     metadata_path: Path,
     *,
+    policy_path: Path,
     seed: int | None = None,
 ) -> dict[str, Any]:
     """Generate one ION table from a caller-selected latent-family point."""
@@ -575,6 +580,7 @@ def generate_single_table(
         operating_point_id,
         particle_count,
         selected_seed,
+        policy_path,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(output_path, generated, delimiter=",", fmt="%.12g")
@@ -583,7 +589,7 @@ def generate_single_table(
         "role": SINGLE_TABLE_ROLE,
         "operating_point": operating_point_id,
         "particles": particle_count,
-        "master_particles": _policy_counts()[2],
+        "master_particles": _policy_counts(policy_path)[2],
         "prefix_sampling": True,
         "seed": selected_seed,
         "mass_amu": family["operating_points"][operating_point_id]["mass_amu"],

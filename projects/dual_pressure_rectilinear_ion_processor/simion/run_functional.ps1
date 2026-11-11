@@ -301,7 +301,7 @@ print(json.dumps(refs))
   $ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $ContinuationPredecessorManifestPath).Path
   if([IO.Path]::GetFileName($ContinuationPredecessorManifestPath)-cne'run_manifest.json'){throw 'Continuation requires an explicit predecessor manifest'}
   $predecessor=Split-Path -Parent $ContinuationPredecessorManifestPath
-  $projection=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.ip_continuation import continuation_protection_paths;print(json.dumps([str(p) for p in continuation_protection_paths(Path(sys.argv[1]))]))' $predecessor
+  $projection=& $python -c 'import json,sys;from pathlib import Path;from msplatform.results.ip_continuation import continuation_protection_paths;print(json.dumps([str(p) for p in continuation_protection_paths(Path(sys.argv[1]))]))' $predecessor
   if($LASTEXITCODE-ne0){throw 'IP continuation ancestry protection projection failed'}
   $continuationAuthorities=@(($projection|ConvertFrom-Json))
   $records=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p],protected_cache_keys=[]) for p in json.loads(sys.argv[1])]))' (ConvertTo-Json -InputObject @($continuationAuthorities) -Compress)
@@ -358,7 +358,7 @@ print(json.dumps(refs))
   Protect-IonProcessorPreviousField -FieldRun $NativeFieldRun -ResolvedModel $model -Context $continuationFieldGuards
  }
  if($ContinuationPredecessorManifestPath){
-  $projection=& $python -c 'import json,sys;from pathlib import Path;from msplatform.execution.ip_continuation import continuation_protection_paths;print(json.dumps([str(p) for p in continuation_protection_paths(Path(sys.argv[1]))]))' $predecessor
+  $projection=& $python -c 'import json,sys;from pathlib import Path;from msplatform.results.ip_continuation import continuation_protection_paths;print(json.dumps([str(p) for p in continuation_protection_paths(Path(sys.argv[1]))]))' $predecessor
   if($LASTEXITCODE-ne0-or($projection|ConvertFrom-Json|ConvertTo-Json -Compress)-cne($continuationAuthorities|ConvertTo-Json -Compress)){throw 'IP continuation ancestry changed after capacity admission'}
   foreach($source in $continuationAuthorities){Protect-IonProcessorContinuationInputs -Predecessor $source -Context $continuationReadGuards}
  }

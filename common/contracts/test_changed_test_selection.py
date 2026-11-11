@@ -1293,6 +1293,44 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         if path.endswith("/inputs.py"):
                             self.assertIn("common/contracts/test_frozen_inputs.py", common)
 
+    def test_installed_rf_convergence_selects_source_and_comparison_consumers(self) -> None:
+        expected = {f"{RF}.tests.analysis.{name}".replace("/", ".") for name in (
+            "test_cross_solver_gate_contract", "test_frozen_particle_policy_package",
+            "test_generate_interface_particle_table", "test_same_solver_numerical_convergence",
+            "test_simion_transport_runner_source", "test_workflow_architecture_contract")}
+        paths = (
+            "src/msplatform/workflows/rf_convergence_comparison.py",
+            "src/msplatform/components/rf_multipole/paired_particle_source_bundle.py",
+            "src/msplatform/components/rf_multipole/particle_source_binding.py",
+        )
+        with tempfile.TemporaryDirectory(prefix="rf_convergence_consumer_plans_") as directory:
+            for index, path in enumerate(paths):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    parameters = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
+                    self.assertTrue(expected.issubset(parameters["ChangedTestModules"]))
+                    common = stages["common_contracts"]["command"]["arguments"]
+                    self.assertIn("common/contracts/test_installed_scientific_core.py", common)
+                    self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
+
+    def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
+        paths = ("src/msplatform/results/ip_continuation.py",
+                 "src/msplatform/backends/simion/ip_exit.py")
+        with tempfile.TemporaryDirectory(prefix="ip_reader_consumer_plans_") as directory:
+            for index, path in enumerate(paths):
+                with self.subTest(path=path):
+                    request = Path(directory) / f"plan-{index}.json"
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = {row["name"]: row for row in json.loads(
+                        request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
+                    self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
+                    common = stages["common_contracts"]["command"]["arguments"]
+                    self.assertIn("common/contracts/test_installed_scientific_core.py", common)
+                    self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
+
     def test_installed_reflectron_fit_selects_its_workflow_and_installation_consumers(self) -> None:
         project = "projects/single_reflection_oa_tof_mass_analyzer"
         expected = [f"{project}.tests.analysis.{name}".replace("/", ".") for name in (

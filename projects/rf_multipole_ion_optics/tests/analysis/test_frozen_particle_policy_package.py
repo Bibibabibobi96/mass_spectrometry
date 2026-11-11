@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
 
 from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 
@@ -34,7 +35,6 @@ RELATIVE_PATHS = (
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\__init__.py",
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\generate_particle_table.py",
     r"projects\rf_multipole_ion_optics\workflows\interface_readiness\particle_source_policy.py",
-    r"projects\rf_multipole_ion_optics\analysis\paired_particle_source_bundle.py",
     r"src\msplatform\contracts\particle_count_policy.json",
     r"common\contracts\file_identity.py",
     r"projects\rf_multipole_ion_optics\core\__init__.py",
@@ -49,7 +49,7 @@ REQUIRED_MODULES = (
     "projects.rf_multipole_ion_optics.workflows.interface_readiness",
     "projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table",
     "projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy",
-    "projects.rf_multipole_ion_optics.analysis.paired_particle_source_bundle",
+    "msplatform.components.rf_multipole.paired_particle_source_bundle",
     "msplatform.contracts.particle_physics",
     "msplatform.contracts.particle_count_policy",
     "common.contracts.file_identity",
@@ -392,7 +392,7 @@ $paths=Get-FrozenPythonPackageExecutionPaths -RelativePaths $frozenPythonRelativ
 $package=New-FrozenPythonPackage -Python $python -SourceRoot $repoRoot -CodeRoot {_ps(root / str(index))} -RelativePaths $frozenPythonRelativePaths
 $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
  -Module 'projects.rf_multipole_ion_optics.workflows.interface_readiness.generate_particle_table' `
- -Arguments @('--source-family',{_ps(SOURCE_FAMILY)},'--distribution',{_ps(DISTRIBUTION)},
+ -Arguments @('--particle-count-policy',(Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/contracts/particle_count_policy.json'),'--source-family',{_ps(SOURCE_FAMILY)},'--distribution',{_ps(DISTRIBUTION)},
  '--resolved-design',{_ps(RESOLVED)},'--particle-count','4','--bundle-output-dir',{_ps(root / ('bundle-' + str(index)))}) `
  -DistributionNames @('numpy') `
  -RequiredModuleNames @('projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy') `
@@ -413,7 +413,7 @@ $results+=@{{files=@($package.files.relative_path);paths=$paths;executed=$execut
                 files = result['files']
                 self.assertTrue(result['executed'])
                 self.assertEqual(result['paths'], ['inputs/code/' + path for path in files])
-                self.assertIn('projects/rf_multipole_ion_optics/analysis/paired_particle_source_bundle.py', files)
+                self.assertIn('src/msplatform/components/rf_multipole/paired_particle_source_bundle.py', files)
                 self.assertIn('projects/rf_multipole_ion_optics/analysis/rf_event_table_validation.py', files)
                 self.assertIn('projects/rf_multipole_ion_optics/simion/ion11_source_adapter.py', files)
                 self.assertNotIn('projects/rf_multipole_ion_optics/analysis/__init__.py', files)
@@ -504,7 +504,7 @@ exit 0
         with tempfile.TemporaryDirectory() as root_text:
             root = Path(root_text)
             bundle = root / "bundle"
-            generate_interface_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle)
+            generate_interface_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle, policy_path=POLICY_PATH)
             source_snapshot = root / "source_snapshot"
             frozen_relative_paths = RELATIVE_PATHS + (
                 GATE_VALIDATOR_RELATIVE_PATH,
@@ -547,6 +547,8 @@ exit 0
             arguments = ",\n        ".join(
                 _ps(value)
                 for value in (
+                    "--particle-count-policy",
+                    code_root / "src/msplatform/contracts/particle_count_policy.json",
                     "--source-family",
                     SOURCE_FAMILY,
                     "--distribution",

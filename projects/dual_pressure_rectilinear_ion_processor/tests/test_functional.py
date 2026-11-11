@@ -680,6 +680,57 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
         self.assertEqual((self.run/'simion/processor.gem').read_bytes(),(detached/'simion/processor.gem').read_bytes())
         self.assertEqual((self.run/'inputs/release.csv').read_bytes(),(detached/'inputs/release.csv').read_bytes())
 
+    def test_actual_prepared_closure_uses_ip_reader_and_rejects_live_fallback(self) -> None:
+        # Exercise the same PowerShell root context and functional CLI as the
+        # prepared IP owner, with inert fixtures and no native flight.
+        import shutil
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is required for the prepared owner boundary")
+        _, vendor = self.make_prepare_fixture()
+        functional.prepare(self.run, PROJECT, vendor)
+        closure = self.run / "inputs/code"
+        frozen = closure / "src/msplatform/results/ip_continuation.py"
+        live = PROJECT.parents[1] / "src/msplatform/results/ip_continuation.py"
+        support = PROJECT.parents[1] / "common/contracts/run_artifact_support.ps1"
+        self.assertTrue(frozen.is_file())
+        self.assertTrue(live.is_file())
+        self.assertTrue(support.is_file())
+        self.assertEqual(frozen.read_bytes(), live.read_bytes())
+        driver = Path(self.temporary.name) / "run_frozen_analyzer.ps1"
+        driver.write_text(r'''param($Support, $Closure, $Python, $Run)
+. $Support
+Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
+    & $Python -B -s -v -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional analyze --run $Run
+    if ($LASTEXITCODE -ne 0) { throw "Prepared Python boundary failed: $LASTEXITCODE" }
+}
+''', encoding="utf-8")
+        def run_analyzer() -> subprocess.CompletedProcess[str]:
+            return subprocess.run([pwsh, "-NoProfile", "-File", str(driver), str(support),
+                                   str(closure), sys.executable, str(self.run)],
+                                  cwd=self.run, capture_output=True, text=True,
+                                  encoding="utf-8", timeout=60)
+        # No events are fabricated: the unchanged prepared model must reach the
+        # selected data directory and fail at its absent events.csv boundary.
+        events = self.run / "simion/events.csv"
+        self.assertFalse(events.exists())
+        present = run_analyzer()
+        self.assertNotEqual(present.returncode, 0, present.stdout + present.stderr)
+        self.assertIn("FileNotFoundError", present.stderr)
+        self.assertIn(str(events.resolve()).replace("\\", "/").lower(),
+                      present.stderr.replace("\\\\", "/").replace("\\", "/").lower())
+        # Python's verbose importer reports the source file actually executed;
+        # tolerate its repr escaping of Windows separators.
+        self.assertIn(str(frozen.resolve()).replace("\\", "/").lower(),
+                      present.stderr.replace("\\\\", "/").replace("\\", "/").lower())
+        frozen.unlink()
+        missing = run_analyzer()
+        self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+        self.assertIn("msplatform.results.ip_continuation", missing.stderr)
+        self.assertIn("ModuleNotFoundError", missing.stderr)
+        self.assertNotIn("FileNotFoundError", missing.stderr)
+        self.assertTrue(live.is_file())
+
     def test_frozen_closure_loads_particle_count_policy_in_independent_python(self) -> None:
         # Use the real loaded repository closure but inert vendor input. A fresh
         # interpreter cannot benefit from this unittest process's import cache.
