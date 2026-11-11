@@ -291,7 +291,7 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
                 "fixture_run=" + repr(str(run)) + "\n" + """
 from msplatform.execution.file_lock import process_file_lock
 fixture_create=fixture_protection.create_capacity_protection_lease
-fixture_renew=fixture_protection.renew_capacity_protection_lease
+fixture_renew=fixture_protection.refresh_capacity_protection_lease
 def fixture_probe():
     try:
         with process_file_lock(Path(fixture_run)/".run_terminal_publication.lock", timeout_seconds=0):
@@ -306,7 +306,7 @@ def fixture_expand(root, **options):
     fixture_probe()
     return fixture_renew(root, **options)
 fixture_protection.create_capacity_protection_lease=fixture_pin
-fixture_protection.renew_capacity_protection_lease=fixture_expand
+fixture_protection.refresh_capacity_protection_lease=fixture_expand
 """, condition="$script:requireGuard"), encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(ROOT), sys.executable, str(request)],
                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=45)

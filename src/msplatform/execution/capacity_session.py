@@ -58,7 +58,7 @@ def _source_protection(session: dict[str, Any], references: Iterable[Mapping[str
             session["source_protection_leases"].append(existing)
             operation = protection.create_capacity_protection_lease
         else:
-            operation = protection.renew_capacity_protection_lease
+            operation = protection.refresh_capacity_protection_lease
         lease = operation(root, lease_id=existing["lease_id"], owner=session["owner"],
             ttl_seconds=session["lease_ttl_seconds"], committed_new_bytes=0,
             protected_paths=map(Path, group["paths"]), protected_cache_keys=group["keys"])
@@ -209,10 +209,10 @@ def renew_capacity_session(session: dict[str, Any], *, remaining_committed_new_b
         touched = _source_protection(session, source_references, guards)
         for source in session["source_protection_leases"]:
             if source["status"] == "active" and source["lease_id"] not in touched:
-                protection.renew_capacity_protection_lease(Path(source["artifact_root"]),
+                protection.refresh_capacity_protection_lease(Path(source["artifact_root"]),
                     lease_id=source["lease_id"], owner=session["owner"],
                     ttl_seconds=session["lease_ttl_seconds"], committed_new_bytes=0)
-        renewal = protection.renew_capacity_protection_lease(Path(session["artifact_root"]),
+        renewal = protection.refresh_capacity_protection_lease(Path(session["artifact_root"]),
             lease_id=session["lease_id"], owner=session["owner"], ttl_seconds=session["lease_ttl_seconds"],
             committed_new_bytes=remaining_committed_new_bytes,
             protected_paths=map(Path, [*session["protected_paths"], *protected_paths]),

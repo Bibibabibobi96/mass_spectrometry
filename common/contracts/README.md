@@ -467,6 +467,14 @@ PowerShell入口使用精确RepoRoot上下文。独立writer/verifier的直接�
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
 artifact布局检查接受该精确台账文件并复用台账校验器；租约目录的既有decision lock由公共租约读取器识别，
 它是内核互斥所用的保留文件，不是JSON证据。其他未登记common文件仍拒绝。
+Workflow capacity sessions refresh active own/source leases under the same decision
+lock with `max(existing expiry, observed UTC now + TTL)`. Immediate or backward-clock
+refresh can retain the granted expiry while applying validated scope/commitment updates;
+it never revives an expired lease or changes its finite closure deadline. Owner,
+bootstrap/disposal and increase-admission checks remain mandatory. Explicit low-level
+`renew_capacity_protection_lease` still requires a strictly later expiry. Session refresh
+uses the separate lock-owning `refresh_capacity_protection_lease` entry into that same
+validated implementation; callers do not invent time or retry until the clock moves.
 Lease snapshot reads take the existing capacity decision lock across enumeration and
 validation, so they cannot observe an in-progress create, renewal, or deletion by
 the same protocol. Already-locked internal callers use the single unlocked parser;

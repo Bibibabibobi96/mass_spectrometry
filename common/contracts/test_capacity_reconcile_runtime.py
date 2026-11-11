@@ -175,7 +175,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                     capacity._maintenance_plan = fail_plan
                 if scenario == "renewal_failure" and action == "renew" and not (root / "disposable").exists():
                     def fail_renewal(*args, **kwargs): raise ValueError("fixture lease renewal failure")
-                    protection.renew_capacity_protection_lease = fail_renewal
+                    protection.refresh_capacity_protection_lease = fail_renewal
                 if scenario == "expired_before_renewal" and action == "renew" and not (root / "disposable").exists():
                     lease_path = next((root / "common/capacity_protection_leases").glob("*.json"))
                     lease = json.loads(lease_path.read_text(encoding="utf-8"))
@@ -276,7 +276,7 @@ with fixture_events.open("a",encoding="utf-8") as fixture_stream:
 if fixture_scenario == "renewal_failure" and fixture_action == "renew" and not (fixture_root/"disposable").exists():
     def fixture_fail_renewal(*args,**kwargs):
         raise ValueError("fixture lease renewal failure")
-    fixture_protection.renew_capacity_protection_lease=fixture_fail_renewal
+    fixture_protection.refresh_capacity_protection_lease=fixture_fail_renewal
 if fixture_scenario == "expired_before_renewal" and fixture_action == "renew" and not (fixture_root/"disposable").exists():
     from datetime import datetime,timedelta
     fixture_path=next((fixture_root/"common/capacity_protection_leases").glob("*.json"))

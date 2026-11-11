@@ -311,8 +311,9 @@ def _renew_capacity_protection_lease_unlocked(
     committed_new_bytes: int | None = None,
     closure_deadline_at_utc: datetime | str | None = None,
     now: datetime | None = None,
+    _refresh: bool = False,
 ) -> dict[str, Any]:
-    """Atomically extend an active lease and monotonically expand its scope.
+    """Update one active lease; strict renewal is the default private contract.
 
     Renewal must happen before expiry and requires the same owner.  New keys
     and paths are unioned with the existing scope; renewal can never remove a
@@ -393,7 +394,11 @@ def _renew_capacity_protection_lease_unlocked(
         if requested_deadline[0] != closure_deadline[0]:
             raise ValueError("protection lease renewal cannot change its closure deadline")
     expires = datetime.fromtimestamp(observed.timestamp() + ttl_seconds, timezone.utc)
-    if expires.timestamp() <= current_expiry[0]:
+    if _refresh:
+        # Session refresh is idempotent if the observed wall clock has not
+        # advanced; never invent time or shorten the already granted expiry.
+        expires = max(expires, datetime.fromtimestamp(current_expiry[0], timezone.utc))
+    elif expires.timestamp() <= current_expiry[0]:
         raise ValueError("protection lease renewal must extend its expiry")
     if expires.timestamp() > closure_deadline[0]:
         raise ValueError("protection lease renewal cannot extend beyond its closure deadline")
@@ -464,6 +469,29 @@ def renew_capacity_protection_lease(
             now=now,
         )
 
+
+
+def refresh_capacity_protection_lease(
+    root: Path, *, lease_id: str, owner: str, ttl_seconds: int,
+    protected_cache_keys: Iterable[str] = (),
+    protected_paths: Iterable[Path] = (),
+    committed_new_bytes: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Refresh a workflow's active protection without requiring clock progress.
+
+    Retain max(current expiry, observed now + TTL), under the existing decision
+    lock and the same owner, expiry, scope, commitment and immutable-deadline
+    checks. This never revives an expired lease. Explicit strict renewal remains
+    renew_capacity_protection_lease; sessions need not invent a later wall clock.
+    """
+    with capacity_decision_lock(root):
+        return _renew_capacity_protection_lease_unlocked(
+            root, lease_id=lease_id, owner=owner, ttl_seconds=ttl_seconds,
+            protected_cache_keys=protected_cache_keys,
+            protected_paths=protected_paths, committed_new_bytes=committed_new_bytes,
+            now=now, _refresh=True,
+        )
 
 def _delete_capacity_protection_lease_unlocked(root: Path, *, lease_id: str) -> dict[str, Any]:
     """Delete exactly one named protection lease; missing leases are a no-op."""
