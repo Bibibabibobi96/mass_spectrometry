@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
+from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
 from msplatform.execution.resources import resource_path
 from msplatform.execution.retention import file_record
@@ -588,13 +589,12 @@ function Write-ColdFixtureEvent {
             root = Path(directory)
             run = root/('deep-'+'a'*65)/('deep-'+'b'*65)/('deep-'+'c'*65)/'run'
             code = run/'inputs/code'
-            for relative in ('projects/rf_multipole_ion_optics/core/interface_geometry.py',
-                             'projects/rf_multipole_ion_optics/runtime/finite_extraction_context.py',
-                             'common/host_execution_lease.ps1', 'src/msplatform/execution/resources/host_resource_policy.json',
+            for relative in ('common/host_execution_lease.ps1', 'src/msplatform/execution/resources/host_resource_policy.json',
                              'common/host_resource_scheduler.py', 'common/require_powershell7.ps1'):
                 target = code/relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO/relative, target)
+            copy_scientific_core(REPO, code)
             install_controlled_cpu_snapshot(REPO, code)
             (run/'inputs').mkdir(parents=True, exist_ok=True)
             (run/'results').mkdir()
@@ -693,6 +693,22 @@ $negativeState=@{native_attempted=$false;wrapper_observation=$null;host_lease=$n
 $caught=$null;try{Invoke-FiniteComsolSavedExtraction -Context $context -State $negativeState -Source $fixture.source -Frozen $fixture.frozen -CodeRoot (Join-Path $run 'inputs/code') -Python $Python -RunId 'inert-cold-wiring' -Limits $limits}catch{$caught=$_}
 if($null-eq$caught-or$caught.Exception.Message-notlike'*Saved-solution extraction failed; no solve was requested.*'){throw 'Actual wrapper failure was swallowed or replaced'}
 Remove-Item Env:RF_INERT_COLD_LAUNCHER_FAIL
+# The real projector must come from this selected snapshot, never host/author code.
+$projector=Join-Path $run 'inputs/code/src/msplatform/backends/comsol/rf_finite_extraction.py'
+$projectorHash=(Get-FileHash -LiteralPath $projector -Algorithm SHA256).Hash
+$originCheck='import sys;from pathlib import Path;import msplatform.backends.comsol.rf_finite_extraction as m;assert Path(m.__file__).resolve()==Path(sys.argv[1]).resolve()'
+Invoke-RunToolRootContext -RepoRoot (Join-Path $run 'inputs/code') -Operation {
+ & $Python -B -c $originCheck $projector
+ if($LASTEXITCODE-ne0){throw 'SELECTED_PROJECTOR_ORIGIN_LOST'}
+}
+$missingProjector=$projector+'.missing'
+Move-Item -LiteralPath $projector -Destination $missingProjector
+try {
+ $missingCaught=$null
+ try {Invoke-FiniteComsolSavedExtraction -Context $context -State $state -Source $fixture.source -Frozen $fixture.frozen -CodeRoot (Join-Path $run 'inputs/code') -Python $Python -RunId 'inert-cold-wiring' -Limits $limits} catch {$missingCaught=$_}
+ if($null-eq$missingCaught-or$missingCaught.Exception.Message-notlike'*Saved extraction context cannot be projected from original frozen authority.*'){throw 'MISSING_SELECTED_PROJECTOR_ACCEPTED'}
+} finally {Move-Item -LiteralPath $missingProjector -Destination $projector}
+if((Get-FileHash -LiteralPath $projector -Algorithm SHA256).Hash-cne$projectorHash){throw 'SELECTED_PROJECTOR_BYTES_CHANGED'}
 Remove-RunPackageExecutionAlias -Package $package
 @{completion=$completion;state=$state;result=$result;negative_observation=$negativeState.wrapper_observation;removed_alias=$alias;alias_exists=(Test-Path -LiteralPath $alias)}|ConvertTo-Json -Depth 30 -Compress
 """, encoding='utf-8')

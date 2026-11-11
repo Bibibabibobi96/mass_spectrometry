@@ -1829,6 +1829,10 @@
         {
           "exact": "src/msplatform/execution/resources/__init__.py",
           "reason": "installed_frozen_python_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
+          "reason": "installed_rf_finite_extraction_changed"
         }
       ],
       "command": {
@@ -1870,6 +1874,18 @@
             "modules": [
               "projects/rf_multipole_ion_optics/tests/domain/test_published_design_freshness.py",
               "projects/rf_multipole_ion_optics/tests/domain/test_simion_runner_contract.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
+                "reason": "installed_rf_finite_extraction_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/domain/test_finite_extraction_context.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3461,6 +3477,10 @@
         {
           "exact": "src/msplatform/execution/resources/__init__.py",
           "reason": "installed_frozen_python_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
+          "reason": "installed_rf_finite_extraction_changed"
         }
       ],
       "command": {
@@ -3641,6 +3661,18 @@
               "projects/rf_multipole_ion_optics/tests/analysis/test_interface_postprocess_child.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_interface_public_owner.py",
               "projects/rf_multipole_ion_optics/tests/analysis/test_same_solver_numerical_convergence.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
+                "reason": "installed_rf_finite_extraction_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_analysis_recovery.py"
             ],
             "dependency_profile": "locked"
           }

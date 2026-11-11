@@ -1303,3 +1303,21 @@ The existing no-sink, probe, stdout-sink and failure identities are retained.
 The managed finite-length workflow above uses these operations through the same
 selected frozen resource. Source, ordinary-installation and native acceptance
 remain distinct; factoring the executor alone grants no scientific qualification.
+
+
+## Installed finite COMSOL extraction projection
+
+The three frozen-science projection functions have one implementation in
+`msplatform.backends.comsol.rf_finite_extraction`. Both initial finite transport
+and saved-solution extraction call that selected canonical package. They retain
+explicit resolved design, numerics and source metadata, the original geometry and
+RF case/phase semantics, and all original validation/error ordering. The projector
+does not select research defaults or bind native solution IDs, release order or
+output paths; the existing owner supplies those facts.
+
+The old runtime Python body is retired without a forwarding alias. Existing
+normal/saved source inventories already include the canonical tree; the cold
+fixture selects the same tree through the existing package enumerator and checks
+selected origin and physical missing-module refusal. MATLAB exporter/validator
+resources, CSV mathematics, native orchestration and historical frozen packages
+remain unchanged. This ownership migration alone grants no finite3D/native qualification.

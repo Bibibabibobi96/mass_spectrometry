@@ -1188,6 +1188,36 @@ assert described['scientific_qualification']=='not_granted' and 'velocity' in de
 print('INSTALLED_PUBLIC_COMPARISON=PASS')
 import msplatform.examples
 example_path = pathlib.Path(msplatform.examples.__file__).with_name('rf_oatof_functional_v1.json')
+# RF_FINITE_EXTRACTION_INSTALLED_BEGIN
+from msplatform.backends.comsol import rf_finite_extraction as rf_extraction_module
+rf_extraction_fixture=fixture['rf_finite_extraction']
+rf_extraction_path=pathlib.Path(rf_extraction_module.__file__).resolve()
+assert rf_extraction_path.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert rf_extraction_path.stat().st_size==rf_extraction_fixture['module_bytes']
+assert hashlib.sha256(rf_extraction_path.read_bytes()).hexdigest()==rf_extraction_fixture['module_sha256']
+rf_extraction_arguments=copy.deepcopy(rf_extraction_fixture['arguments'])
+assert rf_extraction_module.project_finite_extraction_science(*rf_extraction_arguments)==rf_extraction_fixture['expected']
+assert rf_extraction_arguments==rf_extraction_fixture['arguments']
+rf_extraction_arguments[2]['parent_resolved_design_sha256']='OTHER'
+try:
+    rf_extraction_module.project_finite_extraction_science(*rf_extraction_arguments)
+except ValueError as rf_extraction_error:
+    assert 'not bound to resolved design' in str(rf_extraction_error)
+else:
+    raise AssertionError('installed RF extraction accepted changed source authority')
+rf_extraction_backup=rf_extraction_path.with_suffix('.missing')
+rf_extraction_path.rename(rf_extraction_backup)
+try:
+    rf_extraction_missing=subprocess.run([sys.executable,'-I','-B','-c',
+        'from msplatform.backends.comsol.rf_finite_extraction import project_finite_extraction_science'],
+        cwd=root,capture_output=True,timeout=30)
+    assert rf_extraction_missing.returncode!=0 and b'msplatform.backends.comsol.rf_finite_extraction' in rf_extraction_missing.stderr, rf_extraction_missing.stderr
+finally:
+    rf_extraction_backup.rename(rf_extraction_path)
+assert hashlib.sha256(rf_extraction_path.read_bytes()).hexdigest()==rf_extraction_fixture['module_sha256']
+print('INSTALLED_RF_FINITE_EXTRACTION=PASS')
+# RF_FINITE_EXTRACTION_INSTALLED_END
+
 # Exercise the real installed workflow with three explicit outside-tree input bundles.
 from msplatform.workflows.single_reflection_flight import prepare as sfi_prepare
 workflow_modes = []
@@ -4358,6 +4388,18 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             source_acceptance=dict(spec=asdict(acceptance_case.spec),
                 point=asdict(acceptance_case.point), golden=acceptance_golden))
 
+    def rf_finite_extraction_probe_fixture(self) -> dict:
+        """Reuse the original artificial projection fixture, without native claims."""
+        from projects.rf_multipole_ion_optics.tests.domain.test_finite_extraction_context import fixture
+        from msplatform.backends.comsol import rf_finite_extraction
+
+        arguments = fixture()
+        module_bytes = Path(rf_finite_extraction.__file__).read_bytes()
+        return dict(arguments=arguments,
+                    expected=rf_finite_extraction.project_finite_extraction_science(*arguments),
+                    module_bytes=len(module_bytes),
+                    module_sha256=hashlib.sha256(module_bytes).hexdigest())
+
     def rf_l1_managed_probe_fixture(self, root: Path) -> dict:
         from msplatform.workflows.rf_mass_filter import finite_length
         project = REPO_ROOT / "projects/rf_multipole_ion_optics"
@@ -4951,6 +4993,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               mr_interface=self.mr_interface_probe_fixture(),
                                               mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),
                                               tof_budget=self.tof_budget_probe_fixture(),
+                                              rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),

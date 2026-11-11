@@ -2,7 +2,7 @@
 from copy import deepcopy
 import json
 import unittest
-from projects.rf_multipole_ion_optics.runtime.finite_extraction_context import project_finite_extraction_science as project
+from msplatform.backends.comsol.rf_finite_extraction import project_finite_extraction_science as project
 
 
 def fixture():

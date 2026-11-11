@@ -580,7 +580,7 @@ function Invoke-FiniteComsolSavedExtraction {
   $projection=@"
 import json,sys
 from pathlib import Path
-from projects.rf_multipole_ion_optics.runtime.finite_extraction_context import project_finite_extraction_science
+from msplatform.backends.comsol.rf_finite_extraction import project_finite_extraction_science
 read=lambda p:json.loads(Path(p).read_text(encoding='utf-8-sig'))
 binding=read(sys.argv[1]);mapping=read(binding['mapping_path'])
 if mapping.get('native_scope')!='complete_cohort':raise ValueError('Original complete native release mapping required')
@@ -1158,7 +1158,7 @@ $comsolRunFailure=$null
   }
 
   $extractionScience=Join-Path $inputDir 'finite_extraction_science.json'
-  $projectScience='import json,sys;from pathlib import Path;from projects.rf_multipole_ion_optics.runtime.finite_extraction_context import project_finite_extraction_science;read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"));Path(sys.argv[4]).write_text(json.dumps(project_finite_extraction_science(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])),allow_nan=False),encoding="utf-8")'
+  $projectScience='import json,sys;from pathlib import Path;from msplatform.backends.comsol.rf_finite_extraction import project_finite_extraction_science;read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"));Path(sys.argv[4]).write_text(json.dumps(project_finite_extraction_science(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])),allow_nan=False),encoding="utf-8")'
   Invoke-RunToolRootContext -RepoRoot $codeRoot -Operation {
     & $python -B -c $projectScience $resolved $numerics $sourceMetadata $extractionScience
     if($LASTEXITCODE-ne0){throw 'Frozen finite extraction science projection failed.'}

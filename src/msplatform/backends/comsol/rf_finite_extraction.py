@@ -7,7 +7,7 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
-from projects.rf_multipole_ion_optics.core.interface_geometry import (
+from msplatform.components.rf_multipole.interface_geometry import (
     transport_numerical_domain, transport_observations,
 )
 
