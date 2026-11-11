@@ -165,7 +165,7 @@ print(json.dumps({
             $probeArguments = $isolationArguments +
                 @([string]$DistributionNames.Count) + $DistributionNames +
                 $RequiredModuleNames
-            $probeText = (& $Python -I -B -c $probe @probeArguments | Out-String).Trim()
+            $probeText = (& $Python -I -X utf8 -B -c $probe @probeArguments | Out-String).Trim()
             if ($LASTEXITCODE -ne 0) {
                 throw 'Frozen Python third-party dependency probe failed.'
             }
@@ -224,13 +224,13 @@ finally:
                 failure.add_note(detail)
 '@
                 if ($StdoutPath) {
-                    & $Python -I -B -c $execute @isolationArguments $Module @Arguments 1> $StdoutPath
+                    & $Python -I -X utf8 -B -c $execute @isolationArguments $Module @Arguments 1> $StdoutPath
                     $moduleExitCode = $LASTEXITCODE
                     if ($moduleExitCode -eq 0) {
                         $moduleOutput = [IO.File]::ReadAllText($StdoutPath).Trim()
                     }
                 } else {
-                    $moduleOutput = (& $Python -I -B -c $execute @isolationArguments $Module @Arguments |
+                    $moduleOutput = (& $Python -I -X utf8 -B -c $execute @isolationArguments $Module @Arguments |
                         Out-String).Trim()
                     $moduleExitCode = $LASTEXITCODE
                 }

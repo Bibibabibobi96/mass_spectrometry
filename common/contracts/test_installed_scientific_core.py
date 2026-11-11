@@ -2580,12 +2580,14 @@ if os.name=='nt':
             relative_path='src/'+frozen_relative,sha256=frozen_record['sha256'].upper()))
     frozen_selected=frozen_code/'src/msplatform/execution/resources/frozen_python_package.ps1'
     assert frozen_selected.read_bytes()==frozen_executor_original
-    frozen_expected='OWNED_STDOUT_MARKER\n\n\u4e2d\u6587 trailing  \n\n'.encode('utf-8')
+    frozen_prefix='OWNED_STDOUT_MARKER\n\n\u4e2d\u6587 trailing  \n\n'.encode('utf-8')
+    frozen_expected=frozen_prefix+'unicode printed: \u8d28\u8c31'.encode('utf-8')
     frozen_analyzer=frozen_code/'owned_analyzer.py'
     frozen_analyzer.write_text(
         "import pathlib,sys\n"
-        "sys.stdout.buffer.write(bytes.fromhex("+repr(frozen_expected.hex())+"))\n"
+        "sys.stdout.buffer.write(bytes.fromhex("+repr(frozen_prefix.hex())+"))\n"
         "sys.stdout.flush()\n"
+        "print('unicode printed: \u8d28\u8c31',end='',flush=True)\n"
         "print('OWNED_STDERR_MARKER',file=sys.stderr,flush=True)\n"
         "pathlib.Path(sys.argv[2]).write_text(str(pathlib.Path(__file__).resolve()),encoding='utf-8')\n"
         "raise SystemExit(int(sys.argv[1]))\n",encoding='utf-8')
