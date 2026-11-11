@@ -2,7 +2,6 @@
 import json
 from pathlib import Path
 import sys
-from threading import RLock
 from types import SimpleNamespace
 from msplatform.execution.run_session import RunSession
 from msplatform.execution.resources import resource_path
@@ -51,29 +50,24 @@ def inert_native(arguments, *, model_relative_paths, failure=None):
     Path(value("-CompletionPath")).write_text(json.dumps(receipt), encoding="utf-8")
 
 
-class InertComsolSession:
-    declare_file = RunSession.declare_file
-    add_input = RunSession.add_input
-    classify_file = RunSession.classify_file
-
+class InertComsolSession(RunSession):
     def __init__(self, root, *, model_relative_paths, failure=None):
-        self.model_relative_paths = model_relative_paths
-        self.run_dir = self.artifact_run_dir = root
-        self.input_dir, self.result_dir, self.log_dir = (root / name for name in ("inputs", "results", "logs"))
-        for path in (self.input_dir, self.result_dir, self.log_dir):
-            path.mkdir()
-        self.run_config = root / "run_config.json"
-        self.run_config.write_text('{"inputs":{}}', encoding="utf-8")
-        self.file_roles, self._lock, self.calls = {}, RLock(), []
-        self.expected_operation_ids, self.run_id = ("build_model", "verify_model"), "inert-ei"
-        self.context = SimpleNamespace(workspace=root, python_executable=Path(sys.executable),
+        context = SimpleNamespace(workspace=root, python_executable=Path(sys.executable),
             powershell_executable=Path(sys.executable), host_state_path=root / "state.sqlite3",
             policy_path=resource_path("host_resource_policy.json"),
             tools=dict(comsol_launcher=Path(sys.executable), matlab_root=root))
+        super().__init__(context=context, artifact_root=root.parent,
+            run_id="inert-ei", project="inert_comsol_fixture", mode="inert_transport",
+            package=dict(run_dir=root, artifact_run_dir=root),
+            capacity_session=dict(fixture="inert_no_capacity_admission"),
+            execution_request=root / "execution_request.json", result_path=root / "Result.json",
+            expected_operation_ids=("build_model", "verify_model"))
+        self.model_relative_paths = model_relative_paths
+        for path in (self.input_dir, self.result_dir, self.log_dir):
+            path.mkdir()
+        self.run_config.write_text('{"inputs":{}}', encoding="utf-8")
+        self.calls = []
         self.failure = failure
-
-    def canonical_path(self, path):
-        return Path(path).resolve()
 
     def run_process(self, operation_id, **kwargs):
         self.calls.append((operation_id, kwargs))
