@@ -334,6 +334,86 @@ cone_input = root / ('cone-input-' + sys.argv[2])
 cone_input.mkdir()
 for name in ('resolved','numerics','ion_transport_science','gas_field_interface','gas_flow_science','source_spec'):
     (cone_input/(name+'.json')).write_text(json.dumps(cone[name]), encoding='utf-8')
+# GAS_AND_MR_INSTALLED_CONSUMERS_BEGIN
+# Original pre-migration witness cases; source SHA is recorded below.
+gm_mr_original=fixture['mr_prepared_field_old_witness']['cases']
+import msplatform.backends.simion.mr_prepared_field as gm_installed_mr
+import msplatform.workflows.dual_cone_transport as gm_installed_gas_workflow
+gm_purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+for gm_owner in (gm_installed_mr,gm_installed_gas_workflow,dual_cone_transport):
+    assert pathlib.Path(gm_owner.__file__).resolve().is_relative_to(gm_purelib)
+assert gm_installed_mr.compile_memory_consumer_crops(*gm_mr_original['crop_valid']['inputs'])==gm_mr_original['crop_valid']['old']['return']
+# Explicit fixed inert vectors: original test contract, not native qualification.
+gm_coverage_vectors=fixture['mr_interface_coverage_vectors']['cases']
+assert len(gm_coverage_vectors)==11 and len({case['case'] for case in gm_coverage_vectors})==11
+gm_coverage_before=copy.deepcopy(gm_coverage_vectors)
+for gm_coverage_case in gm_coverage_vectors:
+    try: gm_coverage_actual={'return':gm_installed_mr.audit_field_coverage(gm_coverage_case['points'],gm_coverage_case['windows'])}
+    except Exception as gm_coverage_error: gm_coverage_actual={'exception_type':type(gm_coverage_error).__module__+'.'+type(gm_coverage_error).__qualname__,'exception_message':str(gm_coverage_error)}
+    assert gm_coverage_actual==gm_coverage_case['expected'],(gm_coverage_case['case'],gm_coverage_actual,gm_coverage_case['expected'])
+assert gm_coverage_vectors==gm_coverage_before
+try: gm_installed_mr.validate_candidate_binding(*gm_mr_original['candidate_role']['inputs'])
+except ValueError as gm_error: assert str(gm_error)==gm_mr_original['candidate_role']['old']['exception']['message']
+else: raise AssertionError('invalid candidate role accepted')
+# Existing sealed synthetic IP binding; actual loader/operator, no mocks or solver.
+from msplatform.backends.comsol.static_field_binding import load_binding as gm_load_binding
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority as gm_candidate_authority
+gm_operator_binding=gm_load_binding(pathlib.Path(fixture['mr_prepared_field_operator_binding']))
+gm_operator_candidate=copy.deepcopy(gm_operator_binding)
+gm_expected_candidate=dict(s1=1.0,s2=2.0,p1=3.0,p2=4.0)
+gm_operator_candidate['authority']=gm_candidate_authority(gm_operator_binding['authority'],gm_expected_candidate)
+assert gm_installed_mr.validate_candidate_binding(gm_operator_candidate,gm_operator_binding)==gm_expected_candidate
+for gm_kind in ('four','five'):
+    gm_layout_case=gm_mr_original['layout_'+gm_kind];gm_projection_case=gm_mr_original['projection_'+gm_kind]
+    gm_actual=gm_installed_mr.collision_workbench_layout(*gm_layout_case['inputs'])
+    gm_expected=copy.deepcopy(gm_layout_case['old']['return']); gm_expected_seed=pathlib.PureWindowsPath(gm_expected.pop('seed')).name
+    gm_actual_seed=pathlib.Path(gm_actual.pop('seed')).resolve()
+    assert gm_actual_seed.name==gm_expected_seed and gm_actual_seed.is_relative_to(gm_purelib)
+    assert gm_actual==gm_expected
+    assert gm_installed_mr.native_projection(*gm_projection_case['inputs'])==gm_projection_case['old']['return']
+    gm_seed_bytes=gm_actual_seed.read_bytes(); gm_held=gm_actual_seed.with_suffix('.missing-installed-probe')
+    assert not gm_held.exists(); gm_actual_seed.rename(gm_held)
+    try:
+        gm_seed_code="import json,sys;from msplatform.backends.simion.mr_prepared_field import collision_workbench_layout;collision_workbench_layout(json.loads(sys.argv[1]))"
+        gm_seed_absent=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',gm_seed_code,json.dumps(gm_layout_case['inputs'][0])],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert gm_seed_absent.returncode!=0 and ('installed SIMION structural seed is missing: '+gm_expected_seed) in gm_seed_absent.stderr,gm_seed_absent.stdout+gm_seed_absent.stderr
+    finally: gm_held.rename(gm_actual_seed)
+    assert gm_actual_seed.read_bytes()==gm_seed_bytes
+# Both explicit CLI selections use the same pre-existing published-gas fixture.
+gm_gas_reference=copy.deepcopy(fixture['gas_field_reference'])
+assert 'retention_role' not in gm_gas_reference['manifest']
+gm_gas_reference['manifest']['retention_role']='required_evidence'
+gm_gas_ref_path=root/('gas-runtime-reference-'+sys.argv[2]+'.json');gm_gas_ref_path.write_text(json.dumps(gm_gas_reference),encoding='utf-8')
+gm_gas_ref_before=gm_gas_ref_path.read_bytes();gm_gas_manifest_path=pathlib.Path(fixture['gas_field_reference']['manifest']['path']);gm_gas_run=gm_gas_manifest_path.parent
+gm_gas_source_before={p:p.read_bytes() for p in gm_gas_run.iterdir() if p.is_file()}
+gm_gas_out=root/('installed-gas-runtime-'+sys.argv[2]);gm_gas_out.mkdir()
+gm_gas_cli=[sys.executable,'-I','-B','-X','utf8','-m','msplatform.workflows.dual_cone_transport']
+# The inherited 10x10 synthetic gas product spans 0..9 mm on each axis.
+gm_gas_interface=copy.deepcopy(cone['gas_field_interface'])
+gm_gas_interface['runtime_artifact_contract']['domain'].update(minimum_z_mm=0.0,maximum_z_mm=9.0,minimum_radius_mm=0.0,maximum_radius_mm=9.0)
+gm_gas_interface_path=root/('gas-runtime-interface-'+sys.argv[2]+'.json')
+gm_gas_interface_path.write_text(json.dumps(gm_gas_interface),encoding='utf-8')
+gm_gas_interface_before=gm_gas_interface_path.read_bytes()
+gm_gas_common=['--interface',str(gm_gas_interface_path),'--output-dir',str(gm_gas_out)]
+gm_gas_outputs=[]
+for gm_selector in (['--source-reference',str(gm_gas_ref_path)],['--comsol-run-directory',str(gm_gas_run)]):
+    gm_run=subprocess.run(gm_gas_cli+gm_selector+gm_gas_common,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert gm_run.returncode==0 and 'SIMION_GAS_FIELD_MANIFEST=' in gm_run.stdout,gm_run.stdout+gm_run.stderr
+    gm_gas_outputs.append(tuple((gm_gas_out/name).read_bytes() for name in ('gas_field_runtime.lua','gas_field_manifest.json')))
+assert gm_gas_outputs[0]==gm_gas_outputs[1]
+assert json.loads(gm_gas_outputs[0][1])['source']['producer_reference']==gm_gas_reference
+assert gm_gas_ref_path.read_bytes()==gm_gas_ref_before and all(p.read_bytes()==data for p,data in gm_gas_source_before.items()) and gm_gas_interface_path.read_bytes()==gm_gas_interface_before
+for gm_module in (gm_installed_gas_workflow,gm_installed_mr):
+    gm_module_path=pathlib.Path(gm_module.__file__).resolve();gm_module_bytes=gm_module_path.read_bytes();gm_held=gm_module_path.with_suffix('.missing-installed-probe')
+    assert not gm_held.exists();gm_module_path.rename(gm_held)
+    try:
+        gm_missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-m',gm_module.__name__,'--help'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert gm_missing.returncode!=0 and ('No module named '+gm_module.__name__) in gm_missing.stderr,gm_missing.stdout+gm_missing.stderr
+    finally: gm_held.rename(gm_module_path)
+    assert gm_module_path.read_bytes()==gm_module_bytes
+print('INSTALLED_GAS_AND_MR_CONSUMERS=PASS')
+# GAS_AND_MR_INSTALLED_CONSUMERS_END
+
 cone_outputs = []
 for interval in (1,2):
     numerical = json.loads(json.dumps(cone['numerics']))
@@ -1782,6 +1862,63 @@ for name,origin in tof_source_report['origins'].items():
 print('INSTALLED_TOF_SOURCE_ACCEPTANCE=PASS')
 # TOF_SOURCE_ACCEPTANCE_INSTALLED_END
 
+# ION_READER_INSTALLED_BEGIN
+ion_fixture=fixture['ion_reader_old_witness']
+ion_root=root/('ion-reader-'+sys.argv[2]);ion_root.mkdir()
+import base64 as ion_base64
+ion_cases=ion_fixture['cases']; assert len(ion_cases)==11 and len({c['case'] for c in ion_cases})==11
+ion_files={}
+for ion_case in ion_cases:
+    ion_payload=ion_base64.b64decode(ion_case['data_base64'],validate=True)
+    assert len(ion_payload)==ion_case['bytes'] and hashlib.sha256(ion_payload).hexdigest()==ion_case['sha256']
+    ion_path=ion_root/(ion_case['case']+'.ion');ion_path.write_bytes(ion_payload);ion_files[str(ion_path)]=ion_payload
+ion_child=r"""import importlib.abc,json,os,pathlib,sys,sysconfig
+import numpy as np
+q=json.load(sys.stdin);blocked=[pathlib.Path(p).resolve() for p in q['blocked_roots']]
+def refuse(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  path=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(path.is_relative_to(root) for root in blocked):raise AssertionError('author source access: '+str(path))
+sys.addaudithook(refuse)
+class DenyRepository(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('repository import: '+fullname)
+sys.meta_path.insert(0,DenyRepository())
+from msplatform.backends.simion import ion_table
+origin=pathlib.Path(ion_table.__file__).resolve()
+assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+def failure(error):return {'exception_type':type(error).__module__+'.'+type(error).__qualname__,'exception_message':str(error)}
+for case in q['cases']:
+ path=pathlib.Path(q['directory'])/(case['case']+'.ion');expected=dict(case['outcome'])
+ if expected.pop('path_substitution',None)=='input_path':expected['exception_message']=expected['exception_message'].replace('{input_path}',str(path))
+ try:
+  frame=ion_table.read_ion_table(path)
+  actual={'columns':list(frame.columns),'dtypes':[str(v) for v in frame.dtypes],'rows':[[repr(v) for v in row] for row in frame.itertuples(index=False,name=None)]}
+ except Exception as error:actual=failure(error)
+ assert actual==expected,(case['case'],actual,expected)
+values=(1,-2,1.0,1.5,True,np.bool_(True),np.int64(-3),0,float('inf'),'1e0','1.00000000000000001')
+assert len(q['charge_cases'])==len(values)==11
+for case,value in zip(q['charge_cases'],values):
+ assert case['input_type']==type(value).__module__+'.'+type(value).__qualname__ and case['input_repr']==repr(value)
+ try:actual={'return':ion_table._validated_charge_state(value)}
+ except Exception as error:actual=failure(error)
+ assert actual==case['outcome'],(case,actual)
+print(json.dumps({'origin':str(origin),'cases':len(q['cases']),'charges':len(values)}))
+"""
+ion_request=dict(cases=ion_cases,charge_cases=ion_fixture['charge_cases'],directory=str(ion_root),blocked_roots=[str(p) for p in blocked_source_roots])
+ion_run=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',ion_child],cwd=root,input=json.dumps(ion_request),capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert ion_run.returncode==0,ion_run.stdout+ion_run.stderr
+ion_report=json.loads(ion_run.stdout);assert ion_report['cases']==11 and ion_report['charges']==11
+ion_origin=pathlib.Path(ion_report['origin']);ion_owned=ion_origin.read_bytes();ion_held=ion_origin.with_suffix('.ion-probe-held')
+assert not ion_held.exists();ion_origin.rename(ion_held)
+try:
+    ion_missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c','import msplatform.backends.simion.ion_table'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert ion_missing.returncode!=0 and "No module named 'msplatform.backends.simion.ion_table'" in ion_missing.stderr,ion_missing.stdout+ion_missing.stderr
+finally:ion_held.rename(ion_origin)
+assert ion_origin.read_bytes()==ion_owned and all(pathlib.Path(path).read_bytes()==data for path,data in ion_files.items())
+print('INSTALLED_ION_READER=PASS')
+# ION_READER_INSTALLED_END
+
 # FILE_IDENTITY_INSTALLED_BEGIN
 from msplatform.io import file_identity as installed_identity
 installed_identity_origin=pathlib.Path(installed_identity.__file__).resolve()
@@ -1801,6 +1938,16 @@ for identity_args,identity_expected in ((['--left',str(identity_left),'--right',
     identity_run=subprocess.run([sys.executable,'-I','-B','-m','msplatform.io.file_identity',*identity_args],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
     assert identity_run.returncode==0 and identity_run.stdout.strip()==identity_expected,identity_run.stdout+identity_run.stderr
 assert all(p.read_bytes()==data for p,data in identity_before.items()) and identity_manifest.read_bytes()==identity_manifest_before
+identity_owned_bytes=installed_identity_origin.read_bytes()
+identity_held=installed_identity_origin.with_suffix('.identity-held')
+assert not identity_held.exists()
+installed_identity_origin.rename(identity_held)
+try:
+    identity_absent=subprocess.run([sys.executable,'-I','-B','-X','utf8','-m','msplatform.io.file_identity','--manifest',str(identity_manifest),'--root',str(identity_root)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert identity_absent.returncode!=0 and 'No module named msplatform.io.file_identity' in identity_absent.stderr,identity_absent.stdout+identity_absent.stderr
+finally:
+    identity_held.rename(installed_identity_origin)
+assert installed_identity_origin.read_bytes()==identity_owned_bytes
 print('INSTALLED_FILE_IDENTITY=PASS')
 # FILE_IDENTITY_INSTALLED_END
 
@@ -2941,7 +3088,38 @@ try:
         session=rf_l1_seen['session'];project=rf_l1_workspace/'artifacts/projects/rf_multipole_ion_optics'
         result_path=project/'scratch/workflow_results'/rf_l1_id/'result.json'
         result=json.loads(result_path.read_text(encoding='utf-8'))
-        assert result['writers_confirmed'] is True
+        rf_l1_failure_detail=''
+        if result['writers_confirmed'] is not True:
+            rf_l1_diagnostic=dict(case=rf_l1_case,arm=sys.argv[2],
+                caught_error_type=None if rf_l1_error is None else type(rf_l1_error).__module__+'.'+type(rf_l1_error).__qualname__,
+                caught_error=None if rf_l1_error is None else str(rf_l1_error),
+                result=result)
+            try:
+                rf_l1_retained=os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
+                if rf_l1_retained:
+                    rf_l1_diagnostic_dir=pathlib.Path(rf_l1_retained)/('rf-l1-writer-failure-'+sys.argv[2]+'-'+rf_l1_case)
+                    rf_l1_diagnostic_dir.mkdir(exist_ok=False)
+                    rf_l1_evidence=[('workflow_result.json',result_path)]
+                    rf_l1_evidence += [('result_'+name,session.result_dir/name) for name in
+                        ('failure_context.json','prepare_execution.json','simulation_execution.json','analysis_execution.json')]
+                    rf_l1_evidence += [('log_'+name,session.log_dir/name) for name in
+                        [*(stage+'_module.stdout.log' for stage in ('prepare','simulation','analysis')),
+                         *(f'operation_{index:04d}.{suffix}' for index in range(1,4)
+                           for suffix in ('stdout.log','stderr.log','usage.json','process.json'))]]
+                    rf_l1_copied=[];rf_l1_skipped=[]
+                    for rf_l1_label,rf_l1_source in rf_l1_evidence:
+                        if rf_l1_source.is_file():
+                            if rf_l1_source.stat().st_size>1048576:
+                                rf_l1_skipped.append(rf_l1_label)
+                            else:
+                                with (rf_l1_diagnostic_dir/rf_l1_label).open('xb') as rf_l1_target:
+                                    rf_l1_target.write(rf_l1_source.read_bytes())
+                                rf_l1_copied.append(rf_l1_label)
+                    rf_l1_diagnostic.update(retained_directory=str(rf_l1_diagnostic_dir),copied=rf_l1_copied,oversize_skipped=rf_l1_skipped)
+            except Exception as rf_l1_diagnostic_error:
+                rf_l1_diagnostic['diagnostic_error']=type(rf_l1_diagnostic_error).__module__+'.'+type(rf_l1_diagnostic_error).__qualname__+': '+str(rf_l1_diagnostic_error)
+            rf_l1_failure_detail=json.dumps(rf_l1_diagnostic,ensure_ascii=False)
+        assert result['writers_confirmed'] is True,rf_l1_failure_detail
         rf_l1_captured_capacity=result['capacity_session']['capacity_policy']
         assert rf_l1_captured_capacity['source_record']==rf_l1_capacity_selection['source_record']
         assert rf_l1_captured_capacity['snapshot']==rf_l1_capacity_selection['snapshot']
@@ -5578,6 +5756,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 shutil.copyfile(rfconv_path,rfconv_copy_path)
                 rfconv_data[rfconv_key] = str(rfconv_copy_path)
             rfconv_fixture = dict(manifests=rfconv_manifests,data=rfconv_data,oracle=rfconv_oracle)
+            from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+            mr_operator_root = root / 'mr-prepared-field-operator'
+            mr_operator_root.mkdir()
+            _, mr_operator_binding_path, _ = IonProcessorNativeBindingTest().fixture(mr_operator_root)
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
                                               author_source_roots=[str(REPO_ROOT)],
@@ -5595,6 +5777,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
+                                              mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
+                                              ion_reader_old_witness=json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/ion_reader_old_witness.json').read_text(encoding='utf-8')),
+                                              mr_interface_coverage_vectors=json.loads((REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_interface_coverage_vectors.json').read_text(encoding='utf-8')),
+                                              mr_prepared_field_operator_binding=str(mr_operator_binding_path),
                                               prepared_joint_admission=self.prepared_joint_admission_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
