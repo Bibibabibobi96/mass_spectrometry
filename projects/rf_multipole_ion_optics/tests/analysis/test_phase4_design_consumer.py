@@ -49,10 +49,8 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             self.assertNotIn(forbidden, lifecycle)
     def test_managed_plotters_bind_explicit_png_and_state_identity(self) -> None:
         managed = (
-            PROJECT_ROOT
-            / "workflows"
-            / "mass_filter_reference"
-            / "evaluate_comparison.py",
+            REPO_ROOT
+            / "src/msplatform/workflows/rf_mass_filter/response_comparison.py",
             PROJECT_ROOT / "analysis" / "compare_rf_input_energy.py",
         )
         for path in managed:
@@ -62,7 +60,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             self.assertIn("figsize=", source, path.name)
         for path in managed:
             if path.name in {
-                "evaluate_comparison.py",
+                "response_comparison.py",
                 "compare_rf_input_energy.py",
             }:
                 continue

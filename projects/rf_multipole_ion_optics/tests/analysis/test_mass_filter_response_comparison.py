@@ -6,9 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
-    evaluate_comparison as module,
-)
+from msplatform.workflows.rf_mass_filter import response_comparison as module
 
 
 PROJECT_ROOT = Path(__file__).parents[2]

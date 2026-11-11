@@ -235,8 +235,7 @@ try {
             -Prefix "$($entry.Key.ToLower())_source" `
             -Files $entry.Value.files
     }
-    $module = 'projects.rf_multipole_ion_optics.workflows.' +
-        'mass_filter_reference.evaluate_comparison'
+    $module = 'msplatform.workflows.rf_mass_filter.response_comparison'
     $requiredModules = @(
         'projects.rf_multipole_ion_optics.workflows',
         'projects.rf_multipole_ion_optics.workflows.mass_filter_reference',

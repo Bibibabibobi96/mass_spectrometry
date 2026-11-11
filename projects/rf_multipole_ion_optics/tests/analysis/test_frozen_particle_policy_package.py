@@ -874,5 +874,102 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
                     self.assertTrue(record["execution"]["python_no_bytecode"])
 
 
+    def test_mass_response_comparison_executes_actual_frozen_cli_and_refuses_missing_owner(self) -> None:
+        from msplatform.workflows.rf_mass_filter import response_comparison as comparison
+        from projects.rf_multipole_ion_optics.tests.analysis.test_mass_filter_response_comparison import (
+            MassFilterResponseComparisonTests,
+        )
+
+        fixture = MassFilterResponseComparisonTests()
+        self.addCleanup(fixture.doCleanups)
+        fixture.setUp()
+        expected_rows, expected_metrics = comparison.compare_responses(
+            fixture.comsol, fixture.simion, fixture.l1, fixture.baseline, fixture.mode,
+            fixture.source_metrics, 1000, 1000,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source_inputs = root / "source_inputs"
+            source_inputs.mkdir()
+            selected = {}
+            for name, source in (("comsol_response", fixture.comsol), ("simion_response", fixture.simion),
+                                 ("l1_response", fixture.l1), ("baseline", fixture.baseline), ("mode", fixture.mode)):
+                target = source_inputs / (name + source.suffix)
+                shutil.copyfile(source, target)
+                selected[name] = target
+            roles = {
+                "COMSOL": "rf_quadrupole_comsol_mass_filter_functional_metrics",
+                "SIMION": "rf_quadrupole_simion_mass_filter_functional_metrics",
+                "L1": "quadrupole_mass_filter_l1_metrics",
+            }
+            for name, values in fixture.source_metrics.items():
+                target = source_inputs / (name.lower() + "_metrics.json")
+                target.write_text(json.dumps(dict(values, role=roles[name])), encoding="utf-8")
+                selected[name.lower() + "_metrics"] = target
+            expected_csv = root / "expected.csv"
+            comparison.write_comparison(expected_csv, expected_rows)
+            output_csv, output_metrics, output_figure = (root / name for name in (
+                "comparison.csv", "metrics.json", "comparison.png"))
+            result_path = root / "execution.json"
+            arguments = []
+            for name, path in selected.items():
+                arguments.extend(("--" + name.replace("_", "-"), str(path)))
+            arguments.extend(("--comsol-source-particles", "1000", "--simion-source-particles", "1000",
+                              "--output", str(output_csv), "--metrics", str(output_metrics),
+                              "--figure", str(output_figure)))
+            input_directory = root / "frozen_inputs"
+            input_directory.mkdir()
+            setup = _mass_analysis_setup(PROJECT_ROOT / "workflows/mass_filter_reference/compare_responses.ps1")
+            script = f"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. {_ps(SUPPORT)}
+. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+$repoRoot={_ps(REPO_ROOT)}
+$projectRoot={_ps(PROJECT_ROOT)}
+$python={_ps(Path(sys.executable).resolve())}
+$inputDir={_ps(input_directory)}
+{setup}
+$arguments=@({','.join(_ps(value) for value in arguments)})
+$execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenAnalysisPackage `
+ -Module $analysisModule -Arguments $arguments -DistributionNames $analysisDistributions `
+ -RequiredModuleNames $analysisRequiredModules -ForbiddenRoots @($repoRoot,$projectRoot)
+$selectedPath=Get-FrozenPythonPackageFile -Package $frozenAnalysisPackage `
+ -RelativePath 'src/msplatform/workflows/rf_mass_filter/response_comparison.py'
+$withheld=$selectedPath+'.withheld'
+$missing=$null
+try {{
+ [IO.File]::Move($selectedPath,$withheld)
+ try {{
+  Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenAnalysisPackage `
+   -Module $analysisModule -Arguments $arguments -DistributionNames $analysisDistributions `
+   -RequiredModuleNames $analysisRequiredModules -ForbiddenRoots @($repoRoot,$projectRoot)|Out-Null
+ }} catch {{ $missing=$_.Exception.Message }}
+}} finally {{
+ if([IO.File]::Exists($withheld)){{[IO.File]::Move($withheld,$selectedPath)}}
+}}
+@{{execution=$execution;selected_path=$selectedPath;missing=$missing}}|ConvertTo-Json -Depth 12|Set-Content -LiteralPath {_ps(result_path)} -Encoding UTF8
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=root, env=os.environ.copy(), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+            self.assertEqual(output_csv.read_bytes(), expected_csv.read_bytes())
+            self.assertEqual(json.loads(output_metrics.read_text(encoding="utf-8")), expected_metrics)
+            self.assertTrue(output_figure.is_file())
+            origins = {row["name"]: Path(row["origin"]).resolve()
+                       for row in result["execution"]["frozen_modules"]}
+            selected_path = Path(result["selected_path"]).resolve()
+            self.assertEqual(origins["msplatform.workflows.rf_mass_filter.response_comparison"], selected_path)
+            self.assertTrue(selected_path.is_relative_to(input_directory))
+            self.assertEqual(selected_path.read_bytes(), Path(comparison.__file__).read_bytes())
+            self.assertTrue(result["execution"]["module_invoked"])
+            self.assertIn("missing or outside", result["missing"])
+            self.assertFalse((selected_path.with_name(selected_path.name + ".withheld")).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -299,7 +299,7 @@ Get-Content $specification.stdout|Write-Output
         comsol_evaluator = _read(MASS_FILTER_WORKFLOW / "evaluate_comsol.py")
         simion_evaluator = _read(MASS_FILTER_WORKFLOW / "evaluate_simion.py")
         comparison_evaluator = _read(
-            MASS_FILTER_WORKFLOW / "evaluate_comparison.py"
+            REPO_ROOT / "src/msplatform/workflows/rf_mass_filter/response_comparison.py"
         )
         self.assertNotIn("evaluate_simion", comsol_evaluator)
         self.assertNotIn("theory_masses", comsol_evaluator)

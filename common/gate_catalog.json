@@ -3709,6 +3709,20 @@
               "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_analysis_recovery.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/rf_mass_filter/response_comparison.py",
+                "reason": "installed_rf_mass_response_comparison_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/analysis/test_phase4_design_consumer.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_frozen_particle_policy_package.py",
+              "projects/rf_multipole_ion_optics/tests/analysis/test_comsol_mass_filter_contract.py"
+            ],
+            "dependency_profile": "locked"
           }
         ]
       },

@@ -2443,6 +2443,87 @@ throw 'Missing selected resource accepted'
 print('INSTALLED_SELECTED_FROZEN_EXECUTOR=PASS')
 # FROZEN_EXECUTOR_INSTALLED_END
 
+# RF_RESPONSE_COMPARISON_INSTALLED_BEGIN
+from msplatform.workflows.rf_mass_filter import response_comparison as rf_response
+rf_response_fixture=fixture['rf_response_comparison']
+rf_response_module=pathlib.Path(rf_response.__file__).resolve()
+assert rf_response_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert hashlib.sha256(rf_response_module.read_bytes()).hexdigest()==rf_response_fixture['module_sha256']
+rf_response_root=root/('rf-response-comparison-'+sys.argv[2]);rf_response_root.mkdir()
+rf_response_inputs={}
+for rf_response_name,rf_response_record in rf_response_fixture['inputs'].items():
+    rf_response_bytes=bytes.fromhex(rf_response_record['bytes_hex'])
+    assert len(rf_response_bytes)==rf_response_record['bytes']
+    assert hashlib.sha256(rf_response_bytes).hexdigest()==rf_response_record['sha256']
+    rf_response_path=rf_response_root/(rf_response_name+('.csv' if rf_response_name.endswith('_response') else '.json'))
+    rf_response_path.write_bytes(rf_response_bytes);rf_response_inputs[rf_response_name]=rf_response_path
+rf_response_source_metrics={name:json.loads(rf_response_inputs[name.lower()+'_metrics'].read_text(encoding='utf-8'))
+                            for name in ('COMSOL','SIMION','L1')}
+rf_response_rows,rf_response_metrics=rf_response.compare_responses(
+    rf_response_inputs['comsol_response'],rf_response_inputs['simion_response'],rf_response_inputs['l1_response'],
+    rf_response_inputs['baseline'],rf_response_inputs['mode'],rf_response_source_metrics,1000,1000)
+assert rf_response_rows==rf_response_fixture['expected_rows']
+assert rf_response_metrics==rf_response_fixture['expected_metrics']
+assert rf_response_metrics['decision_status']=='NOT_EVALUATED'
+assert {name:row['sample_count'] for name,row in rf_response_metrics['sampled_response_analysis'].items()}=={'COMSOL':7,'SIMION':7,'L1':29}
+assert all(not row['resolution_claim_allowed'] for row in rf_response_metrics['sampled_response_analysis'].values())
+rf_response_arguments=[]
+for rf_response_name,rf_response_path in rf_response_inputs.items():
+    rf_response_arguments.extend(('--'+rf_response_name.replace('_','-'),str(rf_response_path)))
+rf_response_csv=rf_response_root/'comparison.csv';rf_response_json=rf_response_root/'comparison.json';rf_response_png=rf_response_root/'comparison.png'
+rf_response_arguments.extend(('--comsol-source-particles','1000','--simion-source-particles','1000',
+                              '--output',str(rf_response_csv),'--metrics',str(rf_response_json),'--figure',str(rf_response_png)))
+rf_response_cli_code="""import hashlib,importlib.util,json,pathlib,runpy,sys
+module='msplatform.workflows.rf_mass_filter.response_comparison'
+expected,sha,*arguments=sys.argv[1:]
+origin=pathlib.Path(importlib.util.find_spec(module).origin).resolve()
+assert origin==pathlib.Path(expected).resolve()
+assert hashlib.sha256(origin.read_bytes()).hexdigest()==sha
+print('RF_RESPONSE_COMPARISON_CLI_ORIGIN='+str(origin),flush=True)
+sys.argv=[module,*arguments]
+runpy.run_module(module,run_name='__main__',alter_sys=True)
+"""
+rf_response_cli=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rf_response_cli_code,str(rf_response_module),
+    rf_response_fixture['module_sha256'],*rf_response_arguments],cwd=rf_response_root,capture_output=True,text=True,encoding='utf-8',check=False)
+assert rf_response_cli.returncode==0,rf_response_cli.stdout+rf_response_cli.stderr
+assert 'RF_RESPONSE_COMPARISON_CLI_ORIGIN='+str(rf_response_module) in rf_response_cli.stdout
+assert rf_response_csv.read_bytes()==bytes.fromhex(rf_response_fixture['expected_csv_hex'])
+assert json.loads(rf_response_json.read_text(encoding='utf-8'))==rf_response_fixture['expected_metrics']
+assert rf_response_png.is_file() and rf_response_png.stat().st_size>0
+for rf_response_name,rf_response_path in rf_response_inputs.items():
+    assert rf_response_path.read_bytes()==bytes.fromhex(rf_response_fixture['inputs'][rf_response_name]['bytes_hex'])
+rf_response_original=rf_response_module.read_bytes();rf_response_held=rf_response_module.with_suffix('.py.withheld')
+try:
+    rf_response_module.rename(rf_response_held)
+    rf_response_negative="""import importlib,importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+def reject(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  candidate=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(candidate.is_relative_to(p) for p in blocked):raise AssertionError('author tree accessed')
+class NoRepository(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('repository import attempted')
+sys.addaudithook(reject);sys.meta_path.insert(0,NoRepository())
+try:importlib.import_module('msplatform.workflows.rf_mass_filter.response_comparison')
+except ModuleNotFoundError as error:
+ if error.name!='msplatform.workflows.rf_mass_filter.response_comparison':raise
+ print('RF_RESPONSE_COMPARISON_MISSING=REJECTED')
+else:raise AssertionError('missing selected owner imported')
+"""
+    rf_response_missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',rf_response_negative,
+        json.dumps([str(path) for path in blocked_source_roots])],cwd=rf_response_root,capture_output=True,text=True,encoding='utf-8',check=False)
+    assert rf_response_missing.returncode==0,rf_response_missing.stdout+rf_response_missing.stderr
+    assert 'RF_RESPONSE_COMPARISON_MISSING=REJECTED' in rf_response_missing.stdout
+finally:rf_response_held.rename(rf_response_module)
+assert rf_response_module.read_bytes()==rf_response_original
+try:importlib.import_module('projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_comparison')
+except (ModuleNotFoundError,AssertionError):pass
+else:raise AssertionError('retired repository comparison imported')
+missing_rejected.append('rf_response_comparison')
+print('INSTALLED_RF_RESPONSE_COMPARISON=PASS')
+# RF_RESPONSE_COMPARISON_INSTALLED_END
+
 # RF_MANAGED_L1_INSTALLED_BEGIN
 from unittest.mock import patch as rf_l1_patch
 from msplatform.workflows.rf_mass_filter import finite_length as rf_l1
@@ -4501,6 +4582,41 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     module_bytes=len(module_bytes),
                     module_sha256=hashlib.sha256(module_bytes).hexdigest())
 
+    def rf_response_comparison_probe_fixture(self, root: Path) -> dict:
+        """Serialize the original eight-test fixture and unchanged comparison body result."""
+        from msplatform.workflows.rf_mass_filter import response_comparison
+        from projects.rf_multipole_ion_optics.tests.analysis.test_mass_filter_response_comparison import (
+            MassFilterResponseComparisonTests,
+        )
+
+        original = MassFilterResponseComparisonTests()
+        try:
+            original.setUp()
+            expected_rows, expected_metrics = response_comparison.compare_responses(
+                original.comsol, original.simion, original.l1, original.baseline, original.mode,
+                original.source_metrics, 1000, 1000,
+            )
+            expected = root / 'rf-response-comparison-original.csv'
+            response_comparison.write_comparison(expected, expected_rows)
+            selected = dict(comsol_response=original.comsol, simion_response=original.simion,
+                            l1_response=original.l1, baseline=original.baseline, mode=original.mode)
+            records = {}
+            for name, path in selected.items():
+                value = path.read_bytes()
+                records[name] = dict(bytes_hex=value.hex(), bytes=len(value), sha256=hashlib.sha256(value).hexdigest())
+            roles = dict(COMSOL='rf_quadrupole_comsol_mass_filter_functional_metrics',
+                         SIMION='rf_quadrupole_simion_mass_filter_functional_metrics',
+                         L1='quadrupole_mass_filter_l1_metrics')
+            for name, values in original.source_metrics.items():
+                value = json.dumps(dict(values, role=roles[name])).encode('utf-8')
+                records[name.lower() + '_metrics'] = dict(bytes_hex=value.hex(), bytes=len(value),
+                                                        sha256=hashlib.sha256(value).hexdigest())
+            return dict(inputs=records, expected_rows=expected_rows, expected_metrics=expected_metrics,
+                        expected_csv_hex=expected.read_bytes().hex(),
+                        module_sha256=hashlib.sha256(Path(response_comparison.__file__).read_bytes()).hexdigest())
+        finally:
+            original.doCleanups()
+
     def rf_l1_managed_probe_fixture(self, root: Path) -> dict:
         from msplatform.workflows.rf_mass_filter import finite_length
         project = REPO_ROOT / "projects/rf_multipole_ion_optics"
@@ -5096,6 +5212,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               tof_budget=self.tof_budget_probe_fixture(),
                                               rf_finite_extraction=self.rf_finite_extraction_probe_fixture(),
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
+                                              rf_response_comparison=self.rf_response_comparison_probe_fixture(root),
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
