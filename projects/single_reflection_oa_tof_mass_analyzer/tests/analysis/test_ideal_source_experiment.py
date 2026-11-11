@@ -63,7 +63,11 @@ class IdealExperimentTests(unittest.TestCase):
                          "--workspace", "{workspace}", "--environment", "{execution_environment}",
                          "--profile", "{environment_profile}"])
         self.assertTrue((PROJECT_ROOT / step["entrypoint"]).is_file())
-        self.assertEqual((PROJECT_ROOT / step["entrypoint"]).resolve(), Path(runner.__file__).resolve())
+        registered_module = (PROJECT_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
+        self.assertEqual(runner.__name__, registered_module.with_suffix("").as_posix().replace("/", "."))
+        # Ordinary installs select the same source through a different absolute root.
+        self.assertEqual((PROJECT_ROOT / step["entrypoint"]).read_text(encoding="utf-8"),
+                         Path(runner.__file__).read_text(encoding="utf-8"))
         self.assertEqual((PROJECT_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
                          .with_suffix("").as_posix().replace("/", "."),
                          "msplatform.workflows.oa_tof_design.source_comparison")
