@@ -47,17 +47,26 @@ class FileIdentityTest(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
     def test_selected_cli_preserves_non_ascii_missing_path_diagnostic(self) -> None:
+        import ctypes
+
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "不存在的文件.bin"
             repo_root = Path(__file__).resolve().parents[2]
             command = [sys.executable, "-I", "-S", "-B", "-X", "utf8",
-                       str(repo_root / "src/msplatform/io/file_identity.py"), "--unbuffered", str(missing)]
-            result = subprocess.run(command, cwd=repo_root, capture_output=True, timeout=30)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(result.stdout, b"")
-            diagnostic = result.stderr.decode("utf-8", errors="strict")
-            self.assertIn(str(missing), diagnostic)
-            self.assertIn("WinError 2", diagnostic)
+                       str(repo_root / "src/msplatform/io/file_identity.py")]
+            for arguments in (("--unbuffered", str(missing)),
+                              ("--left", str(missing), "--right", str(missing))):
+                with self.subTest(mode=arguments[0]):
+                    result = subprocess.run(command + list(arguments), cwd=repo_root,
+                                            capture_output=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b"")
+                    diagnostic = result.stderr.decode("utf-8", errors="strict")
+                    self.assertIn("WinError 2", diagnostic)
+                    self.assertIn(ctypes.FormatError(2).strip(), diagnostic)
+                    # ctypes.WinError has no filename; Path.stat includes its repr.
+                    if arguments[0] == "--left":
+                        self.assertIn(repr(str(missing)), diagnostic)
 
     @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
     def test_unbuffered_matches_hashlib_at_sector_and_chunk_boundaries(self) -> None:
