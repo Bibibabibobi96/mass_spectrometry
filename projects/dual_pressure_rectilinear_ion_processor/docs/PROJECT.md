@@ -529,8 +529,12 @@ existing rigid placement once and converts gas velocity m/s to official HS1 mm/u
 No PA-pitch velocity scaling, cross-callback time/ID cache, new timestep truncation or RNG draw
 is introduced. Actual Program activation/reset/seed, callback/event order and15electrodes stay.
 
-Acceptance in this slice is software preparation, emittedLua and actual Program with inert
-HS1 callback recording. It does not establish native collisions, boundary-resolved integration,
+Acceptance includes software preparation, emitted Lua and actual Program with inert
+HS1 callback recording. An explicit zero-HP/LP software witness also loads the selected official
+HS1 body through its prepared gas binding: zero pressure leaves velocity/timestep unchanged,
+does not draw collision randomness, and out-of-domain queries fail. Its direct vendor initialization
+does not validate the Program's configured seed or native random sequence. It does not establish
+native collisions, boundary-resolved integration,
 P11 arbitrary IP placement, new field/flight qualification or whole installed IP orchestration.
 The existing root workflow still owns its genuine snapshot/seed/field/admission/analysis duties.
 

@@ -132,6 +132,97 @@ class FunctionalContractTests(unittest.TestCase):
     def test_validate_current_config(self) -> None:
         preparation.validate_configs(self.config)
 
+    def test_authored_zero_pressure_reaches_selected_hs1_without_collision_draws(self) -> None:
+        """Software witness on real prepared gas and selected HS1, not a SIMION Fly."""
+        selected = os.environ.get("MASS_SPECTROMETRY_INSTALLED_IP_HS1_SOURCE")
+        if "MASS_SPECTROMETRY_INSTALLED_IP_HS1_SOURCE" in os.environ:
+            self.assertTrue(selected, "Explicit HS1 source is empty")
+            hs1_source = Path(selected)
+            self.assertTrue(hs1_source.is_file(), f"Explicit HS1 source unavailable: {hs1_source}")
+        else:
+            hs1_source = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/examples/collision_hs1/collision_hs1.lua"
+            if not hs1_source.is_file():
+                self.skipTest("G11 selected HS1 software tier unavailable: no implicit installed source")
+        selected_lua = os.environ.get("SIMION_LUA_EXE")
+        if "SIMION_LUA_EXE" in os.environ:
+            self.assertTrue(selected_lua, "Explicit standalone Lua is empty")
+            self.assertTrue(Path(selected_lua).is_file(), f"Explicit standalone Lua unavailable: {selected_lua}")
+            executable = selected_lua
+        else:
+            executable = shutil.which("lua") or shutil.which("lua5.1")
+            if executable is None:
+                self.skipTest("G11 selected HS1 software tier unavailable: no standalone Lua")
+        raw = hs1_source.read_bytes()
+        original_text = hs1_source.read_text(encoding="utf-8")
+        project, vendor = self.make_prepare_fixture()
+        baseline_path = project / "config/baseline.json"
+        baseline = functional.read_json(baseline_path)
+        baseline["gas"]["hp_pressure_pa"] = 0
+        baseline["gas"]["lp_pressure_pa"] = 0
+        functional.write_json(baseline_path, baseline)
+        vendor_copy = vendor / "examples/collision_hs1/collision_hs1.lua"
+        vendor_copy.write_bytes(raw)
+        functional.prepare(self.run, project, vendor)
+        resolved = functional.read_json(self.run / "inputs/resolved_model.json")
+        self.assertEqual(resolved["baseline"]["gas"]["hp_pressure_pa"], 0)
+        self.assertEqual(resolved["baseline"]["gas"]["lp_pressure_pa"], 0)
+        self.assertEqual((self.run / "inputs/collision_hs1_original.lua").read_bytes(), raw)
+        adapted = (self.run / "simion/collision_hs1.lua").read_text(encoding="utf-8")
+        self.assertEqual(adapted, adapt_hs1_for_repeat_fly(original_text))
+        adapter = functional.read_json(self.run / "inputs/collision_adapter.json")
+        import hashlib
+        self.assertEqual(adapter["original_sha256"].lower(), hashlib.sha256(raw).hexdigest())
+        self.assertEqual(adapter["adapted_sha256"].lower(), hashlib.sha256((self.run / "simion/collision_hs1.lua").read_bytes()).hexdigest())
+        self.assertFalse(adapter["algorithm_changed"])
+        # Stock Lua does not know SIMION's declaration keyword. Remove only that
+        # prefix from each declaration in a disposable copy of the frozen source.
+        executable_source, declarations = re.subn(r"(?m)^adjustable (?=_[A-Za-z0-9_]+\s*=)", "", adapted)
+        self.assertEqual(declarations, 13, "Selected HS1 declaration shape changed")
+        executable_path = self.run / "standalone_hs1_syntax.lua"
+        executable_path.write_text(executable_source, encoding="utf-8", newline="\n")
+        harness = self.run / "zero_pressure_witness.lua"
+        harness.write_text(r'''simion={workbench_program=function() end}; segment={}
+local seeded,draws=0,0
+seed=function(value) seeded=seeded+1 end
+rand=function() draws=draws+1; return 0.5 end
+abs,sqrt,exp,ln=math.abs,math.sqrt,math.exp,math.log
+local hs=assert(loadfile(arg[1]))()
+local field=assert(loadfile(arg[2]))()
+local binding=assert(loadfile(arg[3]))()
+local x,y,z=0,0,0
+local frame=arg[4]
+local sample=binding.bind(hs,field,function() return x,y,z end,frame)
+ion_px_gu,ion_py_gu,ion_pz_gu=0,0,0
+ion_vx_mm,ion_vy_mm,ion_vz_mm=1,2,3
+ion_time_step=0.01
+hs.segment.initialize()
+assert(seeded==1 and draws==0,'unexpected HS1 initialization RNG')
+for _,point in ipairs({{tonumber(arg[5]),0,0},{tonumber(arg[6]),0,0}}) do
+  x,y,z=point[1],point[2],point[3]
+  local state=sample()
+  assert(state.status=='vacuum' and state.pressure_pa==0,'authored region is not vacuum')
+  assert(hs.pressure()==0 and hs.temperature()==tonumber(arg[8]),'gas callback differs')
+  local vx,vy,vz=hs.velocity(); assert(vx==0 and vy==0 and vz==0,'gas velocity differs')
+  hs.segment.other_actions(); hs.segment.tstep_adjust()
+  assert(ion_vx_mm==1 and ion_vy_mm==2 and ion_vz_mm==3 and ion_time_step==0.01,'zero-pressure changed state')
+  assert(seeded==1 and draws==0,'zero-pressure consumed collision RNG')
+end
+x=tonumber(arg[7]); y,z=0,0
+local ok,err=pcall(hs.segment.other_actions)
+assert(not ok and tostring(err):match('gas field coverage lost'),'unknown coverage accepted')
+assert(seeded==1 and draws==0,'unknown coverage consumed collision RNG')
+print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
+''', encoding="utf-8", newline="\n")
+        geometry = resolved["baseline"]["geometry"]
+        result = subprocess.run([str(executable), str(harness), str(executable_path),
+            str(self.run / "simion/gas_field.lua"), str(self.run / "simion/collision_hs1_gas.lua"),
+            resolved["gas_runtime"]["query_frame_id"], str(geometry["hp_center_mm"]),
+            str(geometry["lp_center_mm"]), str(resolved["native_projection"]["maximum_mm"][0] + 1),
+            str(resolved["baseline"]["gas"]["temperature_k"])],
+            cwd=self.run, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("IP_ZERO_HS1_SOFTWARE_WITNESS=PASS", result.stdout)
+
     def test_native_timing_aligns_both_switches_and_preserves_lift_end(self) -> None:
         baseline = copy.deepcopy(self.config["baseline"])
         baseline["electric"]["rf_quench_alignment"] = "next_cosine_zero"
