@@ -114,3 +114,39 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
             with self.subTest(sign=sign), self.assertRaisesRegex(ValueError, reason):
                 integrate_axis_to_plane_us(field, z0_mm=0.0, vz0_mm_per_us=0.0,
                     z_stop_mm=10.0, mass_to_charge_th=100.0, charge_sign=sign)
+
+    def test_nonintegral_horizon_rejects_crossing_beyond_the_time_limit(self) -> None:
+        from msplatform.analysis.axis_field_transport import AxisField
+        import numpy as np
+
+        field = AxisField(np.asarray([0.0, 2.0]), np.asarray([1.0, 1.0]))
+        with self.assertRaisesRegex(RuntimeError, "max_elapsed_us"):
+            integrate_axis_to_plane_us(
+                field, z0_mm=0.0, vz0_mm_per_us=0.0, z_stop_mm=1.0,
+                mass_to_charge_th=1.0, charge_sign=1,
+                dt_us=0.1, max_elapsed_us=0.11,
+            )
+
+    def test_nonintegral_horizon_accepts_constant_velocity_at_and_inside_limit(self) -> None:
+        from msplatform.analysis.axis_field_transport import AxisField
+        import numpy as np
+        from sys import float_info
+
+        field = AxisField(np.asarray([0.0, 2.0]), np.asarray([0.0, 0.0]))
+        # With E=0 and v=1 mm/us, t=z/v independently fixes both arrivals.
+        # 0.11 ends the shortened step; 0.105 crosses inside it.
+        # 0.1 retains a complete-step arrival within the same horizon.
+        # For these E=0/v=1 controls, endpoint accumulation contributes gamma3;
+        # convex endpoint interpolation adds gamma3, bounded by gamma6 * H.
+        # This binary64 forward-error bound is not a physical tolerance.
+        u = float_info.epsilon / 2
+        gamma6 = 6 * u / (1 - 6 * u)
+        for stop_mm in (0.11, 0.105, 0.1):
+            with self.subTest(stop_mm=stop_mm):
+                elapsed = integrate_axis_to_plane_us(
+                    field, z0_mm=0.0, vz0_mm_per_us=1.0, z_stop_mm=stop_mm,
+                    mass_to_charge_th=1.0, charge_sign=1,
+                    dt_us=0.1, max_elapsed_us=0.11,
+                )
+                self.assertAlmostEqual(elapsed, stop_mm, delta=gamma6 * 0.11)
+                self.assertLessEqual(elapsed, 0.11)

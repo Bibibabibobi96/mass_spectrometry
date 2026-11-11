@@ -1117,7 +1117,10 @@ another charge-magnitude factor. Its existing unit-charge-representative q/m
 calculation preserves arithmetic order and does not reconstruct physical mass.
 
 Original interpolation, adjacent-endpoint tolerance, timestep/horizon defaults
-and local-crossing semantics are unchanged. Negative charge with reversed field
+and local-crossing semantics are unchanged. The final RK4 step is shortened to
+the remaining declared horizon; a crossing beyond that horizon is rejected.
+This repairs the former nonintegral-step overshoot without changing the requested
+time limit or imposing a new scientific criterion. Negative charge with reversed field
 and 200 u / z=2 represented as 100 Th reuse the original constant-acceleration
 oracle. Candidate/source/cohort guards and the consumers' original one/five-percent
 research criteria remain with those analyzers. No PA, native export, solver

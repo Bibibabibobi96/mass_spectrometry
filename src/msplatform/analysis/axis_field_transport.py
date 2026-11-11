@@ -57,7 +57,8 @@ def integrate_axis_to_plane_us(
     a particle may initially move upstream and turn around in the accelerator.
     Failure to reach the stop plane within the declared local propagation
     horizon is explicit rather than silently clipped or iterated to a generic
-    implementation step cap.
+    implementation step cap. The final step is shortened to the remaining
+    horizon; no state beyond that horizon is accepted as a plane crossing.
 
     ``mass_to_charge_th`` is unsigned m/|q| in Th (u/e), not physical mass;
     ``charge_sign`` is the integer -1 or +1, not charge magnitude. Multiply
@@ -83,7 +84,10 @@ def integrate_axis_to_plane_us(
             return elapsed
         if not field.z_mm[0] <= z <= field.z_mm[-1]:
             raise RuntimeError("axis integration left exported field before reaching stop plane")
-        h = dt_us
+        remaining_us = max_elapsed_us - elapsed
+        if remaining_us <= 0:
+            break
+        h = min(dt_us, remaining_us)
         previous_z = z
         a1 = acceleration(z); k1z, k1v = v, a1
         a2 = acceleration(z + 0.5 * h * k1z); k2z, k2v = v + 0.5 * h * k1v, a2
@@ -91,7 +95,7 @@ def integrate_axis_to_plane_us(
         a4 = acceleration(z + h * k3z); k4z, k4v = v + h * k3v, a4
         z += h * (k1z + 2 * k2z + 2 * k3z + k4z) / 6
         v += h * (k1v + 2 * k2v + 2 * k3v + k4v) / 6
-        elapsed += h
+        elapsed = min(elapsed + h, max_elapsed_us)
         if previous_z < z_stop_mm <= z:
             # The interpolation only localizes the final accepted RK4 step;
             # convergence is checked by varying ``dt_us`` in the C3 contract.
