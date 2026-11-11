@@ -198,8 +198,7 @@ print(json.dumps({
                 }
             }
             $moduleOutput = ''
-            if (-not $ProbeOnly) {
-                $execute = $isolate + "`n" + @'
+            $execute = $isolate + "`n" + @'
 import importlib.util, runpy
 module = sys.argv[1]
 spec = importlib.util.find_spec(module)
@@ -223,14 +222,17 @@ finally:
                     raise RuntimeError(detail)
                 failure.add_note(detail)
 '@
+            $invocationArguments = @('-I', '-X', 'utf8', '-B', '-c', $execute) +
+                $isolationArguments + @($Module) + $Arguments
+            if (-not $ProbeOnly) {
                 if ($StdoutPath) {
-                    & $Python -I -X utf8 -B -c $execute @isolationArguments $Module @Arguments 1> $StdoutPath
+                    & $Python @invocationArguments 1> $StdoutPath
                     $moduleExitCode = $LASTEXITCODE
                     if ($moduleExitCode -eq 0) {
                         $moduleOutput = [IO.File]::ReadAllText($StdoutPath).Trim()
                     }
                 } else {
-                    $moduleOutput = (& $Python -I -X utf8 -B -c $execute @isolationArguments $Module @Arguments |
+                    $moduleOutput = (& $Python @invocationArguments |
                         Out-String).Trim()
                     $moduleExitCode = $LASTEXITCODE
                 }
@@ -250,7 +252,7 @@ finally:
         $env:PYTHONDONTWRITEBYTECODE = $savedNoBytecode
     }
     Assert-FrozenPythonPackage -Package $Package
-    [pscustomobject]@{
+    $executionResult = [pscustomobject]@{
         schema_version = 1
         module = $Module
         module_invoked = -not [bool]$ProbeOnly
@@ -266,4 +268,14 @@ finally:
         python_prefix = [string]$environment.python_prefix
         module_stdout = $moduleOutput
     }
+    if ($ProbeOnly) {
+        # Managed callers execute the same verified bootstrap through their own
+        # process owner, rechecking the package before launch and after success.
+        $executionResult | Add-Member -NotePropertyName invocation -NotePropertyValue ([pscustomobject]@{
+            file_path = $Python
+            arguments = [string[]]$invocationArguments
+            working_directory = $selectedWorkingDirectory
+        })
+    }
+    $executionResult
 }

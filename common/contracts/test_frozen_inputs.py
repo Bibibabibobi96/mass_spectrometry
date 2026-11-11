@@ -1,5 +1,7 @@
 """Raw-byte freezing and failure boundaries, without solver payloads."""
 from pathlib import Path
+import json
+import shutil
 import os
 import subprocess
 import sys
@@ -121,6 +123,92 @@ class FrozenInputTests(unittest.TestCase):
                         freeze_file(source, target, retention_classifier=classifier)
 
 class PythonPackageSelectionTests(unittest.TestCase):
+    def test_probe_invocation_executes_same_frozen_module_with_isolation(self):
+        from msplatform.execution.inputs import freeze_python_package
+
+        pwsh = shutil.which('pwsh')
+        if pwsh is None:
+            self.skipTest('PowerShell 7 is required')
+        repo = Path(__file__).resolve().parents[2]
+        helper = repo / 'src/msplatform/execution/resources/frozen_python_package.ps1'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            author = root / 'author live'
+            frozen = root / 'frozen code'
+            cwd = root / 'work 空 白'
+            cwd.mkdir()
+            module = author / 'fixturepkg/entry.py'
+            module.parent.mkdir(parents=True)
+            module.write_text(
+                'import json,os,pathlib,sys\n'
+                'pathlib.Path(sys.argv[1]).write_text("executed",encoding="utf-8")\n'
+                'print(json.dumps({"arguments":sys.argv[1:],"cwd":os.getcwd(),'
+                '"origin":str(pathlib.Path(__file__).resolve()),'
+                '"isolated":sys.flags.isolated,"utf8":sys.flags.utf8_mode},ensure_ascii=False))\n',
+                encoding='utf-8')
+            original = module.read_bytes()
+            package = freeze_python_package(author, frozen, relative_paths=['fixturepkg/entry.py'])
+            marker = root / 'executed marker.txt'
+            arguments = [str(marker), 'Unicode 测试', 'two spaces and \"quotes\"', 'trailing space ']
+            config = root / 'request.json'
+            config.write_text(json.dumps({'package': package, 'arguments': arguments,
+                                          'author': str(author), 'cwd': str(cwd)}, ensure_ascii=False), encoding='utf-8')
+            script = root / 'probe.ps1'
+            script.write_text("""param([string]$Helper,[string]$Config,[string]$Mode)
+$ErrorActionPreference='Stop'
+. $Helper
+$c=Get-Content -LiteralPath $Config -Raw -Encoding utf8 | ConvertFrom-Json
+if($Mode -eq 'assert') { Assert-FrozenPythonPackage -Package $c.package; exit 0 }
+$options=@{Python=$env:FROZEN_TEST_PYTHON;Package=$c.package;Module='fixturepkg.entry';
+ Arguments=@($c.arguments);ForbiddenRoots=@($c.author);WorkingDirectory=$c.cwd}
+if($Mode -eq 'probe') { $options.ProbeOnly=$true }
+Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
+""", encoding='utf-8')
+            environment = {**os.environ, 'FROZEN_TEST_PYTHON': sys.executable, 'PYTHONPATH': str(author)}
+            def invoke(mode):
+                return subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(helper), str(config), mode],
+                    cwd=root, env=environment, timeout=30, capture_output=True, text=True, encoding='utf-8')
+            probe = invoke('probe')
+            self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+            result = json.loads(probe.stdout)
+            self.assertFalse(result['module_invoked'])
+            self.assertFalse(marker.exists())
+            invocation = result['invocation']
+            self.assertEqual(Path(invocation['file_path']).resolve(), Path(sys.executable).resolve())
+            self.assertEqual(Path(invocation['working_directory']).resolve(), cwd.resolve())
+            self.assertEqual(invocation['arguments'][:5], ['-I', '-X', 'utf8', '-B', '-c'])
+            actual = subprocess.run([invocation['file_path'], *invocation['arguments']],
+                cwd=invocation['working_directory'], env=environment, timeout=30,
+                capture_output=True, text=True, encoding='utf-8')
+            self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+            witness = json.loads(actual.stdout)
+            self.assertEqual(witness['arguments'], arguments)
+            self.assertEqual(Path(witness['cwd']).resolve(), cwd.resolve())
+            self.assertEqual(Path(witness['origin']).resolve(), (frozen / 'fixturepkg/entry.py').resolve())
+            self.assertEqual((witness['isolated'], witness['utf8']), (1, 1))
+            self.assertTrue(marker.is_file())
+            marker.unlink()
+            normal = invoke('normal')
+            self.assertEqual(normal.returncode, 0, normal.stdout + normal.stderr)
+            normal_result = json.loads(normal.stdout)
+            self.assertTrue(normal_result['module_invoked'])
+            self.assertEqual(json.loads(normal_result['module_stdout']), witness)
+            self.assertTrue(marker.is_file())
+            frozen_module = frozen / 'fixturepkg/entry.py'
+            frozen_module.unlink()
+            denied = subprocess.run([invocation['file_path'], *invocation['arguments']],
+                cwd=invocation['working_directory'], env=environment, timeout=30,
+                capture_output=True, text=True, encoding='utf-8')
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn('entry module escaped frozen roots', denied.stderr)
+            self.assertEqual(module.read_bytes(), original)
+            frozen_module.write_bytes(original)
+            frozen_module.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+            rejected = invoke('assert')
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('Frozen Python dependency hash differs', rejected.stderr)
+            self.assertEqual(module.read_bytes(), original)
+
     def test_import_root_bootstrap_does_not_import_scientific_or_lifecycle_packages(self):
         root = Path(__file__).resolve().parents[2]
         code = ('import sys;from pathlib import Path;root=Path(sys.argv[1]);sys.path[:0]=[str(root/"src"),str(root)];'

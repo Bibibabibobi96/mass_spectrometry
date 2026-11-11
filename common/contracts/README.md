@@ -314,12 +314,12 @@ MR实测源与共同场有限脉冲准备已复用同一入口，原有文件身
 
 Canonical SHA-256 helpers live in [`msplatform.io.file_identity`](../../src/msplatform/io/file_identity.py), independent of repository discovery and execution owners. They return uppercase hexadecimal digests. `file_sha256` identifies raw manifest/artifact bytes; `repository_text_sha256` preserves the existing LF-normalized source-authority identity across CRLF/CR/LF text. Callers choose the declared identity policy and remain responsible for path scope, size and evidence qualification. The repository helper no longer defines or reexports `repository_text_sha256`.
 
-[`execution.inputs.freeze_file(source, destination)`](../../src/msplatform/execution/inputs.py)冻结显式选定的小配置、源码或观测文件：
+[`msplatform.execution.inputs.freeze_file(source, destination)`](../../src/msplatform/execution/inputs.py)冻结显式选定的小配置、源码或观测文件：
 以源文件的原始字节记录核验副本，返回目的文件record及`source_path`；缺源、目的已存在或副本身份不符均失败。
 每次只读取一次源身份和一次目的身份；调用方负责输入选择、目的目录与命名。IP和MR准备入口直接消费此API，
 沿原有源码闭包冻结公共模块；PA／MPH等求解器载荷继续使用各自owner机制。
 
-`frozen_inputs.enumerate_python_sources(source_root, package_roots=..., module_paths=..., provider_root=..., resource_suffixes=())`
+`msplatform.execution.inputs.enumerate_python_sources(source_root, package_roots=..., module_paths=..., provider_root=..., resource_suffixes=())`
 将显式声明的包目录或独立模块展开为排序的仓库相对 POSIX 路径；只枚举，不导入、复制或哈希。
 默认只交付生产 `.py`；已有父包初始化文件随包交付，namespace 包不补造初始化文件。
 调用者可用显式 `resource_suffixes=(".schema.json",)` 同时选择包内所需资源；未声明的后缀不自动进入闭包。
@@ -328,12 +328,20 @@ Canonical SHA-256 helpers live in [`msplatform.io.file_identity`](../../src/mspl
 [集成依赖冻结](../../integrations/docs/INTEGRATION.md#依赖冻结与门禁)。
 代码交付范围与场、Fly、Analysis 的科学复用依赖分别表达，包中无关模块变化不自动使已有场失效。
 
-`frozen_inputs.python_import_roots(source_root)` 返回快照内实际存在的 `src`、再返回快照根；
+`msplatform.execution.inputs.python_import_roots(source_root)` 返回快照内实际存在的 `src`、再返回快照根；
 历史扁平源码快照没有 `src` 时只返回根。PowerShell 对应入口为
 [`Get-RunPythonImportRoots -RepoRoot`](run_artifact_support.ps1)，调用者按平台路径分隔符组成 `PYTHONPATH`。
 二者不搜索安装环境，`src` 必须是来源树内的目录。prepared owner及RF冻结Python包核对实际已加载模块来源；
 新快照缺少核心时，不能借当前 installed／editable `msplatform` 填洞。旧快照继续消费自己冻结的原实现，
 不回写历史清单或从活动仓库补齐。
+
+The installed [frozen Python helper](../../src/msplatform/execution/resources/frozen_python_package.ps1)
+owns package verification and the isolated module bootstrap. Its `-ProbeOnly` result
+includes `invocation.file_path`, `arguments` and `working_directory`, using the same
+argument vector as ordinary helper execution. A managed caller executes that vector
+through its existing process owner and checks `Assert-FrozenPythonPackage` before
+launch and after successful completion. The caller retains process, lease and error
+ownership; preflight records the selected sources and environment.
 
 manifest writer 与 verifier 分别只在本次调用内复用重复文件的 `(bytes, SHA)`；复用键绑定解析后的实际路径、
 真实读取函数、大小与修改时间，普通读取和大 PA 无缓冲读取不能混用。每条声明仍独立检查路径、字节数、
