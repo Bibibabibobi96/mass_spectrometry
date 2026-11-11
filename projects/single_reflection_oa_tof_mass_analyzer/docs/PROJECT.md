@@ -32,8 +32,8 @@ function origins, and the existing software runner includes all three classes. T
 repair; COMSOL models, field/particle solves and scientific qualification require separate evidence.
 Official basis: [MathWorks genpath](https://www.mathworks.com/help/matlab/ref/genpath.html), checked
 2026-11-09; the installed R2025b `toolbox/matlab/general/genpath.m` excludes `resources`, and the
-runtime refused its `addpath` before any tests ran. Real R2025b software verification passed all 38 selected SolverPolicy, CartesianRelease and
-PairedAcceleratorPulse cases (27.2856221 seconds; zero failures or incomplete tests). Before and after
+runtime refused its `addpath` before any tests ran. The 2026-11-11 R2025b source-origin recheck passed all 38 selected SolverPolicy, CartesianRelease and
+PairedAcceleratorPulse cases (21.7814939 seconds; zero failures or incomplete tests). Before and after
 the run, `which` resolved all three production functions to this canonical `matlab` directory.
 The original MATLAB path and current folder were restored and the public GATE lease was released.
 No COMSOL server/model, field solve, particle solve, SIMION or GUI was started.
@@ -138,6 +138,9 @@ Candidate与质量谱冻结声明直接绑定安装SIMION aperture实现；旧�
 `2ec3efe52bcb081bc40141497332fbcf77a4a4aed5a3c9192b2fed5c39e6aacf`与受管`accelerator.pa1`
 完全一致。该未登记冗余恢复副本已从Formal目录退役；正式资产、manifest与计数规则未改。此为资产归属修正，
 不是缺件豁免或新的原生验证。
+The 2026-11-11 read-only stable-entry check independently confirmed that the named backup is absent,
+the managed PA retains that recorded identity, and all 54 manifest-listed SIMION assets match the
+54 actual payload files. Native runtime verification was explicitly not requested.
 
 ### P2 R0：受控测试超时现场
 
