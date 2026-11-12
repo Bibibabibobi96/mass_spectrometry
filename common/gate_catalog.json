@@ -3714,7 +3714,8 @@
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_assembly_interface.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_simion_candidate_reference.py",
-              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py"
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_gap2_fixed_design.py"
             ],
             "dependency_profile": "locked"
           },

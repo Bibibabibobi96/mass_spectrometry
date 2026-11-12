@@ -2209,6 +2209,8 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                 self.assertNotIn('SelectedTestModules',command['parameters'])
                 modules=command['parameters']['ChangedTestModules']
                 self.assertTrue(required <= set(modules), (path,modules))
+                if path == base+'candidate_contract.py':
+                    self.assertIn(prefix+'test_gap2_fixed_design', modules)
                 self.assertEqual(len(modules),len(set(modules)))
                 if path.startswith('src/'):
                     common=[value for row in request['stages'] if row['selected'] and

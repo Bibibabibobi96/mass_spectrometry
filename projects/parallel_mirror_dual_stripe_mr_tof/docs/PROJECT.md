@@ -944,6 +944,23 @@ continues in its original entry. This does not establish native flight or qualif
 
 ### Explicit MR component provider and mechanical composition
 
+The selected Candidate `accelerator.gap_2_mm` is a physical design input. Contract
+validation preserves it when the numerical mesh changes, retaining the compact
+acceptance bound, reference-voltage and downstream-focus checks. Calling
+`derive_compact_accelerator_acceptance_design` without an explicit selected gap
+still performs the original mesh-aligned design selection; that is a new design
+choice, not a fixed-geometry convergence result. Historical quantization records
+and saved designs remain unchanged. The Candidate scalar and the separately
+selected canonical OA profile are distinct authorities and are not equated.
+The isolated old/new software witness retained the exact original strategy,
+focus and placement, and passed four parents and seven subtests in 35.215 seconds
+with source, checkout and overlays frozen. This does not qualify off-grid native
+representation, new fields or trajectories. After integration, the complete
+assembly-interface module, fixed-design regressions, focus case and actual Changed
+selector passed 12 parents and 34 subtests in 92.644 seconds with all 2,914 source
+paths and checkout unchanged. Ordinary-install and broader regression for this
+successor remain pending.
+
 The MR provider resolves the complete selected candidate contract and explicit OA physical
 requirements and profile into one full physical design and schema-3 mechanical interface.
 Four Stripe bodies remain separate physical groups; the existing two paired voltage-drive

@@ -364,7 +364,8 @@ def validate_contract(
             == "compact_exit_focus_bound_at_maximum_declared_center__native_uniform_ring_planes"
             and data.get("candidate_derivation") is None
         ):
-            design = derive_compact_accelerator_acceptance_design(data)
+            design = derive_compact_accelerator_acceptance_design(
+                data, selected_gap2_mm=accelerator.get("gap_2_mm"))
             declared = {
                 "gap_1_mm": accelerator.get("gap_1_mm"),
                 "gap_2_mm": accelerator.get("gap_2_mm"),
@@ -468,14 +469,15 @@ def derive_accelerator_design_source_interval(
 
 
 def derive_compact_accelerator_acceptance_design(
-    contract: dict[str, Any],
+    contract: dict[str, Any], *, selected_gap2_mm: float | None = None,
 ) -> dict[str, float | str | bool]:
     """Derive a compact two-zone geometry for the full declared envelope.
 
     The highest permitted operating centre is the worst case under homogeneous
     voltage scaling.  Designing that point for the declared per-particle energy
     half-range guarantees every lower operating centre stays inside the same
-    downstream mirror/Stripe energy envelope.
+    downstream mirror/Stripe energy envelope. An explicit selected gap is a
+    frozen physical design; omission selects a design on the supplied mesh.
     """
     accelerator = contract.get("accelerator")
     if not isinstance(accelerator, dict):
@@ -502,14 +504,15 @@ def derive_compact_accelerator_acceptance_design(
         raise CandidateContractError(
             "compact two-zone acceptance design requires a centered release position"
         )
-    simion = contract.get("simion")
-    component_mesh = simion.get("component_mesh_mm_per_gu") if isinstance(simion, dict) else None
-    accelerator_mesh = component_mesh.get("accelerator") if isinstance(component_mesh, dict) else None
-    if not isinstance(accelerator_mesh, list) or len(accelerator_mesh) != 3:
-        raise CandidateContractError("accelerator component mesh is required")
-    axial_mesh = _number(accelerator_mesh[2], "accelerator axial mesh")
-    if axial_mesh <= 0.0:
-        raise CandidateContractError("accelerator axial mesh must be positive")
+    if selected_gap2_mm is None:
+        simion = contract.get("simion")
+        component_mesh = simion.get("component_mesh_mm_per_gu") if isinstance(simion, dict) else None
+        accelerator_mesh = component_mesh.get("accelerator") if isinstance(component_mesh, dict) else None
+        if not isinstance(accelerator_mesh, list) or len(accelerator_mesh) != 3:
+            raise CandidateContractError("accelerator component mesh is required")
+        axial_mesh = _number(accelerator_mesh[2], "accelerator axial mesh")
+        if axial_mesh <= 0.0:
+            raise CandidateContractError("accelerator axial mesh must be positive")
     ideal_gap2 = float(bound["gap2_mm"])
     stage_2_rings = accelerator.get("stage_2_rings")
     if not isinstance(stage_2_rings, dict):
@@ -522,18 +525,19 @@ def derive_compact_accelerator_acceptance_design(
         raise CandidateContractError("accelerator stage-2 ring count must be an integer")
     if ring_count < 0:
         raise CandidateContractError("accelerator stage-2 ring count must be nonnegative")
-    # Every ideal grid and every uniformly spaced physical ring must land on a
-    # native axial node.  With N interior rings the complete gap therefore has
-    # to be an integer multiple of (N+1)*dz, not merely dz.  Choose the
-    # downstream-focus side; workbench placement transports the resulting
-    # small positive ideal drift to project z=0.
-    gap_quantum = (ring_count + 1) * axial_mesh
-    resolved_gap2 = round(
-        math.floor((ideal_gap2 + 1e-12) / gap_quantum) * gap_quantum,
-        12,
-    )
-    if resolved_gap2 <= 0.0 or ideal_gap2 - resolved_gap2 >= gap_quantum + 1e-12:
-        raise CandidateContractError("accelerator compact gap cannot be resolved on its axial mesh")
+    if selected_gap2_mm is None:
+        # Explicit design strategy: choose a gap on the selected axial mesh.
+        gap_quantum = (ring_count + 1) * axial_mesh
+        resolved_gap2 = round(
+            math.floor((ideal_gap2 + 1e-12) / gap_quantum) * gap_quantum,
+            12,
+        )
+        if resolved_gap2 <= 0.0 or ideal_gap2 - resolved_gap2 >= gap_quantum + 1e-12:
+            raise CandidateContractError("accelerator compact gap cannot be resolved on its axial mesh")
+    else:
+        resolved_gap2 = _number(selected_gap2_mm, "selected accelerator gap_2_mm")
+        if resolved_gap2 <= 0.0 or resolved_gap2 > ideal_gap2 + 1e-12:
+            raise CandidateContractError("selected accelerator gap_2_mm exceeds the compact acceptance design")
     scale = (
         energy.net_gain_reference_center_v
         / energy.net_gain_center_maximum_v
@@ -555,15 +559,16 @@ def derive_compact_accelerator_acceptance_design(
         )
     except TwoZoneTheoryError as error:
         raise CandidateContractError(
-            "solver-aligned compact accelerator has no downstream focus"
+            "compact accelerator has no downstream focus" if selected_gap2_mm is not None
+            else "solver-aligned compact accelerator has no downstream focus"
         ) from error
-    return {
+    result = {
         **bound,
         "ideal_gap2_mm": ideal_gap2,
         "gap2_mm": resolved_gap2,
-        "gap2_solver_quantization_mm": resolved_gap2 - ideal_gap2,
-        "gap2_solver_quantum_mm": gap_quantum,
-        "axial_mesh_mm_per_gu": axial_mesh,
+        **({"gap2_solver_quantization_mm": resolved_gap2 - ideal_gap2,
+            "gap2_solver_quantum_mm": gap_quantum, "axial_mesh_mm_per_gu": axial_mesh}
+           if selected_gap2_mm is None else {"gap2_selection_rule": "explicit_selected_physical_gap"}),
         "resolved_compact_accelerator_length_mm": float(bound["gap1_mm"]) + resolved_gap2,
         "design_operating_center_rule": "maximum_declared_net_gain_center",
         "reference_voltage_scaling_rule": "homogeneous_about_exit_grid",
@@ -577,6 +582,8 @@ def derive_compact_accelerator_acceptance_design(
             energy.particle_net_gain_half_range_v * scale
         ),
     }
+    return result
+
 
 
 def derive_two_zone_focus(
