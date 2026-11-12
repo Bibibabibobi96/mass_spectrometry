@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # This runs with -I in a clean installed environment, without repository imports.
 INSTALLED_PROBE = r'''
-import copy, csv, hashlib, importlib, importlib.metadata, json, math, os, pathlib, shutil, subprocess, sys, sysconfig
+import base64, copy, csv, hashlib, importlib, importlib.metadata, json, math, os, pathlib, shutil, subprocess, sys, sysconfig
 
 from contextlib import contextmanager
 import time
@@ -5273,6 +5273,19 @@ class InstalledScientificCoreTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ModuleNotFoundError", result.stderr)
             self.assertIn(module, result.stderr)
+
+    def test_first_installed_sections_resolve_shared_imports(self) -> None:
+        """Catch shared names lost when an earlier section becomes a function."""
+        prefix, marker, _ = INSTALLED_PROBE.partition('# MR_MEASURED_SOURCE_INSTALLED_END')
+        self.assertTrue(marker, 'The measured-source installed section must be selected.')
+        result = subprocess.run(
+            [sys.executable, '-m', 'ruff', 'check', '--isolated', '--select', 'F821',
+             '--stdin-filename', 'installed_probe_prefix.py', '-'],
+            input=prefix, cwd=REPO_ROOT, capture_output=True, text=True,
+            encoding='utf-8', timeout=30, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
     def test_probe_author_guard_allows_hosted_stdlib_lazy_import_but_denies_checkout(self) -> None:
         import ast
