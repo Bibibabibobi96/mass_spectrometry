@@ -617,7 +617,8 @@ ConvertTo-Json -Compress -InputObject $paths
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference",
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_freeze",
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport",
-            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_two_prism_simion_trial"})
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_two_prism_simion_trial",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_gap2_fixed_design"})
         self.assertEqual(len(params["ChangedTestModules"]), len(set(params["ChangedTestModules"])))
         verify = (REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1").read_text(encoding="utf-8")
         self.assertIn("$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)", verify)
@@ -638,7 +639,8 @@ ConvertTo-Json -Compress -InputObject $paths
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference",
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_freeze",
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport",
-            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_two_prism_simion_trial"})
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_two_prism_simion_trial",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_gap2_fixed_design"})
         self.assertEqual(mr_rows[0]["command"]["parameters"]["Level"], "Core")
         self.assertNotIn("SelectedTestModules", mr_rows[0]["command"]["parameters"])
         self.assertEqual(len(mr), len(set(mr)))
