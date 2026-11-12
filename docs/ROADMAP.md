@@ -112,14 +112,43 @@ complete MP-to-OA, OA/IP-to-MR and FullJoint/prepared-joint tasks require contin
 from an explicit original source; cross-model survivor relaunch is not their replacement.
 Local frontend and cooled exclusive features are withdrawn, including their dedicated recipes,
 policies and tests. Their dedicated local product is retired in `1ec0f843`; this is a scope change, not scientific implementation acceptance.
-The user's 2026-11-12 SFI clarification prioritizes the current complete multipole plus
-complete OA/TOF and public continuous flight. Do not add multipole aperture plates merely
+The user's 2026-11-12 SFI clarification selects the complete canonical bare-rod multipole,
+without an added shell or aperture plates, plus complete OA/TOF and public continuous flight.
+Do not add multipole aperture plates merely
 to reproduce the historical SFI geometry: OA already supplies its aperture. The historical
 plate-reconstruction draft remains private and is excluded from this SFI delivery; existing
 plate capabilities with other genuine research consumers are retained. Acceptance checks
 the selected current geometry, field coverage, original births/full cohort, clock and drive
 continuity, installed execution and applicable native behavior. Historical metal/PA or
 trajectory equality is not an extra SFI completion condition, and history remains unchanged.
+Other combinations should use their corresponding canonical component geometry and complete
+instances directly. If an actual instrument requires different physical geometry, present
+the specific differences, reasons and effects for the user's decision before changing any
+structure; do not independently add, remove or reshape component members.
+The installed preparation owner completed
+`20261112_193031__sim__python__sfi-birth-preparation-71a0972bae0c` successfully:
+the current canonical bare multipole, one OA/TOF, 100 original source IDs and their
+clock were frozen, with no solver or PA operation. The retained poses leave an explicit
+2.5 mm vacuum gap contained by the parent domain. This is preparation, not field coupling
+or continuous-flight acceptance. The selected physical detector is radius 40 mm and
+1.0 mm thick at z=-1..0; the user approved replacing the old 0.1 mm numerical-absorber
+substitute for all current OA-TOF consumers, including new Formal-delivery and reflectron
+compensation runs, while preserving the z=0 detection face and capture controls. The user
+explicitly approved this shared scope. The candidate now projects the canonical body through
+its producer, generator, planner, verifier, placement and tracking consumers. The body remains
+present throughout flight; SFI and active Formal return observation reject outbound, stationary
+and unarmed splats. The ordinary wheel/sdist parent passed on this candidate (993.313 command
+seconds); this is software/installation evidence, not native occupancy, coupled fields or
+trajectory qualification. Frozen Formal assets and historical results remain unchanged.
+The selected current preparation has no PA or IOB, and its old frozen callback is not the
+corrected candidate. The OA-exit split contains an open-vacuum interface; independent PA
+Refine or continuous Fly cannot establish its coupled field. Actual native IOB inspection,
+a source-bound same-geometry common-domain reference, representative RF/pulse states and
+separate domain, grid and trajectory studies remain open. Private source prototypes preserve
+all 77 selected members (32 RF solids, 40 OA/TOF solids and five ideal surfaces); they are not
+native proof. The last Changed attempt recorded 10 PASS, one FAIL and 14 blocked stages
+(1524.752 command seconds); its normal-host installed successor does not turn it or the
+full Repository green. The Windows process-query denial still needs diagnosis.
 Existing independent sources, historical state readers, neutral transforms and genuine recovery
 remain. Keep the existing segmented MP-to-IP production path until its verified continuous
 replacement can retire it in the same slice. A new public gas-property database is deferred
@@ -196,6 +225,11 @@ correcting the remaining new fixture's missing declaration passed 41 affected te
 84.891 seconds with unchanged source/checkout guards and exact frozen-input/payload joins.
 Full Repository, final combined-version installation, the native continuous combinations
 and performance budgets remain OPEN.
+GitHub successor runs `43203148874` (`23cd7a42`) and `43207599002` (`04aa5c0c`)
+both completed Changed successfully, with Repository integration skipped. The original
+bare-frontend selector test and full ordinary installed-core method actually passed in
+the former log; the installation method took 1,559.382 seconds on that remote machine.
+This closes that selected CI failure, not the historical full-Repository or performance debt.
 The new segmented MP producer-verification extraction was withheld under V8.7;
 the existing MP-to-IP production path remains until its continuous replacement is verified.
 At committed `569a017f`, GitHub run `43152720040` completed with Changed successful
