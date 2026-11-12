@@ -32,21 +32,6 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
-    def test_workbench_seed_paths_select_real_consumers(self):
-        for path in ('src/msplatform/backends/simion/workbench_seed.py', 'src/msplatform/backends/simion/resources/1_instance_seed.iob', 'common/simion/workbench_seed.py'):
-            with self.subTest(path=path):
-                request, _ = self.plan("-ChangedPath", path)
-                rows = [row for row in request["stages"] if row["selected"]]
-                self.assertTrue(any(row["name"] == "dual_pressure_rectilinear_ion_processor_static" or row["name"].startswith("dual_pressure_rectilinear_ion_processor_static__tests_") for row in rows))
-                simion = [row for row in rows if row["name"] == "simion_common" or row["name"].startswith("simion_common__tests_")]
-                self.assertTrue(simion)
-                modules = {v.removesuffix(".py").replace("/", ".") for row in simion for v in row["command"]["arguments"][2:]}
-                self.assertIn("common.simion.test_workbench_seed", modules)
-                if path != 'common/simion/workbench_seed.py':
-                    common = [row for row in rows if row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_")]
-                    self.assertTrue(common)
-                    self.assertIn("common.contracts.test_installed_scientific_core", {v.removesuffix(".py").replace("/", ".") for row in common for v in row["command"]["arguments"][2:]})
-
     def test_installed_tof_design_preserves_full_owner_and_host_entry_consumers(self):
         prefix = "src/msplatform/workflows/oa_tof_design/"
         owner = "single_reflection_oa_tof_mass_analyzer_static"
@@ -97,6 +82,40 @@ class ChangedGateContractTests(unittest.TestCase):
                 modules = {value.removesuffix(".py").replace("/", ".")
                            for row in rows for value in row["command"]["arguments"][2:]}
                 self.assertIn("common.contracts.test_installed_scientific_core", modules)
+
+    def test_collision_overlay_and_binding_select_actual_consumers(self):
+        for path in ('src/msplatform/backends/simion/collision_overlay.py',):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                for stage, parameter, required in (
+                    ("parallel_mirror_dual_stripe_mr_tof_static", "ChangedTestModules", {"test_native_static_field_provider", "test_native_static_field_provider_runner", "test_static_field_binding"}),
+                    ("instrument_assembly_integration", "SelectedTestModules", {"test_oa_mr_source_context", "test_accelerator_interface", "test_oa_mr_execute", "test_prepared_joint_execute"}),
+                ):
+                    modules = {value.rsplit(".", 1)[-1] for row in request["stages"]
+                               if row["selected"] and row["name"].startswith(stage)
+                               for value in row["command"].get("parameters", {}).get(parameter, [])}
+                    self.assertTrue(required <= modules, (path, stage, modules))
+
+    def test_static_field_binding_routes_to_all_consumer_owners(self):
+        stages = self.routed_stages("src/msplatform/backends/comsol/static_field_binding.py")
+        self.assertIn("parallel_mirror_dual_stripe_mr_tof_static", stages)
+        self.assertTrue(any(name == "instrument_assembly_integration" or
+                            name.startswith("instrument_assembly_integration__tests_") for name in stages))
+
+    def test_workbench_seed_paths_select_real_consumers(self):
+        for path in ('src/msplatform/backends/simion/workbench_seed.py', 'src/msplatform/backends/simion/resources/1_instance_seed.iob', 'common/simion/workbench_seed.py'):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                rows = [row for row in request["stages"] if row["selected"]]
+                self.assertTrue(any(row["name"] == "dual_pressure_rectilinear_ion_processor_static" or row["name"].startswith("dual_pressure_rectilinear_ion_processor_static__tests_") for row in rows))
+                simion = [row for row in rows if row["name"] == "simion_common" or row["name"].startswith("simion_common__tests_")]
+                self.assertTrue(simion)
+                modules = {v.removesuffix(".py").replace("/", ".") for row in simion for v in row["command"]["arguments"][2:]}
+                self.assertIn("common.simion.test_workbench_seed", modules)
+                if path != 'common/simion/workbench_seed.py':
+                    common = [row for row in rows if row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_")]
+                    self.assertTrue(common)
+                    self.assertIn("common.contracts.test_installed_scientific_core", {v.removesuffix(".py").replace("/", ".") for row in common for v in row["command"]["arguments"][2:]})
 
     def test_installed_detector_census_selects_actual_consumers(self):
         request, _ = self.plan("-ChangedPath", "src/msplatform/backends/simion/detector_census.py")
@@ -545,7 +564,18 @@ ConvertTo-Json -Compress -InputObject $paths
         mr = [row for row in request["stages"]
               if row["name"] == "parallel_mirror_dual_stripe_mr_tof_static"]
         self.assertEqual(len(mr), 1)
-        self.assertNotIn("ChangedTestModules", mr[0]["command"].get("parameters", {}))
+        params = mr[0]["command"]["parameters"]
+        self.assertEqual(params["Level"], "Core")
+        self.assertNotIn("SelectedTestModules", params)
+        self.assertEqual(set(params["ChangedTestModules"]), {
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_assembly_interface",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_freeze",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_two_prism_simion_trial"})
+        self.assertEqual(len(params["ChangedTestModules"]), len(set(params["ChangedTestModules"])))
+        verify = (REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1").read_text(encoding="utf-8")
+        self.assertIn("$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)", verify)
         self.assertTrue(any(row["name"].startswith("instrument_assembly_integration")
                             for row in request["stages"]))
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
@@ -560,7 +590,12 @@ ConvertTo-Json -Compress -InputObject $paths
         mr = mr_rows[0]["command"]["parameters"]["ChangedTestModules"]
         self.assertEqual(set(mr), {
             "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_assembly_interface",
-            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference"})
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_freeze",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport",
+            "projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_two_prism_simion_trial"})
+        self.assertEqual(mr_rows[0]["command"]["parameters"]["Level"], "Core")
+        self.assertNotIn("SelectedTestModules", mr_rows[0]["command"]["parameters"])
         self.assertEqual(len(mr), len(set(mr)))
         integration = {value for row in request["stages"]
                        if row["name"].startswith("instrument_assembly_integration")
@@ -2111,6 +2146,44 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],
                 cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_mr_provider_sources_and_test_files_select_real_core_plan(self):
+        base = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/'
+        sources = ('src/msplatform/components/catalog.py', base+'provider.py', base+'candidate_contract.py',
+                   base+'assembly_interface.py', base+'resolved_geometry.py', 'src/msplatform/backends/simion/mr_geometry.py',
+                   'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py')
+        prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.'
+        required = {prefix+name for name in ('test_mr_provider_freeze','test_mr_provider_trial_transport',
+                    'test_assembly_interface','test_simion_candidate_reference','test_two_prism_simion_trial')}
+        for path in sources:
+            with self.subTest(path=path):
+                request, _ = self.plan('-ChangedPath',path)
+                rows = [row for row in request['stages'] if row['selected'] and row['name']=='parallel_mirror_dual_stripe_mr_tof_static']
+                self.assertEqual(len(rows),1)
+                command = rows[0]['command']; self.assertEqual(command['parameters']['Level'],'Core')
+                self.assertNotIn('SelectedTestModules',command['parameters'])
+                modules=command['parameters']['ChangedTestModules']
+                self.assertTrue(required <= set(modules), (path,modules))
+                self.assertEqual(len(modules),len(set(modules)))
+                if path.startswith('src/'):
+                    common=[value for row in request['stages'] if row['selected'] and
+                            (row['name']=='common_contracts' or row['name'].startswith('common_contracts__tests_'))
+                            for value in row['command'].get('arguments',[])]
+                    self.assertIn('common.contracts.test_installed_scientific_core',
+                                  [value.removesuffix('.py').replace('/','.') for value in common])
+        for module in ('test_mr_provider_freeze','test_mr_provider_trial_transport'):
+            path='projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/'+module+'.py'
+            self.assertTrue((REPO_ROOT/path).is_file())
+            request, _ = self.plan('-ChangedPath',path)
+            owner=next(row for row in request['stages'] if row['selected'] and row['name']=='parallel_mirror_dual_stripe_mr_tof_static')
+            self.assertIn(prefix+module,owner['command']['parameters']['ChangedTestModules'])
+            loader=unittest.TestLoader()
+            suite=loader.loadTestsFromName(prefix+module)
+            self.assertEqual(loader.errors,[])
+            self.assertEqual(suite.countTestCases(),1 if module=='test_mr_provider_freeze' else 2)
+        verify=(REPO_ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1').read_text(encoding='utf-8')
+        self.assertIn('$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)',verify)
+        self.assertIn('-m common.gate_unittest @coreTests',verify)
 
     def test_installed_mr_phase_public_plan_preserves_core_and_full_integration(self):
         request, _ = self.plan('-ChangedPath',

@@ -4,10 +4,13 @@ from __future__ import annotations
 import copy
 import math
 import struct
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import candidate_contract
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.geometry_contract import CENTRAL_GROUND_ELECTRODE_ID
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import derive_mirror_boundaries
 
 IP_PROVIDER = "dual_pressure_rectilinear_ion_processor"
 
@@ -287,6 +290,34 @@ def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contr
                 refine_performed=False, fast_adjust_performed=False, refinable=False)
 
 
+def resolve_accelerator_assembly_transform(requirements, profile, profile_id, accelerator_assembly):
+    """Validate the selected OA native supports and project its explicit assembly pose."""
+    from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
+    from msplatform.contracts.rigid_transform import RigidTransform
+    native = resolve_closed_two_zone_electrodes(
+        requirements, geometry_profile_id=profile_id, geometry_profile=profile).to_dict()
+    try:
+        actual = accelerator_assembly["accelerator_resolved_electrodes"]
+        supports = actual["grid_supports"]
+        if (actual["acceleration_direction"] != "-z"
+                or sorted(supports, key=lambda item: item["component_electrode_id"])
+                != sorted(native["grid_supports"], key=lambda item: item["component_electrode_id"])):
+            raise CandidateContractError("frozen OA support solids differ from explicit physical authority")
+        translation = actual["local_to_pa_translation_mm"]
+        origin = accelerator_assembly["accelerator_iob_origin_mm"]
+        if len(translation) != 3 or len(origin) != 3:
+            raise CandidateContractError("OA projection requires three-dimensional translations")
+        delta = tuple(float(translation[i]) + float(origin[i]) for i in range(3))
+        # The canonical mechanical exit is zero; native z carries its explicit storage margin.
+        delta = (delta[0], delta[1], delta[2] + float(requirements["local_pa"]["exit_z_mm"]))
+        return RigidTransform(
+            "orthogonal_accelerator_exit_origin_v1",
+            "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+            ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), delta)
+    except (KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError("P1 extension lacks complete matching OA support/placement authority") from error
+
+
 def resolve_mr_geometry(contract: dict[str, Any], *, accelerator_geometry_authority: Mapping[str, Any],
                         inherited_dual_stripe_topology_contract: dict[str, Any] | None = None,
                         accelerator_to_mr=None, accelerator_assembly=None) -> dict[str, Any]:
@@ -296,8 +327,7 @@ def resolve_mr_geometry(contract: dict[str, Any], *, accelerator_geometry_author
     The domain resolver itself remains independent of PA storage coordinates.
     Source records are verified by their existing consuming workflow boundary.
     """
-    from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_layout, resolve_closed_two_zone_electrodes
-    from msplatform.contracts.rigid_transform import RigidTransform
+    from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_layout
     from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 
     if not isinstance(accelerator_geometry_authority, Mapping):
@@ -312,30 +342,65 @@ def resolve_mr_geometry(contract: dict[str, Any], *, accelerator_geometry_author
     if accelerator_assembly is not None:
         if accelerator_to_mr is not None:
             raise CandidateContractError("OA placement must have one explicit projection authority")
-        native = resolve_closed_two_zone_electrodes(
-            requirements, geometry_profile_id=profile_id, geometry_profile=profile).to_dict()
-        try:
-            actual = accelerator_assembly["accelerator_resolved_electrodes"]
-            supports = actual["grid_supports"]
-            if (actual["acceleration_direction"] != "-z"
-                    or sorted(supports, key=lambda item: item["component_electrode_id"])
-                    != sorted(native["grid_supports"], key=lambda item: item["component_electrode_id"])):
-                raise CandidateContractError("frozen OA support solids differ from explicit physical authority")
-            translation = actual["local_to_pa_translation_mm"]
-            origin = accelerator_assembly["accelerator_iob_origin_mm"]
-            if len(translation) != 3 or len(origin) != 3:
-                raise CandidateContractError("OA projection requires three-dimensional translations")
-            delta = tuple(float(translation[i]) + float(origin[i]) for i in range(3))
-            # The canonical mechanical exit is zero; native z carries its explicit storage margin.
-            delta = (delta[0], delta[1], delta[2] + float(requirements["local_pa"]["exit_z_mm"]))
-            accelerator_to_mr = RigidTransform(
-                "orthogonal_accelerator_exit_origin_v1",
-                "astral.xyz.reflection_z.drift_y.transverse_x.v2",
-                ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), delta)
-        except (KeyError, TypeError, ValueError) as error:
-            raise CandidateContractError("P1 extension lacks complete matching OA support/placement authority") from error
+        accelerator_to_mr = resolve_accelerator_assembly_transform(
+            requirements, profile, profile_id, accelerator_assembly)
     return resolve_geometry(
         contract, accelerator_requirements=requirements, geometry_profile=profile, geometry_profile_id=profile_id,
         inherited_dual_stripe_topology_contract=inherited_dual_stripe_topology_contract,
         accelerator_to_mr=accelerator_to_mr,
     )
+
+
+def build_simion_gem(contract: dict[str, Any]) -> str:
+    """Emit a reviewable legacy-GEM electrode map with stable electrode IDs.
+
+    This is a topology source, not an approval to run SIMION: CAD dimensions and
+    full PA bounds remain subject to the project CAD audit and numerical contract.
+    """
+    if contract.get("geometry_authority", {}).get("model") not in {
+        "theory_derived_3d",
+        "manufactured_CAD_geometry__theory_optimized_operating_point",
+    }:
+        raise CandidateContractError("SIMION topology needs a qualified Candidate authority")
+    mirror = contract["mirror"]
+    if candidate_contract._number(mirror.get("beam_slot_width_mm"), "beam_slot_width_mm") != 30.0:
+        raise CandidateContractError("CAD mirror beam slot is a fixed 30 mm mechanical constraint")
+    stripe = contract["dual_stripe"]
+    if candidate_contract._number(stripe.get("beam_slot_width_mm"), "ion_foil_beam_slot_width_mm") != 4.0:
+        raise CandidateContractError("CAD Ion-Foil beam slot is a fixed 4 mm mechanical constraint")
+    edges = [candidate_contract._number(value, "electrode_z_edges_mm") for value in derive_mirror_boundaries(mirror)["active_start_z_mm"]]
+    if len(edges) != 5 or edges != sorted(edges) or edges[0] <= 0.0:
+        raise CandidateContractError("five positive ordered mirror electrode edges are required")
+    width = candidate_contract._number(stripe["maximum_width_mm"], "maximum_width_mm")
+    corridor = candidate_contract._number(stripe["central_grounded_corridor_mm"], "central_grounded_corridor_mm")
+    lines = [
+        "; MR-TOF Candidate-only topology source for SIMION 2020 legacy GEM.",
+        "; Frame: x transverse focus, y drift, z reflection; central plane is z=0.",
+        "; IDs 1..5 right mirror, 6..10 left mirror, 11..14 physical dual stripes.",
+        "; Stripe pairs (11,12) and (13,14) share independently adjustable voltages.",
+        "pa_define(801,801,1601, planar,none,electrostatic,,,0.25,0.25,0.25, surface=none)",
+        "locate(400,400,800) {",
+    ]
+    for index, edge in enumerate(edges, start=1):
+        lines.append(f"  e({index}) {{ box3D(-{width},-{width},{edge - 2}, {width},{width},{edge + 2}) }}")
+        lines.append(f"  e({index + 5}) {{ box3D(-{width},-{width},{-edge - 2}, {width},{width},{-edge + 2}) }}")
+    half = corridor / 2.0
+    lines.extend([
+        f"  e(11) {{ box3D(-{width},-{width},-{half}, {width},-{width / 2}, {half}) }}",
+        f"  e(12) {{ box3D(-{width},{width / 2},-{half}, {width},{width}, {half}) }}",
+        f"  e(13) {{ box3D(-{width / 2},-{width},-{half}, {width / 2},-{width / 2}, {half}) }}",
+        f"  e(14) {{ box3D(-{width / 2},{width / 2},-{half}, {width / 2},{width}, {half}) }}",
+        "  ; The accelerator, prism, grounded guard, detector and raw-node ideal grids are generated only after CAD audit.",
+        "}",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def write_gem(contract_path: Path, output_path: Path) -> candidate_contract.TwoZoneFocus:
+    """Validate a contract, emit its GEM source, and return the focus placement."""
+    contract = candidate_contract.load_contract(contract_path)
+    focus = candidate_contract.derive_two_zone_focus(contract)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(build_simion_gem(contract), encoding="utf-8", newline="\n")
+    return focus

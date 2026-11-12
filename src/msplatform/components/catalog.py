@@ -11,6 +11,9 @@ from .model import ResolvedComponent
 
 def _component_interface(provider: str, resolved: dict[str, Any], profile: str | None) -> dict[str, Any]:
     """Derive the public interface from the same complete provider design."""
+    if provider == "parallel_mirror_dual_stripe_mr_tof":
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface
+        return resolve_assembly_interface(resolved, geometry_profile_id=profile, schema_version=3)
     if provider == "rf_multipole":
         from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
         return build_assembly_interface(resolved, geometry_profile_id=profile)
@@ -43,6 +46,11 @@ def _from_provider(provider: str, resolved: Mapping[str, Any], interface: Mappin
     canonical = _component_interface(provider, design, interface.get("geometry_profile_id"))
     if canonical != interface:
         raise ContractError(f"{provider}: assembly interface differs from the resolved design")
+    if provider == "parallel_mirror_dual_stripe_mr_tof":
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component as resolve
+        expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
+        if expected["resolved_design"] != design:
+            raise ContractError("MR resolved design differs from its explicit source authorities")
     if provider == "orthogonal_accelerator":
         from msplatform.components.orthogonal_accelerator.provider import resolve_component as resolve
         expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
@@ -73,7 +81,11 @@ def resolve_component(request: Mapping[str, Any]) -> ResolvedComponent:
     design = copy.deepcopy(request["design"])
     profile = request.get("geometry_profile_id")
     provider = request["provider_id"]
-    if provider == "rf_multipole":
+    if provider == "parallel_mirror_dual_stripe_mr_tof":
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component as resolve
+        result = resolve(design, geometry_profile_id=profile)
+        resolved, interface = result["resolved_design"], result["assembly_interface"]
+    elif provider == "rf_multipole":
         from msplatform.components.rf_multipole.compile_design_request import compile_design_request
         from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
         resolved = compile_design_request(design, expected_identity=design["identity"])

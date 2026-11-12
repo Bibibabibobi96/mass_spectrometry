@@ -2244,6 +2244,14 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/collision_overlay.py",
+          "reason": "collision_overlay_binding_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/static_field_binding.py",
+          "reason": "collision_overlay_binding_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/components/rf_multipole/event_table.py",
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
@@ -2503,6 +2511,21 @@
         "scope": "integrations/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/collision_overlay.py",
+                "reason": "collision_overlay_binding_consumer_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_oa_mr_source_context.py",
+              "integrations/tests/test_accelerator_interface.py",
+              "integrations/tests/test_oa_mr_execute.py",
+              "integrations/tests/test_prepared_joint_execute.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -2825,6 +2848,14 @@
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/collision_overlay.py",
+          "reason": "collision_overlay_binding_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/static_field_binding.py",
+          "reason": "collision_overlay_binding_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/mr_prepared_field.py",
           "reason": "installed_mr_prepared_field_changed"
         },
@@ -2951,6 +2982,18 @@
         {
           "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
           "reason": "prepared_joint_frozen_executor_changed"
+        },
+        {
+          "exact": "src/msplatform/components/catalog.py",
+          "reason": "mr_provider_and_gem_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/provider.py",
+          "reason": "mr_provider_and_gem_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py",
+          "reason": "mr_provider_and_gem_consumer_changed"
         }
       ],
       "command": {
@@ -3080,6 +3123,20 @@
         "module_parameter": "ChangedTestModules",
         "preserve_command": true,
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/collision_overlay.py",
+                "reason": "collision_overlay_binding_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider_runner.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -3465,7 +3522,8 @@
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py",
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_workpoint_iteration.py",
-              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py"
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3549,6 +3607,71 @@
             ],
             "modules": [
               "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_static_field_binding.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/catalog.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/provider.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/assembly_interface.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_freeze.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_assembly_interface.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_simion_candidate_reference.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/mr_geometry.py",
+                "reason": "mr_provider_and_gem_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_freeze.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_assembly_interface.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_simion_candidate_reference.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_simion_trial.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_dual_stripe_l0_math.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_assembly.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mirror_convergence_geometry.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mirror_exact_k_operating_point.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_corridor_freeze.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_corridor_plan.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_gem_slots.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_native_static_field_provider.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_diagnostics.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prism_shield_exit_extension.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_segmented_coverage.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_segmented_transport.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_two_prism_segmented_voltage_seed.py"
             ],
             "dependency_profile": "locked"
           }

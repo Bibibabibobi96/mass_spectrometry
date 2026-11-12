@@ -48,6 +48,81 @@ class PrismEntryInterfaceTests(unittest.TestCase):
         self.assertEqual(interface["ports"]["accelerator_entry"]["center_mm"],
                          [(slot[0] + slot[3]) / 2, (slot[1] + slot[4]) / 2, slot[5]])
 
+    def test_provider_emits_complete_current_groups_from_explicit_authority(self):
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component
+        contract = load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json")
+        authority = pure_geometry_inputs(contract)
+        design = {"contract": contract, "accelerator_requirements": authority["accelerator_requirements"],
+                  "geometry_profile": authority["geometry_profile"]}
+        before = copy.deepcopy(design)
+        actual = resolve_component(design, geometry_profile_id=authority["geometry_profile_id"])
+        self.assertEqual(design, before)
+        self.assertEqual(actual["resolved_design"], complete_geometry())
+        interface = actual["assembly_interface"]
+        validate_schema(interface, "component_geometry_interface_v3.schema.json")
+        self.assertEqual(interface["ports"], resolve_assembly_interface(complete_geometry())["ports"])
+        groups = {item["electrode_group_id"] for item in interface["component_electrodes"]}
+        self.assertEqual(len(groups), 22)
+        self.assertTrue({"positive_stripe_set_1", "negative_stripe_set_1", "positive_stripe_set_2",
+                         "negative_stripe_set_2", "positive_mirror_ground_shield",
+                         "negative_mirror_ground_shield", "central_ground", "detector"} <= groups)
+        for key in ("contract", "accelerator_requirements", "geometry_profile"):
+            broken = dict(design)
+            broken.pop(key)
+            with self.subTest(missing=key), self.assertRaises(ValueError):
+                resolve_component(broken, geometry_profile_id=authority["geometry_profile_id"])
+        for profile_id in (None, "", "  ", " wrong "):
+            with self.subTest(profile_id=profile_id), self.assertRaises(ValueError):
+                resolve_component(design, geometry_profile_id=profile_id)
+        missing_shield = copy.deepcopy(actual["resolved_design"])
+        missing_shield["mirror_ground_shields"].pop()
+        with self.assertRaisesRegex(ValueError, "mirror ground shield"):
+            resolve_assembly_interface(missing_shield, geometry_profile_id=authority["geometry_profile_id"], schema_version=3)
+        from msplatform.contracts.rigid_transform import RigidTransform
+        transform = RigidTransform("orthogonal_accelerator_exit_origin_v1",
+            "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+            ((1., 0., 0.), (0., 1., 0.), (0., 0., 1.)), (0., 0., 0.)).to_contract()
+        explicit = {**design, "inherited_dual_stripe_topology_contract": copy.deepcopy(contract),
+                    "accelerator_to_mr": transform}
+        explicit_before = copy.deepcopy(explicit)
+        self.assertEqual(resolve_component(explicit, geometry_profile_id=authority["geometry_profile_id"]), actual)
+        self.assertEqual(explicit, explicit_before)
+        self.assertEqual(RigidTransform.from_contract(transform).to_contract(), transform)
+        invalid = copy.deepcopy(explicit)
+        invalid["accelerator_to_mr"]["rotation"][0][0] = 2
+        with self.assertRaises(ValueError):
+            resolve_component(invalid, geometry_profile_id=authority["geometry_profile_id"])
+
+    def test_file_and_memory_contract_admission_agree_on_complete_and_invalid_inputs(self):
+        import json
+        from tempfile import TemporaryDirectory
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import validate_contract
+        contract = load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json")
+        cases = {"valid": copy.deepcopy(contract)}
+        for name in ("project", "count", "width", "energy", "voltage", "source_acceptance"):
+            cases[name] = copy.deepcopy(contract)
+        cases["project"]["project_id"] = "other"
+        cases["count"]["dual_stripe"]["theoretical_response_count"] = 3
+        cases["width"]["dual_stripe"]["minimum_width_mm"] = -1
+        cases["energy"]["accelerator_energy_contract"]["net_gain_reference_center_per_charge_v"] = -1
+        cases["voltage"]["mirror"]["theory_requirements"]["voltage_envelope_v"]["B"]["power_supply_limits_v"]["maximum_inclusive_v"] = -1e99
+        cases["source_acceptance"]["accelerator"]["design_source_acceptance"]["axis"] = "invalid"
+        with TemporaryDirectory() as temporary:
+            for name, case in cases.items():
+                with self.subTest(case=name):
+                    path = Path(temporary) / f"{name}.json"
+                    path.write_text(json.dumps(case), encoding="utf-8")
+                    before = copy.deepcopy(case)
+                    def outcome(function):
+                        try:
+                            return ("ok", function())
+                        except Exception as error:
+                            return (type(error).__name__, str(error))
+                    actual = outcome(lambda: validate_contract(case))
+                    self.assertEqual(actual, outcome(lambda: load_contract(path)))
+                    self.assertEqual(case, before)
+                    self.assertEqual(actual[0] == "ok", name == "valid")
+
     def test_missing_groups_and_invalid_electrical_identities_are_rejected(self):
         for kind in ("missing", "closure", "duplicate", "noninteger", "ground", "detector"):
             source = copy.deepcopy(complete_geometry())

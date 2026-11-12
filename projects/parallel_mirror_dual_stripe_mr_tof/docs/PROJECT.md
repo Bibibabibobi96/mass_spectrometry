@@ -914,6 +914,17 @@ projection uses the canonical SIMION structural seed resource. The trial lifecyc
 remains in its existing research entry; this slice does not establish full prepared-joint
 installation, native field or flight qualification.
 
+The SIMION collision-occupancy header and coverage checks are owned by
+`msplatform.backends.simion.collision_overlay`. The native static-field provider
+and installed COMSOL asset verifier consume that implementation; the verifier
+no longer imports a nonexistent COMSOL-local provider. Mode -1/-2, planar
+symmetry, bit-28 and coverage rules retain their existing meanings. Synthetic
+asset-verifier tests stub source materialization explicitly and do not qualify
+complete field materialization or native assets. The native-static PowerShell
+runner still executes from its repository context; its recorded source copies
+are audit evidence, not proof of frozen execution. That remaining lifecycle
+boundary stays open within P4.
+
 ### Interface field coverage ownership
 
 The first-match IP fine-field coverage and native gradient-halo check used by
@@ -929,3 +940,24 @@ policy are owned by `msplatform.workflows.prepared_joint.ip_mr_connection`. The
 source runtime is an installed SIMION resource. The real accelerator-interface and
 prepared-joint consumers use these implementations; the remaining trial lifecycle
 continues in its original entry. This does not establish native flight or qualification.
+
+
+### Explicit MR component provider and mechanical composition
+
+The MR provider resolves the complete selected candidate contract and explicit OA physical
+requirements and profile into one full physical design and schema-3 mechanical interface.
+Four Stripe bodies remain separate physical groups; the existing two paired voltage-drive
+settings do not assert physical wiring. Mirror closures, physical grounds, prism shields,
+detector and the actual entry aperture remain in the resolved design. The component group
+names do not assert native electrode numbering. The current plan-5 OA-to-MR mechanical
+consumer re-resolves the selected authorities and compares the complete physical geometry;
+plan-3 source and interface interpretation is retained. The backend retains the existing
+OA support and PA placement checks. This mechanical slice does not create a complete native
+electrode-binding artifact or qualify fields, Fly, CAD, historical runs or full MR.
+
+For a static-field overlay, plan 5 requires the complete selected field geometry to
+equal the explicitly re-resolved provider design, including nonphysical metadata. A
+difference is refused; no historical geometry is reconstructed or supplemented.
+Existing schema-1 field geometry was used with the retained plan-3 path, which does
+not establish its equivalence to a new plan-5 source. Use plan 3 for that historical
+interpretation, or select a field with a compatible complete plan-5 authority.

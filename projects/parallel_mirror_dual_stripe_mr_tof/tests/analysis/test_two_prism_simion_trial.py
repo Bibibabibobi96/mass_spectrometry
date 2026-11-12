@@ -102,11 +102,14 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
 
     def _materialize_static_stripe_fixture(self, root, *, mode="comsol_static_scalar_v",
                                           override=None, scale=1., mismatch=None, trajectory_anchor=None,
-                                          bank_recipes="default", author_groups=None, parent_plan=None):
+                                          bank_recipes="default", author_groups=None, parent_plan=None,
+                                          selected_static=None, p1_extension=False):
         """Exercise the real materializer with small inputs, without solver assets."""
         project = Path(__file__).resolve().parents[2]
         contract = json.loads((project / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         contract["simion"]["nonaccelerator_scale"] = scale
+        if p1_extension:
+            contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
         if author_groups is not None:
             contract["simion"]["native_corridor"]["response_voltage_groups"] = author_groups
         mirrors, endpoints = [0., -5900., -2500., 4100., 6000.], [100., 80., 0.]
@@ -122,6 +125,23 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                        sources={}, records={}, grid={}, geometry={}, instances=[{"origin_mm": [-9., -8., -7.]}, {"pa_path": "collision.pa"},
                        {"origin_mm": [0., 0., 0.]}, {"origin_mm": [11., 12., 13.]}], refinement_windows=[], accelerator_front_z_mm=0.,
                        manifest="native_manifest.json", native_solver_numerics={})
+        if selected_static is not None:
+            binding["authority"]["assembly"] = copy.deepcopy(selected_static["assembly"])
+            binding["geometry"] = copy.deepcopy(selected_static["geometry"])
+            binding["instances"][2]["origin_mm"] = list(selected_static["origin"])
+            # Use the selected OA producer's real component-to-local electrode map.
+            selected_oa = binding["authority"]["assembly"]["accelerator_resolved_electrodes"]
+            selected_electrodes = [selected_oa["grounded_enclosure"], selected_oa["repeller"],
+                                   *selected_oa["grid_supports"], *selected_oa["rings"]]
+            ring_voltages = [endpoints[1] + (endpoints[2] - endpoints[1]) * i / (len(selected_oa["rings"]) + 1)
+                             for i in range(1, len(selected_oa["rings"]) + 1)]
+            oa_voltages = [0., *endpoints, *ring_voltages]
+            self.assertEqual(sorted(item["local_pa_electrode_id"] for item in selected_electrodes),
+                             list(range(1, len(oa_voltages) + 1)))
+            binding["authority"]["component_voltages_v"] = [
+                dict(component_namespace="accelerator", component_electrode_id=item["component_electrode_id"],
+                     voltage_v=oa_voltages[item["local_pa_electrode_id"] - 1])
+                for item in selected_electrodes]
         p1 = 190.
         if mismatch == "prism": p1 += 1.
         elif mismatch == "mirror": values[1] += 1.
@@ -133,6 +153,11 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                            "composition": {}, "campaign": {}}.items():
             paths[name] = root / f"{name}.json"
             paths[name].write_text(json.dumps(data), encoding="utf-8")
+        if selected_static is not None:
+            receipt = json.loads(paths["accelerator"].read_text(encoding="utf-8"))
+            receipt["mrtof_projection"]["ring_voltages_v"] = ring_voltages
+            receipt["mrtof_projection"]["geometry"]["ring_count"] = len(ring_voltages)
+            paths["accelerator"].write_text(json.dumps(receipt), encoding="utf-8")
         bank_path = None
         if mode is None and bank_recipes is not None:
             if bank_recipes == "default":
@@ -170,7 +195,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
              patch(module + "._accelerator_energy_binding", return_value=dict(applied_net_gain_parameter_v=4372.,
                    target_axial_energy_per_charge_v=4372., finite_3d_gain_correction_v=0.)), \
              patch(module + "._provider_exit_energy_contract", return_value={"targets_per_charge_v": {"Ey": 5.0}}), \
-             patch(module + "._accelerator_ring_voltages", return_value=[]), \
+             (nullcontext() if selected_static is not None else patch(module + "._accelerator_ring_voltages", return_value=[])), \
              patch(module + ".load_binding", return_value=binding) as loader, \
              geometry_context as geometry_resolver, origin_context as oa_resolver, pose_context, \
              patch(module + ".resolve_converging_prism_target", return_value={} if mode else None), \
@@ -201,6 +226,72 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 if mode is None and trajectory_anchor is not None:
                     self.assertEqual(geometry_resolver.call_args_list[1].args, (contract, trajectory, trajectory))
         return result, (root / "operating.lua").read_text(encoding="utf-8")
+
+    def test_plan5_static_p1_explicit_full_geometry_and_mismatch_refusal(self):
+        # Software fixture: load_binding is stubbed by the existing helper; no PA or field qualification.
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout
+        from msplatform.backends.simion.mr_geometry import resolve_accelerator_assembly_transform
+        from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_accelerator_iob_origin
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport import _plans
+
+        _, plan, contract = _plans()
+        contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
+        authority = geometry_authority(contract)
+        req, profile, profile_id = (authority["accelerator_requirements"], authority["geometry_profile"], authority["geometry_profile_id"])
+        physical = resolve_closed_two_zone_geometry(req, geometry_profile_id=profile_id, geometry_profile=profile)
+        electrodes = resolve_closed_two_zone_electrodes(req, geometry_profile_id=profile_id, geometry_profile=profile).to_dict()
+        translation = electrodes["local_to_pa_translation_mm"]
+        front = min(item["front_z_mm"] for item in physical.grid_supports)
+        assembly = {"accelerator_resolved_electrodes": electrodes,
+                    "accelerator_iob_origin_mm": [-translation[0], -translation[1], -translation[2] - req["local_pa"]["exit_z_mm"] - front]}
+        transform = resolve_accelerator_assembly_transform(req, profile, profile_id, assembly)
+        source = {"contract": contract, "accelerator_requirements": req, "geometry_profile": profile,
+                  "inherited_dual_stripe_topology_contract": contract, "accelerator_to_mr": transform.to_contract()}
+        projected = resolve_component(source, geometry_profile_id=profile_id)
+        components = copy.deepcopy(plan["components"])
+        mr = next(key for key, value in components.items() if value["project_id"] == "parallel_mirror_dual_stripe_mr_tof")
+        components[mr] = projected["assembly_interface"]
+        # The P1 extension ends 1 mm before the OA exit; the old 30 mm
+        # connection belongs to the unextended shield and is not this fixture.
+        self.assertEqual(components[mr]["ports"]["accelerator_entry"]["center_mm"][2], -1.0)
+        recipe = copy.deepcopy(plan["recipe"])
+        recipe["recipe_id"] = "oa_mr_p1_extended_gap1"
+        self.assertEqual(len(recipe["connections"]), 1)
+        recipe["connections"][0]["gap_mm"] = 1.0
+        plan = compile_assembly_layout(recipe, components)
+        self.assertEqual(plan["connection_checks"][0]["gap_mm"], 1.0)
+        project = Path(__file__).resolve().parents[2]
+        campaign = project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json"
+        from msplatform.backends.simion.oa_focus_plan import derive
+        provider = derive(campaign, geometry_profile=load_geometry_profile(profile_id), mesh_mm_per_gu=[.25, .25, .1])
+        origin = resolve_accelerator_iob_origin(contract, provider, plan, accelerator_geometry_authority=authority,
+            resolved_geometry=projected["resolved_design"], mr_source_design=source)
+        selected = {"assembly": assembly, "geometry": projected["resolved_design"], "origin": origin}
+        original = copy.deepcopy(selected)
+        with tempfile.TemporaryDirectory(prefix="mr_static_p1_") as directory:
+            for name in ("matching", "physical", "metadata"):
+                root = Path(directory) / name
+                root.mkdir()
+                case = copy.deepcopy(selected)
+                if name == "physical":
+                    case["geometry"]["detector"]["box"][0] += 1.0
+                elif name == "metadata":
+                    case["geometry"]["metadata"]["selected_overlay_marker"] = "different"
+                if name == "matching":
+                    result, _ = self._materialize_static_stripe_fixture(root, parent_plan=plan,
+                        selected_static=case, p1_extension=True)
+                    self.assertEqual(result["field_binding"]["mode"], "comsol_static_scalar_v")
+                    self.assertEqual(result["resolved_iob_pose"]["origins_mm"]["accelerator"], list(origin))
+                    self.assertIn("extension_to_accelerator_exit", case["geometry"]["prism_ground_shields"][0])
+                else:
+                    with self.assertRaisesRegex(CandidateContractError, "matching explicit provider authorities"):
+                        self._materialize_static_stripe_fixture(root, parent_plan=plan,
+                            selected_static=case, p1_extension=True)
+                    self.assertFalse((root / "trial.json").exists())
+        self.assertEqual(selected, original)
 
     def test_whole_parent_motion_preserves_materialized_local_controls(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference import reframe_oa_mr_plan
@@ -1407,6 +1498,19 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         result = _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=assembly, accelerator_geometry_authority=geometry_authority(contract))
         shield = result["prism_ground_shields"][0]
         extension = shield["extension_to_accelerator_exit"]
+        from msplatform.backends.simion.mr_geometry import resolve_accelerator_assembly_transform
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component
+        placement = resolve_accelerator_assembly_transform(requirements, selected_authority["geometry_profile"],
+            selected_authority["geometry_profile_id"], assembly)
+        design = {"contract": contract, "accelerator_requirements": requirements,
+            "geometry_profile": selected_authority["geometry_profile"],
+            "inherited_dual_stripe_topology_contract": contract, "accelerator_to_mr": placement.to_contract()}
+        projected = resolve_component(design, geometry_profile_id=selected_authority["geometry_profile_id"])
+        self.assertEqual(projected["resolved_design"], result)
+        missing = dict(design)
+        missing.pop("accelerator_to_mr")
+        with self.assertRaisesRegex(CandidateContractError, "explicit accelerator placement"):
+            resolve_component(missing, geometry_profile_id=selected_authority["geometry_profile_id"])
         self.assertEqual(extension["resolved_end_z_mm"], -1.0)
         self.assertEqual(extension["exit_support_downstream_z_mm"], 0.0)
         self.assertEqual(extension["added_length_mm"], 29.0)

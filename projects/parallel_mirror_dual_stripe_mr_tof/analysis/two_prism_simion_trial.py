@@ -305,9 +305,9 @@ def _source_transverse_reference(
     }
 
 
-def _accelerator_geometric_exit_reference(*, accelerator_geometry_authority, contract: dict[str, Any], provider_plan: dict[str, Any], resolved_campaign: dict[str, Any], bunch_source: dict[str, Any] | None, bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int, slow_energy_per_charge_v: float, source_origin_project_mm: tuple[float, float, float], composition_plan: dict[str, Any], local_scope: dict[str, Any] | None, direct_pose: dict[str, Any], validated_provider_origin: tuple[float, float, float] | None=None) -> dict[str, Any]:
+def _accelerator_geometric_exit_reference(*, accelerator_geometry_authority, contract: dict[str, Any], provider_plan: dict[str, Any], resolved_campaign: dict[str, Any], bunch_source: dict[str, Any] | None, bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int, slow_energy_per_charge_v: float, source_origin_project_mm: tuple[float, float, float], composition_plan: dict[str, Any], local_scope: dict[str, Any] | None, direct_pose: dict[str, Any], validated_provider_origin: tuple[float, float, float] | None=None, mr_source_design: dict[str, Any] | None=None) -> dict[str, Any]:
     """Project the OA provider's per-particle geometric-exit targets into MR coordinates."""
-    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, accelerator_geometry_authority=accelerator_geometry_authority)
+    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, **({"mr_source_design": mr_source_design} if mr_source_design is not None else {}), accelerator_geometry_authority=accelerator_geometry_authority)
                        if validated_provider_origin is None else validated_provider_origin)
     domain = provider_plan["numerical_domain"]
     local_exit_z_mm = _finite(domain.get("local_exit_z_mm"), "provider local exit z")
@@ -565,8 +565,8 @@ def _accelerator_geometric_exit_validation(
     }
 
 
-def _resolve_trial_geometry(reviewed_geometry_contract: dict[str, Any], current_topology_contract: dict[str, Any], accelerator_placement_contract: dict[str, Any], *, accelerator_geometry_authority, accelerator_assembly: dict[str, Any] | None=None) -> dict[str, Any]:
-    """Resolve reviewed conductors with the two consumed accelerator overrides."""
+def _trial_geometry_contract(reviewed_geometry_contract: dict[str, Any], accelerator_placement_contract: dict[str, Any]) -> dict[str, Any]:
+    """Project only the two existing selected accelerator geometry overrides."""
     resolved_contract = copy.deepcopy(reviewed_geometry_contract)
     reviewed_accelerator = resolved_contract.get("accelerator")
     placement_accelerator = accelerator_placement_contract.get("accelerator")
@@ -579,6 +579,12 @@ def _resolve_trial_geometry(reviewed_geometry_contract: dict[str, Any], current_
         if not isinstance(value, dict):
             raise CandidateContractError(f"accelerator geometry projection lacks {key}")
         reviewed_accelerator[key] = copy.deepcopy(value)
+    return resolved_contract
+
+
+def _resolve_trial_geometry(reviewed_geometry_contract: dict[str, Any], current_topology_contract: dict[str, Any], accelerator_placement_contract: dict[str, Any], *, accelerator_geometry_authority, accelerator_assembly: dict[str, Any] | None=None) -> dict[str, Any]:
+    """Resolve reviewed conductors with the two consumed accelerator overrides."""
+    resolved_contract = _trial_geometry_contract(reviewed_geometry_contract, accelerator_placement_contract)
     return resolve_geometry(
         resolved_contract,
         inherited_dual_stripe_topology_contract=current_topology_contract,
@@ -1797,6 +1803,26 @@ def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, ac
         accelerator_geometry_contract,
         accelerator_assembly=(field_binding["authority"].get("assembly") if field_binding is not None else None),
      accelerator_geometry_authority=accelerator_geometry_authority)
+    # Plan5 transports the exact selected provider authorities; plan3 keeps its original call path.
+    trial_source_design = None
+    plain_source_design = None
+    trajectory_source_design = None
+    if composition_plan.get("schema_version") == 5:
+        plain_source_design = {"contract": contract,
+            "accelerator_requirements": accelerator_geometry_authority["accelerator_requirements"],
+            "geometry_profile": accelerator_geometry_authority["geometry_profile"]}
+        trajectory_source_design = {**plain_source_design, "contract": trajectory_contract}
+        trial_source_design = {**plain_source_design,
+            "contract": _trial_geometry_contract(reviewed_contract, accelerator_geometry_contract),
+            "inherited_dual_stripe_topology_contract": trajectory_contract}
+        assembly = field_binding["authority"].get("assembly") if field_binding is not None else None
+        if assembly is not None:
+            from msplatform.backends.simion.mr_geometry import resolve_accelerator_assembly_transform
+            placement = resolve_accelerator_assembly_transform(
+                accelerator_geometry_authority["accelerator_requirements"],
+                accelerator_geometry_authority["geometry_profile"],
+                accelerator_geometry_authority["geometry_profile_id"], assembly)
+            trial_source_design["accelerator_to_mr"] = placement.to_contract()
     actual_oa_origin = None
     resolved_iob_pose = None
     if field_binding is not None:
@@ -1808,6 +1834,7 @@ def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, ac
         resolved.update(copy.deepcopy(field_binding["geometry"]))
         actual_oa_origin = resolve_accelerator_iob_origin(
             contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, resolved_geometry=resolved,
+            **({"mr_source_design": trial_source_design} if trial_source_design is not None else {}),
          accelerator_geometry_authority=accelerator_geometry_authority)
         if list(actual_oa_origin) != field_binding["instances"][2]["origin_mm"]:
             raise CandidateContractError("requested OA placement differs from the static field")
@@ -1827,9 +1854,10 @@ def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, ac
             actual_oa_origin = resolve_accelerator_iob_origin(
                 contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose,
                 resolved_geometry=(resolved if contract == reviewed_contract == accelerator_geometry_contract == trajectory_contract else None),
+                **({"mr_source_design": (trial_source_design if contract == reviewed_contract == accelerator_geometry_contract == trajectory_contract else plain_source_design)} if trial_source_design is not None else {}),
              accelerator_geometry_authority=accelerator_geometry_authority)
             origins["accelerator"] = (actual_oa_origin if contract == trajectory_contract else
-                                     resolve_accelerator_iob_origin(trajectory_contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, accelerator_geometry_authority=accelerator_geometry_authority))
+                                     resolve_accelerator_iob_origin(trajectory_contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, **({"mr_source_design": trajectory_source_design} if trajectory_source_design is not None else {}), accelerator_geometry_authority=accelerator_geometry_authority))
             analyzer_authority = "reviewed_analyzer_contract"
         resolved_iob_pose = {
             "origins_mm": {key: list(value) for key, value in origins.items()},
@@ -1920,6 +1948,7 @@ def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, ac
         local_scope=local_scope,
         direct_pose=direct_pose,
         validated_provider_origin=actual_oa_origin,
+        **({"mr_source_design": plain_source_design} if plain_source_design is not None else {}),
      accelerator_geometry_authority=accelerator_geometry_authority)
     exit_plane_lua = (
         "accelerator_exit_plane_project_z_mm = "

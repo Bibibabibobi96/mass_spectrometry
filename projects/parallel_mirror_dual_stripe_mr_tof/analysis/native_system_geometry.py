@@ -398,7 +398,7 @@ def resolve_oa_mr_direct_pose(
     }
 
 
-def resolve_accelerator_iob_origin(contract: dict[str, object], provider_plan: dict[str, object], composition_plan: dict[str, object], *, accelerator_geometry_authority, local_scope: dict[str, object] | None=None, direct_pose: dict[str, object] | None=None, resolved_geometry: dict[str, object] | None=None) -> tuple[float, float, float]:
+def resolve_accelerator_iob_origin(contract: dict[str, object], provider_plan: dict[str, object], composition_plan: dict[str, object], *, accelerator_geometry_authority, local_scope: dict[str, object] | None=None, direct_pose: dict[str, object] | None=None, resolved_geometry: dict[str, object] | None=None, mr_source_design: dict[str, object] | None=None) -> tuple[float, float, float]:
     """Project the provider PA through one frozen OA-to-MR direct pose."""
     if (
         provider_plan.get("role") != "orthogonal_accelerator_component_focus_pa_plan"
@@ -416,10 +416,13 @@ def resolve_accelerator_iob_origin(contract: dict[str, object], provider_plan: d
     requirements = provider_plan.get("requirements")
     if not isinstance(requirements, dict):
         raise CandidateContractError("provider plan lacks compiled two-zone requirements")
-    # This deployed MR renderer consumes component1/plan3, not the OA
-    # publisher's current scientific-group default.
+    # Preserve frozen plan3 exactly; current plan5 uses both current providers.
+    version = direct_pose["resolved_plan"]["schema_version"]
+    if version not in (3, 5):
+        raise CandidateContractError("OA/MR renderer requires composition plan version 3 or 5")
+    component_version = {3: 1, 5: 3}[version]
     actual_oa = resolve_oa_assembly_interface(
-        requirements, geometry_profile_id=layout.get("geometry_profile_id"), schema_version=1,
+        requirements, geometry_profile_id=layout.get("geometry_profile_id"), schema_version=component_version,
         geometry_profile=accelerator_geometry_authority["geometry_profile"],
     )
     declared_frame = direct_pose["resolved_plan"]["components"][direct_pose["oa_instance_id"]]["local_frame_id"]
@@ -431,9 +434,22 @@ def resolve_accelerator_iob_origin(contract: dict[str, object], provider_plan: d
         actual_oa["local_frame_id"] = declared_frame
     elif declared_frame != "orthogonal_accelerator_exit_origin_v1":
         raise CandidateContractError("unsupported OA component coordinate frame")
-    actual_mr = resolve_mr_assembly_interface(
-        resolved, geometry_profile_id=resolved["metadata"]["accelerator_component_geometry_profile_id"],
-    )
+    if component_version == 1:
+        actual_mr = resolve_mr_assembly_interface(
+            resolved, geometry_profile_id=resolved["metadata"]["accelerator_component_geometry_profile_id"],
+        )
+    else:
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component as resolve_mr_provider
+        if mr_source_design is None:
+            raise CandidateContractError("MR v3 geometry requires explicit provider source design")
+        if (mr_source_design.get("accelerator_requirements") != accelerator_geometry_authority["accelerator_requirements"]
+                or mr_source_design.get("geometry_profile") != accelerator_geometry_authority["geometry_profile"]):
+            raise CandidateContractError("MR v3 source design differs from selected OA authority")
+        projected = resolve_mr_provider(mr_source_design,
+            geometry_profile_id=accelerator_geometry_authority["geometry_profile_id"])
+        if projected["resolved_design"] != resolved:
+            raise CandidateContractError("MR v3 geometry requires matching explicit provider authorities")
+        actual_mr = projected["assembly_interface"]
     components = direct_pose["resolved_plan"]["components"]
     oa_id = direct_pose["oa_instance_id"]
     mr_id = direct_pose["mr_instance_id"]

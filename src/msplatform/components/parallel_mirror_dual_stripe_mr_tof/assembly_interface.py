@@ -40,7 +40,7 @@ def _component_electrodes(resolved: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def resolve_assembly_interface(
-    resolved_geometry: dict[str, Any], *, geometry_profile_id: str | None = None,
+    resolved_geometry: dict[str, Any], *, geometry_profile_id: str | None = None, schema_version: int = 1,
 ) -> dict[str, Any]:
     """Publish the actual +z slot mouth of the resolved accelerator_exit frame.
 
@@ -48,6 +48,8 @@ def resolve_assembly_interface(
     through-slot and a recessed Prism clearance. It does not approximate other
     CSG topologies by their bounding boxes.
     """
+    if type(schema_version) is not int or schema_version not in (1, 3):
+        raise ValueError("MR interface requires schema version 1 or 3")
     frame = resolved_geometry.get("frame_id")
     if (resolved_geometry.get("project_id") != "parallel_mirror_dual_stripe_mr_tof"
             or frame != "astral.xyz.reflection_z.drift_y.transverse_x.v2"):
@@ -80,8 +82,11 @@ def resolve_assembly_interface(
             and slot[2] <= z0 < z1 == slot[5]
             and max(p[1] for p in clearance) < z1):
         raise ValueError("MR E18 accelerator_exit slot does not reach the actual outer face with a closed rectangular rim")
+    electrodes = _component_electrodes(resolved_geometry)
+    if schema_version == 3:
+        electrodes = _scientific_groups(resolved_geometry, electrodes)
     return {
-        "schema_version": 1, "role": "component_geometry_interface",
+        "schema_version": schema_version, "role": "component_geometry_interface",
         "project_id": "parallel_mirror_dual_stripe_mr_tof",
         "variant_id": "complete_mr_analyzer", "geometry_profile_id": geometry_profile_id,
         "local_frame_id": frame, "length_unit": "mm",
@@ -92,5 +97,38 @@ def resolve_assembly_interface(
             "cross_section": {"shape": "rectangle", "width_mm": slot[3] - slot[0],
                               "height_mm": slot[4] - slot[1], "width_axis": [1, 0, 0], "height_axis": [0, 1, 0]},
         }},
-        "component_electrodes": _component_electrodes(resolved_geometry),
+        "component_electrodes": electrodes,
     }
+
+
+def _scientific_groups(resolved: dict[str, Any], electrodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project physical order and stations, keeping each distinct conductor."""
+    from .resolved_geometry import DUAL_STRIPE_PHYSICAL_INSTANCE_INVARIANT
+
+    mirrors = resolved["mirror_electrodes"]
+    if len(mirrors) != 10:
+        raise ValueError("MR physical topology requires five mirror layers per side")
+    names = {}
+    for index, row in enumerate(mirrors):
+        side = "positive" if index % 2 == 0 else "negative"
+        names[row["id"]] = f"{side}_mirror_layer_{index // 2 + 1}"
+    for instance in DUAL_STRIPE_PHYSICAL_INSTANCE_INVARIANT:
+        side = "positive" if instance.reflection_axis_sign > 0 else "negative"
+        names[instance.electrode_id] = f"{side}_stripe_{instance.set_name}"
+    for section, suffix in (("prism_electrodes", "prism"), ("prism_ground_shields", "prism_shield")):
+        for row in resolved[section]:
+            if row["station"] not in ("accelerator_exit", "central_ground_left"):
+                raise ValueError("MR prism station is unsupported")
+            names[row["id"]] = f"{row['station']}_{suffix}"
+    names[CENTRAL_GROUND_ELECTRODE_ID] = "central_ground"
+    names[resolved["detector"]["id"]] = "detector"
+    if len(names) != len(electrodes) or set(names) != {row["component_electrode_id"] for row in electrodes}:
+        raise ValueError("MR resolved physical members differ from supported complete topology")
+    shields = resolved["mirror_ground_shields"]
+    if len(shields) != 2 or any(row.get("role") != "inner_stripe_facing_4mm_slot" for row in shields):
+        raise ValueError("MR requires one mirror ground shield on each side")
+    groups = [{"electrode_group_id": names[row["component_electrode_id"]], "role": row["role"]}
+              for row in electrodes]
+    groups.extend({"electrode_group_id": f"{side}_mirror_ground_shield", "role": "mirror_ground_shield"}
+                  for side in ("positive", "negative"))
+    return groups

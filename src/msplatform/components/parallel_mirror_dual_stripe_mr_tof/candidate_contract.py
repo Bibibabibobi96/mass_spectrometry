@@ -1,4 +1,4 @@
-"""Pure reference and SIMION-GEM source generator for the MR-TOF prototype.
+"""Pure candidate admission and reference logic for the MR-TOF prototype.
 
 The only coordinate frame accepted here is the project frame: z is reflection,
 y is drift, x is transverse focusing, and z=0 is the injection midplane.  This
@@ -7,6 +7,7 @@ is a separate candidate, even though it uses the same two-uniform-field theory.
 """
 from __future__ import annotations
 
+import copy
 import json
 import math
 from dataclasses import dataclass
@@ -24,7 +25,6 @@ from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
     derive_uniform_ring_planes,
 )
 
-from .mirror_geometry_parameters import derive_mirror_boundaries
 
 
 class CandidateContractError(ValueError):
@@ -280,6 +280,16 @@ def load_contract(
     fail-closed.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
+    return validate_contract(data, inherited_detector_return_path=inherited_detector_return_path,
+                             inherited_mirror_power_supply_limits_v=inherited_mirror_power_supply_limits_v)
+
+
+def validate_contract(
+    data: dict[str, Any], *, inherited_detector_return_path: dict[str, Any] | None = None,
+    inherited_mirror_power_supply_limits_v: dict[str, dict[str, float]] | None = None,
+) -> dict[str, Any]:
+    """Validate explicit contents with the file loader's existing historical policies."""
+    data = copy.deepcopy(data)
     if data.get("project_id") != "parallel_mirror_dual_stripe_mr_tof":
         raise CandidateContractError("project_id must identify the MR-TOF project")
     authority = data.get("geometry_authority", {})
@@ -690,58 +700,3 @@ def derive_stage_2_ring_voltages(
         grid_1 + (exit_grid - grid_1) * index / (len(layout.centers_mm) + 1)
         for index in range(1, len(layout.centers_mm) + 1)
     )
-
-
-def build_simion_gem(contract: dict[str, Any]) -> str:
-    """Emit a reviewable legacy-GEM electrode map with stable electrode IDs.
-
-    This is a topology source, not an approval to run SIMION: CAD dimensions and
-    full PA bounds remain subject to the project CAD audit and numerical contract.
-    """
-    if contract.get("geometry_authority", {}).get("model") not in {
-        "theory_derived_3d",
-        "manufactured_CAD_geometry__theory_optimized_operating_point",
-    }:
-        raise CandidateContractError("SIMION topology needs a qualified Candidate authority")
-    mirror = contract["mirror"]
-    if _number(mirror.get("beam_slot_width_mm"), "beam_slot_width_mm") != 30.0:
-        raise CandidateContractError("CAD mirror beam slot is a fixed 30 mm mechanical constraint")
-    stripe = contract["dual_stripe"]
-    if _number(stripe.get("beam_slot_width_mm"), "ion_foil_beam_slot_width_mm") != 4.0:
-        raise CandidateContractError("CAD Ion-Foil beam slot is a fixed 4 mm mechanical constraint")
-    edges = [_number(value, "electrode_z_edges_mm") for value in derive_mirror_boundaries(mirror)["active_start_z_mm"]]
-    if len(edges) != 5 or edges != sorted(edges) or edges[0] <= 0.0:
-        raise CandidateContractError("five positive ordered mirror electrode edges are required")
-    width = _number(stripe["maximum_width_mm"], "maximum_width_mm")
-    corridor = _number(stripe["central_grounded_corridor_mm"], "central_grounded_corridor_mm")
-    lines = [
-        "; MR-TOF Candidate-only topology source for SIMION 2020 legacy GEM.",
-        "; Frame: x transverse focus, y drift, z reflection; central plane is z=0.",
-        "; IDs 1..5 right mirror, 6..10 left mirror, 11..14 physical dual stripes.",
-        "; Stripe pairs (11,12) and (13,14) share independently adjustable voltages.",
-        "pa_define(801,801,1601, planar,none,electrostatic,,,0.25,0.25,0.25, surface=none)",
-        "locate(400,400,800) {",
-    ]
-    for index, edge in enumerate(edges, start=1):
-        lines.append(f"  e({index}) {{ box3D(-{width},-{width},{edge - 2}, {width},{width},{edge + 2}) }}")
-        lines.append(f"  e({index + 5}) {{ box3D(-{width},-{width},{-edge - 2}, {width},{width},{-edge + 2}) }}")
-    half = corridor / 2.0
-    lines.extend([
-        f"  e(11) {{ box3D(-{width},-{width},-{half}, {width},-{width / 2}, {half}) }}",
-        f"  e(12) {{ box3D(-{width},{width / 2},-{half}, {width},{width}, {half}) }}",
-        f"  e(13) {{ box3D(-{width / 2},-{width},-{half}, {width / 2},-{width / 2}, {half}) }}",
-        f"  e(14) {{ box3D(-{width / 2},{width / 2},-{half}, {width / 2},{width}, {half}) }}",
-        "  ; The accelerator, prism, grounded guard, detector and raw-node ideal grids are generated only after CAD audit.",
-        "}",
-        "",
-    ])
-    return "\n".join(lines)
-
-
-def write_gem(contract_path: Path, output_path: Path) -> TwoZoneFocus:
-    """Validate a contract, emit its GEM source, and return the focus placement."""
-    contract = load_contract(contract_path)
-    focus = derive_two_zone_focus(contract)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(build_simion_gem(contract), encoding="utf-8", newline="\n")
-    return focus

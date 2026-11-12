@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as p
+from msplatform.backends.simion import collision_overlay as collision
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
 from msplatform.backends.comsol.static_field_binding import _record, load_binding
@@ -147,9 +148,9 @@ try {
         raw = carrier.read_bytes()
         carrier.write_bytes(b"bad")
         with self.assertRaises(ValueError):
-            p.verify_collision_overlay_support(self.source, plan["analyzer_collision_patch_build"])
+            collision.verify_collision_overlay_support(self.source, plan["analyzer_collision_patch_build"])
         carrier.write_bytes(raw)
-        p.verify_collision_overlay_support(self.source, plan["analyzer_collision_patch_build"])
+        collision.verify_collision_overlay_support(self.source, plan["analyzer_collision_patch_build"])
 
     def test_collision_overlay_compiles_only_same_csg_occupancy_and_no_parent(self):
         request = self.overlay_fixture()
@@ -176,7 +177,7 @@ try {
         request["collision_overlay_update"]["pitch_mm"] = [1, 1, 1]
         plan = p.compile_request(request)
         self.assertEqual(plan["analyzer_collision_patch_build"]["pa_bytes"], 32+8*3*5*5)
-        self.assertEqual(p.collision_pa_header(detector).dx_mm, 1)
+        self.assertEqual(collision.collision_pa_header(detector).dx_mm, 1)
         with self.assertRaisesRegex(ValueError, "mode -2"):
             read_pa_header(detector)
 
@@ -201,7 +202,7 @@ try {
                 if mutation == "ip_overlap":
                     plan = p.compile_request(value)
                     with self.assertRaises(ValueError):
-                        p.verify_collision_overlay_support(source, plan["analyzer_collision_patch_build"])
+                        collision.verify_collision_overlay_support(source, plan["analyzer_collision_patch_build"])
                 else:
                     with self.assertRaises(ValueError):
                         p.compile_request(value)
@@ -209,6 +210,14 @@ try {
     def test_collision_overlay_loader_preserves_materialization_and_checks_all_new_assets(self):
         from msplatform.backends.comsol import static_field_binding as b
         request = self.overlay_fixture()
+        # The real asset verifier requires sealed records for every source PA.
+        # The older loader fixture used metadata-only instances without them.
+        fallback = Path(self.source["instances"][0]["pa_path"])
+        fallback.write_bytes(Path(self.source["instances"][1]["pa_path"]).read_bytes())
+        for instance in self.source["instances"]:
+            instance["record"] = file_record(Path(instance["pa_path"]))
+            p.write_json(Path(instance["manifest"]),
+                         {"status": "success", "outputs": [instance["record"]]})
         source_path = Path(request["source_binding_path"])
         p.write_json(source_path, dict(schema_version=1, role="mrtof_native_static_field_binding", materialization={}))
         def record(path):
@@ -227,7 +236,7 @@ try {
         patch_plan = plan["analyzer_collision_patch_build"]
         directory = run / "simion/analyzer_collision_patch"
         pa = directory / "analyzer_collision_patch.pa"
-        header = PaHeader(-2, 1, 100000, *patch_plan["dimensions"], p.COLLISION_NOTREFINABLE_FLAG | 1, *patch_plan["pitch_mm"])
+        header = PaHeader(-2, 1, 100000, *patch_plan["dimensions"], collision.COLLISION_NOTREFINABLE_FLAG | 1, *patch_plan["pitch_mm"])
         pa.write_bytes(header.pack()+b"\0"*(header.node_count*8))
         Path(str(pa)+"-surf").write_bytes(b"fractional")
         path = run / "results/field_binding.json"
@@ -239,6 +248,7 @@ try {
         original = copy.deepcopy(self.source)
         with patch.object(b, "_load_native_materialized", return_value=self.source) as materialized:
             loaded = b.load_binding(path)
+            b.verify_joint_asset_records(loaded)
         self.assertEqual(loaded["instances"][:4], self.source["instances"])
         self.assertEqual(loaded["instances"][4]["role"], "analyzer_collision_patch")
         self.assertEqual(loaded["authority"], self.source["authority"])
@@ -255,7 +265,7 @@ try {
                 value["refine_performed"] = True
                 p.write_json(target, value)
             elif mutation in ("header", "refinable"):
-                flag = p.COLLISION_NOTREFINABLE_FLAG if mutation == "header" else 1
+                flag = collision.COLLISION_NOTREFINABLE_FLAG if mutation == "header" else 1
                 changed = PaHeader(-2, 1, 100000, *patch_plan["dimensions"], flag, *patch_plan["pitch_mm"])
                 target.write_bytes(changed.pack()+before[56:])
             else:
@@ -267,8 +277,10 @@ try {
                 if mutation in ("header", "refinable"):
                     # Metadata parsing consumes the sealed plan, not the PA.
                     b.load_binding(path)
-                    actual = p.collision_pa_header(pa)
-                    self.assertTrue(actual.raw_mirror & 7 != 1 or not actual.raw_mirror & p.COLLISION_NOTREFINABLE_FLAG)
+                    actual = collision.collision_pa_header(pa)
+                    self.assertTrue(actual.raw_mirror & 7 != 1 or not actual.raw_mirror & collision.COLLISION_NOTREFINABLE_FLAG)
+                    with self.assertRaisesRegex(ValueError, "collision overlay PA grid/symmetry differs"):
+                        b.verify_joint_asset_records(b.load_binding(path))
                 else:
                     with self.assertRaises((AssertionError, ValueError)):
                         b.load_binding(path)

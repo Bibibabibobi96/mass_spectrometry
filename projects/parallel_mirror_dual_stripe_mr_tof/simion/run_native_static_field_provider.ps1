@@ -75,6 +75,7 @@ try{
     }
     $copies.crop_adapter=Join-Path $PSScriptRoot 'crop_native_static_field.lua'
     foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $repo ("src/msplatform/backends/simion/$name.py")}
+    $copies.collision_overlay=Join-Path $repo 'src/msplatform/backends/simion/collision_overlay.py'
     if($isComposition){$copies.composer=Join-Path $repo 'src/msplatform/backends/simion/standalone_pa_composition.py'}
     $frozen=[ordered]@{}
     foreach($key in $copies.Keys){

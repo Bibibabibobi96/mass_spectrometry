@@ -278,7 +278,7 @@ def verify_joint_asset_records(binding: dict[str, Any]) -> None:
         verify_record("live joint field asset", record)
     overlay = binding.get("collision_overlay")
     if overlay is not None:
-        from .native_static_field_provider import (
+        from msplatform.backends.simion.collision_overlay import (
             collision_pa_header, verify_collision_overlay_support, COLLISION_NOTREFINABLE_FLAG,
         )
         plan = _read(Path(overlay["patch_plan_path"]))

@@ -2929,6 +2929,79 @@ for rf_transport_probe_name in ('msplatform.workflows.rf_transport_comparison','
 print('INSTALLED_RF_TRANSPORT_WORKFLOW=PASS')
 # RF_TRANSPORT_WORKFLOW_INSTALLED_END
 
+# MR_PUBLIC_PROVIDER_INSTALLED_BEGIN
+mrp_request = fixture['mr_public_provider']
+mrp_fixture_before = copy.deepcopy(mrp_request)
+from msplatform import components as mrp_components
+from msplatform.capabilities import capabilities as mrp_capabilities
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import provider as mrp_provider
+from msplatform.components.catalog import _from_provider as mrp_from_provider
+from msplatform.assembly.resolve_assembly import validate_component_geometry_interface as mrp_validate_interface
+mrp_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+mrp_owner = pathlib.Path(mrp_provider.__file__).resolve()
+assert mrp_owner == mrp_purelib / 'msplatform/components/parallel_mirror_dual_stripe_mr_tof/provider.py'
+mrp_result = mrp_components.resolve_component(mrp_request)
+mrp_design = mrp_result.resolved_design
+mrp_interface = mrp_result.assembly_interface
+assert mrp_design['project_id'] == 'parallel_mirror_dual_stripe_mr_tof'
+assert mrp_interface['schema_version'] == 3 and len(mrp_interface['component_electrodes']) == 22
+assert 'accelerator_entry' in mrp_interface['ports'] and mrp_validate_interface(mrp_interface) == 3
+assert len({row['electrode_group_id'] for row in mrp_interface['component_electrodes']}) == 22
+mrp_query = mrp_capabilities(dict(schema_version=1, operation='resolve_component', arguments=dict(request=mrp_request)))
+assert mrp_query['contract_status'] == 'accepted' and mrp_query['native_qualification'] == 'not_granted'
+mrp_bad_source = copy.deepcopy(mrp_request['design'])
+mrp_bad_source['contract']['project_id'] = 'different_project'
+try:
+    mrp_components.resolve_component({**mrp_request, 'design': mrp_bad_source})
+except ValueError:
+    pass
+else:
+    raise AssertionError('MR provider accepted changed source authority')
+# Internal admission rechecks a caller-supplied resolved design against its source.
+mrp_bad_design = copy.deepcopy(mrp_design)
+mrp_bad_design['metadata']['mr_installed_mutation'] = True
+try:
+    mrp_from_provider(mrp_result.provider_id, mrp_bad_design, mrp_interface, source_design=mrp_request['design'])
+except ValueError:
+    pass
+else:
+    raise AssertionError('MR provider accepted changed resolved design')
+assert mrp_request == mrp_fixture_before
+mrp_child_file = root / ('mr-provider-' + sys.argv[2] + '.json')
+mrp_child_file.write_text(json.dumps(mrp_request), encoding='utf-8')
+mrp_child = """import importlib.abc,json,os,pathlib,sys,sysconfig
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[2])]
+def deny(event,args):
+    if event=='open' and args and isinstance(args[0],(str,bytes)):
+        path=pathlib.Path(os.fsdecode(args[0])).resolve()
+        if any(path.is_relative_to(item) for item in blocked): raise AssertionError('author source read: '+str(path))
+sys.addaudithook(deny)
+class DenyRepository(importlib.abc.MetaPathFinder):
+    def find_spec(self,fullname,path=None,target=None):
+        if fullname.split('.')[0] in {'projects','common','integrations'}: raise AssertionError('author import: '+fullname)
+sys.meta_path.insert(0,DenyRepository())
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof import provider
+from msplatform import components
+assert pathlib.Path(provider.__file__).resolve()==pathlib.Path(sysconfig.get_path('purelib')).resolve()/'msplatform/components/parallel_mirror_dual_stripe_mr_tof/provider.py'
+part=components.resolve_component(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')))
+assert part.assembly_interface['schema_version']==3
+"""
+mrp_cmd = [sys.executable, '-I', '-B', '-c', mrp_child, str(mrp_child_file), json.dumps([str(path) for path in blocked_source_roots])]
+mrp_ok = subprocess.run(mrp_cmd, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+assert mrp_ok.returncode == 0, mrp_ok.stdout + mrp_ok.stderr
+mrp_bytes = mrp_owner.read_bytes()
+mrp_held = mrp_owner.with_name(mrp_owner.name + '.mr-provider-held')
+assert not mrp_held.exists()
+mrp_owner.rename(mrp_held)
+try:
+    mrp_missing = subprocess.run(mrp_cmd, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+    assert mrp_missing.returncode != 0 and 'ImportError:' in mrp_missing.stderr and 'provider' in mrp_missing.stderr, mrp_missing.stderr
+finally:
+    mrp_held.rename(mrp_owner)
+assert mrp_owner.read_bytes() == mrp_bytes
+print('INSTALLED_MR_PUBLIC_PROVIDER=PASS')
+# MR_PUBLIC_PROVIDER_INSTALLED_END
+
 # MR_INTERFACE_INSTALLED_BEGIN
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface as mr_interface_owner
 mr_owner_path = pathlib.Path(mr_interface_owner.__file__).resolve()
@@ -3239,6 +3312,79 @@ finally:focus_hidden.rename(focus_module)
 assert focus_module.read_bytes()==focus_bytes
 missing_rejected.append('oa_focus_analysis')
 print('INSTALLED_OA_FOCUS_ANALYSIS=PASS')
+
+# Synthetic source materialization; actual installed asset, header and support verification.
+from msplatform.backends.simion import collision_overlay as installed_collision
+collision_module=pathlib.Path(installed_collision.__file__).resolve()
+assert collision_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert all(not collision_module.is_relative_to(path) for path in blocked_source_roots)
+collision_fixture=fixture['collision_overlay_probe']
+collision_input=root/('collision-overlay-fixture-'+sys.argv[2]+'.json')
+collision_input.write_text(json.dumps(collision_fixture),encoding='utf-8')
+collision_input_bytes=collision_input.read_bytes()
+collision_child=r"""
+import copy, hashlib, importlib, json, os, pathlib, struct, sys, sysconfig
+from unittest.mock import patch
+blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+def reject_author(event, values):
+    if event=='open' and values and isinstance(values[0],(str,bytes,os.PathLike)):
+        path=pathlib.Path(os.fsdecode(values[0])).resolve()
+        if any(path.is_relative_to(source) for source in blocked): raise AssertionError('author source read: '+str(path))
+sys.addaudithook(reject_author)
+collision=importlib.import_module('msplatform.backends.simion.collision_overlay')
+binding_module=importlib.import_module('msplatform.backends.comsol.static_field_binding')
+purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
+assert all(pathlib.Path(module.__file__).resolve().is_relative_to(purelib) for module in (collision,binding_module))
+fixture=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8')); assert fixture['fixture_kind']=='synthetic_stubbed_materialization_actual_asset_verifier'
+selected=fixture['binding']; source=fixture['source']; root=pathlib.Path(fixture['root'])
+def inventory():
+    return {str(path.relative_to(root)):(path.stat().st_size,hashlib.sha256(path.read_bytes()).hexdigest())
+            for path in root.rglob('*') if path.is_file()}
+before=inventory()
+pa=pathlib.Path(selected['instances'][-1]['pa_path'])
+header=collision.collision_pa_header(pa)
+assert header.raw_mirror & 7==1 and header.raw_mirror & collision.COLLISION_NOTREFINABLE_FLAG
+plan=json.loads(pathlib.Path(selected['collision_overlay']['patch_plan_path']).read_text(encoding='utf-8'))
+collision.verify_collision_overlay_support(source,plan)
+with patch.object(binding_module,'_load_native_materialized',return_value=source):
+    binding_module.verify_joint_asset_records(selected)
+    original=pa.read_bytes()
+    for label,flags in (('wrong_mirror',collision.COLLISION_NOTREFINABLE_FLAG),('refinable',1)):
+        try:
+            changed=bytearray(original); struct.pack_into('<i',changed,28,flags); pa.write_bytes(changed)
+            candidate=copy.deepcopy(selected)
+            candidate['instances'][-1]['record']['bytes']=len(changed)
+            candidate['instances'][-1]['record']['sha256']=hashlib.sha256(changed).hexdigest()
+            try:
+                binding_module.verify_joint_asset_records(candidate)
+            except ValueError as error:
+                assert str(error)=='collision overlay PA grid/symmetry differs',(label,str(error))
+            else:
+                raise AssertionError(label+' accepted')
+        finally:
+            pa.write_bytes(original)
+        assert inventory()==before,label
+assert inventory()==before
+print('INSTALLED_COLLISION_OVERLAY=PASS fixture_stubbed_materialization actual_asset_verifier wrong_mirror refinable')
+"""
+collision_args=[sys.executable,'-I','-B','-X','utf8','-c',collision_child,
+    json.dumps([str(path) for path in blocked_source_roots]),str(collision_input)]
+collision_result=subprocess.run(collision_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert collision_result.returncode==0 and 'INSTALLED_COLLISION_OVERLAY=PASS' in collision_result.stdout,collision_result.stdout+collision_result.stderr
+collision_held=collision_module.with_name(collision_module.name+'.missing')
+collision_bytes=collision_module.read_bytes()
+assert not collision_held.exists()
+collision_module.rename(collision_held)
+try:
+    collision_missing=subprocess.run(collision_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert collision_missing.returncode!=0 and "No module named 'msplatform.backends.simion.collision_overlay'" in collision_missing.stderr,collision_missing.stderr
+finally:
+    collision_held.rename(collision_module)
+assert collision_module.read_bytes()==collision_bytes
+assert collision_input.read_bytes()==collision_input_bytes
+missing_rejected.append('collision_overlay')
+print('INSTALLED_COLLISION_OVERLAY=PASS')
+
 
 # The old project capture is a software fixture, not a native SIMION qualification.
 from msplatform.backends.simion import detector_census
@@ -5460,7 +5606,6 @@ class InstalledScientificCoreTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-
     def test_probe_author_guard_allows_hosted_stdlib_lazy_import_but_denies_checkout(self) -> None:
         import ast
         from types import SimpleNamespace
@@ -6276,6 +6421,22 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return dict(numerical_contract=contract, cases=cases,
                     profile_source=dict(bytes=len(provider_bytes), sha256=hashlib.sha256(provider_bytes).hexdigest()))
 
+    def mr_public_provider_probe_fixture(self) -> dict:
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
+        mrp_contract_path = REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
+        mrp_oa_path = REPO_ROOT / 'projects/orthogonal_accelerator/config/component_contract.json'
+        mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
+        assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '257e10f381b566db9eb85f63776081fbe8ada140bdc99eb44bda4e148fda066f'
+        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '38d9ad771bb8b194cf484de770d062cb1b1bdd3462da8730c3616c738f57ffed'
+        mrp_contract = load_contract(mrp_contract_path)
+        mrp_authority = geometry_authority(mrp_contract)
+        assert mrp_authority['geometry_profile_id'] == 'closed_two_zone_compact_mr_axial_r3_gap1_4mm'
+        assert mrp_contract_path.read_bytes() == mrp_contract_bytes and mrp_oa_path.read_bytes() == mrp_oa_bytes
+        return dict(provider_id='parallel_mirror_dual_stripe_mr_tof', geometry_profile_id=mrp_authority['geometry_profile_id'],
+                    design=dict(contract=mrp_contract, accelerator_requirements=mrp_authority['accelerator_requirements'],
+                                geometry_profile=mrp_authority['geometry_profile']))
+
     def mr_interface_probe_fixture(self) -> list[dict]:
         # Original six-parent physical fixture; expected complete results were
         # recorded from the retired original publisher at 574ae974 (8849a767...).
@@ -6529,6 +6690,43 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         with tempfile.TemporaryDirectory() as directory:
             result = self.oa_mr_runtime_receipt_probe_fixture(Path(directory) / 'fixture-admission')
             self.assertEqual(result['expected']['status'], 'published_standalone_response_bank')
+
+    def collision_overlay_probe_fixture(self, work: Path) -> dict:
+        """Capture the existing synthetic owner fixture with stubbed materialization."""
+        import copy
+        from unittest import mock
+        from msplatform.backends.comsol import static_field_binding
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_native_static_field_provider as fixture
+
+        work.mkdir(parents=True, exist_ok=False)
+        class Keep:
+            name = str(work)
+            def cleanup(self):
+                pass
+        class Captured(Exception):
+            pass
+        case = fixture.NativeStaticProviderTest('test_collision_overlay_loader_preserves_materialization_and_checks_all_new_assets')
+        with mock.patch.object(fixture.tempfile, 'TemporaryDirectory', return_value=Keep()):
+            case.setUp()
+        observed = {}
+        original = static_field_binding.verify_joint_asset_records
+        def capture(selected):
+            original(selected)
+            observed.update(binding=copy.deepcopy(selected), source=copy.deepcopy(case.source))
+            raise Captured()
+        try:
+            with mock.patch.object(static_field_binding, 'verify_joint_asset_records', side_effect=capture):
+                try:
+                    case.test_collision_overlay_loader_preserves_materialization_and_checks_all_new_assets()
+                except Captured:
+                    pass
+        finally:
+            case.doCleanups()
+        if set(observed) != {'binding', 'source'}:
+            raise AssertionError('fixture did not reach the actual asset verifier')
+        observed['fixture_kind'] = 'synthetic_stubbed_materialization_actual_asset_verifier'
+        observed['root'] = str(work)
+        return observed
 
     def oa_focus_analysis_probe_fixture(self) -> dict:
         from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
@@ -6948,8 +7146,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
+                                              collision_overlay_probe=self.collision_overlay_probe_fixture(root / 'collision-overlay'),
                                               detector_census_old_witness=json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/test_support/detector_census_old_witness.json').read_text(encoding='utf-8')),
                                               oa_mr_runtime_receipt=self.oa_mr_runtime_receipt_probe_fixture(root / 'oa-mr-receipt'),
+                                              mr_public_provider=self.mr_public_provider_probe_fixture(),
                                               mr_interface=self.mr_interface_probe_fixture(),
                                               mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),
                                               tof_budget=self.tof_budget_probe_fixture(),

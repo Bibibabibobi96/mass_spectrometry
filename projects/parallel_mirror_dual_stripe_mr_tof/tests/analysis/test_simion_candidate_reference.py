@@ -13,14 +13,15 @@ from unittest.mock import patch
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
-    CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
+    CandidateContractError, derive_mirror_voltage_bounds,
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
-    load_contract, resolve_trajectory_profile, write_gem,
+    load_contract, resolve_trajectory_profile,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
     build_analyzer_gem, resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose,
     resolve_static_iob_origins,
 )
+from msplatform.backends.simion.mr_geometry import build_simion_gem, write_gem
 from msplatform.backends.simion.oa_focus_plan import derive as derive_oa_provider_plan
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
@@ -390,6 +391,35 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         unknown_version["components"][direct["oa_instance_id"]]["schema_version"] = 999
         with self.assertRaisesRegex(ValueError, "unsupported component interface version"):
             resolve_oa_mr_direct_pose(provider_plan, unknown_version)
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface as mr_interface
+        current_plan = copy.deepcopy(composition_plan)
+        current_plan["components"][direct["oa_instance_id"]] = current_oa
+        current_plan["components"][direct["mr_instance_id"]] = mr_interface(
+            resolved, geometry_profile_id=provider_plan["layout"]["geometry_profile_id"], schema_version=3)
+        current_plan = compile_assembly_layout(current_plan["recipe"], current_plan["components"])
+        self.assertEqual(current_plan["schema_version"], 5)
+        current_bytes = json.dumps(current_plan, sort_keys=True)
+        oa_authority = geometry_authority(contract)
+        source_design = {"contract": contract, "accelerator_requirements": oa_authority["accelerator_requirements"],
+                         "geometry_profile": oa_authority["geometry_profile"]}
+        with self.assertRaisesRegex(CandidateContractError, "requires explicit provider source"):
+            resolve_accelerator_iob_origin(contract, provider_plan, current_plan,
+                accelerator_geometry_authority=oa_authority)
+        self.assertEqual(resolve_accelerator_iob_origin(contract, provider_plan, current_plan,
+            accelerator_geometry_authority=oa_authority, mr_source_design=source_design), origin)
+        self.assertEqual(json.dumps(current_plan, sort_keys=True), current_bytes)
+        for mutation in ("missing", "changed"):
+            bad = copy.deepcopy(current_plan)
+            groups = bad["components"][direct["mr_instance_id"]]["component_electrodes"]
+            if mutation == "missing":
+                groups.pop()
+            else:
+                groups[0]["electrode_group_id"] = "different_physical_group"
+            bad = compile_assembly_layout(bad["recipe"], bad["components"])
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(
+                    CandidateContractError, "interfaces differ"):
+                resolve_accelerator_iob_origin(contract, provider_plan, bad,
+                    accelerator_geometry_authority=oa_authority, mr_source_design=source_design)
         self.assertEqual(direct["oa_translation_mm"], (0., -55., -6.))
         self.assertEqual(direct["exit_project_mm"], (0., -55., 0.))
         legacy = copy.deepcopy(composition_plan)

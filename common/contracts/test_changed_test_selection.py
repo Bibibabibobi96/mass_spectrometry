@@ -1089,6 +1089,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             ],
             'two_prism_simion_trial': [
                 'test_downstream_fixed_grid_workpoint',
+                'test_mr_provider_trial_transport',
                 'test_prepared_joint_trial',
                 'test_static_field_binding',
                 'test_static_workpoint_iteration',
