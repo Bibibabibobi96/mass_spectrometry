@@ -41,6 +41,38 @@ def cases_fixture() -> list[dict]:
 
 
 class ExtractionPhaseSpaceComparisonTests(unittest.TestCase):
+    def test_recorded_selected_geometry_retains_authority_and_rejects_tamper(self):
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+        from msplatform.backends.simion.ip_geometry import represent_selected_ip_design
+        cases = cases_fixture()
+        contract = dict(factor_A=dict(levels=[80., 61.5]), factor_B=dict(levels=[4000., 4480.]),
+                        execution=dict(particle_count=3), stages=cases[0]['stages'])
+        configuration = Path(__file__).resolve().parents[1] / 'config'
+        for case in cases:
+            config = {key:json.loads((configuration / f'{key}.json').read_text(encoding='utf-8'))
+                      for key in ('baseline', 'native_operating_point', 'source', 'numerics', 'coordinate_transform',
+                                  'diagnostics', 'field_diagnostics', 'acceptance')}
+            config.update(native_timing={'pulse': 1}, source_profile='functional')
+            config['baseline']['geometry']['lp_length_mm'] = case['lp_length_mm']
+            config['baseline']['electric']['lift_v'] = case['lift_v']
+            config['native_operating_point']['lift_v'] = case['lift_v']
+            config['baseline']['physical_design_selection'] = {'native_grid_mm': .1, 'native_aux_segments': 60}
+            selected = select_legacy_physical_design(config['baseline'], selection_grid_mm=.1, auxiliary_segments=60)
+            config['physical_design_selection'] = {key: copy.deepcopy(selected[key]) for key in
+                ('schema_version', 'role', 'baseline_sha256', 'selection')}
+            config['numerics']['native_grid_mm'] = .2
+            config['native_projection'] = represent_selected_ip_design(selected, baseline=config['baseline'], grid_mm=.2)
+            config['numerical_boundaries'] = derive_numerical_boundaries(config['native_projection'])
+            case['config'] = config
+        validate_controlled_cases(cases, contract)
+        for mutation in (lambda c: c[0]['config']['native_projection']['electrodes'][4]['cutouts'][0]['min_mm'].__setitem__(1, 999),
+                         lambda c: c[0]['config']['physical_design_selection'].__setitem__('baseline_sha256', '0'*64),
+                         lambda c: c[0]['config']['physical_design_selection']['selection'].__setitem__('native_aux_segments', 61)):
+            changed = copy.deepcopy(cases)
+            mutation(changed)
+            with self.assertRaises(ValueError):
+                validate_controlled_cases(changed, contract)
+
     def test_registered_analysis_uses_explicit_sources_and_rejects_wrong_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             run=Path(temporary)

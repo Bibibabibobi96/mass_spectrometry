@@ -19,11 +19,11 @@ from msplatform.gas.field import prepare_gas_field
 from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import build_gas_field_spec
 from msplatform.backends.simion.gas_runtime import compile_gas_runtime
 from msplatform.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection, select_legacy_physical_design
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import transform_from_config, to_project_position, to_project_vector
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
-from msplatform.backends.simion.ip_geometry import render_gem
+from msplatform.backends.simion.ip_geometry import render_gem, _represent_selected_ip_design
 from msplatform.backends.simion.ip_handoff import release_states, freeze_injected_source
 from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.backends.simion.resources import native_resource_path
@@ -59,7 +59,7 @@ def validate_source_profile(config: dict[str, Any]) -> str:
         raise ValueError("source_profile must be functional or exploration")
     return profile
 
-def validate_configs(config: dict[str, Any]) -> None:
+def validate_configs(config: dict[str, Any]) -> dict[str, Any] | None:
     """Reject malformed scientific inputs before solver startup."""
     baseline, numerics, source, acceptance = (config[k] for k in ("baseline", "numerics", "source", "acceptance"))
     expected = {
@@ -69,7 +69,7 @@ def validate_configs(config: dict[str, Any]) -> None:
         "schedule": "capture_end_us transfer_end_us lift_end_us extraction_start_us terminal_us",
         "clock": "epoch_us frame_id rf_phase_rad",
     }
-    if set(baseline) - {"electrode_contours"} != {"schema_version", "native_geometry", *expected} or baseline["schema_version"] != 1:
+    if set(baseline) - {"electrode_contours", "physical_design_selection"} != {"schema_version", "native_geometry", *expected} or baseline["schema_version"] != 1:
         raise ValueError("unsupported baseline schema/fields")
     for section, fields in expected.items():
         if set(baseline[section]) != set(fields.split()):
@@ -140,13 +140,55 @@ def validate_configs(config: dict[str, Any]) -> None:
         raise ValueError("extraction energy bounds must be ordered")
     if "shield_extraction_slit_width_mm" not in baseline["native_geometry"]:
         raise ValueError("current author inputs require an explicit shield extraction aperture")
-    native_projection(baseline, numerics)
+    selected = None
+    physical_selection = baseline.get("physical_design_selection")
+    if physical_selection is None:
+        if "physical_design_selection" in baseline:
+            raise ValueError("explicit legacy physical selection requires its original grid and staircase segments")
+        native_projection(baseline, numerics)
+    else:
+        if not isinstance(physical_selection, dict) or set(physical_selection) != {"native_grid_mm", "native_aux_segments"}:
+            raise ValueError("explicit legacy physical selection requires its original grid and staircase segments")
+        segments = numerics["native_aux_segments"]
+        if (isinstance(segments, bool) or not isinstance(segments, (int, float)) or not math.isfinite(segments)
+                or int(segments) != segments or segments < 10
+                or segments != physical_selection["native_aux_segments"]):
+            raise ValueError("numerical auxiliary segments must match the selected physical staircase")
+        selected = select_legacy_physical_design(baseline, selection_grid_mm=physical_selection["native_grid_mm"],
+                                                  auxiliary_segments=physical_selection["native_aux_segments"])
     point=config["native_operating_point"]
     point_keys="schema_version capture_hp_offset_v capture_lp_offset_v guide_offset_v hp_aux_capture_relative_v hp_aux_transfer_relative_v hp_transfer_offset_v lp_outer_relative_v lp_inner_relative_v entrance_lens_v end_lens_relative_v extraction_push_relative_v extraction_pull_relative_v extraction_shield_relative_v lift_v".split()
     if set(point)!=set(point_keys) or point["schema_version"]!=1:
         raise ValueError("unsupported native operating point")
     if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in point.values()):
         raise ValueError("native voltages must be finite")
+    return selected
+
+def recorded_native_projection(config: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct the exact declared legacy or selected-design projection."""
+    recorded = config.get("physical_design_selection")
+    if recorded is None:
+        if "physical_design_selection" in config["baseline"]:
+            raise ValueError("selected physical design record is missing")
+        return native_projection(config["baseline"], config["numerics"])
+    if (not isinstance(recorded, dict) or set(recorded) != {"schema_version", "role", "baseline_sha256", "selection"}
+            or type(recorded["schema_version"]) is not int):
+        raise ValueError("invalid recorded physical design selection")
+    choice = recorded["selection"]
+    if config["baseline"].get("physical_design_selection") != choice:
+        raise ValueError("recorded physical selection differs from baseline authority")
+    if not isinstance(choice, dict) or set(choice) != {"native_grid_mm", "native_aux_segments"}:
+        raise ValueError("invalid recorded physical design parameters")
+    segments = config["numerics"]["native_aux_segments"]
+    if (isinstance(segments, bool) or not isinstance(segments, (int, float)) or not math.isfinite(segments)
+            or int(segments) != segments or segments < 10 or segments != choice["native_aux_segments"]):
+        raise ValueError("numerical auxiliary segments must match the recorded physical staircase")
+    selected = select_legacy_physical_design(config["baseline"], selection_grid_mm=choice["native_grid_mm"],
+                                               auxiliary_segments=choice["native_aux_segments"])
+    if recorded != {key: selected[key] for key in recorded}:
+        raise ValueError("recorded physical design identity differs")
+    return _represent_selected_ip_design(selected, baseline=config["baseline"], grid_mm=config["numerics"]["native_grid_mm"])
+
 
 def derive_numerical_boundaries(projection: dict[str, Any]) -> dict[str, Any]:
     """Place numerical observations inside both native axial domain ends.
@@ -258,6 +300,8 @@ def compile_source(config: dict[str, Any], *, admission: dict[str, Any] | None =
     standalone sources use the existing release specification and deterministic sampler.
     """
     config = copy.deepcopy(config)
+    if "physical_design_selection" in config:
+        raise ValueError("supply physical selection explicitly, not through a prior output configuration")
     states = []
     if admission is not None:
         states = release_states(admission)
@@ -274,7 +318,7 @@ def compile_source(config: dict[str, Any], *, admission: dict[str, Any] | None =
             mother_particle_count=admission["census"]["mother_count"])
         if states and config["numerics"]["seed"] + max(config["injected_source"]["particle_ids"]) - 1 > 2**31 - 2:
             raise ValueError("original upstream particle ID exceeds IP per-particle seed envelope")
-    validate_configs(config)
+    selected = validate_configs(config)
     if admission is None:
         states = generate_release_states(config["source"])
     config["native_timing"] = derive_native_timing(config["baseline"])
@@ -292,7 +336,14 @@ def compile_source(config: dict[str, Any], *, admission: dict[str, Any] | None =
         companions.append(state)
         beams.append(beam)
     config["extraction_force_audit"] = dict(schema_version=1, role="native_extraction_force_audit", start_reference="native_timing.primary_quench_us", field_basis_count=15, step_state_scope="actual_pre_and_post_HS1", integration="Hermite_composite_Simpson_5_vs_3")
-    config["native_projection"] = native_projection(config["baseline"],config["numerics"])
+    if selected is None:
+        config["native_projection"] = native_projection(config["baseline"],config["numerics"])
+    else:
+        assert selected is not None
+        config["native_projection"] = _represent_selected_ip_design(selected, baseline=config["baseline"],
+            grid_mm=config["numerics"]["native_grid_mm"])
+        config["physical_design_selection"] = {key: copy.deepcopy(selected[key]) for key in
+            ("schema_version", "role", "baseline_sha256", "selection")}
     config["numerical_boundaries"] = derive_numerical_boundaries(config["native_projection"])
     if any(row["x_mm"] <= config["numerical_boundaries"]["upstream_exit_x_mm"] for row in states):
         raise ValueError("source births must lie strictly inside the upstream numerical observation")

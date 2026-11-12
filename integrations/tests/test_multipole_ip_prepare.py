@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import importlib
 import os
 from pathlib import Path
 import shutil
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS
 from msplatform.execution.retention import file_record
@@ -160,6 +162,42 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         recipe["instances"].reverse()
         components={ids[key]:value for key,value in self.parent['components'].items()}
         self.parent=compile_assembly_layout(recipe,components)
+
+    def test_selected_receiver_projection_and_tampered_identity(self):
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+        from msplatform.workflows.ion_processor.preparation import recorded_native_projection
+        module = importlib.import_module('msplatform.workflows.multipole_ip.prepare')
+        self.execute()
+        original_run = self.run
+        model_path = self.receiver/'inputs/resolved_model.json'
+        model = json.loads(model_path.read_text(encoding='utf-8'))
+        model['baseline']['physical_design_selection'] = {'native_grid_mm': .1, 'native_aux_segments': 60}
+        selection = select_legacy_physical_design(model['baseline'], selection_grid_mm=.1, auxiliary_segments=60)
+        model['physical_design_selection'] = {key: copy.deepcopy(selection[key]) for key in
+            ('schema_version', 'role', 'baseline_sha256', 'selection')}
+        model['numerics']['native_grid_mm'] = .2
+        expected = recorded_native_projection(model)
+        legacy = native_projection(model['baseline'], model['numerics'])
+        self.assertNotEqual(expected['electrodes'], legacy['electrodes'])
+        write_json(model_path, model)
+        self.request['receiver'] = self.publish_manifest(self.receiver, 'dual_pressure_rectilinear_ion_processor', 'receiver_run')
+        self.run = self.root/'selected_receiver'
+        (self.run/'inputs').mkdir(parents=True)
+        with patch.object(module, '_layout', wraps=module._layout) as layout:
+            self.execute()
+        self.assertEqual(layout.call_count, 1)
+        self.assertEqual(layout.call_args.args[2], expected)
+        for relative in ('inputs/clock_authority.json', 'inputs/instrument_epoch.json',
+                         'results/multipole_ip/source_states.csv', 'results/multipole_ip/mother_fates.csv',
+                         'results/multipole_ip/mother_census.json'):
+            self.assertEqual((self.run/relative).read_bytes(), (original_run/relative).read_bytes())
+        model['physical_design_selection']['baseline_sha256'] = '0'*64
+        write_json(model_path, model)
+        self.request['receiver'] = self.publish_manifest(self.receiver, 'dual_pressure_rectilinear_ion_processor', 'receiver_run')
+        self.run = self.root/'tampered_receiver'
+        (self.run/'inputs').mkdir(parents=True)
+        with self.assertRaisesRegex(ValueError, 'recorded physical design identity differs'):
+            self.execute()
 
     def test_recipe_instance_rename_changes_only_route_identity(self):
         self.execute()

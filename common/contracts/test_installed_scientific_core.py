@@ -1468,6 +1468,48 @@ assert (ip_output/'inputs/collision_hs1_original.lua').read_bytes() == ip_hs1.re
 assert (ip_output/'simion/collision_hs1.lua').read_text() == adapt_hs1_for_repeat_fly(ip_hs1.read_text(encoding='utf-8'))
 assert not (ip_output/'simion/processor.iob').exists() and not list((ip_output/'simion').glob('*.pa*'))
 assert not (ip_output/'simion/iob_seed').exists()
+# Explicit selected CSG is preserved across representation grids in the installed API.
+from msplatform.components.dual_pressure_rectilinear_ion_processor import native_geometry as ip_design_owner
+from msplatform.backends.simion import ip_geometry as ip_geometry_owner
+ip_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+assert pathlib.Path(ip_preparation.__file__).resolve() == ip_purelib/'msplatform/workflows/ion_processor/preparation.py'
+assert pathlib.Path(ip_design_owner.__file__).resolve() == ip_purelib/'msplatform/components/dual_pressure_rectilinear_ion_processor/native_geometry.py'
+assert pathlib.Path(ip_geometry_owner.__file__).resolve() == ip_purelib/'msplatform/backends/simion/ip_geometry.py'
+ip_choice = {name: ip['preparation_config']['numerics'][name] for name in ('native_grid_mm', 'native_aux_segments')}
+ip_selected_config = copy.deepcopy(ip['preparation_config'])
+ip_selected_config['baseline']['physical_design_selection'] = ip_choice
+ip_selected = ip_preparation.compile_source(ip_selected_config)
+assert ip_selected['config']['native_projection'] == projection
+assert ip_selected['config']['physical_design_selection']['selection'] == ip_choice
+ip_coarse_config = copy.deepcopy(ip_selected_config)
+ip_coarse_config['numerics']['native_grid_mm'] = .2
+ip_coarse = ip_preparation.compile_source(ip_coarse_config)
+assert ip_coarse['config']['native_projection']['electrodes'] == projection['electrodes']
+assert ip_coarse['config']['native_projection']['shape_gu'] != projection['shape_gu']
+assert ip_coarse['config']['physical_design_selection'] == ip_selected['config']['physical_design_selection']
+assert ip_coarse['states'] == ip_selected['states']
+ip_coarse_numerics = ip_input_root/'coarse-numerics.json'
+ip_coarse_numerics.write_text(json.dumps(ip_coarse_config['numerics']), encoding='utf-8')
+ip_selected_baseline = ip_input_root/'selected-baseline.json'
+ip_selected_baseline.write_text(json.dumps(ip_coarse_config['baseline']), encoding='utf-8')
+ip_coarse_authorities = dict(ip_authorities, numerics=ip_coarse_numerics, baseline=ip_selected_baseline)
+ip_selected_output = root/('selected-ip-inputs-' + sys.argv[2])
+ip_selected_output.mkdir()
+ip_preparation.materialize_inputs(ip_selected_output, ip_coarse_config, configuration_files=ip_coarse_authorities,
+                                  hs1_source=ip_hs1)
+ip_frozen_config = json.loads((ip_selected_output/'inputs/resolved_model.json').read_text(encoding='utf-8-sig'))
+assert ip_frozen_config['physical_design_selection'] == ip_coarse['config']['physical_design_selection']
+assert ip_frozen_config['native_projection'] == ip_coarse['config']['native_projection']
+assert (ip_selected_output/'simion/processor.gem').read_text(encoding='utf-8') == render_ip_gem(ip_coarse['config']['native_projection'])
+assert not (ip_selected_output/'simion/processor.iob').exists() and not list((ip_selected_output/'simion').glob('*.pa*'))
+ip_design = ip_design_owner.select_legacy_physical_design(ip['baseline'], selection_grid_mm=ip_choice['native_grid_mm'],
+                                                          auxiliary_segments=ip_choice['native_aux_segments'])
+ip_tampered = copy.deepcopy(ip_design)
+ip_tampered['projection']['electrodes'][4]['cutouts'][0]['min_mm'][1] += .01
+try: ip_geometry_owner.represent_selected_ip_design(ip_tampered, baseline=ip['baseline'], grid_mm=.2)
+except ValueError as error: assert str(error) == 'selected IP physical design differs from its declared source'
+else: raise AssertionError('tampered IP physical selection was accepted')
+print('INSTALLED_IP_SELECTED_PHYSICAL_DESIGN=PASS')
 print('INSTALLED_IP_INPUTS=' + json.dumps(dict(hs1_input_kind=ip['hs1_input_kind'], hs1_sha256=ip['hs1_input_sha256'], particles=len(compiled_ip['states']), vendor_execution_count=0)))
 from msplatform.backends.simion.resources import native_resource_path as ip_resource
 for resource_name in ('runtime.lua', 'build_workbench.lua', 'probe_native_field.lua', 'extraction_force_audit.lua'):

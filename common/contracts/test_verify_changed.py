@@ -32,6 +32,23 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_ip_preparation_selects_both_actual_integration_consumers(self):
+        request, _ = self.plan('-ChangedPath', 'src/msplatform/workflows/ion_processor/preparation.py')
+        selected = [row for row in request['stages'] if row['selected']]
+        modules = [module for row in selected
+                   if row['name'].startswith('instrument_assembly_integration')
+                   for module in row['command']['parameters'].get('SelectedTestModules', [])]
+        self.assertCountEqual(modules, [
+            'integrations.tests.test_multipole_ip_prepare',
+            'integrations.tests.test_accelerator_interface',
+            'integrations.tests.test_dependencies',
+        ])
+        self.assertEqual(len(modules), len(set(modules)))
+        self.assertTrue(any(row['name'] == 'dual_pressure_rectilinear_ion_processor_static' for row in selected))
+        common = {value.removesuffix('.py').replace('/', '.') for row in selected
+                  if row['name'].startswith('common_contracts') for value in row['command']['arguments'][2:]}
+        self.assertIn('common.contracts.test_installed_scientific_core', common)
+
     def test_shared_oa_physical_consumers_select_the_actual_oa_stage(self):
         for path in (
             'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_assembly_interface.py',

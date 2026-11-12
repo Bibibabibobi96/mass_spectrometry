@@ -9,6 +9,9 @@ analytical fields. Gas pressure remains a prescribed bath outside this module.
 from __future__ import annotations
 
 import math
+import copy
+import hashlib
+import json
 from typing import Any
 
 from msplatform.components.dual_pressure_rectilinear_ion_processor.electrode_contours import apply_contours
@@ -205,3 +208,22 @@ def native_projection(baseline: dict, numerics: dict) -> dict[str, Any]:
             "exit_aperture_provenance": "independent_square_bore_model_assumption",
             "auxiliary_segments": segments, "gas_model": "prescribed_pressure_not_gas_flow_solution"}
     return apply_contours(projection, baseline) if "electrode_contours" in baseline else projection
+
+
+def select_legacy_physical_design(baseline: dict, *, selection_grid_mm: float,
+                                  auxiliary_segments: int) -> dict[str, Any]:
+    """Select the existing mesh-constrained CSG once, preserving every tool.
+
+    The selected grid is design provenance, not a claim that the staircase or
+    Boolean overcuts are exact manufactured boundaries.
+    """
+    projection = native_projection(baseline, {"native_grid_mm": selection_grid_mm,
+                                               "native_aux_segments": auxiliary_segments})
+    selected = {key: copy.deepcopy(value) for key, value in projection.items()
+                if key not in {"origin_mm", "maximum_mm", "shape_gu", "span_mm", "grid_mm"}}
+    baseline_sha256 = hashlib.sha256(json.dumps(baseline, sort_keys=True, separators=(",", ":"),
+                                                allow_nan=False).encode("utf-8")).hexdigest()
+    return {"schema_version": 1, "role": "ip_legacy_selected_physical_design",
+            "baseline_sha256": baseline_sha256,
+            "selection": {"native_grid_mm": float(selection_grid_mm), "native_aux_segments": auxiliary_segments},
+            "projection": selected}

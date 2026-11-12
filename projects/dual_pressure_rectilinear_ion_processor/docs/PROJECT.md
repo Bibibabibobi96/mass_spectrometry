@@ -28,7 +28,7 @@ this does not rerun GUI replay, Refine, Fly or qualify a new source/field model.
 工作台运行资源冻结显式传递现有保留分类器，覆盖原大 PA 占位种子；未分类大输入仍拒绝，
 种子不当作已求解场。IP交接所有record读取及producer记录也复用同一分类器；真实8 MiB无显式role记录及等长篡改
 负例通过。此为软件身份验证，不是新的Windows原生或SIMION资格。七项原独立冻结、准备及上游接入回归通过，源／时钟／母群及冻结记录含义保持。
-可复用裸导引、冷却组件和完整IP是不同输出边界；裸导引不包含HP／LP、气体浴或完整IP资格。
+The complete IP retains its entrance guide, HP/LP and extraction exit. Dedicated cooled and local-frontend products are withdrawn; an internal guide projection does not carry full-IP qualification.
 真实上游接入、器件间位姿和下游联合飞行归[统一集成](../../../integrations/README.md)。
 
 | 对象 | 当前结论与限制 |
@@ -121,13 +121,12 @@ Original IP HP/LP geometry, all fifteen electrodes, HS1 and historical run data 
 Exact plane sections, rectangle/convex cutout subtraction and section centroids are owned by
 `msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`. The
 fixed IP/project axis convention and existing curved-Boolean refusal remain explicit;
-this is not a general freely rotated section renderer. IP diagnostics and the retained local guide/OA figures consume this same geometry. The installed `msplatform.workflows.ion_processor.section_diagnostics`
+this is not a general freely rotated section renderer. IP diagnostics consume this same geometry; the dedicated local guide/OA figure consumer was withdrawn in V8.7. The installed `msplatform.workflows.ion_processor.section_diagnostics`
 owns recorded-run rendering/export and producer identity; its former
 pure geometry bodies and import aliases are absent. Software/cold-install evidence
 for this migration does not add native impact or field qualification.
 
-一组可含多个solid，不按CSG分块或PA编号重新定义物理电极。裸导引与冷却组件分别发布自己的真实几何，
-不构造假孔、整面静态电位或新时钟。完整接口不替代真实几何与场的消费核验。
+An electrode may contain several solids; CSG pieces and PA labels do not redefine its physical identity. Retained projections use their actual geometry, without invented apertures, equipotential faces or clocks. An interface does not replace geometry and field verification.
 
 `msplatform.backends.simion.ip_exit`只读封存运行，发布公共canonical粒子状态、原ID、物种、实测6D、绝对时间和全母群census；
 新MP→IP准备结果的母群终态携带每ID相对权重，IP出口census同时保留未转交粒子的权重；历史记录缺少
@@ -276,7 +275,7 @@ IP的210 DPI及白底。manifest记录实际导出的尺寸／格式／DPI／字
 ## 开放动作与关闭条件
 
 1. 按[统一集成状态](../../../integrations/docs/INTEGRATION.md)完成实际请求、端口、电极与驱动消费对照；
-   独立IP、裸导引及冷却组件分别验收，不能用接口纯回归代替真实装配。
+   Retained IP and complete assemblies require their actual applicable acceptance; interface-only regression does not qualify a physical assembly.
 2. 若恢复碰撞／损失调查，先做固定状态短程步长／开关验证、C37真实边界继续飞行及D99端域对照，
    保留全部原生状态；未经新授权不恢复已暂停的整机优化。
 3. 真实上游捕获或匹配改动须冻结物种、母群、到达时钟、唯一变量与接受标准；旧100 Da负结果和524 Da门限失败保留。
@@ -459,6 +458,34 @@ fail before output writes. A research edit is applied by updating that selected 
 and parsing its values, with no hidden project defaults. Diagnostic controls are validated
 only when explicitly supplied. Materialized inputs are not a PreparedModel or FieldBundle:
 no IOB, Refine, Fly or GUI readiness is implied.
+
+An explicit `baseline.physical_design_selection` names the original `native_grid_mm` and
+`native_aux_segments` used once to select the existing staircase/Boolean CSG.
+The selected solids, cutouts and contour variant remain fixed when representation
+`native_grid_mm` changes; the target segment count must remain valid and match the
+selected staircase. Resolved inputs retain the selection and baseline identity.
+The selected scientific baseline is frozen through the existing configuration-file
+authority; the public workflow accepts it via its existing `-ConfigurationDirectory`.
+Inputs without this selection keep the original compilation behavior.
+Recorded extraction/geometry studies and the retained receiver-layout reader
+reconstruct this declared authority and reject tampering or undeclared design changes.
+This does not extend the legacy segmented MP-to-IP strategy or qualify a new field.
+
+The isolated geometry/consumer suite passed 125 parents and 150 subtests; old/new
+default, partial-cut, coarse and contour projection/GEM hashes matched exactly.
+A separate actual selected-receiver test passed. Targeted direct-wheel and
+sdist-rebuilt-wheel consumers passed in 85.130 seconds with exact source/archive/
+installed payload joins, N=100 unsolved inputs, tamper and missing-resource refusal.
+These are software checks; native representation, coupled fields, continuous MP-to-IP
+and final whole-Repository/installation acceptance remain open.
+The initial integrated API slice passed 183 parent tests and 271 subtests in
+403.109 seconds. Adding the scientific-baseline authority then passed 186 of 187
+tests; the remaining new recorded-reader fixture omitted that declaration. After
+correcting the fixture, 41 affected tests and 50 subtests passed in 17.903 seconds.
+The baseline-authority wheel/sdist consumer arms passed in 84.891 seconds, including
+exact frozen baseline/numerics/source/vendor bytes and package payload joins.
+All source and checkout guards remained unchanged. These distinct snapshots do not
+constitute a final whole-Repository or native acceptance.
 
 The HS1 lifecycle adapter has one installed owner, `msplatform.backends.simion.collision_hs1`.
 Its source and the retained IP caller remain unchanged by the cooled withdrawal.

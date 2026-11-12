@@ -33,7 +33,7 @@ from msplatform.components.rf_multipole.assembly_interface import build_assembly
 from msplatform.backends.simion.rf_observations import validate_exit_observations
 from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
 from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.workflows.ion_processor.preparation import recorded_native_projection
 from msplatform.backends.simion.ip_handoff import FATE_COLUMNS
 from msplatform.backends.simion.transport_result import load_transport_producer_result
 
@@ -214,7 +214,7 @@ def prepare(request_path: Path, run: Path) -> dict[str, Any]:
     shutil.copyfile(record_path(request['composition_plan'],base_dir=request_path.parent),parent_path)
     verify_record('parent composition plan',{**request['composition_plan'],'path':str(parent_path)})
     plan=derive_assembly_scope(_read(parent_path),local_scope=request.get('local_scope'))
-    pose, connection = _layout(plan, interface, native_projection(model["baseline"], model["numerics"]))
+    pose, connection = _layout(plan, interface, recorded_native_projection(model))
     clock = _read(paths["clock_authority"])
     validate_clock_authority(paths["clock_authority"], source_run)
     if clock["authority"]["path"] != "inputs/instrument_epoch.json":

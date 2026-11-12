@@ -26,8 +26,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries, recorded_native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings import (
     VALUES, prepare_spatial_crossings_from_samples,
 )
@@ -172,11 +171,14 @@ def validate_controlled_cases(cases: list[dict], contract: dict) -> None:
         if (a,b) in cells:
             raise ValueError("duplicate factorial cell")
         cells.add((a,b))
-        if config["native_projection"] != native_projection(config["baseline"], config["numerics"]):
+        recorded_selection = config.get("physical_design_selection")
+        expected_projection = recorded_native_projection(config)
+        if config["native_projection"] != expected_projection:
             raise ValueError("native projection differs from authority compilation")
         if config["numerical_boundaries"] != derive_numerical_boundaries(config["native_projection"]):
             raise ValueError("numerical boundaries differ from native geometry derivation")
         normalized = copy.deepcopy({key:config[key] for key in ("baseline", "native_operating_point", "source", "numerics", "coordinate_transform", "native_timing", "diagnostics", "field_diagnostics", "acceptance", "source_profile")})
+        normalized["physical_design_selection"] = None if recorded_selection is None else copy.deepcopy(recorded_selection["selection"])
         del normalized["baseline"]["geometry"]["lp_length_mm"]
         del normalized["baseline"]["electric"]["lift_v"]
         del normalized["native_operating_point"]["lift_v"]

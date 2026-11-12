@@ -137,7 +137,7 @@ class GeometryComparisonTests(unittest.TestCase):
 
     def test_active_same_mode_voltage_and_absent_contour_field_are_exactly_declared(self):
         cases, study = self.design_cases()
-        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+        with patch.object(geometry,"recorded_native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
             geometry.validate_geometry_cases(cases,study)
             for mutation in ("undeclared","wrong_before","duplicate","ancestor","source","numerics"):
                 bad, contract = copy.deepcopy(cases), copy.deepcopy(study)
@@ -150,6 +150,24 @@ class GeometryComparisonTests(unittest.TestCase):
                 elif mutation == "numerics": bad[1]["config"]["numerics"]["native_grid_mm"] *= 2
                 with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                     geometry.validate_geometry_cases(bad,contract)
+
+    def test_physical_selection_is_a_cross_case_invariant(self):
+        cases, study = self.design_cases()
+        with patch.object(geometry,"recorded_native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+            # Historical all-absent selection retains the old behavior.
+            geometry.validate_geometry_cases(cases, study)
+            for case in cases:
+                case["config"]["physical_design_selection"] = {
+                    "schema_version": 1, "role": "ip_legacy_selected_physical_design",
+                    "baseline_sha256": "a"*64,
+                    "selection": {"native_grid_mm": .1, "native_aux_segments": 60}}
+            geometry.validate_geometry_cases(cases, study)
+            cases[1]["config"]["physical_design_selection"]["selection"]["native_aux_segments"] = 61
+            with self.assertRaisesRegex(ValueError,"undeclared physical design selection"):
+                geometry.validate_geometry_cases(cases,study)
+            del cases[1]["config"]["physical_design_selection"]
+            with self.assertRaisesRegex(ValueError,"undeclared physical design selection"):
+                geometry.validate_geometry_cases(cases,study)
 
     def test_historical_author_is_explicitly_readonly(self):
         cases, study = self.cases()
@@ -164,7 +182,7 @@ class GeometryComparisonTests(unittest.TestCase):
     def test_controlled_geometry_rejects_changed_or_incomplete_source_weights(self):
         cases, study = self.design_cases()
         changes = ({1:1.,2:100.,3:1.}, {1:3.5,2:3.5,3:3.5}, {1:1.,2:1.}, {1:1.,2:1.,3:2.})
-        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+        with patch.object(geometry,"recorded_native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
             for weights in changes:
                 changed = copy.deepcopy(cases)
                 changed[1]["particle_weights"] = weights
@@ -177,7 +195,7 @@ class GeometryComparisonTests(unittest.TestCase):
             values = [(1,.125),(2,8.),(3,3.5)]
             case["particle_weights"] = dict(reversed(values) if index == 1 else values)
         before = copy.deepcopy(cases)
-        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+        with patch.object(geometry,"recorded_native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
             geometry.validate_geometry_cases(cases, study)
         self.assertEqual(cases, before)
 
@@ -193,7 +211,7 @@ class GeometryComparisonTests(unittest.TestCase):
             case["states"] = [dict(original[stage],particle_id=pid,
                 status=("extracted" if pid <= count else "lost") if stage == "exit_z0" else "alive")
                 for stage in case["stages"] for pid in range(1,101)]
-        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+        with patch.object(geometry,"recorded_native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
             geometry.validate_geometry_cases(cases,study)
             statistics, _, common = recorded.prepare_statistics(cases)
             geometry.extend_statistics(cases,statistics,common)
@@ -242,12 +260,12 @@ class GeometryComparisonTests(unittest.TestCase):
     def test_reference_case_can_be_last_without_changing_comparison_semantics(self):
         cases, study = self.design_cases()
         cases.reverse();study["cells"].reverse()
-        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+        with patch.object(geometry,"recorded_native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
             geometry.validate_geometry_cases(cases,study)
 
     def test_fourth_parabolic_geometry_is_optional_unique_and_renders(self) -> None:
         cases, study = self.cases(include_parabolic=True)
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
+        with patch.object(geometry, "recorded_native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
             geometry.validate_geometry_cases(cases, study, recorded_author=True)
             duplicate = copy.deepcopy(study)
             duplicate["cells"][3]["contour_mode"] = "formed_extraction_continuous_aux"
@@ -274,7 +292,7 @@ class GeometryComparisonTests(unittest.TestCase):
 
     def test_recorded_boundary_validation_is_explicit_and_errors_propagate(self) -> None:
         cases, study = self.cases()
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), \
+        with patch.object(geometry, "recorded_native_projection", return_value=projection_fixture()), \
              patch.object(geometry, "validate_numerical_boundaries") as validator:
             geometry.validate_geometry_cases(cases, study, recorded_author=True)
             self.assertEqual(validator.call_count, len(cases))
@@ -314,7 +332,7 @@ class GeometryComparisonTests(unittest.TestCase):
 
     def test_contour_only_contract_rejects_voltage_or_birth_change(self) -> None:
         cases, study = self.cases()
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
+        with patch.object(geometry, "recorded_native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
             geometry.validate_geometry_cases(cases, study, recorded_author=True)
             changed = copy.deepcopy(cases)
             changed[1]["config"]["baseline"]["electric"]["lift_v"] += 1
@@ -386,7 +404,7 @@ class GeometryComparisonTests(unittest.TestCase):
         write_json(parent/"inputs/study_contract.json", study)
         write_json(parent/"run_config.json", dict(project=recorded.PROJECT, inputs=dict(study_contract="inputs/study_contract.json")))
         from msplatform.io.figure_export import export_figures
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None), patch.object(geometry,"export_figures",wraps=export_figures) as exported:
+        with patch.object(geometry, "recorded_native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None), patch.object(geometry,"export_figures",wraps=export_figures) as exported:
             result = geometry.analyze_geometry_study(parent)
         exported.assert_called_once()
         self.assertEqual(exported.call_args.kwargs,dict(formats=("png","svg"),dpi=210,facecolor="white"))
@@ -425,7 +443,7 @@ class GeometryComparisonTests(unittest.TestCase):
         for figure in figures.values():
             plt.close(figure)
         with self.assertRaises(FileExistsError):
-            with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
+            with patch.object(geometry, "recorded_native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
                 geometry.analyze_geometry_study(parent)
 
     def test_actual_polygon_sections_and_auxiliary_crops_render_for_three_and_four_cases(self) -> None:

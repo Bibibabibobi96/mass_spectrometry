@@ -30,7 +30,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
 from msplatform.workflows.ion_processor.preparation import validate_numerical_boundaries
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.workflows.ion_processor.preparation import recorded_native_projection
 from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import parts, section_centroid
 
 MODES = {"flat", "formed_extraction", "formed_extraction_continuous_aux"}
@@ -119,8 +119,11 @@ def validate_geometry_cases(cases: list[dict], study: dict, *, recorded_author: 
         if len(references) != 1 or cells[references[0]]["configuration_changes"] != []:
             raise ValueError("reference_case_id must name one unchanged reference")
         reference = {key: cases[references[0]]["config"][key] for key in CONFIG_KEYS}
+        reference_physical = cases[references[0]]["config"].get("physical_design_selection")
+        reference_selection = None if reference_physical is None else copy.deepcopy(reference_physical["selection"])
     else:
         reference = None
+        reference_selection = None
     if len({c["label"] for c in cells}) != len(cells) or len({c["run_id"] for c in cells}) != len(cells):
         raise ValueError("duplicate geometry study label or run identity")
     count = study["particle_count"]
@@ -137,8 +140,14 @@ def validate_geometry_cases(cases: list[dict], study: dict, *, recorded_author: 
         contour = config["baseline"].get("electrode_contours")
         if (contour["mode"] if contour else "flat") != cell["contour_mode"]:
             raise ValueError("actual contour mode differs from declaration")
-        if config["native_projection"] != native_projection(config["baseline"], config["numerics"]):
+        if config["native_projection"] != recorded_native_projection(config):
             raise ValueError("native projection differs from geometry authority")
+        physical = config.get("physical_design_selection")
+        selection = None if physical is None else physical["selection"]
+        if version == 1 and reference is None:
+            reference_selection = copy.deepcopy(selection)
+        if selection != reference_selection:
+            raise ValueError("undeclared physical design selection change")
         validate_numerical_boundaries(config["numerical_boundaries"], config["native_projection"], recorded=True)
         normalized = copy.deepcopy({key: config[key] for key in CONFIG_KEYS})
         expected = _declared_configuration(reference, cell["configuration_changes"]) if version == 2 else reference

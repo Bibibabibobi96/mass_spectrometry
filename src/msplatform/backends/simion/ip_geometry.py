@@ -5,8 +5,54 @@ serialization only; it does not solve fields or place assembled components.
 """
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
+import math
+
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes
 from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
+
+
+def _represent_selected_ip_design(selected: dict, *, baseline: dict, grid_mm: float) -> dict:
+    """Represent a freshly verified IP CSG at an independent PA pitch."""
+    if (not isinstance(selected, dict) or set(selected) != {'schema_version', 'role', 'baseline_sha256', 'selection', 'projection'}
+            or type(selected['schema_version']) is not int or selected['schema_version'] != 1
+            or selected['role'] != 'ip_legacy_selected_physical_design'):
+        raise ValueError('explicit selected IP physical design required')
+    identity = hashlib.sha256(json.dumps(baseline, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
+    if selected['baseline_sha256'] != identity:
+        raise ValueError('selected IP physical design belongs to a different baseline')
+    if isinstance(grid_mm, bool) or not isinstance(grid_mm, (int, float)) or not math.isfinite(grid_mm) or grid_mm <= 0:
+        raise ValueError('representation grid must be positive and finite')
+    grid = float(grid_mm)
+    g, n = baseline['geometry'], baseline['native_geometry']
+    low = [n['domain_start_x_mm'], n['domain_min_y_mm'], -n['domain_halfwidth_z_mm']]
+    high = [g['guide_length_mm'] + g['hp_length_mm'] + g['lp_length_mm'] + n['domain_end_x_margin_mm'],
+            n['domain_max_y_mm'], n['domain_halfwidth_z_mm']]
+    shape = [math.ceil((b-a)/grid-1e-12)+1 for a,b in zip(low, high)]
+    if any(value < 3 for value in shape):
+        raise ValueError('native PA domain must have at least three nodes per axis')
+    projection = copy.deepcopy(selected['projection'])
+    projection.update(origin_mm=low, maximum_mm=[a+(count-1)*grid for a,count in zip(low,shape)],
+                      shape_gu=shape, span_mm=[(count-1)*grid for count in shape], grid_mm=grid)
+    return projection
+
+
+def represent_selected_ip_design(selected: dict, *, baseline: dict, grid_mm: float) -> dict:
+    """Revalidate an external selection before representing its immutable CSG."""
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+    if (not isinstance(selected, dict) or type(selected.get('schema_version')) is not int
+            or not isinstance(selected.get('selection'), dict)):
+        raise ValueError('explicit selected IP physical design required')
+    choice = selected['selection']
+    if set(choice) != {'native_grid_mm', 'native_aux_segments'}:
+        raise ValueError('selected IP physical design parameters differ')
+    actual = select_legacy_physical_design(baseline, selection_grid_mm=choice['native_grid_mm'],
+                                          auxiliary_segments=choice['native_aux_segments'])
+    if json.dumps(selected, sort_keys=True, separators=(',', ':'), allow_nan=False) != json.dumps(actual, sort_keys=True, separators=(',', ':'), allow_nan=False):
+        raise ValueError('selected IP physical design differs from its declared source')
+    return _represent_selected_ip_design(actual, baseline=baseline, grid_mm=grid_mm)
 
 
 def _box(lo: list[float], hi: list[float]) -> dict:

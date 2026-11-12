@@ -479,6 +479,58 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
         self.assertEqual((project / "config/baseline.json").read_bytes(), original)
         self.assertEqual(functional.read_json(self.run / "run_config.json")["parameters"]["configuration_directory"], str(candidate.resolve()))
 
+    def test_external_baseline_selection_freezes_and_preserves_selected_csg(self) -> None:
+        project, vendor = self.make_prepare_fixture()
+        candidate = Path(self.temporary.name) / 'selected_inputs'
+        shutil.copytree(project / 'config', candidate)
+        shutil.copyfile(PROJECT / 'config/coordinate_transform.json', candidate / 'coordinate_transform.json')
+        baseline = functional.read_json(candidate / 'baseline.json')
+        numerics = functional.read_json(candidate / 'numerics.json')
+        legacy = native_projection(baseline, numerics)
+        choice = {'native_grid_mm': .1, 'native_aux_segments': 60}
+        baseline['physical_design_selection'] = choice
+        numerics['native_grid_mm'] = .2
+        functional.write_json(candidate / 'baseline.json', baseline)
+        functional.write_json(candidate / 'numerics.json', numerics)
+        baseline_bytes = (candidate / 'baseline.json').read_bytes()
+        source_bytes = (candidate / 'source.json').read_bytes()
+        functional.prepare(self.run, project, vendor, configuration_directory=candidate)
+        resolved = functional.read_json(self.run / 'inputs/resolved_model.json')
+        self.assertEqual(resolved['baseline'], baseline)
+        self.assertEqual(resolved['physical_design_selection']['selection'], choice)
+        self.assertEqual(resolved['native_projection']['electrodes'], legacy['electrodes'])
+        self.assertNotEqual(resolved['native_projection']['shape_gu'], legacy['shape_gu'])
+        self.assertEqual((self.run / 'inputs/baseline.json').read_bytes(), baseline_bytes)
+        self.assertEqual((self.run / 'inputs/source.json').read_bytes(), source_bytes)
+        self.assertEqual((candidate / 'baseline.json').read_bytes(), baseline_bytes)
+        self.assertEqual((candidate / 'source.json').read_bytes(), source_bytes)
+
+    def test_selected_baseline_must_match_explicit_authority_before_writes(self) -> None:
+        project, vendor = self.make_prepare_fixture()
+        config = copy.deepcopy(self.config)
+        config['baseline']['physical_design_selection'] = {'native_grid_mm': .1, 'native_aux_segments': 60}
+        authorities = {name: project / 'config' / (name + '.json') for name in
+                       ('baseline', 'numerics', 'source', 'acceptance', 'native_operating_point')}
+        output = Path(self.temporary.name) / 'mismatched_authority'
+        output.mkdir()
+        with self.assertRaisesRegex(ValueError, 'authority differs'):
+            preparation.materialize_inputs(output, config, configuration_files=authorities,
+                hs1_source=vendor / 'examples/collision_hs1/collision_hs1.lua')
+        self.assertEqual(list(output.iterdir()), [])
+
+    def test_bad_external_baseline_selection_fails_before_materialization(self) -> None:
+        project, vendor = self.make_prepare_fixture()
+        candidate = Path(self.temporary.name) / 'bad_selected_inputs'
+        shutil.copytree(project / 'config', candidate)
+        shutil.copyfile(PROJECT / 'config/coordinate_transform.json', candidate / 'coordinate_transform.json')
+        baseline = functional.read_json(candidate / 'baseline.json')
+        baseline['physical_design_selection'] = {'native_grid_mm': .1, 'native_aux_segments': 61}
+        functional.write_json(candidate / 'baseline.json', baseline)
+        with self.assertRaisesRegex(ValueError, 'match'):
+            functional.prepare(self.run, project, vendor, configuration_directory=candidate)
+        self.assertFalse((self.run / 'inputs/resolved_model.json').exists())
+        self.assertFalse((self.run / 'simion/processor.gem').exists())
+
     def test_external_configuration_does_not_fall_back_to_project_transform(self) -> None:
         project, vendor = self.make_prepare_fixture()
         with self.assertRaisesRegex(ValueError, "explicit coordinate"):

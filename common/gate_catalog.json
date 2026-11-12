@@ -2498,6 +2498,10 @@
         {
           "exact": "common/comsol/add_comsol_size_feature.m",
           "reason": "retired_comsol_mesh_source_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/ion_processor/preparation.py",
+          "reason": "ip_preparation_actual_consumers_changed"
         }
       ],
       "command": {
@@ -2815,6 +2819,20 @@
             ],
             "modules": [
               "integrations/tests/test_single_reflection_recorded_birth_consumer.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/ion_processor/preparation.py",
+                "reason": "ip_preparation_actual_consumers_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_multipole_ip_prepare.py",
+              "integrations/tests/test_accelerator_interface.py",
+              "integrations/tests/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           }
