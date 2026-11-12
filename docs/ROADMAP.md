@@ -112,6 +112,14 @@ complete MP-to-OA, OA/IP-to-MR and FullJoint/prepared-joint tasks require contin
 from an explicit original source; cross-model survivor relaunch is not their replacement.
 Local frontend and cooled exclusive features are withdrawn, including their dedicated recipes,
 policies and tests. Their dedicated local product is retired in `1ec0f843`; this is a scope change, not scientific implementation acceptance.
+The user's 2026-11-12 SFI clarification prioritizes the current complete multipole plus
+complete OA/TOF and public continuous flight. Do not add multipole aperture plates merely
+to reproduce the historical SFI geometry: OA already supplies its aperture. The historical
+plate-reconstruction draft remains private and is excluded from this SFI delivery; existing
+plate capabilities with other genuine research consumers are retained. Acceptance checks
+the selected current geometry, field coverage, original births/full cohort, clock and drive
+continuity, installed execution and applicable native behavior. Historical metal/PA or
+trajectory equality is not an extra SFI completion condition, and history remains unchanged.
 Existing independent sources, historical state readers, neutral transforms and genuine recovery
 remain. Keep the existing segmented MP-to-IP production path until its verified continuous
 replacement can retire it in the same slice. A new public gas-property database is deferred
@@ -173,8 +181,21 @@ with 2,919 source records and checkout unchanged. Integrated software checks pas
 134 parents/545 subtests and then 125 parents/392 subtests for their declared scopes;
 the exact MR selector failures were exercised and saved separately in `0aa58a37`.
 After the installation snapshot, three new Python files were normalized from CRLF to required LF
-with identical ASTs. That raw-byte change is recorded separately; final exact-version installation,
-full Repository, the native continuous combinations and performance budgets remain OPEN.
+with identical ASTs. The separate committed-version GitHub run `43190854989` at `42b710db`
+subsequently passed the full ordinary installed-core method in 1,524.318 seconds, including
+both SFI helper arms and the original MR provider/interface selector tests. The run as a whole
+failed on a different bare-frontend route expectation that omitted its real OA owner; that
+expectation was repaired in `77af37b0`, with the failed method and four adjacent route checks
+passing in 16.449 seconds. The failed run is not reported as successful. This remote-machine
+duration is not a same-machine performance comparison with the earlier local installation.
+The IP fixed-physical-CSG slice was saved in `23cd7a42`: its selection is declared in the
+frozen scientific baseline and consumed by the normal configuration-directory preparation
+path, recorded studies and receiver layout. The authority run passed 186 of 187 tests;
+correcting the remaining new fixture's missing declaration passed 41 affected tests and
+50 subtests in 17.903 seconds. Its two targeted ordinary installation arms passed in
+84.891 seconds with unchanged source/checkout guards and exact frozen-input/payload joins.
+Full Repository, final combined-version installation, the native continuous combinations
+and performance budgets remain OPEN.
 The new segmented MP producer-verification extraction was withheld under V8.7;
 the existing MP-to-IP production path remains until its continuous replacement is verified.
 At committed `569a017f`, GitHub run `43152720040` completed with Changed successful
