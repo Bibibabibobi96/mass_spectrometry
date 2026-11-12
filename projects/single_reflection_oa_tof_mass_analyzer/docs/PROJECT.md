@@ -50,8 +50,9 @@ New SFI, Formal and compensation builds use the complete physical detector: the 
 40 mm radius, 1 mm thickness and active face at z=0. The 0.1 mm marker parameter and 0.02 mm
 capture depth remain separate numerical controls. The explicitly selected Formal detector build
 limit is 128 MiB; a 64 MiB request still fails its capacity check. The earlier two- and three-zone
-parity results apply to their original implementation and frozen runs. Native occupancy, coupled
-fields and trajectories for the new physical detector require separate evidence.
+parity results apply to their original implementation and frozen runs. The current SFI geometry
+build and selected native IOB point observations now cover the 1 mm body; their exact overlap
+and vacuum-priority limits are recorded in the [integration state](../../../integrations/docs/INTEGRATION.md#单反射整机). Coupled fields and trajectories for the new physical detector remain open.
 The integration Program now retains that body at every flight phase; only return observation
 is armed by trajectory history. All 38 Program tests passed on the integrated successor
 (32.344 seconds), including outbound, stationary, unarmed and valid-return callback cases.

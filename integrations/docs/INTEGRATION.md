@@ -249,8 +249,33 @@ New SFI detector PAs represent the canonical physical body: the baseline has a 4
 1 mm thickness and active face at z=0. The 0.1 mm marker parameter and 0.02 mm capture depth
 remain separate numerical controls. The PA domain, capacity plan and Program use the same body;
 a missing or mismatched body is rejected. The explicit 128 MiB detector-builder limit is not a
-total-run memory limit or an accuracy guarantee. Historical 0.1 mm marker runs remain unchanged;
-native occupancy, field coverage and coupling, and continuous Fly still need separate evidence.
+total-run memory limit or an accuracy guarantee. Historical 0.1 mm marker runs remain unchanged.
+
+The installed geometry build [20261112_234343](../../../artifacts/projects/instrument_assembly/runs/20261112_234343__build__simion__geometry-e92a0c8553ff/summary.json)
+completed in 128.077 seconds with four raw geometry PAs and a saved/reopened, unsolved IOB;
+its manifest records no requested source, Refine or Fly. After the build alias was removed,
+the canonical IOB reopened using its saved PA basenames. The subsequent read-only
+[39-point](../../../artifacts/projects/instrument_assembly/runs/20261112_235700__analysis__simion__iob-3a94901e3169/logs/operation_0001.stdout.log)
+and [6-point](../../../artifacts/projects/instrument_assembly/runs/20261113_000539__analysis__simion__iob-33495e7c193f/logs/operation_0001.stdout.log)
+observations completed in 77.484 and 69.361 seconds. They query unsolved geometry without Fly
+or executing source `instance_adjust` callbacks. At the declared overlap samples, instance
+priority is 4 > 3 > 1 and 2 > 1; detector-domain vacuum can mask the parent and flight-tube
+instances, and the open OA exit is a non-electrode transition. These are specific sampled
+observations, not a field solution. V/E coupling, domain and grid studies, and continuous Fly
+remain OPEN.
+
+The actual slot order is flight tube (1), reflectron (2), frontend parent (3), detector (4).
+The tube/reflectron overlap sample at z=600.0354065982945 mm selects 2; their exact entrance
+at z=600 mm selects 1 even though both `inside_wc` results are true. At x=44.575 mm,
+y=0, the detector/parent overlap selects 4 both in metal (z=-0.5 mm) and in vacuum
+(z=0.1 mm). Containment alone therefore does not establish which field is selected.
+Current Program source creates an `instance_adjust` overlay only for the optional entrance
+refinement (slot 5); this four-slot selection leaves all four instances unchanged on that
+source path. The source-free observations above do not execute or qualify this callback.
+The frontend parent uses its declared Neumann exterior while the tube is solved separately;
+the open OA-exit transition and detector vacuum margin still require a common-domain V/E
+reference. No extra conductor, aperture plate, artificial thickness or physical crop has
+been introduced to close these numerical interfaces.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

@@ -140,11 +140,15 @@ present throughout flight; SFI and active Formal return observation reject outbo
 and unarmed splats. The ordinary wheel/sdist parent passed on this candidate (993.313 command
 seconds); this is software/installation evidence, not native occupancy, coupled fields or
 trajectory qualification. Frozen Formal assets and historical results remain unchanged.
-The selected current preparation has no PA or IOB, and its old frozen callback is not the
-corrected candidate. The OA-exit split contains an open-vacuum interface; independent PA
-Refine or continuous Fly cannot establish its coupled field. Actual native IOB inspection,
-a source-bound same-geometry common-domain reference, representative RF/pulse states and
-separate domain, grid and trajectory studies remain open. Private source prototypes preserve
+The selected preparation itself has no PA or IOB, and its old frozen callback is not the
+corrected candidate. A subsequent installed unsolved geometry build and two source-free native
+IOB observations established the selected body and sampled instance priorities; the canonical
+saved IOB reopened after the execution alias was removed. Detector-domain vacuum masks the
+parent and flight tube at observed overlaps, and the OA exit is an open, non-electrode transition.
+These geometry observations do not establish the V/E field coupling there. A source-bound
+same-geometry common-domain reference, representative RF/pulse states and separate domain,
+grid and trajectory studies remain open. See the [integration evidence](../integrations/docs/INTEGRATION.md)
+for the exact run and point records. Private source prototypes preserve
 all 77 selected members (32 RF solids, 40 OA/TOF solids and five ideal surfaces); they are not
 native proof. The last Changed attempt recorded 10 PASS, one FAIL and 14 blocked stages
 (1524.752 command seconds); its normal-host installed successor does not turn it or the
@@ -300,7 +304,7 @@ status table or a promise to preserve each historical workflow as a permanent pa
 | RF finite-SIMION metrics | `analysis.rf_transport_metrics`; all four actual finite-transport CLI modes and frozen consumers | The complete old assembler is retired, with original denominators, handoff counting and UNQUALIFIED limits unchanged. Scoped software and ordinary-wheel evidence delivered; remaining RF algorithms/orchestration and composed acceptance stay OPEN. |
 | IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
 | Native execution path projection/context | `execution.run_paths` and its selected installed/frozen PowerShell resource; actual native consumers | Root projection/context bodies retired; explicit execution roots, canonical identity, shared ledger and existing junction/writer guards retained. Repository DEV root discovery remains outside the package. No new native or general historical-path portability claim. |
-| Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration, composed installation and native seed/reopen acceptance stay OPEN. |
+| Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration and broader native seed/reopen qualification stay OPEN; the selected four-slot unsolved build and reopen are recorded above. |
 | Withdrawn local frontend; retained initial-state CSV | Local exclusive preparation/runtime/policies/resources/tests await removal; `backends.simion.source.load_initial_state` remains where actual retained consumers require it | User withdrawal is not PASS. Check SFI/IP/shared consumers before removing mixed resources; historical inputs and results remain unchanged. |
 | Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
 | MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
