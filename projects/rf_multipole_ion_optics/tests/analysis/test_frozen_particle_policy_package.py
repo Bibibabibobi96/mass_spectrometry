@@ -237,7 +237,7 @@ $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
         start = source.index("  foreach($case in $cases){", source.index("Restore-RunEnvironment"))
         analysis = source[start:source.index("  $metricDocument=", start)]
         setup = _mass_analysis_setup(runner)
-        files = re.findall(r"^\s*'((?:projects|common)[/\\][^']+)'[,]?$", setup, re.MULTILINE)
+        files = re.findall(r"^\s*'((?:projects|common|src)[/\\][^']+)'[,]?$", setup, re.MULTILINE)
         package_roots = [relative for relative in files if (REPO_ROOT / relative).is_dir()]
         self.assertTrue(package_roots)
         files = (set(files) - set(package_roots)) | set(

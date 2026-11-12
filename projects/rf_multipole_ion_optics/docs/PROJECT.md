@@ -1378,3 +1378,8 @@ The existing stationary-field `compare` CLI selects the explicit generic path
 with `--comparison-authority <json>`; its two field cases each require per-side
 metadata, transforms and point statuses plus an explicit coordinate tolerance.
 The legacy no-authority diagnostic remains and its retirement is still open.
+
+The frozen COMSOL analysis fixture materializes the project, common and package
+resources selected by the production freezer, including its canonical MATLAB mesh
+helpers. Its detached-execution and missing-frozen-input assertions remain in force;
+the fixture does not run COMSOL or establish a new native result.
