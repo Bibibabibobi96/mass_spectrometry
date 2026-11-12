@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import subprocess
 import sys
 import tempfile
@@ -685,6 +686,9 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
             output = root / "output"
             result = analyze_mass_spectrum(mode_path, comsol_dir, simion_path, output)
 
+            self.assertEqual(result["python"], platform.python_version())
+            saved = json.loads((output / "mass_spectrum_metrics.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["python"], result["python"])
             self.assertEqual(result["status"], "PASS")
             self.assertFalse(result["resolution_claim_allowed"])
             metadata = result["analysis_metadata"]

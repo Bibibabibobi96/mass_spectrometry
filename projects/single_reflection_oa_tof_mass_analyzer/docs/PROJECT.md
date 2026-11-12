@@ -879,6 +879,8 @@ Candidate后处理CLI夹具按现有科学资源、提供者实现声明、公�
 
 `mass_spectrum_candidate -ReanalyzeOnly`使用显式`-SourceRunPath`和新的`-RunId`创建后继分析run；父run的输入、CSV、报告、配置、summary与manifest只读，不再执行原位预检或重新发布。其准入先核对实际消费的小记录和原容量owner的ready封存；checkpoint还须`-SourceStoppedReceiptPath`指向原owner已生成的停止receipt。只有运行中的interrupted标记、未知writer、writing范围、缺失或篡改记录均拒绝，并要求回原owner补齐收尾／封存，不由分析入口伪造停写证明。跨根来源沿公共SourceReferences绑定明确manifest与原owner，不猜父根。
 
+The installed spectrum records the actual Python version through the existing execution-context owner; its scientific workflow does not probe the host directly. API, CLI and saved JSON retain the same version value.
+
 重分析直接调用`msplatform.workflows.single_reflection_mass_spectrum.analyze_mass_spectrum`，保留每物种COMSOL完整检测、SIMION全母群检测、精确ID／物种／电荷及原峰形、校准和绘图规则。冻结Python闭包，并显式消费父manifest绑定的resolved几何；结果输入登记该几何的SHA，不能换用今天默认值。原CSV受保护引用；PA、MPH及ION不复制、不重新物化、无求场或Fly，也不读取未消费的今日Formal资产，今日Formal不可用不阻断充分封存记录的分析。原`ResumeAfterComsol`仍是既有执行续跑，不属于这条新分析路径。
 
 原入口示例（从仓库根执行；8MiB是本次显式小代码／metadata／图表／收尾承诺示例，按实际输入与余量选择，不是隐藏默认或父求解预算）：

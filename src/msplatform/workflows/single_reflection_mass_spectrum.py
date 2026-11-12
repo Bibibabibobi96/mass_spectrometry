@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from msplatform.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
+from msplatform.execution.context import python_runtime_version
 from msplatform.io.file_identity import file_sha256
 from msplatform.results import single_reflection_particle_table as particle_table
 from msplatform.backends.simion import ion_table as simion_ion_table
@@ -551,7 +551,7 @@ def analyze_mass_spectrum(
                 "census_bound": "all_supplied_rows_per_species_at_most_emitted; transmission_denominator_is_declared_emitted",
             },
         },
-        "python": platform.python_version(),
+        "python": python_runtime_version(),
         "inputs": input_hashes,
         "calibration": calibrations,
         "peak_shape_comparisons": peak_shapes.to_dict(orient="records"),
