@@ -1314,7 +1314,8 @@ $result|ConvertTo-Json -Compress
 
     def test_installed_bare_frontend_routes_all_actual_owners(self) -> None:
         self.assertEqual(set(self.routed_stages("src/msplatform/backends/simion/bare_frontend_geometry.py")),
-                         {"instrument_assembly_integration", "common_contracts", "single_reflection_oa_tof_mass_analyzer_static"})
+                         {"instrument_assembly_integration", "common_contracts", "single_reflection_oa_tof_mass_analyzer_static",
+                          "orthogonal_accelerator_static"})
 
     def test_direct_integration_gate_routes_its_declared_frozen_dependencies(self) -> None:
         inventory = json.loads((REPO_ROOT / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
