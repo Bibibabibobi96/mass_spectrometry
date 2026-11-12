@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform.results.artifacts import open_artifact
+from msplatform.results.artifacts import OpenedArtifact, open_artifact
 from msplatform.io.manifest_records import file_record
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.terminal_publication import publish_terminal_state
@@ -20,6 +20,43 @@ from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 
 
 class ArtifactReaderTests(unittest.TestCase):
+    def test_reopen_relocated_snapshot_rechecks_manifest_and_data(self):
+        moved = self.root / 'moved locations'
+        shutil.move(str(self.run), moved)
+        resolver = lambda record, base: moved / Path(record['path']).name if base is None else base / record['path']
+        original = open_artifact(self.reference, expected_kind='trajectory_result', resolver=resolver)
+        reopened = open_artifact(original, expected_kind='trajectory_result')
+        self.assertEqual(reopened.reference, original.reference)
+        self.assertEqual(reopened.data_records, original.data_records)
+        self.assertEqual(reopened.data_locations, original.data_locations)
+        with self.assertRaisesRegex(ValueError, 'resolver is ambiguous'):
+            open_artifact(original, expected_kind='trajectory_result', resolver=resolver)
+        payload = moved / self.data.name
+        saved = payload.read_bytes()
+        payload.write_bytes(b'tampered')
+        with self.assertRaises(AssertionError):
+            open_artifact(original, expected_kind='trajectory_result')
+        payload.write_bytes(saved)
+        (moved / 'run_manifest.json').write_bytes(b'tampered')
+        with self.assertRaises(AssertionError):
+            open_artifact(original, expected_kind='trajectory_result')
+
+    def test_reopen_rejects_same_record_with_distinct_locations(self):
+        document = copy.deepcopy(self.manifest)
+        document['products']['flight']['data']['duplicate'] = copy.deepcopy(
+            document['products']['flight']['data']['observations'])
+        reference = self.reference_after_manifest_edit(document)
+        opened = open_artifact(reference, expected_kind='trajectory_result')
+        other = self.root / 'same bytes.csv'
+        shutil.copyfile(self.data, other)
+        locations = opened.data_locations
+        locations['duplicate'] = other
+        ambiguous = OpenedArtifact(kind=opened.kind, product_id=opened.product_id,
+            reference=opened.reference, metadata=opened.metadata, records=opened.data_records,
+            paths=locations, producer=opened.producer, manifest_location=opened.manifest_location)
+        with self.assertRaisesRegex(ValueError, 'ambiguous locations'):
+            open_artifact(ambiguous, expected_kind='trajectory_result')
+
     def test_resolved_location_snapshot_survives_relocation_and_cannot_mutate_reader(self):
         moved = self.root/'moved locations'
         shutil.move(str(self.run), moved)

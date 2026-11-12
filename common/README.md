@@ -249,6 +249,13 @@ entry directly; the former execution reader/record/identity modules are removed 
 实际位置快照，不替代后续`data_path`复核或原owner的写入保护。搬迁后的数据可读不自动改变原容量owner；
 真实三进程链的完成状态仍查集成正文。
 
+`open_artifact(opened, expected_kind=...)` can revalidate an existing `OpenedArtifact`
+at those explicit locations. It rereads the terminal manifest and every selected data
+member, preserving the original reference and records. A second resolver or conflicting
+locations for the same record is rejected. This read-only operation does not make backend
+execution through relocated inputs available automatically; each execution consumer must
+preserve the same explicit locations and input protection.
+
 `msplatform.ion_release.sample_release`消费版本1的`canonical_birth_source_request`：显式`release_spec`（原生成器合同）、
 `clock`（epoch与authority SHA）、`instrument_origin_us`、`species_id`、`source_component_id`与
 `relative_weights`，可另给首次作者`particle_ids`。`relative_weights=None`明确使用单位权重；映射则

@@ -107,7 +107,7 @@ class OpenedArtifact:
         return path
 
 
-def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
+def open_artifact(reference: Mapping[str, Any] | OpenedArtifact, *, expected_kind: str,
                   resolver: ArtifactResolver | None = None) -> OpenedArtifact:
     """Verify a manifest-bound complete product; no tools, writes, locks or replay.
 
@@ -116,6 +116,11 @@ def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
     Every selected data record must also be one of that manifest's input/output
     records. Missing unrelated execution code does not invalidate readable data.
     """
+    opened = reference if isinstance(reference, OpenedArtifact) else None
+    if opened is not None:
+        if resolver is not None:
+            raise ValueError("opened artifact already has explicit locations; resolver is ambiguous")
+        reference = opened.reference
     if expected_kind not in ARTIFACT_KINDS:
         raise ValueError(f"unsupported artifact kind: {expected_kind}")
     if not isinstance(reference, Mapping) or set(reference) != {"manifest", "product_id"}:
@@ -124,7 +129,13 @@ def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
     if not isinstance(product_id, str) or not product_id.strip():
         raise ValueError("artifact product_id must be explicit")
     manifest_record = validate_file_record(reference["manifest"], "manifest")
-    manifest_path = _verified_path(manifest_record, label="manifest", base=None, resolver=resolver)
+    if opened is None:
+        manifest_path = _verified_path(manifest_record, label="manifest", base=None, resolver=resolver)
+    else:
+        manifest_path = opened.manifest_location
+        if not manifest_path.is_absolute():
+            raise ValueError("opened artifact manifest location must be absolute")
+        verify_record("manifest", dict(manifest_record, path=str(manifest_path)))
     require_completed_terminal_publication(manifest_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     if (not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int
@@ -144,6 +155,11 @@ def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
         raise ValueError("artifact manifest input/output records are invalid")
     bound = [*inputs.values(), *outputs]
     records, paths = {}, {}
+    prior_records = opened.data_records if opened is not None else {}
+    prior_paths = opened.data_locations if opened is not None else {}
+    if opened is not None and (set(prior_records) != set(product["data"]) or set(prior_paths) != set(product["data"])):
+        raise ValueError("opened artifact data locations differ from published product")
+    located_records = [(manifest_record, manifest_path.resolve())]
     for name, value in product["data"].items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("artifact data member names must be explicit")
@@ -151,7 +167,19 @@ def open_artifact(reference: Mapping[str, Any], *, expected_kind: str,
         if record not in bound:
             raise ValueError(f"artifact data member is not bound by the run manifest: {name}")
         records[name] = record
-        paths[name] = _verified_path(record, label=name, base=manifest_path.parent, resolver=resolver)
+        if opened is None:
+            paths[name] = _verified_path(record, label=name, base=manifest_path.parent, resolver=resolver)
+        else:
+            if prior_records[name] != record:
+                raise ValueError(f"opened artifact data record differs from published product: {name}")
+            path = Path(prior_paths[name])
+            if not path.is_absolute():
+                raise ValueError("opened artifact data location must be absolute")
+            if any(previous == record and location != path.resolve() for previous, location in located_records):
+                raise ValueError("same artifact record has ambiguous locations")
+            verify_record(name, dict(record, path=str(path)))
+            paths[name] = path
+            located_records.append((record, path.resolve()))
     producer = {name: copy.deepcopy(manifest.get(name)) for name in ("run_id", "project", "mode", "status")}
     return OpenedArtifact(kind=expected_kind, product_id=product_id,
         reference=dict(reference), metadata=product["metadata"], records=records, paths=paths, producer=producer,
