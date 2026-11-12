@@ -37,6 +37,8 @@ freezing evidence, with no MATLAB or COMSOL execution or new model qualification
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 
+The registered project build-only task retains its explicit run/contract adapter and delegates its existing phase checks and text report writer to the installed COMSOL MATLAB resource. The project owner and its three MPH outputs and report contract remain unchanged; this ownership change adds no native qualification.
+
 ## Installed implementation migration
 
 The installed builders require explicit resolved-contract and owner-run paths.

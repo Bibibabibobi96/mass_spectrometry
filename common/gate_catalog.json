@@ -811,6 +811,10 @@
         {
           "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
           "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m",
+          "reason": "installed_wehnelt_report_consumer_changed"
         }
       ],
       "command": {
@@ -1524,6 +1528,19 @@
             ],
             "modules": [
               "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m",
+                "reason": "installed_wehnelt_report_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py",
+              "common/contracts/test_comsol_wehnelt_model.py"
             ],
             "dependency_profile": "locked"
           }
@@ -4918,6 +4935,10 @@
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m",
+          "reason": "installed_wehnelt_report_consumer_changed"
         }
       ],
       "command": {

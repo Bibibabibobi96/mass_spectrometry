@@ -14,7 +14,7 @@
 - Run paths: each canonical stage requires `(resolvedContractPath, runDirectory)` from the existing owner; no environment or checkout discovery.
 - Read-only cold verification: [`verify_wehnelt_model.m`](../../../src/msplatform/backends/comsol/matlab/verify_wehnelt_model.m) targets only the final unsolved phase4 MPH and never sets parameters, Compute or saves it.
 - 项目门禁：`../verify_project.ps1`
-- build-only生产任务：`../comsol/build_only_smoke.m`
+- build-only生产任务：`../comsol/build_only_smoke.m`；the task delegates its phase checks and report writer to `msplatform.backends.comsol/matlab/write_wehnelt_build_only_report.m`
 
 版本与启动见[操作指南](../../../docs/OPERATIONS.md)。三阶段脚本不包含COMSOL安装路径或`mphstart`，只能由仓库统一
 LiveLink入口调用。

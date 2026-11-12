@@ -165,9 +165,12 @@ class MatlabContractBindingTests(unittest.TestCase):
             "parameter_bindings_verified",
             "candidate_evidence_allowed",
         )
+        report = (MATLAB / "write_wehnelt_build_only_report.m").read_text(encoding="utf-8")
+        self.assertIn("write_wehnelt_build_only_report(result, reportPath)", self.build_task)
+        self.assertIn("resolved_model.json", self.build_task)
         for token in required:
             with self.subTest(token=token):
-                self.assertIn(token, self.build_task)
+                self.assertIn(token, self.build_task if token == "resolved_model.json" else report)
         self.assertIn(
             "projectRoot = fileparts(fileparts(mfilename('fullpath')))",
             self.build_task,
@@ -706,6 +709,7 @@ function Get-HostResourceSnapshot {
                     expected_core.extend(path.relative_to(REPO_ROOT).as_posix()
                                          for path in package_root.glob(pattern) if path.is_file())
             expected_core = sorted(set(expected_core))
+            self.assertIn("src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m", expected_core)
             selection_start = self.build_runner.index("  $selectCoreSources = @'")
             selection_end = self.build_runner.index(
                 "\nforeach ($entry in $bootstrapIdentity", selection_start
