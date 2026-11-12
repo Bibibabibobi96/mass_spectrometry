@@ -2349,6 +2349,9 @@ for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
     (prepared_run/'inputs').mkdir(parents=True)
     receipt = sfi_prepare.prepare(pathlib.Path(case['request']),prepared_run)
+    if case['kind'] == 'recorded_birth':
+        recorded_birth_probe = runpy.run_path(str(root / 'installed_recorded_birth_probe.py'))
+        recorded_birth_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -7192,6 +7195,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             static_probe_bytes = static_probe_source.read_bytes()
             shutil.copyfile(static_probe_source, root / 'installed_static_field_probe.py')
             self.assertEqual((root / 'installed_static_field_probe.py').read_bytes(), static_probe_bytes)
+            recorded_probe_source = source / 'common/contracts/test_support/installed_recorded_birth_probe.py'
+            recorded_probe_bytes = recorded_probe_source.read_bytes()
+            shutil.copyfile(recorded_probe_source, root / 'installed_recorded_birth_probe.py')
+            self.assertEqual((root / 'installed_recorded_birth_probe.py').read_bytes(), recorded_probe_bytes)
             # Remove both private author trees from their original locations;
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
@@ -7227,6 +7234,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/installed_strict_json_probe.py',
                     'common/contracts/test_support/installed_workbench_seed_probe.py',
                     'common/contracts/test_support/installed_static_field_probe.py',
+                    'common/contracts/test_support/installed_recorded_birth_probe.py',
                     'common/contracts/test_installed_scientific_core.py'))
                 source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
                 source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,

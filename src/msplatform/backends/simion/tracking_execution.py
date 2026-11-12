@@ -30,14 +30,31 @@ def _mother_records(records):
 
 
 def _birth_states(packet, geometry):
+    if isinstance(packet, Mapping) and packet.get('role') == 'canonical_recorded_birth_realization':
+        from msplatform.ion_release.authoring import load_recorded_release
+        source = packet['recorded_source']
+        rebuilt = load_recorded_release(source['record'], clock=ClockIdentity(**packet['clock']),
+            frame_id=source['frame_id'], source_component_id=source['source_component_id'],
+            species_id=source['species_id'], relative_weights=source['relative_weights'],
+            instrument_origin_us=source['instrument_origin_us'], expected_particle_ids=source['expected_particle_ids'])
+        if (set(packet) != set(rebuilt) or packet['schema_version'] != rebuilt['schema_version']
+                or packet['state_kind'] != rebuilt['state_kind'] or packet['rows'] != rebuilt['rows']
+                or packet['clock'] != rebuilt['clock'] or packet['recorded_source'] != rebuilt['recorded_source']
+                or set(packet['mother']) != {'records', 'fates'}
+                or _mother_records(packet['mother']['records']) != _mother_records(rebuilt['mother']['records'])
+                or packet['mother']['fates'] != rebuilt['mother']['fates']):
+            raise ValueError('recorded birth realization differs from its bound source and interpretation')
+        count = len(source['expected_particle_ids'])
+    else:
+        count = None
     if (not isinstance(packet, Mapping) or type(packet.get('schema_version')) is not int
-            or packet['schema_version'] != 1 or packet.get('role') != 'canonical_release_realization'
+            or packet['schema_version'] != 1 or packet.get('role') not in {'canonical_release_realization', 'canonical_recorded_birth_realization'}
             or packet.get('state_kind') != 'source_birth'):
         raise ValueError('tracking birth source requires the actual canonical release realization')
     rows = validate_component_particle_state_rows(packet['rows']).rows
     records = _mother_records(packet['mother']['records'])
     ids = [row['particle_id'] for row in rows]
-    if set(ids) != set(records) or len(rows) != packet['realization']['spec']['particle_count']:
+    if set(ids) != set(records) or len(rows) != (count if count is not None else packet['realization']['spec']['particle_count']):
         raise ValueError('birth source must contain the complete actually released mother')
     mother = HandoffMother({pid:records[pid] for pid in ids}, copy.deepcopy(packet['mother']['fates']))
     plan = geometry['composition_plan']
@@ -120,6 +137,8 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         require_same_clock(source_clock,clock)
         native,provenance = project_source_states(rows,mother=mother,clock=clock,state_kind='source_birth',
             clock_records=clock_records,consumed_plane_events=consumed)
+        if particles.get('role') == 'canonical_recorded_birth_realization':
+            provenance['recorded_birth_source'] = copy.deepcopy(particles['recorded_source'])
     policy = propagation['end_policy']
     if not isinstance(policy,Mapping) or set(policy) not in ({'maximum_particle_age_us'},{'absolute_instrument_end_us'}):
         raise ValueError('tracking end_policy must select exactly one absolute-clock rule')
@@ -642,6 +661,15 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     _clock_reference(document,dict(contract=clocks['clock_authority'],authority=clocks['instrument_epoch'],data_root=str(session.input_dir/'clock')))
     plan = plan_tracking_execution(model,particles=particles,clock_records=clocks,propagation=propagation,observations=observations,
         numerics=numerics,unit_size=unit_size,field_manifest_record=source.reference['manifest'])
+    if isinstance(particles, Mapping) and particles.get('role') == 'canonical_recorded_birth_realization':
+        from msplatform.io.manifest_records import verify_record
+        selected = particles['recorded_source']['record']
+        frozen_source = small('recorded_birth_source', session.input_dir/'recorded_birth_source.csv',
+                              source_path=selected['path'])
+        verify_record('recorded birth source after freezing', selected)
+        if (frozen_source['bytes'] != selected['bytes']
+                or frozen_source['sha256'].upper() != selected['sha256'].upper()):
+            raise ValueError('frozen recorded birth source differs from selected source')
     recovery = None
     if recovery_reference is not None:
         from .tracking_units import prepare_tracking_recovery,partition_tracking_units

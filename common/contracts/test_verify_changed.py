@@ -61,11 +61,22 @@ class ChangedGateContractTests(unittest.TestCase):
                    and row['name'].startswith('common_contracts')
                    for value in row['command']['arguments'][2:]}
         self.assertIn('common.contracts.test_installed_scientific_core', modules)
-        for name in ('strict_json', 'workbench_seed', 'static_field'):
+        for name in ('strict_json', 'workbench_seed', 'static_field', 'recorded_birth'):
             with self.subTest(helper=name):
                 self.assertIn('common_contracts', self.routed_stages(
                     'common/contracts/test_support/installed_' + name + '_probe.py'))
 
+    def test_recorded_birth_selects_the_actual_receivers(self):
+        request, _ = self.plan('-ChangedPath', 'src/msplatform/ion_release/authoring.py')
+        modules = {value.removesuffix('.py').replace('/', '.')
+                   for row in request['stages'] if row['selected']
+                   and row['name'].startswith('common_contracts')
+                   for value in row['command']['arguments'][2:]}
+        self.assertTrue({
+            'common.contracts.test_release_authoring', 'common.contracts.test_platform_api',
+            'common.contracts.test_simion_tracking_execution',
+            'common.contracts.test_simion_tracking_units',
+        } <= modules)
     def test_installed_tof_design_preserves_full_owner_and_host_entry_consumers(self):
         prefix = "src/msplatform/workflows/oa_tof_design/"
         owner = "single_reflection_oa_tof_mass_analyzer_static"

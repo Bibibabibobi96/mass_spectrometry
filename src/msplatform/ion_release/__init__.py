@@ -1,6 +1,6 @@
 """Repository-wide solver-neutral ion-release authoring and materialization."""
 
-from msplatform.ion_release.authoring import ReleaseRealization, sample_release
+from msplatform.ion_release.authoring import ReleaseRealization, load_recorded_release, sample_release
 from msplatform.ion_release.cylinder import (
     apply_controlled_position_pair,
     apply_controlled_slow_energy_pair,
@@ -16,6 +16,7 @@ from msplatform.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_sp
 
 __all__ = [
     "ReleaseRealization",
+    "load_recorded_release",
     "apply_controlled_position_pair",
     "apply_controlled_slow_energy_pair",
     "generate_center_axis_pair_halton_cylinder_phase_space",

@@ -13,6 +13,57 @@ from common.ion_release.test_cylinder import halton_spec
 
 
 class ReleaseAuthoringTests(unittest.TestCase):
+    def test_recorded_birth_sparse_weights_clock_and_rejections(self):
+        import csv
+        from pathlib import Path
+        import tempfile
+        from msplatform.io.manifest_records import file_record
+        from msplatform.ion_release.authoring import load_recorded_release
+        from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'birth.csv'
+            raw = generate_release_states(_spec(3))
+            ids = [11, 1009, 2**60 + 1]
+            for row, pid in zip(raw, ids, strict=True):
+                row['particle_id'] = pid
+            def write(columns, rows):
+                with source.open('w', encoding='utf-8', newline='') as stream:
+                    writer = csv.DictWriter(stream, fieldnames=columns, extrasaction='ignore', lineterminator='\n')
+                    writer.writeheader()
+                    writer.writerows(rows)
+            write(CANONICAL_COLUMNS, raw)
+            clock = ClockIdentity('explicit-clock', 'a' * 64)
+            args = dict(clock=clock, frame_id=_spec(3)['frame_id'], source_component_id='rf',
+                        species_id='declared', relative_weights={11: .5, 1009: 2., ids[2]: 3.},
+                        instrument_origin_us=12.5, expected_particle_ids=ids)
+            with patch('msplatform.ion_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
+                packet = load_recorded_release(file_record(source), **args)
+            self.assertEqual(packet['role'], 'canonical_recorded_birth_realization')
+            self.assertEqual(packet['clock'], {'clock_epoch_id': clock.clock_epoch_id, 'authority_sha256': clock.authority_sha256})
+            self.assertEqual(list(packet['mother']['records']), ids)
+            for row, before in zip(packet['rows'], raw, strict=True):
+                self.assertEqual(row['particle_birth_time_us'], 12.5 + before['birth_time_s'] * 1e6)
+                self.assertEqual(row['particle_weight'], args['relative_weights'][row['particle_id']])
+            duplicate = copy.deepcopy(raw)
+            duplicate[1]['particle_id'] = duplicate[0]['particle_id']
+            write(CANONICAL_COLUMNS, duplicate)
+            with self.assertRaisesRegex(ValueError, 'ordered mother IDs'):
+                load_recorded_release(file_record(source), **args)
+            write(CANONICAL_COLUMNS[:-1], raw)
+            with self.assertRaisesRegex(ValueError, 'columns'):
+                load_recorded_release(file_record(source), **args)
+            write(CANONICAL_COLUMNS, raw)
+            invalid = copy.deepcopy(raw)
+            invalid[0]['birth_time_s'] = 'not-a-number'
+            write(CANONICAL_COLUMNS, invalid)
+            with self.assertRaisesRegex(ValueError, 'numeric'):
+                load_recorded_release(file_record(source), **args)
+            missing = file_record(source)
+            source.unlink()
+            with self.assertRaises(AssertionError):
+                load_recorded_release(missing, **args)
+
     def author(self, spec, **changes):
         args = dict(clock=ClockIdentity("instrument", "a"*64), instrument_origin_us=12.5,
                     species_id="test_ion", source_component_id="rf", relative_weights=None)

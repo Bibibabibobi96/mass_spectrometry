@@ -61,6 +61,65 @@ def compile_example():
 
 
 class PlatformApiTests(unittest.TestCase):
+    def test_recorded_sfi_births_reach_real_tracking_planner_without_sampling(self):
+        import csv
+        from msplatform.contracts.clock import ClockIdentity
+        from msplatform.ion_release.authoring import load_recorded_release
+        from msplatform.backends.simion.model import project_resolved_drive, compile_prepared_model
+        from msplatform.backends.simion.tracking_execution import plan_tracking_execution
+        from integrations.tests.test_single_reflection_preparation import scientific_preparation_fixture
+        from msplatform.workflows.single_reflection_flight.prepare import prepare
+
+        case, _, _, compiled = compile_example()
+        with tempfile.TemporaryDirectory() as directory:
+            request_path, run, request = scientific_preparation_fixture(Path(directory), recorded_birth=True)
+            prepared = prepare(request_path, run)
+            source_record = prepared['input_records']['particle_source']
+            with Path(source_record['path']).open(encoding='utf-8-sig', newline='') as stream:
+                original = list(csv.DictReader(stream))
+            ids = [int(row['particle_id']) for row in original]
+            clock = ClockIdentity('instrument_clock_epoch_v1', request['source']['instrument_epoch']['sha256'])
+            clock_records = {name: prepared['input_records'][name] for name in ('clock_authority', 'instrument_epoch')}
+            with patch('msplatform.ion_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
+                packet = load_recorded_release(source_record, clock=clock, frame_id=request['source']['frame_id'],
+                    source_component_id=request['source']['instance_id'], species_id='explicit_fixture_species',
+                    relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
+                selected = {name: compiled.components_resolved[name]
+                            for name in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
+                drive = project_resolved_drive(compiled, selected, pulse=case.drive['pulse'],
+                    clock=dict(clock_epoch_id=clock.clock_epoch_id, authority_sha256=clock.authority_sha256,
+                               phase_reference_instrument_time_us=0.))
+                model = compile_prepared_model(compiled, selected, drive=drive, physics=case.physics)
+                plan = plan_tracking_execution(model, particles=packet, clock_records=clock_records,
+                    propagation=dict(schema_version=1, scope='continuous_assembly',
+                        end_policy=dict(maximum_particle_age_us=200.), consumed_plane_events=[], stop=None),
+                    observations=dict(plane_observations=[]),
+                    numerics=dict(maximum_step_us=.001, trajectory_quality=17, rf_steps_per_period=80))
+            self.assertEqual([row['particle_id'] for row in plan['rows']], ids)
+            self.assertEqual(len(plan['source_provenance']['mother_records']), len(ids))
+            for before, after in zip(original, packet['rows'], strict=True):
+                self.assertEqual(after['particle_birth_time_us'], float(before['birth_time_s']) * 1e6)
+                self.assertEqual(after['mass_amu'], float(before['mass_amu']))
+                self.assertEqual(after['charge_state'], int(before['charge_state']))
+                self.assertEqual(after['particle_weight'], 1.)
+                for axis in 'xyz':
+                    self.assertEqual(after['position_'+axis+'_mm'], float(before[axis+'_mm']))
+                    self.assertEqual(after['velocity_'+axis+'_m_s'], float(before['v'+axis+'_m_s']))
+            self.assertEqual(plan['source_provenance']['recorded_birth_source']['record'], source_record)
+            with self.assertRaisesRegex(ValueError, 'ordered mother IDs'):
+                load_recorded_release(source_record, clock=clock, frame_id=request['source']['frame_id'],
+                    source_component_id='multipole', species_id='explicit_fixture_species', relative_weights=None,
+                    instrument_origin_us=0., expected_particle_ids=list(reversed(ids)))
+            altered = copy.deepcopy(packet)
+            altered['rows'][0]['particle_birth_time_us'] += 1
+            with self.assertRaisesRegex(ValueError, 'differs from its bound source'):
+                plan_tracking_execution(model, particles=altered, clock_records=clock_records,
+                    propagation=plan['propagation'], observations=plan['observations'], numerics=plan['numerics'])
+            Path(source_record['path']).write_bytes(b'tampered')
+            with self.assertRaises(AssertionError):
+                plan_tracking_execution(model, particles=packet, clock_records=clock_records,
+                    propagation=plan['propagation'], observations=plan['observations'], numerics=plan['numerics'])
+
     def test_public_trajectory_comparison_opens_explicit_references_and_existing_products_read_only(self):
         from common.contracts.test_simion_trajectory_comparison import PublishedTrajectoryComparisonTests
         fixture = PublishedTrajectoryComparisonTests()

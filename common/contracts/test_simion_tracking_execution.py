@@ -115,6 +115,62 @@ def tracking_action_fixture(self, root):
 
 
 class TrackingExecutionPlanTests(unittest.TestCase):
+    def test_recorded_birth_owner_freezes_bytes_before_recovery_and_native(self):
+        import csv
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from msplatform.backends.simion.tracking_execution import execute_tracking
+        from msplatform.io.manifest_records import file_record
+        from msplatform.ion_release.authoring import load_recorded_release
+        from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact, Session, _ = tracking_action_fixture(self, root)
+            source = root / 'recorded.csv'
+            ids = [11, 1009, 2001]
+            original = copy.deepcopy(self.packet['realization']['generator_rows'][:3])
+            for row, pid in zip(original, ids, strict=True):
+                row['particle_id'] = pid
+            with source.open('w', encoding='utf-8', newline='') as stream:
+                writer = csv.DictWriter(stream, fieldnames=CANONICAL_COLUMNS, extrasaction='ignore', lineterminator='\n')
+                writer.writeheader()
+                writer.writerows(original)
+            selected = file_record(source)
+            packet = load_recorded_release(selected, clock=ClockIdentity(**self.packet['clock']),
+                frame_id=self.case.release['release_spec']['frame_id'], source_component_id='multipole',
+                species_id='declared', relative_weights={11: .5, 1009: 2., 2001: 3.},
+                instrument_origin_us=12.5, expected_particle_ids=ids)
+            session = Session(root/'recorded')
+            def stop_at_recovery(*args, **kwargs):
+                frozen = session.inputs['recorded_birth_source']
+                self.assertEqual(Path(frozen['path']).read_bytes(), source.read_bytes())
+                self.assertEqual((frozen['bytes'], frozen['sha256']), (selected['bytes'], selected['sha256']))
+                self.assertEqual(session.calls, [])
+                raise RuntimeError('recovery boundary reached')
+            with patch('msplatform.backends.simion.model_execution._protected_source'), \
+                 patch('msplatform.backends.simion.tracking_units.prepare_tracking_recovery', side_effect=stop_at_recovery), \
+                 self.assertRaisesRegex(RuntimeError, 'recovery boundary reached'):
+                execute_tracking(session, fields_reference=artifact, particles=packet, propagation=self.policy,
+                    observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                    recovery_reference={'path': 'explicit-fixture'})
+            self.assertEqual(session.calls, [])
+            successful = Session(root/'successful')
+            with patch('msplatform.backends.simion.model_execution._protected_source'):
+                result = execute_tracking(successful, fields_reference=artifact, particles=packet, propagation=self.policy,
+                    observations={'plane_observations': []}, numerics=self.numerics, limits={})
+            data = result['manifest_extra_fields']['products']['trajectory']['data']
+            self.assertEqual(Path(data['recorded_birth_source']['path']).read_bytes(), source.read_bytes())
+            self.assertEqual(data['recorded_birth_source']['sha256'], selected['sha256'])
+            self.assertEqual([row['id'] for row in successful.calls], list(successful.expected_operation_ids))
+            source.write_bytes(b'changed before freeze')
+            rejected = Session(root/'rejected')
+            with patch('msplatform.backends.simion.model_execution._protected_source'), self.assertRaises(AssertionError):
+                execute_tracking(rejected, fields_reference=artifact, particles=packet, propagation=self.policy,
+                    observations={'plane_observations': []}, numerics=self.numerics, limits={})
+            self.assertEqual(rejected.calls, [])
+
     def setUp(self):
         self.case=example_api.load_example('rf_oatof_functional_v1')
         parts={key:component_api.resolve_component(value) for key,value in self.case.component_requests.items()}

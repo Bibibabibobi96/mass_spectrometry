@@ -266,6 +266,15 @@ preserve the same explicit locations and input protection.
 `msplatform.ion_release.release.generate_release_states`合同和采样次序保持。实际原生执行仍须验证相同
 clock authority的真实发布record，并由backend检查原生ID表示范围。
 
+`msplatform.ion_release.load_recorded_release` reads an explicitly identified canonical
+birth CSV without running a sampler. The caller supplies the full ordered particle IDs,
+clock, frame, source component, species, time mapping and positive weights (or explicit
+unit weights). Its distinct recorded-birth packet retains the selected file record and
+complete mother population. Tracking revalidates the rows against that source and freezes
+the source bytes before recovery or native dispatch. This is birth admission, not an
+observed pre-pulse handoff or a native checkpoint. Existing SFI sources use their original
+absolute birth seconds with zero additional origin shift.
+
 `msplatform.backends.simion.track(fields, particles, propagation=..., observations=..., numerics=..., context=...,
 source_reference=None, unit_size=None, recovery_reference=None, dispatch_profiles=())`
 将已发布SIMION FieldBundle接到同一运行owner；未求解model直接拒绝。

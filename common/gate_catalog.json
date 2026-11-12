@@ -910,7 +910,7 @@
           "reason": "installed_wehnelt_report_consumer_changed"
         },
         {
-          "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field)_probe\\.py$",
+          "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth)_probe\\.py$",
           "reason": "installed_probe_support_changed"
         }
       ],
@@ -934,7 +934,7 @@
           {
             "matches": [
               {
-                "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field)_probe\\.py$",
+                "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth)_probe\\.py$",
                 "reason": "installed_probe_support_changed"
               }
             ],
@@ -1714,6 +1714,25 @@
             "modules": [
               "common/contracts/test_installed_scientific_core.py",
               "common/contracts/test_comsol_wehnelt_model.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/ion_release/authoring.py",
+                "reason": "recorded_birth_tracking_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/ion_release/__init__.py",
+                "reason": "recorded_birth_tracking_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_release_authoring.py",
+              "common/contracts/test_platform_api.py",
+              "common/contracts/test_simion_tracking_execution.py",
+              "common/contracts/test_simion_tracking_units.py"
             ],
             "dependency_profile": "locked"
           }

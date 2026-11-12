@@ -220,6 +220,13 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 明确旧[request 9](../../src/msplatform/workflows/single_reflection_flight/request_v9.schema.json)保留其原plan3／native-view读取分支，
 没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
 
+Recorded-birth admission is now available through
+`msplatform.ion_release.load_recorded_release`, without sampling or replacing the
+original particle IDs and clock. The public tracking planner and its existing owner
+revalidate and freeze that source. Scoped software fixtures cover actual SFI input
+through the planner and source freezing before recovery; this does not replace the
+SFI PowerShell execution body, recorded pre-pulse verification or native acceptance.
+
 可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
 规格校验见[`validate_native_field_observation`](../../src/msplatform/backends/simion/tracking_program.py)，
 实际冻结与批次选择见[`field_evidence._field_observation`](../../src/msplatform/workflows/single_reflection_flight/field_evidence.py)。
