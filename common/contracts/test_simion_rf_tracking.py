@@ -299,8 +299,49 @@ simion={wb={instances={item}},pas={open=function() return {close=function()end} 
                 self.assertFalse((removed.manifest_location.parent/'simion/geometry/iob_seed/iob_seed_placeholder_01.pa0').exists())
                 removed_completion=json.loads((removed.manifest_location.parent/'results/execution_completion.json').read_text())
                 self.assertIn(str(removed.manifest_location.parent/'simion/geometry/iob_seed/iob_seed_placeholder_01.pa0'),removed_completion['file_roles'])
+                # One explicit recorded producer follows the same actual independent RF owner.
+                import csv
+                import io
+                from msplatform.ion_release import load_recorded_release
+                from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+                output = io.StringIO(newline='')
+                writer = csv.DictWriter(output, fieldnames=CANONICAL_COLUMNS, lineterminator='\n')
+                writer.writeheader()
+                for row in packet['rows']:
+                    writer.writerow(dict(particle_id=row['particle_id'], birth_time_s=row['particle_birth_time_us']/1e6,
+                        mass_amu=row['mass_amu'], charge_state=row['charge_state'],
+                        **{axis+'_mm':row['position_'+axis+'_mm'] for axis in 'xyz'},
+                        **{'v'+axis+'_m_s':row['velocity_'+axis+'_m_s'] for axis in 'xyz'}))
+                raw = output.getvalue().encode('utf-8')
+                def produce_birth(session):
+                    path = session.declare_file(session.result_dir/'recorded_birth.csv', 'required_evidence')
+                    path.write_bytes(raw)
+                    return dict(status='success',summary={},output_paths=[str(path)],required_output_paths=[str(path)],
+                                retention_preserve_paths=[],manifest_extra_fields={})
+                birth = owner.run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='inert_birth',software=[]),
+                    run_id='20261109_000003__test__python__inert-birth',payload={},committed_new_bytes=16777216,
+                    commitment_inputs=[file_record(budget,'required_evidence')],retention=retention,expected_operation_ids=(),
+                    operation_dependencies={},action=produce_birth,action_record=file_record(Path(__file__),'required_evidence'))
+                birth_record = file_record(Path(birth['run_directory'])/'results/recorded_birth.csv', 'required_evidence')
+                authority = dict(manifest=birth['manifest'],records=dict(source=birth_record))
+                recorded = load_recorded_release(birth_record, clock=ClockIdentity(**packet['clock']),
+                    frame_id=packet['rows'][0]['frame_id'],source_component_id=packet['rows'][0]['source_component_id'],
+                    species_id='software_fixture',relative_weights={7:2.5,91:4.},instrument_origin_us=0.,
+                    expected_particle_ids=[7,91])
+                wrong = copy.deepcopy(authority)
+                wrong['records']['source']['sha256'] = '0'*64
+                with self.assertRaises(ValueError):
+                    track(reference,recorded,propagation=propagation,observations=dict(plane_observations=[]),
+                          numerics=numerics,context=context,birth_source_authority=wrong)
+                self.assertEqual(len(observed),6)
+                recorded_run = track(reference,recorded,propagation=propagation,observations=dict(plane_observations=[]),
+                    numerics=numerics,context=context,birth_source_authority=authority)
+                self.assertEqual(len(observed),9)
+                self.assertEqual(recorded_run.data_path('recorded_birth_source').read_bytes(), raw)
+                provenance=json.loads(recorded_run.data_path('source_provenance').read_text())
+                self.assertEqual(provenance['birth_source_authority']['manifest'],birth['manifest'])
             for path,before in originals.items():self.assertEqual(Path(path).read_bytes(),before)
-            for product in (current,zero,removed):
+            for product in (current,zero,removed,recorded_run):
                 completion=json.loads((product.manifest_location.parent/'results/execution_completion.json').read_text())
                 writer=completion['writer_completion']
                 self.assertEqual(len(writer['operations']),0 if product is zero else 3)

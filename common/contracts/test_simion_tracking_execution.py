@@ -115,6 +115,58 @@ def tracking_action_fixture(self, root):
 
 
 class TrackingExecutionPlanTests(unittest.TestCase):
+    def test_public_track_binds_recorded_birth_producer_and_rejects_tamper(self):
+        import csv
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.io.manifest_records import file_record
+        from msplatform.ion_release.authoring import load_recorded_release
+        from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fields, Session, _ = tracking_action_fixture(self, root)
+            producer = root / 'birth-producer'
+            producer.mkdir()
+            source, evidence = producer/'source.csv', producer/'request.json'
+            ids = [11, 1009, 2001]
+            original = copy.deepcopy(self.packet['realization']['generator_rows'][:3])
+            for row, pid in zip(original, ids, strict=True):
+                row['particle_id'] = pid
+            with source.open('w', encoding='utf-8', newline='') as stream:
+                writer = csv.DictWriter(stream, fieldnames=CANONICAL_COLUMNS, extrasaction='ignore', lineterminator='\n')
+                writer.writeheader()
+                writer.writerows(original)
+            evidence.write_text('{}', encoding='utf-8')
+            records = {'source': file_record(source), 'request': file_record(evidence)}
+            manifest = dict(schema_version=2, role='simulation_run_manifest', run_id='birth-fixture',
+                project='instrument_assembly', mode='source', status='success', inputs=records, outputs=[])
+            publish_terminal_state(producer, {'status': 'success'}, manifest)
+            authority = {'manifest': file_record(producer/'run_manifest.json'), 'records': records}
+            packet = load_recorded_release(records['source'], clock=ClockIdentity(**self.packet['clock']),
+                frame_id=self.case.release['release_spec']['frame_id'], source_component_id='multipole',
+                species_id='explicit', relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
+            session = Session()
+            limits = {'transient_run_directory_bytes': 1}
+            stage = {'limits': limits, 'artifact_retention': {}}
+            with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
+                 patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
+                 patch('msplatform.results.artifacts.open_artifact', return_value='published'):
+                self.assertEqual(simion_api.track(fields, packet, propagation=self.policy,
+                    observations={'plane_observations': []}, numerics=self.numerics, context=session.context,
+                    birth_source_authority=authority), 'published')
+                call = owner.call_args.kwargs
+                self.assertIn({'manifest_record': authority['manifest']}, call['source_references'])
+                self.assertEqual(call['payload']['birth_source_authority'], authority)
+                self.assertEqual(call['action'].keywords['birth_source_authority'], authority)
+            evidence.write_text('tampered', encoding='utf-8')
+            with patch('msplatform.execution.owner.run_managed_stage') as owner, self.assertRaises(AssertionError):
+                simion_api.track(fields, packet, propagation=self.policy, observations={'plane_observations': []},
+                    numerics=self.numerics, context=session.context, birth_source_authority=authority)
+            owner.assert_not_called()
+
     def test_recorded_birth_owner_freezes_bytes_before_recovery_and_native(self):
         import csv
         from pathlib import Path
@@ -122,13 +174,16 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         from unittest.mock import patch
         from msplatform.backends.simion.tracking_execution import execute_tracking
         from msplatform.io.manifest_records import file_record
+        from msplatform.execution.terminal_publication import publish_terminal_state
         from msplatform.ion_release.authoring import load_recorded_release
         from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             artifact, Session, _ = tracking_action_fixture(self, root)
-            source = root / 'recorded.csv'
+            producer = root / 'recorded-producer'
+            producer.mkdir()
+            source = producer / 'recorded.csv'
             ids = [11, 1009, 2001]
             original = copy.deepcopy(self.packet['realization']['generator_rows'][:3])
             for row, pid in zip(original, ids, strict=True):
@@ -138,15 +193,43 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 writer.writeheader()
                 writer.writerows(original)
             selected = file_record(source)
+            metadata = producer / 'source_metadata.json'
+            metadata.write_text('{}', encoding='utf-8')
+            authority_records = {'source': selected, 'metadata': file_record(metadata)}
+            manifest = dict(schema_version=2, role='simulation_run_manifest', run_id='source-fixture',
+                project='instrument_assembly', mode='source', status='success', inputs=authority_records, outputs=[])
+            publish_terminal_state(producer, {'status': 'success'}, manifest)
+            authority = {'manifest': file_record(producer/'run_manifest.json'), 'records': authority_records}
             packet = load_recorded_release(selected, clock=ClockIdentity(**self.packet['clock']),
                 frame_id=self.case.release['release_spec']['frame_id'], source_component_id='multipole',
                 species_id='declared', relative_weights={11: .5, 1009: 2., 2001: 3.},
                 instrument_origin_us=12.5, expected_particle_ids=ids)
+            from msplatform.execution.inputs import freeze_file
+            manifest_path = producer/'run_manifest.json'
+            manifest_bytes = manifest_path.read_bytes()
+            changing = Session(root/'changing')
+            def mutate_at_copy(source_path, destination, **kwargs):
+                if Path(destination).name == 'manifest.json' and Path(destination).parent.name == 'birth_authority':
+                    manifest_path.write_bytes(manifest_bytes + b' ')
+                return freeze_file(source_path, destination, **kwargs)
+            try:
+                with patch('msplatform.backends.simion.model_execution._protected_source'), \
+                     patch('msplatform.execution.inputs.freeze_file', side_effect=mutate_at_copy), \
+                     self.assertRaisesRegex(ValueError, 'frozen birth authority manifest differs'):
+                    execute_tracking(changing, fields_reference=artifact, particles=packet, propagation=self.policy,
+                        observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                        birth_source_authority=authority)
+            finally:
+                manifest_path.write_bytes(manifest_bytes)
+            self.assertEqual(changing.calls, [])
             session = Session(root/'recorded')
             def stop_at_recovery(*args, **kwargs):
                 frozen = session.inputs['recorded_birth_source']
                 self.assertEqual(Path(frozen['path']).read_bytes(), source.read_bytes())
                 self.assertEqual((frozen['bytes'], frozen['sha256']), (selected['bytes'], selected['sha256']))
+                self.assertEqual(Path(session.inputs['birth_authority_0002']['path']).read_bytes(), metadata.read_bytes())
+                self.assertEqual(Path(session.inputs['birth_authority_manifest']['path']).read_bytes(),
+                                 (producer/'run_manifest.json').read_bytes())
                 self.assertEqual(session.calls, [])
                 raise RuntimeError('recovery boundary reached')
             with patch('msplatform.backends.simion.model_execution._protected_source'), \
@@ -154,12 +237,13 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                  self.assertRaisesRegex(RuntimeError, 'recovery boundary reached'):
                 execute_tracking(session, fields_reference=artifact, particles=packet, propagation=self.policy,
                     observations={'plane_observations': []}, numerics=self.numerics, limits={},
-                    recovery_reference={'path': 'explicit-fixture'})
+                    recovery_reference={'path': 'explicit-fixture'}, birth_source_authority=authority)
             self.assertEqual(session.calls, [])
             successful = Session(root/'successful')
             with patch('msplatform.backends.simion.model_execution._protected_source'):
                 result = execute_tracking(successful, fields_reference=artifact, particles=packet, propagation=self.policy,
-                    observations={'plane_observations': []}, numerics=self.numerics, limits={})
+                    observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                    birth_source_authority=authority)
             data = result['manifest_extra_fields']['products']['trajectory']['data']
             self.assertEqual(Path(data['recorded_birth_source']['path']).read_bytes(), source.read_bytes())
             self.assertEqual(data['recorded_birth_source']['sha256'], selected['sha256'])
@@ -168,7 +252,8 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             rejected = Session(root/'rejected')
             with patch('msplatform.backends.simion.model_execution._protected_source'), self.assertRaises(AssertionError):
                 execute_tracking(rejected, fields_reference=artifact, particles=packet, propagation=self.policy,
-                    observations={'plane_observations': []}, numerics=self.numerics, limits={})
+                    observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                    birth_source_authority=authority)
             self.assertEqual(rejected.calls, [])
 
     def setUp(self):

@@ -803,6 +803,46 @@ class NormalOwnerTests(unittest.TestCase):
                 self.assertTrue(context.host_state_path.is_file())
 
 
+    def test_recorded_birth_authority_uses_actual_source_lease_and_releases_it(self):
+        from msplatform.backends.simion.model_execution import _protected_source
+        from msplatform.backends.simion.tracking_execution import validate_birth_authority
+        from msplatform.contracts.clock import ClockIdentity
+        from msplatform.execution import owner
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
+        from msplatform.io.manifest_records import file_record
+        from msplatform.ion_release import load_recorded_release
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = self._context(root)
+            def produce(session):
+                source = session.declare_file(session.result_dir/'source.csv', 'required_evidence')
+                source.write_text('particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_state\n'
+                                  '7,0,0,0,0,0,0,1000,100,1\n', encoding='utf-8')
+                return dict(status='success', summary={}, output_paths=[str(source)],
+                    required_output_paths=[str(source)], retention_preserve_paths=[], manifest_extra_fields={})
+            arguments = self._arguments(root, produce)
+            arguments['retention'] = dict(policy_version=1, **{'class': 'solver_review'}, reason='source fixture')
+            with patch('msplatform.execution.capacity_admission._capacity_policy', return_value=self._policy()):
+                producer = owner.run_managed_stage(context, **arguments)
+                producer_run = Path(producer['run_directory'])
+                source = file_record(producer_run/'results/source.csv', 'required_evidence')
+                packet = load_recorded_release(source, clock=ClockIdentity('fixture', 'A'*64), frame_id='rf',
+                    source_component_id='rf', species_id='fixture', relative_weights=None,
+                    instrument_origin_us=0., expected_particle_ids=[7])
+                authority = validate_birth_authority({'manifest':producer['manifest'], 'records':{'source':source}}, packet)
+                def consume(session):
+                    _protected_source(session, authority['manifest'], required_paths=[source['path']])
+                    leases = load_capacity_protection_leases(session.artifact_root)
+                    self.assertTrue(path_is_protected(producer_run, leases['protected_paths']))
+                    return self._action(session)
+                arguments = self._arguments(root, consume)
+                arguments['run_id'] = '20261104_120001__build__python__birth-consumer'
+                arguments['source_references'] = [{'manifest_record': authority['manifest']}]
+                consumer = owner.run_managed_stage(context, **arguments)
+                self.assertEqual(consumer['status'], 'success')
+            self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'], [])
+
     def test_stopped_payload_seal_source_protection_and_real_alias_keep_original_identity(self):
         from msplatform.execution import owner
         from msplatform.execution.capacity_ledger import load_capacity_ledger

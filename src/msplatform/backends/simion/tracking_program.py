@@ -1135,7 +1135,8 @@ def _bound_tracking_model(prepared_model, multipoles, oatof, geometry, design, f
     checked = deepcopy(design)
     for domain in checked['domains']:
         digest = domain.pop('gem_sha256', None)
-        if digest is not None and digest != hashlib.sha256(actual_geometry.frontend_gems[domain['domain_id']].encode('utf-8')).hexdigest():
+        if digest is not None and (not isinstance(digest, str) or re.fullmatch(r'[a-fA-F0-9]{64}', digest) is None
+                or digest.lower() != hashlib.sha256(actual_geometry.frontend_gems[domain['domain_id']].encode('utf-8')).hexdigest()):
             raise ValueError('tracking field GEM differs from bound model')
     # A FieldBundle is persisted JSON: native voltage table integer keys are
     # transported as strings. Compare that exact finite JSON meaning while

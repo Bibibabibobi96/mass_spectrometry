@@ -242,7 +242,8 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
           numerics: Mapping[str, Any], context: ExecutionContext,
           source_reference: OpenedArtifact | Mapping[str, Any] | None = None,
           unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
-          dispatch_profiles: Sequence[Mapping[str, Any]] = ()) -> OpenedArtifact:
+          dispatch_profiles: Sequence[Mapping[str, Any]] = (),
+          birth_source_authority: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Publish an explicit fixed-field flight, preserving its original cohort/clock.
 
     A release realization starts at birth; a HandoffResult requires its published
@@ -260,7 +261,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     from msplatform.assembly.handoff import HandoffResult
     from msplatform.backends.simion.artifacts import CompiledPreparedModel
     from msplatform.backends.simion.model import require_prepared_model
-    from msplatform.backends.simion.tracking_execution import execute_tracking, plan_tracking_execution
+    from msplatform.backends.simion.tracking_execution import execute_tracking, plan_tracking_execution, validate_birth_authority
     from msplatform.backends.simion.tracking_units import inspect_tracking_recovery
     from msplatform.backends.simion import native_completion
     from msplatform.results.artifacts import OpenedArtifact
@@ -279,6 +280,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
     packet = particles.to_dict() if isinstance(particles, ReleaseRealization) else copy.deepcopy(particles)
+    birth_authority = None if birth_source_authority is None else validate_birth_authority(birth_source_authority, packet)
     clocks = {name: dict(source.data_records[name], path=str(source.data_path(name)))
               for name in ("clock_authority", "instrument_epoch")}
     if (not isinstance(dispatch_profiles, Sequence) or isinstance(dispatch_profiles, (str, bytes))
@@ -294,13 +296,16 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         recovery = copy.deepcopy(dict(recovery_reference))
     planning = dict(particles=packet, clock_records=clocks, propagation=propagation,
                     observations=observations, numerics=numerics, unit_size=unit_size,
-                    field_manifest_record=source.reference["manifest"])
+                    field_manifest_record=source.reference["manifest"],
+                    **({'birth_source_authority': birth_authority} if birth_authority is not None else {}))
     graph = plan_tracking_execution(model, **planning)
     if recovery is not None:
         inspected = inspect_tracking_recovery(graph, recovery)
         graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
+    if birth_authority is not None:
+        references.append({"manifest_record": birth_authority['manifest']})
     if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
@@ -331,6 +336,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             propagation=copy.deepcopy(dict(propagation)), observations=copy.deepcopy(dict(observations)),
             numerics=copy.deepcopy(dict(numerics)), source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
+            **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
             stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
         commitment_inputs=[policy_record], retention=stage["artifact_retention"],
@@ -340,6 +346,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             propagation=graph["propagation"], observations=graph["observations"], numerics=graph["numerics"],
             limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
+            **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
             allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
         action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)

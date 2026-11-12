@@ -1039,3 +1039,5 @@ native qualification are separate scopes.
 The shared RF/OA/TOF checkpoint adapter remains in
 `msplatform.workflows.single_reflection_flight.checkpoint_diagnostics`. It reads
 recorded data without launching a solver; this is not native qualification.
+
+The installed single-reflection recorded-birth consumer accepts an explicit, complete saved FieldBundle and its prepared original-source manifest. It verifies the selected geometry, timed pulse and clock against the compiled model before public tracking; it records and freezes the producer authority for recovery. This software binding does not establish native flight or field qualification. The retained SFI component-level research scope is distinct from the withdrawn local frontend product.

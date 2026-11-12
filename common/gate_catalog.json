@@ -910,7 +910,7 @@
           "reason": "installed_wehnelt_report_consumer_changed"
         },
         {
-          "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth)_probe\\.py$",
+          "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth|sfi_consumer)_probe\\.py$",
           "reason": "installed_probe_support_changed"
         }
       ],
@@ -934,7 +934,7 @@
           {
             "matches": [
               {
-                "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth)_probe\\.py$",
+                "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth|sfi_consumer)_probe\\.py$",
                 "reason": "installed_probe_support_changed"
               }
             ],
@@ -2779,6 +2779,42 @@
             ],
             "modules": [
               "integrations/tests/test_paired_accelerator_static_field_execute.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/single_reflection_flight/prepare.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/operations.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/tracking_execution.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/tracking_program.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/compiler.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/model.py",
+                "reason": "recorded_birth_sfi_consumer_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_single_reflection_recorded_birth_consumer.py"
             ],
             "dependency_profile": "locked"
           }

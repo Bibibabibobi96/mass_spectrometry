@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import copy
 import io
 import json
@@ -424,10 +425,25 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 self.assertEqual(result['particle_count'], 100)
                 expected_records = {instance: result['input_records']['instance_design__'+instance]
                                     for instance in request['providers']['instances']}
-                self.assertEqual(binding['provider_inputs'], expected_records)
-                for instance in expected_records:
+                expected_identities = {}
+                for instance, frozen_record in expected_records.items():
+                    author_record = request['providers']['instances'][instance]['resolved_design']
+                    author_path = record_path(author_record, base_dir=path.parent)
+                    frozen_path = run/'inputs/components'/instance/'resolved_design.json'
+                    self.assertEqual(frozen_record, {**author_record, 'path': str(frozen_path), 'exists': True})
+                    self.assertEqual(frozen_record, file_record(frozen_path))
+                    self.assertEqual(frozen_path.read_bytes(), author_path.read_bytes())
                     self.assertEqual(sum(call.args[0] == 'instance_design__'+instance
                                          for call in verified.call_args_list), 1)
+                    def content_hash(document):
+                        payload = json.dumps(document, sort_keys=True, separators=(',', ':'),
+                                             ensure_ascii=False, allow_nan=False).encode('utf-8')
+                        return hashlib.sha256(payload).hexdigest()
+                    expected_identities[instance] = {
+                        'resolved_content_sha256': content_hash(json.loads(frozen_path.read_text(encoding='utf-8'))),
+                        'component_interface_sha256': content_hash(geometry['composition_plan']['components'][instance]),
+                    }
+                self.assertEqual(binding['provider_inputs'], expected_identities)
                 for instance, groups in binding['electrode_group_scope'].items():
                     self.assertEqual(set(groups), set(request['providers']['instances'][instance]['electrode_bindings']))
                 complete_oa = geometry['composition_plan']['components']['oatof']['component_electrodes']

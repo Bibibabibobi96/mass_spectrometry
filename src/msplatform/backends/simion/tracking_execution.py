@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import math
 from pathlib import Path
 from typing import Mapping
@@ -15,6 +16,46 @@ from .artifacts import NativeStagePlan
 from .model import require_prepared_model, model_geometry
 from .source import project_source_states, project_handoff_source, lua_value, render_restart_fly2
 from .tracking_program import validate_native_flight, validate_propagation_stop
+
+
+def validate_birth_authority(authority: Mapping, particles: Mapping) -> dict:
+    """Verify explicit recorded-birth producer and its selected small inputs."""
+    from msplatform.io.manifest_records import validate_file_record, verify_record, require_completed_terminal_publication
+    if (not isinstance(authority, Mapping) or set(authority) != {'manifest', 'records'}
+            or not isinstance(authority['records'], Mapping) or not authority['records']
+            or not isinstance(particles, Mapping) or particles.get('role') != 'canonical_recorded_birth_realization'):
+        raise ValueError('birth authority requires a recorded birth, manifest and explicit records')
+    manifest = validate_file_record(authority['manifest'], 'birth producer manifest')
+    if not Path(manifest['path']).is_absolute():
+        raise ValueError('birth producer manifest path must be absolute')
+    verify_record('birth producer manifest', manifest)
+    path = Path(manifest['path'])
+    require_completed_terminal_publication(path)
+    document = json.loads(path.read_text(encoding='utf-8-sig'))
+    if document.get('role') != 'simulation_run_manifest' or document.get('status') != 'success':
+        raise ValueError('birth producer must be a terminal successful run')
+    inputs, outputs = document.get('inputs'), document.get('outputs')
+    if not isinstance(inputs, dict) or not isinstance(outputs, list):
+        raise ValueError('birth producer manifest lacks input/output records')
+    bound = [*inputs.values(), *outputs]
+    records = {}
+    for name, value in authority['records'].items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError('birth authority record names must be explicit')
+        record = validate_file_record(value, name)
+        if not Path(record['path']).is_absolute():
+            raise ValueError('birth authority paths must be absolute')
+        if not any(isinstance(item, Mapping) and item.get('path') == record['path']
+                   and item.get('bytes') == record['bytes']
+                   and str(item.get('sha256', '')).upper() == record['sha256'].upper() for item in bound):
+            raise ValueError('birth authority record is not bound by its producer')
+        verify_record(name, record)
+        records[name] = record
+    selected = particles['recorded_source']['record']
+    if not any(record['path'] == selected['path'] and record['bytes'] == selected['bytes']
+               and record['sha256'].upper() == selected['sha256'].upper() for record in records.values()):
+        raise ValueError('birth authority must bind the actual recorded source')
+    return {'manifest': manifest, 'records': records}
 
 
 def _mother_records(records):
@@ -91,7 +132,7 @@ def _birth_states(packet, geometry):
 
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,
                             observations: Mapping, numerics: Mapping, unit_size=None,
-                            reused_unit_keys=(), field_manifest_record=None) -> dict:
+                            reused_unit_keys=(), field_manifest_record=None, birth_source_authority=None) -> dict:
     """Validate the complete cohort and an explicit ordinal unit partition.
 
     The shared dispatcher controls real concurrency; units fix replay boundaries. Handoff producer
@@ -121,6 +162,8 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     clock = ClockIdentity(document['drive']['clock']['clock_epoch_id'],document['drive']['clock']['authority_sha256'])
     consumed = propagation['consumed_plane_events']
     if isinstance(particles,HandoffResult):
+        if birth_source_authority is not None:
+            raise ValueError('birth source authority cannot be used for a handoff')
         if propagation['scope'] != 'state_relaunch':
             raise ValueError('handoff/snapshot propagation must declare state_relaunch')
         require_same_clock(particles.clock.source,particles.clock.target)
@@ -139,6 +182,8 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             clock_records=clock_records,consumed_plane_events=consumed)
         if particles.get('role') == 'canonical_recorded_birth_realization':
             provenance['recorded_birth_source'] = copy.deepcopy(particles['recorded_source'])
+        if birth_source_authority is not None:
+            provenance['birth_source_authority'] = validate_birth_authority(birth_source_authority, particles)
     policy = propagation['end_policy']
     if not isinstance(policy,Mapping) or set(policy) not in ({'maximum_particle_age_us'},{'absolute_instrument_end_us'}):
         raise ValueError('tracking end_policy must select exactly one absolute-clock rule')
@@ -556,7 +601,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
 
 def execute_tracking(session, *, fields_reference, particles, propagation, observations, numerics,
                      limits, source_reference=None, allow_asynchronous_io=None, unit_size=None,
-                     recovery_reference=None, dispatch_profiles=()) -> dict:
+                     recovery_reference=None, dispatch_profiles=(), birth_source_authority=None) -> dict:
     """Execute one explicit fixed-field cohort through the existing run owner.
 
     No Refine/GEM2PA/cache transaction occurs. The public observed-process owner
@@ -586,7 +631,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         return execute_rf_tracking(session,source=source,model=model,document=document,particles=particles,
             propagation=propagation,observations=observations,numerics=numerics,limits=limits,
             source_reference=source_reference,allow_asynchronous_io=allow_asynchronous_io,unit_size=unit_size,
-            recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles)
+            recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority)
     compiled = model_geometry(model,downstream_drive=True)
     geometry = compiled.frontend_geometry
     _,downstream = require_downstream_reuse(source,meta['downstream_identity'])
@@ -627,12 +672,12 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         field_workbench=field_workbench,borrowed=borrowed,original_clock=original_clock,relative_epoch=relative_epoch,
         particles=particles,propagation=propagation,observations=observations,numerics=numerics,limits=limits,
         source_reference=source_reference,allow_asynchronous_io=allow_asynchronous_io,unit_size=unit_size,
-        recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles)
+        recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority)
 
 
 def _execute_tracking_bound_source(session,*,source,model,document,compiled,geometry,design,stored_bank,
         frontend,downstream,field_workbench,borrowed,original_clock,relative_epoch,particles,propagation,observations,
-        numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles):
+        numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles,birth_source_authority=None):
     """The same unit runner and result publisher for verified TOF/RF source bindings."""
     import json
     from dataclasses import asdict
@@ -660,7 +705,21 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         instrument_epoch=small('instrument_epoch',session.input_dir/'clock'/relative_epoch,source_path=original_clock['authority']['path']))
     _clock_reference(document,dict(contract=clocks['clock_authority'],authority=clocks['instrument_epoch'],data_root=str(session.input_dir/'clock')))
     plan = plan_tracking_execution(model,particles=particles,clock_records=clocks,propagation=propagation,observations=observations,
-        numerics=numerics,unit_size=unit_size,field_manifest_record=source.reference['manifest'])
+        numerics=numerics,unit_size=unit_size,field_manifest_record=source.reference['manifest'],
+        birth_source_authority=birth_source_authority)
+    if birth_source_authority is not None:
+        authority = validate_birth_authority(birth_source_authority, particles)
+        _protected_source(session, authority['manifest'], required_paths=[record['path'] for record in authority['records'].values()])
+        frozen_manifest = small('birth_authority_manifest', session.input_dir/'birth_authority/manifest.json', source_path=authority['manifest']['path'])
+        if (frozen_manifest['bytes'] != authority['manifest']['bytes']
+                or frozen_manifest['sha256'].upper() != authority['manifest']['sha256'].upper()):
+            raise ValueError('frozen birth authority manifest differs from selected input')
+        for index, record in enumerate(authority['records'].values(), 1):
+            if record['path'] == particles['recorded_source']['record']['path']:
+                continue  # The existing recorded-source freeze below owns this copy.
+            frozen = small(f'birth_authority_{index:04d}', session.input_dir/f'birth_authority/input_{index:04d}', source_path=record['path'])
+            if frozen['bytes'] != record['bytes'] or frozen['sha256'].upper() != record['sha256'].upper():
+                raise ValueError('frozen birth authority differs from selected input')
     if isinstance(particles, Mapping) and particles.get('role') == 'canonical_recorded_birth_realization':
         from msplatform.io.manifest_records import verify_record
         selected = particles['recorded_source']['record']

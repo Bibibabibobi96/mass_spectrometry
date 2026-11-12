@@ -61,10 +61,27 @@ class ChangedGateContractTests(unittest.TestCase):
                    and row['name'].startswith('common_contracts')
                    for value in row['command']['arguments'][2:]}
         self.assertIn('common.contracts.test_installed_scientific_core', modules)
-        for name in ('strict_json', 'workbench_seed', 'static_field', 'recorded_birth'):
+        for name in ('strict_json', 'workbench_seed', 'static_field', 'recorded_birth', 'sfi_consumer'):
             with self.subTest(helper=name):
                 self.assertIn('common_contracts', self.routed_stages(
                     'common/contracts/test_support/installed_' + name + '_probe.py'))
+
+    def test_recorded_sfi_consumer_selects_its_source_and_installed_boundaries(self):
+        consumer = 'integrations.tests.test_single_reflection_recorded_birth_consumer'
+        for path in ('src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
+                     'src/msplatform/backends/simion/operations.py',
+                     'src/msplatform/backends/simion/compiler.py'):
+            with self.subTest(path=path):
+                request, _ = self.plan('-ChangedPath', path)
+                selected = [row for row in request['stages'] if row['selected']]
+                modules = {value for row in selected
+                           if row['name'].startswith('instrument_assembly_integration')
+                           for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])}
+                self.assertIn(consumer, modules)
+                common = {value.removesuffix('.py').replace('/', '.') for row in selected
+                          if row['name'].startswith('common_contracts')
+                          for value in row['command'].get('arguments', [])[2:]}
+                self.assertIn('common.contracts.test_installed_scientific_core', common)
 
     def test_recorded_birth_selects_the_actual_receivers(self):
         request, _ = self.plan('-ChangedPath', 'src/msplatform/ion_release/authoring.py')
@@ -1182,7 +1199,8 @@ exit 0
         expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                     for path in (REPO_ROOT / 'integrations/tests').glob('test_*.py')
                     if (path.stem.startswith('test_single_reflection_') and
-                        path.stem != 'test_single_reflection_checkpoint_diagnostics') or
+                        path.stem not in ('test_single_reflection_checkpoint_diagnostics',
+                                          'test_single_reflection_recorded_birth_consumer')) or
                     path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy')}
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                 for path in (REPO_ROOT / 'integrations/tests').rglob('test_*.py')}

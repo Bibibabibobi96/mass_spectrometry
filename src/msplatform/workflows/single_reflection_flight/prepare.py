@@ -370,15 +370,20 @@ def prepare(request_path: Path, run: Path) -> dict:
     if isinstance(epoch, bool) or not isinstance(epoch, (int, float)) or not math.isfinite(epoch):
         raise ValueError("canonical instrument epoch must be finite")
     variant = instances[oatof_id]["geometry"]["accelerator_variant"]
-    provider_binding_inputs = ({"provider_inputs": {
-        instance_id: {**selected["instance_design__" + instance_id],
-                      "path": str(paths["instance_design__" + instance_id]), "exists": True}
-        for instance_id in instances}} if request_version == 10 else {})
-    gems, geometry = compile_frontend_geometry(multipoles, oatof, composition_plan=plan,
-        numerical_domains=request["numerics"]["frontend_domains"],
-        accelerator_variant=variant,
-        electrode_bindings={key: value["electrode_bindings"] for key, value in instances.items()},
-        **provider_binding_inputs)
+    if request_version == 10:
+        from msplatform.backends.simion.compiler import compile_geometry
+        geometry_domains = {name: {key: value for key, value in domain.items() if key != 'refine_convergence_v'}
+                            for name, domain in request['numerics']['frontend_domains'].items()}
+        compiled = compile_geometry(
+            {'composition_plan': plan, 'components_resolved': {**multipoles, oatof_id: oatof}},
+            numerics={'frontend_domains': geometry_domains, 'geometry_build': oatof['simion_geometry_build'],
+                'detector_marker': oatof['simion_detector_marker'],
+                'electrode_group_native_ids': {key: value['electrode_bindings'] for key, value in instances.items()}})
+        gems, geometry = compiled.frontend_gems, compiled.frontend_geometry
+    else:
+        gems, geometry = compile_frontend_geometry(multipoles, oatof, composition_plan=plan,
+            numerical_domains=request["numerics"]["frontend_domains"], accelerator_variant=variant,
+            electrode_bindings={key: value["electrode_bindings"] for key, value in instances.items()})
     plan = geometry["composition_plan"]
     if (
         source["instance_id"] not in plan["scope"]["instance_ids"]

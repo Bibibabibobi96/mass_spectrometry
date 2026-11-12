@@ -723,3 +723,5 @@ composition readback verifies its small recorded plan and preserves its original
 generator SHA/location as provenance; it does not open a missing old generator or
 substitute the current one. New planning still requires the selected installed
 resource. Software/source and native qualification remain separate.
+
+The public tracking API can carry an explicit recorded-birth producer authority alongside a saved FieldBundle. The owner verifies and freezes that authority with the original source for recovery; this does not itself qualify a native field or flight.
