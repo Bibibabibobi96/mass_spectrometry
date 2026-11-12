@@ -274,8 +274,33 @@ refinement (slot 5); this four-slot selection leaves all four instances unchange
 source path. The source-free observations above do not execute or qualify this callback.
 The frontend parent uses its declared Neumann exterior while the tube is solved separately;
 the open OA-exit transition and detector vacuum margin still require a common-domain V/E
-reference. No extra conductor, aperture plate, artificial thickness or physical crop has
+reference. The common-domain COMSOL [geometry-only build and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261113_003938__build__comsol__geometry-only-6fa5e6a28135/summary.json)
+now report success for 77 canonical members, 50 groups, 81 geometry domains (including
+three vacuum domains) and six outer faces. The saved MPH is 4,782,576 bytes; its manifest
+SHA-256 is `0e340794fcaa1195aa3ccb32d527ac1b3c619bb0426de1ac5ae3007740de455c`.
+Both reports record zero physics, mesh, study and solver features. This is geometry
+and reopen evidence only; field, sampling, phase, convergence and trajectory comparisons
+remain open. No extra conductor, aperture plate, artificial thickness or physical crop has
 been introduced to close these numerical interfaces.
+
+The first controlled common-domain carrier diagnostic used that same geometry with a
+100 mm numerical exterior pad, an explicit 0 V box boundary, automatic mesh level 9
+and a 5 mm electrode-boundary maximum size. The [native solve](../../../artifacts/projects/instrument_assembly/runs/20261113_005459__sim__comsol__carrier-reference-6197242c0958/summary.json)
+saved a 1,233,776,609-byte solution and returned finite V/E at all 17 predeclared vacuum
+points. Its wrapper remained FAILED because the default CSV writer rounded coordinates.
+The [cold-export successor](../../../artifacts/projects/instrument_assembly/runs/20261113_011939__analysis__comsol__carrier-cold-export-0d1809f717b0/summary.json)
+then passed with round-trip binary64 precision, all 45 original IDs/statuses retained,
+and no Compute, remesh or source-model rewrite. The original failed receipt is unchanged;
+the recovered model identity is explicitly captured from its stopped producer.
+
+At x=y=0, the coarse carrier reference reports V=0.50578171143547335 V at
+z=600.03540659829446 mm and V=3.571239077807832 V at z=600.25 mm; the latter
+has Ez=-14284.956256288338 V/m. These are reference samples, not a comparison PASS.
+The box Dirichlet boundary differs from the partitioned parent's Neumann boundary.
+The solve's working-set observation exceeded its 8 GiB warning threshold; it completed
+without a physical-memory stop. This private frozen-source diagnostic does not establish
+an installed reference capability. Paired SFI sampling, RF/pulse states, actual Program
+execution, domain/grid/solver/trajectory convergence and coupled-field qualification remain OPEN.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

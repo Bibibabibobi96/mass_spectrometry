@@ -124,7 +124,14 @@ sel.geom('geom1', 2);
 sel.set(boundaryIds);
 ```
 
-- 几何特征可开启`selresult='on'`生成命名选择。
+- Geometry features expose named selections with `selresult='on'`. The COMSOL 6.4
+  [Block API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.062.html)
+  defaults to `selresultshow='dom'`; request `'bnd'` for boundary selections and verify
+  their propagation through subsequent Booleans. The [geometry-only cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261113_003938__build__comsol__geometry-only-6fa5e6a28135/summary.json)
+  verified six exterior faces in the actual model.
+- Native Java entity vectors can have unequal lengths. Normalize their orientation
+  before grouping; the verified adapter uses rows and retains all per-member,
+  disjointness and exhaustive-coverage checks.
 - 使用`Adjacent`从域选择得到相邻边界；复杂集合运算可在MATLAB中显式完成后写入`Explicit`。
 - 每次几何重建后检查选择非空、没有错误实体并覆盖所有预期实体。
 - 未验证前不要猜组件级`Union`/`Difference`选择的`input2`等属性。
@@ -379,6 +386,13 @@ d = mpheval(model, 'es.V', 'dataset', 'dset1', 'edim', 3);
 
 检查返回数组维度和单位，不假定单点或单表达式始终保持固定行列方向。
 
+Default `writetable` precision can prevent binary64 sample coordinates from round-tripping.
+Use explicit `%.17g` numerical output and test the readback without relaxing equality.
+The original 45-point export failed its wrapper after Compute for this reason; the
+[saved-model cold export](../../../artifacts/projects/instrument_assembly/runs/20261113_011939__analysis__comsol__carrier-cold-export-0d1809f717b0/summary.json)
+passed without another Compute. It preserves the source producer's FAILED status and
+does not establish full-field qualification or BVP equivalence.
+
 粒子坐标、速度和时间使用`mphparticle`，不用`mpheval(...,'edim',0)`冒充粒子数据；后者可能
 静默返回FEM顶点。不要给Particle数据集传`edim`。
 
@@ -468,6 +482,11 @@ COMSOL6.4官方[变量更新说明](https://doc.comsol.com/6.4/doc/com.comsol.he
 实际目录进入原 completion 的 runtime_storage 与原 RunDir 计量；持久身份、容量和删除仍属现有 owner。
 无 RunDir 的旧连接调用明确 owned=false。替身 argv/退出回归只证明软件接线，真实路径可用
 `ModelUtil.getRecoveryDir(modelTag)` 只读核对；尚未取得原生读回，不声称已验证供应商落盘行为。
+
+For an explicitly selected large MPH copy, the existing
+[`freeze_file`](../../src/msplatform/execution/inputs.py) accepts a `retention_classifier`
+returning its declared `solver_native_binary` role. This selects the existing native-file
+identity and verification path; capacity, protection and retention remain with the owner.
 
 111112真实冷读：getRecoveryDir在useRecovery=false时仍建立并返回本owner目录；load8.742805秒、
 getter0.058398秒。usage84.668秒、峰值RSS2,531,082,240 B、run载荷456,427 B，无warning；

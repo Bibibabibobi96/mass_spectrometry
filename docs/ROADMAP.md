@@ -147,12 +147,18 @@ saved IOB reopened after the execution alias was removed. Detector-domain vacuum
 parent and flight tube at observed overlaps, and the OA exit is an open, non-electrode transition.
 These geometry observations do not establish the V/E field coupling there. A source-bound
 same-geometry common-domain reference, representative RF/pulse states and separate domain,
-grid and trajectory studies remain open. See the [integration evidence](../integrations/docs/INTEGRATION.md)
-for the exact run and point records. Private source prototypes preserve
-all 77 selected members (32 RF solids, 40 OA/TOF solids and five ideal surfaces); they are not
-native proof. The last Changed attempt recorded 10 PASS, one FAIL and 14 blocked stages
+grid and trajectory studies remain open. The COMSOL common-domain geometry-only build
+and cold reopen succeeded for all 77 canonical members and 50 groups, with 81 geometry
+domains including three vacuum domains and six outer faces. The saved model has no mesh,
+physics, study or solver; this is not field, sampling, phase, convergence or trajectory
+qualification. See the [integration evidence](../integrations/docs/INTEGRATION.md) for the
+exact run and point records. A coarse common-domain carrier solution and its cold-only
+17-point V/E export now exist, retaining all 45 point identities; the original solve's
+coordinate-rounding wrapper failure remains FAILED. This is a private reference diagnostic,
+not paired-field, RF/pulse, convergence, installed-capability or trajectory acceptance.
+The earlier local Changed attempt recorded 10 PASS, one FAIL and 14 blocked stages
 (1524.752 command seconds); its normal-host installed successor does not turn it or the
-full Repository green. The Windows process-query denial still needs diagnosis.
+full Repository green. CI run `43258894135` subsequently completed Changed successfully after rerunning its two originally failed test IDs; Repository was skipped. The Windows process-query denial still needs diagnosis.
 Existing independent sources, historical state readers, neutral transforms and genuine recovery
 remain. Keep the existing segmented MP-to-IP production path until its verified continuous
 replacement can retire it in the same slice. A new public gas-property database is deferred
