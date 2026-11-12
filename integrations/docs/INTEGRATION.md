@@ -335,7 +335,14 @@ scope decision. Historical run records retain their original identities. Shared
 single-reflection and paired-flight owners remain separately supported.
 The private r3 withdrawal software run failed across 278 parent tests. A targeted
 successor passed 60 parents and 128 subtests (188 successes) in 190.688 seconds.
-These results do not constitute a full Repository gate or native qualification.
+These results do not constitute a full Repository gate or native qualification. The later combined
+withdrawal/SFI/OA ordinary wheel and sdist witness passed in 1,098.821 seconds with
+2,919 source records and checkout unchanged. Its installed saved-field SFI consumer
+exercised original-source/model checks and source/model corruption refusals through the
+actual public binding, with an inert field fixture and mocked managed owner. Three new
+Python files were subsequently normalized from CRLF to required LF with identical ASTs;
+the installation receipt retains its prior raw-byte identity. Exact final-version
+installation and native coupled-field/continuous-flight acceptance remain OPEN.
 
 ## OA／IP接口准备与绑定
 

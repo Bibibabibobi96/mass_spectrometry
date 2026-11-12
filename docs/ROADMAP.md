@@ -111,7 +111,7 @@ numerics and lower-cost installation feedback can proceed independently. The nam
 complete MP-to-OA, OA/IP-to-MR and FullJoint/prepared-joint tasks require continuous propagation
 from an explicit original source; cross-model survivor relaunch is not their replacement.
 Local frontend and cooled exclusive features are withdrawn, including their dedicated recipes,
-policies and tests. Their removal is OPEN and is a scope change, not implementation acceptance.
+policies and tests. Their dedicated local product is retired in `1ec0f843`; this is a scope change, not scientific implementation acceptance.
 Existing independent sources, historical state readers, neutral transforms and genuine recovery
 remain. Keep the existing segmented MP-to-IP production path until its verified continuous
 replacement can retire it in the same slice. A new public gas-property database is deferred
@@ -163,9 +163,18 @@ The retained reader, original recorded-birth source and opt-in generic static-fi
 passed a frozen combined focused witness: 140 parents and 283 subtests, all successful,
 in 302.033 seconds. Their complete direct-wheel and sdist-rebuilt-wheel software witness
 passed in 1,006.453 seconds with 2,913 source paths and checkout bytes unchanged.
-These are uncommitted candidate results, not final V8.7 acceptance. The separate stage
-composition remains private. Full SFI policy/recovery replacement, downstream relocated
-execution and an authenticated non-OA static-field comparison remain OPEN.
+The reader, static comparison and recorded-source implementations were subsequently saved in
+`9db67d02`, `17411690` and `ea4138b8`; these earlier source epochs are not final V8.7 acceptance.
+The separate stage composition remains private. Full SFI policy/recovery replacement,
+downstream relocated execution and an authenticated non-OA static-field comparison remain OPEN.
+The V8.7 withdrawal, original-source SFI consumer (`673f6bb6`) and OA physical-policy slice
+(`a3c7b804`) passed a frozen combined ordinary wheel/sdist witness in 1,098.821 seconds,
+with 2,919 source records and checkout unchanged. Integrated software checks passed
+134 parents/545 subtests and then 125 parents/392 subtests for their declared scopes;
+the exact MR selector failures were exercised and saved separately in `0aa58a37`.
+After the installation snapshot, three new Python files were normalized from CRLF to required LF
+with identical ASTs. That raw-byte change is recorded separately; final exact-version installation,
+full Repository, the native continuous combinations and performance budgets remain OPEN.
 The new segmented MP producer-verification extraction was withheld under V8.7;
 the existing MP-to-IP production path remains until its continuous replacement is verified.
 At committed `569a017f`, GitHub run `43152720040` completed with Changed successful
