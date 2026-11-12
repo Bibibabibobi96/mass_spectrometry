@@ -470,6 +470,13 @@ consumers. In particular, `component_focus_pa_plan.derive` currently disallows t
 this static constraint is not a reproduced native error and is not deferred to P5.
 
 
+### OA to MR runtime receipt ownership
+
+The component-focus workflow invokes `msplatform.workflows.oa_focus_mr_runtime_receipt`
+for its existing manifest-bound, read-only PA metadata projection. Its active owner,
+output path, gate and historical receipts retain their original meaning. This move
+alone grants no native Fly or system qualification.
+
 ### Recorded-analysis workflow boundary correction
 
 The sole recorded analyzer is `msplatform.workflows.oa_focus_analysis`, beside its

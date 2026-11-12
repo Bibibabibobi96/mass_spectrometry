@@ -3240,6 +3240,87 @@ assert focus_module.read_bytes()==focus_bytes
 missing_rejected.append('oa_focus_analysis')
 print('INSTALLED_OA_FOCUS_ANALYSIS=PASS')
 
+# Real installed OA receipt consumer, using synthetic metadata-valid payloads.
+from msplatform.workflows import oa_focus_mr_runtime_receipt as oa_mr_receipt
+receipt_fixture=fixture['oa_mr_runtime_receipt']
+receipt_module=pathlib.Path(oa_mr_receipt.__file__).resolve()
+assert receipt_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert all(not receipt_module.is_relative_to(source) for source in blocked_source_roots)
+receipt_output=pathlib.Path(receipt_fixture['output'])
+receipt_args=['--workflow-receipt',receipt_fixture['workflow_receipt_path'],
+    '--pa-result',receipt_fixture['pa_result_path'],'--pa-manifest',receipt_fixture['pa_manifest_path'],
+    '--campaign',receipt_fixture['campaign_path'],'--plan',receipt_fixture['plan_path'],
+    '--output',str(receipt_output)]
+receipt_command=[sys.executable,'-I','-B','-X','utf8','-m',oa_mr_receipt.__name__,*receipt_args]
+receipt_fixture_root=receipt_output.parent.parent.parent
+
+def receipt_inventory():
+    return {str(path.relative_to(receipt_fixture_root)): (path.stat().st_size,
+        hashlib.sha256(path.read_bytes()).hexdigest())
+        for path in receipt_fixture_root.rglob('*') if path.is_file() and path != receipt_output}
+
+receipt_before=receipt_inventory()
+assert not receipt_output.exists()
+receipt_cli=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert receipt_cli.returncode==0 and 'ORTHOGONAL_ACCELERATOR_MRTOF_RUNTIME_RECEIPT=PASS' in receipt_cli.stdout,receipt_cli.stdout+receipt_cli.stderr
+receipt_bytes=receipt_output.read_bytes()
+assert json.loads(receipt_bytes)==receipt_fixture['expected']
+receipt_repeat=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert receipt_repeat.returncode!=0 and 'already exists' in receipt_repeat.stdout+receipt_repeat.stderr
+assert receipt_output.read_bytes()==receipt_bytes
+receipt_output.unlink()
+for receipt_label,receipt_path,receipt_reason in (
+    ('pa-result',pathlib.Path(receipt_fixture['pa_result_path']),'provider PA result'),
+    ('flight-manifest',receipt_fixture_root/'flight/run_manifest.json','selected provider flight manifest'),
+    ('flight-analysis',receipt_fixture_root/'flight/results/focus_analysis.json','selected provider flight analysis')):
+    receipt_original=receipt_path.read_bytes()
+    try:
+        receipt_path.write_bytes(receipt_original+b' ')
+        receipt_failed=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert receipt_failed.returncode!=0 and receipt_reason in receipt_failed.stdout+receipt_failed.stderr,(receipt_label,receipt_failed.stdout,receipt_failed.stderr)
+        assert not receipt_output.exists()
+    finally:
+        receipt_path.write_bytes(receipt_original)
+receipt_held=receipt_module.with_name(receipt_module.name+'.missing')
+receipt_module_bytes=receipt_module.read_bytes()
+assert not receipt_held.exists()
+receipt_module.rename(receipt_held)
+try:
+    receipt_missing=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert receipt_missing.returncode!=0 and ('No module named' in receipt_missing.stderr or 'ModuleNotFoundError' in receipt_missing.stderr),receipt_missing.stderr
+finally:
+    receipt_held.rename(receipt_module)
+assert receipt_module.read_bytes()==receipt_module_bytes
+receipt_guard=r"""
+import importlib, json, os, pathlib, runpy, sys, sysconfig
+blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
+payloads={os.path.normcase(str(pathlib.Path(p).resolve())) for p in json.loads(sys.argv[2])}
+def reject(event,values):
+    if event=='open' and values and isinstance(values[0],(str,bytes,os.PathLike)):
+        path=pathlib.Path(os.fsdecode(values[0])).resolve()
+        if any(path.is_relative_to(source) for source in blocked): raise RuntimeError('author source read forbidden')
+        if os.path.normcase(str(path)) in payloads: raise RuntimeError('PA payload read forbidden')
+sys.addaudithook(reject)
+module=importlib.import_module('msplatform.workflows.oa_focus_mr_runtime_receipt')
+assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+sys.modules.pop(module.__name__)
+sys.argv=[module.__name__,*sys.argv[3:]]
+runpy.run_module(module.__name__,run_name='__main__')
+"""
+receipt_pas=[str(path.resolve()) for directory in (pathlib.Path(receipt_fixture['generation']),receipt_fixture_root/'runtime')
+    for path in directory.rglob('*') if path.is_file() and '.pa' in path.name.lower()]
+assert receipt_pas
+receipt_guarded=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',receipt_guard,
+    json.dumps([str(path) for path in blocked_source_roots]),json.dumps(receipt_pas),*receipt_args],
+    cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert receipt_guarded.returncode==0 and 'ORTHOGONAL_ACCELERATOR_MRTOF_RUNTIME_RECEIPT=PASS' in receipt_guarded.stdout,receipt_guarded.stdout+receipt_guarded.stderr
+assert receipt_output.read_bytes()==receipt_bytes
+receipt_output.unlink()
+assert receipt_inventory()==receipt_before
+missing_rejected.append('oa_focus_mr_runtime_receipt')
+print('INSTALLED_OA_MR_RUNTIME_RECEIPT=PASS')
+
+
 for label, missing_path, action in (
     ('comsol_launcher', comsol_resource_path('run_comsol_r2025b.ps1'), lambda:comsol_resource_path('run_comsol_r2025b.ps1')),
     ('ei_builder', comsol_resource_path('ms_stage1_ei_source.m'), lambda:comsol_resource_path('ms_stage1_ei_source.m')),
@@ -6309,6 +6390,73 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             cases.append(dict(case="frame_" + kind, source=resolved, error="MR accelerator_exit"))
         return cases
 
+    def oa_mr_runtime_receipt_probe_fixture(self, work):
+        from unittest import mock
+        from projects.orthogonal_accelerator.tests.analysis import test_component_focus_workflow as fixtures
+        from msplatform.backends.simion import pa_family_cache as cache
+        work.mkdir(parents=True, exist_ok=False)
+        base = work / 'fixture'
+        base.mkdir()
+        case = fixtures.ComponentFocusWorkflowTests('test_mr_runtime_receipt_projects_only_small_provider_identity_records')
+        case.setUp()
+        original = fixtures.project
+        captured = {}
+
+        def capture(**kwargs):
+            result = original(**kwargs)
+            captured.update({key: str(value) for key, value in kwargs.items()})
+            return result
+
+        class Keep:
+            def __enter__(self):
+                return str(base)
+            def __exit__(self, *unused):
+                return False
+
+        try:
+            with mock.patch.object(fixtures.tempfile, 'TemporaryDirectory', return_value=Keep()), mock.patch.object(fixtures, 'project', side_effect=capture):
+                case.test_mr_runtime_receipt_projects_only_small_provider_identity_records()
+            owner = base / 'owner'
+            owner.mkdir()
+            captured['output'] = str(case._write_active_owner(owner))
+        finally:
+            case.doCleanups()
+        generation = base / 'generation'
+        (generation / 'export_standalone_pa.lua').unlink()
+        old = json.loads((generation / 'cache_manifest.json').read_text(encoding='utf-8'))
+        records = sorted(old['files'], key=lambda entry: entry['name'])
+        identity = {name: 'synthetic-software-fixture' for name in cache.CACHE_KEY_FIELDS}
+        key = cache.canonical_pa_family_cache_key(identity)
+        manifest = cache._manifest(key, identity, records)
+        (generation / 'cache_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+        generation = generation.rename(base / manifest['generation_sha256'])
+        checkpoint = base / 'accelerator_runtime_checkpoint.json'
+        doc = json.loads(checkpoint.read_text(encoding='utf-8'))
+        doc.update(cache_key=key, generation_sha256=manifest['generation_sha256'])
+        checkpoint.write_text(json.dumps(doc), encoding='utf-8')
+        result = Path(captured['pa_result_path'])
+        doc = json.loads(result.read_text(encoding='utf-8'))
+        doc.update(cache_key=key, generation_sha256=manifest['generation_sha256'], generation_directory=str(generation))
+        result.write_text(json.dumps(doc), encoding='utf-8')
+        pa_manifest = Path(captured['pa_manifest_path'])
+        doc = json.loads(pa_manifest.read_text(encoding='utf-8'))
+        doc['outputs'] = [{'path': str(result.resolve()), 'bytes': result.stat().st_size,
+                          'sha256': hashlib.sha256(result.read_bytes()).hexdigest().upper()}]
+        pa_manifest.write_text(json.dumps(doc), encoding='utf-8')
+        cache.validate_pa_family_cache_generation(generation, expected_cache_key=key, verify_payload=False)
+        admitted = fixtures.project(**{key: Path(captured[key]) for key in ('workflow_receipt_path', 'pa_result_path', 'pa_manifest_path', 'campaign_path', 'plan_path')})
+        assert admitted['status'] == 'published_standalone_response_bank'
+        captured['expected'] = admitted
+        captured['generation'] = str(generation)
+        (work / 'fixture.json').write_text(json.dumps(captured, indent=2), encoding='utf-8')
+        return captured
+
+
+    def test_oa_mr_runtime_receipt_fixture_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.oa_mr_runtime_receipt_probe_fixture(Path(directory) / 'fixture-admission')
+            self.assertEqual(result['expected']['status'], 'published_standalone_response_bank')
+
     def oa_focus_analysis_probe_fixture(self) -> dict:
         from projects.orthogonal_accelerator.tests.analysis import test_component_focus_analysis as fixtures
         from msplatform.workflows.oa_focus_analysis import analyze
@@ -6727,6 +6875,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
+                                              oa_mr_runtime_receipt=self.oa_mr_runtime_receipt_probe_fixture(root / 'oa-mr-receipt'),
                                               mr_interface=self.mr_interface_probe_fixture(),
                                               mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),
                                               tof_budget=self.tof_budget_probe_fixture(),

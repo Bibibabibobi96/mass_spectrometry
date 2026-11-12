@@ -9,7 +9,7 @@ from unittest.mock import patch
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.standalone_pa_response_set import ResponseExport, write_standalone_pa_response_set
 from projects.orthogonal_accelerator.analysis.component_focus_pa_cache import identity
-from projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt import (
+from msplatform.workflows.oa_focus_mr_runtime_receipt import (
     MrRuntimeReceiptError, project, write_receipt,
 )
 from projects.orthogonal_accelerator.analysis.component_focus_workflow import (
@@ -282,8 +282,20 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
                     raise AssertionError("runtime receipt must not hash or read controller PA payload")
                 return original_read_bytes(path)
 
-            with patch("projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt.validate_pa_family_cache_generation", return_value=cache), patch.object(Path, "read_bytes", forbid_pa_payload_read):
+            with patch("msplatform.workflows.oa_focus_mr_runtime_receipt.validate_pa_family_cache_generation", return_value=cache), patch.object(Path, "read_bytes", forbid_pa_payload_read):
                 receipt = project(workflow_receipt_path=workflow, pa_result_path=result, pa_manifest_path=manifest, campaign_path=campaign, plan_path=plan)
+                for target, message in ((result, "provider PA result is not the verified child-manifest output"),
+                                        (flight_manifest, "selected provider flight manifest is invalid"),
+                                        (analysis, "selected provider flight analysis differs")):
+                    with self.subTest(tampered=target.name):
+                        original = target.read_bytes()
+                        target.write_bytes(original + b" ")
+                        try:
+                            with self.assertRaisesRegex(MrRuntimeReceiptError, message):
+                                project(workflow_receipt_path=workflow, pa_result_path=result, pa_manifest_path=manifest,
+                                        campaign_path=campaign, plan_path=plan)
+                        finally:
+                            target.write_bytes(original)
         self.assertEqual(receipt["status"], "published_standalone_response_bank")
         self.assertEqual(receipt["mrtof_projection"]["endpoint_voltages_v"], [
             float(value) for value in self.campaign["operating_point"]["electrode_voltages_v"][1:4]
@@ -302,7 +314,7 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
             root = Path(directory)
             workflow = root / "workflow.json"
             workflow.write_text(json.dumps({"role": "orthogonal_accelerator_component_focus_workflow_receipt", "status": "candidate_incomplete"}), encoding="utf-8")
-            with patch("projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt._verify_pa_child_source"):
+            with patch("msplatform.workflows.oa_focus_mr_runtime_receipt._verify_pa_child_source"):
                 with self.assertRaisesRegex(ValueError, "complete N=100 time focus"):
                     project(workflow_receipt_path=workflow, pa_result_path=workflow, pa_manifest_path=workflow,
                             campaign_path=workflow, plan_path=workflow)

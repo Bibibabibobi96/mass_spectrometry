@@ -846,7 +846,8 @@ exit 0
         self.assertTrue(downstream <= self.routed_stages(
             prefix + "analysis/component_focus_analysis.py").keys())
         for installed in ("src/msplatform/workflows/oa_focus_analysis.py",
-                          "src/msplatform/workflows/oa_focus_fast_adjust.py"):
+                          "src/msplatform/workflows/oa_focus_fast_adjust.py",
+                          "src/msplatform/workflows/oa_focus_mr_runtime_receipt.py"):
             with self.subTest(installed=installed):
                 stages = self.routed_stages(installed)
                 self.assertTrue(downstream <= stages.keys())

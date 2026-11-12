@@ -25,6 +25,7 @@
 `oa_two_three_geometric_v1`示例经`assembly.assemble`生成真实两变体装配，并可由`exporters`投影STEP。
 项目侧`analysis/assembly_interface.py`只负责读取具名项目profile并调用规范实现，不复制端口或电极算法。
 这些是纯几何／CAD能力，不启动原生求解，也不授予独立器件场、轨迹、GUI或Formal资格。
+其 OA→MR 运行时凭据投影位于 `msplatform.workflows.oa_focus_mr_runtime_receipt`。
 组件工作流的软件接线回归执行实际源投影与冻结分析参数，验证小manifest身份绑定，
 并在禁止读取受保护载荷的条件下检查摘要；软件通过不代表原生飞行或科学资格。
 
