@@ -15,7 +15,7 @@ from typing import Any
 
 from msplatform.execution.retention import classify_file
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file
-from common.simion.workbench_seed import freeze_workbench_seed
+from msplatform.backends.simion.workbench_seed import freeze_workbench_seed
 from msplatform.workflows.ion_processor import preparation
 from msplatform.workflows.ion_processor import field_reference
 from msplatform.backends.simion.ip_handoff import (
@@ -124,7 +124,8 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         git_context[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
     git_context["worktree_dirty"] = bool(git_context["worktree_porcelain"])
     write_json(inputs / "source_context.json", git_context)
-    seed = freeze_workbench_seed(run, repo)
+    seed = freeze_workbench_seed(run, seed_path=repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+        placeholder_path=repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0")
     config["workbench_seed_path"] = seed["seed"]["frozen"]["path"]
     config["workbench_seed_records"] = seed
     config["native_field"]={"directory":str(solver),"source_manifest":None}

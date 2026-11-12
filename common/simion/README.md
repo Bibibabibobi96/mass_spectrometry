@@ -682,11 +682,13 @@ Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemo
 
 ## 共用工作台种子与独立场成员
 
-`workbench_seed.freeze_workbench_seed(run, repo)`只冻结官方一实例seed与必需placeholder的小配套对；
-同run再次消费核对已有副本，不能复制或替代科学PA family。local／cooled的实际context及IP准备共同调用，
-原local私有seed复制实现已删除。源资源的用途见[官方种子](assets/iob_instance_seeds/README.md)。
-独立Laplace身份继续由integration的`single_reflection_flight.field_plan.laplace_member_identity`提供；
-单反射domain与cooled七成员共用该投影，缓存事务仍归本目录，物理operator／边界条件由原owner校验。
+The installed `msplatform.backends.simion.workbench_seed.freeze_workbench_seed` freezes the selected
+one-instance IOB and explicitly supplied placeholder. The default IOB comes from the installed
+structural seed owner; callers may explicitly select a frozen IOB. Reuse verifies the existing
+pair. This does not replace a scientific PA family; the caller retains placeholder authority.
+Independent Laplace member identity belongs to `msplatform.backends.simion.field_identity`.
+Field-planning consumers retain their actual operator and boundary-condition checks;
+PA-family transactions use the installed SIMION cache owner.
 
 ## 科学事件 CSV
 
@@ -705,7 +707,7 @@ MR和IP正常生产者携带冻结写入器，实际分析调用同一读取器�
 传预期身份时bytes与SHA必须成对，单项或不匹配拒绝。IP正式dispatch消费这份活guard记录，
 模板生成与收尾不重复读取相同受护PA；guard中断必须重新验证。
 外部发布资产仍用原manifest预期身份，未知writer不得进入新身份建立边界，身份不代表科学适用性。
-IP的prepare也调用现`workbench_seed.freeze_workbench_seed`冻结官方seed和placeholder配套，
+IP的prepare也调用已安装的SIMION工作台种子owner冻结已选seed和显式placeholder配套，
 不另复制科学场；其冻结Python闭包同时保留实际Lua资源和已选作者配置。
 
 ### Program-owned trajectory quality

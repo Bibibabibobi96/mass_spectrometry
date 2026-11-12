@@ -740,8 +740,10 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         code = """from pathlib import Path
 import sys
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+from msplatform.backends.simion import workbench_seed
 closure,run,vendor=map(Path,sys.argv[1:4])
 Path(functional.__file__).resolve().relative_to(closure.resolve())
+assert Path(workbench_seed.__file__).resolve() == (closure/'src/msplatform/backends/simion/workbench_seed.py').resolve()
 project=closure/'projects/dual_pressure_rectilinear_ion_processor'
 functional.prepare(run,project,vendor)
 assert (run/'simion/native_run_path.lua').is_file()
@@ -769,6 +771,22 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
             env={**os.environ,'PYTHONPATH':os.pathsep.join(python_import_roots(closure)),'PYTHONNOUSERSITE':'1'},capture_output=True,text=True,encoding='utf-8',timeout=45)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('FROZEN_ACTUAL_PREPARE=PASS',result.stdout)
+        frozen_seed_owner = closure/'src/msplatform/backends/simion/workbench_seed.py'
+        live_seed_owner = PROJECT.parents[1]/'src/msplatform/backends/simion/workbench_seed.py'
+        self.assertTrue(live_seed_owner.is_file())
+        self.assertEqual(frozen_seed_owner.read_bytes(), live_seed_owner.read_bytes())
+        original_seed_owner = frozen_seed_owner.read_bytes()
+        try:
+            frozen_seed_owner.unlink()
+            blocked=subprocess.run([sys.executable,'-B','-s','-c',code,str(closure),str(detached),str(vendor)],cwd=detached,
+                env={**os.environ,'PYTHONPATH':os.pathsep.join([*python_import_roots(closure),str(PROJECT.parents[1]/'src')]),'PYTHONNOUSERSITE':'1'},
+                capture_output=True,text=True,encoding='utf-8',timeout=45)
+            self.assertNotEqual(blocked.returncode,0,blocked.stdout+blocked.stderr)
+            self.assertIn('workbench_seed',blocked.stderr)
+            self.assertIn('ModuleNotFoundError',blocked.stderr)
+            self.assertTrue(live_seed_owner.is_file())
+        finally:
+            frozen_seed_owner.write_bytes(original_seed_owner)
         self.assertEqual((self.run/'simion/processor.gem').read_bytes(),(detached/'simion/processor.gem').read_bytes())
         self.assertEqual((self.run/'inputs/release.csv').read_bytes(),(detached/'inputs/release.csv').read_bytes())
 

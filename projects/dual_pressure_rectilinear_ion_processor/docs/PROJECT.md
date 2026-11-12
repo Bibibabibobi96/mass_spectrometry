@@ -1,7 +1,7 @@
 # 双压力区矩形射频离子处理器项目状态
 
-Functional and GUI-replay preparation now select the byte-identified structural IOB from the
-installed SIMION resource owner; the original common PA placeholder remains unchanged. Frozen
+Functional and GUI-replay preparation call the installed SIMION seed-freezing owner with their
+explicitly selected IOB and common PA placeholder; the placeholder remains unchanged. Frozen
 preparation and functional software tests cover the moved source. This does not add IP native
 flight, collision or scientific qualification.
 

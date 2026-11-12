@@ -11,7 +11,7 @@ import shutil
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
-from common.simion.workbench_seed import freeze_workbench_seed
+from msplatform.backends.simion.workbench_seed import freeze_workbench_seed
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
@@ -151,7 +151,8 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
         ])
         with (solver / "processor.lua").open("a", encoding="utf-8") as stream:
             stream.write(orchestrator)
-    seed_binding = freeze_workbench_seed(run, project.parents[1])
+    seed_binding = freeze_workbench_seed(run, seed_path=project.parents[1] / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+        placeholder_path=project.parents[1] / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0")
     seed = Path(seed_binding["seed"]["frozen"]["path"])
     placeholder = Path(seed_binding["placeholder"]["frozen"]["path"])
     config = _read(inputs / "resolved_model.json")

@@ -593,6 +593,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+          "reason": "workbench_seed_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/components/rf_multipole/event_table.py",
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
@@ -826,6 +830,18 @@
           "common/contracts/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+                "reason": "workbench_seed_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -1585,6 +1601,18 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/resources.py",
+          "reason": "workbench_seed_resource_resolver_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/workbench_seed.py",
+          "reason": "workbench_seed_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+          "reason": "workbench_seed_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -1658,6 +1686,22 @@
           "common/simion/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/workbench_seed.py",
+                "reason": "workbench_seed_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+                "reason": "workbench_seed_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/simion/test_workbench_seed.py"
+            ],
+            "dependency_profile": "stdlib"
+          },
           {
             "matches": [
               {
@@ -4558,6 +4602,22 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
+        {
+          "exact": "src/msplatform/backends/simion/resources.py",
+          "reason": "workbench_seed_resource_resolver_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/workbench_seed.py",
+          "reason": "workbench_seed_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
+          "reason": "workbench_seed_consumer_changed"
+        },
+        {
+          "exact": "common/simion/workbench_seed.py",
+          "reason": "workbench_seed_consumer_changed"
+        },
         {
           "exact": "src/msplatform/analysis/particle_styles.py",
           "reason": "migrated_actual_consumer_changed"

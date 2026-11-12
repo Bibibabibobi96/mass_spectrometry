@@ -97,7 +97,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.publish_manifest()
         # Real public pair freezing, but its source PA is explicit inert test
         # data. No checkout-local 16 MB seed or scientific PA is required.
-        from common.simion.workbench_seed import freeze_workbench_seed as freeze_pair
+        from msplatform.backends.simion.workbench_seed import freeze_workbench_seed as freeze_pair
         from msplatform.backends.simion.resources import structural_seed_path
         from projects.dual_pressure_rectilinear_ion_processor.analysis import gui_replay
         self.seed_repository = root / "explicit_seed_source"
@@ -107,8 +107,12 @@ class GuiReplayPlanTests(unittest.TestCase):
         public_placeholder = self.seed_repository / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"
         public_placeholder.parent.mkdir(parents=True)
         public_placeholder.write_bytes(b"INERT_STRUCTURE_ONLY_NOT_A_SCIENTIFIC_PA")
-        selected_seed = patch.object(gui_replay, "freeze_workbench_seed",
-            side_effect=lambda run, repo: freeze_pair(run, self.seed_repository))
+        def selected_pair(run, *, seed_path, placeholder_path):
+            actual_repo = Path(gui_replay.__file__).resolve().parents[3]
+            self.assertEqual(seed_path, actual_repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob")
+            self.assertEqual(placeholder_path, actual_repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0")
+            return freeze_pair(run, seed_path=public_seed, placeholder_path=public_placeholder)
+        selected_seed = patch.object(gui_replay, "freeze_workbench_seed", side_effect=selected_pair)
         selected_seed.start()
         self.addCleanup(selected_seed.stop)
 

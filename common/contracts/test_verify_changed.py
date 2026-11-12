@@ -32,6 +32,21 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_workbench_seed_paths_select_real_consumers(self):
+        for path in ('src/msplatform/backends/simion/workbench_seed.py', 'src/msplatform/backends/simion/resources/1_instance_seed.iob', 'common/simion/workbench_seed.py'):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                rows = [row for row in request["stages"] if row["selected"]]
+                self.assertTrue(any(row["name"] == "dual_pressure_rectilinear_ion_processor_static" or row["name"].startswith("dual_pressure_rectilinear_ion_processor_static__tests_") for row in rows))
+                simion = [row for row in rows if row["name"] == "simion_common" or row["name"].startswith("simion_common__tests_")]
+                self.assertTrue(simion)
+                modules = {v.removesuffix(".py").replace("/", ".") for row in simion for v in row["command"]["arguments"][2:]}
+                self.assertIn("common.simion.test_workbench_seed", modules)
+                if path != 'common/simion/workbench_seed.py':
+                    common = [row for row in rows if row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_")]
+                    self.assertTrue(common)
+                    self.assertIn("common.contracts.test_installed_scientific_core", {v.removesuffix(".py").replace("/", ".") for row in common for v in row["command"]["arguments"][2:]})
+
     def test_installed_tof_design_preserves_full_owner_and_host_entry_consumers(self):
         prefix = "src/msplatform/workflows/oa_tof_design/"
         owner = "single_reflection_oa_tof_mass_analyzer_static"

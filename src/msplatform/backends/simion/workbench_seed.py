@@ -7,16 +7,18 @@ from msplatform.execution.retention import classify_file
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
+from msplatform.backends.simion.resources import structural_seed_path
 
 
-def freeze_workbench_seed(run: Path, repo: Path) -> dict:
+def freeze_workbench_seed(run: Path, *, placeholder_path: Path, seed_path: Path | None = None) -> dict:
     """Prepare the same small pair once; never copy a scientific PA family."""
-    source_root = Path(repo)/"common/simion/assets/iob_instance_seeds"
+    seed_source = structural_seed_path(1) if seed_path is None else Path(seed_path)
+    placeholder_source = Path(placeholder_path)
     destination = Path(run)/"simion/iob_seed"
     destination.mkdir(parents=True, exist_ok=True)
     identities = {}
     for name, key in (("1_instance_seed.iob", "seed"), ("iob_seed_placeholder_01.pa0", "placeholder")):
-        source = (Path(repo)/"src/msplatform/backends/simion/resources"/name if key == "seed" else source_root/name)
+        source = seed_source if key == "seed" else placeholder_source
         frozen = destination/name
         if frozen.exists():
             original = file_record(source)

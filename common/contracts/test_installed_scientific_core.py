@@ -113,6 +113,10 @@ import runpy
 strict_json_probe = runpy.run_path(str(root / 'installed_strict_json_probe.py'))
 strict_json_probe['run_strict_json'](fixture, root, blocked_source_roots, sys.argv[2], section_timing)
 # STRICT_JSON_INSTALLED_END
+# INSTALLED_WORKBENCH_SEED_BEGIN
+workbench_seed_probe = runpy.run_path(str(root / 'installed_workbench_seed_probe.py'))
+workbench_seed_probe['run'](fixture, root, blocked_source_roots, sys.argv[2], section_timing)
+# INSTALLED_WORKBENCH_SEED_END
 # MR_MEASURED_SOURCE_INSTALLED_BEGIN
 with section_timing('mr_measured_source', sys.argv[2]):
     from msplatform.workflows.prepared_joint import source as mr_source_owner
@@ -6720,6 +6724,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             probe_bytes = probe_source.read_bytes()
             shutil.copyfile(probe_source, root / 'installed_strict_json_probe.py')
             self.assertEqual((root / 'installed_strict_json_probe.py').read_bytes(), probe_bytes)
+            seed_probe_source = source / 'common/contracts/test_support/installed_workbench_seed_probe.py'
+            seed_probe_bytes = seed_probe_source.read_bytes()
+            shutil.copyfile(seed_probe_source, root / 'installed_workbench_seed_probe.py')
+            self.assertEqual((root / 'installed_workbench_seed_probe.py').read_bytes(), seed_probe_bytes)
             # Remove both private author trees from their original locations;
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
@@ -6753,6 +6761,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                 'requirements-cad-step-lock.txt', 'README.md') if (actual_source / name).is_file()]
                 source_files.extend(actual_source / name for name in (
                     'common/contracts/test_support/installed_strict_json_probe.py',
+                    'common/contracts/test_support/installed_workbench_seed_probe.py',
                     'common/contracts/test_installed_scientific_core.py'))
                 source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
                 source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,
