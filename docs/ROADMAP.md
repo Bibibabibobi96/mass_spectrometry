@@ -102,12 +102,20 @@ P4 retains the remaining approved designs and named COMSOL capabilities. P5 test
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
 
-V8.6 is the active P4 scope. Its single goal continues the existing task branch and preserves
+V8.7 is the active P4 scope. Its single goal continues the existing task branch and preserves
 all retained scientific, installation, recovery and performance obligations. Eight domain
 baselines share the existing stages and execution owner; they are not eight new runners.
-The first priority is a usable public-stage replacement for SFI, alongside generic static-field
-comparison, verified cross-model transfer and lower-cost installation feedback. Existing
-MP-to-IP verification and same-model relaunch checks remain distinct and must be reused.
+First establish each physical geometry family's canonical authority, then deliver a usable
+complete-component continuous SFI replacement. Generic static-field comparison, MR fixed-design
+numerics and lower-cost installation feedback can proceed independently. The named MP-to-IP,
+complete MP-to-OA, OA/IP-to-MR and FullJoint/prepared-joint tasks require continuous propagation
+from an explicit original source; cross-model survivor relaunch is not their replacement.
+Local frontend and cooled exclusive features are withdrawn, including their dedicated recipes,
+policies and tests. Their removal is OPEN and is a scope change, not implementation acceptance.
+Existing independent sources, historical state readers, neutral transforms and genuine recovery
+remain. Keep the existing segmented MP-to-IP production path until its verified continuous
+replacement can retire it in the same slice. A new public gas-property database is deferred
+beyond P4; existing IP/HS1 and dual-cone/SDS migration and correctness remain P4 obligations.
 Formal reusable implementations and necessary scientific strategies belong to
 `src/msplatform`; research inputs, history, tests and development tools remain outside that
 production tree. Existing completed slices are retained. Independent RF raw geometry/model,
@@ -126,7 +134,7 @@ plus one loader error; 7,996 subtests (7,894 success, 59 failure, 43 error). Its
 elapsed time was 3,243.832287 seconds, not a separately retained external command wall.
 Overlapping private validation makes this a correctness diagnosis rather than a controlled
 performance baseline. Successor repairs and focused checks do not turn that failed run green.
-Manifest/retention ownership, local frontend preparation/runtime, the initial-state CSV reader,
+Manifest/retention ownership, the formerly selected local frontend preparation/runtime, the initial-state CSV reader,
 SFI field planning/downstream/runtime and the explicit OA closed-focus plan have now been committed
 with scoped software validation. Their retired root bodies are absent. Runtime composition exposed
 an empty-package freeze declaration and a stale DAG node; those were corrected without relaxing
@@ -151,10 +159,18 @@ MR measured-source import failure was exercised successfully in both arms. Befor
 committing the census, two redundant EOF blank lines were removed; its 19 focused
 tests and 20 subtests passed afterward. These installation and consumer checks do
 not close Repository, native acceptance or the original 15-minute software budget.
-The proposed shared stage composition and generic field comparison remain isolated
-development candidates: 50 parents and 17 subtests passed, including relocated-reader
-and tamper cases. Full SFI policy/recovery replacement, downstream relocated execution
-and an authenticated non-OA static-field comparison remain OPEN.
+The retained reader, original recorded-birth source and opt-in generic static-field consumers
+passed a frozen combined focused witness: 140 parents and 283 subtests, all successful,
+in 302.033 seconds. Their complete direct-wheel and sdist-rebuilt-wheel software witness
+passed in 1,006.453 seconds with 2,913 source paths and checkout bytes unchanged.
+These are uncommitted candidate results, not final V8.7 acceptance. The separate stage
+composition remains private. Full SFI policy/recovery replacement, downstream relocated
+execution and an authenticated non-OA static-field comparison remain OPEN.
+The new segmented MP producer-verification extraction was withheld under V8.7;
+the existing MP-to-IP production path remains until its continuous replacement is verified.
+At committed `569a017f`, GitHub run `43152720040` completed with Changed successful
+and Repository skipped. This was independently checked from run/jobs metadata, not a
+downloaded test artifact; it does not close the historical Repository failures.
 The original combined installed-core test passed on the composed pulse/preparation
 source in 266.575 seconds: all 454 runtime package payloads match the frozen
 source, actual build source, direct wheel, sdist and rebuilt
@@ -165,7 +181,8 @@ OA analysis, neutral gas sampling/compilation, retained IP/HS1 and dual-cone/SDS
 bindings have canonical owners. V8.5 withdraws the entire cooled feature, including
 its dedicated design, geometry, Program, preparation, tests and native obligations.
 This is a user scope change, not scientific failure or same-function optimization;
-original commits and run data remain interpretable. Retained local/checkpoint analysis,
+original commits and run data remain interpretable. V8.7 also withdraws local frontend exclusive
+features; its historical delivered slices are not current product obligations. Retained historical state analysis,
 MR/IP neutral/backend boundaries, TOF roots/acceptance, RF finite-length kernels,
 remaining actual workflows, ordinary installation and final Repository/native/performance
 closure remain P4 work. No unfinished retained obligation moves to P5.
@@ -185,20 +202,20 @@ integrator. Detailed domain evidence remains in the linked project and integrati
 
 | Task | Current responsibility and dependencies | Consumer and exit boundary |
 |---|---|---|
-| B00 | Integrator: candidate identity and precise failure follow-up | Public verification; selected successor failures pass without claiming full acceptance |
+| B00 | Integrator: candidate identity, local/cooled withdrawal and precise failure follow-up | Remove exclusive active consumers while preserving shared functions; actual successor failures pass without claiming full acceptance |
 | B01 | SFI replacement; after B00 | Real SFI request through existing public stages, then retire replaced execution bodies |
 | B02 | Generic static-field comparison; after B00 | OA and a real non-OA static-field consumer; preserve separate pulse and sampling responsibilities |
-| B03 | Cross-model transfer; after B00 | Existing verified MP exit to IP receiver; retain same-model checks, clock, mother population and gap refusal |
-| B04 | IP basic path and receiver; after B03 | Independent IP and injected-source consumers, installation and applicable native evidence |
-| B05 | MR basic path; after B00 | Actual OA-to-MR or prepared analyzer, complete neutral design and backend projection |
+| B03 | Unique complete geometry and continuous-field boundaries; after B00 | Canonical OA/RF physical families across standalone/TOF/MR; real member/port/parameter and instance tests, justified connected field coverage |
+| B04 | Complete IP and continuous MP-to-IP; after B00/B03 | Complete guide/HP/LP/exit and HS1, original source through both full components; install/native evidence before retiring segmented production |
+| B05 | Complete MR combinations and fixed-design numerics; after B00/B03 | Inherit the delivered catalog provider; avoid duplicate internal OA, separate physical gap2 from representation and close renderer/field/continuous tracking |
 | B06 | RF/OA/TOF capabilities and scientific strategies; after B01 | Real native and ideal paths remain separately identified; unique methods and consumers retained |
 | B07 | Dual-cone/EI/Wehnelt; after B00 | Existing staged and build-only operations, resources, cold reopen and applicable native checks |
-| B08 | Composition recipes; after B01/B03/B04/B05 | Local, FullJoint, prepared-joint and OA-to-MR starting points reuse stages and lose duplicate lifecycle bodies |
+| B08 | Complete continuous composition; after B01/B03/B04/B05 | MP-to-OA, MP-to-IP, OA/IP-to-MR and FullJoint/prepared-joint reuse the same complete model/field stages and execution owner; no survivor relaunch or local product |
 | B09 | Research campaign strategies; after B01/B02 | Retained radial, compensation, spectrum and finite-length tasks share execution and recovery |
 | B10 | Retained gas chains; after B00 | IP/HS1 and dual-cone/SDS preserve G01–G18 and their distinct models/vendor evidence |
 | B11 | Installation and feedback cost; after B00 | Selectable real probes and immutable builds; full wheel/sdist coverage and original budgets retained |
 | B12 | Resources, obsolete bridges and current documentation; follows affected capability rows | One production tree and parameter authority; protect history and in-flight writers |
-| B13 | Integrator: final closure; after B04–B12 | One candidate, complete Repository/install/native and requirement/cost accounting; unfinished work stays OPEN |
+| B13 | Integrator: final closure; after B01–B12 | One candidate, complete Repository/install/native and requirement/cost accounting; unfinished work stays OPEN |
 
 The existing ownership inventory below describes implemented boundaries, not another task
 status table or a promise to preserve each historical workflow as a permanent package.
@@ -220,7 +237,7 @@ status table or a promise to preserve each historical workflow as a permanent pa
 | IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
 | Native execution path projection/context | `execution.run_paths` and its selected installed/frozen PowerShell resource; actual native consumers | Root projection/context bodies retired; explicit execution roots, canonical identity, shared ledger and existing junction/writer guards retained. Repository DEV root discovery remains outside the package. No new native or general historical-path portability claim. |
 | Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration, composed installation and native seed/reopen acceptance stay OPEN. |
-| Local frontend and initial-state CSV | `workflows.local_frontend` and `backends.simion.source.load_initial_state`; local consumers | Root local bodies retired; classified IOB policy and original particle/clock semantics retained. Final composed acceptance and remaining shared orchestration stay OPEN. |
+| Withdrawn local frontend; retained initial-state CSV | Local exclusive preparation/runtime/policies/resources/tests await removal; `backends.simion.source.load_initial_state` remains where actual retained consumers require it | User withdrawal is not PASS. Check SFI/IP/shared consumers before removing mixed resources; historical inputs and results remain unchanged. |
 | Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
 | MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
 | Dual-cone SIMION input preparation | `backends.simion.dual_cone_transport` and canonical source serializers; Program resource/callers migrated, old preparation/source/Program copies retired | Ordinary installation and explicit observation cadence delivered; actual seven-electrode field/ion-flight integration stays OPEN |
