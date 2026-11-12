@@ -142,6 +142,11 @@ def emit_grounded_enclosure(
             or entry_cut_padding_mm is None or isinstance(entry_cut_padding_mm, bool)
             or not isfinite(entry_cut_padding_mm) or entry_cut_padding_mm <= 0):
         raise TwoZoneGeometryError("side opening must cross only the negative-y wall with explicit positive padding")
+    # The strict interior of the Boolean tool must not reach the opposite wall.
+    # Check both the input and the coordinates actually serialized into GEM.
+    if (entry_cut_padding_mm > 2 * iy or
+            float(_number(box[4] + entry_cut_padding_mm)) > float(_number(iy))):
+        raise TwoZoneGeometryError("side opening padding would cut the positive-y wall")
     return (
         result + f" notin_inside {{ box3D({_number(box[0])},{_number(box[1]-entry_cut_padding_mm)},"
         f"{_number(box[2])},{_number(box[3])},{_number(box[4]+entry_cut_padding_mm)},{_number(box[5])}) }}"

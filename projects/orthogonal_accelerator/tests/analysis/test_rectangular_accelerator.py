@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from math import nextafter
 import unittest
 
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
@@ -35,6 +36,36 @@ class RectangularAcceleratorTest(unittest.TestCase):
                 emit_grounded_enclosure(enclosure, exit_z_mm=6, negative_y_entry_box_mm=box, entry_cut_padding_mm=.1)
         with self.assertRaises(TwoZoneGeometryError):
             emit_grounded_enclosure(enclosure, exit_z_mm=6, entry_cut_padding_mm=.1)
+
+    def test_side_opening_padding_never_cuts_the_opposite_wall(self) -> None:
+        for outer_y, inner_y in ((17.0, 16.0), (14.5, 13.5)):
+            with self.subTest(inner_y=inner_y):
+                enclosure = derive_shielded_rectangular_enclosure(
+                    electrode_outer_width_x_mm=40, electrode_outer_height_y_mm=2*(inner_y-1),
+                    guard_outer_width_x_mm=44, guard_outer_height_y_mm=2*outer_y,
+                    guard_wall_thickness_mm=1, lateral_clearance_mm=1,
+                    repeller_z_mm=40, repeller_thickness_z_mm=2, rear_gap_mm=1,
+                )
+                self.assertEqual(enclosure.guard_inner_half_y_mm, inner_y)
+                opening=[-1.5,-outer_y,36.6,1.5,-inner_y,39.4]
+                def opposite_wall_overlap(padding: float) -> float:
+                    tool_top=-inner_y+padding
+                    return max(0.0, min(outer_y,tool_top)-inner_y)
+                threshold=2*inner_y
+                for padding in (0.1, nextafter(threshold,0.0), threshold):
+                    with self.subTest(padding=padding):
+                        self.assertEqual(opposite_wall_overlap(padding),0.0)
+                        emitted=emit_grounded_enclosure(enclosure,exit_z_mm=6,
+                            negative_y_entry_box_mm=opening,entry_cut_padding_mm=padding)
+                        upper=float(emitted.rsplit('box3D(',1)[1].split(')',1)[0].split(',')[4])
+                        self.assertLessEqual(upper,inner_y)
+                crossing=threshold+0.5
+                self.assertGreater(opposite_wall_overlap(crossing),0.0)
+                for padding in (nextafter(threshold,float('inf')),crossing):
+                    with self.subTest(padding=padding), self.assertRaisesRegex(
+                            TwoZoneGeometryError,'padding would cut the positive-y wall'):
+                        emit_grounded_enclosure(enclosure,exit_z_mm=6,
+                            negative_y_entry_box_mm=opening,entry_cut_padding_mm=padding)
 
     def test_closed_two_zone_endplates_cannot_be_rendered_as_grids(self) -> None:
         enclosure = derive_shielded_rectangular_enclosure(

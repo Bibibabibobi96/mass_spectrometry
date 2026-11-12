@@ -121,6 +121,13 @@ resolved或三区领域文档，以稳定角色和环序号发布科学组；mem
 封闭二区可用SIMION的planar x镜像存储半域；物理跨度、存储跨度、镜像面和IOB原点均进入身份。
 带侧孔几何不复用封闭PA资格。提供者机制的调用与冻结闭包回归不等于新的原生场或飞行验收。
 
+The SIMION negative-y side-opening subtraction now rejects numerical padding that
+would cut the opposite wall, including the emitted GEM coordinates. Padding ending
+at the opposite inner face remains valid under the existing strict-interior cut.
+This preserves the canonical opening and valid GEM bytes; it does not enlarge the
+opening or change component dimensions to accommodate a grid. Software boundary
+regression is separate from native occupancy and field qualification.
+
 ### 机械模型与求解器投影
 
 `analysis/two_zone_geometry.py`公开`load_geometry_profile`与`resolve_closed_two_zone_geometry`，
