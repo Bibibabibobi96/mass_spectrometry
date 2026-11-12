@@ -114,8 +114,10 @@ class ElectrodeTopologyTests(unittest.TestCase):
         self.assertEqual((g["shield_inner_width_mm"] - g["electrode_width_mm"])/2, 5)
         request = dict(schema_version=1, role="orthogonal_accelerator_bare_three_zone_requirements",
                        variant_id="three_zone", geometry=copy.deepcopy(g))
+        from msplatform.components.orthogonal_accelerator.assembly_interface import build_assembly_interface
+        physical = resolve_bare_three_zone_component(request)
         with self.assertRaisesRegex(ValueError, "first gap"):
-            resolve_bare_three_zone_component(request)
+            build_assembly_interface(physical, geometry_profile_id=None)
         self.assertEqual(mechanical["role"], "instrument_sectioned_accelerator_mechanics_projection")
         self.assertFalse(mechanical["standalone_component_capability"])
         self.assertEqual(mechanical["port"]["height_mm"], 4)

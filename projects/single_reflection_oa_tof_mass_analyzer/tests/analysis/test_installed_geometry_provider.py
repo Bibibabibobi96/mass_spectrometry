@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
@@ -44,15 +45,20 @@ class InstalledGeometryProviderTests(unittest.TestCase):
 
     def test_tree_independent_pure_provider_does_not_import_backend_or_host(self):
         code = """import json,sys
+from pathlib import Path
+src=Path(sys.argv[1]).resolve(strict=True)
+sys.path.insert(0,str(src))
 from msplatform.examples import load_example_document as load_example
 from msplatform.components.single_reflection_oa_tof.provider import resolve_component
+assert Path(sys.modules[resolve_component.__module__].__file__).resolve()==src/'msplatform/components/single_reflection_oa_tof/provider.py'
 x=resolve_component(load_example('rf_oatof_functional_v1')['component_requests']['oatof']['design'])
 for prefix in ('projects','integrations','common','msplatform.backends','msplatform.execution'):
  assert not any(k==prefix or k.startswith(prefix+'.') for k in sys.modules), prefix
 print(json.dumps({'schema':x['assembly_interface']['schema_version'],'module':resolve_component.__module__}))
 """
         with tempfile.TemporaryDirectory() as root:
-            result = subprocess.run([sys.executable, "-I", "-c", code], cwd=root, capture_output=True, text=True, timeout=30)
+            candidate_src = Path(__file__).resolve().parents[4] / 'src'
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(candidate_src)], cwd=root, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["schema"], 3)
 

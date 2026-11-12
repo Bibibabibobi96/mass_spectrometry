@@ -50,7 +50,7 @@ class BareThreeZoneComponentTests(unittest.TestCase):
             if mutation == "missing": del g["ring_thickness_mm"]
             elif mutation == "unknown": g["implicit_voltage"] = 0
             elif mutation == "wall": g["shield_wall_mm"] = 2.
-            elif mutation == "port": g["numerical_port_height_mm"] = 4.
+            elif mutation == "port": g["numerical_port_height_mm"] = 100.
             elif mutation == "plane": g["intermediate2_z_mm"] = 40.
             elif mutation == "ring": g["ring_z_mm"][0] = 4.
             else: g["ring_z_mm"] = [6.,7.,8.,9.]
@@ -75,8 +75,10 @@ class BareThreeZoneComponentTests(unittest.TestCase):
         request = three_zone_requirements_fixture()
         request["geometry"]["numerical_port_height_mm"] = 4.0
         before = copy.deepcopy(request)
+        from msplatform.components.orthogonal_accelerator.assembly_interface import build_assembly_interface
+        physical = resolve_bare_three_zone_component(request)
         with self.assertRaisesRegex(ValueError, "first gap"):
-            resolve_bare_three_zone_component(request)
+            build_assembly_interface(physical, geometry_profile_id=None)
         source = dict(schema_version=1, role="oatof_validated_sectioned_accelerator_geometry",
                       producer="single_reflection_oa_tof_mass_analyzer", frame_id="oatof_global",
                       geometry=request["geometry"])
@@ -86,18 +88,34 @@ class BareThreeZoneComponentTests(unittest.TestCase):
         self.assertFalse(low["standalone_component_capability"])
         self.assertEqual(_mechanical_groups(low)[1][3][0], "intermediate_grid_2")
         self.assertEqual(request, before)
-        for key, value in (("producer", "unknown"), ("schema_version", 2),
+        for key, value in (("schema_version", 2),
                            ("schema_version", True), ("role", "unknown"), ("frame_id", "unknown")):
             invalid = copy.deepcopy(source)
             invalid[key] = value
             with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, "source"):
                 project_instrument_sectioned_mechanics(invalid)
-        for key, value in (("producer", "unknown"), ("source_schema_version", 2),
-                           ("standalone_component_capability", True)):
+        for key, value in (("producer", ""), ("producer", None),
+                           ("source_role", "unknown"), ("source_schema_version", 2),
+                           ("source_schema_version", True), ("standalone_component_capability", True),
+                           ("standalone_component_capability", None)):
             invalid = copy.deepcopy(low)
             invalid[key] = value
             with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, "source or capability"):
                 _mechanical_groups(invalid)
+        alternate = project_instrument_sectioned_mechanics({**source, "producer": "another_instrument"})
+        self.assertEqual(alternate["geometry"], low["geometry"])
+        self.assertEqual(_mechanical_groups(alternate)[1], _mechanical_groups(low)[1])
+
+    def test_topology_rejects_mutated_physical_projection_without_native_table(self):
+        from projects.orthogonal_accelerator.analysis.electrode_topology import _mechanical_groups
+
+        resolved = resolve_bare_three_zone_component(three_zone_requirements_fixture())
+        del resolved["electrodes"]
+        _mechanical_groups(resolved)
+        invalid = copy.deepcopy(resolved)
+        invalid["geometry"]["port_center_y_mm"] += .5
+        with self.assertRaisesRegex(ValueError, "validated physical geometry"):
+            _mechanical_groups(invalid)
 
     def test_shared_mechanical_constructor_keeps_original_standalone_vectors(self):
         from projects.orthogonal_accelerator.analysis.sectioned_geometry import project_instrument_sectioned_mechanics

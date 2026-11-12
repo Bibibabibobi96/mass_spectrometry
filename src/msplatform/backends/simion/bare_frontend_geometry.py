@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from msplatform.components.orthogonal_accelerator.sectioned_geometry import resolve_bare_three_zone_component
+from msplatform.components.orthogonal_accelerator.sectioned_geometry import (resolve_bare_three_zone_component, validate_standalone_first_gap_port)
 
 import json
 import itertools
@@ -67,6 +67,7 @@ def _canonical_three_zone_component(component: dict[str, Any], *, cells: dict[st
             or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in translation)):
         raise ValueError("sectioned component translation must be finite xyz")
     resolved = resolve_bare_three_zone_component(component["requirements"])
+    validate_standalone_first_gap_port(resolved)
     electrodes = frontend_electrodes(ring_count=len(resolved["ring_z_mm"]), three_zone=True, variant=THREE_ZONE_BARE_VARIANT)
     expected = {1: electrodes["grounded_shield_id"], 2: electrodes["accelerator_repeller_id"],
                 3: electrodes["accelerator_grid1_id"], 4: electrodes["accelerator_intermediate2_id"],

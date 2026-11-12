@@ -505,3 +505,5 @@ extracted section omitted the real probe's earlier SciPy initialization. Restori
 that prerequisite outside the unchanged process/write guards made the original
 failed parent pass in 1.270 seconds. Package and installed-probe bytes were unchanged
 by this fixture-only correction; the failed module epoch remains recorded.
+
+The standalone and internal TOF three-zone OA use the same physical construction and side-wall opening validation. Standalone first-gap ports and the bare frontend retain their study-specific first-gap checks. Instrument provenance remains explicit; the producer name does not decide physical validity.

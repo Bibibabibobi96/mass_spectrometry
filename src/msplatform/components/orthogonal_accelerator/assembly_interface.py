@@ -10,7 +10,7 @@ from typing import Any
 
 from msplatform.contracts.machine_contracts import validate_schema
 from .electrode_topology import _mechanical_groups
-from .sectioned_geometry import resolve_bare_three_zone_component
+from .sectioned_geometry import resolve_bare_three_zone_component, validate_standalone_first_gap_port
 from .two_zone_geometry import resolve_closed_two_zone_geometry
 
 
@@ -87,6 +87,7 @@ def build_assembly_interface(resolved: Mapping[str, Any], *, geometry_profile_id
     elif variant == "three_zone":
         if resolved.get("role") != "orthogonal_accelerator_sectioned_three_zone_geometry":
             raise ValueError("three-zone interface requires standalone resolved geometry")
+        validate_standalone_first_gap_port(resolved)
         port = resolved["port"]
         frame = resolved["coordinate_frame"]
         center = list(port["center_mm"])

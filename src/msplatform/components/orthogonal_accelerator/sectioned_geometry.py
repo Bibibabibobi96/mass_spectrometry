@@ -25,13 +25,28 @@ def resolve_bare_three_zone_component(requirements: dict[str, Any]) -> dict[str,
         raise ValueError("explicit bare three-zone geometry requirements required")
     g = copy.deepcopy(requirements["geometry"])
     _validate_sectioned_mechanics(g)
+    validate_sectioned_wall_opening(g)
+    return _project_sectioned_mechanics(g)
+
+
+def validate_standalone_first_gap_port(resolved: dict[str, Any]) -> None:
+    """Require the standalone first-gap side-entry port used by this study."""
+    g = resolved["geometry"]
     planes = _sectioned_planes(g)
     width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
     if (abs(g["port_center_y_mm"] - g["axis_y_mm"]) + width/2 >= g["shield_inner_width_mm"]/2
             or g["port_center_z_mm"] - height/2 <= planes["repeller"]
             or g["port_center_z_mm"] + height/2 >= planes["grid1"]):
         raise ValueError("side entry must fit strictly inside the first gap and lateral cavity")
-    return _project_sectioned_mechanics(g)
+
+
+def validate_sectioned_wall_opening(g: dict[str, Any]) -> None:
+    """Require a rectangular opening wholly within its physical shield wall."""
+    width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
+    if (abs(g["port_center_y_mm"] - g["axis_y_mm"]) + width/2 >= g["shield_inner_width_mm"]/2
+            or g["port_center_z_mm"] - height/2 <= g["shield_back_z_mm"] + g["shield_wall_mm"]
+            or g["port_center_z_mm"] + height/2 >= g["grid2_z_mm"]):
+        raise ValueError("instrument side opening crosses the actual wall corner or axial end")
 
 
 def project_instrument_sectioned_mechanics(source: dict[str, Any]) -> dict[str, Any]:
@@ -45,17 +60,11 @@ def project_instrument_sectioned_mechanics(source: dict[str, Any]) -> dict[str, 
     if (not isinstance(source, dict) or set(source) != {"schema_version", "role", "producer", "frame_id", "geometry"}
             or type(source["schema_version"]) is not int or source["schema_version"] != 1
             or source["role"] != "oatof_validated_sectioned_accelerator_geometry"
-            or source["producer"] != "single_reflection_oa_tof_mass_analyzer"
+            or not isinstance(source["producer"], str) or not source["producer"].strip()
             or source["frame_id"] != "oatof_global"):
         raise ValueError("explicit supported instrument sectioned mechanics source required")
-    g = copy.deepcopy(source["geometry"])
-    _validate_sectioned_mechanics(g)
-    width, height = g["numerical_port_width_mm"], g["numerical_port_height_mm"]
-    if (abs(g["port_center_y_mm"] - g["axis_y_mm"]) + width/2 >= g["shield_inner_width_mm"]/2
-            or g["port_center_z_mm"] - height/2 <= g["shield_back_z_mm"] + g["shield_wall_mm"]
-            or g["port_center_z_mm"] + height/2 >= g["grid2_z_mm"]):
-        raise ValueError("instrument side opening crosses the actual wall corner or axial end")
-    result = _project_sectioned_mechanics(g)
+    result = resolve_bare_three_zone_component(dict(schema_version=1, role=ROLE,
+                                                    variant_id="three_zone", geometry=source["geometry"]))
     result.update(role="instrument_sectioned_accelerator_mechanics_projection",
                   producer=source["producer"], source_role=source["role"], source_schema_version=1,
                   standalone_component_capability=False)

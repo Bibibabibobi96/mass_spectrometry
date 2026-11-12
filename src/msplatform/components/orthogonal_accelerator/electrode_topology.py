@@ -68,14 +68,22 @@ def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> t
         if type(resolved.get("schema_version")) is not int or resolved["schema_version"] != 1:
             raise ValueError("three-zone topology requires explicit sectioned geometry schema 1")
         if resolved["role"] == "instrument_sectioned_accelerator_mechanics_projection" and (
-            resolved.get("producer") != "single_reflection_oa_tof_mass_analyzer"
+            not isinstance(resolved.get("producer"), str) or not resolved["producer"].strip()
             or resolved.get("source_role") != "oatof_validated_sectioned_accelerator_geometry"
             or type(resolved.get("source_schema_version")) is not int or resolved["source_schema_version"] != 1
             or resolved.get("standalone_component_capability") is not False
         ):
             raise ValueError("unknown instrument mechanics source or capability")
-        document = resolved
+        from .sectioned_geometry import ROLE, resolve_bare_three_zone_component
         geometry = resolved["geometry"]
+        canonical = resolve_bare_three_zone_component(dict(schema_version=1, role=ROLE,
+                                                           variant_id="three_zone", geometry=geometry))
+        for key, value in canonical.items():
+            # Current scientific-group queries intentionally omit the native
+            # integer electrode table; geometry and physical projections remain bound.
+            if key not in {"role", "electrodes"} and resolved.get(key) != value:
+                raise ValueError("three-zone topology differs from validated physical geometry")
+        document = resolved
         rings = resolved["ring_z_mm"]
         sheets = resolved["canonical_electrodes"]["ideal_sheets"]
         if (not rings or len(rings) != geometry["ring_count"] or rings != geometry["ring_z_mm"]

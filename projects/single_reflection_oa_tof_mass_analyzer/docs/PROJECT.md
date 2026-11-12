@@ -1167,3 +1167,5 @@ The existing vector-field CLI selects this explicit static path with
 `--static-comparison-authority <json>`; the JSON must supply both sides'
 metadata, transforms, point statuses and coordinate tolerance. Its ordinary
 legacy comparison remains available and has not yet been retired.
+
+The internal three-zone OA uses canonical OA construction and side-wall opening validation. Its physical TOF opening may extend beyond the standalone first-gap study acceptance; provenance and actual mechanical dimensions remain explicit.

@@ -32,6 +32,20 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_shared_oa_physical_consumers_select_the_actual_oa_stage(self):
+        for path in (
+            'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_assembly_interface.py',
+            'src/msplatform/components/single_reflection_oa_tof/accelerator_geometry.py',
+            'src/msplatform/backends/simion/bare_frontend_geometry.py',
+        ):
+            with self.subTest(path=path):
+                request, _ = self.plan('-ChangedPath', path)
+                selected = [row for row in request['stages'] if row['selected']]
+                stage = [row for row in selected if row['name'] == 'orthogonal_accelerator_static']
+                self.assertEqual(len(stage), 1)
+                self.assertEqual(stage[0]['command']['script'],
+                                 'projects/orthogonal_accelerator/verify_project.ps1')
+
     def test_static_field_comparison_selects_both_real_cli_consumers_and_installation(self):
         path = 'src/msplatform/analysis/field_comparison.py'
         request, _ = self.plan('-ChangedPath', path)

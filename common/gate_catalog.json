@@ -2892,6 +2892,18 @@
         {
           "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust|workflows/oa_focus_mr_runtime_receipt)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_assembly_interface.py",
+          "reason": "shared_oa_physical_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/components/single_reflection_oa_tof/accelerator_geometry.py",
+          "reason": "shared_oa_physical_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/bare_frontend_geometry.py",
+          "reason": "shared_oa_physical_consumer_changed"
         }
       ],
       "command": {

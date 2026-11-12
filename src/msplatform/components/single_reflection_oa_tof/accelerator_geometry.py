@@ -52,10 +52,15 @@ def _resolve_side_entry_port(
         if not all(math.isfinite(value) and value > 0 for value in (wall, width, height)):
             raise ValueError("oaTOF side-shield aperture dimensions must be finite and positive")
         # An aperture extending past a corner/end is a different solid topology.
-        if (abs(y - float(g["axis_y_mm"])) + width / 2 >= float(g["shield_inner_width_mm"]) / 2
-                or z - height / 2 <= float(g["shield_back_z_mm"]) + wall
-                or z + height / 2 >= float(g["grid2_z_mm"])):
-            raise ValueError("oaTOF side-shield aperture crosses a wall corner or axial end")
+        from msplatform.components.orthogonal_accelerator.sectioned_geometry import validate_sectioned_wall_opening
+        physical_opening = dict(port_center_y_mm=y, port_center_z_mm=z,
+            numerical_port_width_mm=width, numerical_port_height_mm=height,
+            axis_y_mm=float(g["axis_y_mm"]), shield_inner_width_mm=float(g["shield_inner_width_mm"]),
+            shield_back_z_mm=float(g["shield_back_z_mm"]), shield_wall_mm=wall, grid2_z_mm=float(g["grid2_z_mm"]))
+        try:
+            validate_sectioned_wall_opening(physical_opening)
+        except ValueError as error:
+            raise ValueError("oaTOF side-shield aperture crosses a wall corner or axial end") from error
     except (KeyError, TypeError) as error:
         raise ValueError(f"oaTOF side-shield rendered projection is incomplete: {error}") from error
     return {
