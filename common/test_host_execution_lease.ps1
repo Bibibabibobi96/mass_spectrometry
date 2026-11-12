@@ -20,6 +20,7 @@ foreach ($name in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_H
   [Environment]::SetEnvironmentVariable($name, $null, 'Process')
 }
 $lease = $null
+$retainTestRoot = $false
 try {
   New-Item -ItemType Directory -Path $testRoot | Out-Null
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
@@ -141,6 +142,80 @@ sys.exit(23)
       'The closed-pipe path lost the scheduler stderr diagnostic.'
   } finally { $script:HostResourceExecutionContext.workspace = $originalWorkspace }
   Write-Output 'HOST_RESOURCE_STDIN_CLOSED_TEST=PASS EXIT=23 STDERR=CAPTURED'
+
+  # This child closes stdin and stays alive until its owned stop marker or
+  # finite safety deadline; no actual scheduler or host ledger is opened.
+  $basePython=(& $PythonExe -c 'import sys; print(sys._base_executable)').Trim()
+  Assert-True ($LASTEXITCODE-eq0-and(Test-Path -LiteralPath $basePython -PathType Leaf)) 'Base Python is unavailable for closed-stdin fixture.'
+  $stallRoot=Join-Path $testRoot 'stdin-stall'
+  $stallPackage=Join-Path $stallRoot 'msplatform/execution'
+  New-Item -ItemType Directory -Path $stallPackage -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $stallRoot 'msplatform/__init__.py'),'')
+  [IO.File]::WriteAllText((Join-Path $stallPackage '__init__.py'),'')
+  [IO.File]::WriteAllText((Join-Path $stallPackage 'host_resource_scheduler.py'), @"
+import ctypes,json,os,pathlib,sys,time
+from ctypes import wintypes
+kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+kernel.GetCurrentProcess.restype=wintypes.HANDLE
+kernel.GetProcessTimes.argtypes=[wintypes.HANDLE]+[ctypes.POINTER(wintypes.FILETIME)]*4
+created,exited,kernel_time,user_time=(wintypes.FILETIME() for _ in range(4))
+if not kernel.GetProcessTimes(kernel.GetCurrentProcess(),ctypes.byref(created),ctypes.byref(exited),ctypes.byref(kernel_time),ctypes.byref(user_time)):
+    raise ctypes.WinError(ctypes.get_last_error())
+ticks=(created.dwHighDateTime<<32)+created.dwLowDateTime+504911232000000000
+pathlib.Path('child-identity.json').write_text(json.dumps({'pid':os.getpid(),'started_ticks':str(ticks)}),encoding='utf-8')
+os.close(0)
+pathlib.Path('child-ready').write_text('closed', encoding='utf-8')
+sys.stderr.write('P410_STALL_SENTINEL\n');sys.stderr.flush()
+deadline=time.monotonic()+20
+while not pathlib.Path('stop').exists() and time.monotonic()<deadline: time.sleep(.05)
+sys.exit(23)
+"@)
+  $oldWorkspace=$script:HostResourceExecutionContext.workspace
+  $oldPython=$script:HostResourceExecutionContext.python_executable
+  $realSnapshot=${function:Get-HostResourceSnapshot}
+  $stallState=Join-Path $stallRoot 'never-created.sqlite3'
+  try {
+    $script:HostResourceExecutionContext.workspace=$stallRoot
+    $script:HostResourceExecutionContext.python_executable=$basePython
+    function Get-HostResourceSnapshot {
+      param([Diagnostics.Stopwatch]$WaitTimer=$null,[double]$WaitTimeoutSeconds=0)
+      return @{processes=@(@{pid=$PID;started='fixture'});complete=$true;padding=('X'*2000000)}
+    }
+    $stallTimer=[Diagnostics.Stopwatch]::StartNew()
+    $stallError=$null
+    try { $null=Invoke-HostResourceTransaction -StatePath $stallState -Request @{operation='status'} -WaitTimer $stallTimer -WaitTimeoutSeconds 2 }
+    catch { $stallError=$_ }
+    Assert-True ($null-ne$stallError-and$stallError.Exception.GetBaseException()-is[IO.IOException]) 'Timed collection must preserve the original IOException.'
+    Assert-True ($stallError.Exception.Data['scheduler_process_collection_timeout']-eq$true) 'Closed stdin live-child collection did not report its deadline.'
+    Assert-True ($stallError.Exception.Data.Contains('scheduler_process_exit_code')-or$stallError.Exception.Data['scheduler_process_exit_unavailable']-eq$true) 'Timed collection must record the child exit or its unavailability.'
+    Assert-True (([string]$stallError.Exception.Data['scheduler_process_stderr']-match'P410_STALL_SENTINEL')-or$stallError.Exception.Data['scheduler_process_stderr_unavailable']-eq$true) 'Timed collection must retain stderr or record its unavailability.'
+    Assert-True ((Test-Path -LiteralPath (Join-Path $stallRoot 'child-ready'))-and-not(Test-Path -LiteralPath $stallState)) 'Stall fixture readiness/state boundary differed.'
+    Assert-True ($stallTimer.Elapsed.TotalSeconds-lt15) 'Timed collection exceeded the isolated test bound.'
+    Write-Output 'HOST_RESOURCE_STDIN_STALL_TEST=PASS ORIGINAL_IOEXCEPTION=RETAINED'
+  } finally {
+    [IO.File]::WriteAllText((Join-Path $stallRoot 'stop'),'stop')
+    $fixtureExited=$false
+    $identityPath=Join-Path $stallRoot 'child-identity.json'
+    try {
+      if(-not(Test-Path -LiteralPath $identityPath -PathType Leaf)){throw 'Owned child identity was not recorded'}
+      $identity=Get-Content -LiteralPath $identityPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      if([int]$identity.pid-le0-or[string]$identity.started_ticks-notmatch'^\d+$'){throw 'Owned child identity is invalid'}
+      $owned=$null
+      try { $owned=[Diagnostics.Process]::GetProcessById([int]$identity.pid) }
+      catch { if($_.Exception.GetBaseException() -is [ArgumentException]){$fixtureExited=$true}else{throw} }
+      if($null-ne$owned){
+        try {
+          if([string]$owned.StartTime.ToUniversalTime().Ticks -cne [string]$identity.started_ticks){$fixtureExited=$true}
+          else {$fixtureExited=$owned.WaitForExit(25000)}
+        } finally {$owned.Dispose()}
+      }
+    } catch { Write-Warning "Owned stall fixture exit could not be verified: $($_.Exception.Message)" }
+    if(-not$fixtureExited){$retainTestRoot=$true;Write-Warning "Retaining unverified fixture at $testRoot"}
+    Set-Item -Path function:Get-HostResourceSnapshot -Value $realSnapshot
+    $script:HostResourceExecutionContext.workspace=$oldWorkspace
+    $script:HostResourceExecutionContext.python_executable=$oldPython
+    if(-not$fixtureExited){throw 'Owned stall fixture exit was not verified; isolated directory retained.'}
+  }
 
   $emptyParents = [Collections.Generic.Dictionary[int,int]]::new()
   $snapshotParents = [Collections.Generic.Dictionary[int,int]]::new()
@@ -538,5 +613,5 @@ Exit-HostResourceStage -Lease `$childLease
       -not (Split-Path -Leaf $resolved).StartsWith('host_stage_test_')) {
     throw 'Refusing cleanup outside isolated scheduler test directory.'
   }
-  if (Test-Path -LiteralPath $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
+  if (-not $retainTestRoot -and (Test-Path -LiteralPath $resolved)) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }

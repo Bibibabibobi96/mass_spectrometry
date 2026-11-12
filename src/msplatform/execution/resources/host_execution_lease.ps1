@@ -374,27 +374,51 @@ function Invoke-HostResourceTransaction {
     try {
       $outputTask = $process.StandardOutput.ReadToEndAsync()
       $errorTask = $process.StandardError.ReadToEndAsync()
+      $stdinFailure=$null
       try {
         $process.StandardInput.WriteLine((@{request=$Request;snapshot=$snapshot} | ConvertTo-Json -Depth 12 -Compress))
         $process.StandardInput.Close()
       } catch {
         $stdinFailure=$_
-        try {
-          $process.WaitForExit()
-          $stdinFailure.Exception.Data['scheduler_process_exit_code']=$process.ExitCode
-          try {$stdinFailure.Exception.Data['scheduler_process_stdout']=$outputTask.GetAwaiter().GetResult()}
-          catch {$stdinFailure.Exception.Data['scheduler_process_stdout_collection_error']=[string]$_}
-          try {$stdinFailure.Exception.Data['scheduler_process_stderr']=$errorTask.GetAwaiter().GetResult()}
-          catch {$stdinFailure.Exception.Data['scheduler_process_stderr_collection_error']=[string]$_}
-          [Console]::Error.WriteLine("HOST_SCHEDULER_STDIN_FAILURE EXIT=$($process.ExitCode) STDERR=$($errorTask.GetAwaiter().GetResult())")
-        } catch {
-          $stdinFailure.Exception.Data['scheduler_process_collection_error']=[string]$_
-        }
-        throw $stdinFailure
       }
       $transactionWaitMilliseconds=45000
       if($null-ne$WaitTimer-and$WaitTimeoutSeconds-gt0){
         $transactionWaitMilliseconds=[int][Math]::Max(1,[Math]::Min(45000,1000*($WaitTimeoutSeconds-$WaitTimer.Elapsed.TotalSeconds)))
+      }
+      if($null-ne$stdinFailure){
+        $collectionTimer=[Diagnostics.Stopwatch]::StartNew()
+        $drainTimer=$collectionTimer; $drainBudgetMilliseconds=$transactionWaitMilliseconds
+        try {
+          if(-not $process.WaitForExit($transactionWaitMilliseconds)){
+            $stdinFailure.Exception.Data['scheduler_process_collection_timeout']=$true
+            # A separate, bounded cleanup allowance applies only after a caught
+            # stdin failure; it is not a transaction retry or scheduler policy.
+            $drainTimer=[Diagnostics.Stopwatch]::StartNew(); $drainBudgetMilliseconds=2000
+            try {$process.Kill($true)}
+            catch {$stdinFailure.Exception.Data['scheduler_process_kill_error']=[string]$_}
+            $remaining=[int][Math]::Max(0,$drainBudgetMilliseconds-$drainTimer.Elapsed.TotalMilliseconds)
+            if(-not $process.WaitForExit($remaining)){
+              $stdinFailure.Exception.Data['scheduler_process_cleanup_timeout']=$true
+            }
+          }
+          if($process.HasExited){$stdinFailure.Exception.Data['scheduler_process_exit_code']=$process.ExitCode}
+          else {$stdinFailure.Exception.Data['scheduler_process_exit_unavailable']=$true}
+          foreach($stream in @(@{name='stdout';task=$outputTask},@{name='stderr';task=$errorTask})){
+            $remaining=[int][Math]::Max(0,$drainBudgetMilliseconds-$drainTimer.Elapsed.TotalMilliseconds)
+            try {
+              if($stream.task.IsCompleted-or$stream.task.Wait($remaining)){
+                $stdinFailure.Exception.Data['scheduler_process_'+$stream.name]=$stream.task.GetAwaiter().GetResult()
+              } else {
+                $stdinFailure.Exception.Data['scheduler_process_'+$stream.name+'_unavailable']=$true
+                $stdinFailure.Exception.Data['scheduler_process_collection_timeout']=$true
+              }
+            } catch {$stdinFailure.Exception.Data['scheduler_process_'+$stream.name+'_collection_error']=[string]$_}
+          }
+          [Console]::Error.WriteLine("HOST_SCHEDULER_STDIN_FAILURE EXIT=$($stdinFailure.Exception.Data['scheduler_process_exit_code']) STDERR=$($stdinFailure.Exception.Data['scheduler_process_stderr'])")
+        } catch {
+          $stdinFailure.Exception.Data['scheduler_process_collection_error']=[string]$_
+        }
+        throw $stdinFailure
       }
       if (-not $process.WaitForExit($transactionWaitMilliseconds)) {
         $process.Kill($true); $process.WaitForExit()
