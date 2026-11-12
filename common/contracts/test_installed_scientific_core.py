@@ -109,80 +109,9 @@ class RejectRepositoryImports(importlib.abc.MetaPathFinder):
             raise AssertionError('installed action imported a repository owner: ' + fullname)
 sys.meta_path.insert(0, RejectRepositoryImports())
 # STRICT_JSON_INSTALLED_BEGIN
-with section_timing('strict_json', sys.argv[2]):
-    import base64
-    from msplatform.io import strict_json as sj_owner
-    sj_path = pathlib.Path(sj_owner.__file__).resolve()
-    assert sj_path == pathlib.Path(sysconfig.get_path('purelib')).resolve() / 'msplatform/io/strict_json.py'
-    sj_fixture = fixture['strict_json_old_witness']
-    sj_root = root / ('strict-json-' + sys.argv[2])
-    sj_root.mkdir()
-    def sj_observe(call):
-        try:
-            value = call()
-            return dict(return_type=type(value).__module__ + '.' + type(value).__qualname__, **{'return': value})
-        except Exception as exc:
-            cause = exc.__cause__
-            return dict(exception_type=type(exc).__module__ + '.' + type(exc).__qualname__, exception_message=str(exc),
-                cause_type=None if cause is None else type(cause).__module__ + '.' + type(cause).__qualname__,
-                cause_message=None if cause is None else str(cause))
-    def sj_expected(result, path=None):
-        result = dict(result)
-        if result.get('exception_type') == 'common.contracts.strict_json.StrictJsonError':
-            result['exception_type'] = 'msplatform.io.strict_json.StrictJsonError'
-        for key in ('exception_message', 'cause_message'):
-            if path is not None and result.get(key) is not None:
-                result[key] = result[key].replace('<PATH_REPR>', repr(str(path))).replace('<PATH>', str(path))
-        return result
-    assert len(sj_fixture['files']) == 10 and len(sj_fixture['methods']) == 11
-    for sj_case in sj_fixture['files']:
-        sj_input = sj_root / (sj_case['name'] + '.json')
-        if not sj_case.get('absent'):
-            sj_raw = base64.b64decode(sj_case['input_base64'], validate=True)
-            assert len(sj_raw) == sj_case['bytes'] and hashlib.sha256(sj_raw).hexdigest() == sj_case['sha256']
-            sj_input.write_bytes(sj_raw)
-        assert sj_observe(lambda: sj_owner.load_json_object(sj_input)) == sj_expected(sj_case['result'], sj_input)
-        if not sj_case.get('absent'):
-            assert sj_input.read_bytes() == sj_raw
-        else:
-            assert not sj_input.exists()
-    sj_calls = dict(exact_keys=lambda: sj_owner.require_exact_keys({'extra': 1}, {'required'}, 'contract'),
-        dict=lambda: sj_owner.require_dict([], 'item'), bool=lambda: sj_owner.require_bool(1, 'flag'),
-        string=lambda: sj_owner.require_string('', 'label'), number_bool=lambda: sj_owner.require_number(True, 'value'),
-        number_overflow=lambda: sj_owner.require_number(10**1000, 'value'),
-        number_minimum=lambda: sj_owner.require_number(0, 'value', minimum=0, strict_minimum=True),
-        number_maximum=lambda: sj_owner.require_number(3, 'value', maximum=2.0),
-        number_valid=lambda: sj_owner.require_number(-2, 'value'),
-        integer_bool=lambda: sj_owner.require_positive_integer(True, 'count'),
-        integer_valid=lambda: sj_owner.require_positive_integer(3, 'count'))
-    assert set(sj_calls) == {case['name'] for case in sj_fixture['methods']}
-    for sj_case in sj_fixture['methods']:
-        assert sj_observe(sj_calls[sj_case['name']]) == sj_expected(sj_case['result'])
-    sj_owned = sj_path.read_bytes()
-    sj_held = sj_path.with_suffix('.strict-json-held')
-    assert not sj_held.exists()
-    sj_path.rename(sj_held)
-    try:
-        sj_missing_code = r"""import importlib.abc,json,os,pathlib,sys
-blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
-def deny(event,args):
- if event=='open' and args and isinstance(args[0],(str,bytes)):
-  p=pathlib.Path(os.fsdecode(args[0])).resolve()
-  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(p))
-sys.addaudithook(deny)
-class Deny(importlib.abc.MetaPathFinder):
- def find_spec(self,fullname,path=None,target=None):
-  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
-sys.meta_path.insert(0,Deny())
-import msplatform.io.strict_json
-"""
-        sj_missing = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', '-c', sj_missing_code,
-            json.dumps([str(path) for path in blocked_source_roots])], cwd=root, capture_output=True,
-            text=True, encoding='utf-8', timeout=30, check=False)
-        assert sj_missing.returncode != 0 and "No module named 'msplatform.io.strict_json'" in sj_missing.stderr, sj_missing.stderr
-    finally:
-        sj_held.rename(sj_path)
-    assert sj_path.read_bytes() == sj_owned
+import runpy
+strict_json_probe = runpy.run_path(str(root / 'installed_strict_json_probe.py'))
+strict_json_probe['run_strict_json'](fixture, root, blocked_source_roots, sys.argv[2], section_timing)
 # STRICT_JSON_INSTALLED_END
 # MR_MEASURED_SOURCE_INSTALLED_BEGIN
 with section_timing('mr_measured_source', sys.argv[2]):
@@ -6785,6 +6714,12 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'
             probe_path.write_text(INSTALLED_PROBE, encoding='utf-8')
+            probe_source = source / 'common/contracts/test_support/installed_strict_json_probe.py'
+            frozen_test_source = source / 'common/contracts/test_installed_scientific_core.py'
+            self.assertEqual(frozen_test_source.read_bytes(), Path(__file__).read_bytes())
+            probe_bytes = probe_source.read_bytes()
+            shutil.copyfile(probe_source, root / 'installed_strict_json_probe.py')
+            self.assertEqual((root / 'installed_strict_json_probe.py').read_bytes(), probe_bytes)
             # Remove both private author trees from their original locations;
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
@@ -6816,6 +6751,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 actual_source = root / 'source-offline'
                 source_files = [actual_source / name for name in ('pyproject.toml', 'requirements-lock.txt',
                                 'requirements-cad-step-lock.txt', 'README.md') if (actual_source / name).is_file()]
+                source_files.extend(actual_source / name for name in (
+                    'common/contracts/test_support/installed_strict_json_probe.py',
+                    'common/contracts/test_installed_scientific_core.py'))
                 source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
                 source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,
                     sha256=hashlib.sha256(path.read_bytes()).hexdigest()) for path in sorted(source_files)]
