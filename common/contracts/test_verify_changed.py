@@ -32,6 +32,40 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_static_field_comparison_selects_both_real_cli_consumers_and_installation(self):
+        path = 'src/msplatform/analysis/field_comparison.py'
+        request, _ = self.plan('-ChangedPath', path)
+        selected = [row for row in request['stages'] if row['selected']]
+        stage = [row for row in selected if row['name'] == 'static_field_comparison_tests']
+        self.assertEqual(len(stage), 1)
+        self.assertEqual(stage[0]['command']['arguments'][2:], [
+            'common.analysis.test_static_field_comparison',
+            'common.analysis.test_static_field_consumers',
+        ])
+        modules = {value.removesuffix('.py').replace('/', '.')
+                   for row in selected if row['name'].startswith('common_contracts')
+                   for value in row['command']['arguments'][2:]}
+        self.assertIn('common.contracts.test_installed_scientific_core', modules)
+        for caller in (
+            'projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py',
+            'projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py',
+        ):
+            with self.subTest(caller=caller):
+                self.assertIn('static_field_comparison_tests', self.routed_stages(caller))
+
+    def test_installed_probe_support_selects_the_complete_installed_parent(self):
+        path = 'common/contracts/test_support/installed_static_field_probe.py'
+        request, _ = self.plan('-ChangedPath', path)
+        modules = {value.removesuffix('.py').replace('/', '.')
+                   for row in request['stages'] if row['selected']
+                   and row['name'].startswith('common_contracts')
+                   for value in row['command']['arguments'][2:]}
+        self.assertIn('common.contracts.test_installed_scientific_core', modules)
+        for name in ('strict_json', 'workbench_seed', 'static_field'):
+            with self.subTest(helper=name):
+                self.assertIn('common_contracts', self.routed_stages(
+                    'common/contracts/test_support/installed_' + name + '_probe.py'))
+
     def test_installed_tof_design_preserves_full_owner_and_host_entry_consumers(self):
         prefix = "src/msplatform/workflows/oa_tof_design/"
         owner = "single_reflection_oa_tof_mass_analyzer_static"

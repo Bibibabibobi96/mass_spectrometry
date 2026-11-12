@@ -1368,3 +1368,13 @@ fixture selects the same tree through the existing package enumerator and checks
 selected origin and physical missing-module refusal. MATLAB exporter/validator
 resources, CSV mathematics, native orchestration and historical frozen packages
 remain unchanged. This ownership migration alone grants no finite3D/native qualification.
+
+
+The offline stationary sample comparison accepts an explicit comparison authority
+for the shared descriptive sample comparison. Existing RF diagnostic metrics remain;
+a real independently sourced matching field pair has not been established here.
+
+The existing stationary-field `compare` CLI selects the explicit generic path
+with `--comparison-authority <json>`; its two field cases each require per-side
+metadata, transforms and point statuses plus an explicit coordinate tolerance.
+The legacy no-authority diagnostic remains and its retirement is still open.

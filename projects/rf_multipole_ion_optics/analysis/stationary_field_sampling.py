@@ -735,6 +735,7 @@ def _build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--reference", type=Path, required=True)
     compare.add_argument("--candidate", type=Path, required=True)
     compare.add_argument("--output", type=Path, required=True)
+    compare.add_argument("--comparison-authority", type=Path)
     return parser
 
 
@@ -766,6 +767,63 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if arguments.command == "compare":
+        if arguments.comparison_authority is not None:
+            import pandas as pd
+            from msplatform.analysis.field_comparison import compare_static_field_samples, validate_static_comparison_authority
+            from msplatform.contracts.rigid_transform import RigidTransform
+            from msplatform.io.strict_json import load_json_object
+            authority = load_json_object(arguments.comparison_authority)
+            if set(authority) != {"schema_version", "role", "coordinate_tolerance_mm", *FIELD_CASES}:
+                raise StationaryFieldContractError("multipole comparison authority fields differ")
+            if (type(authority["schema_version"]) is not int or authority["schema_version"] != 1
+                    or authority["role"] != "multipole_static_field_comparison_authority"):
+                raise StationaryFieldContractError("multipole comparison authority version or role differs")
+            for field_case in FIELD_CASES:
+                case_authority = authority[field_case]
+                if not isinstance(case_authority, dict) or set(case_authority) != {"reference", "candidate"}:
+                    raise StationaryFieldContractError("multipole comparison authority case fields differ")
+                validate_static_comparison_authority({"schema_version": authority["schema_version"],
+                    "role": "static_field_comparison_authority",
+                    "coordinate_tolerance_mm": authority["coordinate_tolerance_mm"], **case_authority})
+            tables = [pd.read_csv(path, float_precision="round_trip",
+                                  dtype={"sample_id": str, "region": str, "field_case": str},
+                                  keep_default_na=False) for path in
+                      (arguments.reference, arguments.candidate)]
+            for frame in tables:
+                if tuple(frame.columns) != FIELD_OUTPUT_COLUMNS or not frame["field_case"].isin(FIELD_CASES).all():
+                    raise StationaryFieldContractError("field output columns or cases differ")
+            # Validate each source's paired identities without reading field values;
+            # nonvalid samples may intentionally lack finite field observations.
+            from types import SimpleNamespace
+            for table in tables:
+                identities = []
+                for row in table.to_dict("records"):
+                    sample_id, region = row["sample_id"], row["region"]
+                    if (not isinstance(sample_id, str) or not sample_id or sample_id.strip() != sample_id
+                            or not isinstance(region, str) or not region or region.strip() != region):
+                        raise StationaryFieldContractError("sample identity or region is invalid")
+                    identities.append(SimpleNamespace(sample_id=sample_id, region=region, field_case=row["field_case"],
+                        x_mm=_finite_number(row["x_mm"], "x_mm"), y_mm=_finite_number(row["y_mm"], "y_mm"),
+                        z_mm=_finite_number(row["z_mm"], "z_mm")))
+                _validate_paired_field_cases(identities)
+            generic = {}
+            for field_case in FIELD_CASES:
+                frames = []
+                for label, table in zip(("reference", "candidate"), tables, strict=True):
+                    frame = table[table["field_case"] == field_case].copy().rename(columns={"sample_id": "point_id"})
+                    states = authority[field_case][label]["status_by_point_id"]
+                    frame["status"] = [states[str(point)] for point in frame["point_id"]]
+                    frames.append(frame)
+                values = authority[field_case]
+                generic[field_case] = compare_static_field_samples(
+                    *frames, reference_metadata=values["reference"]["metadata"],
+                    candidate_metadata=values["candidate"]["metadata"],
+                    reference_transform=RigidTransform.from_contract(values["reference"]["transform"]),
+                    candidate_transform=RigidTransform.from_contract(values["candidate"]["transform"]),
+                    coordinate_tolerance_mm=authority["coordinate_tolerance_mm"])
+            _write_json({"schema_version":1, "role":"multipole_static_field_comparison", "status":"DESCRIPTIVE_ONLY",
+                         "field_cases":generic}, arguments.output)
+            return 0
         comparison = compare_stationary_field_outputs(
             load_stationary_field_output_csv(arguments.reference),
             load_stationary_field_output_csv(arguments.candidate),

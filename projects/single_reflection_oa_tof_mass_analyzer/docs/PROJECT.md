@@ -1157,3 +1157,13 @@ Radial continuation compares the declared non-analysis source records as a set a
 hash, excluding the canonical detector-census analyzer from flight identity. The campaign
 driver, scientific inputs and native sources remain separately bound; this source-map
 change does not authorize reuse of a predecessor with a different campaign driver.
+
+
+The static vector comparison accepts an explicit comparison authority for the
+shared descriptive sample comparison. Existing diagnostic metrics remain; this
+software interface is not native or scientific qualification.
+
+The existing vector-field CLI selects this explicit static path with
+`--static-comparison-authority <json>`; the JSON must supply both sides'
+metadata, transforms, point statuses and coordinate tolerance. Its ordinary
+legacy comparison remains available and has not yet been retired.

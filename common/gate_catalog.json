@@ -398,6 +398,43 @@
       "owner": "common/analysis"
     },
     {
+      "stage": "static_field_comparison_tests",
+      "dependency_profile": "locked",
+      "repository_integration_group": "fast",
+      "matches": [
+        {
+          "exact": "src/msplatform/analysis/field_comparison.py",
+          "reason": "static_field_comparison_consumer_changed"
+        },
+        {
+          "exact": "common/analysis/test_static_field_comparison.py",
+          "reason": "static_field_comparison_consumer_changed"
+        },
+        {
+          "exact": "common/analysis/test_static_field_consumers.py",
+          "reason": "static_field_comparison_consumer_changed"
+        },
+        {
+          "exact": "projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py",
+          "reason": "static_field_comparison_consumer_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py",
+          "reason": "static_field_comparison_consumer_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_static_field_comparison",
+          "common.analysis.test_static_field_consumers"
+        ]
+      },
+      "owner": "common/analysis"
+    },
+    {
       "stage": "documentation_link_tests",
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
@@ -871,6 +908,10 @@
         {
           "exact": "src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m",
           "reason": "installed_wehnelt_report_consumer_changed"
+        },
+        {
+          "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field)_probe\\.py$",
+          "reason": "installed_probe_support_changed"
         }
       ],
       "command": {
@@ -890,6 +931,18 @@
           "common/contracts/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field)_probe\\.py$",
+                "reason": "installed_probe_support_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -3823,24 +3876,24 @@
         "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
-      {
-        "matches": [
           {
-            "exact": "src/msplatform/backends/simion/detector_census.py",
-            "reason": "installed_detector_census_consumer_changed"
-          }
-        ],
-        "modules": [
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_solver_diagnostics.py",
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_radial_compaction_campaign.py",
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_compensation.py",
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py",
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
-          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py"
-        ],
-        "dependency_profile": "locked"
-      },
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/detector_census.py",
+                "reason": "installed_detector_census_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_solver_diagnostics.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_radial_compaction_campaign.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_compensation.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

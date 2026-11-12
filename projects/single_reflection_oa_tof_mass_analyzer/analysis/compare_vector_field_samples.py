@@ -64,9 +64,40 @@ def main() -> None:
     parser.add_argument("comsol", type=Path)
     parser.add_argument("simion", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--static-comparison-authority", type=Path)
     args = parser.parse_args()
-    c = pd.read_csv(args.comsol, float_precision="round_trip")
-    s = pd.read_csv(args.simion, float_precision="round_trip")
+    if args.static_comparison_authority is not None:
+        c = pd.read_csv(args.comsol, float_precision="round_trip", dtype={"point_id": str}, keep_default_na=False)
+        s = pd.read_csv(args.simion, float_precision="round_trip", dtype={"point_id": str}, keep_default_na=False)
+    else:
+        c = pd.read_csv(args.comsol, float_precision="round_trip")
+        s = pd.read_csv(args.simion, float_precision="round_trip")
+    if args.static_comparison_authority is not None:
+        from msplatform.analysis.field_comparison import compare_static_field_samples, validate_static_comparison_authority
+        from msplatform.contracts.rigid_transform import RigidTransform
+        from msplatform.io.strict_json import load_json_object
+        authority = load_json_object(args.static_comparison_authority)
+        validate_static_comparison_authority(authority)
+        if any({"particle_id", "time_us"}.issubset(frame.columns) for frame in (c, s)):
+            raise ValueError("static comparison rejects trajectory sample keys")
+        frames = []
+        for label, data in (("reference", c), ("candidate", s)):
+            value = data.copy()
+            statuses = authority[label]["status_by_point_id"]
+            value["status"] = [statuses[str(point)] for point in value["point_id"]]
+            frames.append(value)
+        result = compare_static_field_samples(
+            *frames, reference_metadata=authority["reference"]["metadata"],
+            candidate_metadata=authority["candidate"]["metadata"],
+            reference_transform=RigidTransform.from_contract(authority["reference"]["transform"]),
+            candidate_transform=RigidTransform.from_contract(authority["candidate"]["transform"]),
+            coordinate_tolerance_mm=authority["coordinate_tolerance_mm"])
+        result = {"schema_version": 1, **result}
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output / "static_field_comparison.json").write_text(
+            json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        print("STATIC_FIELD_COMPARISON=DESCRIPTIVE_ONLY")
+        return
     _require_field_columns(c, "COMSOL")
     _require_field_columns(s, "SIMION")
     sample_contract, keys = _sample_contract(c, s)

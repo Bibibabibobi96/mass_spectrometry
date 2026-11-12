@@ -175,3 +175,26 @@ Importing peak settings does not initialize SciPy. The canonical KDE, time-peak
 statistics and shape-comparison functions import `scipy.stats` when they execute;
 a missing required dependency propagates as an error. Numerical formulas,
 settings, outputs and the public SIMION analysis entry remain unchanged.
+
+
+The explicit static-field comparison API consumes per-side source and BVP
+authority, units, potential reference, sample statuses and rigid transforms.
+Coverage includes missing and excluded points; results are descriptive and do
+not apply a scientific acceptance threshold. Native sampling remains separate.
+
+The OA `--static-comparison-authority` JSON has exactly `schema_version: 1`,
+`role: "static_field_comparison_authority"`, `coordinate_tolerance_mm`,
+`reference` and `candidate`. The RF `--comparison-authority` JSON has exactly
+`schema_version: 1`, `role: "multipole_static_field_comparison_authority"`,
+`coordinate_tolerance_mm`, `differential` and `static`; each field case contains
+exactly `reference` and `candidate`. Each side has exactly `metadata`,
+`transform` and `status_by_point_id`. Metadata has exactly `source`, `bvp`,
+`frame_id`, `units` and `potential_reference`; the transform is the existing
+versioned rigid-transform contract. Statuses are supplied per source point;
+no missing source, BVP, frame, units or gauge is inferred from a CSV label.
+The persisted result has schema version 1 and its declared comparison role;
+its `DESCRIPTIVE_ONLY` status is not numerical or native qualification. Legacy
+no-authority CLI behavior remains separate and its retirement remains open.
+The new authority JSON is read with the shared strict reader: duplicate keys and
+nonfinite JSON numbers are rejected. Generic static sample IDs are preserved as
+text, including leading zeroes; legacy CSV decoding is unchanged.
