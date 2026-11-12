@@ -591,7 +591,67 @@ with section_timing('ip_field_diagnostics', sys.argv[2]):
         ipd_rel=pathlib.Path(ipd_row['path']);assert not ipd_rel.is_absolute() and '..' not in ipd_rel.parts
         ipd_sha=hashlib.sha256((ipd_run/ipd_rel).read_bytes()).hexdigest().upper();assert ipd_sha==ipd_row['sha256']
         ipd_images[ipd_rel.as_posix()]=ipd_sha
-    assert set(ipd_images)==set(ipd_old['image_sha256']) and ipd_meta==ipd_old['scientific_metadata']
+    def ipd_assert_field_equivalence(expected, actual, expected_images, actual_images):
+        # Existing test_field_diagnostics.py::test_quadratic_fit_recovers_common_mode_curvatures_and_mixed_term:
+        # six analytic coefficients at places=11; residual_rms_v < 1e-11.
+        assert set(expected_images)==set(actual_images), 'field image inventory differs'
+        assert set(expected)==set(actual), 'field metadata keys differ'
+        assert {key:value for key,value in expected.items() if key!='fits'} == {key:value for key,value in actual.items() if key!='fits'}, 'field nonfit metadata differs'
+        old_fits=expected['fits'];new_fits=actual['fits']
+        assert isinstance(old_fits,list) and isinstance(new_fits,list) and len(old_fits)==len(new_fits)==6, 'field fit count differs'
+        coefficients={'phi0_v':7,'linear_y_v_per_mm':2,'linear_z_v_per_mm':-3,
+            'curvature_yy_v_per_mm2':8,'mixed_yz_v_per_mm2':5,'curvature_zz_v_per_mm2':-12}
+        numerical=set(coefficients)|{'residual_rms_v'}
+        structural={'stage_id','section_id','sample_count','radius_mm','qualification'}
+        for index,(old_fit,new_fit) in enumerate(zip(old_fits,new_fits,strict=True)):
+            assert set(old_fit)==set(new_fit)==numerical|structural, ('field fit keys differ',index)
+            assert {key:old_fit[key] for key in structural}=={key:new_fit[key] for key in structural}, ('field fit identity differs',index)
+            for label,fit in (('original',old_fit),('actual',new_fit)):
+                for key,analytic in coefficients.items():
+                    value=fit[key]
+                    assert type(value) in (int,float) and math.isfinite(value), (label,index,key,value)
+                    assert round(abs(value-analytic),11)==0, (label,index,key,value,analytic)
+                residual=fit['residual_rms_v']
+                assert type(residual) in (int,float) and math.isfinite(residual) and 0<=residual<1e-11, (label,index,'residual_rms_v',residual)
+            for key in coefficients:
+                assert round(abs(new_fit[key]-old_fit[key]),11)==0, ('fit witness differs',index,key,old_fit[key],new_fit[key])
+            assert abs(new_fit['residual_rms_v']-old_fit['residual_rms_v'])<1e-11, ('fit residual differs',index)
+    try:
+        ipd_assert_field_equivalence(ipd_old['scientific_metadata'],ipd_meta,ipd_old['image_sha256'],ipd_images)
+    except AssertionError as ipd_failure:
+        # Failure-only evidence; diagnostic errors must not mask the primary failure.
+        try:
+            def ipd_differences(expected, actual, location):
+                if isinstance(expected,dict) and isinstance(actual,dict):
+                    changes=[]
+                    for key in sorted(expected.keys()|actual.keys()):
+                        child=location+'.'+str(key)
+                        if key not in expected: changes.append(dict(path=child,expected='<missing>',actual=actual[key]))
+                        elif key not in actual: changes.append(dict(path=child,expected=expected[key],actual='<missing>'))
+                        else: changes.extend(ipd_differences(expected[key],actual[key],child))
+                    return changes
+                if isinstance(expected,list) and isinstance(actual,list):
+                    changes=[]
+                    if len(expected)!=len(actual): changes.append(dict(path=location+'.length',expected=len(expected),actual=len(actual)))
+                    for index,(left,right) in enumerate(zip(expected,actual)):
+                        changes.extend(ipd_differences(left,right,location+'['+str(index)+']'))
+                    for index in range(min(len(expected),len(actual)),max(len(expected),len(actual))):
+                        changes.append(dict(path=location+'['+str(index)+']',expected=expected[index] if index<len(expected) else '<missing>',actual=actual[index] if index<len(actual) else '<missing>'))
+                    return changes
+                return [] if expected==actual else [dict(path=location,expected=expected,actual=actual,expected_type=type(expected).__name__,actual_type=type(actual).__name__)]
+            ipd_versions={}
+            for ipd_distribution in ('numpy','scipy','matplotlib'):
+                try: ipd_versions[ipd_distribution]=importlib.metadata.version(ipd_distribution)
+                except Exception as ipd_version_error: ipd_versions[ipd_distribution]=repr(ipd_version_error)
+            print('IP_FIELD_MISMATCH='+json.dumps(dict(case=sys.argv[2],python=sys.version,platform=sys.platform,
+                versions=ipd_versions,metadata=ipd_differences(ipd_old['scientific_metadata'],ipd_meta,'metadata'),
+                missing_images=sorted(set(ipd_old['image_sha256'])-set(ipd_images)),
+                unexpected_images=sorted(set(ipd_images)-set(ipd_old['image_sha256'])),
+                input_sha256=ipd_input_hashes,owner_sha256=hashlib.sha256(ipd_path.read_bytes()).hexdigest()),
+                ensure_ascii=False,sort_keys=True),flush=True)
+        except Exception as ipd_diagnostic_error:
+            ipd_failure.add_note('Field mismatch diagnostic failed: '+repr(ipd_diagnostic_error))
+        raise
     print('IP_FIELD_FIGURES_EQUAL='+json.dumps({k:ipd_images[k]==v for k,v in ipd_old['image_sha256'].items()}),flush=True)
     for ipd_rel,ipd_sha in ipd_input_hashes.items(): assert hashlib.sha256((ipd_run/ipd_rel).read_bytes()).hexdigest()==ipd_sha
     assert {p.relative_to(ipd_run).as_posix() for p in ipd_run.rglob('*') if p.is_file()}==set(ipd_input_hashes)|set(ipd_images)|{'results/field_diagnostics.json'}
@@ -5469,6 +5529,50 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             exec(code,namespace)
             self.assertEqual(namespace['described']['status'],'comparison_completed')
             self.assertTrue(all(type(pid) is int and pid==row['particle_id'] for pid,row in namespace['mother'].records.items()))
+
+    def test_installed_field_fit_probe_preserves_witness_contract(self) -> None:
+        import ast
+        import copy
+        import math
+        tree = ast.parse(INSTALLED_PROBE)
+        helpers = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                   and node.name == 'ipd_assert_field_equivalence']
+        self.assertEqual(len(helpers), 1)
+        namespace = {'math': math}
+        exec(compile(ast.Module(body=helpers, type_ignores=[]), '<actual-installed-field-check>', 'exec'), namespace)
+        check = namespace['ipd_assert_field_equivalence']
+        fixture = json.loads((REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8'))
+        expected = fixture['field_diagnostics']['scientific_metadata']
+        images = fixture['field_diagnostics']['image_sha256']
+        check(expected, copy.deepcopy(expected), images, dict(images))
+        within = copy.deepcopy(expected)
+        within['fits'][0]['phi0_v'] += 1e-13
+        check(expected, within, images, dict(images))
+        cases = {}
+        cases['coefficient'] = lambda value: value['fits'][0].__setitem__('phi0_v', value['fits'][0]['phi0_v']+1e-6)
+        cases['coefficient_nan'] = lambda value: value['fits'][0].__setitem__('phi0_v', float('nan'))
+        cases['residual_nan'] = lambda value: value['fits'][0].__setitem__('residual_rms_v', float('nan'))
+        cases['residual_limit'] = lambda value: value['fits'][0].__setitem__('residual_rms_v', 1e-11)
+        cases['negative_residual'] = lambda value: value['fits'][0].__setitem__('residual_rms_v', -1.0)
+        cases['count'] = lambda value: value['fits'].pop()
+        cases['order'] = lambda value: value['fits'].reverse()
+        cases['unknown_fit_key'] = lambda value: value['fits'][0].__setitem__('unrecorded', 1)
+        cases['sample_count'] = lambda value: value['fits'][0].__setitem__('sample_count', 80)
+        cases['nonfit_metadata'] = lambda value: value.__setitem__('sample_count', -1)
+        for label, mutate in cases.items():
+            with self.subTest(case=label):
+                candidate = copy.deepcopy(expected)
+                mutate(candidate)
+                with self.assertRaises(AssertionError):
+                    check(expected, candidate, images, dict(images))
+        bad_original = copy.deepcopy(expected)
+        bad_original['fits'][0]['phi0_v'] += 1e-6
+        with self.assertRaises(AssertionError):
+            check(bad_original, copy.deepcopy(expected), images, dict(images))
+        missing_images = dict(images)
+        missing_images.pop(next(iter(missing_images)))
+        with self.assertRaises(AssertionError):
+            check(expected, copy.deepcopy(expected), images, missing_images)
 
     def test_installed_comparison_fixture_id_decode_rejects_noncanonical_or_reshaped_ids(self) -> None:
         import ast

@@ -11,6 +11,15 @@ flight, collision or scientific qualification.
 
 ## 当前状态与封存边界
 
+Installed field-diagnostic acceptance keeps the original synthetic quadratic test contract:
+11-decimal coefficient agreement and finite nonnegative RMS below 1e-11 V. Identical
+inputs and NumPy produced different last bits with selected OpenBLAS kernels, so
+those fitted floats are checked against both the analytic polynomial and original
+witness at that existing precision; all other metadata, fit identities and image
+inventories remain exact. Production fitting and scientific thresholds are unchanged.
+The precise fields from the earlier public CI failure were not retained in its log;
+new failures report their differences without masking the primary assertion.
+
 本项目拥有HP／LP拓扑、RF驱动、气体与碰撞、捕获／转运／聚集／抬升／正交引出时序及独立验收。
 The P4 replay wrappers now call the canonical installed run-capacity lifecycle, and batching no longer
 imports an unused recovery alias. The original functional module passed all 38 tests after migration;
