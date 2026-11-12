@@ -102,7 +102,13 @@ P4 retains the remaining approved designs and named COMSOL capabilities. P5 test
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
 
-V8.5 is the active P4 scope, continuing the same goal. Formal reusable implementations and workflows belong to
+V8.6 is the active P4 scope. Its single goal continues the existing task branch and preserves
+all retained scientific, installation, recovery and performance obligations. Eight domain
+baselines share the existing stages and execution owner; they are not eight new runners.
+The first priority is a usable public-stage replacement for SFI, alongside generic static-field
+comparison, verified cross-model transfer and lower-cost installation feedback. Existing
+MP-to-IP verification and same-model relaunch checks remain distinct and must be reused.
+Formal reusable implementations and necessary scientific strategies belong to
 `src/msplatform`; research inputs, history, tests and development tools remain outside that
 production tree. Existing completed slices are retained. Independent RF raw geometry/model,
 independent two-/three-zone OA geometry and Wehnelt build-only operations have source-bound
@@ -129,9 +135,26 @@ Those scoped checks did not establish composed installation or full regression;
 the latest combined installation evidence is recorded below. Full regression and
 performance targets stay OPEN.
 
-The latest retained full Repository run is `4576fa69`: 42 PASS, 8 FAIL and
-12 NOT_APPLICABLE stages in 3,789.140 seconds. Subsequent targeted repairs preserve
-that failed result; no complete successor Repository acceptance is claimed.
+The latest retained full Repository diagnostic is the uncommitted candidate based on
+`abd983b8`, recorded as `v85-composed-repository-root-r2`: 8 PASS, 30 FAIL,
+12 BLOCKED and 12 NOT_APPLICABLE. The run lacked host-inspection permissions and recorded
+process-identity admission failures and CLOC temporary-directory failures; three independent MR selection
+expectations also conflicted with the actual Core-plus-consumer routing. The repaired
+selection, CLOC and execution modules subsequently passed all 188 parents and 616 subtests
+in the correct host context with the candidate unchanged. That focused successor does not
+close the full Repository failure or establish the root cause of older incidents.
+The earlier `4576fa69` full failure remains historical evidence.
+The composed Wehnelt/OA receipt/TOF census/MR provider candidate passed the complete
+ordinary wheel and sdist-rebuilt-wheel software witness in 1,072.112 seconds, with
+520 runtime payloads in each arm and the source/checkout guards unchanged. The prior
+MR measured-source import failure was exercised successfully in both arms. Before
+committing the census, two redundant EOF blank lines were removed; its 19 focused
+tests and 20 subtests passed afterward. These installation and consumer checks do
+not close Repository, native acceptance or the original 15-minute software budget.
+The proposed shared stage composition and generic field comparison remain isolated
+development candidates: 50 parents and 17 subtests passed, including relocated-reader
+and tamper cases. Full SFI policy/recovery replacement, downstream relocated execution
+and an authenticated non-OA static-field comparison remain OPEN.
 The original combined installed-core test passed on the composed pulse/preparation
 source in 266.575 seconds: all 454 runtime package payloads match the frozen
 source, actual build source, direct wheel, sdist and rebuilt
@@ -154,6 +177,31 @@ Native path projection/context and the single-flight Program renderer also have 
 owners and actual migrated consumers. Their scoped checks do not close the remaining
 root native orchestration, current composed installation, complete regression or native acceptance.
 
+
+The following is the single active P4 worklist. All rows remain OPEN until their stated
+consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
+not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one
+integrator. Detailed domain evidence remains in the linked project and integration states.
+
+| Task | Current responsibility and dependencies | Consumer and exit boundary |
+|---|---|---|
+| B00 | Integrator: candidate identity and precise failure follow-up | Public verification; selected successor failures pass without claiming full acceptance |
+| B01 | SFI replacement; after B00 | Real SFI request through existing public stages, then retire replaced execution bodies |
+| B02 | Generic static-field comparison; after B00 | OA and a real non-OA static-field consumer; preserve separate pulse and sampling responsibilities |
+| B03 | Cross-model transfer; after B00 | Existing verified MP exit to IP receiver; retain same-model checks, clock, mother population and gap refusal |
+| B04 | IP basic path and receiver; after B03 | Independent IP and injected-source consumers, installation and applicable native evidence |
+| B05 | MR basic path; after B00 | Actual OA-to-MR or prepared analyzer, complete neutral design and backend projection |
+| B06 | RF/OA/TOF capabilities and scientific strategies; after B01 | Real native and ideal paths remain separately identified; unique methods and consumers retained |
+| B07 | Dual-cone/EI/Wehnelt; after B00 | Existing staged and build-only operations, resources, cold reopen and applicable native checks |
+| B08 | Composition recipes; after B01/B03/B04/B05 | Local, FullJoint, prepared-joint and OA-to-MR starting points reuse stages and lose duplicate lifecycle bodies |
+| B09 | Research campaign strategies; after B01/B02 | Retained radial, compensation, spectrum and finite-length tasks share execution and recovery |
+| B10 | Retained gas chains; after B00 | IP/HS1 and dual-cone/SDS preserve G01–G18 and their distinct models/vendor evidence |
+| B11 | Installation and feedback cost; after B00 | Selectable real probes and immutable builds; full wheel/sdist coverage and original budgets retained |
+| B12 | Resources, obsolete bridges and current documentation; follows affected capability rows | One production tree and parameter authority; protect history and in-flight writers |
+| B13 | Integrator: final closure; after B04–B12 | One candidate, complete Repository/install/native and requirement/cost accounting; unfinished work stays OPEN |
+
+The existing ownership inventory below describes implemented boundaries, not another task
+status table or a promise to preserve each historical workflow as a permanent package.
 
 | 当前对象／职责 | 规范所有者与活动消费者 | 本阶段退出条件 |
 |---|---|---|
