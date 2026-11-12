@@ -237,7 +237,6 @@ summary指向实际composition／scope和source provenance；canonical事件及�
 
 | 科学工作流 | 公开入口与显式输入 | 状态及操作边界 |
 |---|---|---|
-| 裸导引→二区／三区OA | [local_frontend/execute.ps1](workflows/local_frontend/execute.ps1)，`-Request` | [准备与复核](docs/INTEGRATION.md#局部前端执行与复核) |
 | 多极杆→OA→单反射TOF | [single_reflection_flight/run.ps1](workflows/single_reflection_flight/run.ps1)，`-Request -ExecutionBudgetPath` | [科学组request10及具名旧request9](docs/INTEGRATION.md#单反射整机)；内部execute由owner调用 |
 | OA／IP→MR接口准备与执行 | [accelerator_interface/execute.ps1](workflows/accelerator_interface/execute.ps1)，准备时明确提供者与参考run；`-FullJoint`按源链或prepared workbench分支执行 | [输入及设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
 | 已准备IP→MR飞行／分析 | [prepared_joint/execute.ps1](workflows/prepared_joint/execute.ps1)，准备run与观测合同 | [联合执行及Analysis](docs/INTEGRATION.md#已准备ipmr联合飞行) |

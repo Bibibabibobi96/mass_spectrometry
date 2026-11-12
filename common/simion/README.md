@@ -76,14 +76,10 @@ original manifests or claiming a frozen run-local analyzer closure that was abse
 项目间连接的矩形开孔统一调用[`msplatform.backends.simion.aperture`](../../src/msplatform/backends/simion/aperture.py)：机械宽、高任一小于一个cell时失败关闭；
 非整数cell倍数或孔边缘未落在网格节点时保留机械尺寸并输出机器可读离散警告；GEM减材固定使用
 `exclude_shape_inside_or_on_v1`，不得用隐藏epsilon扩大机械孔。提供者已有的 `notin_inside` 电极边缘合同则
-显式标为 `exclude_shape_inside_only_v1`，保留边缘节点，不冒称两种切口相同。编译或缓存PA后，所有生产消费者还必须
-通过[`aperture_topology_support.ps1`](aperture_topology_support.ps1)调用
-[`verify_aperture_topology.lua`](verify_aperture_topology.lua)，确认法兰厚度方向至少有一条贯通非电极节点列，
-并确认孔外四侧接地guard在法兰内部厚度节点仍存在（两端面连接相邻真空域，不作为侧壁判据）；FAIL禁止Fly。
-调用方显式声明真实世界坐标的法兰法向 `NormalAxis=x|y|z`、厚度范围及三维孔中心；宽、高分别沿剩余轴的
-x/y/z顺序取值（法向y时为x/z）。验证器只置换PA节点索引，既不旋转PA，也不借其他轴字段代称坐标。
-该入口面向仓库内所有未来SIMION项目连接，不绑定多极杆、
-oaTOF、single-flight或具体电极编号。
+显式标为 `exclude_shape_inside_only_v1`，保留边缘节点，不冒称两种切口相同。
+The former local-frontend compiled-PA aperture verifier and its PowerShell wrapper
+were withdrawn with their sole production consumer. The shared aperture geometry
+contract remains; it does not itself certify a compiled PA or authorize Fly.
 
 `surface=fractional`只提高非对齐表面的场与边界表达精度，不保证连续几何精确，也不能替代真实PA拓扑审计
 或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目 runner 经公共主机调度和冻结预算准入，
@@ -99,7 +95,7 @@ oaTOF、single-flight或具体电极编号。
 `examples/collision_hs1/collision_hs1.lua`文本，返回增加`reset_run_state`和只读`bound_parameters`的运行副本。
 它是仓库的生命周期适配，不是供应商推荐的新碰撞算法；安装目录源码不修改。未知私有声明、参数绑定、
 已适配来源或非唯一return均拒绝。碰撞公式、抽样、参数、PRNG及种子约定保持，调用方负责原始／适配源码身份。
-IP与冷却前端共用此入口，并沿各自现有冻结机制携带公共模块；冷却消费者不再依赖IP functional工作流。
+IP沿现有冻结机制携带此公共模块；冷却前端消费者已撤销。
 气体分布、调用时机和科学时序仍由消费者拥有，SDS不通过此HS1专用适配。
 
 ## 电压边沿
@@ -116,7 +112,7 @@ IP与冷却前端共用此入口，并沿各自现有冻结机制携带公共模
 公共模块不调度事件或自动平滑理想跳变。IP的`native_drive.lua`显式接收模块，runtime与场探针注入同一冻结副本，
 抬升进度及其截断仍由IP决定。MR联合场审计保留上游已绑定的驱动与波形源码；电压投影显式冻结并注入公共模块，
 IP距离研究同时绑定并核对源驱动及波形身份。run、worker及保存工作台携带必要代码伴随文件，恢复消费冻结源码。
-full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注入此公共模块；Program沿已有源清单冻结并内嵌它，
+保留的single-flight脉冲hook显式注入此公共模块；Program沿已有源清单冻结并内嵌它，
 不从活动仓库动态加载。器件脉冲模式和时序仍归hook，现有RF kernel保持原权威。
 [`test_voltage_waveforms.lua`](test_voltage_waveforms.lua)是无PA／Workbench的纯Lua边沿、矩形门及三次过渡回归；
 职责标准见[电压驱动与同步](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#电压波形器件驱动与同步)。
@@ -712,11 +708,11 @@ IP的prepare也调用已安装的SIMION工作台种子owner冻结已选seed和�
 
 ### Program-owned trajectory quality
 
-Modern installed tracking uses `validate_program_trajectory_quality` in `msplatform.backends.simion.tracking_program`: an explicit integer from -500 through500 is accepted; booleans, fractions and values outside that range are rejected. The RF, shared single-flight, local/cooled frontend and paired-pulse Program paths consume that one validator. Their existing positive defaults, RF-period steps, time/step limits, seeds, pulse/clock and particle identity rules are unchanged.
+Modern installed tracking uses `validate_program_trajectory_quality` in `msplatform.backends.simion.tracking_program`: an explicit integer from -500 through500 is accepted; booleans, fractions and values outside that range are rejected. The RF, shared single-flight and paired-pulse Program paths consume that one validator. Their existing positive defaults, RF-period steps, time/step limits, seeds, pulse/clock and particle identity rules are unchanged.
 
 This range is for the reserved variable `sim_trajectory_quality`, documented by [Workbench Program Extensions](https://simion.com/info/workbench_program_extensions.html#sim_trajectory_quality) and the installed SIMION2020 supplemental Help; [Time Step Size](https://simion.com/info/time_step_size.html) explains that zero/negative and positive values select different numerical behavior. It is a user numerical choice, not an accuracy qualification or automatic tuning recommendation.
 
-The local frontend applies quality through its same-stem frozen Program on load and every initialize_run, with `--programs 1`; its redundant CLI quality argument has been removed. The separate `--trajectory-quality` CLI range has not been verified for8.2.0.11. Legacy CLI-only RF runners and dual-cone CLI numerics have not been broadened by this change. Plain-Lua callback/readback checks are software evidence, not a native Fly or convergence claim.
+The dedicated local frontend is withdrawn. The separate `--trajectory-quality` CLI range has not been verified for8.2.0.11. Legacy CLI-only RF runners and dual-cone CLI numerics have not been broadened by this change. Plain-Lua callback/readback checks are software evidence, not a native Fly or convergence claim.
 
 Standalone operating-PA schema2 identities and cache adapters have one installed
 owner: `msplatform.backends.simion.operating_pa_cache`. They delegate publication,

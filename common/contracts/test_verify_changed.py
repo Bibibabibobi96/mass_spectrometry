@@ -648,28 +648,6 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertEqual(integration, {"integrations.tests.test_accelerator_interface_geometry"})
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
-    def test_recorded_frontend_analysis_selects_actual_consumers(self):
-        expected = {"integrations.tests." + name for name in (
-            "test_local_frontend_analysis", "test_local_frontend_focus",
-            "test_local_frontend_replay", "test_local_frontend_execute", "test_dependencies")}
-        for relative in (
-            "local_frontend/analyze.py", "local_frontend/focus.py", "local_frontend/figures.py",
-            "single_reflection_flight/checkpoint_diagnostics.py"):
-            with self.subTest(relative=relative):
-                request, _ = self.plan("-ChangedPath", "src/msplatform/workflows/" + relative)
-                modules = {value for row in request["stages"]
-                           if row["name"].startswith("instrument_assembly_integration")
-                           for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
-                self.assertEqual(modules, expected)
-                self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
-                                     for row in request["stages"]))
-
-        for retired in ("local_frontend/analyze.py", "local_frontend/focus.py"):
-            with self.subTest(retired=retired):
-                relative = "integrations/workflows/" + retired
-                self.assertFalse((REPO_ROOT / relative).exists())
-                self.assertTrue(any(name.startswith("instrument_assembly_integration")
-                                    for name in self.routed_stages(relative)))
 
 
 
@@ -680,7 +658,7 @@ ConvertTo-Json -Compress -InputObject $paths
         modules = [value for row in request["stages"]
                    if row["name"].startswith("instrument_assembly_integration")
                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
-        self.assertEqual(set(modules), {"integrations.tests.test_local_frontend_analysis"})
+        self.assertNotIn("integrations.tests.test_local_frontend_analysis", modules)
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
 
@@ -1201,7 +1179,8 @@ exit 0
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
         expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                     for path in (REPO_ROOT / 'integrations/tests').glob('test_*.py')
-                    if path.stem.startswith('test_single_reflection_') or
+                    if (path.stem.startswith('test_single_reflection_') and
+                        path.stem != 'test_single_reflection_checkpoint_diagnostics') or
                     path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy')}
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                 for path in (REPO_ROOT / 'integrations/tests').rglob('test_*.py')}
@@ -1284,7 +1263,6 @@ $result|ConvertTo-Json -Compress
         for path in ("integrations/tests/test_dependencies.py",
                      "integrations/config/runtime_dependencies.json",
                      "integrations/verify_integration.ps1",
-                     "integrations/workflows/local_frontend/prepare.py",
                      "integrations/runtime/dependencies.ps1",
                      "integrations/runtime/single_flight_frontend.py",
                      "integrations/analysis/plot_single_flight_spatial_six_panel.py"):
@@ -1299,11 +1277,6 @@ $result|ConvertTo-Json -Compress
                 self.assertEqual(set(self.routed_stages(path)),
                                  {"common_contracts", "instrument_assembly_integration"})
 
-    def test_installed_local_frontend_routes_its_actual_consumers(self) -> None:
-        for name in ("prepare.py", "runtime.py"):
-            with self.subTest(name=name):
-                stages = set(self.routed_stages("src/msplatform/workflows/local_frontend/" + name))
-                self.assertTrue({"common_contracts", "instrument_assembly_integration"} <= stages)
 
     def test_installed_bare_frontend_routes_all_actual_owners(self) -> None:
         self.assertEqual(set(self.routed_stages("src/msplatform/backends/simion/bare_frontend_geometry.py")),
@@ -1865,8 +1838,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         rf = "projects.rf_multipole_ion_optics.tests.analysis."
         single = "projects.single_reflection_oa_tof_mass_analyzer.tests.analysis."
         expected = {
-            "instrument_assembly_integration": ["integrations.tests.test_local_frontend_owner_recovery",
-                                                 "integrations.tests.test_single_reflection_owner_recovery"],
+            "instrument_assembly_integration": ["integrations.tests.test_single_reflection_owner_recovery"],
             "rf_multipole_quadrupole_static": [rf + name for name in (
                 "test_comsol_owner_finalization", "test_owner_finalization_recovery", "test_simion_powershell_owner")],
             "single_reflection_oa_tof_mass_analyzer_static": [single + name for name in (
@@ -2304,7 +2276,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                        if row['name'].startswith('instrument_assembly_integration')
                        for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
         self.assertCountEqual(integration, [
-            'integrations.tests.test_local_frontend_field_support', 'integrations.tests.test_dependencies'])
+            'integrations.tests.test_dependencies'])
         self.assertEqual(len(integration), len(set(integration)))
         self.assertTrue(any(row['name'].startswith('common_contracts') for row in request['stages']))
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'} for row in request['stages']))

@@ -14,7 +14,7 @@ class EngineeringBudgetTests(unittest.TestCase):
         code = r"""param($RepoRoot,$Temporary)
 $ErrorActionPreference='Stop'
 $relative='integrations';$sharedRuntime='integrations/runtime'
-foreach($entry in @('integrations/workflows/local_frontend/execute.ps1')){
+foreach($entry in @('integrations/workflows/single_reflection_flight/execute.ps1')){
  Remove-Item Function:Initialize-IntegrationStageBudget -ErrorAction SilentlyContinue
  $tokens=$null;$errors=$null
  $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot $entry),[ref]$tokens,[ref]$errors)
@@ -22,7 +22,7 @@ foreach($entry in @('integrations/workflows/local_frontend/execute.ps1')){
  foreach($statement in $ast.EndBlock.Statements){
   if($statement-is[Management.Automation.Language.PipelineAst]){
    $command=$statement.PipelineElements[0]
-   if($command-is[Management.Automation.Language.CommandAst]-and$command.InvocationOperator-eq'Dot'){Invoke-Expression $command.Extent.Text}
+   if($command-is[Management.Automation.Language.CommandAst]-and$command.InvocationOperator-eq'Dot'-and$command.Extent.Text-match 'integrations/runtime/engineering_budget\.ps1'){Invoke-Expression $command.Extent.Text}
   }
  }
  if(-not(Get-Command Initialize-IntegrationStageBudget -ErrorAction SilentlyContinue)){throw "missing entry budget: $entry"}

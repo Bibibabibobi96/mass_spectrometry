@@ -1,7 +1,7 @@
 # 统一装配实施状态
 
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
-Current scope is P4 V8.5 (2026-11-10); historical evidence keeps its original version.
+Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original version.
 原始输入和终态仍以各run的manifest为准。早期阶段见
 [迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
@@ -10,7 +10,9 @@ Current scope is P4 V8.5 (2026-11-10); historical evidence keeps its original ve
 
 The user withdrew the complete cooled feature in V8.5. Its dedicated source,
 resources, requests and tests are retired rather than renamed or disabled. IP HP/LP,
-HS1, dual-cone/SDS, local guide/OA, paired and multipole-IP remain in scope.
+HS1, dual-cone/SDS, single-reflection, paired and multipole-IP remain in scope.
+The dedicated local-frontend workflow and replay are withdrawn in V8.7; retained
+single-reflection research scopes and their shared providers remain separate.
 Original data and prior evidence are preserved; earlier cooled migrations are historical,
 not completion or scientific failure of the retained P4 scope. The exact previous text is
 [available at its original commit](https://github.com/Bibibabibobi96/mass_spectrometry/blob/574ae97437f5d27b4b7e3d6eb53845133158ca00/integrations/docs/INTEGRATION.md).
@@ -179,7 +181,7 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 | 执行与观测 | [公共调度](../../common/README.md#主机资源实现)，普通预算告警不终止健康求解 |
 | 完成事实与终态 | [SIMION适配](../../common/simion/README.md#原生完成事实)与[公共收尾](../../common/contracts/README.md)，不把完成行当科学成功 |
 | 母群、事件与统计 | [公共释放](../../common/ion_release/README.md)、[分析函数](../../common/analysis/README.md)；科学分母与判据仍由项目定义 |
-| 碰撞生命周期 | IP与冷却入口共用HS1加载／冻结／复位；机制复用不授予碰撞物理资格 |
+| 碰撞生命周期 | IP保留HS1加载／冻结／复位；机制复用不授予碰撞物理资格 |
 
 容量目标和最低空闲保护只读[唯一机器政策](../../src/msplatform/execution/resources/artifact_capacity_policy.json)。
 预算、实测峰值与数组下限分别记录，不用磁盘空闲代替准入，也不以改变网格或母群迁就旧预算。
@@ -326,84 +328,14 @@ COMSOL Freeze可保留停止后的状态，SIMION停止后不再输出后续观�
 原042142只测到部分工作集的记录不能冒充完整进程树预算；后继公共观察保护不热装到冻结旧run。
 当前来源接线、strict PA、仅后处理及保存模型重开均已有各自证据，不再作为“待首次执行”的行动指令。
 
-## 局部前端执行与复核
+## Withdrawn local frontend
 
-Local frontend scientific preparation and scheduler-owned phase materialization now live in
-`msplatform.workflows.local_frontend.prepare` and `.runtime`. The existing PowerShell workflow
-still owns admission, execution, protected fields, cleanup and publication; this slice introduces
-no second owner. Analysis and focus use the installed local owners; remaining root orchestration/replay closure is P4 work.
-
-Each source-bearing local case explicitly references its verified ordinary carrier and
-actual three-member response bank. The sole canonical IOB writer
-uses a case-local installed 20,856-byte structural container and creates/removes its owned neutral
-3x3x3 bootstrap; no published field or large historical placeholder is copied. Build and independent
-reopen are separate declared native operations, with original field/control identities rechecked.
-These new software contracts do not relabel previous saves as cold-reopen or native-flight evidence.
-The shared legacy seed helper, its remaining IP/MR/other workflow consumers and the tracked large
-placeholder remain open retirement work; neither that asset nor commercial software enters the wheel.
-
-
-The bare-guide/OA geometry compiler is installed as `msplatform.backends.simion.bare_frontend_geometry`.
-Two-zone callers explicitly provide `geometry_profile` content with its identity; the backend never loads
-a project profile or checkout. Interface validation and geometry compilation consume the
-same explicit request profile body; frozen historical requests/plans remain unchanged.
-This compiler migration does not change field, pulse, mother-population, clock or native qualification.
-
-
-[裸导引入口](../workflows/local_frontend/execute.ps1)接收schema 3请求；冻结完整父plan，默认full或显式local，不复制组件内部几何。
-从仓库根替换路径运行；以下最后一条会启动商业求解，须有对应科学运行授权及显式预算：
-
-```powershell
-& integrations/workflows/local_frontend/execute.ps1 -Request "<request.json>" -ValidateOnly
-& integrations/workflows/local_frontend/execute.ps1 -Request "<request.json>" -PrepareOnly -OutputDirectory "<managed-run>"
-& integrations/workflows/local_frontend/execute.ps1 -Request "<request.json>" -ExecutionBudgetPath "<budget.json>" -SolverAuthorized
-```
-
-`PrepareOnly`只写调用方已建立的受管run，不能用任意空目录或改变owner。二区／三区分别消费真实提供者，
-不能把旧八模式整机场当作裸导引场；位置、机械孔与数值carve分别处理，源保持全部原ID和唯一时钟。
-已退役无消费者的旧post-pulse／非bare PA+生成入口及重复拓扑校验转发；实际bare生成器、拓扑校验及旧模型／post-pulse收据渲染支持保持。
-
-三区[165815迁移对照](../../../artifacts/projects/instrument_assembly/runs/20261022_165815__sim__simion__local-bare-guide-oa/summary.json)
-已完成N=100、源与规范事件逐值对照、69出口／31损失及新进程默认回放，差异字段0。
-只证明冻结局部工况迁移一致，不授予MR接受、整机分辨率或Formal资格。
-
-
-局部OA出口的九变量均值与中心协方差调用[公共总体矩](../../common/analysis/README.md)，与IP二变量统计
-共用`ddof=0`内核；当前出口群仍按每个原ID等权计算，保留全部出口及既有字段和单位。
-这项离线计算收敛不改变原生快照、穿面重建、真实角度定义或历史运行结果。
-
-局部前端的响应选择只验证小收据及其manifest身份、命名、响应集合和大小；PA字节由公共物化入口在
-首次消费时完整核验。三个工作点共用同一组从首次核验起持续受护的只读私有副本，输出仍分别新建、核验；
-`source_verification_after_native`记录连续源guard的身份确认，不表示再次全文读取。单反射IOB持久副本
-沿公共发布入口转交实际目标guard，后续保护复用同一身份；已有产物和独立消费者仍按原边界完整验证。
-软件夹具中97 B及8 MiB以上文件的复制／发布／保护均由5次身份全读降为2次；五／六输入的三个工作点
-物化夹具分别由23／27次降为10／12次，另验证metadata选择不读PA而仍读取小收据。计数不含复制及原生
-composer读取，不代表物理磁盘流量或运行倍速。
-[小型真实SIMION三工作点验收](../../../artifacts/projects/instrument_assembly/runs/20261029_062052__test__simion__h1-h2-three-workpoints/summary.json)
-已完成：19次CLI正常退出，三个工作点各343节点的potential／mask／grid及两采样点在冻结BASE／NEW间相等，
-60次保护探针拒绝写入，源即时和延迟身份不变。小PA日志有尺寸小于11的精度警告；此结果只证明传输／
-代数等价和保护，不证明场精度、大PA吞吐、Fly或GUI资格。完整测量边界见[指南验收记录](../../docs/history/20261029__system-guide-complete-review.md#实测收益与边界)。
-观察器明确报告直接原生根退出未知时保留该组临时输入，将精确目录附于原异常供owner处理；不执行
-输入清理，也不声称PowerShell退出后FileShare句柄仍然保持。
-
-局部OA与IP的穿面适配器直接消费[公共有界穿面内核](../../src/msplatform/analysis/plane_crossings.py)，
-局部OA不再构造IP配置或调用IP穿面适配器。原生事件白名单、instance=1、寿命截断、同刻六维精确去重、
-脉冲后选择与原CSV／raw-log锚点仍由局部适配器保持；插值使用原mm／μs字段，z=0只取实测出口。
-公共内核只接受相邻记录夹持的正向事件，最大间隔为冻结采样间隔加最大步长，保留1e-12 μs既有判定余量。
-出口坐标在旧记录容差内也不能支持越过其实际位置的外推；这种情况保留unknown诊断缺口而非物理损失。
-结果的`crossing_reconstruction`记录方法版本与首次穿越选择，不证明未采样区间中没有转折。
-冻结清单包含公共内核；脱离活动仓库的局部快照能实际计算穿面，缺该模块时失败关闭。
-
-局部OA共享时刻census接入[公共母群核算](../../src/msplatform/analysis/particle_census.py)，
-保留真实shared-time观测与原32 ULP端点政策；没有支持记录时仍为numerical_unsupported，
-不借用IP显示插值，不由缺终态推断存活。legacy already_loss仅指非出口终态，实际图标为Non-exit terminal，
-不表示已证实撞壁。分类与出口比例保持完整原始母群及显式分母，缺观测不从分母移除。
-
-束宽、真角度发射度、时间相关与零场预测现直接调用[公共beam方法](../../src/msplatform/analysis/beam_focus_diagnostics.py)，
-不再从IP导入实现。局部源按现有生成合同显式全1权重；这不声明支持外来canonical非等权注入。
-固定出口群、各面缺测与全部原始ID保持；场内实际观测和出口后零场反事实继续分开，图只读prepared结果。
-图形保存复用[公共导出](../../src/msplatform/io/figure_export.py)，保持原PNG／SVG、190 DPI、白底和文件名，
-实际导出记录写入focus summary；不改写其他phase summary，路径冲突或失败不覆盖既有文件。
+The dedicated local-frontend workflow and replay were withdrawn by the V8.7
+scope decision. Historical run records retain their original identities. Shared
+single-reflection and paired-flight owners remain separately supported.
+The private r3 withdrawal software run failed across 278 parent tests. A targeted
+successor passed 60 parents and 128 subtests (188 successes) in 190.688 seconds.
+These results do not constitute a full Repository gate or native qualification.
 
 ## OA／IP接口准备与绑定
 
@@ -650,16 +582,6 @@ run_artifact_workflow owner，保存实际原生完成／释放事实、run 外�
 
 既有小型SIMION路径探针`20261030_194622__sim__simion__cold-reopen-path-probexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`经正式IOB builder/core完成四个准备／保存／重开操作，原alias删除后由新表示冷开成功；首次收尾失败保留，修正公共收据运输后仅收尾6.223秒完成，零新增原生。该证据无Refine／Fly，不代替N100功能或科学资格。
 
-## Local normal execution and explicit field reuse
-
-The local CLI uses the public run_artifact_workflow owner and persistent Result.
-`-ResumeFinalization -ResultPath <original Result>` advances only unfinished finalization;
-unknown writers keep their guards and the original failure remains a failure.
-Normal Fly and saved-workbench replay are separate actions. Replay is requested explicitly
-with `verify_saved_workbench_replay=true`; source, geometry, operator, grid, drive and
-solver dependencies still determine legitimate field reuse. No cooled execution mode remains.
-
-
 ### 同步已冻结的理想栅接口审计源码
 
 `111659`原生实际冻结builder包含OA出口／reflectron入口的grounded-sheet与有界endpoint检查，
@@ -681,12 +603,13 @@ paired pulse在MATLAB／COMSOL前段迁移前保留early alias，不以此提交
 
 纯准备的冻结Python cwd本身若超过Windows进程目录边界，仍需后续Python owner运输；本主题不以SIMION argv投影声称关闭此限制。
 
-局部裸导引basis现在由同一冻结`frontend_field_plan`给出固定原生命令序列和科学依赖，
+Historical local-frontend basis evidence used a frozen `frontend_field_plan`; the local workflow is withdrawn.
+Historically,
 现PowerShell只投影计划中的已知文件角色并执行；实际gem2pa、默认Refine与逐mode导出顺序不变。
 源、场、驱动和网格变化仍按实际依赖失效；纯宿主路径、日志或完成事实运输不再改变basis key。
 完整PS/Python和验收来源仍另存`local_frontend_field_source_provenance.json`，不是删除来源记录。
 20261022三个旧local run目前缺完整冻结producer；唯一仍有field receipt的165815所指generation亦缺失，
-因此本次不转换旧key或声称历史资产自动兼容；缺资产时最小恢复范围是该local basis重新构造与验收，
+The historical keys are not converted or claimed compatible; the following describes the former recovery scope:
 不是重新采样源或无条件重飞。本主题仅软件接线验证，没有新Refine、场精度或科学资格结论。
 verifier与response-set contract仍作为现publication资格约束保守入key；本次不宣称任意验收方法变化也零Refine。
 
@@ -935,12 +858,12 @@ the original scientific definitions; no native propagation was performed here.
 Official CLOC 2.10, e4fecc11 to this slice: total +2, production 0, tests +2,
 zero unclassified; full language counts/filter remain in task evidence.
 
-Modern Program-based local and paired-pulse preparation/runtime now use the installed tracking quality validator; its documented range and CLI distinction are described in [public SIMION controls](../../common/simion/README.md#program-owned-trajectory-quality). Frozen defaults and other numerical/physics guards remain unchanged. Local frontend uses its bound Program as the sole quality authority instead of also passing a CLI quality flag. This update has plain-Lua/software evidence only and adds no native qualification.
+Modern Program-based paired-pulse preparation/runtime use the installed tracking quality validator; its documented range and CLI distinction are described in [public SIMION controls](../../common/simion/README.md#program-owned-trajectory-quality). Frozen defaults and other numerical/physics guards remain unchanged. This update has plain-Lua/software evidence only and adds no native qualification.
 
 
 ### Shared initial-state record reader
 
-The installed local frontend runtime reads its frozen initial-state CSV through
+The retained single-reflection runtime reads its frozen initial-state CSV through
 `msplatform.backends.simion.source.load_initial_state`. The retired SFI Program
 wrapper has no reader body or re-export. The reader preserves row order,
 explicit positive unique row IDs, each original instrument-time value and
@@ -1013,7 +936,7 @@ Program receives its explicitly selected frozen native-path helper bytes.
 
 ### Standalone Lua discovery for frontend software checks
 
-The single-reflection and local frontend software fixtures try `lua`, then the pinned
+The retained single-reflection software fixtures try `lua`, then the pinned
 `lua5.1` provider on PATH, before their unchanged vendor fallback. The provider keeps its original
 executable name and matching runtime manifests. This changes test interpreter discovery only;
 production supplier selection, callbacks, source/field identities and numerical policies are unchanged.
@@ -1111,16 +1034,8 @@ canonical geometry fails in a fresh process; no project or Matplotlib fallback
 is supplied by this pure-geometry proof. Full installed-parent, Repository and
 native qualification are separate scopes.
 
-### Recorded local analysis ownership
+### Retained recorded checkpoint analysis
 
-Recorded local guide-to-OA analysis, focus and geometry figures live in
-`msplatform.workflows.local_frontend`. The withdrawn cooled workflow is not
-retained under a conditioner overlay or alternate local mode.
-The shared RF/OA/TOF checkpoint protocol adapter is
-`msplatform.workflows.single_reflection_flight.checkpoint_diagnostics`; the mixed
-repository campaign plot calls it directly and retains its campaign responsibilities.
-These readers consume frozen sources and recorded logs without a solver or owner.
-The complete mother, native clocks, unresolved terminals and recorded-only snapshots
-are retained; a figure or nominal gas reference does not prove native propagation
-or actual gas coverage. Root execution/runtime/replay orchestration remains
-a separate migration responsibility.
+The shared RF/OA/TOF checkpoint adapter remains in
+`msplatform.workflows.single_reflection_flight.checkpoint_diagnostics`. It reads
+recorded data without launching a solver; this is not native qualification.

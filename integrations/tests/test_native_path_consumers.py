@@ -81,72 +81,9 @@ try{
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("PERSISTENT_RECEIPT_EVIDENCE=PASS", result.stdout)
 
-    def test_field_and_replay_retain_actual_process_facts_before_checks(self):
-        code = r"""param($Repo,$Python,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/runtime/local_frontend_field_support.ps1'),[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-LocalFieldNative'},$true)
-Invoke-Expression $node.Extent.Text
-New-Item -ItemType Directory -Path (Join-Path $Root inputs),(Join-Path $Root logs) -Force|Out-Null
-$Package=[pscustomobject]@{python=$Python;artifact_run_dir=$Root;run_dir=$Root;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
-$run=$Root;$log=Join-Path $Root logs;$logs=$log;$StageElapsed=$null;$Limits=@{};$SimionExe='INERT_NOT_A_SOLVER'
-$fieldNativeContext=@{run_dir=$Root;environment=@{}}
-$NativeResourceReleaseId='actual-test-grant'
-$script:nativeCalls=0
-function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$Environment,$RedirectStandardOutput,$RedirectStandardError)
- $script:nativeCalls++
- if($mode-eq'unknown'){
-  try{throw 'ORIGINAL_NATIVE_OBSERVATION_FAILURE'}catch{
-   $_.Exception.Data['observed_process_exit_confirmed']=$false
-   $_.Exception.Data['observed_process_returncode']=$null
-   $_.Exception.Data['observed_process_id']=701
-   $_.Exception.Data['observed_process_started_at_utc_ticks']=801L
-   throw
-  }
- }
- return @{completed=$true;exit_code=$(if($mode-eq'nonzero'){7}else{0});root_process_id=701;root_process_started_at_utc_ticks=801L;resource_budget_exceeded=$false}
-}
-function Get-HostResourceBudget {param($Role,$Stage);return @{}}
-function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes);return $Lease}
-function Invoke-FrontendRuntimePython {
- param($Python,$RepoRoot,$RunDirectory,$Name,$Arguments,[switch]$Json)
- if($Name-eq'default_replay_prepare'){return @{working_directory=$Root;control_records=@();argument_list=@('--nogui','fly',(Join-Path $Root saved.iob));environment=@{};usage_path=(Join-Path $Root usage.json);stdout=(Join-Path $Root replay.log);stderr=(Join-Path $Root replay.err)}}
- if($Name-eq'default_replay_compare'){
-  if($NativeOperations.Count-ne1){throw 'Native completion was not recorded before analysis'}
-  throw 'ORIGINAL_COMPARISON_FAILURE'
- }
- throw 'Unexpected runtime call'
-}
-foreach($boundary in @('field','replay')){foreach($mode in @('nonzero','unknown','analysis_failure')){
- $NativeOperations=[Collections.Generic.List[object]]::new();$caught=$null;$before=$nativeCalls
- try{
-  if($boundary-eq'field'){
-   Invoke-LocalFieldNative -Arguments @('--nogui') -Directory $Root -Name field_test
-   if($NativeOperations.Count-ne1){throw 'Field completion was not recorded before analysis'}
-   throw 'ORIGINAL_COMPARISON_FAILURE'
-  }else{
-   $lease=@{};$materialized=@{default_replay_policy=@{scope='fresh_process';comparison_policy='deterministic_trajectory_parity'};gui_case=@{iob_path=(Join-Path $Root saved.iob)};batches=@()}
-   $null=Invoke-FrontendDefaultReplay -Package $Package -Materialized $materialized -HostLease ([ref]$lease) -RunDirectory $Root -RepoRoot $Repo -Python $Python -SimionExe $SimionExe -Limits @{} -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId
-  }
- }catch{$caught=$_}
- if($null-eq$caught-or$nativeCalls-ne($before+1)-or$NativeOperations.Count-ne1){throw 'Failure lost actual native facts or restarted the operation'}
- $fact=$NativeOperations[0]
- if($fact.resource_release_id-ne$NativeResourceReleaseId-or$fact.observation.process_id-ne701){throw 'Process or grant identity changed'}
- if($mode-eq'unknown'){
-  if($fact.observation.exit_confirmed-or$null-ne$fact.observation.returncode-or$caught.Exception.Message-ne'ORIGINAL_NATIVE_OBSERVATION_FAILURE'){throw 'Unknown writer was made complete or its cause masked'}
- }elseif(-not$fact.observation.exit_confirmed-or$fact.observation.returncode-ne$(if($mode-eq'nonzero'){7}else{0})){throw 'Actual stopped process fact changed'}
- if($mode-eq'analysis_failure'-and$caught.Exception.Message-ne'ORIGINAL_COMPARISON_FAILURE'){throw 'Analysis cause was masked'}
-}}
-"""
+
+    def test_canonical_member_retains_actual_process_facts_before_checks(self):
         with tempfile.TemporaryDirectory() as temporary:
-            script = Path(temporary)/"facts.ps1"
-            script.write_text(code, encoding="utf-8", newline="\n")
-            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO), sys.executable, temporary],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self._check_canonical_member_native_facts(Path(temporary))
 
     def _check_canonical_member_native_facts(self, root):
@@ -477,49 +414,6 @@ try{
                 self.assertIn("NATIVE_FACT_BEFORE_SCIENCE=PASS", result.stdout)
 
 
-    def test_local_topology_project_environment_paths_before_actual_writer(self):
-        code=r"""param($Repo,$Python,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
-$source=Join-Path $Repo 'integrations/workflows/local_frontend/execute.ps1'
-$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$topology.InvokeVerifier'},$true)
-Invoke-Expression ('$callback='+$node.Right.Extent.Text)
-$callbacks=@($callback)
-$Limits=@{};$SimionExe='INERT';$NativeResourceReleaseId='owner'
-$run=Join-Path $Root ('persistent_'+('depth_'*40));New-Item -ItemType Directory -Path (Join-Path $run logs),(Join-Path $run inputs) -Force|Out-Null
-$package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;log_dir=(Join-Path $run logs);path_context=[pscustomobject]@{execution_root=(Join-Path $Root short);artifact_root=$Root;host_resource_state_path=(Join-Path $Root host.sqlite3)}}
-$script:run=$run;$budget=@{limits=@{}};$simion='INERT';$lease=@{token='owner'};$nativeOperations=[Collections.Generic.List[object]]::new()
-$env:SIMION_APERTURE_PA_PATH=Join-Path $run 'inputs/field.pa'
-$env:SIMION_APERTURE_REPORT_PATH=Join-Path $run 'results/report.json'
-$verifier=Join-Path $run 'inputs/verifier.lua';$script:calls=0
-function Invoke-ResourceBudgetedProcess {
- param($Limits,$RunDir,$FilePath,$WorkingDirectory,$ArgumentList,$Environment,$UsagePath,$RedirectStandardOutput,$RedirectStandardError)
- $script:calls++
- foreach($path in @($WorkingDirectory,$ArgumentList[-1],$Environment.SIMION_APERTURE_PA_PATH,$Environment.SIMION_APERTURE_REPORT_PATH)){
-  if($path.StartsWith($run)-or-not$path.StartsWith($package.run_dir)){throw 'topology native locator not projected'}
- }
- if($RunDir-ne$run-or$Environment.MASS_SPECTROMETRY_RUN_DIRECTORY-ne$run-or$Environment.MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY-ne$package.run_dir){throw 'identity/execution roots mixed'}
- return @{completed=$true;exit_code=0;root_process_id=(701+$calls);root_process_started_at_utc_ticks=(801L+$calls);resource_budget_exceeded=$false}
-}
-try{
- foreach($callback in $callbacks){$result=&$callback $verifier}
- if($calls-ne1-or$nativeOperations.Count-ne1-or$result.exit_code-ne0){throw 'topology writer/fact wiring failed'}
- if($env:SIMION_APERTURE_PA_PATH-ne(Join-Path $run 'inputs/field.pa')){throw 'persistent caller environment rewritten'}
- function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool);throw 'PREPARATION_FAILED_BEFORE_WRITER'}
- try{&$callback $verifier;throw 'missing preparation failure'}catch{if($_.Exception.Message-ne'PREPARATION_FAILED_BEFORE_WRITER'){throw}}
- if($calls-ne1-or$nativeOperations.Count-ne1){throw 'preparation failure created native operation'}
- 'LOCAL_TOPOLOGY_PATH_CONTEXT=PASS'
-}finally{Remove-RunPackageExecutionAlias -Package $package}
-"""
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            script=root/'topology.ps1'
-            script.write_text(code,encoding='utf-8',newline='\n')
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=45)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn('LOCAL_TOPOLOGY_PATH_CONTEXT=PASS',result.stdout)
 
 
 if __name__ == "__main__":

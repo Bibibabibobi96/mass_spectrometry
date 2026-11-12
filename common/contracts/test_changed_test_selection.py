@@ -981,8 +981,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'test_operating_pa_cache.py', 'test_standalone_pa_composition_tools.py',
             'test_export_standalone_pa.py')]
         mr = [MR + '/tests/analysis/test_static_field_binding.py']
-        local = ['integrations/tests/test_local_frontend_field_support.py',
-                 'integrations/tests/test_dependencies.py']
+        local = ['integrations/tests/test_dependencies.py']
         cases = [
             dict(stage='simion_common', paths=[cache], modules=[common + 'test_operating_pa_cache.py']),
             dict(stage='simion_common', paths=[composer], modules=common_composer),
@@ -1824,8 +1823,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 all_modules.update(modules)
 
     def test_integration_ip_provider_tests_keep_only_real_fixture_consumers(self) -> None:
-        integration = ["integrations/tests/test_local_frontend_owner_recovery.py",
-                       "integrations/tests/test_single_reflection_owner_recovery.py"]
+        integration = ["integrations/tests/test_single_reflection_owner_recovery.py"]
         ip = "projects/dual_pressure_rectilinear_ion_processor/"
         consumers = integration + [
             RF + "/tests/analysis/test_comsol_owner_finalization.py",

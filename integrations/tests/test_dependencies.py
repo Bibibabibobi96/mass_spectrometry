@@ -121,15 +121,15 @@ print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3])
                         (package / name).write_bytes(raw)
                     relative = package.relative_to(author).as_posix()
                     declaration = dict(schema_version=3, role="integration_runtime_dependencies",
-                        owner_id="instrument_assembly", consumer_ids=["local_frontend"], providers=[
+                        owner_id="instrument_assembly", consumer_ids=["single_reflection_flight"], providers=[
                             dict(provider_scope="project", provider_project="device", files=[],
                                  python_packages=[dict(source_repo_path=relative,
-                                     consumers=["local_frontend"], resource_suffixes=[".schema.json", ".py"])],
+                                     consumers=["single_reflection_flight"], resource_suffixes=[".schema.json", ".py"])],
                                  python_modules=[])])
                     contract.write_text(json.dumps(declaration), encoding="utf-8")
                     destination = root / f"inputs{number}"
                     script = f""". '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{contract}' -InputDir '{destination}' -OwnerId instrument_assembly -ConsumerId local_frontend
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{contract}' -InputDir '{destination}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """
                     result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                         cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
@@ -145,7 +145,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
                     self.assertEqual({entry["source_repo_path"] for entry in entries}, expected)
                     self.assertEqual(len(entries), len(expected))
                     for entry in entries:
-                        self.assertEqual(entry["consumers"], ["local_frontend"])
+                        self.assertEqual(entry["consumers"], ["single_reflection_flight"])
                         self.assertEqual((destination / "runtime_snapshot" / entry["source_repo_path"]).read_bytes(),
                                          (author / entry["source_repo_path"]).read_bytes())
 
@@ -227,7 +227,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
             freeze_script.write_text("""param($Repo,$Destination,$Python)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
-$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId local_frontend
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """, encoding="utf-8", newline="\n")
             environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1",
                                SIMULATION_PYTHON_EXE=sys.executable,
@@ -275,7 +275,7 @@ foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invo
             script = f"""
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 $f.import_roots|ConvertTo-Json -Compress
 """
             result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script], cwd=root,
@@ -293,7 +293,7 @@ $f.import_roots|ConvertTo-Json -Compress
             self.assertEqual(policy_entries[0]["provider_project"], "msplatform")
             self.assertEqual(policy_entries[0]["id"], "msplatform_contracts_particle_count_policy_json")
             self.assertEqual(policy_entries[0]["consumers"],
-                ["local_frontend", "prepared_joint", "accelerator_interface", "oa_mr"])
+                ["prepared_joint", "accelerator_interface", "oa_mr"])
             self.assertEqual((snapshot/policy_relative).read_bytes(), (REPO_ROOT/policy_relative).read_bytes())
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
@@ -475,7 +475,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["common/contracts/run_artifact_workflow.ps1"],
                          {"prepared_joint", "oa_mr", "paired_accelerator_static_field",
-                          "paired_accelerator_pulse", "local_frontend",
+                          "paired_accelerator_pulse",
                           "single_reflection_flight"})
         self.assertLessEqual(entries["common/contracts/run_artifact_workflow.ps1"],
                              entries["common/resource_budget_support.ps1"])
@@ -814,6 +814,11 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             statement = """
 import json,sys
 from pathlib import Path
+class DenyWithdrawn:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith(('msplatform.workflows.local_frontend', 'msplatform.workflows.cooled_frontend')):
+            raise AssertionError('withdrawn workflow imported: '+fullname)
+sys.meta_path.insert(0,DenyWithdrawn())
 class NoOrchestrationImport:
     def find_spec(self, fullname, path=None, target=None):
         if fullname in ('integrations.workflows.single_reflection_flight.runtime',
@@ -893,215 +898,7 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
 
 
 
-    def test_local_freezer_imports_without_repository_and_requires_provider(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory)
-            script = f"""
-. '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
-if(@($f.identities).Count-lt1){{throw 'empty selected closure'}}
-Write-Output $f.execution_root
-"""
-            result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            selected = load(output / "code_inventory.json")["dependencies"]
-            paths = {row["source_repo_path"] for row in selected}
-            required_ip = {"src/msplatform/components/dual_pressure_rectilinear_ion_processor/guide_interface.py"}
-            required_ip.update("src/msplatform/components/dual_pressure_rectilinear_ion_processor/" + name + ".py"
-                               for name in ("native_geometry", "electrode_contours", "convex_geometry"))
-            self.assertTrue(required_ip <= paths)
-            self.assertNotIn("oatof_analyzer_component", {row["id"] for row in selected})
-            snapshot = output/"runtime_snapshot"
-            detached_script = """
-. './integrations/runtime/dependencies.ps1'
-Assert-DependencyProviderIdentity -RepoRoot (Get-Location).Path -DependencyId test `
-  -Scope integration -Provider instrument_assembly -ProviderRelative integrations
-Write-Output 'FROZEN_DEPENDENCIES=PASS'
-"""
-            detached = subprocess.run([pwsh, "-NoProfile", "-Command", detached_script],
-                                      cwd=snapshot, capture_output=True, text=True,
-                                      encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(detached.returncode, 0, detached.stdout + detached.stderr)
-            env = dict(os.environ)
-            env["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
-            statement = ("from msplatform.workflows.local_frontend import prepare,runtime; "
-                         "from msplatform.workflows.local_frontend import analyze; from integrations.runtime "
-                         "import standalone_pa_family; from msplatform.execution import run_capacity_lifecycle;"
-                         "assert prepare.ROLE=='instrument_assembly_local_frontend_request'; print('LOCAL_SNAPSHOT_IMPORT=PASS')")
-            completed = subprocess.run([sys.executable, "-s", "-c", statement], cwd=snapshot, env=env,
-                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-            analyzer_statement = """
-from pathlib import Path
-import sys
-class RejectCooled:
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "msplatform.workflows.cooled_frontend" or fullname.startswith("msplatform.workflows.cooled_frontend."):
-            raise AssertionError("retained analyzer imported withdrawn cooled owner: " + fullname)
-sys.meta_path.insert(0, RejectCooled())
-from msplatform.workflows.local_frontend import analyze, focus, figures
-from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
-for module in (analyze, focus, figures, checkpoint_diagnostics):
-    assert Path(module.__file__).resolve().is_relative_to(Path.cwd()/'src')
-print('RECORDED_ANALYSIS_ORIGINS=PASS')
-"""
-            analyzer_command = [sys.executable, "-B", "-s", "-c", analyzer_statement]
-            actual = subprocess.run(analyzer_command, cwd=snapshot, env=env,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
-            self.assertIn("RECORDED_ANALYSIS_ORIGINS=PASS", actual.stdout)
-            for relative in ("local_frontend/analyze.py", "local_frontend/focus.py",
-                             "local_frontend/figures.py",
-                             "single_reflection_flight/checkpoint_diagnostics.py"):
-                with self.subTest(missing_owner=relative):
-                    owner = snapshot/"src/msplatform/workflows"/relative
-                    original = owner.read_bytes()
-                    owner.unlink()
-                    try:
-                        missing_owner = subprocess.run(analyzer_command, cwd=snapshot, env=env,
-                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-                        self.assertNotEqual(missing_owner.returncode, 0)
-                        self.assertIn(Path(relative).stem, missing_owner.stderr)
-                    finally:
-                        owner.write_bytes(original)
-            # Exercise the real local OA adapter inside the detached snapshot,
-            # then remove its new public kernel and prove imports fail closed.
-            crossing_statement = """
-from pathlib import Path
-from msplatform.workflows.local_frontend.focus import _local_crossings
-from msplatform.analysis import plane_crossings
-assert Path(plane_crossings.__file__).is_relative_to(Path.cwd())
-rows = _local_crossings(
-    [(4, dict(particle_id=7,t_us=1.,x_mm=1.,y_mm=2.,z_mm=2.,vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-1.)),
-     (8, dict(particle_id=7,t_us=2.,x_mm=3.,y_mm=2.,z_mm=0.,vx_mm_us=0.,vy_mm_us=0.,vz_mm_us=-1.))],
-    {7: {}}, {}, {7: dict(reason='not_extracted')}, [1.,0.],
-    frame='mrtof_global_cartesian',pulse=0.,limit=1.,mass=524.)
-assert rows[0]['t_us']==1.5 and rows[0]['lower_sample_line']==4 and rows[0]['upper_sample_line']==8
-assert rows[1]['status']=='unknown'
-print('LOCAL_SNAPSHOT_CROSSING=PASS')
-"""
-            crossing_command = [sys.executable, "-B", "-s", "-c", crossing_statement]
-            crossed = subprocess.run(crossing_command, cwd=snapshot, env=env,
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertEqual(crossed.returncode, 0, crossed.stdout+crossed.stderr)
-            self.assertIn("LOCAL_SNAPSHOT_CROSSING=PASS", crossed.stdout)
-            kernel = snapshot/"src/msplatform/analysis/plane_crossings.py"
-            contents = kernel.read_bytes()
-            kernel.unlink()
-            try:
-                absent = subprocess.run(crossing_command, cwd=snapshot, env=env,
-                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-                self.assertNotEqual(absent.returncode, 0)
-                self.assertIn("plane_crossings", absent.stderr)
-            finally:
-                kernel.write_bytes(contents)
-            # Removing one declared provider proves the clean snapshot cannot
-            # silently recover an undeclared cross-project import from the repo.
-            (snapshot/"src/msplatform/components/dual_pressure_rectilinear_ion_processor/guide_interface.py").unlink()
-            missing = subprocess.run([sys.executable, "-B", "-s", "-c", statement], cwd=snapshot, env=env,
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-            self.assertNotEqual(missing.returncode, 0)
-            self.assertIn("guide_interface", missing.stderr)
 
-    def test_local_snapshot_prepares_both_variants_and_requires_runtime_resources(self) -> None:
-        from integrations.tests.test_local_frontend_workflow import fixture, write_fixture_plan
-        from integrations.tests.frontend_fixtures import canonical_three_zone_frontend_fixture
-
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        with tempfile.TemporaryDirectory() as directory:
-            workspace = Path(directory)
-            fixture_root = workspace / "frozen"
-            request_path, request = fixture(fixture_root)
-            freeze = f"""
-. '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{workspace / 'frozen'}' -OwnerId instrument_assembly -ConsumerId local_frontend
-"""
-            frozen = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
-            self.assertEqual(frozen.returncode, 0, frozen.stdout+frozen.stderr)
-            snapshot = workspace / "frozen/runtime_snapshot"
-            environment = dict(os.environ)
-            environment["PYTHONPATH"] = os.pathsep.join(python_import_roots(snapshot))
-            module = "msplatform.workflows.local_frontend.prepare"
-            command = [sys.executable, "-B", "-s", "-m", module, "--request", str(request_path),
-                       "--workspace-root", str(fixture_root), "--validate-only"]
-
-            def run_prepare():
-                return subprocess.run(command, cwd=snapshot, env=environment, capture_output=True,
-                                      text=True, encoding="utf-8", errors="replace", timeout=60)
-
-            for variant in ("two_zone", "three_zone"):
-                with self.subTest(variant=variant):
-                    if variant == "three_zone":
-                        _, connection, component = canonical_three_zone_frontend_fixture()
-                        placement = component.pop("transform")
-                        request["accelerator_component"] = component
-                        parent = json.loads(Path(request['composition_plan']['path']).read_text())
-                        recipe = parent['recipe']
-                        instances = {item["instance_id"]: item for item in recipe["instances"]}
-                        instances["guide"]["transform"].update(
-                            rotation=connection["spatial_registration"]["rotation_upstream_to_downstream"],
-                            translation_mm=connection["spatial_registration"]["translation_mm"])
-                        instances["accelerator"]["transform"].update(
-                            from_frame_id="sectioned_accelerator_cartesian", **placement)
-                        recipe["connections"][0]["gap_mm"] = connection["connector"]["length_mm"]
-                        write_fixture_plan(fixture_root, request, recipe)
-                    request_path.write_text(json.dumps(request), encoding="utf-8")
-                    completed = run_prepare()
-                    self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-                    output = workspace / variant
-                    output.mkdir()
-                    config = output / "run_config.json"
-                    run_id = "20261022_120000__test__python__frozen-prepare"
-                    public = [pwsh, "-NoProfile", "-File", str(INTEGRATION_ROOT / "workflows/local_frontend/execute.ps1"),
-                              "-Request", str(request_path), "-RepoRoot", str(snapshot), "-Python", sys.executable,
-                              "-PrepareOnly", "-OutputDirectory", str(output)]
-                    config.write_text(json.dumps(dict(project="wrong_owner", run_id=run_id)))
-                    refused = subprocess.run(public, cwd=snapshot, env=environment, capture_output=True, text=True,
-                                             encoding="utf-8", errors="replace", timeout=60)
-                    self.assertNotEqual(refused.returncode, 0)
-                    self.assertIn("managed run owner", refused.stderr)
-                    self.assertFalse((output / "inputs").exists())
-                    config.write_text(json.dumps(dict(project="instrument_assembly", run_id=run_id)))
-                    prepared = subprocess.run(public, cwd=snapshot, env=environment, capture_output=True, text=True,
-                                              encoding="utf-8", errors="replace", timeout=60)
-                    self.assertEqual(prepared.returncode, 0, prepared.stdout+prepared.stderr)
-                    self.assertEqual(load(workspace / variant / "inputs/integration_identity.json")["integration_id"],
-                                     "instrument_assembly")
-                    from msplatform.execution.clock_authority import validate_clock_authority
-                    self.assertEqual(validate_clock_authority(output / "inputs/clock_authority.json", output)["clock_epoch_id"],
-                                     load(output / "inputs/source_identity.json")["clock_epoch_id"])
-                    self.assertFalse((output / "inputs/source_clock.json").exists())
-                    result = json.loads(completed.stdout)
-                    self.assertEqual((result["status"], result["particle_count"]), ("validated", 100))
-
-            # Each omitted resource failed in a real frozen run. Fresh processes
-            # and -B prevent an already imported module/pyc masking the omission.
-            for relative in ("src/msplatform/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
-                             "src/msplatform/execution/clock_authority.py",
-                             "src/msplatform/contracts/schemas/canonical_clock_authority.schema.json",
-                             "src/msplatform/contracts/schemas/assembly_recipe.schema.json",
-                             "src/msplatform/contracts/schemas/component_geometry_interface.schema.json",
-                             "src/msplatform/contracts/schemas/composition_plan.schema.json",
-                             "src/msplatform/assembly/resolve_assembly.py",
-                             "src/msplatform/components/orthogonal_accelerator/assembly_interface.py",
-                             "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py"):
-                with self.subTest(missing=relative):
-                    resource = snapshot / relative
-                    original = resource.read_bytes()
-                    resource.unlink()
-                    try:
-                        missing = run_prepare()
-                        self.assertNotEqual(missing.returncode, 0, missing.stdout)
-                        self.assertIn(resource.stem, missing.stderr)
-                    finally:
-                        resource.write_bytes(original)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_changed_frozen_dependency_reports_both_paths_and_measured_hashes(self) -> None:
@@ -1126,7 +923,7 @@ function Copy-Item {{
 $dependency=[pscustomobject]@{{
  id='fixture';provider_scope='repository_common';provider_project='common';provider_repo_path='common'
  source_repo_path='common/fixture.txt';frozen_filename='runtime_snapshot/common/fixture.txt'
- run_input_name='fixture';consumers=@('local_frontend')
+ run_input_name='fixture';consumers=@('single_reflection_flight')
 }}
 try {{
  $null=Copy-FrozenDependency -RepoRoot '{quote(repo)}' -InputDir '{quote(inputs)}' -Dependency $dependency
@@ -1177,11 +974,11 @@ try {{
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"VALUE = {number}\n", encoding="utf-8")
                 groups.append(dict(provider_scope=scope, provider_project=owner,
-                    files=[dict(id=f"provider{number}", source_repo_path=source, consumers=["local_frontend"])],
+                    files=[dict(id=f"provider{number}", source_repo_path=source, consumers=["single_reflection_flight"])],
                     python_packages=[], python_modules=[]))
             contract = root / "integrations/config/dependencies.json"
             contract.write_text(json.dumps(dict(schema_version=3, role="integration_runtime_dependencies",
-                owner_id="instrument_assembly", consumer_ids=["local_frontend"], providers=groups)), encoding="utf-8")
+                owner_id="instrument_assembly", consumer_ids=["single_reflection_flight"], providers=groups)), encoding="utf-8")
             package = root / "projects/device/pkg"
             package.mkdir(parents=True)
             (package / "entry.py").write_text(
@@ -1189,7 +986,7 @@ try {{
                 "def prepare(destination):\n"
                 "    destination.write_text(str(VALUE), encoding='utf-8')\n", encoding="utf-8")
             groups[2]["python_packages"].append(dict(
-                source_repo_path="projects/device/pkg", consumers=["local_frontend"]))
+                source_repo_path="projects/device/pkg", consumers=["single_reflection_flight"]))
             groups[2]["python_packages"].append(dict(
                 source_repo_path="projects/device/unrequested", consumers=["not_requested"]))
             author = load(contract)
@@ -1203,7 +1000,7 @@ try {{
             output = Path(directory) / "inputs"
             script = f"""
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 if(@($f.identities).Count-ne6){{throw 'provider count differs'}}
 $inventory=Get-Content $f.code_inventory_path -Raw|ConvertFrom-Json
 if($inventory.owner_id-ne'instrument_assembly' -or $inventory.PSObject.Properties.Name-contains'consumer_project'){{throw 'owner identity differs'}}
@@ -1230,13 +1027,13 @@ foreach($case in $cases){{
  & $case.change $bad
  $bad|ConvertTo-Json -Depth 30|Set-Content '{contract}'
  $destination='{output}-invalid'+$index
- try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId local_frontend;throw 'invalid author accepted'}}
+ try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight;throw 'invalid author accepted'}}
  catch{{if($_.Exception.Message-notlike$case.message){{throw}}}}
  if(Test-Path $destination){{throw 'Invalid author copied files before rejection'}}
  $index++
 }}
 $valid|Set-Content '{contract}'
-try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId local_frontend;throw 'existing destination accepted'}}
+try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight;throw 'existing destination accepted'}}
 catch{{if($_.Exception.Message-notlike'*already exists*'){{throw}}}}
 Write-Output 'BOUNDARIES=PASS'
 """

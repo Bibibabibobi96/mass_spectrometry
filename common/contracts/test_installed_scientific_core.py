@@ -60,7 +60,7 @@ from msplatform.backends.simion import rf_observations
 
 root = pathlib.Path.cwd()
 
-# Read the same explicit CSV ABI used by the installed local frontend runtime.
+# Read the explicit CSV ABI used by the retained SIMION source adapters.
 from msplatform.backends.simion.source import load_initial_state
 source_record_probe = root / "installed_initial_state.csv"
 source_record_probe.write_text("particle_id,instrument_time_us,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s\n"
@@ -864,60 +864,38 @@ importlib.import_module(sys.argv[2])
         finally: held.rename(path)
         assert path.read_bytes() == original
 # TOF_MASS_SPECTRUM_INSTALLED_END
-# Recorded local analysis: synthetic logs, no solver or owner.
-from msplatform.workflows.local_frontend import analyze as local_analyzer, focus as local_focus, figures as local_figures
+# Retained single-reflection checkpoint diagnostics are installed independently
+# of the withdrawn local frontend. Preserve its physically missing-module check.
 from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
-for analyzer_module in (local_analyzer, local_focus, local_figures, checkpoint_diagnostics):
-    assert pathlib.Path(analyzer_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
-analysis_round = sys.argv[2]
-analyzer_results = []
-for case_index, analysis_case in enumerate(fixture['recorded_frontend_analysis']):
-    analysis_run = pathlib.Path(analysis_case['existing_run']) if 'existing_run' in analysis_case else root / ('recorded-analysis-' + analysis_round + '-' + str(case_index))
-    if 'existing_run' not in analysis_case:
-        analysis_run.mkdir()
-        for relative, content in analysis_case['files'].items():
-            target = analysis_run / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(bytes.fromhex(content))
-    analysis_log = analysis_run / analysis_case['log']
-    before_analysis = {str(path):path.read_bytes() for path in analysis_run.rglob('*') if path.is_file()}
-    assert analysis_case['kind'] == 'local', 'unsupported recorded analyzer case'
-    analysis_summary = local_analyzer.analyze_local_frontend(analysis_run, [analysis_log],
-        phase='discovery', shared_times_us=[0.,.5,1.,2.,3.])
-    analysis_output = analysis_run/'results/local_frontend/discovery'
-    expected_exit = analysis_case['expected_exit']
-    assert (analysis_summary['mother_count'],analysis_summary['exit_count'],analysis_summary['loss_count']) == (3,expected_exit,3-expected_exit)
-    assert analysis_summary['exit_efficiency']['denominator_particle_ids'] == [3,11,67]
-    assert (analysis_output/'shared_time_distributions.png').is_file()
-    assert before_analysis == {str(path):path.read_bytes() for path in analysis_run.rglob('*') if str(path) in before_analysis}
-    if 'old_expected' in analysis_case:
-        actual_records = {path.relative_to(analysis_run).as_posix():path.read_bytes().hex()
-                          for path in (analysis_run/'results').rglob('*') if path.suffix in {'.json','.csv'}}
-        assert actual_records == analysis_case['old_expected'], sorted(set(actual_records)^set(analysis_case['old_expected']))
-    analyzer_results.append(dict(kind=analysis_case['kind'],mother=3,exit=expected_exit,non_exit=3-expected_exit))
-for missing_analyzer in (local_analyzer,local_focus,local_figures,checkpoint_diagnostics):
-    missing_path = pathlib.Path(missing_analyzer.__file__)
-    missing_hold = missing_path.with_suffix('.analyzer-probe-held')
-    missing_path.rename(missing_hold)
-    try:
-        fresh = subprocess.run([sys.executable,'-I','-B','-c',
-            'import importlib,sys; importlib.import_module(sys.argv[1])', missing_analyzer.__name__],
-            cwd=root,capture_output=True,text=True,timeout=30,check=False)
-        assert fresh.returncode != 0 and missing_analyzer.__name__.split('.')[-1] in fresh.stderr
-    finally:
-        missing_hold.rename(missing_path)
-# End recorded local analysis.
+checkpoint_path = pathlib.Path(checkpoint_diagnostics.__file__).resolve()
+assert checkpoint_path.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+checkpoint_original = checkpoint_path.read_bytes()
+checkpoint_held = checkpoint_path.with_suffix('.checkpoint-probe-held')
+assert not checkpoint_held.exists()
+checkpoint_path.rename(checkpoint_held)
+try:
+    fresh = subprocess.run([sys.executable,'-I','-B','-c',
+        'import importlib; importlib.import_module("msplatform.workflows.single_reflection_flight.checkpoint_diagnostics")'],
+        cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert fresh.returncode != 0 and 'checkpoint_diagnostics' in fresh.stderr
+finally:
+    checkpoint_held.rename(checkpoint_path)
+assert checkpoint_path.read_bytes() == checkpoint_original
 
-# The withdrawn cooled feature has no installed executable modules or resources.
+# Withdrawn local and cooled workflows have no installed executable modules.
 from importlib.util import find_spec as installed_find_spec
 for retired_module in (
     "msplatform.workflows.cooled_frontend",
+    "msplatform.workflows.local_frontend",
     "msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher",
     "msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design",
     "msplatform.backends.simion.cooled_frontend_geometry",
     "msplatform.backends.simion.ip_frontend_geometry",
 ):
     assert installed_find_spec(retired_module) is None, retired_module
+from msplatform.backends.simion import tracking_program as installed_tracking_program
+assert not hasattr(installed_tracking_program, "build_local_frontend_program")
+assert callable(installed_tracking_program._resolve_standalone_dynamic_field_bank)
 from msplatform.backends.simion.resources import NATIVE_RESOURCES as installed_native_resources
 assert not {"cooled_frontend.lua", "sample_cooled_field.lua"} & installed_native_resources
 from importlib.resources import files as installed_resource_files
@@ -4462,7 +4440,7 @@ scalar_executable_bytes=scalar_executable.read_bytes()
 assert len(scalar_executable_bytes)==scalar_fixture['executable']['bytes']
 assert hashlib.sha256(scalar_executable_bytes).hexdigest()==scalar_fixture['executable']['sha256']
 assert scalar_fixture['version_stdout'] or scalar_fixture['version_stderr']
-scalar_directory=root/('installed-scalar-adapter-'+analysis_round)
+scalar_directory=root/('installed-scalar-adapter-'+sys.argv[2])
 scalar_directory.mkdir()
 scalar_base={'sources':{'scalar_pa':'base V.pa','valid_pa':'base mask.pa'},
              'grid':{'origin_mm':[-4,-4,-4],'pitch_mm':[1,1,1]},'ideal_sheet_projection':[]}
@@ -5601,14 +5579,12 @@ class InstalledScientificCoreTests(unittest.TestCase):
             self.assertIn("ModuleNotFoundError", result.stderr)
             self.assertIn(module, result.stderr)
 
-    def test_first_installed_sections_resolve_shared_imports(self) -> None:
-        """Catch shared names lost when an earlier section becomes a function."""
-        prefix, marker, _ = INSTALLED_PROBE.partition('# MR_MEASURED_SOURCE_INSTALLED_END')
-        self.assertTrue(marker, 'The measured-source installed section must be selected.')
+    def test_installed_sections_resolve_shared_imports(self) -> None:
+        """Catch shared names lost when an installed section moves or retires."""
         result = subprocess.run(
             [sys.executable, '-m', 'ruff', 'check', '--isolated', '--select', 'F821',
-             '--stdin-filename', 'installed_probe_prefix.py', '-'],
-            input=prefix, cwd=REPO_ROOT, capture_output=True, text=True,
+             '--stdin-filename', 'installed_probe.py', '-'],
+            input=INSTALLED_PROBE, cwd=REPO_ROOT, capture_output=True, text=True,
             encoding='utf-8', timeout=30, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -5749,31 +5725,6 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             with self.assertRaises(FileExistsError):
                 exec(code, dict(root=root, sys=SimpleNamespace(argv=['probe', 'fixture.json', '0'])))
 
-        analysis_index = next(index for index, node in enumerate(statements)
-                              if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
-                                  and target.id == "analysis_round" for target in node.targets))
-        analysis_loop = next(node for node in statements if isinstance(node, ast.For)
-                             and isinstance(node.iter, ast.Call)
-                             and ast.unparse(node.iter) == "enumerate(fixture['recorded_frontend_analysis'])")
-        paths = ast.Module(body=[statements[analysis_index],
-            ast.For(target=analysis_loop.target, iter=analysis_loop.iter,
-                    body=analysis_loop.body[:2], orelse=[])], type_ignores=[])
-        code = compile(ast.fix_missing_locations(paths), "<actual-analyzer-probe-paths>", "exec")
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            def namespace(round_id):
-                return dict(root=root, sys=SimpleNamespace(argv=['probe', 'fixture.json', round_id]),
-                            pathlib=__import__('pathlib'), os=os,
-                            fixture={'recorded_frontend_analysis': [{'files': {}, 'kind': 'local'}]})
-            locations = []
-            for round_id in ('0', '1'):
-                selected = namespace(round_id)
-                exec(code, selected)
-                locations.append(selected['analysis_run'])
-            self.assertNotEqual(*locations)
-            self.assertEqual(len(list(root.iterdir())), 2)
-            with self.assertRaises(FileExistsError):
-                exec(code, namespace('0'))
 
     def test_actual_installed_comparison_probe_uses_manifest_bound_fixture(self) -> None:
         import ast
@@ -6833,18 +6784,6 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return rebuilt_wheel
 
     @staticmethod
-    def recorded_frontend_analysis_probe_fixture(root: Path) -> list[dict]:
-        from integrations.tests.test_local_frontend_analysis import fixture
-        directory = root / "recorded-analyzer-fixture-0"
-        directory.mkdir()
-        log, _ = fixture(directory)
-        cases = [dict(kind="local", expected_exit=1,
-            log=log.relative_to(directory).as_posix(),
-            files={path.relative_to(directory).as_posix():path.read_bytes().hex()
-                   for path in directory.rglob('*') if path.is_file()})]
-        return cases
-
-    @staticmethod
     def paired_pulse_analysis_probe_fixture(root: Path) -> dict:
         from integrations.tests.test_comsol_prepulse_replay import ComsolPrePulseReplayTests
         from integrations.tests.test_paired_accelerator_pulse_comparison import PairedPulseComparisonTests
@@ -7130,7 +7069,6 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               standalone_contracts=standalone_contracts, dual_cone=dual_cone, ip=ip,
                                               paired_static=paired,
                                               paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
-                                              recorded_frontend_analysis=self.recorded_frontend_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),

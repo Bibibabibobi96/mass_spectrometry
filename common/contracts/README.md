@@ -1061,7 +1061,7 @@ paired 只验证实际参数、原始错误／载荷传递及入口恢复。
 
 ### Local 消费者的公共收尾
 
-local_frontend入口接入同一PowerShell owner及`-ResumeFinalization -ResultPath <原Result>`。
+已撤销的local_frontend旧入口不再作为当前执行入口；共享PowerShell owner仍服务保留消费者。
 消费者运输真实进程／释放事实、原异常与原始结果，删除私有retention／manifest／seal收尾。
 普通未请求的保存工作台回放明确`not_requested`；这不改写科学Fly完成事实或其失败状态。
 消费者验证参数和错误传播，完整收尾故障矩阵继续只在公共owner维护。

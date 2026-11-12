@@ -168,7 +168,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             self.assertEqual(len([s for s in local['physical_samples'] if s['kind']=='rod']), 32)
 
     def test_box_intersection_distinguishes_absent_metal_and_unrepresented_metal(self):
-        from integrations.runtime.frontend_field_plan import box_sample
+        from msplatform.backends.simion.physical_samples import box_sample
         box = dict(x_min_mm=-2.,x_max_mm=2.,y_min_mm=-2.,y_max_mm=2.,z_min_mm=.2,z_max_mm=.3)
         kwargs = dict(rotation=[[1,0,0],[0,1,0],[0,0,1]], translation=[0.,0.,0.],
                       origin=dict(x=-3.,y=-3.,z=0.),pitch=dict(x=1.,y=1.,z=1.),dimensions=dict(nx=7,ny=7,nz=3))
@@ -179,7 +179,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             box_sample(box,None,**kwargs,local_bounds_mm=bounds)
 
     def test_narrow_box_intersection_samples_present_metal_and_skips_absent_axes(self):
-        from integrations.runtime.frontend_field_plan import box_sample
+        from msplatform.backends.simion.physical_samples import box_sample
         box = dict(x_min_mm=-4.,x_max_mm=4.,y_min_mm=-4.,y_max_mm=4.,z_min_mm=-1.,z_max_mm=1.)
         hole = dict(x_min_mm=-2.,x_max_mm=2.,y_min_mm=-2.,y_max_mm=2.,z_min_mm=-2.,z_max_mm=2.)
         bounds = dict(x_min=-4.,x_max=-2.5,y_min=-1.,y_max=1.,z_min=-1.,z_max=1.)

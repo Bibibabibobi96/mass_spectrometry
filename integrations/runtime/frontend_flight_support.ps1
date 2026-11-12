@@ -152,17 +152,7 @@ function Invoke-FrontendIobBuild {
   $arguments=Project-RunPath -Paths ([string[]]$Case.iob_builder_arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
   $nativeReturned=$false
   $nativeAttempted=$false
-  $hasReopen=(($Case-is[Collections.IDictionary]-and$Case.Contains('iob_reopen_arguments'))-or$Case.PSObject.Properties.Name-contains'iob_reopen_arguments')
-  $validateCase={
-    param([string]$ValidationStage)
-    if(-not$hasReopen){return}
-    $null=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory `
-      -Name ($Phase+'.'+$name+'.'+$ValidationStage) -Arguments @('-m',[string]$Case.iob_validation_module,'verify-case',
-        '--run',$RunDirectory,'--case',(Join-Path ([string]$Case.working_directory) 'case_metadata.json'),
-        '--validation-stage',$ValidationStage) -Json
-  }
   try {
-  & $validateCase 'prebuild'
   $nativeAttempted=$true
   $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
     -ArgumentList ([string[]]$arguments) -WorkingDirectory ([string]$execution.projected_paths[0]) -Environment $execution.environment `
@@ -173,23 +163,6 @@ function Invoke-FrontendIobBuild {
   if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob.'+$name) -ProcessRecord $result}
   if($result.resource_budget_exceeded-or[int]$result.exit_code-ne0-or-not(Test-Path -LiteralPath ([string]$Case.iob_path))){
     throw "Frontend IOB assembly failed: $Phase/$name"
-  }
-  if($hasReopen){
-    & $validateCase 'postbuild'
-    $reopenArgs=Project-RunPath -Paths ([string[]]$Case.iob_reopen_arguments) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
-    $nativeReturned=$false
-    $reopen=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-      -ArgumentList ([string[]]$reopenArgs) -WorkingDirectory ([string]$execution.projected_paths[0]) -Environment $execution.environment `
-      -UsagePath (Join-Path $RunDirectory "logs/$Phase.$name.reopen.resource_usage.json") `
-      -RedirectStandardOutput ([string]$Case.iob_reopen_record.path) `
-      -RedirectStandardError (Join-Path $RunDirectory "logs/$Phase.$name.reopen.stderr.log")
-    $nativeReturned=$true
-    if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId ($Phase+'.iob-reopen.'+$name) -ProcessRecord $reopen}
-    if($reopen.resource_budget_exceeded-or[int]$reopen.exit_code-ne0){throw "Frontend IOB reopen failed: $Phase/$name"}
-    $marker=Get-Content -LiteralPath ([string]$Case.iob_reopen_record.path) -Raw
-    if($marker-notmatch'(?m)^LOCAL_FRONTEND_IOB_REOPEN=PASS INSTANCES=1
-?$'){throw 'Local frontend IOB lacks its actual canonical cold-reopen completion marker.'}
-    & $validateCase 'postreopen'
   }
   if($IobVerification){
     Invoke-RunToolRootContext -RepoRoot $RepoRoot -Environment $execution.environment -Operation {
@@ -385,84 +358,4 @@ function Invoke-FrontendFlightPhase {
       '--dispatch-plan-relative-path',"results/$Phase.dispatch_plan.json",'--output',(Join-Path $RunDirectory "results/$profileName"))
   }
   return $materialized
-}
-
-function Invoke-FrontendDefaultReplay {
- [CmdletBinding()]
- param(
-  [Parameter(Mandatory)]$Package,
-  [Parameter(Mandatory)]$Materialized,[Parameter(Mandatory)][ref]$HostLease,
-  [Parameter(Mandatory)][string]$RunDirectory,[Parameter(Mandatory)][string]$RepoRoot,
-  [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$SimionExe,
-  [Parameter(Mandatory)]$Limits,
-  $NativeOperations=$null,[string]$NativeResourceReleaseId='simion'
- )
- $policy=$Materialized.default_replay_policy
- if($policy.scope-eq'not_requested'){
-  return @{status='not_requested';requested=$false;native_fly_performed=$false;scope='not_requested'}
- }
- $casePath=Join-Path $RunDirectory 'inputs/default_replay_gui_case.json'
- Write-RunJson -Path $casePath -Value $Materialized.gui_case -Depth 100
- if($policy.comparison_policy-eq'independent_stochastic_collisions'-and$policy.scope-eq'saved_controls_only'){
-  $verify=@'
-import json,sys
-from pathlib import Path
-from integrations.workflows.local_frontend.replay import verify_saved_controls
-run=Path(sys.argv[1])
-receipt=verify_saved_controls(run,json.loads(Path(sys.argv[2]).read_text()))
-receipt['default_replay_policy']=json.loads(Path(sys.argv[3]).read_text())['default_replay_policy']
-receipt['requested']=receipt['default_replay_policy']['requested']
-path=run/'results/saved_controls_verification.json'
-if path.exists():
-    raise ValueError('refuse to overwrite saved controls verification')
-path.write_text(json.dumps(receipt,indent=2,allow_nan=False)+'\n',encoding='utf-8')
-print(json.dumps(receipt,allow_nan=False))
-'@
-  return Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory -Name saved_controls_verify `
-   -Arguments @('-c',$verify,$RunDirectory,$casePath,([string]$Materialized.receipt_path)) -Json
- }
- if($policy.comparison_policy-ne'deterministic_trajectory_parity'-or$policy.scope-ne'fresh_process'){
-  throw 'Saved-default replay requires an explicit supported materialization policy.'
- }
- $logsPath=Join-Path $RunDirectory 'inputs/default_replay_scheduled_logs.json'
- Write-RunJson -Path $logsPath -Value @($Materialized.batches|ForEach-Object{[string]$_.stdout})
- $prepare=@'
-import json,sys
-from pathlib import Path
-from integrations.workflows.local_frontend.replay import prepare_default_replay
-print(json.dumps(prepare_default_replay(Path(sys.argv[1]),json.loads(Path(sys.argv[2]).read_text())),allow_nan=False))
-'@
- $spec=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory -Name default_replay_prepare -Arguments @('-c',$prepare,$RunDirectory,$casePath) -Json
- $execution=Get-RunNativeExecutionContext -Package $Package -Paths (@([string]$spec.working_directory,[string]$Materialized.gui_case.iob_path)+@($spec.control_records|ForEach-Object{[string]$_.path})) -Tool SIMION
- $arguments=Project-RunPath -Paths ([string[]]$spec.argument_list) -ArtifactRunDir $Package.artifact_run_dir -RunDir $execution.run_dir -Python $Package.python
- $environment=$spec.environment|ConvertTo-Json -Compress|ConvertFrom-Json -AsHashtable
- foreach($key in $execution.environment.Keys){$environment[$key]=$execution.environment[$key]}
- $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
- # A new process consumes the saved IOB defaults. No Program, Q, particles,
- # retention, preload Lua, or other flight setting is supplied on the CLI.
- try{
- $result=Invoke-ResourceBudgetedProcess -Limits $Limits -RunDir $RunDirectory -FilePath $SimionExe `
-  -ArgumentList ([string[]]$arguments) -WorkingDirectory ([string]$execution.projected_paths[0]) `
-  -Environment $environment `
-  -UsagePath ([string]$spec.usage_path) -RedirectStandardOutput ([string]$spec.stdout) -RedirectStandardError ([string]$spec.stderr)
-  if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId 'default_replay.fly' -ProcessRecord $result}
- }catch{
-  if($null-ne$NativeOperations){Add-FrontendNativeOperation -NativeOperations $NativeOperations -NativeResourceReleaseId $NativeResourceReleaseId -OperationId 'default_replay.fly' -ExceptionData $_.Exception.Data}
-  throw
- }
- if($result.resource_budget_exceeded-or[int]$result.exit_code-ne0){throw 'Saved-default fresh-process Fly failed; original and replay logs retained.'}
- $HostLease.Value=Update-HostResourceStage -Lease $HostLease.Value -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
- $compare=@'
-import json,sys
-from pathlib import Path
-from integrations.workflows.local_frontend.replay import compare_default_replay
-run,logs,replay=map(Path,sys.argv[1:4])
-print(json.dumps(compare_default_replay(run,[Path(p) for p in json.loads(logs.read_text())],replay),allow_nan=False))
-'@
- $comparison=Invoke-FrontendRuntimePython -Python $Python -RepoRoot $RepoRoot -RunDirectory $RunDirectory -Name default_replay_compare -Arguments @('-c',$compare,$RunDirectory,$logsPath,([string]$spec.stdout)) -Json
- if(-not$comparison.passed){throw 'Saved-default replay differs from scheduled mother evidence; complete comparison retained.'}
- $comparison|Add-Member -NotePropertyName requested -NotePropertyValue $true -Force
- $comparison|Add-Member -NotePropertyName native_fly_performed -NotePropertyValue $true -Force
- $comparison|Add-Member -NotePropertyName status -NotePropertyValue completed -Force
- return $comparison
 }

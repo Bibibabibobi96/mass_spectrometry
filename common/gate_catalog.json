@@ -2464,10 +2464,6 @@
           "reason": "installed_paired_pulse_analysis_changed"
         },
         {
-          "prefix": "src/msplatform/workflows/local_frontend/",
-          "reason": "canonical_local_frontend_workflow_changed"
-        },
-        {
           "regex": "^src/msplatform/(?:workflows/oa_focus_analysis|workflows/oa_focus_fast_adjust|workflows/oa_focus_mr_runtime_receipt)\\.py$",
           "reason": "installed_oa_focus_dependency_changed"
         },
@@ -2532,14 +2528,6 @@
           "test_engineering_budget": 2.125866,
           "test_frontend_flight_continuation": 8.58285,
           "test_frontend_native_completion": 0.906806,
-          "test_local_frontend_analysis": 33.14636,
-          "test_local_frontend_execute": 12.458089,
-          "test_local_frontend_field_support": 22.933781,
-          "test_local_frontend_focus": 7.060455,
-          "test_local_frontend_owner_recovery": 18.006121,
-          "test_local_frontend_replay": 0.193002,
-          "test_local_frontend_runtime": 2.532876,
-          "test_local_frontend_workflow": 4.975347,
           "test_multipole_ip_prepare": 8.83113,
           "test_native_path_consumers": 28.415431,
           "test_oa_mr_execute": 86.047613,
@@ -2651,40 +2639,12 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/local_frontend/analyze.py",
-                "reason": "recorded_frontend_analysis_changed"
-              },
-              {
-                "exact": "src/msplatform/workflows/local_frontend/focus.py",
-                "reason": "recorded_frontend_analysis_changed"
-              },
-              {
-                "exact": "src/msplatform/workflows/local_frontend/figures.py",
-                "reason": "recorded_frontend_analysis_changed"
-              },
-              {
                 "exact": "src/msplatform/workflows/single_reflection_flight/checkpoint_diagnostics.py",
                 "reason": "recorded_frontend_analysis_changed"
               }
             ],
             "modules": [
-              "integrations/tests/test_local_frontend_analysis.py",
-              "integrations/tests/test_local_frontend_focus.py",
-              "integrations/tests/test_local_frontend_replay.py",
-              "integrations/tests/test_local_frontend_execute.py",
-              "integrations/tests/test_dependencies.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {
-                "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py",
-                "reason": "ip_section_geometry_changed"
-              }
-            ],
-            "modules": [
-              "integrations/tests/test_local_frontend_analysis.py"
+              "integrations/tests/test_single_reflection_checkpoint_diagnostics.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2696,10 +2656,6 @@
               }
             ],
             "modules": [
-              "integrations/tests/test_local_frontend_workflow.py",
-              "integrations/tests/test_local_frontend_field_support.py",
-              "integrations/tests/test_local_frontend_runtime.py",
-              "integrations/tests/test_local_frontend_analysis.py",
               "integrations/tests/test_single_reflection_geometry.py",
               "integrations/tests/test_dependencies.py"
             ],
@@ -2766,7 +2722,6 @@
               }
             ],
             "modules": [
-              "integrations/tests/test_local_frontend_owner_recovery.py",
               "integrations/tests/test_single_reflection_owner_recovery.py"
             ],
             "dependency_profile": "locked"
@@ -2803,7 +2758,6 @@
               }
             ],
             "modules": [
-              "integrations/tests/test_local_frontend_field_support.py",
               "integrations/tests/test_dependencies.py"
             ],
             "dependency_profile": "locked"

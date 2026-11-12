@@ -12,8 +12,7 @@ local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_o
 local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
 local component_tracking=spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
-local local_frontend=spec.role=='local_frontend_tracking_iob'
-local tracking_role=component_tracking or local_frontend
+local tracking_role=component_tracking
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone
 local independent_marker=dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
@@ -142,23 +141,6 @@ for index,row in ipairs(spec.instances) do
   end
 end
 
-if local_frontend then
-  assert(count==1 and spec.instances[1].role=='local_frontend_carrier',
-    'local frontend requires exactly its ordinary Cartesian carrier')
-  local row=spec.instances[1]
-  assert(row.path:lower():match('%.pa$'),'local frontend carrier must be the actual ordinary PA')
-  assert(row.placement.az_deg==0 and row.placement.el_deg==0 and row.placement.rt_deg==0
-    and row.placement.scale==1,'local frontend requires its explicit Cartesian placement')
-  assert(type(spec.response_fields)=='table' and #spec.response_fields>0,
-    'local frontend requires the actual verified response bank')
-  local names,paths={},{}
-  for _,response in ipairs(spec.response_fields) do
-    assert(response.domain=='coarse_frontend' and type(response.kind)=='string'
-      and not names[response.kind] and not paths[response.path] and response.path~=row.path
-      and response.path:lower():match('%.pa$'),'local frontend response identities differ')
-    names[response.kind]=true;paths[response.path]=true
-  end
-end
 
 local function verify_fractional_component(item,row)
   if not independent_component then return end
@@ -178,7 +160,6 @@ local function verify_fractional_component(item,row)
       assert(near(value,expected),'RF point differs from original rigid transform')
     end
   end
-  if local_frontend then return end
   if component_tracking then
     assert(row.path:match('%.pa0$'),'RF tracking requires the original solved carrier')
     local actual={}
@@ -366,10 +347,6 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   end
   if geometry_only then
     print((independent_component and independent_marker..'_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
-    return
-  end
-  if local_frontend then
-    print('LOCAL_FRONTEND_TRACKING_COLD=PASS INSTANCES=1 FLY=False REFINE=False')
     return
   end
   if component_tracking then

@@ -813,7 +813,7 @@ class ResolveConnectionTests(unittest.TestCase):
             {
                 "schema_version": 2,
                 "integration_id": "instrument_assembly",
-                "workflow_id": "local_frontend",
+                "workflow_id": "single_reflection_flight",
                 "run_id": "20260728_120000__test__cross__connection",
                 "composition_plan": {"path": "composition_plan.json", "sha256": "A" * 64},
             },
