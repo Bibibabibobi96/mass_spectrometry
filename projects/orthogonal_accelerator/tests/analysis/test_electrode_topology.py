@@ -88,6 +88,14 @@ class ElectrodeTopologyTests(unittest.TestCase):
         self.assertEqual(build_electrode_topology(three, voltage_sources=bindings, source_document=source),
                          build_electrode_topology(changed, voltage_sources=bindings, source_document=source))
 
+    def test_three_zone_rejects_changed_physical_sheet_despite_native_renumbering(self):
+        resolved, source, bindings = three_zone_inputs()
+        changed = copy.deepcopy(resolved)
+        changed["canonical_electrodes"]["ideal_sheets"][0]["sheet_box_mm"]["z_min_mm"] += 0.1
+        changed["canonical_electrodes"]["ideal_sheets"][0]["component_electrode_id"] += 100
+        with self.assertRaisesRegex(ValueError, "validated physical geometry"):
+            build_electrode_topology(changed, voltage_sources=bindings, source_document=source)
+
     def test_missing_extra_or_invalid_source_binding_is_rejected(self):
         for factory in (two_zone_inputs, three_zone_inputs):
             resolved, source, bindings = factory()

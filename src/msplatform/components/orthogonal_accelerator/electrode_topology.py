@@ -78,10 +78,25 @@ def _mechanical_groups(resolved: ClosedTwoZoneGeometry | Mapping[str, Any]) -> t
         geometry = resolved["geometry"]
         canonical = resolve_bare_three_zone_component(dict(schema_version=1, role=ROLE,
                                                            variant_id="three_zone", geometry=geometry))
+        # Scientific groups depend on physical members, not native PA numbering.
+        # Keep every physical field while excluding the embedded numeric table
+        # and member numeric IDs, which are validated at native binding.
+        from copy import deepcopy
+        physical = deepcopy(resolved.get("canonical_electrodes"))
+        expected_physical = deepcopy(canonical["canonical_electrodes"])
+        if not isinstance(physical, dict):
+            raise ValueError("three-zone topology differs from validated physical geometry")
+        for document in (physical, expected_physical):
+            document.pop("electrodes", None)
+            members = [document.get("repeller"), *document.get("ideal_sheets", [])]
+            for member in members:
+                if not isinstance(member, dict):
+                    raise ValueError("three-zone topology differs from validated physical geometry")
+                member.pop("component_electrode_id", None)
         for key, value in canonical.items():
-            # Current scientific-group queries intentionally omit the native
-            # integer electrode table; geometry and physical projections remain bound.
-            if key not in {"role", "electrodes"} and resolved.get(key) != value:
+            observed = physical if key == "canonical_electrodes" else resolved.get(key)
+            expected = expected_physical if key == "canonical_electrodes" else value
+            if key not in {"role", "electrodes"} and observed != expected:
                 raise ValueError("three-zone topology differs from validated physical geometry")
         document = resolved
         rings = resolved["ring_z_mm"]

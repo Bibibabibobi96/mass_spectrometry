@@ -105,6 +105,13 @@ resolved或三区领域文档，以稳定角色和环序号发布科学组；mem
 二区真实campaign及三区机械拓扑、编号置换与相邻机制软件回归通过；三区生产驱动和新装配消费者
 尚待接线。现schema1接口、几何编译和原生renderer未因此切换，不增加两种变体的独立baseline资格。
 
+Scientific topology compares every canonical physical field independently of native
+electrode numbering, including the numeric IDs embedded in member projections.
+The native-number tables and member IDs alone are excluded from that comparison;
+changed sheet geometry still fails, and native binding retains its own mapping checks.
+The original permutation test, two/three-zone consumers and full 159-test OA static
+stage passed on this repair. This is software evidence, not new native qualification.
+
 | 能力 | 已有范围 | 不包含 |
 |---|---|---|
 | 解析理论 | 二区时间焦距、位置—速度相关导数、三区精确局部时间及固定净增益灵敏度 | 三维边缘场、实际丝网和仪器位姿选择 |
