@@ -45,10 +45,36 @@ No COMSOL server/model, field solve, particle solve, SIMION or GUI was started.
 
 完整科学电极几何及工作电位由`geometry_contract.resolve_electrode_geometry`唯一构造，
 拓扑直接消费该中立结果；不再要求SIMION detector marker或从原生电压表按标签回查。
-`resolve_physical_geometry`仅作为既有物理ID/native标签与marker的显式投影；
-提取前后的两／三区三份完整原生输出严格相等，19项物理／拓扑／映射回归通过。
-共地组保留侧盾、飞行管盾、反射器入口栅和真实检测器四成员；0 V出口仍是独立组，
-数值detector marker不当作机械检测器。新装配消费与真实原生资格另由集成状态维护。
+`resolve_physical_geometry` projects the canonical detector and electrical groups into SIMION.
+New SFI, Formal and compensation builds use the complete physical detector: the baseline has a
+40 mm radius, 1 mm thickness and active face at z=0. The 0.1 mm marker parameter and 0.02 mm
+capture depth remain separate numerical controls. The explicitly selected Formal detector build
+limit is 128 MiB; a 64 MiB request still fails its capacity check. The earlier two- and three-zone
+parity results apply to their original implementation and frozen runs. Native occupancy, coupled
+fields and trajectories for the new physical detector require separate evidence.
+The integration Program now retains that body at every flight phase; only return observation
+is armed by trajectory history. All 38 Program tests passed on the integrated successor
+(32.344 seconds), including outbound, stationary, unarmed and valid-return callback cases.
+The new detector projection/Formal placement modules also passed all nine tests (1.466 seconds)
+after supplying explicit temporary working directories and software-process timeouts.
+These are standalone-Lua software checks, not native field or flight qualification.
+The first public Changed attempt failed in development standards and ordinary installation;
+its mass-spectrum test rejected current geometry bytes against an older immutable witness
+before analysis. The fixture now materializes the witness's original geometry and verifies
+its size and SHA, retaining every original input/output assertion. The active Formal Program now rejects outbound, stationary and unarmed detector splats,
+matching return observation while keeping the physical body present. Its generated-source sync
+and 18 Formal/contract tests passed (0.271 seconds), including all four real Lua termination
+cases. The complete ordinary wheel and sdist-rebuilt-wheel parent then passed on the same
+production/test candidate in the normal host context (982.713 test seconds, 993.313 command
+seconds). Both arms exercised the saved-field SFI consumer, canonical detector projection,
+missing-resource and tamper controls. All 515 runtime payloads matched both distributions;
+526 nongenerated build-source records matched the checkout. Five generated setuptools
+metadata records remain build outputs, separately recorded rather than checkout inputs.
+The prior Changed attempt remains FAIL: 10 PASS, one installation failure and 14 blocked
+stages, command wall 1524.752 seconds. Its live foreign reservation could not be queried
+(OpenProcess error 5); the later normal-host run passed, but the access-denied root cause
+is still open. These results do not close Repository, native coupling or the 15-minute goal.
+
 
 三区理论公开因子改为`time_scale_s_sqrt_v_per_mm`（s·√V/mm），源中心为
 `center_extraction_position_mm`，公开提取坐标为`extraction_position_mm`。

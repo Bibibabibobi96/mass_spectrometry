@@ -173,6 +173,10 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
     g, b, m = (resolved[k] for k in ("geometry_mm", "simion_geometry_build", "simion_detector_marker"))
     rings, v = resolved["rings"], resolved["electrodes_V"]
     _validate_provider_inputs(g, b, m, rings, v)
+    physical = resolve_physical_geometry(resolved)
+    face = physical["detector_active_face"]
+    if m["active_plane_z_mm"] != face["center_mm"][2] or m["active_radius_mm"] != face["radius_mm"]:
+        raise ValueError("numerical detector marker differs from the physical detector active face")
     snapshot_root = snapshot_root.absolute()
     resources = {key: snapshot_root / name for key, name in _RESOURCES.items()}
     for key, role in (("tube_gem", "flight_tube"), ("detector_gem", "detector"), ("reflectron_gem", "reflectron")):
@@ -246,7 +250,6 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
             success_marker=marker))
 
     projection_path = directory / "oatof_resolved.lua"
-    physical = resolve_physical_geometry(resolved)
     command("flight_tube", "pa_refine", "tube_builder",
         [resources["tube_gem"], tube, projection_path], "BUILD: PASS")
     command("detector", "pa_refine", "detector_builder",
@@ -255,7 +258,8 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
         [resources["reflectron_gem"], mirror, projection_path, "refine-all"], "BUILD: PASS")
     command("reflectron_export", "prepare", "exporter", [mirror.with_suffix(".pa0"), operating], "STANDALONE_PA_EXPORT=PASS")
     domains = derive_simion_geometry(geometry=g, coordinate=resolved["coordinate_convention"], build=b,
-                                     marker=m, source=resolved["particle_source"])["simion_instances"]
+                                     marker=m, source=resolved["particle_source"],
+                                     physical_detector=physical["simion"]["detector_body"])["simion_instances"]
     assets, estimates = [], []
     for domain in domains:
         role = "flight_tube" if domain["role"] == "flight_tube_shield" else domain["role"]

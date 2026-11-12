@@ -30,7 +30,7 @@
       "accelerator": {"cell_xy_mm": 0.25, "cell_z_mm": 0.05, "vacuum_margin_mm": 0.0, "back_domain_margin_mm": 0.0, "front_domain_margin_mm": 0.0, "grid_phase_z_mm": 0.0, "max_gib": 3.5},
       "reflectron": {"cell_axial_mm": 0.25, "cell_radial_mm": 1.0, "max_gib": 0.5},
       "flight_tube": {"cell_axial_mm": 1.0, "cell_radial_mm": 1.0, "max_gib": 0.1},
-      "detector": {"margin_xy_mm": 1.0, "max_mib": 64.0}
+      "detector": {"margin_xy_mm": 1.0, "max_mib": 128.0}
     },
     "detector_marker": {
       "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",

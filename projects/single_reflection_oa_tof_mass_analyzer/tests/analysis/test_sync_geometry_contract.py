@@ -22,7 +22,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
     BASELINE_PATH,
     MODE_PATH,
     NUMERICS_PATH,
-    derive_simion_geometry,
+    derive_simion_geometry, resolve_physical_geometry,
     resolve_contract,
     resolve_contract_documents,
     serialized,
@@ -57,6 +57,35 @@ class SyncGeometryContractTests(unittest.TestCase):
     def test_baseline_derived_geometry_matches_published_contract(self) -> None:
         self.assertEqual(resolve_contract()["derived"], load_contract()["derived"])
 
+    def test_detector_capture_depth_remains_inside_marker(self) -> None:
+        baseline, mode, numerics = [json.loads(path.read_text(encoding="utf-8"))
+                                    for path in (BASELINE_PATH, MODE_PATH, NUMERICS_PATH)]
+        marker = numerics["simion"]["detector_marker"]
+        marker.update(cell_z_mm=.025, front_margin_z_mm=.25, back_margin_z_mm=.125,
+                      absorber_thickness_mm=.1, capture_depth_mm=.02)
+        resolved = resolve_contract_documents(baseline, mode, numerics, input_identity={})
+        self.assertEqual(resolved["geometry_mm"]["detector_thickness"], 1.)
+        self.assertEqual(resolved["simion_detector_marker"]["capture_depth_mm"], .02)
+        marker["capture_depth_mm"] = .1
+        with self.assertRaisesRegex(ValueError, "capture depth must lie inside"):
+            resolve_contract_documents(baseline, mode, numerics, input_identity={})
+
+    def test_nondefault_detector_face_remains_canonical(self) -> None:
+        baseline, mode, numerics = [json.loads(path.read_text(encoding="utf-8"))
+                                    for path in (BASELINE_PATH, MODE_PATH, NUMERICS_PATH)]
+        baseline["geometry_mm"].update(detector_z=12.5, detector_radius=27.5)
+        marker = numerics["simion"]["detector_marker"]
+        marker.update(active_plane_z_mm=12.5, active_radius_mm=27.5)
+        result = resolve_contract_documents(baseline, mode, numerics, input_identity={})
+        physical = resolve_physical_geometry(result)
+        self.assertEqual(physical["detector_active_face"]["center_mm"][2], 12.5)
+        self.assertEqual(physical["detector_active_face"]["radius_mm"], 27.5)
+        row = next(row for row in result["derived"]["simion_instances"] if row["role"] == "detector")
+        self.assertAlmostEqual(row["z_mm"] + row["physical_back_cells"] * marker["cell_z_mm"], 12.5)
+        marker["active_plane_z_mm"] = 0.
+        with self.assertRaisesRegex(ValueError, "differs from the physical detector active face"):
+            resolve_contract_documents(baseline, mode, numerics, input_identity={})
+
     def test_detector_half_cells_match_native_rounding_without_moving_geometry(self) -> None:
         resolved = resolve_contract()
         build = resolved["simion_geometry_build"]
@@ -64,15 +93,17 @@ class SyncGeometryContractTests(unittest.TestCase):
         marker = resolved["simion_detector_marker"]
         marker.update(active_radius_mm=4.125, cell_xy_mm=.5, cell_z_mm=.25,
             absorber_thickness_mm=1.25, front_margin_z_mm=2.5, back_margin_z_mm=1.375)
+        resolved["geometry_mm"].update(detector_radius=4.125, detector_thickness=1.25)
+        body = resolve_physical_geometry(resolved)["simion"]["detector_body"]
         derived = derive_simion_geometry(
             geometry=resolved["geometry_mm"], coordinate=resolved["coordinate_convention"],
-            build=build, marker=marker, source=resolved["particle_source"])
+            build=build, marker=marker, source=resolved["particle_source"], physical_detector=body)
         detector = derived["simion_instances"][3]
         # Both spans are 20.5 cells: native Lua rounds up, not ties-to-even.
         self.assertEqual((detector["nx"], detector["ny"], detector["nz"]), (22, 22, 22))
         self.assertEqual(detector["x_mm"], resolved["coordinate_convention"]["detector_x"] - 5.125)
         self.assertEqual(detector["y_mm"], -5.125)
-        self.assertEqual(detector["z_mm"], marker["active_plane_z_mm"] - 2.625)
+        self.assertEqual(detector["z_mm"], marker["active_plane_z_mm"] - 2.75)
 
     def test_final_geometry_controls_internal_placements_dimensions_and_samples(self) -> None:
         derived = derive_simion_geometry(
@@ -93,6 +124,7 @@ class SyncGeometryContractTests(unittest.TestCase):
                 back_margin_z_mm=.25, absorber_thickness_mm=.25,
                 front_margin_z_mm=.5, cell_xy_mm=.5, cell_z_mm=.25),
             source=dict(center_z_mm=12),
+            physical_detector=dict(radius_mm=4, height_mm=.25, back_cells=2, front_cells=2),
         )
         instances = derived["simion_instances"]
         self.assertEqual([(r["x_mm"], r["y_mm"], r["z_mm"], r["az_deg"])

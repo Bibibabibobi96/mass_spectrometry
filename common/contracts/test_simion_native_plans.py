@@ -168,6 +168,7 @@ class NativePlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             assembly,numerics,_=compiler_inputs(root/"author")
+            numerics["geometry_build"]["detector"]["max_mib"] = 128
             compiled=compile_geometry(assembly,numerics=numerics)
             contract=compiled.frontend_geometry["downstream_build_contract"]
             provider=copy.deepcopy(assembly["components_resolved"]["oatof"])

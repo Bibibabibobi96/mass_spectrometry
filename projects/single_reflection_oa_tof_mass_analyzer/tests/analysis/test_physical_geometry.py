@@ -213,8 +213,17 @@ simion={command=function() error('Fast Adjust must not use a command string') en
                 self.assertEqual((len(old_payload), hashlib.sha256(old_payload).hexdigest().upper()),
                                  (record["bytes"], record["sha256"]))
                 old_vars = dict(zip(parameters[role].split(), map(float, step["argv"][6:6+len(parameters[role].split())]), strict=True))
-                new_vars = (old_vars if role == "detector" else dict(component=physical["simion"][role],
-                    mmgu_axial=old_vars["mmgu_axial"], mmgu_radial=old_vars["mmgu_radial"]))
+                if role == "detector":
+                    body = physical["simion"]["detector_body"]
+                    self.assertEqual(old_vars["absorber_thickness"], .1)
+                    self.assertEqual((body["height_mm"], body["radius_mm"]), (1., 40.))
+                    self.assertEqual(resolved["simion_detector_marker"]["active_plane_z_mm"], 0.)
+                    self.assertEqual(resolved["simion_detector_marker"]["capture_depth_mm"], .02)
+                    new_vars = dict(old_vars, radius=body["radius_mm"], absorber_thickness=body["height_mm"],
+                                    back_cells=body["back_cells"], front_cells=body["front_cells"])
+                else:
+                    new_vars = dict(component=physical["simion"][role],
+                        mmgu_axial=old_vars["mmgu_axial"], mmgu_radial=old_vars["mmgu_radial"])
                 outputs = []
                 for label, template, variables in (("old", old_payload.decode(), old_vars),
                     ("new", gem_template_text(role), new_vars)):
@@ -232,7 +241,12 @@ simion={command=function() error('Fast Adjust must not use a command string') en
                         for primitive, arguments in re.findall(r"(box|cylinder|locate)\(([^)]+)\)", line):
                             signatures.append((eid, primitive, tuple(float(x) if x.strip() else None for x in arguments.split(","))))
                     outputs.append((re.sub(r"\s+", "", grid), signatures))
-                self.assertEqual(outputs[0], outputs[1], role)
+                if role == "detector":
+                    self.assertNotEqual(outputs[0], outputs[1])
+                    cylinders = [row for row in outputs[1][1] if row[1] == "cylinder"]
+                    self.assertEqual(cylinders, [(1, "cylinder", (0., 0., 0., 40., None, 1.))])
+                else:
+                    self.assertEqual(outputs[0], outputs[1], role)
 
     def test_invalid_physical_dimensions_fail_before_transport(self):
         for field, value in (("ring_thickness", 0), ("detector_thickness", -1), ("L_stage1", float("nan"))):
@@ -257,6 +271,14 @@ class NeutralElectrodeGeometryTests(unittest.TestCase):
         for name, (resolved, projection) in cases.items():
             with self.subTest(case=name):
                 actual = resolve_physical_geometry(resolved, accelerator_projection=projection)
+                body = actual["simion"].pop("detector_body")
+                expected_body = next(row["geometry"] for row in actual["electrodes"] if row["role"] == "detector")
+                marker = resolved["simion_detector_marker"]
+                import math
+                self.assertEqual(body.pop("back_cells"), math.ceil((expected_body["height_mm"] + marker["back_margin_z_mm"]) / marker["cell_z_mm"]))
+                self.assertEqual(body.pop("front_cells"), math.ceil(marker["front_margin_z_mm"] / marker["cell_z_mm"]))
+                self.assertEqual(body, expected_body)
+                # Preserve the full pre-extraction identity of every original field.
                 payload = json.dumps(actual, sort_keys=True, separators=(",", ":")).encode()
                 self.assertEqual(hashlib.sha256(payload).hexdigest(), expected[name])
 

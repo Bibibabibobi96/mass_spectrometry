@@ -113,6 +113,9 @@ function component.new(config)
     detector_marker_absorber_thickness_mm=true,
     diagnostic_return_plane_z_mm=true, flight_tube_near_outer_z_mm=true,
     flight_tube_far_outer_z_mm=true}
+  geometry_keys.detector_physical_thickness_mm = true
+  geometry_keys.detector_physical_back_cells = true
+  geometry_keys.detector_physical_front_cells = true
   if three_zone then
     geometry_keys.accelerator_intermediate2_z_mm = true
     geometry_keys.accelerator_ring_z_mm = true
@@ -320,10 +323,12 @@ function component.new(config)
     local detector_half_x = (detector_instance.nx - 1) * detector_instance.dx_mm * detector_instance.scale / 2
     local detector_half_y = (detector_instance.ny - 1) * detector_instance.dy_mm * detector_instance.scale / 2
     local detector_span_z = (detector_instance.nz - 1) * detector_instance.dz_mm * detector_instance.scale
-    local expected_detector_span = g.detector_marker_front_margin_z_mm +
-      g.detector_marker_absorber_thickness_mm + g.detector_marker_back_margin_z_mm
-    assert(math.abs(detector_span_z - expected_detector_span) < 1e-9,
-      'detector marker PA z span does not match linked numerical parameters')
+    local detector_body_thickness = g.detector_physical_thickness_mm
+    positive(detector_body_thickness, "detector physical thickness")
+    assert(detector_instance.nz == g.detector_physical_back_cells + g.detector_physical_front_cells + 1 and
+      g.detector_physical_back_cells * detector_instance.dz_mm * detector_instance.scale >= detector_body_thickness + g.detector_marker_back_margin_z_mm and
+      g.detector_physical_front_cells * detector_instance.dz_mm * detector_instance.scale >= g.detector_marker_front_margin_z_mm,
+      'detector physical PA z span does not cover linked parameters')
     local flight_axial_span = (flight.nx - 1) * flight.dx_mm * flight.scale
     local reflectron_axial_span = (reflectron.nx - 1) * reflectron.dx_mm * reflectron.scale
     if not config.domain_split then
@@ -347,8 +352,7 @@ function component.new(config)
         az_deg=-90, el_deg=0, rt_deg=0, scale=1},
       detector={x_mm=g.detector_x_mm - detector_half_x,
         y_mm=g.detector_y_mm - detector_half_y,
-        z_mm=g.detector_z_mm - g.detector_marker_back_margin_z_mm -
-          g.detector_marker_absorber_thickness_mm, az_deg=0, el_deg=0, rt_deg=0,
+        z_mm=g.detector_z_mm - g.detector_physical_back_cells * detector_instance.dz_mm * detector_instance.scale, az_deg=0, el_deg=0, rt_deg=0,
           scale=detector_instance.scale},
     }}
   end
@@ -457,9 +461,8 @@ function component.new(config)
     return {splat=splat, events=events}
   end
 
-  -- This PA is a numerical return detector, not a mechanical obstruction.
-  -- instance_adjust cannot read velocity on SIMION2020: arm it from the
-  -- accepted trajectory history only after the ion reaches the reflectron.
+  -- Arm return observation from accepted trajectory history only after the
+  -- ion reaches the reflectron; the physical detector remains present.
   local function detector_marker_active(particle_id)
     local record = particles[particle_id]
     return record ~= nil and record.max_z_mm >= g.reflectron_entgrid_z_mm

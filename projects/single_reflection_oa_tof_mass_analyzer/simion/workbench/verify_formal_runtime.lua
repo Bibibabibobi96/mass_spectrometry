@@ -88,8 +88,10 @@ end
 -- Probe the middle of the persisted detector electrode, not a Lua virtual
 -- plane.  The IOB itself must select detector instance 4 over shield 1.
 local detector_x=contract.coordinate_convention.detector_x
+local detector_body=assert(contract.physical_geometry.simion.detector_body,
+  'canonical physical detector body is missing')
 local detector_z=contract.simion_detector_marker.active_plane_z_mm-
-  contract.simion_detector_marker.absorber_thickness_mm/2
+  detector_body.height_mm/2
 local detector_electrode,detector_instance=wb:find_at(detector_x,0,detector_z)
 record('DETECTOR_STATIC_PROBE_XYZ_MM=%.15g,0,%.15g',detector_x,detector_z)
 record('DETECTOR_STATIC_ACTIVE_INSTANCE=%s ELECTRODE=%s',

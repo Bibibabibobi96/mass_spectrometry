@@ -51,6 +51,9 @@ adjustable detector_mirror_offset_y_mm=0.0
 adjustable detector_active_plane_z_mm=0.0
 adjustable detector_radius_mm=40.0
 adjustable detector_marker_absorber_thickness_mm=0.1
+adjustable detector_physical_thickness_mm=1.0
+adjustable detector_physical_back_cells=105.0
+adjustable detector_physical_front_cells=20.0
 adjustable detector_marker_front_margin_z_mm=0.2
 adjustable detector_marker_back_margin_z_mm=0.05
 adjustable detector_tstep_enable=1.0
@@ -162,14 +165,14 @@ local function configure_linked_geometry()
  local detector_half_x=(di.pa.nx-1)*di.pa.dx_mm*di.scale/2
  local detector_half_y=(di.pa.ny-1)*di.pa.dy_mm*di.scale/2
  local detector_span_z=(di.pa.nz-1)*di.pa.dz_mm*di.scale
- local expected_detector_span_z=detector_marker_front_margin_z_mm+
-   detector_marker_absorber_thickness_mm+detector_marker_back_margin_z_mm
- assert(math.abs(detector_span_z-expected_detector_span_z)<1e-9,
-   'detector marker PA z span does not match linked numerical parameters')
+ local detector_cell_z=di.pa.dz_mm*di.scale
+ assert(di.pa.nz==detector_physical_back_cells+detector_physical_front_cells+1 and
+   detector_physical_back_cells*detector_cell_z>=detector_physical_thickness_mm+detector_marker_back_margin_z_mm and
+   detector_physical_front_cells*detector_cell_z>=detector_marker_front_margin_z_mm,
+   'detector physical PA does not cover its linked body and margins')
  di.x=detector_x_mm-detector_half_x
  di.y=detector_y_mm-detector_half_y
- di.z=detector_z_mm-detector_marker_back_margin_z_mm-
-   detector_marker_absorber_thickness_mm
+ di.z=detector_z_mm-detector_physical_back_cells*detector_cell_z
  if trajectory_log_enable~=0 then
   print(string.format('TRACE: linked_geometry accelerator_axis=(%.12g,%.12g) accelerator_instance=(%.12g,%.12g,%.12g) accelerator_cell=(%.12g,%.12g,%.12g) shield_inner_outer_radius=(%.12g,%.12g) shield_bore_z=(%.12g,%.12g) shield_outer_z=(%.12g,%.12g) detector_active_plane=(%.12g,%.12g,%.12g) radius=%.12g marker_thickness=%.12g marker_margins_front_back=(%.12g,%.12g) detector_instance=(%.12g,%.12g,%.12g)',accelerator_axis_x_mm,accelerator_axis_y_mm,ai.x,ai.y,ai.z,ai.pa.dx_mm,ai.pa.dy_mm,ai.pa.dz_mm,flight_tube_inner_radius_mm,expected_radius,near_bore_z,far_bore_z,near_outer_z,far_outer_z,detector_x_mm,detector_y_mm,detector_z_mm,detector_radius_mm,detector_marker_absorber_thickness_mm,detector_marker_front_margin_z_mm,detector_marker_back_margin_z_mm,di.x,di.y,di.z))
  end
@@ -350,7 +353,8 @@ end
 function segment.terminate()
  local n=ion_number
  if timed_out[n] or detector_crossed[n] then return end
- if ion_instance~=INSTANCE_DETECTOR then
+ if ion_instance~=INSTANCE_DETECTOR or ion_vz_mm>=0 or
+     (max_z[n] or ion_pz_mm)<reflectron_entgrid_z_mm then
   if trajectory_log_enable~=0 then
    print(string.format('TRACE: non_detector_splat ion=%d instance=%d t=%.12g x=%.12g y=%.12g z=%.12g zmax=%.12g',
     n,ion_instance,ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,max_z[n] or ion_pz_mm))

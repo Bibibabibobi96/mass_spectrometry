@@ -2373,7 +2373,7 @@ for case in fixture['single_reflection_workflow']:
         recorded_birth_probe = runpy.run_path(str(root / 'installed_recorded_birth_probe.py'))
         recorded_birth_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
         sfi_consumer_probe = runpy.run_path(str(root / 'installed_sfi_consumer_probe.py'))
-        sfi_consumer_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
+        sfi_consumer_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing, blocked_source_roots)
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -7101,8 +7101,16 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             tof_spectrum_root = root / 'tof-mass-spectrum-inputs'
             tof_spectrum_root.mkdir()
             tof_spectrum_mode, tof_spectrum_comsol, tof_spectrum_simion = SourceMappingAndBootstrapTest._mass_spectrum_inputs(tof_spectrum_root)
+            # The retained oracle was captured with these exact geometry bytes.
+            # Current detector numerics evolve independently of this old witness.
+            import base64
+            tof_spectrum_old_witness = json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/tof_mass_spectrum_old_witness.json').read_text(encoding='utf-8'))
+            tof_spectrum_geometry_record = tof_spectrum_old_witness['inputs']['resolved_geometry.json']
+            tof_spectrum_geometry_bytes = base64.b64decode(tof_spectrum_geometry_record['base64'], validate=True)
+            self.assertEqual(len(tof_spectrum_geometry_bytes), tof_spectrum_geometry_record['bytes'])
+            self.assertEqual(hashlib.sha256(tof_spectrum_geometry_bytes).hexdigest(), tof_spectrum_geometry_record['sha256'])
             tof_spectrum_geometry = tof_spectrum_root / 'resolved_geometry.json'
-            shutil.copyfile(REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json', tof_spectrum_geometry)
+            tof_spectrum_geometry.write_bytes(tof_spectrum_geometry_bytes)
             tof_spectrum_input_bytes = {path: path.read_bytes() for path in tof_spectrum_root.rglob('*') if path.is_file()}
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
@@ -7121,7 +7129,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
-                                              tof_mass_spectrum_old_witness=json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/tof_mass_spectrum_old_witness.json').read_text(encoding='utf-8')),
+                                              tof_mass_spectrum_old_witness=tof_spectrum_old_witness,
                                               rf_event_old_capture=json.loads((REPO_ROOT / 'projects/rf_multipole_ion_optics/tests/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
                                               ip_analyzer_old_witness=json.loads((REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
                                               ip_exporters_old_witness=json.loads((REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),

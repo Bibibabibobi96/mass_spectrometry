@@ -52,7 +52,7 @@ def validate_pure_lua_component_source(source: str, name: str) -> str:
         )
     return source
 from msplatform.components.single_reflection_oa_tof.accelerator_electrical import resolve_accelerator_electrical_design
-from msplatform.backends.simion.tof_geometry import derive_simion_geometry
+from msplatform.backends.simion.tof_geometry import derive_simion_geometry, resolve_physical_geometry
 
 _DIAGNOSTIC_RETURN_PLANE_Z_MM = 20.5
 _SUCCESSOR_DIAGNOSTICS = {"post_pulse_observation_window_us": 90.0, "log_stride": 1000}
@@ -987,8 +987,14 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
         expected = {row['role']:row for row in model_document['downstream_geometry']['frontend_geometry']['downstream_pa_instances']}
     else:
         marker = oatof['simion_detector_marker']
+        detector_row = next(row for row in geometry["downstream_pa_instances"] if row["role"] == "detector")
+        if "physical_detector" not in detector_row:
+            raise ValueError("canonical physical detector body is required")
+        if detector_row["physical_detector"] != resolve_physical_geometry(oatof)["simion"]["detector_body"]:
+            raise ValueError("physical detector differs from the canonical provider")
         provider = derive_simion_geometry(geometry=physical,coordinate=coordinate,
-            build=oatof['simion_geometry_build'],marker=marker,source=oatof['particle_source'])
+            build=oatof['simion_geometry_build'],marker=marker,source=oatof['particle_source'],
+            physical_detector=detector_row["physical_detector"])
         expected = {row['role']:row for row in provider['simion_instances'] if row['role'] != 'accelerator'}
     downstream = {row["role"]:row for row in geometry["downstream_pa_instances"]}
     if set(downstream) != set(expected) or any(
@@ -1013,6 +1019,12 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
         detector_marker_back_margin_z_mm=marker["back_margin_z_mm"],
         detector_marker_absorber_thickness_mm=marker["absorber_thickness_mm"],diagnostic_return_plane_z_mm=_DIAGNOSTIC_RETURN_PLANE_Z_MM,
         flight_tube_near_outer_z_mm=physical["shield_outer_z_min"],flight_tube_far_outer_z_mm=physical["shield_outer_z_max"])
+    detector_body = downstream["detector"].get("physical_detector")
+    if detector_body is None:
+        raise ValueError("canonical physical detector body is required")
+    analyzer_geometry["detector_physical_thickness_mm"] = detector_body["height_mm"]
+    analyzer_geometry["detector_physical_back_cells"] = downstream["detector"]["physical_back_cells"]
+    analyzer_geometry["detector_physical_front_cells"] = downstream["detector"]["physical_front_cells"]
     config = dict(accelerator_topology_id="three_zone_frontend_contract_derived_v1",
         instance_roles=dict(flight_tube=1,reflectron=2,accelerator=3,detector=4),
         instance_filenames=dict(flight_tube="flight_tube_ground.pa0",reflectron="reflectron.pa0",
@@ -1877,31 +1889,13 @@ function segment.efield_adjust()
   end
 end
 function segment.instance_adjust()
-  -- Suppress only the numerical detector marker before reflectron entry.
-  -- Official instance_adjust uses ion_instance=0 to select the next PA;
-  -- do not move the ion or assume velocity is available in this callback.
-  -- SIMION also selects an instance before initialize_run creates the
-  -- analyzer. No particle has entered the reflectron at that point.
-  local detector_active=single_flight_analyzer and
-    single_flight_analyzer.detector_marker_active(single_flight_canonical_particle_id())
-  if single_flight_pre_pulse_time_series==0 and
-      ion_instance==single_flight_detector_instance_index and
-      not detector_active then
-    ion_instance=0
-    return
-  end
+  -- The detector PA contains the physical body at every flight phase.
+  -- Observation eligibility is decided by the analyzer, not PA selection.
   local overlay=single_flight_overlay_for_instance(ion_instance)
   if overlay==nil then return end
   local b=overlay.bounds_mm
-  if single_flight_pre_pulse_time_series~=0 then
-    if ion_px_mm<=b.x_min or ion_px_mm>=b.x_max or
-        ion_py_mm<=b.y_min or ion_py_mm>=b.y_max or
-        ion_pz_mm<=b.z_min or ion_pz_mm>=b.z_max then ion_instance=0 end
-    return
-  end
   local detector=simion.wb.instances[single_flight_detector_instance_index]
-  if (detector_active and
-      detector:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm)) or
+  if detector:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or
       ion_px_mm<=b.x_min or ion_px_mm>=b.x_max or
       ion_py_mm<=b.y_min or ion_py_mm>=b.y_max or
       ion_pz_mm<=b.z_min or ion_pz_mm>=b.z_max then ion_instance=0 end

@@ -29,7 +29,7 @@
     },
     "solver_numerics": {
       "path": "config/formal_solver_numerics.json",
-      "sha256": "408797DA7470A9713B8C248583C4E46AABE96D7A894BE163C71968F6E2753B7A"
+      "sha256": "1399A47EE8CD54EBC7F2A0B6E83BA7130B969B26E1E194D4C78CC8EECF81B7E6"
     },
     "design_variable_catalog": {
       "path": "config/design_variables.json",

@@ -32,6 +32,24 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_detector_pipeline_preserves_owner_core_routes(self):
+        backend = "src/msplatform/backends/simion/"
+        workflow = "src/msplatform/workflows/single_reflection_flight/downstream_fields.py"
+        for path in (backend + "downstream.py", backend + "resources/oatof_detector_ground.gem",
+                     backend + "resources/build_detector_variant.lua", workflow):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                selected = [row for row in request["stages"] if row["selected"]]
+                common = {value.removesuffix(".py").replace("/", ".")
+                          for row in selected if row["name"].startswith("common_contracts")
+                          for value in row["command"]["arguments"][2:]}
+                self.assertIn("common.contracts.test_installed_scientific_core", common)
+                if path != workflow:
+                    self.assertIn("common.contracts.test_detector_physical_projection", common)
+                self.assertTrue(any(row["name"].startswith("instrument_assembly_integration") for row in selected))
+                if path != workflow:
+                    self.assertTrue(any(row["name"].startswith("single_reflection_oa_tof_mass_analyzer_static") for row in selected))
+
     def test_ip_preparation_selects_both_actual_integration_consumers(self):
         request, _ = self.plan('-ChangedPath', 'src/msplatform/workflows/ion_processor/preparation.py')
         selected = [row for row in request['stages'] if row['selected']]

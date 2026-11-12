@@ -300,10 +300,11 @@ end
         program = self.build(native_path_projection=False,build_metadata=metadata,
             standalone_dynamic_field_paths={'accelerator_main':dict(rf_differential_pa_paths=['C:/inert/rf.pa'],
                                                                    pulse_delta_pa_path='C:/inert/delta.pa')})
+        # The retained baseline witness and its full diff are recorded in the detector migration evidence: the detector PA origin, physical-domain fields and shared analyzer checks changed; the clock and capture controls did not. The later detector-selection change is captured in the always-physical evidence diff; metadata remains byte-identical.
         self.assertEqual(hashlib.sha256(program.encode()).hexdigest(),
-                         'd894419a5c5a687208ff1975c63a0d50337743c9dc9da18c7e09c70a2d3b7969')
+                         '5659d2a47cb1ef4441860f63964c874f010d409d6f961a9af52935104aa3a64b')
         self.assertEqual(hashlib.sha256((json.dumps(metadata,sort_keys=True,indent=2)+'\n').encode()).hexdigest(),
-                         'dbaf3c73e1670ef3a8e56ebebb3b5e42b861c177f23dc7e342cccefb674162d9')
+                         '3d97ba859523ceaeb601e16a993838a25559acb2474804d134e13889529d7a9a')
 
     @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
     def test_bounded_field_observer_preserves_actual_callback_math_and_records_final_overrides(self):
@@ -447,6 +448,13 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
             voltage_waveforms_source=native_resource_path("voltage_waveforms.lua").read_bytes().decode("utf-8-sig"),
             frontend_hook_source=native_resource_path("single_flight_frontend_hook.lua").read_bytes().decode("utf-8-sig"),
             rf_drive_kernel_source=native_resource_path("rf_drive.lua").read_bytes().decode("utf-8-sig"))
+
+    def test_current_model_less_program_rejects_missing_physical_detector(self):
+        geometry = copy.deepcopy(self.geometry)
+        detector = next(row for row in geometry["downstream_pa_instances"] if row["role"] == "detector")
+        del detector["physical_detector"]
+        with self.assertRaisesRegex(ValueError, "canonical physical detector body is required"):
+            self.build(frontend_geometry=geometry)
 
     def test_prepared_model_real_public_example_is_the_only_tracking_drive(self):
         from msplatform import assembly as assembly_api, components as component_api, examples as example_api
@@ -1269,15 +1277,19 @@ print('LOCAL_OATOF_NO_RF=PASS')
         self.oatof["coordinate_convention"]["reflectron_axis"]=[7.,-9.]
         self.oatof["coordinate_convention"]["detector_x"]=81.
         self.oatof["simion_detector_marker"]["active_plane_z_mm"]=12.5
+        from msplatform.backends.simion.tof_geometry import resolve_physical_geometry
+        detector_body = resolve_physical_geometry(self.oatof)["simion"]["detector_body"]
+        next(row for row in self.geometry["downstream_pa_instances"] if row["role"] == "detector")["physical_detector"] = detector_body
         provider=derive_simion_geometry(geometry=self.oatof["geometry_mm"],coordinate=self.oatof["coordinate_convention"],
-            build=self.oatof["simion_geometry_build"],marker=self.oatof["simion_detector_marker"],source=self.oatof["particle_source"])
+            build=self.oatof["simion_geometry_build"],marker=self.oatof["simion_detector_marker"],source=self.oatof["particle_source"],
+            physical_detector=next(row["physical_detector"] for row in self.geometry["downstream_pa_instances"] if row["role"] == "detector"))
         for row in self.geometry["downstream_pa_instances"]:
             row.update(next(p for p in provider["simion_instances"] if p["role"]==row["role"]))
         metadata = {}
         program = self.build(build_metadata=metadata)
         self.assertEqual(metadata["provider_placements"]["reflectron"]["x_mm"],7.)
         self.assertEqual(metadata["provider_placements"]["flight_tube"]["y_mm"],-9.)
-        self.assertEqual(metadata["provider_placements"]["detector"]["z_mm"],12.35)
+        self.assertEqual(metadata["provider_placements"]["detector"]["z_mm"],12.5 - 105 * .01)
         inspect = "\nsegment.inspect=function() return single_flight_instrument_time_us(),single_flight_canonical_particle_id(),single_flight_rf_drives[1].differential_at(single_flight_instrument_time_us()) end\n"
         inspect += "segment.inspect_lifecycle=function() return single_flight_particle_state,single_flight_analyzer_initialized,single_flight_previous,single_flight_reported,single_flight_standalone_dynamic_by_instance end\n"
         program += inspect
@@ -1362,6 +1374,13 @@ if arg[2]=='wrong' then
  assert(not ok and tostring(err):find('native provider placement differs'),'wrong placement was silently repaired: '..tostring(err))
  print('WRONG_PLACEMENT_REJECTED=PASS')
  return
+end
+-- SIMION can select the physical detector before the analyzer exists.
+ion_instance=4;segment.instance_adjust();assert(ion_instance==4,'physical detector suppressed before initialize_run')
+if #simion.wb.instances==5 then
+ simion.wb.instances[4].inside_override=true
+ ion_instance=5;segment.instance_adjust();assert(ion_instance==0,'fine PA hid detector before initialize_run')
+ simion.wb.instances[4].inside_override=false
 end
 segment.initialize_run()
 assert(segment.fast_adjust==nil)
@@ -1476,6 +1495,10 @@ if #simion.wb.instances==5 then
  segment.efield_adjust()
  assert(math.abs(ion_dvoltsx_gu-(10-rf))<1e-8,'fine field did not use the same actual drive')
  assert((query_counts[3] or 0)==parent_queries and (query_counts[5] or 0)>0,'parent and fine fields were added together')
+ simion.wb.instances[4].inside_override=true
+ ion_instance=5;segment.instance_adjust()
+ assert(ion_instance==0,'fine domain shadowed an unarmed physical detector')
+ simion.wb.instances[4].inside_override=false
  -- The same native observer arms the existing detector role; the numerical
  -- refinement must yield to that role even though slot 5 has higher priority.
  ion_number=1;ion_instance=3;ion_time_of_flight=0
@@ -1580,6 +1603,12 @@ if arg[2]=='held' then
  ion_time_of_flight=200;segment.other_actions();assert(ion_splat==1)
  segment.terminate()
  print('GENUINE_HELD_OFF=PASS')
+ return
+end
+if arg[2]=='outbound_detector' then
+ ion_instance=4;ion_time_of_flight=.5;ion_px_mm=81;ion_py_mm=0;ion_pz_mm=12.5;ion_vz_mm=1;ion_splat=1
+ segment.instance_adjust();assert(ion_instance==4,'physical detector suppressed before mirror')
+ segment.terminate()
  return
 end
 if arg[2]=='detector' then
@@ -1698,6 +1727,11 @@ print('NATIVE_FULL_PROGRAM=PASS')
             self.assertEqual(wrong_fine.returncode,0,wrong_fine.stdout+wrong_fine.stderr)
             self.assertIn("WRONG_FINE_PLACEMENT_REJECTED=PASS",wrong_fine.stdout)
 
+        outbound = subprocess.run([str(LUA),str(script),str(path),"outbound_detector",str(reference)],
+                                  cwd=self.root,capture_output=True,text=True,timeout=30)
+        self.assertEqual(outbound.returncode,0,outbound.stdout+outbound.stderr)
+        self.assertIn("TRACE: non_detector_splat ", outbound.stdout)
+        self.assertNotIn("TRACE: detector_crossing ", outbound.stdout)
         detected = subprocess.run([str(LUA),str(script),str(path),"detector",str(reference)],
                                   cwd=self.root,capture_output=True,text=True,timeout=30)
         self.assertEqual(detected.returncode,0,detected.stdout+detected.stderr)

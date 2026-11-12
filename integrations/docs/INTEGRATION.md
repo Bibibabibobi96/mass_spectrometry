@@ -245,6 +245,13 @@ held-OFF由原科学mode派生场依赖，仅省略恒0脉冲响应；完整carr
 源行顺序、时钟和错误判据；元数据准备不读取PA载荷。已有冻结清单覆盖这些模块，隔离快照可独立导入及执行，
 无需新增CLI或恢复状态；这项职责整理不改变科学计算，也不构成性能提升或原生验收声明。
 
+New SFI detector PAs represent the canonical physical body: the baseline has a 40 mm radius,
+1 mm thickness and active face at z=0. The 0.1 mm marker parameter and 0.02 mm capture depth
+remain separate numerical controls. The PA domain, capacity plan and Program use the same body;
+a missing or mismatched body is rejected. The explicit 128 MiB detector-builder limit is not a
+total-run memory limit or an accuracy guarantee. Historical 0.1 mm marker runs remain unchanged;
+native occupancy, field coverage and coupling, and continuous Fly still need separate evidence.
+
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|
 | [110745单实例](../../../artifacts/projects/instrument_assembly/runs/20261025_110745__sim__simion__single-reflection-flight/summary.json) | 六工作场、100终态、默认回放差异为空；0检测，终态均non_detector_splat_instance_5 | 实例编号不证明真实碰撞实体，未到反射器不代表整机物理性能通过 |

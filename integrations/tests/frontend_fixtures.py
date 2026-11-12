@@ -8,7 +8,7 @@ from __future__ import annotations
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile as _load_oa_geometry_profile
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
-    derive_simion_geometry,
+    derive_simion_geometry, resolve_physical_geometry,
 )
 
 def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
@@ -135,5 +135,5 @@ def _compile_three_zone_candidate(base_geometry, profile, candidate, candidate_b
 
 def compile_geometry_and_port(base_geometry, base_port, profile, *, three_zone_candidate=None, three_zone_candidate_binding=None):
     geometry, port, layout = _canonical_compile_geometry_and_port(base_geometry, base_port, profile, three_zone_candidate=three_zone_candidate, three_zone_candidate_binding=three_zone_candidate_binding, design_catalog=_design_catalog())
-    geometry["derived"] = derive_simion_geometry(geometry=geometry["geometry_mm"], coordinate=geometry["coordinate_convention"], build=geometry["simion_geometry_build"], marker=geometry["simion_detector_marker"], source=geometry["particle_source"])
+    geometry["derived"] = derive_simion_geometry(geometry=geometry["geometry_mm"], coordinate=geometry["coordinate_convention"], build=geometry["simion_geometry_build"], marker=geometry["simion_detector_marker"], source=geometry["particle_source"], physical_detector=resolve_physical_geometry(geometry)["simion"]["detector_body"])
     return geometry, port, layout

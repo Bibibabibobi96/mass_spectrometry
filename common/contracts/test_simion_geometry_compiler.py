@@ -90,11 +90,11 @@ class SimionGeometryCompilerTests(unittest.TestCase):
                 self.assertEqual(set(identity), {"resolved_content_sha256", "component_interface_sha256"})
                 self.assertTrue(all(len(value)==64 for value in identity.values()))
 
-    def test_template_migration_preserves_all_original_bytes(self):
+    def test_current_template_source_pins(self):
         expected = {
             "flight_tube": "55c4dd8e249ad3af532047f77b235c700eae47e15951a2828f1605dfc9841f1e",
             "reflectron": "6bc686c9a4827827dc45eef13590ea2ccdc578038a05f90d8132afbb00f7b2fb",
-            "detector": "9688511443118d7e69f780c3d54e42685b520882b3cc55f4777c68cbe515b8f3",
+            "detector": "7c6212a9161745bc9319ac03a65edba1991109b6d8fb27cbee37823f95b386cd",
         }
         for role, digest in expected.items():
             with self.subTest(role=role):

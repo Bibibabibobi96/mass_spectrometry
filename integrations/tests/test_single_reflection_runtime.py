@@ -280,6 +280,21 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         return materialize_workbench(self.preparation, self.field_receipt, file_record(self.downstream_path),
             self.run, snapshot_root=self.snapshot, flight=kwargs.pop("flight", self.flight), **kwargs)
 
+    def test_model_less_runtime_rejects_absent_physical_detector(self):
+        context = _prepare_context(self.preparation, self.field_receipt, file_record(self.downstream_path),
+                                   self.run, snapshot_root=self.snapshot, flight=self.flight)
+        runtime.compile_case_controls(context, context["source"])
+        bad = copy.deepcopy(context)
+        row = next(item for item in bad["geometry"]["downstream_pa_instances"] if item["role"] == "detector")
+        del row["physical_detector"]
+        with self.assertRaisesRegex(ValueError, "canonical physical detector body is required"):
+            runtime.compile_case_controls(bad, bad["source"])
+        bad = copy.deepcopy(context)
+        row = next(item for item in bad["geometry"]["downstream_pa_instances"] if item["role"] == "detector")
+        row["physical_detector"]["height_mm"] = .1
+        with self.assertRaisesRegex(ValueError, "physical detector differs from the canonical provider"):
+            runtime.compile_case_controls(bad, bad["source"])
+
     def test_control_compilation_creates_no_native_working_files(self):
         context = _prepare_context(self.preparation, self.field_receipt, file_record(self.downstream_path),
                                    self.run, snapshot_root=self.snapshot, flight=self.flight)

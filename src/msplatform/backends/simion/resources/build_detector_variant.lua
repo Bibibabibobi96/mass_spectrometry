@@ -19,7 +19,9 @@ local contract = dofile(assert(arg[3], 'missing frozen resolved Lua'))
 local marker = assert(contract.physical_geometry, 'missing provider physical geometry').simion.detector_marker
 local mesh = contract.simion_geometry_build.detector
 local mmgu_xy, mmgu_z = marker.cell_xy_mm, marker.cell_z_mm
-local radius, absorber_thickness = marker.active_radius_mm, marker.absorber_thickness_mm
+local body = assert(contract.physical_geometry.simion.detector_body, "missing canonical physical detector body")
+local radius = body.radius_mm
+local absorber_thickness = body.height_mm
 local front_margin_z, back_margin_z = marker.front_margin_z_mm, marker.back_margin_z_mm
 local margin_xy, max_mib = mesh.margin_xy_mm, mesh.max_mib
 
@@ -31,8 +33,9 @@ assert(output:match('%.pa#$'), 'output must end in .pa#')
 assert(mmgu_xy and mmgu_xy > 0, 'xy cell size must be positive')
 assert(mmgu_z and mmgu_z > 0, 'z cell size must be positive')
 assert(radius and radius > 0, 'radius must be positive')
-assert(absorber_thickness and absorber_thickness >= 5*mmgu_z,
-  'absorber thickness must span at least five z cells')
+assert(marker.absorber_thickness_mm and marker.absorber_thickness_mm > 0,
+  'marker absorber thickness must be positive')
+assert(absorber_thickness and absorber_thickness > 0, 'detector body thickness must be positive')
 assert(front_margin_z and front_margin_z >= 10*mmgu_z,
   'front z margin must span at least ten z cells')
 assert(back_margin_z and back_margin_z >= 5*mmgu_z,
@@ -45,7 +48,7 @@ local xy_span = 2*(radius+margin_xy)
 local z_span = front_margin_z+absorber_thickness+back_margin_z
 local nx = math.floor(xy_span/mmgu_xy+0.5)+1
 local ny = nx
-local nz = math.floor(z_span/mmgu_z+0.5)+1
+local nz = body.back_cells+body.front_cells+1
 -- Electrode basis, adjusted PA0, PA# and fractional-surface metadata.
 local estimated_mib = nx*ny*nz*8*3.25/1024^2
 print(string.format(
@@ -59,7 +62,7 @@ assert(estimated_mib <= max_mib,
 if build_mode~='solve-only' then
 local geometry_variables={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,radius=radius,
   absorber_thickness=absorber_thickness,front_margin_z=front_margin_z,
-  back_margin_z=back_margin_z,margin_xy=margin_xy}
+  back_margin_z=back_margin_z,margin_xy=margin_xy,physical_body=true, back_cells=body.back_cells, front_cells=body.front_cells}
 geometry.gem2pa(source,output,geometry_variables)
 end
 if build_mode=='geometry-only' then

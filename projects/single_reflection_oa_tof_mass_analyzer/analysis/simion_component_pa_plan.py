@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.tof_geometry import derive_simion_instances
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
     resolve_physical_geometry,
 )
@@ -73,6 +74,13 @@ def compile_component_pa_plan(
     )):
         raise ValueError("managed oaTOF PA reuse requires its declared unpadded accelerator domain")
     instances = {item["role"]: item for item in contract["derived"]["simion_instances"]}
+    # The detector PA covers the canonical body; other provider placements stay
+    # on their existing frozen representation.
+    detector_instance = next(item for item in derive_simion_instances(
+        geometry=contract["geometry_mm"], coordinate=contract["coordinate_convention"],
+        build=mesh, marker=contract["simion_detector_marker"],
+        physical_detector=physical["simion"]["detector_body"]) if item["role"] == "detector")
+    instances["detector"] = detector_instance
     if set(instances) != {item[0] for item in COMPONENTS.values()}:
         raise ValueError("component PA plan requires the existing four-instance geometry")
     executable_identity = {"release": "SIMION 2020", "executable_sha256": file_sha256(executable)}
@@ -97,10 +105,11 @@ def compile_component_pa_plan(
             cells = [mesh[role]["cell_axial_mm"], mesh[role]["cell_radial_mm"], mesh[role]["cell_radial_mm"]]
             symmetry = "2dcylindrical"
         else:
-            geometry = physical["simion"]["detector_marker"]
+            geometry = dict(body=deepcopy(physical["simion"]["detector_body"]),
+                            marker=deepcopy(physical["simion"]["detector_marker"]))
             operating_values = [0.0]
             count = 1
-            cells = [geometry["cell_xy_mm"]] * 2 + [geometry["cell_z_mm"]]
+            cells = [geometry["marker"]["cell_xy_mm"]] * 2 + [geometry["marker"]["cell_z_mm"]]
             symmetry = "3dplanar"
         if type(count) is not int or count < 1 or any(
             isinstance(value, bool) or not isinstance(value, (int, float))

@@ -8,7 +8,7 @@ return {
     mode="config/modes/formal.json",
     mode_sha256="40842C72515AB70AC0C848AA87CACEB91FBB437E4EAEB7F92FBDBAA47DC88446",
     solver_numerics="config/formal_solver_numerics.json",
-    solver_numerics_sha256="408797DA7470A9713B8C248583C4E46AABE96D7A894BE163C71968F6E2753B7A"
+    solver_numerics_sha256="1399A47EE8CD54EBC7F2A0B6E83BA7130B969B26E1E194D4C78CC8EECF81B7E6"
   },
   coordinate_convention={
     frame_id="oatof_global",
@@ -167,7 +167,7 @@ return {
       },
       detector={
         margin_xy_mm=1.0,
-        max_mib=64.0
+        max_mib=128.0
       }
     },
     detector_marker={
@@ -207,7 +207,7 @@ return {
     },
     detector={
       margin_xy_mm=1.0,
-      max_mib=64.0
+      max_mib=128.0
     }
   },
   comsol_runtime={
@@ -294,12 +294,14 @@ return {
         name="detector_ground.pa0",
         x_mm=7.799999999999997,
         y_mm=-41.0,
-        z_mm=-0.15000000000000002,
+        z_mm=-1.05,
         az_deg=0.0,
         nx=165,
         ny=165,
-        nz=36,
-        cell_mm=0.5
+        nz=126,
+        cell_mm=0.5,
+        physical_back_cells=105,
+        physical_front_cells=20
       }
     },
     field_sample_points_mm={
@@ -1317,6 +1319,23 @@ return {
         crossing_step_control_enabled=true,
         capture_arm_distance_mm=100.0,
         capture_depth_mm=0.02
+      },
+      detector_body={
+        primitive="cylinder",
+        radius_mm=40.0,
+        base_center_mm={
+          48.8,
+          0,
+          -1.0
+        },
+        height_mm=1.0,
+        axis={
+          0,
+          0,
+          1
+        },
+        back_cells=105,
+        front_cells=20
       }
     }
   }

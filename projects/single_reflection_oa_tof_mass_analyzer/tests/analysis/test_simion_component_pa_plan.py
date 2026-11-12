@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 from msplatform.io.file_identity import file_sha256
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry, resolve_physical_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import (
     compile_component_pa_plan, sum_component_commitments,
 )
@@ -98,6 +98,7 @@ class ComponentPaPlanTests(unittest.TestCase):
             geometry=changed["geometry_mm"], coordinate=changed["coordinate_convention"],
             build=changed["simion_geometry_build"], marker=changed["simion_detector_marker"],
             source=changed["particle_source"],
+            physical_detector=resolve_physical_geometry(changed)["simion"]["detector_body"],
         )
         before = {item["role"]: item for item in self.plan()["components"]}
         after = {item["role"]: item for item in self.plan(changed)["components"]}
@@ -122,8 +123,15 @@ class ComponentPaPlanTests(unittest.TestCase):
         instances = {item["name"].removesuffix(".pa0"): item
                      for item in self.contract["derived"]["simion_instances"]}
         for item in plan["components"]:
-            self.assertEqual(item["grid"]["dimensions"],
-                             [instances[item["stem"]][axis] for axis in ("nx", "ny", "nz")])
+            if item["role"] == "detector":
+                marker = self.contract["simion_detector_marker"]
+                body = item["identity"]["geometry"]["physical_geometry"]["body"]
+                self.assertEqual(item["grid"]["dimensions"][2], body["back_cells"] + body["front_cells"] + 1)
+                self.assertEqual(body["height_mm"], self.contract["geometry_mm"]["detector_thickness"])
+                self.assertEqual(item["identity"]["geometry"]["physical_geometry"]["marker"], marker)
+            else:
+                self.assertEqual(item["grid"]["dimensions"],
+                                 [instances[item["stem"]][axis] for axis in ("nx", "ny", "nz")])
 
 
 if __name__ == "__main__":

@@ -84,14 +84,12 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     physical = dict(simion={role:specs[role]["template_variables"]["component"]
                            for role in ("flight_tube", "reflectron")})
     detector = specs["detector"]["template_variables"]
-    physical["simion"]["detector_marker"] = dict(
-        cell_xy_mm=detector["mmgu_xy"], cell_z_mm=detector["mmgu_z"], active_radius_mm=detector["radius"],
-        absorber_thickness_mm=detector["absorber_thickness"], front_margin_z_mm=detector["front_margin_z"],
-        back_margin_z_mm=detector["back_margin_z"])
+    physical["simion"]["detector_body"] = copy.deepcopy(specs["detector"]["physical_detector"])
     # Full original build preconditions need these values, not a fake resolved design.
     contract = compiled.frontend_geometry.get("downstream_build_contract")
     if contract is None:
         raise ValueError("compiled geometry lacks the actual downstream build contract")
+    physical["simion"]["detector_marker"] = copy.deepcopy(contract["simion_detector_marker"])
     materializations[str(projection)] = "return " + lua_value(dict(contract, physical_geometry=physical)) + "\n"
     for spec in compiled.downstream_specs:
         role = spec["role"]
@@ -439,6 +437,7 @@ def _plan_downstream_solve_with_assets(compiled: CompiledSimionGeometry, *, raw_
     specs={row["role"]:row for row in compiled.downstream_specs}
     physical=dict(simion={role:specs[role]["template_variables"]["component"] for role in ("flight_tube","reflectron")})
     physical["simion"]["detector_marker"]=contract["simion_detector_marker"]
+    physical["simion"]["detector_body"] = copy.deepcopy(specs["detector"]["physical_detector"])
     projection=root/"projection.lua"
     materializations={str(projection):"return "+lua_value(dict(contract,physical_geometry=physical))+"\n"}
     copies,operations,assets=[],[],[]

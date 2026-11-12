@@ -5,12 +5,16 @@ from typing import Any
 from msplatform.components.single_reflection_oa_tof.geometry_contract import resolve_electrode_geometry
 
 def derive_simion_instances(*, geometry: dict[str, Any], coordinate: dict[str, Any],
-                            build: dict[str, Any], marker: dict[str, Any]) -> list[dict[str, Any]]:
+                            build: dict[str, Any], marker: dict[str, Any],
+                            physical_detector: dict[str, Any]) -> list[dict[str, Any]]:
     """Project native geometry domains without a particle source or field samples."""
     accelerator_half = geometry["accelerator_bore_half"] + geometry["accelerator_ring_width"] + geometry["accelerator_insulation_gap"] + geometry["accelerator_shield_wall"]
     accelerator_local_z_min = -geometry["accelerator_repeller_thickness"] - geometry["accelerator_rear_clearance"] - geometry["accelerator_shield_wall"]
     accelerator_local_z_max = geometry["L_accel"] + geometry["accelerator_front_vacuum_margin"]
-    detector_half = marker["active_radius_mm"] + build["detector"]["margin_xy_mm"]
+    detector_radius = physical_detector["radius_mm"]
+    detector_half = detector_radius + build["detector"]["margin_xy_mm"]
+    back_cells = physical_detector["back_cells"]
+    front_cells = physical_detector["front_cells"]
 
     instances = [
         {"role": "flight_tube_shield", "workbench_index": 1, "priority_number": 1, "name": "flight_tube_ground.pa0", "x_mm": coordinate["reflectron_axis"][0], "y_mm": coordinate["reflectron_axis"][1], "z_mm": geometry["shield_outer_z_min"], "az_deg": -90.0,
@@ -26,27 +30,30 @@ def derive_simion_instances(*, geometry: dict[str, Any], coordinate: dict[str, A
          "nz": round((accelerator_local_z_max - accelerator_local_z_min) / build["accelerator"]["cell_z_mm"]) + 1,
          "cell_mm": build["accelerator"]["cell_xy_mm"]},
         {"role": "detector", "workbench_index": 4, "priority_number": 4, "name": "detector_ground.pa0", "x_mm": coordinate["detector_x"] - detector_half, "y_mm": -detector_half,
-         "z_mm": marker["active_plane_z_mm"] - marker["back_margin_z_mm"] - marker["absorber_thickness_mm"], "az_deg": 0.0,
+         "z_mm": marker["active_plane_z_mm"] - back_cells * marker["cell_z_mm"], "az_deg": 0.0,
          # Match simion/workbench/build_detector_variant.lua at half-cell ties.
          "nx": math.floor(2 * detector_half / marker["cell_xy_mm"] + 0.5) + 1,
          "ny": math.floor(2 * detector_half / marker["cell_xy_mm"] + 0.5) + 1,
-         "nz": math.floor((marker["front_margin_z_mm"] + marker["absorber_thickness_mm"] + marker["back_margin_z_mm"]) / marker["cell_z_mm"] + 0.5) + 1,
+         "nz": back_cells + front_cells + 1,
          "cell_mm": marker["cell_xy_mm"]},
     ]
 
+    instances[-1]["physical_back_cells"] = back_cells
+    instances[-1]["physical_front_cells"] = front_cells
     return instances
 
 
 def derive_simion_geometry(
     *, geometry: dict[str, Any], coordinate: dict[str, Any],
     build: dict[str, Any], marker: dict[str, Any], source: dict[str, Any],
+    physical_detector: dict[str, Any],
 ) -> dict[str, Any]:
     """Derive provider-local PA placements and samples from the final design.
 
     These placements map native PA domains into oatof_global; cross-component
     assembly transforms are applied separately by the consuming integration.
     """
-    instances = derive_simion_instances(geometry=geometry, coordinate=coordinate, build=build, marker=marker)
+    instances = derive_simion_instances(geometry=geometry, coordinate=coordinate, build=build, marker=marker, physical_detector=physical_detector)
 
     return {
         "simion_instances": instances,
@@ -88,6 +95,10 @@ def resolve_physical_geometry(
                                             if body["role"].startswith("reflectron_")), 1)]
     native.append(native_row(shield, len(native) + 1, shield["reflectron_local_regions"]))
     extent = neutral["local_extents"]
+    marker = contract["simion_detector_marker"]
+    detector_body = dict(next(body["geometry"] for body in bodies if body["role"] == "detector"))
+    detector_body["back_cells"] = math.ceil((detector_body["height_mm"] + marker["back_margin_z_mm"]) / marker["cell_z_mm"])
+    detector_body["front_cells"] = math.ceil(marker["front_margin_z_mm"] / marker["cell_z_mm"])
     return dict(schema_version=1, role="oatof_physical_geometry", local_frame_id=neutral["local_frame_id"],
         length_unit="mm", variant_id=neutral["variant_id"],
         accelerator=dict(geometry=neutral["accelerator"]["geometry"], physical_electrode_ids=oa_ids,
@@ -98,4 +109,4 @@ def resolve_physical_geometry(
                                     axial_span_mm=extent["flight_tube_axial_span_mm"], outer_radius_mm=extent["outer_radius_mm"]),
                     reflectron=dict(electrodes=native, axial_span_mm=extent["reflectron_axial_span_mm"],
                                     outer_radius_mm=extent["outer_radius_mm"]),
-                    detector_marker=dict(contract["simion_detector_marker"])))
+                    detector_marker=dict(contract["simion_detector_marker"]), detector_body=detector_body))

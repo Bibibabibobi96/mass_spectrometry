@@ -138,6 +138,7 @@ def generated_adjustables(contract: dict) -> str:
     voltage = contract["electrodes_V"]
     runtime = contract["simion_runtime"]
     marker = contract["simion_detector_marker"]
+    detector_body = resolve_physical_geometry(contract)["simion"]["detector_body"]
     rings = contract["rings"]
     instance_z = (
         geometry["accelerator_repeller_z"]
@@ -196,6 +197,9 @@ def generated_adjustables(contract: dict) -> str:
         ("detector_active_plane_z_mm", marker["active_plane_z_mm"]),
         ("detector_radius_mm", marker["active_radius_mm"]),
         ("detector_marker_absorber_thickness_mm", marker["absorber_thickness_mm"]),
+        ("detector_physical_thickness_mm", detector_body["height_mm"]),
+        ("detector_physical_back_cells", detector_body["back_cells"]),
+        ("detector_physical_front_cells", detector_body["front_cells"]),
         ("detector_marker_front_margin_z_mm", marker["front_margin_z_mm"]),
         ("detector_marker_back_margin_z_mm", marker["back_margin_z_mm"]),
         ("detector_tstep_enable", int(marker["crossing_step_control_enabled"])),

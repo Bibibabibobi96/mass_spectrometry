@@ -1371,6 +1371,7 @@
               "common/contracts/test_platform_api.py",
               "common/contracts/test_platform_capabilities.py",
               "common/contracts/test_simion_geometry_compiler.py",
+              "common/contracts/test_detector_physical_projection.py",
               "common/contracts/test_oa_geometry_compiler.py",
               "common/contracts/test_simion_native_plans.py",
               "common/contracts/test_geometry_execution.py",

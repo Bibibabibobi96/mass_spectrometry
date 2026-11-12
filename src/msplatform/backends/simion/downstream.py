@@ -43,8 +43,7 @@ def _validate_provider_inputs(g: dict, b: dict, m: dict, rings: dict, v: dict) -
     middle = g["L_stage1"] / b["reflectron"]["cell_axial_mm"]
     if abs(middle - math.floor(middle + 0.5)) > 1e-8:
         raise ValueError("downstream reflectron midgrid zero-width sheet must lie on a raw PA row")
-    for key, minimum in (("absorber_thickness_mm", 5 * m["cell_z_mm"]),
-                          ("front_margin_z_mm", 10 * m["cell_z_mm"]),
+    for key, minimum in (("front_margin_z_mm", 10 * m["cell_z_mm"]),
                           ("back_margin_z_mm", 5 * m["cell_z_mm"])):
         if m[key] < minimum:
             raise ValueError(f"downstream detector {key} is below its provider cell-span minimum")
@@ -64,19 +63,23 @@ def compile_downstream_specs(resolved: dict) -> tuple[dict, ...]:
     face = physical["detector_active_face"]
     if m["active_plane_z_mm"] != face["center_mm"][2] or m["active_radius_mm"] != face["radius_mm"]:
         raise ValueError("numerical detector marker differs from the physical detector active face")
-    domains = derive_simion_instances(geometry=g, coordinate=resolved["coordinate_convention"], build=b, marker=m)
+    detector_body = physical["simion"]["detector_body"]
+    domains = derive_simion_instances(geometry=g, coordinate=resolved["coordinate_convention"], build=b, marker=m, physical_detector=detector_body)
     by_role = {("flight_tube" if d["role"]=="flight_tube_shield" else d["role"]):d for d in domains}
     specs = []
     for role in ("flight_tube", "reflectron", "detector"):
         mesh = b[role]
         if role == "detector":
-            variables = dict(mmgu_xy=m["cell_xy_mm"], mmgu_z=m["cell_z_mm"], radius=m["active_radius_mm"],
-                absorber_thickness=m["absorber_thickness_mm"], margin_xy=mesh["margin_xy_mm"],
+            variables = dict(mmgu_xy=m["cell_xy_mm"], mmgu_z=m["cell_z_mm"], radius=detector_body["radius_mm"],
+                absorber_thickness=detector_body["height_mm"], margin_xy=mesh["margin_xy_mm"],
                 front_margin_z=m["front_margin_z_mm"], back_margin_z=m["back_margin_z_mm"])
         else:
             variables = dict(mmgu_axial=mesh["cell_axial_mm"], mmgu_radial=mesh["cell_radial_mm"],
                              component=copy.deepcopy(physical["simion"][role]))
-        specs.append(dict(role=role, template_text=gem_template_text(role), template_variables=variables,
+        spec = dict(role=role, template_text=gem_template_text(role), template_variables=variables,
             native_instance=copy.deepcopy(by_role[role]),
-            template_context="SIMION_GEM_Lua_global_var", action="gem2pa_only"))
+            template_context="SIMION_GEM_Lua_global_var", action="gem2pa_only")
+        if role == "detector":
+            spec["physical_detector"] = copy.deepcopy(detector_body)
+        specs.append(spec)
     return tuple(specs)

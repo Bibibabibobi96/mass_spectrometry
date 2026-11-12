@@ -178,6 +178,16 @@ class DownstreamFieldsTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         request, self.run, _ = fixture(self.root)
         self.preparation = prepare(request, self.run)
+        # Test-owned numerical budget for the complete physical detector PA.
+        from msplatform.backends.simion.frontend import native_frontend_instances
+        geometry = json.loads((self.run / "inputs/frontend_geometry.json").read_text())
+        instance_id = native_frontend_instances(geometry["composition_plan"])[1]
+        key = "instance_design__" + instance_id
+        provider = Path(self.preparation["input_records"][key]["path"])
+        resolved = json.loads(provider.read_text(encoding="utf-8"))
+        resolved["simion_geometry_build"]["detector"]["max_mib"] = 128
+        provider.write_text(json.dumps(resolved), encoding="utf-8")
+        self.preparation["input_records"][key] = file_record(provider)
         (self.run / "run_config.json").write_text(json.dumps(dict(project="instrument_assembly")))
         self.planned = plan_downstream_fields(self.preparation, self.run, snapshot_root=ROOT)
         self.plan_path = Path(self.planned["plan_record"]["path"])
@@ -389,6 +399,14 @@ finally:
         fixture_root.mkdir()
         request, target, _ = fixture(fixture_root)
         preparation = prepare(request, target)
+        from msplatform.backends.simion.frontend import native_frontend_instances
+        geometry = json.loads((target / "inputs/frontend_geometry.json").read_text())
+        key = "instance_design__" + native_frontend_instances(geometry["composition_plan"])[1]
+        provider = Path(preparation["input_records"][key]["path"])
+        resolved = json.loads(provider.read_text(encoding="utf-8"))
+        resolved["simion_geometry_build"]["detector"]["max_mib"] = 128
+        provider.write_text(json.dumps(resolved), encoding="utf-8")
+        preparation["input_records"][key] = file_record(provider)
         (target / "run_config.json").write_text(json.dumps(dict(project="instrument_assembly")))
         alias = self.root / "short_plan_run"
         created = subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(target)],
@@ -494,7 +512,8 @@ finally:
             (("rings", "stage1_count"), 1.5, "positive integer"),
             (("electrodes_V", "midgrid"), float("nan"), "midgrid"),
             (("simion_geometry_build", "reflectron", "cell_axial_mm"), 0.37, "zero-width sheet"),
-            (("simion_detector_marker", "absorber_thickness_mm"), 1e-6, "cell-span minimum"),
+            (("simion_detector_marker", "absorber_thickness_mm"), 0, "finite and positive"),
+            (("geometry_mm", "detector_thickness"), 0, "physical lengths and radii"),
             (("simion_detector_marker", "front_margin_z_mm"), 1e-6, "cell-span minimum"),
             (("simion_detector_marker", "back_margin_z_mm"), 1e-6, "cell-span minimum"),
             (("simion_geometry_build", "detector", "margin_xy_mm"), 1e-6, "one xy cell"),
@@ -507,8 +526,51 @@ finally:
                 native.assert_not_called()
                 self.assertFalse((run / "simion/downstream_fields").exists())
 
+    def test_physical_detector_accepts_coarser_grid_with_unchanged_marker(self):
+        edits = [(("simion_detector_marker", "cell_z_mm"), .025),
+                 (("simion_detector_marker", "front_margin_z_mm"), .25),
+                 (("simion_detector_marker", "back_margin_z_mm"), .125)]
+        run, preparation = self.unplanned_provider("coarser_detector", edits)
+        planned = plan_downstream_fields(preparation, run, snapshot_root=ROOT)
+        plan = json.loads(Path(planned["plan_record"]["path"]).read_text())
+        detector = next(asset for asset in plan["assets"] if asset["role"] == "detector")
+        self.assertEqual(detector["grid"]["nz"], 56)
+        projection = Path(plan["provider_projection_record"]["path"]).read_text()
+        self.assertIn("height_mm=1", projection)
+        self.assertIn("absorber_thickness_mm=0.1", projection)
+        self.assertIn("capture_depth_mm=0.02", projection)
+
+    def test_detector_marker_must_match_canonical_face_before_staging(self):
+        for key, value in (("active_plane_z_mm", 1.0), ("active_radius_mm", 39.0)):
+            with self.subTest(key=key):
+                run, preparation = self.unplanned_provider("marker_mismatch_" + key, [
+                    (("simion_detector_marker", key), value)])
+                with self.assertRaisesRegex(ValueError, "differs from the physical detector active face"):
+                    plan_downstream_fields(preparation, run, snapshot_root=ROOT)
+                self.assertFalse((run / "simion/downstream_fields").exists())
+
+    def test_physical_detector_budget_and_projected_source(self):
+        for limit, accepted in ((64, False), (128, True)):
+            run, preparation = self.unplanned_provider(f"physical_detector_{limit}", [
+                (("simion_geometry_build", "detector", "max_mib"), limit)])
+            if not accepted:
+                with self.assertRaisesRegex(ValueError, "detector provider array estimate.*max_mib"):
+                    plan_downstream_fields(preparation, run, snapshot_root=ROOT)
+                self.assertFalse((run / "simion/downstream_fields").exists())
+                continue
+            planned = plan_downstream_fields(preparation, run, snapshot_root=ROOT)
+            plan = json.loads(Path(planned["plan_record"]["path"]).read_text())
+            detector = next(asset for asset in plan["assets"] if asset["role"] == "detector")
+            self.assertEqual(detector["grid"]["nz"], 126)
+            projection = Path(plan["provider_projection_record"]["path"]).read_text()
+            self.assertIn("detector_body", projection)
+            self.assertIn("detector_marker", projection)
+            self.assertIn("height_mm=1", projection)
+
     def test_detector_half_cell_grid_and_budget_use_the_same_provider_dimensions(self):
-        edits = [(("simion_geometry_build", "detector", "margin_xy_mm"), 1)]
+        edits = [(("simion_geometry_build", "detector", "margin_xy_mm"), 1),
+                 (("geometry_mm", "detector_radius"), 4.125),
+                 (("geometry_mm", "detector_thickness"), 1.25)]
         edits.extend((("simion_detector_marker", key), value) for key, value in dict(
             active_radius_mm=4.125, cell_xy_mm=.5, cell_z_mm=.25,
             absorber_thickness_mm=1.25, front_margin_z_mm=2.5, back_margin_z_mm=1.375).items())

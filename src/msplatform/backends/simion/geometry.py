@@ -25,7 +25,7 @@ from msplatform.components.single_reflection_oa_tof.accelerator_geometry import 
 )
 from msplatform.components.single_reflection_oa_tof.electrode_topology import resolve_frontend_field_domain
 from msplatform.assembly.electrode_binding import validate_electrode_bindings
-from msplatform.backends.simion.tof_geometry import derive_simion_instances
+from msplatform.backends.simion.tof_geometry import derive_simion_instances, resolve_physical_geometry
 from msplatform.backends.simion.accelerator_projection import project_side_opening
 from msplatform.backends.simion.tof_assembly_interface import resolve_provider_assembly_interface as resolve_assembly_interface
 
@@ -358,18 +358,19 @@ def compile_frontend_geometry(
             cell_mm_xyz=domain['cell_mm_xyz'], pa_origin_mm=domain['instance_origin_mm'])
             for name, domain in domains.items()}
     build, marker = oatof_resolved['simion_geometry_build'], oatof_resolved['simion_detector_marker']
+    detector_body = resolve_physical_geometry(oatof_resolved)["simion"]["detector_body"]
     provider_domains = derive_simion_instances(
         geometry=oatof_resolved['geometry_mm'], coordinate=oatof_resolved['coordinate_convention'],
-        build=build, marker=marker)
+        build=build, marker=marker, physical_detector=detector_body)
     downstream = []
     for instance in provider_domains:
         role = instance['role']
         if role == 'accelerator':
             continue
         if role == 'detector':
-            downstream.append(dict(instance, frame_id=FRAME, numerical_marker=dict(marker),
+            downstream.append(dict(instance, frame_id=FRAME, numerical_marker=dict(marker), physical_detector=dict(detector_body),
                 grid_numerics=dict(build['detector'], cell_xy_mm=marker['cell_xy_mm'], cell_z_mm=marker['cell_z_mm']),
-                scope='numerical_detector_marker__not_mechanical_detector'))
+                scope='physical_detector_with_numerical_observation_marker'))
         else:
             downstream.append(dict(instance, frame_id=FRAME,
                 grid_numerics=dict(build['flight_tube' if role == 'flight_tube_shield' else role]),

@@ -50,7 +50,12 @@ def resolve_contract_documents(baseline, mode, numerics, *, input_identity):
     resolved = _resolve_documents(baseline, mode, input_identity=input_identity)
     resolved.update(simion_runtime={**numerics["simion"], "routine_particles": mode["particle"]["statistical_count"]},
         simion_geometry_build=build, comsol_runtime=numerics["comsol"], simion_detector_marker=marker)
-    resolved["derived"] = derive_simion_geometry(geometry=resolved["geometry_mm"], coordinate=resolved["coordinate_convention"], build=build, marker=marker, source=resolved["particle_source"])
+    physical = resolve_physical_geometry(resolved)
+    face = physical["detector_active_face"]
+    if marker["active_plane_z_mm"] != face["center_mm"][2] or marker["active_radius_mm"] != face["radius_mm"]:
+        raise ValueError("numerical detector marker differs from the physical detector active face")
+    detector_body = physical["simion"]["detector_body"]
+    resolved["derived"] = derive_simion_geometry(geometry=resolved["geometry_mm"], coordinate=resolved["coordinate_convention"], build=build, marker=marker, source=resolved["particle_source"], physical_detector=detector_body)
     return resolved
 
 
