@@ -36,7 +36,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 from msplatform.backends.simion.optimize_reflectron_ring_voltages import (
     _load_basis, load_authoring_default, optimize, render_lua_profile,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log
+from msplatform.backends.simion import detector_census
 from msplatform.backends.simion import ion_table as simion_ion_table
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import render_program
 
@@ -607,7 +607,7 @@ def analyze(run: Path) -> dict[str, Any]:
             fact = _load(run / f"results/native_batch_completion/{case['name']}.json")
             if fact.get("batch") != case["batch"] or fact.get("natural_exit") is not True or fact.get("exit_code") != 0:
                 raise ValueError("analysis requires a complete native unit")
-            particles, diagnostic = analyze_simion_log(Path(case["stdout_path"]), Path(case["ion"]), mode=label,
+            particles, diagnostic = detector_census.analyze_simion_log(Path(case["stdout_path"]), Path(case["ion"]), mode=label,
                 distribution=f"fixedN{plan['particle_count']}_frozen_source", detector_radius_mm=40.0, allow_incomplete_census=False)
             particles["Ion"] += case["batch"]["simion_particle_id_offset"]
             frames.append(particles)

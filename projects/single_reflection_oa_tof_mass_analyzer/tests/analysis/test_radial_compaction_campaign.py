@@ -41,6 +41,22 @@ def managed_process_fixture(exit_code: int = 0) -> dict:
 
 
 class RadialCompactionCampaignTests(unittest.TestCase):
+    def test_real_radial_analysis_consumes_detector_census(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "results").mkdir()
+            ion, log = root / "source.ion", root / "flight.log"
+            ion.write_text("0,524,1,0,0,0,0,0,5,1,0\n" * 3, encoding="ascii")
+            log.write_text("".join(
+                f"TRACE: detector_crossing ion={i} t={t} x=0 y=0 z=0 r=0 zmax=4\n"
+                for i, t in ((1, 9), (2, 10), (3, 11))), encoding="utf-8")
+            case = {"case_root": root, "case_id": "case", "run_id": "run", "context_sha256": "fixture"}
+            result = radial.analysis.analyze_flight(case, "baseline", log, ion, 3, None, False, {})
+            self.assertEqual(result["diagnostics"]["HitParticleIds"], [1, 2, 3])
+            self.assertEqual(result["diagnostics"]["TofTimeReference"], "particle_birth")
+            self.assertFalse(result["diagnostics"]["ResolutionClaim"])
+            self.assertTrue((root / "results/baseline_particles.csv").is_file())
+
     def test_default_owner_result_is_retained_and_cannot_be_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -297,7 +313,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             }.items():
                 stack.enter_context(patch.object(radial, name, **kwargs))
             stack.enter_context(patch.object(radial.analysis, "canonical_metrics", return_value={"mass_resolution": 1000.0, "significant_kde_modes": 1}))
-            stack.enter_context(patch.object(radial.analysis, "analyze_simion_log", side_effect=analyze))
+            stack.enter_context(patch.object(radial.analysis.detector_census, "analyze_simion_log", side_effect=analyze))
             yield control
 
     def run_fixture(self, root: Path, suffix: str, parent: Path | None = None,
@@ -787,6 +803,23 @@ def run(case_root, run_id, context, managed):
             altered = copy.deepcopy(changed)
             altered[section][key] = "different"
             self.assertFalse(radial._same_flight_dependencies(altered, original))
+        census = "src/msplatform/backends/simion/detector_census.py"
+        with_census = copy.deepcopy(original)
+        with_census["sources"][census] = "new"
+        self.assertTrue(radial._same_flight_dependencies(with_census, original))
+        self.assertTrue(radial._same_flight_dependencies(original, with_census))
+        with_census["sources"][census] = "changed"
+        self.assertTrue(radial._same_flight_dependencies(with_census, original))
+        for change in ("missing", "added", "changed"):
+            native = copy.deepcopy(with_census)
+            if change == "missing":
+                del native["sources"]["physical.lua"]
+            elif change == "added":
+                native["sources"]["new-native.lua"] = "new"
+            else:
+                native["sources"]["physical.lua"] = "different"
+            with self.subTest(native_change=change):
+                self.assertFalse(radial._same_flight_dependencies(native, original))
         changed["campaign_driver_sha256"] = "different"
         self.assertFalse(radial._same_flight_dependencies(changed, original))
 

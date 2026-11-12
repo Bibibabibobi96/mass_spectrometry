@@ -10,7 +10,7 @@ import numpy as np
 
 from msplatform.analysis.peak_metrics import compute_peak_metrics
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import analyze_simion_log
+from msplatform.backends.simion import detector_census
 
 
 def canonical_metrics(particle_csv: Path) -> dict[str, Any]:
@@ -29,7 +29,7 @@ def analyze_flight(case: dict[str, Any], mode: str, log: Path, ion: Path, partic
     """Publish diagnostics for a completed or reused native flight."""
     results = case["case_root"] / "results"
     particle_csv = results / f"{mode}_particles.csv"
-    particles, diagnostics = analyze_simion_log(
+    particles, diagnostics = detector_census.analyze_simion_log(
         log, ion, mode=mode, distribution=f"fixedN{particle_count}",
         detector_radius_mm=40, allow_incomplete_census=True,
     )

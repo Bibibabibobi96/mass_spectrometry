@@ -100,6 +100,7 @@ EXTRA_SOURCE_IDS = (
 # closure members, the driver, frozen inputs and solver/runtime remain bound.
 ANALYSIS_ONLY_SOURCES = frozenset({
     "src/msplatform/analysis/peak_metrics.py",
+    "src/msplatform/backends/simion/detector_census.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
 })
@@ -115,11 +116,11 @@ def _same_flight_dependencies(current: dict[str, Any], parent: dict[str, Any]) -
         k: v for k, v in parent.items() if k != "sources"
     }:
         return False
-    current_sources, parent_sources = current["sources"], parent["sources"]
-    if current_sources.keys() != parent_sources.keys():
-        return False
-    return all(current_sources[name] == parent_sources[name]
-               for name in current_sources if name not in ANALYSIS_ONLY_SOURCES)
+    current_sources = {name: value for name, value in current["sources"].items()
+                       if name not in ANALYSIS_ONLY_SOURCES}
+    parent_sources = {name: value for name, value in parent["sources"].items()
+                      if name not in ANALYSIS_ONLY_SOURCES}
+    return current_sources == parent_sources
 
 
 def _read_parent(parent: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:

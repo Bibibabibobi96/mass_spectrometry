@@ -597,6 +597,62 @@
           "reason": "workbench_seed_consumer_changed"
         },
         {
+          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_exporters_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/rf_multipole_ion_optics/tests/fixtures/rf_convergence_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_reader_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/tof_mass_spectrum_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/rf_multipole_ion_optics/tests/fixtures/rf_event_old_capture.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_analyzer_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_measured_source_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "common/contracts/fixtures/strict_json_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_prepared_field_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/ion_reader_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_interface_coverage_vectors.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/test_support/detector_census_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/rf_multipole_ion_optics/tests/fixtures/rf_transport_comparison_old_witness.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/reflectron_fit_capture.json",
+          "reason": "installed_probe_witness_changed"
+        },
+        {
           "exact": "src/msplatform/components/rf_multipole/event_table.py",
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
@@ -839,6 +895,70 @@
               {
                 "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
                 "reason": "workbench_seed_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_exporters_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/rf_multipole_ion_optics/tests/fixtures/rf_convergence_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_reader_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/tof_mass_spectrum_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/rf_multipole_ion_optics/tests/fixtures/rf_event_old_capture.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_analyzer_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_measured_source_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "common/contracts/fixtures/strict_json_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_prepared_field_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/ion_reader_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_interface_coverage_vectors.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/test_support/detector_census_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/rf_multipole_ion_optics/tests/fixtures/rf_transport_comparison_old_witness.json",
+                "reason": "installed_probe_witness_changed"
+              },
+              {
+                "exact": "projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/reflectron_fit_capture.json",
+                "reason": "installed_probe_witness_changed"
               }
             ],
             "modules": [
@@ -1596,7 +1716,7 @@
           "test_repository_text_bytes": 0.253435,
           "test_rigid_transform": 0.002147,
           "test_run_artifact_workflow": 227.086357,
-          "test_run_artifact_workflow_sources": 177.702262,
+          "test_run_artifact_workflow_sources": 444.723622,
           "test_run_capacity_lifecycle": 15.504897,
           "test_run_terminal_publication": 0.102523,
           "test_shared_artifact_contracts": 0.153551,
@@ -1608,7 +1728,11 @@
           "test_verify_artifact_layout": 11.711225,
           "test_verify_changed": 106.423794,
           "test_verify_run_manifest": 12.027791,
-          "test_write_formal_asset_manifest": 0.01762
+          "test_write_formal_asset_manifest": 0.01762,
+          "test_batch_processes": 167.678243,
+          "test_installed_scientific_core": 1342.666962,
+          "test_simion_field_action": 177.347911,
+          "test_simion_field_worker": 184.951509
         }
       }
     },
@@ -3440,6 +3564,10 @@
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
+          "exact": "src/msplatform/backends/simion/detector_census.py",
+          "reason": "installed_detector_census_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/workflows/single_reflection_mass_spectrum.py",
           "reason": "migrated_actual_consumer_changed"
         },
@@ -3572,6 +3700,24 @@
         "scope": "projects/single_reflection_oa_tof_mass_analyzer/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+      {
+        "matches": [
+          {
+            "exact": "src/msplatform/backends/simion/detector_census.py",
+            "reason": "installed_detector_census_consumer_changed"
+          }
+        ],
+        "modules": [
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_solver_diagnostics.py",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_radial_compaction_campaign.py",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_reflectron_voltage_compensation.py",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
+          "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py"
+        ],
+        "dependency_profile": "locked"
+      },
           {
             "matches": [
               {
@@ -3594,7 +3740,9 @@
             ],
             "modules": [
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_mass_spectrum_input_admission.py",
-              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py"
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3612,7 +3760,9 @@
             "modules": [
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_peak_metrics.py",
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_mass_spectrum_input_admission.py",
-              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py"
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3677,6 +3827,8 @@
             ],
             "modules": [
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py",
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_compensation_powershell_adapter.py"
             ],
             "dependency_profile": "locked"
@@ -3726,6 +3878,8 @@
             ],
             "modules": [
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py",
+              "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py",
               "projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paired_accelerator_field_adapters.py"
             ],
             "dependency_profile": "locked"

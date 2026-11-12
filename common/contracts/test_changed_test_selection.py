@@ -1430,6 +1430,29 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
 
+    def test_candidate_split_keeps_all_prior_mapped_tests_in_real_plans(self) -> None:
+        paths = (
+            'src/msplatform/execution/resources/frozen_python_package.ps1',
+            'src/msplatform/workflows/single_reflection_mass_spectrum.py',
+            'common/contracts/test_support/run_artifact_workflow.py',
+            'src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m',
+        )
+        prefix = 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.'
+        expected = {prefix + name for name in ('test_candidate_workflow',
+                    'test_candidate_causal_workflow', 'test_candidate_postprocess_workflow')}
+        with tempfile.TemporaryDirectory(prefix='candidate_split_plans_') as directory:
+            for index, path in enumerate(paths):
+                with self.subTest(path=path):
+                    request = Path(directory) / f'plan-{index}.json'
+                    write_planned_request(REPO_ROOT, request, [path])
+                    stages = [row for row in json.loads(request.read_text(encoding='utf-8-sig'))['stages']
+                              if row['selected'] and (row['name']=='single_reflection_oa_tof_mass_analyzer_static'
+                              or row['name'].startswith('single_reflection_oa_tof_mass_analyzer_static__tests_'))]
+                    self.assertTrue(stages)
+                    modules = [module for row in stages for module in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
+                    self.assertTrue(expected <= set(modules), (path, modules))
+                    self.assertEqual(len(modules), len(set(modules)))
+
     def test_migrated_ip_tof_paths_select_real_consumers(self) -> None:
         project = "projects.single_reflection_oa_tof_mass_analyzer.tests.analysis."
         consumer_paths = (
@@ -1447,7 +1470,8 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     if path in consumer_paths:
                         params = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
                         selected = set(params["SelectedTestModules"])
-                        expected = {project + "test_mass_spectrum_input_admission", project + "test_candidate_workflow"}
+                        expected = {project + "test_mass_spectrum_input_admission", project + "test_candidate_workflow",
+                                    project + "test_candidate_causal_workflow", project + "test_candidate_postprocess_workflow"}
                         if path != consumer_paths[2]:
                             expected.add(project + "test_peak_metrics")
                         if path == consumer_paths[1]:
@@ -1643,6 +1667,8 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
                 if shared:
                     self.assertCountEqual(owners['single_reflection_oa_tof_mass_analyzer_static']['modules'], [
                         'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_workflow.py',
+                        'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_causal_workflow.py',
+                        'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_candidate_postprocess_workflow.py',
                         'projects/single_reflection_oa_tof_mass_analyzer/tests/analysis/test_paired_accelerator_field_adapters.py'])
                     self.assertEqual(owners['instrument_assembly_integration']['modules'],
                                      ['integrations/tests/test_paired_accelerator_static_field_execute.py'])

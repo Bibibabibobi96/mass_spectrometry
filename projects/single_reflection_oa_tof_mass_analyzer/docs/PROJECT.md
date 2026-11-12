@@ -429,7 +429,7 @@ instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成�
 
 ## 当前能力与边界
 
-辅助`solver_diagnostics.analyze_simion_log`只报告出生相对时间的Gaussian proxy：新输出使用
+辅助`msplatform.backends.simion.detector_census.analyze_simion_log`只报告出生相对时间的Gaussian proxy：新输出使用
 `GaussianProxyFwhmTofNs`与`GaussianProxyTimeEquivalentResolution`，替代旧的`FwhmTofNs`／
 `ResolutionFwhm`歧义字段。方法标签、时间参考和`ResolutionClaim=false`随结果发布，不能用于上文的
 脉冲相对分辨率声明。缺失事件保留为`not_observed`母群成员；允许不完整census不再放松唯一ID约束。
@@ -1152,3 +1152,8 @@ scientific and CSV comparisons, explicit geometry identity, Excel large-ID handl
 missing-owner refusals. The same-epoch source comparison also preserved the CSV and PNG
 bytes; installed PNG identities are recorded separately. Native, complete Repository and
 scientific qualification remain separate acceptance boundaries.
+
+Radial continuation compares the declared non-analysis source records as a set and by
+hash, excluding the canonical detector-census analyzer from flight identity. The campaign
+driver, scientific inputs and native sources remain separately bound; this source-map
+change does not authorize reuse of a predecessor with a different campaign driver.

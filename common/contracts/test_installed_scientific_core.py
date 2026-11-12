@@ -3240,6 +3240,79 @@ assert focus_module.read_bytes()==focus_bytes
 missing_rejected.append('oa_focus_analysis')
 print('INSTALLED_OA_FOCUS_ANALYSIS=PASS')
 
+# The old project capture is a software fixture, not a native SIMION qualification.
+from msplatform.backends.simion import detector_census
+census_module=pathlib.Path(detector_census.__file__).resolve()
+assert census_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert all(not census_module.is_relative_to(source) for source in blocked_source_roots)
+census_work=root/('detector-census-'+sys.argv[2])
+census_work.mkdir()
+census_fixture=fixture['detector_census_old_witness']
+for census_entry in census_fixture['inputs']:
+    census_raw=census_entry['text'].encode('utf-8')
+    assert hashlib.sha256(census_raw).hexdigest()==census_entry['sha256']
+    (census_work/census_entry['name']).write_bytes(census_raw)
+census_expected=census_work/'expected.json'
+census_expected.write_text(json.dumps(census_fixture),encoding='utf-8')
+census_child=r"""
+import copy,hashlib,importlib,json,os,pathlib,sys,sysconfig
+work=pathlib.Path(sys.argv[1]); blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[2])]
+def reject(event,values):
+    if event=='open' and values and isinstance(values[0],(str,bytes,os.PathLike)):
+        path=pathlib.Path(os.fsdecode(values[0])).resolve()
+        if any(path.is_relative_to(source) for source in blocked): raise AssertionError('author source read: '+str(path))
+sys.addaudithook(reject)
+module=importlib.import_module('msplatform.backends.simion.detector_census')
+assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+fixture=json.loads((work/'expected.json').read_text(encoding='utf-8'))
+inputs={entry['name']:entry['sha256'] for entry in fixture['inputs']}
+def check_inputs():
+    assert all(hashlib.sha256((work/name).read_bytes()).hexdigest()==digest for name,digest in inputs.items())
+check_inputs()
+for name,old in fixture['cases'].items():
+    log=work/(name+'.log'); ion=work/'particles.ion'
+    allow=name not in ('zero_variance','computed','radius','no_crossings_strict')
+    radius=0.0 if name=='bad_radius' else 1.0
+    try:
+        table,summary=module.analyze_simion_log(log,ion,mode='test',distribution='fixed',
+            detector_radius_mm=radius,allow_incomplete_census=allow)
+    except Exception as error:
+        assert 'exception_type' in old,(name,str(error))
+        assert type(error).__module__+'.'+type(error).__qualname__==old['exception_type']
+        assert str(error)==old['message'].replace('<EVENT_LOG>',str(log)),(name,str(error),old['message'])
+    else:
+        assert 'summary' in old,name
+        expected=copy.deepcopy(old['summary'])
+        assert expected['Log']=='<EVENT_LOG>'; expected['Log']=str(log)
+        observation=expected['analysis_metadata']['observation']
+        assert observation['source_ion_file']=='<SOURCE_ION>' and observation['event_log']=='<EVENT_LOG>'
+        observation['source_ion_file']=str(ion); observation['event_log']=str(log)
+        assert summary==expected,name
+        csv=table.to_csv(index=False).encode('utf-8')
+        assert csv==old['csv_text'].encode('utf-8') and hashlib.sha256(csv).hexdigest()==old['csv_sha256'],name
+        assert list(table.columns)==old['columns'] and [str(value) for value in table.dtypes]==old['dtypes'],name
+    check_inputs()
+print('INSTALLED_DETECTOR_CENSUS=PASS')
+"""
+census_args=[sys.executable,'-I','-B','-X','utf8','-c',census_child,str(census_work),json.dumps([str(path) for path in blocked_source_roots])]
+census_result=subprocess.run(census_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert census_result.returncode==0 and 'INSTALLED_DETECTOR_CENSUS=PASS' in census_result.stdout,census_result.stdout+census_result.stderr
+census_held=census_module.with_name(census_module.name+'.missing')
+census_module_bytes=census_module.read_bytes()
+assert not census_held.exists()
+census_module.rename(census_held)
+try:
+    census_missing=subprocess.run(census_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert census_missing.returncode!=0 and "No module named 'msplatform.backends.simion.detector_census'" in census_missing.stderr,census_missing.stderr
+finally:
+    census_held.rename(census_module)
+assert census_module.read_bytes()==census_module_bytes
+for census_entry in census_fixture['inputs']:
+    assert hashlib.sha256((census_work/census_entry['name']).read_bytes()).hexdigest()==census_entry['sha256']
+missing_rejected.append('detector_census')
+print('INSTALLED_DETECTOR_CENSUS=PASS')
+
+
 # Real installed OA receipt consumer, using synthetic metadata-valid payloads.
 from msplatform.workflows import oa_focus_mr_runtime_receipt as oa_mr_receipt
 receipt_fixture=fixture['oa_mr_runtime_receipt']
@@ -6875,6 +6948,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
+                                              detector_census_old_witness=json.loads((REPO_ROOT / 'projects/single_reflection_oa_tof_mass_analyzer/tests/test_support/detector_census_old_witness.json').read_text(encoding='utf-8')),
                                               oa_mr_runtime_receipt=self.oa_mr_runtime_receipt_probe_fixture(root / 'oa-mr-receipt'),
                                               mr_interface=self.mr_interface_probe_fixture(),
                                               mr_backend_geometry=self.mr_backend_geometry_probe_fixture(),

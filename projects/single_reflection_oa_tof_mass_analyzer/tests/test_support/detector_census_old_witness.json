@@ -1,0 +1,890 @@
+{
+  "schema_version": 1,
+  "inputs": [
+    {
+      "name": "particles.ion",
+      "sha256": "1be48b13fe311bb6acf9aee69a8f84f98c5993975ab1a5927cc7e117cfb1445c",
+      "text": "100,524,1,0,0,0,0,0,5,1,0\r\n100,524,1,0,0,0,0,0,5,1,0\r\n100,524,1,0,0,0,0,0,5,1,0\r\n"
+    },
+    {
+      "name": "none.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text": ""
+    },
+    {
+      "name": "single.log",
+      "sha256": "649d09d9c6de6403e1c2652683b9c243022f741ed3f4ef84e2bd4c7a7e37c137",
+      "text": "TRACE: detector_crossing ion=1 t=110 x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "zero_variance.log",
+      "sha256": "7d6b8d83fc8a5082ca2a04bf6ad613782aac989f9aac5faba31acc0963927f2c",
+      "text": "TRACE: detector_crossing ion=1 t=110 x=0 y=0 z=0 r=0 zmax=4\r\nTRACE: detector_crossing ion=2 t=110 x=0 y=0 z=0 r=0 zmax=4\r\nTRACE: detector_crossing ion=3 t=110 x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "computed.log",
+      "sha256": "6d45822d713dd6c8918ed9e469d0cad4bc45b2233417fa40d1becedd226f8ffe",
+      "text": "TRACE: detector_crossing ion=3 t=111 x=0 y=0 z=0 r=0 zmax=4\r\nTRACE: detector_crossing ion=1 t=109 x=0 y=0 z=0 r=0 zmax=4\r\nTRACE: detector_crossing ion=2 t=110 x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "radius.log",
+      "sha256": "493762bc31544c1cc6f1ad4970ede8b126b92ef39399fa2e90c74cb8abedefff",
+      "text": "TRACE: detector_crossing ion=1 t=109 x=1 y=2 z=3 r=1 zmax=4\r\nTRACE: detector_crossing ion=2 t=110 x=1 y=2 z=3 r=2 zmax=4\r\nTRACE: detector_crossing ion=3 t=111 x=1 y=2 z=3 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "no_crossings_strict.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text": ""
+    },
+    {
+      "name": "duplicate.log",
+      "sha256": "3f6c0ba911b946daf9e9a69ecc26077dcfa314b9b5f5893abadc831159d680cc",
+      "text": "TRACE: detector_crossing ion=1 t=110 x=0 y=0 z=0 r=0 zmax=4\r\nTRACE: detector_crossing ion=1 t=110 x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "unknown.log",
+      "sha256": "e8f960ab5aed31fbcfe06e2cae0b5459a2d50fed1afcd88e6612b7556d668817",
+      "text": "TRACE: detector_crossing ion=4 t=110 x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "invalid_time.log",
+      "sha256": "ba03b0a1dff21a82e056766a3db1e5db624ca9d569e89a6940ce3273337eee7f",
+      "text": "TRACE: detector_crossing ion=1 t=100 x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "malformed.log",
+      "sha256": "129ede743eaa2957961315dd7d2cba908e73e318037ad86ee25e4fb457798048",
+      "text": "TRACE: detector_crossing ion=1 t=inf x=0 y=0 z=0 r=0 zmax=4\r\n"
+    },
+    {
+      "name": "bad_radius.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "text": ""
+    }
+  ],
+  "cases": {
+    "none": {
+      "summary": {
+        "DiagnosticMethod": "birth_relative_sample_sigma_gaussian_proxy_v1",
+        "TofTimeReference": "particle_birth",
+        "ResolutionClaim": false,
+        "PeakStatus": "no_hits",
+        "SourceParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "CrossingParticleIds": [],
+        "HitParticleIds": [],
+        "UnobservedParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "Mode": "test",
+        "Distribution": "fixed",
+        "Emitted": 3,
+        "Crossed": 0,
+        "Unobserved": 3,
+        "Hit": 0,
+        "EfficiencyPct": 0.0,
+        "MeanTofUs": null,
+        "StdTofNs": null,
+        "GaussianProxyFwhmTofNs": null,
+        "GaussianProxyTimeEquivalentResolution": null,
+        "AllCrossingStdTofNs": null,
+        "MaxHitRadiusMm": null,
+        "MaxCrossingRadiusMm": null,
+        "MeanZmaxMm": null,
+        "CorrTofX0": null,
+        "CorrTofY0": null,
+        "CorrTofZ0": null,
+        "CorrTofEnergy": null,
+        "CorrRadiusX0": null,
+        "CorrRadiusY0": null,
+        "CorrRadiusZ0": null,
+        "CorrRadiusEnergy": null,
+        "HitMeanZ0Mm": null,
+        "MissMeanZ0Mm": 0.0,
+        "HitMeanEnergyEv": null,
+        "MissMeanEnergyEv": 5.0,
+        "Log": "<EVENT_LOG>",
+        "analysis_metadata": {
+          "schema_version": 1,
+          "method_id": "birth_relative_sample_sigma_gaussian_proxy_v1",
+          "status": "no_hits",
+          "scientific_qualification": "not_assessed",
+          "resolution_claim_allowed": false,
+          "sample_sigma_ddof": 1,
+          "weight_policy": "equal_particle_ids",
+          "sample_unit": "original_source_particle_id",
+          "sample_count": 0,
+          "weight_sum": 0.0,
+          "effective_sample_count": 0.0,
+          "settings": {
+            "gaussian_sigma_to_fwhm_factor": 2.3548200450309493,
+            "detector_radius_mm": 1.0,
+            "allow_incomplete_census": true
+          },
+          "units": {
+            "tof": "us",
+            "time_width": "ns",
+            "position": "mm",
+            "energy": "eV"
+          },
+          "time_reference": {
+            "kind": "particle_birth",
+            "expression": "detector_crossing.t - ION.TobUs",
+            "clock_qualification": "birth_relative_only_no_pulse_epoch"
+          },
+          "observation": {
+            "event": "detector_crossing",
+            "multiplicity": "one_recorded_event_per_original_source_id",
+            "hit_selection": "recorded RadiusMm <= detector_radius_mm",
+            "unobserved_policy": "retain_source_id_as_not_observed; no_physical_loss_inference",
+            "source_ion_file": "<SOURCE_ION>",
+            "event_log": "<EVENT_LOG>"
+          },
+          "metric_scope": {
+            "primary_peak": "hits",
+            "AllCrossingStdTofNs": "recorded_crossings",
+            "CorrTof": "hits",
+            "CorrRadius": "recorded_crossings",
+            "MissMean": "non_hits_including_unobserved_source_ids"
+          },
+          "cohorts": {
+            "source": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "recorded_crossings": {
+              "sample_count": 0,
+              "weight_sum": 0.0,
+              "effective_sample_count": 0.0
+            },
+            "hits": {
+              "sample_count": 0,
+              "weight_sum": 0.0,
+              "effective_sample_count": 0.0
+            },
+            "non_hits_including_unobserved_source_ids": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            }
+          },
+          "width_definition": "FWHM_FACTOR * sample_std(hit_tof, ddof=1); Gaussian proxy, not direct half-height width",
+          "time_equivalent_ratio_definition": "mean(hit_tof) / (2 * Gaussian proxy width); no mass-resolution qualification",
+          "null_policy": "empty/singleton sample width is null; zero variance width is zero and ratio is null"
+        }
+      },
+      "csv_sha256": "5ba2467e530e7c162956aa01b6ace5c17bfb264f7379cfaa5ec88d8dd8e03210",
+      "columns": [
+        "Mode",
+        "Distribution",
+        "Ion",
+        "MassAmu",
+        "ChargeState",
+        "X0Mm",
+        "Y0Mm",
+        "Z0Mm",
+        "EnergyEv",
+        "TofUs",
+        "InstrumentTimeUs",
+        "XMm",
+        "YMm",
+        "RadiusMm",
+        "ZmaxMm",
+        "Hit",
+        "ObservationStatus"
+      ],
+      "dtypes": [
+        "str",
+        "str",
+        "int64",
+        "float64",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "bool",
+        "str"
+      ],
+      "csv_text": "Mode,Distribution,Ion,MassAmu,ChargeState,X0Mm,Y0Mm,Z0Mm,EnergyEv,TofUs,InstrumentTimeUs,XMm,YMm,RadiusMm,ZmaxMm,Hit,ObservationStatus\r\ntest,fixed,1,524.0,1,0.0,0.0,0.0,5.0,,,,,,,False,not_observed\r\ntest,fixed,2,524.0,1,0.0,0.0,0.0,5.0,,,,,,,False,not_observed\r\ntest,fixed,3,524.0,1,0.0,0.0,0.0,5.0,,,,,,,False,not_observed\r\n"
+    },
+    "single": {
+      "summary": {
+        "DiagnosticMethod": "birth_relative_sample_sigma_gaussian_proxy_v1",
+        "TofTimeReference": "particle_birth",
+        "ResolutionClaim": false,
+        "PeakStatus": "insufficient_samples",
+        "SourceParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "CrossingParticleIds": [
+          1
+        ],
+        "HitParticleIds": [
+          1
+        ],
+        "UnobservedParticleIds": [
+          2,
+          3
+        ],
+        "Mode": "test",
+        "Distribution": "fixed",
+        "Emitted": 3,
+        "Crossed": 1,
+        "Unobserved": 2,
+        "Hit": 1,
+        "EfficiencyPct": 33.333333333333336,
+        "MeanTofUs": 10.0,
+        "StdTofNs": null,
+        "GaussianProxyFwhmTofNs": null,
+        "GaussianProxyTimeEquivalentResolution": null,
+        "AllCrossingStdTofNs": null,
+        "MaxHitRadiusMm": 0.0,
+        "MaxCrossingRadiusMm": 0.0,
+        "MeanZmaxMm": 4.0,
+        "CorrTofX0": null,
+        "CorrTofY0": null,
+        "CorrTofZ0": null,
+        "CorrTofEnergy": null,
+        "CorrRadiusX0": null,
+        "CorrRadiusY0": null,
+        "CorrRadiusZ0": null,
+        "CorrRadiusEnergy": null,
+        "HitMeanZ0Mm": 0.0,
+        "MissMeanZ0Mm": 0.0,
+        "HitMeanEnergyEv": 5.0,
+        "MissMeanEnergyEv": 5.0,
+        "Log": "<EVENT_LOG>",
+        "analysis_metadata": {
+          "schema_version": 1,
+          "method_id": "birth_relative_sample_sigma_gaussian_proxy_v1",
+          "status": "insufficient_samples",
+          "scientific_qualification": "not_assessed",
+          "resolution_claim_allowed": false,
+          "sample_sigma_ddof": 1,
+          "weight_policy": "equal_particle_ids",
+          "sample_unit": "original_source_particle_id",
+          "sample_count": 1,
+          "weight_sum": 1.0,
+          "effective_sample_count": 1.0,
+          "settings": {
+            "gaussian_sigma_to_fwhm_factor": 2.3548200450309493,
+            "detector_radius_mm": 1.0,
+            "allow_incomplete_census": true
+          },
+          "units": {
+            "tof": "us",
+            "time_width": "ns",
+            "position": "mm",
+            "energy": "eV"
+          },
+          "time_reference": {
+            "kind": "particle_birth",
+            "expression": "detector_crossing.t - ION.TobUs",
+            "clock_qualification": "birth_relative_only_no_pulse_epoch"
+          },
+          "observation": {
+            "event": "detector_crossing",
+            "multiplicity": "one_recorded_event_per_original_source_id",
+            "hit_selection": "recorded RadiusMm <= detector_radius_mm",
+            "unobserved_policy": "retain_source_id_as_not_observed; no_physical_loss_inference",
+            "source_ion_file": "<SOURCE_ION>",
+            "event_log": "<EVENT_LOG>"
+          },
+          "metric_scope": {
+            "primary_peak": "hits",
+            "AllCrossingStdTofNs": "recorded_crossings",
+            "CorrTof": "hits",
+            "CorrRadius": "recorded_crossings",
+            "MissMean": "non_hits_including_unobserved_source_ids"
+          },
+          "cohorts": {
+            "source": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "recorded_crossings": {
+              "sample_count": 1,
+              "weight_sum": 1.0,
+              "effective_sample_count": 1.0
+            },
+            "hits": {
+              "sample_count": 1,
+              "weight_sum": 1.0,
+              "effective_sample_count": 1.0
+            },
+            "non_hits_including_unobserved_source_ids": {
+              "sample_count": 2,
+              "weight_sum": 2.0,
+              "effective_sample_count": 2.0
+            }
+          },
+          "width_definition": "FWHM_FACTOR * sample_std(hit_tof, ddof=1); Gaussian proxy, not direct half-height width",
+          "time_equivalent_ratio_definition": "mean(hit_tof) / (2 * Gaussian proxy width); no mass-resolution qualification",
+          "null_policy": "empty/singleton sample width is null; zero variance width is zero and ratio is null"
+        }
+      },
+      "csv_sha256": "595a20793ca547f4760ca62d02c1ee5852f589b23d2506786be1751cd7bca9b2",
+      "columns": [
+        "Mode",
+        "Distribution",
+        "Ion",
+        "MassAmu",
+        "ChargeState",
+        "X0Mm",
+        "Y0Mm",
+        "Z0Mm",
+        "EnergyEv",
+        "TofUs",
+        "InstrumentTimeUs",
+        "XMm",
+        "YMm",
+        "RadiusMm",
+        "ZmaxMm",
+        "Hit",
+        "ObservationStatus"
+      ],
+      "dtypes": [
+        "str",
+        "str",
+        "int64",
+        "float64",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "bool",
+        "str"
+      ],
+      "csv_text": "Mode,Distribution,Ion,MassAmu,ChargeState,X0Mm,Y0Mm,Z0Mm,EnergyEv,TofUs,InstrumentTimeUs,XMm,YMm,RadiusMm,ZmaxMm,Hit,ObservationStatus\r\ntest,fixed,1,524.0,1,0.0,0.0,0.0,5.0,10.0,110.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\ntest,fixed,2,524.0,1,0.0,0.0,0.0,5.0,,,,,,,False,not_observed\r\ntest,fixed,3,524.0,1,0.0,0.0,0.0,5.0,,,,,,,False,not_observed\r\n"
+    },
+    "zero_variance": {
+      "summary": {
+        "DiagnosticMethod": "birth_relative_sample_sigma_gaussian_proxy_v1",
+        "TofTimeReference": "particle_birth",
+        "ResolutionClaim": false,
+        "PeakStatus": "zero_variance",
+        "SourceParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "CrossingParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "HitParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "UnobservedParticleIds": [],
+        "Mode": "test",
+        "Distribution": "fixed",
+        "Emitted": 3,
+        "Crossed": 3,
+        "Unobserved": 0,
+        "Hit": 3,
+        "EfficiencyPct": 100.0,
+        "MeanTofUs": 10.0,
+        "StdTofNs": 0.0,
+        "GaussianProxyFwhmTofNs": 0.0,
+        "GaussianProxyTimeEquivalentResolution": null,
+        "AllCrossingStdTofNs": 0.0,
+        "MaxHitRadiusMm": 0.0,
+        "MaxCrossingRadiusMm": 0.0,
+        "MeanZmaxMm": 4.0,
+        "CorrTofX0": null,
+        "CorrTofY0": null,
+        "CorrTofZ0": null,
+        "CorrTofEnergy": null,
+        "CorrRadiusX0": null,
+        "CorrRadiusY0": null,
+        "CorrRadiusZ0": null,
+        "CorrRadiusEnergy": null,
+        "HitMeanZ0Mm": 0.0,
+        "MissMeanZ0Mm": null,
+        "HitMeanEnergyEv": 5.0,
+        "MissMeanEnergyEv": null,
+        "Log": "<EVENT_LOG>",
+        "analysis_metadata": {
+          "schema_version": 1,
+          "method_id": "birth_relative_sample_sigma_gaussian_proxy_v1",
+          "status": "zero_variance",
+          "scientific_qualification": "not_assessed",
+          "resolution_claim_allowed": false,
+          "sample_sigma_ddof": 1,
+          "weight_policy": "equal_particle_ids",
+          "sample_unit": "original_source_particle_id",
+          "sample_count": 3,
+          "weight_sum": 3.0,
+          "effective_sample_count": 3.0,
+          "settings": {
+            "gaussian_sigma_to_fwhm_factor": 2.3548200450309493,
+            "detector_radius_mm": 1.0,
+            "allow_incomplete_census": false
+          },
+          "units": {
+            "tof": "us",
+            "time_width": "ns",
+            "position": "mm",
+            "energy": "eV"
+          },
+          "time_reference": {
+            "kind": "particle_birth",
+            "expression": "detector_crossing.t - ION.TobUs",
+            "clock_qualification": "birth_relative_only_no_pulse_epoch"
+          },
+          "observation": {
+            "event": "detector_crossing",
+            "multiplicity": "one_recorded_event_per_original_source_id",
+            "hit_selection": "recorded RadiusMm <= detector_radius_mm",
+            "unobserved_policy": "retain_source_id_as_not_observed; no_physical_loss_inference",
+            "source_ion_file": "<SOURCE_ION>",
+            "event_log": "<EVENT_LOG>"
+          },
+          "metric_scope": {
+            "primary_peak": "hits",
+            "AllCrossingStdTofNs": "recorded_crossings",
+            "CorrTof": "hits",
+            "CorrRadius": "recorded_crossings",
+            "MissMean": "non_hits_including_unobserved_source_ids"
+          },
+          "cohorts": {
+            "source": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "recorded_crossings": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "hits": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "non_hits_including_unobserved_source_ids": {
+              "sample_count": 0,
+              "weight_sum": 0.0,
+              "effective_sample_count": 0.0
+            }
+          },
+          "width_definition": "FWHM_FACTOR * sample_std(hit_tof, ddof=1); Gaussian proxy, not direct half-height width",
+          "time_equivalent_ratio_definition": "mean(hit_tof) / (2 * Gaussian proxy width); no mass-resolution qualification",
+          "null_policy": "empty/singleton sample width is null; zero variance width is zero and ratio is null"
+        }
+      },
+      "csv_sha256": "6d8b68bd6afc1391f7030f5b166d225875ad772c1f66dfec4eedebfe2339f25d",
+      "columns": [
+        "Mode",
+        "Distribution",
+        "Ion",
+        "MassAmu",
+        "ChargeState",
+        "X0Mm",
+        "Y0Mm",
+        "Z0Mm",
+        "EnergyEv",
+        "TofUs",
+        "InstrumentTimeUs",
+        "XMm",
+        "YMm",
+        "RadiusMm",
+        "ZmaxMm",
+        "Hit",
+        "ObservationStatus"
+      ],
+      "dtypes": [
+        "str",
+        "str",
+        "int64",
+        "float64",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "bool",
+        "str"
+      ],
+      "csv_text": "Mode,Distribution,Ion,MassAmu,ChargeState,X0Mm,Y0Mm,Z0Mm,EnergyEv,TofUs,InstrumentTimeUs,XMm,YMm,RadiusMm,ZmaxMm,Hit,ObservationStatus\r\ntest,fixed,1,524.0,1,0.0,0.0,0.0,5.0,10.0,110.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\ntest,fixed,2,524.0,1,0.0,0.0,0.0,5.0,10.0,110.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\ntest,fixed,3,524.0,1,0.0,0.0,0.0,5.0,10.0,110.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\n"
+    },
+    "computed": {
+      "summary": {
+        "DiagnosticMethod": "birth_relative_sample_sigma_gaussian_proxy_v1",
+        "TofTimeReference": "particle_birth",
+        "ResolutionClaim": false,
+        "PeakStatus": "computed",
+        "SourceParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "CrossingParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "HitParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "UnobservedParticleIds": [],
+        "Mode": "test",
+        "Distribution": "fixed",
+        "Emitted": 3,
+        "Crossed": 3,
+        "Unobserved": 0,
+        "Hit": 3,
+        "EfficiencyPct": 100.0,
+        "MeanTofUs": 10.0,
+        "StdTofNs": 1000.0,
+        "GaussianProxyFwhmTofNs": 2354.820045030949,
+        "GaussianProxyTimeEquivalentResolution": 2.1233045007200477,
+        "AllCrossingStdTofNs": 1000.0,
+        "MaxHitRadiusMm": 0.0,
+        "MaxCrossingRadiusMm": 0.0,
+        "MeanZmaxMm": 4.0,
+        "CorrTofX0": null,
+        "CorrTofY0": null,
+        "CorrTofZ0": null,
+        "CorrTofEnergy": null,
+        "CorrRadiusX0": null,
+        "CorrRadiusY0": null,
+        "CorrRadiusZ0": null,
+        "CorrRadiusEnergy": null,
+        "HitMeanZ0Mm": 0.0,
+        "MissMeanZ0Mm": null,
+        "HitMeanEnergyEv": 5.0,
+        "MissMeanEnergyEv": null,
+        "Log": "<EVENT_LOG>",
+        "analysis_metadata": {
+          "schema_version": 1,
+          "method_id": "birth_relative_sample_sigma_gaussian_proxy_v1",
+          "status": "computed",
+          "scientific_qualification": "not_assessed",
+          "resolution_claim_allowed": false,
+          "sample_sigma_ddof": 1,
+          "weight_policy": "equal_particle_ids",
+          "sample_unit": "original_source_particle_id",
+          "sample_count": 3,
+          "weight_sum": 3.0,
+          "effective_sample_count": 3.0,
+          "settings": {
+            "gaussian_sigma_to_fwhm_factor": 2.3548200450309493,
+            "detector_radius_mm": 1.0,
+            "allow_incomplete_census": false
+          },
+          "units": {
+            "tof": "us",
+            "time_width": "ns",
+            "position": "mm",
+            "energy": "eV"
+          },
+          "time_reference": {
+            "kind": "particle_birth",
+            "expression": "detector_crossing.t - ION.TobUs",
+            "clock_qualification": "birth_relative_only_no_pulse_epoch"
+          },
+          "observation": {
+            "event": "detector_crossing",
+            "multiplicity": "one_recorded_event_per_original_source_id",
+            "hit_selection": "recorded RadiusMm <= detector_radius_mm",
+            "unobserved_policy": "retain_source_id_as_not_observed; no_physical_loss_inference",
+            "source_ion_file": "<SOURCE_ION>",
+            "event_log": "<EVENT_LOG>"
+          },
+          "metric_scope": {
+            "primary_peak": "hits",
+            "AllCrossingStdTofNs": "recorded_crossings",
+            "CorrTof": "hits",
+            "CorrRadius": "recorded_crossings",
+            "MissMean": "non_hits_including_unobserved_source_ids"
+          },
+          "cohorts": {
+            "source": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "recorded_crossings": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "hits": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "non_hits_including_unobserved_source_ids": {
+              "sample_count": 0,
+              "weight_sum": 0.0,
+              "effective_sample_count": 0.0
+            }
+          },
+          "width_definition": "FWHM_FACTOR * sample_std(hit_tof, ddof=1); Gaussian proxy, not direct half-height width",
+          "time_equivalent_ratio_definition": "mean(hit_tof) / (2 * Gaussian proxy width); no mass-resolution qualification",
+          "null_policy": "empty/singleton sample width is null; zero variance width is zero and ratio is null"
+        }
+      },
+      "csv_sha256": "4d8a4249b95838b3c0abb4d90fd34784998300a7b595cb9a9c935db9670cf3d6",
+      "columns": [
+        "Mode",
+        "Distribution",
+        "Ion",
+        "MassAmu",
+        "ChargeState",
+        "X0Mm",
+        "Y0Mm",
+        "Z0Mm",
+        "EnergyEv",
+        "TofUs",
+        "InstrumentTimeUs",
+        "XMm",
+        "YMm",
+        "RadiusMm",
+        "ZmaxMm",
+        "Hit",
+        "ObservationStatus"
+      ],
+      "dtypes": [
+        "str",
+        "str",
+        "int64",
+        "float64",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "bool",
+        "str"
+      ],
+      "csv_text": "Mode,Distribution,Ion,MassAmu,ChargeState,X0Mm,Y0Mm,Z0Mm,EnergyEv,TofUs,InstrumentTimeUs,XMm,YMm,RadiusMm,ZmaxMm,Hit,ObservationStatus\r\ntest,fixed,1,524.0,1,0.0,0.0,0.0,5.0,9.0,109.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\ntest,fixed,2,524.0,1,0.0,0.0,0.0,5.0,10.0,110.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\ntest,fixed,3,524.0,1,0.0,0.0,0.0,5.0,11.0,111.0,0.0,0.0,0.0,4.0,True,recorded_crossing\r\n"
+    },
+    "radius": {
+      "summary": {
+        "DiagnosticMethod": "birth_relative_sample_sigma_gaussian_proxy_v1",
+        "TofTimeReference": "particle_birth",
+        "ResolutionClaim": false,
+        "PeakStatus": "computed",
+        "SourceParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "CrossingParticleIds": [
+          1,
+          2,
+          3
+        ],
+        "HitParticleIds": [
+          1,
+          3
+        ],
+        "UnobservedParticleIds": [],
+        "Mode": "test",
+        "Distribution": "fixed",
+        "Emitted": 3,
+        "Crossed": 3,
+        "Unobserved": 0,
+        "Hit": 2,
+        "EfficiencyPct": 66.66666666666667,
+        "MeanTofUs": 10.0,
+        "StdTofNs": 1414.213562373095,
+        "GaussianProxyFwhmTofNs": 3330.218444630791,
+        "GaussianProxyTimeEquivalentResolution": 1.501403010983062,
+        "AllCrossingStdTofNs": 1000.0,
+        "MaxHitRadiusMm": 1.0,
+        "MaxCrossingRadiusMm": 2.0,
+        "MeanZmaxMm": 4.0,
+        "CorrTofX0": null,
+        "CorrTofY0": null,
+        "CorrTofZ0": null,
+        "CorrTofEnergy": null,
+        "CorrRadiusX0": null,
+        "CorrRadiusY0": null,
+        "CorrRadiusZ0": null,
+        "CorrRadiusEnergy": null,
+        "HitMeanZ0Mm": 0.0,
+        "MissMeanZ0Mm": 0.0,
+        "HitMeanEnergyEv": 5.0,
+        "MissMeanEnergyEv": 5.0,
+        "Log": "<EVENT_LOG>",
+        "analysis_metadata": {
+          "schema_version": 1,
+          "method_id": "birth_relative_sample_sigma_gaussian_proxy_v1",
+          "status": "computed",
+          "scientific_qualification": "not_assessed",
+          "resolution_claim_allowed": false,
+          "sample_sigma_ddof": 1,
+          "weight_policy": "equal_particle_ids",
+          "sample_unit": "original_source_particle_id",
+          "sample_count": 2,
+          "weight_sum": 2.0,
+          "effective_sample_count": 2.0,
+          "settings": {
+            "gaussian_sigma_to_fwhm_factor": 2.3548200450309493,
+            "detector_radius_mm": 1.0,
+            "allow_incomplete_census": false
+          },
+          "units": {
+            "tof": "us",
+            "time_width": "ns",
+            "position": "mm",
+            "energy": "eV"
+          },
+          "time_reference": {
+            "kind": "particle_birth",
+            "expression": "detector_crossing.t - ION.TobUs",
+            "clock_qualification": "birth_relative_only_no_pulse_epoch"
+          },
+          "observation": {
+            "event": "detector_crossing",
+            "multiplicity": "one_recorded_event_per_original_source_id",
+            "hit_selection": "recorded RadiusMm <= detector_radius_mm",
+            "unobserved_policy": "retain_source_id_as_not_observed; no_physical_loss_inference",
+            "source_ion_file": "<SOURCE_ION>",
+            "event_log": "<EVENT_LOG>"
+          },
+          "metric_scope": {
+            "primary_peak": "hits",
+            "AllCrossingStdTofNs": "recorded_crossings",
+            "CorrTof": "hits",
+            "CorrRadius": "recorded_crossings",
+            "MissMean": "non_hits_including_unobserved_source_ids"
+          },
+          "cohorts": {
+            "source": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "recorded_crossings": {
+              "sample_count": 3,
+              "weight_sum": 3.0,
+              "effective_sample_count": 3.0
+            },
+            "hits": {
+              "sample_count": 2,
+              "weight_sum": 2.0,
+              "effective_sample_count": 2.0
+            },
+            "non_hits_including_unobserved_source_ids": {
+              "sample_count": 1,
+              "weight_sum": 1.0,
+              "effective_sample_count": 1.0
+            }
+          },
+          "width_definition": "FWHM_FACTOR * sample_std(hit_tof, ddof=1); Gaussian proxy, not direct half-height width",
+          "time_equivalent_ratio_definition": "mean(hit_tof) / (2 * Gaussian proxy width); no mass-resolution qualification",
+          "null_policy": "empty/singleton sample width is null; zero variance width is zero and ratio is null"
+        }
+      },
+      "csv_sha256": "3ed933eeabc3fb90fda3e130a40249d95f11d39c9fe76024548e519263c1e2ee",
+      "columns": [
+        "Mode",
+        "Distribution",
+        "Ion",
+        "MassAmu",
+        "ChargeState",
+        "X0Mm",
+        "Y0Mm",
+        "Z0Mm",
+        "EnergyEv",
+        "TofUs",
+        "InstrumentTimeUs",
+        "XMm",
+        "YMm",
+        "RadiusMm",
+        "ZmaxMm",
+        "Hit",
+        "ObservationStatus"
+      ],
+      "dtypes": [
+        "str",
+        "str",
+        "int64",
+        "float64",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "bool",
+        "str"
+      ],
+      "csv_text": "Mode,Distribution,Ion,MassAmu,ChargeState,X0Mm,Y0Mm,Z0Mm,EnergyEv,TofUs,InstrumentTimeUs,XMm,YMm,RadiusMm,ZmaxMm,Hit,ObservationStatus\r\ntest,fixed,1,524.0,1,0.0,0.0,0.0,5.0,9.0,109.0,1.0,2.0,1.0,4.0,True,recorded_crossing\r\ntest,fixed,2,524.0,1,0.0,0.0,0.0,5.0,10.0,110.0,1.0,2.0,2.0,4.0,False,recorded_crossing\r\ntest,fixed,3,524.0,1,0.0,0.0,0.0,5.0,11.0,111.0,1.0,2.0,0.0,4.0,True,recorded_crossing\r\n"
+    },
+    "no_crossings_strict": {
+      "exception_type": "builtins.ValueError",
+      "message": "No detector_crossing records found in <EVENT_LOG>"
+    },
+    "duplicate": {
+      "exception_type": "builtins.ValueError",
+      "message": "Duplicate detector crossing for ion 1"
+    },
+    "unknown": {
+      "exception_type": "builtins.ValueError",
+      "message": "Detector crossing references absent ion 4"
+    },
+    "invalid_time": {
+      "exception_type": "builtins.ValueError",
+      "message": "Invalid detector radius or birth-relative TOF for ion 1"
+    },
+    "malformed": {
+      "exception_type": "builtins.ValueError",
+      "message": "Malformed detector crossing in <EVENT_LOG>: TRACE: detector_crossing ion=1 t=inf x=0 y=0 z=0 r=0 zmax=4"
+    },
+    "bad_radius": {
+      "exception_type": "builtins.ValueError",
+      "message": "detector_radius_mm must be finite and positive"
+    }
+  }
+}

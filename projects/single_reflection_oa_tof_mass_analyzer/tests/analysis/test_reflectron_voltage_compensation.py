@@ -444,10 +444,35 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one"):
             study._predecessor_axis_exporter(closure)
 
+    def test_real_compensation_analysis_consumes_detector_census(self) -> None:
+        run = self.root / "census-consumer"
+        ion, log = run / "inputs/source.ion", run / "logs/flight.log"
+        ion.parent.mkdir(parents=True)
+        log.parent.mkdir(parents=True)
+        ion.write_text("0,524,1,0,0,0,0,0,5,1,0\n" * 3, encoding="ascii")
+        log.write_text("".join(
+            f"TRACE: detector_crossing ion={i} t={t} x=0 y=0 z=0 r=0 zmax=4\n"
+            for i, t in ((1, 9), (2, 10), (3, 11))), encoding="utf-8")
+        self.write(run / "inputs/compensation_plan.json", {"particle_count": 3, "source": {}})
+        self.write(run / "results/monotone_voltage_fit.json", {"fixed_endpoints_V": {}, "fit": {}})
+        batch = {"simion_particle_id_offset": 0}
+        for label in study.LABELS:
+            name = label + "-unit"
+            self.write(run / f"results/{label}.batches.json", {"batches": [
+                {"name": name, "batch": batch, "stdout_path": str(log), "ion": str(ion)}]})
+            self.write(run / f"results/native_batch_completion/{name}.json",
+                       {"batch": batch, "natural_exit": True, "exit_code": 0})
+        result = study.analyze(run)
+        for label in study.LABELS:
+            self.assertEqual(result["modes"][label]["hit"], 3)
+            self.assertEqual(result["modes"][label]["batches"][0]["HitParticleIds"], [1, 2, 3])
+            self.assertTrue((run / f"results/{label}_particles.csv").is_file())
+        self.assertEqual(result["qualification"], "study_only; no geometry, grid, step or resolution qualification promoted")
+
     def test_analysis_failure_leaves_complete_native_units_reusable(self) -> None:
         parent = self.parent({1, 2, 3, 4, 5})
         before = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
-        with patch.object(study, "analyze_simion_log", side_effect=ValueError("analysis failure")):
+        with patch.object(study.detector_census, "analyze_simion_log", side_effect=ValueError("analysis failure")):
             with self.assertRaisesRegex(ValueError, "analysis failure"):
                 study.analyze(parent)
         child = self.child(parent)

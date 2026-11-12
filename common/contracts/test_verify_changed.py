@@ -71,6 +71,40 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertEqual(len(selected), 1)
         self.assertIn("common.test_host_resource_python", selected[0]["command"]["arguments"])
 
+    def test_installed_probe_witnesses_select_installed_core(self):
+        paths = (
+            'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_exporters_old_witness.json',
+            'projects/rf_multipole_ion_optics/tests/fixtures/rf_convergence_old_witness.json',
+            'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_reader_old_witness.json',
+            'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/tof_mass_spectrum_old_witness.json',
+            'projects/rf_multipole_ion_optics/tests/fixtures/rf_event_old_capture.json',
+            'projects/dual_pressure_rectilinear_ion_processor/tests/fixtures/ip_analyzer_old_witness.json',
+            'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_measured_source_old_witness.json',
+            'common/contracts/fixtures/strict_json_old_witness.json',
+            'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_prepared_field_old_witness.json',
+            'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/ion_reader_old_witness.json',
+            'projects/parallel_mirror_dual_stripe_mr_tof/tests/fixtures/mr_interface_coverage_vectors.json',
+            'projects/single_reflection_oa_tof_mass_analyzer/tests/test_support/detector_census_old_witness.json',
+            'projects/rf_multipole_ion_optics/tests/fixtures/rf_transport_comparison_old_witness.json',
+            'projects/single_reflection_oa_tof_mass_analyzer/tests/fixtures/reflectron_fit_capture.json',
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", path)
+                rows = [row for row in request["stages"] if row["selected"] and
+                        (row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_"))]
+                self.assertTrue(rows)
+                modules = {value.removesuffix(".py").replace("/", ".")
+                           for row in rows for value in row["command"]["arguments"][2:]}
+                self.assertIn("common.contracts.test_installed_scientific_core", modules)
+
+    def test_installed_detector_census_selects_actual_consumers(self):
+        request, _ = self.plan("-ChangedPath", "src/msplatform/backends/simion/detector_census.py")
+        modules = {value for row in request["stages"]
+                   if row["name"].startswith("single_reflection_oa_tof_mass_analyzer_static")
+                   for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
+        self.assertEqual(modules, {'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_solver_diagnostics', 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_radial_compaction_campaign', 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_reflectron_voltage_compensation', 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_compensation_powershell_adapter', 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_workflow', 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_causal_workflow', 'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_postprocess_workflow'})
+
     def test_installed_particle_comparison_selects_both_real_analyzers(self):
         request, _ = self.plan(
             "-ChangedPath", "src/msplatform/analysis/particle_state_comparison.py"
@@ -1231,6 +1265,8 @@ $result|ConvertTo-Json -Compress
                     oa_modules = [value for row in oa for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
                     self.assertCountEqual(oa_modules, [
                         'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_workflow',
+                        'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_causal_workflow',
+                        'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_postprocess_workflow',
                         'projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_paired_accelerator_field_adapters'])
                     integration_modules = [value for row in integration for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
                     self.assertEqual(integration_modules, ['integrations.tests.test_paired_accelerator_static_field_execute'])
@@ -1754,7 +1790,8 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "rf_multipole_quadrupole_static": [rf + name for name in (
                 "test_comsol_owner_finalization", "test_owner_finalization_recovery", "test_simion_powershell_owner")],
             "single_reflection_oa_tof_mass_analyzer_static": [single + name for name in (
-                "test_candidate_workflow", "test_compensation_powershell_adapter")],
+                "test_candidate_workflow", "test_candidate_causal_workflow", "test_candidate_postprocess_workflow",
+                "test_compensation_powershell_adapter")],
         }
 
         def selected_modules(request, owner):

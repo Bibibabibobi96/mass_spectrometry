@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pandas as pd
 from msplatform.backends.simion.ion_table import read_ion_table
+from msplatform.backends.simion import detector_census
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import (
-    analyze_simion_log,
     build_benchmark_metrics,
     calculate_pulse_timing,
     compare_field_reports,
@@ -34,7 +34,7 @@ class SolverDiagnosticsTest(unittest.TestCase):
             source = read_ion_table(ion)
             self.assertEqual(source["ChargeState"].tolist(), [1, 1, 1, -2, -2, -2])
             self.assertEqual(str(source["ChargeState"].dtype), "int64")
-            particles, summary = analyze_simion_log(log, ion, mode="test", distribution="fixed",
+            particles, summary = detector_census.analyze_simion_log(log, ion, mode="test", distribution="fixed",
                                                     detector_radius_mm=40., allow_incomplete_census=True)
             self.assertEqual(particles["ChargeState"].tolist(), source["ChargeState"].tolist())
             self.assertEqual(summary["UnobservedParticleIds"], [1, 2, 3, 4, 5, 6])
@@ -125,7 +125,7 @@ class SolverDiagnosticsTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            return analyze_simion_log(
+            return detector_census.analyze_simion_log(
                 log, ion, mode="test", distribution="fixed",
                 detector_radius_mm=1.0, allow_incomplete_census=allow_incomplete,
             )
@@ -251,7 +251,7 @@ class SolverDiagnosticsTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            particles, summary = analyze_simion_log(
+            particles, summary = detector_census.analyze_simion_log(
                 log,
                 ion,
                 mode="test",

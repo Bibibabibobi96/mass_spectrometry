@@ -194,7 +194,7 @@ ID解析统一在`msplatform.results.single_reflection_particle_table`：CSV仅�
 原ID与观测行的对应关系；XLSX文本ID同样精确读取，不能恢复外部表格软件已舍入的数值单元格。
 只有泛用导入确实缺ID列时仍允许生成行ID，并保留`particle_id_generated=true`，不能用于配对或五质量输入。
 
-`solver_diagnostics.analyze_simion_log`的`analysis_metadata`完整登记
+`msplatform.backends.simion.detector_census.analyze_simion_log`的`analysis_metadata`完整登记
 `birth_relative_sample_sigma_gaussian_proxy_v1`、`ddof=1`、等ID单位权重、单位与出生相对时钟。
 命中、实录穿面、完整源和非命中（含未观测源）分别记录样本数、权重和及有效数；主峰摘要的N仅对应命中。
 空群／单样本宽度为null，零方差宽度为0且比值为null；这些状态均保留方法与观测声明。Gaussian proxy
