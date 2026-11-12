@@ -119,6 +119,12 @@ software fixture; absence fails preflight rather than skipping the check.
 Source: [LuaBinaries 5.1.5 official files](https://sourceforge.net/projects/luabinaries/files/5.1.5/Tools%20Executables/),
 reviewed 2026-11-10. The pinned digest records observed archive bytes, not an independent vendor-published checksum.
 
+Canonical detector projection and Formal Program software fixtures use the same PATH
+discovery when `SIMION_LUA_EXE` is absent; an explicitly supplied value remains authoritative.
+The two modules passed all ten tests with PATH-only Lua on the corrected successor.
+The preceding CI run failed two projection tests on the missing environment variable;
+the focused successor does not replace that full Changed run or grant native qualification.
+
 MR and OA software gates likewise discover `lua`, then `lua5.1`, before the local
 fallback. An explicit `-LuaExe` remains authoritative; a missing explicit path fails.
 OA's separate official test-plane callback still needs the selected runtime's

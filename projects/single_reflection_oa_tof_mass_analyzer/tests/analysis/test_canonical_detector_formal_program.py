@@ -2,12 +2,16 @@
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import resolve_contract, resolve_physical_geometry
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import generated_adjustables, render_program, render_resolved_lua
+
+LUA = (os.environ["SIMION_LUA_EXE"] if "SIMION_LUA_EXE" in os.environ else
+       shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
 class CanonicalDetectorFormalProgramTests(unittest.TestCase):
@@ -37,11 +41,11 @@ simion={workbench_program=function() end,wb={instances={
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / 'program.lua'
             script.write_text(stub + program + '\nsegment.initialize_run()\nassert(math.abs(simion.wb.instances[4].z + 1.05)<1e-12)\nassert(detector_capture_depth_mm==0.02)\nprint("PHYSICAL_DETECTOR_PLACEMENT=PASS")\n', encoding='utf-8')
-            result = subprocess.run([os.environ['SIMION_LUA_EXE'], str(script)], cwd=directory, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+            result = subprocess.run([LUA, str(script)], cwd=directory, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('PHYSICAL_DETECTOR_PLACEMENT=PASS', result.stdout)
             script.write_text(script.read_text(encoding='utf-8').replace('pa(165,165,126,', 'pa(165,165,36,'), encoding='utf-8')
-            failed = subprocess.run([os.environ['SIMION_LUA_EXE'], str(script)], cwd=directory, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+            failed = subprocess.run([LUA, str(script)], cwd=directory, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
             self.assertNotEqual(failed.returncode, 0)
             self.assertIn('detector physical PA does not cover', failed.stderr)
 
@@ -90,7 +94,7 @@ original_print('FORMAL_RETURN_OBSERVATION=PASS')
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "formal_return.lua"
             script.write_text(stub + program + tail, encoding="utf-8")
-            result = subprocess.run([os.environ["SIMION_LUA_EXE"], str(script)], cwd=directory,
+            result = subprocess.run([LUA, str(script)], cwd=directory,
                                     capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("FORMAL_RETURN_OBSERVATION=PASS", result.stdout)
@@ -125,7 +129,7 @@ function wb:find_at(x,y,z)
 end
 simion={wb=wb,command=function() end}
 ''' + 'dofile(' + json.dumps(str(verifier)) + ')\n', encoding='utf-8')
-                result = subprocess.run([os.environ['SIMION_LUA_EXE'], str(script)], cwd=directory, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+                result = subprocess.run([LUA, str(script)], cwd=directory, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
                 if success:
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn('DETECTOR_STATIC_PROBE_XYZ_MM=48.8,0,-0.5', result.stdout)

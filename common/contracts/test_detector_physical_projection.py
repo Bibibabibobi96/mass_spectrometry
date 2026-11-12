@@ -1,11 +1,16 @@
 """Focused software checks for canonical detector projection; native occupancy remains open."""
 import copy
+import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from common.contracts.test_simion_geometry_compiler import compiler_inputs
 from msplatform.backends.simion.compiler import compile_geometry
+
+LUA = (os.environ["SIMION_LUA_EXE"] if "SIMION_LUA_EXE" in os.environ else
+       shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
 class DetectorPhysicalProjectionTests(unittest.TestCase):
@@ -35,11 +40,10 @@ if __name__ == '__main__':
 
 class DetectorBuilderBudgetTests(unittest.TestCase):
     def test_real_builder_budget_and_phase_aligned_body(self):
-        import os
         import subprocess
         from msplatform.backends.simion.source import lua_value
         from msplatform.backends.simion.resources import native_resource_path
-        lua = os.environ['SIMION_LUA_EXE']
+        lua = LUA
         marker = dict(cell_xy_mm=.5, cell_z_mm=.01, active_radius_mm=40.,
                       absorber_thickness_mm=.1, front_margin_z_mm=.2, back_margin_z_mm=.05)
         body = dict(radius_mm=40., height_mm=1.003, back_cells=106, front_cells=20)
@@ -128,7 +132,6 @@ class DetectorNativePlanTests(unittest.TestCase):
 
 class DetectorCoarseBuilderTests(unittest.TestCase):
     def test_builder_accepts_coarse_grid_without_resizing_body_or_marker(self):
-        import os
         import subprocess
         from msplatform.backends.simion.source import lua_value
         from msplatform.backends.simion.resources import native_resource_path
@@ -151,7 +154,7 @@ class DetectorCoarseBuilderTests(unittest.TestCase):
             script.write_text("arg={" + ",".join(json.dumps(s) for s in argv) + "}\n" +
                 "simion={command=function(_) assert(var.absorber_thickness==1); assert(var.back_cells==45); assert(var.front_cells==10); print('COARSE_PHYSICAL=PASS') end}\n" +
                 "dofile(" + json.dumps(str(builder)) + ")\n", encoding="utf-8")
-            result = subprocess.run([os.environ["SIMION_LUA_EXE"], str(script)], cwd=root, capture_output=True,
+            result = subprocess.run([LUA, str(script)], cwd=root, capture_output=True,
                                     text=True, encoding="utf-8", timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("COARSE_PHYSICAL=PASS", result.stdout)
