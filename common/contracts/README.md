@@ -164,6 +164,11 @@ The complete runtime module and nine actual inert consumer seams passed together
 on one source-stable candidate: 43 parents in 367.919 seconds. No commercial
 solver was run in that regression; complete Repository remains separate.
 
+The synthetic Assembly-model test checks the requested COMSOL operation and the
+exact frozen PowerShell fixture before dispatching that inert child as ordinary
+GATE work. Production resource policy, process guards, exit and release checks
+remain unchanged; this fixture does not establish commercial/native capability.
+
 RunSession.add_inputs accepts an ordered iterable of actual input records. It verifies
 and declares each item through the existing owner, then commits the batch with the
 same atomic JSON writer. Handled failures preserve the validated prefix; a secondary

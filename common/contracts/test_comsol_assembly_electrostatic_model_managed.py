@@ -12,6 +12,7 @@ from common.contracts import test_execution_runtime as execution_fixture
 from msplatform.backends.comsol import assembly_electrostatic_model as subject
 from msplatform.backends.comsol import native_execution
 from msplatform.execution.owner import run_managed_stage
+from msplatform.execution.run_session import RunSession
 from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.processes import ProcessExecutionError
@@ -62,7 +63,20 @@ class ManagedSyntheticModelTests(unittest.TestCase):
                     record = file_record(target, 'required_evidence')
                     session.add_input('inert_launcher', record)
                     return target, [*records, record]
-                with patch.object(subject, 'freeze_native_sources', side_effect=sources):
+                original_run_process = RunSession.run_process
+                def inert_transport(session, operation_id, **kwargs):
+                    self.assertIn(operation_id, ('build_model', 'reopen_model'))
+                    self.assertEqual((kwargs['role'], kwargs['stage']), ('COMSOL', 'solver'))
+                    self.assertEqual(Path(kwargs['executable']), session.context.powershell_executable)
+                    arguments = kwargs['arguments']
+                    self.assertEqual(arguments[:2], ['-NoProfile', '-File'])
+                    launcher = Path(arguments[2])
+                    self.assertEqual(launcher.resolve(), (session.input_dir / 'native_sources/inert_model_launcher.ps1').resolve())
+                    self.assertEqual(launcher.read_bytes(), (Path(__file__).parent / 'test_support/assembly_electrostatic_model_launcher.ps1').read_bytes())
+                    kwargs.update(role='GATE', stage='assembly_model_inert_transport')
+                    return original_run_process(session, operation_id, **kwargs)
+                with (patch.object(subject, 'freeze_native_sources', side_effect=sources),
+                      patch.object(RunSession, 'run_process', new=inert_transport)):
                     if case == 'success':
                         product = subject.prepare_model(geometry, request=REQUEST, context=context)
                         self.assertEqual(product.metadata['field_status'], 'not_solved')
