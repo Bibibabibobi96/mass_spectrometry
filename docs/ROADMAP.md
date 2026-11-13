@@ -203,6 +203,17 @@ not calibrated world fields or accepted particle states. All observers remain
 INCONCLUSIVE because six phase/pulse buckets were not covered. Full-domain coupling,
 convergence, the original N=100 flight and the separate full installation-parent
 failure remain open. Original point/error records and protected assets stay intact.
+The separate local Changed candidate `v87-ci-regressions-main-root-r2` failed the
+full ordinary-install parent after 929.635 s: an IP-reader child exited nonzero
+with empty stdout/stderr. Its original return code, PID and case were not retained;
+a nearby Windows Python access-violation event is only a temporal association.
+The diagnostic-only successor retains all twelve reader cases, exact missing-module
+rejection and input immutability, adds faulthandler/startup identity and parent
+launcher context, and preserves the original 30-second kill/drain/rethrow behavior.
+Copied-installed fixtures and inert empty-failure/timeout checks passed; independent
+read-only review found no blocker. The full parent still needs a frozen-version rerun;
+neither this diagnostic change nor the earlier remote Changed success at `097cf39f`
+(run `43395020909`, Repository skipped) explains or closes this local failure.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.

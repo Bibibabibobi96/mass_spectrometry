@@ -16,6 +16,17 @@ or malformed publications fail closed; the protocol wait uses a monotonic
 deadline. Both fixtures retain small receipts before temporary cleanup.
 These tests do not constitute native solver qualification.
 
+The ordinary-installation IP reader probe retains its twelve input/expected-result
+cases and exact missing-module error. Its two child paths now enable Python
+faulthandler, flush interpreter startup identity to stderr and record the parent
+launcher's PID, command and cwd before communicating. Nonzero/empty output reports
+that context; the exact final-line check handles empty stderr without an IndexError.
+The existing 30-second timeout still kills and drains the observed Popen process
+before re-raising. On Windows a venv launcher PID can differ from its child Python
+startup PID; neither record guarantees the latter's identity before startup.
+Focused copied-installed cases and inert failure/timeout checks passed. The earlier
+full-parent failure remains unexplained, and these diagnostics do not close it.
+
 ## 按任务导航
 
 只读本次任务对应的章节；本页说明公共 API，生命周期政策仍以[生命周期](../../docs/LIFECYCLE.md)为准。

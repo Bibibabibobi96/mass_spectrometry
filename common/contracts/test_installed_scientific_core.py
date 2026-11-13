@@ -3939,6 +3939,7 @@ assert rfconv_module.read_bytes()==rfconv_module_bytes
 print('INSTALLED_RF_CONVERGENCE=PASS')
 ipread_probe=fixture['ip_reader']
 ipread_child=r"""import importlib,importlib.abc,json,os,pathlib,sys,sysconfig
+print('IP_READER_CHILD_START='+json.dumps(dict(pid=os.getpid(),executable=sys.executable,version=sys.version)),file=sys.stderr,flush=True)
 q=json.load(sys.stdin)
 blocked=[pathlib.Path(p).resolve() for p in q['blocked']]
 def deny(event,args):
@@ -3956,6 +3957,18 @@ try: result={'return':str(reader.native_data_directory(pathlib.Path(q['run'])))}
 except Exception as error: result={'exception_type':type(error).__module__+'.'+type(error).__qualname__,'exception_message':str(error)}
 print(json.dumps(result))
 """
+def ipread_run_child(case,cwd,payload):
+    args=[sys.executable,'-I','-B','-X','faulthandler','-c',ipread_child]
+    with subprocess.Popen(args,cwd=cwd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                          text=True,encoding='utf-8') as process:
+        print('IP_READER_HOST_CHILD='+json.dumps(dict(case=case,pid=process.pid,argv=args,cwd=str(cwd))),flush=True)
+        try: stdout,stderr=process.communicate(payload,timeout=30)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            error.stdout,error.stderr=process.communicate()
+            raise
+    result=subprocess.CompletedProcess(args,process.returncode,stdout,stderr);result.host_pid=process.pid
+    return result
 ipread_root=root/('ip-reader-installed-'+sys.argv[2]);ipread_root.mkdir()
 ipread_old_ref=next(c['outcome']['return'] for c in ipread_probe['cases'] if c['case']=='valid')
 ipread_new_ref=ipread_root/'reference/simion'
@@ -3971,10 +3984,13 @@ for ipread_case in ipread_probe['cases']:
         ipread_text=ipread_text.replace(json.dumps(ipread_old_parent)[1:-1],json.dumps(ipread_new_parent)[1:-1])
         ipread_raw=(b'\xef\xbb\xbf' if ipread_bom else b'')+ipread_text.encode('utf-8');ipread_plan.write_bytes(ipread_raw)
     ipread_before=ipread_plan.read_bytes() if ipread_plan.exists() else None
-    ipread_run_result=subprocess.run([sys.executable,'-I','-B','-c',ipread_child],cwd=ipread_run,
-        input=json.dumps(dict(run=str(ipread_run),blocked=[str(p) for p in blocked_source_roots])),
-        capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert ipread_run_result.returncode==0,ipread_run_result.stdout+ipread_run_result.stderr
+    ipread_run_result=ipread_run_child(ipread_case['case'],ipread_run,
+        json.dumps(dict(run=str(ipread_run),blocked=[str(p) for p in blocked_source_roots])))
+    assert ipread_run_result.returncode==0, (
+        f"IP reader child failed: case={ipread_case['case']!r}, pid={ipread_run_result.host_pid}, returncode={ipread_run_result.returncode}, "
+        f"command={ipread_run_result.args!r}, cwd={str(ipread_run)!r}, "
+        f"stdout={ipread_run_result.stdout!r}, stderr={ipread_run_result.stderr!r}"
+    )
     ipread_actual=json.loads(ipread_run_result.stdout);ipread_expected=copy.deepcopy(ipread_case['outcome'])
     if 'return' in ipread_expected:ipread_expected['return']=str(ipread_run/'simion' if ipread_case['case']=='no_plan' else ipread_new_ref)
     assert ipread_actual==ipread_expected,(ipread_case['case'],ipread_actual,ipread_expected)
@@ -3984,10 +4000,13 @@ ipread_path=pathlib.Path(ipread_module.__file__).resolve();ipread_original=iprea
 assert not ipread_held.exists()
 ipread_path.rename(ipread_held)
 try:
-    ipread_absent=subprocess.run([sys.executable,'-I','-B','-c',ipread_child],cwd=ipread_root,
-        input=json.dumps(dict(run=str(ipread_root),blocked=[str(p) for p in blocked_source_roots])),
-        capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert ipread_absent.returncode!=0 and ipread_absent.stderr.rstrip().splitlines()[-1]=="ModuleNotFoundError: No module named 'msplatform.results.ip_continuation'",ipread_absent.stdout+ipread_absent.stderr
+    ipread_absent=ipread_run_child('missing_module',ipread_root,
+        json.dumps(dict(run=str(ipread_root),blocked=[str(p) for p in blocked_source_roots])))
+    assert ipread_absent.returncode!=0 and ipread_absent.stderr.rstrip().splitlines()[-1:]==["ModuleNotFoundError: No module named 'msplatform.results.ip_continuation'"], (
+        f"IP reader child failed: case='missing_module', pid={ipread_absent.host_pid}, returncode={ipread_absent.returncode}, "
+        f"command={ipread_absent.args!r}, cwd={str(ipread_root)!r}, "
+        f"stdout={ipread_absent.stdout!r}, stderr={ipread_absent.stderr!r}"
+    )
 finally:ipread_held.rename(ipread_path)
 assert ipread_path.read_bytes()==ipread_original
 print('INSTALLED_IP_CONTINUATION_READER=PASS')
