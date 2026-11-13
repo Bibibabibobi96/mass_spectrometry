@@ -134,6 +134,26 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 
 ### Python工作流的公共生命周期owner
 
+The installed Python `run_managed_stage` verifies the original callable's source
+against its declared action record. After creating recoverable initialization
+records and before calling the action, it freezes that source into
+`inputs/owner/action<suffix>`. The request's `prepared.entrypoint` and manifest
+input `owner_authority_0` identify the copy; `prepared.source_entrypoint` retains
+the original path and byte identity. Execution uses the original callable, whose
+identity and the captured authority are rechecked after confirmed writer closure,
+before persisting completion.
+
+Stopped finalization verifies the saved action copy, so later moving or editing
+the original does not require rerunning the action. Missing or changed copies
+still refuse. A capture or request-update failure does not call the action:
+normal failed publication uses the actual persisted request's verified authority
+and preserves the original exception. If capture never completed, that failed
+initialization keeps its original-source binding. Existing requests and historical
+manifests retain their original verification semantics. This is not a new crash
+or native integration checkpoint. Engineering commitment inputs, borrowed native
+models and source-protection leases are not copied or reclassified by action
+capture; their existing identity and protection obligations remain.
+
 `RunSession.run_process` validates the complete process request before marking an
 operation as an attempted or active writer. Caller-owned arguments, environment,
 limits and immutable records are copied first. Invalid duplicate/malformed frozen

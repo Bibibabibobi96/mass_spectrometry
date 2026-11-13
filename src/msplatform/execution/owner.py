@@ -284,7 +284,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         write_json_atomic(session.execution_request, request)
         write_json_atomic(session.run_config, config)
         session.add_input("capacity_policy", capacity["capacity_policy"]["frozen_record"])
-        for index, authority in enumerate([action_record, *commitment_inputs]):
+        # The callable authority is bound after capture, avoiding a duplicate input rebind.
+        for index, authority in enumerate(commitment_inputs, start=1):
             session.add_input(f"owner_authority_{index}", dict(authority, retention_role="required_evidence"))
         write_json_atomic(run_root / "summary.json", dict(schema_version=1, status="checkpoint",
             role="run_package_initialization_summary", reason="Run package initialized; action has not executed"))
@@ -296,9 +297,35 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         lifecycle.register_writing(root, session.run_config)
         _result(session, status="pending", stage="prepared", resume_action="inspect_writer_completion")
         try:
+            from msplatform.execution.inputs import freeze_file
+            source_action_path = Path(action_record["path"]).resolve()
+            frozen_action = session.declare_file(run_root / "inputs" / "owner" / ("action" + source_action_path.suffix), "required_evidence")
+            frozen_action.parent.mkdir(parents=True, exist_ok=True)
+            freeze_file(source_action_path, frozen_action)
+            frozen_action_record = file_record(frozen_action, "required_evidence")
+            if any(frozen_action_record[key] != action_record[key] for key in ("bytes", "sha256")):
+                raise ValueError("Frozen action source differs from callable authority")
+            verify_record("original action source after freeze", dict(action_record))
+            verify_record("frozen action source after freeze", frozen_action_record)
+            updated_request = copy.deepcopy(request)
+            updated_request["prepared"]["source_entrypoint"] = dict(action_record)
+            updated_request["prepared"]["entrypoint"] = frozen_action_record
+            write_json_atomic(session.execution_request, updated_request)
+            request = updated_request
+            session.add_input("owner_authority_0", frozen_action_record)
             result = dict(action(session))
         except BaseException as failure:
             primary = failure
+            try:
+                inputs = _json(session.run_config)["inputs"]
+                if "owner_authority_0" not in inputs:
+                    request = _json(session.execution_request)
+                    current_authority = dict(request["prepared"]["entrypoint"], retention_role="required_evidence")
+                    verify_record("fallback action authority", current_authority)
+                    session.add_input("owner_authority_0", current_authority)
+            except BaseException as secondary:
+                failure.add_note(f"Action authority preservation failed: {secondary!r}")
+                raise
             result = dict(status="failed", summary=dict(failure_reason=str(failure)),
                           output_paths=[], required_output_paths=[], retention_preserve_paths=[], manifest_extra_fields={})
         if set(result) != {"status", "summary", "output_paths", "required_output_paths",
@@ -308,6 +335,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
                 or any(code != 0 for code in session._completed.values())):
             raise ValueError("Successful action did not complete all declared operations")
         _writer_completion(session)
+        verify_record("original action source after action", dict(action_record))
+        verify_record("current action authority after action", request["prepared"]["entrypoint"])
         if primary is not None:
             failure_outputs = getattr(primary, "failure_output_paths", ())
             if not isinstance(failure_outputs, (list, tuple)):
