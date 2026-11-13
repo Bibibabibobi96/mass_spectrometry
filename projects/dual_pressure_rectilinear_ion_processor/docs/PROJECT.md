@@ -560,6 +560,13 @@ pressure is allowed; other temperature/mass/cross-section, drive, source and tim
 Scientific materialization emits one canonical static gas_field.lua and freezes the backend
 HS1 gas binding. Resolved configuration records the exact emitted file and
 legacy_callback_sampling_v1. The official HS1 algorithm/lifecycle adapter is unchanged.
+Batch preparation also freezes and copies both emitted gas files into each worker.
+Dispatch identity, predecessor validation and read locks cover `gas_field.lua`
+and `collision_hs1_gas.lua`; a predecessor missing either recorded input refuses
+new reuse. Historical read-only records remain unchanged. Five focused parents
+passed separately, and the combined gas/MR candidate passed 11 parents / 36
+records with unchanged source. These are software closure checks, not a new
+native collision or continuous MP-to-IP qualification.
 Its position arguments are GU but the binding uses actual workbench ion_*_mm, applies the
 existing rigid placement once and converts gas velocity m/s to official HS1 mm/us by1000.
 No PA-pitch velocity scaling, cross-callback time/ID cache, new timestep truncation or RNG draw

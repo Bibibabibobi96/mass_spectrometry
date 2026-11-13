@@ -51,7 +51,7 @@ class BatchingTests(unittest.TestCase):
         self.manifest=self.field/"run_manifest.json"
         functional.write_json(self.manifest,dict(inputs={},outputs=[dict(path=str(self.field/"processor.pa0"),sha256="A"*64)]))
         self.config["native_field"]=dict(directory=str(self.field),source_manifest=str(self.manifest))
-        for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","voltage_waveforms.lua","extraction_force_audit.lua","processor.iob"):
+        for name in ("processor.lua","collision_hs1.lua","gas_field.lua","collision_hs1_gas.lua","native_drive.lua","simion_rf_drive.lua","voltage_waveforms.lua","extraction_force_audit.lua","processor.iob"):
             (self.run/"simion"/name).write_bytes(b"inert frozen control "+name.encode())
         shutil.copyfile(PROJECT.parents[1]/"src/msplatform/backends/simion/resources/scientific_event_csv.lua",self.run/"simion/scientific_event_csv.lua")
         self.save_config()
@@ -178,7 +178,7 @@ class BatchingTests(unittest.TestCase):
         prior = Path(self.temp.name) / "20261029_120000__test__simion__parent"
         for name in ("inputs", "simion", "results", "logs"):
             (prior / name).mkdir(parents=True)
-        for name in ("processor.gem", "runtime.lua", "collision_hs1.lua", "native_drive.lua",
+        for name in ("processor.gem", "runtime.lua", "collision_hs1.lua", "gas_field.lua", "collision_hs1_gas.lua", "native_drive.lua",
                      "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua",
                      "processor.fly2", "source_states.lua"):
             (self.run / "simion" / name).write_text("fixture " + name, encoding="utf-8")
@@ -255,7 +255,31 @@ class BatchingTests(unittest.TestCase):
             self.run, self.config, "A" * 64, retain, processor_program=frozen_runtime
         )
         self.assertNotEqual(early["case_input_sha256"], changed["case_input_sha256"])
+        frozen_runtime.write_bytes(processor.read_bytes())
+        for name in ("gas_field.lua", "collision_hs1_gas.lua"):
+            path = self.run / "simion" / name
+            original = path.read_bytes()
+            try:
+                path.write_bytes(original + b" changed")
+                altered = batching.dispatch_request_for_field(
+                    self.run, self.config, "A" * 64, retain, processor_program=frozen_runtime
+                )
+                self.assertNotEqual(early["case_input_sha256"], altered["case_input_sha256"])
+            finally:
+                path.write_bytes(original)
 
+    def test_missing_gas_worker_source_refuses_dispatch(self) -> None:
+        for name in ("gas_field.lua", "collision_hs1_gas.lua"):
+            path = self.run / "simion" / name
+            original = path.read_bytes()
+            try:
+                path.unlink()
+                with self.subTest(name=name), self.assertRaises(FileNotFoundError):
+                    batching.dispatch_request_for_field(
+                        self.run, self.config, "A" * 64, False,
+                        processor_program=self.run / "simion/processor.lua")
+            finally:
+                path.write_bytes(original)
     def test_runtime_budget_identity_is_explicit_and_legacy_is_replay_only(self) -> None:
         current = self.run / "inputs/runtime_profiles.json"
         registry = functional.read_json(current)
@@ -539,6 +563,10 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
         self.assertNotEqual((folder/"processor.fly2").read_bytes(), master_fly2)
         self.assertEqual((self.run/"simion/processor.fly2").read_bytes(), master_fly2)
         self.assertTrue((folder/"batch_input.json").is_file())
+        for name in ("gas_field.lua", "collision_hs1_gas.lua"):
+            self.assertEqual((folder / name).read_bytes(), (self.run / "simion" / name).read_bytes())
+            config = functional.read_json(self.run / "run_config.json")
+            self.assertIn(str((folder / name).relative_to(self.run)), config["inputs"])
 
     def test_vendor_template_drift_or_unknown_file_is_rejected_before_overwrite(self) -> None:
         initial = self.vendor_template_fixture()

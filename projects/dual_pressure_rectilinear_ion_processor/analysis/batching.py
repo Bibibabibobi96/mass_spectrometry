@@ -94,7 +94,7 @@ def dispatch_request_for_field(run: Path, c: dict, pa_sha: str, retain: bool, *,
     identity["native_timing"] = c["native_timing"]
     if "injected_source" in c:
         identity["injected_source"] = _read(run/"inputs/injected_source.json")["source_states"]
-    identity["programs"] = {name:file_sha256(processor_program if name == "processor.lua" else run/"simion"/name) for name in ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua")}
+    identity["programs"] = {name:file_sha256(processor_program if name == "processor.lua" else run/"simion"/name) for name in ("processor.lua", "collision_hs1.lua", "gas_field.lua", "collision_hs1_gas.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua")}
     identity["retain_batch_trajectories"] = retain
     request = dict(solver="SIMION", field_kind="rf", particle_count=c["source"]["particle_count"], independent_particles=True,
                    rf_steps_per_period=c["numerics"]["rf_steps_per_period"], trajectory_quality=c["numerics"]["trajectory_quality"],
@@ -135,7 +135,7 @@ def _validate_continuation_science(run: Path, predecessor: Path) -> tuple[dict, 
         bound("inputs/injected_states.csv")
     if frozen_release_states(predecessor, prior) != frozen_release_states(run, current):
         raise ValueError("IP predecessor frozen particle states differ")
-    for name in ("processor.gem", "runtime.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.fly2", "source_states.lua"):
+    for name in ("processor.gem", "runtime.lua", "collision_hs1.lua", "gas_field.lua", "collision_hs1_gas.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.fly2", "source_states.lua"):
         previous = bound("simion/" + name)
         if file_sha256(previous) != file_sha256(run / "simion" / name):
             raise ValueError("IP predecessor native input differs: " + name)
@@ -462,7 +462,7 @@ def materialize_batches(run: Path, batch_plan: Path) -> dict:
     mother = frozen_release_states(run, c)
     if plan["particle_count"] != len(mother):
         raise ValueError("batch plan population differs from frozen mother cohort")
-    controls = ("processor.lua", "scientific_event_csv.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.iob")
+    controls = ("processor.lua", "scientific_event_csv.lua", "collision_hs1.lua", "gas_field.lua", "collision_hs1_gas.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.iob")
     workers = []
     for batch in plan["batches"]:
         if f"batch_{batch['index']:04d}" in reused:

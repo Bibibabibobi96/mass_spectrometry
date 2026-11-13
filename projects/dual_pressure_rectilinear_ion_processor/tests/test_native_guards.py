@@ -359,16 +359,18 @@ Invoke-Expression $node.Extent.Text
 New-Item -ItemType Directory -Force -Path (Join-Path $Root 'simion_batch_0001'),(Join-Path $Root 'simion'),(Join-Path $Root 'results')|Out-Null
 $csv=Join-Path $Root 'simion_batch_0001/events.csv';$archive=Join-Path $Root 'results/merged_worker_csv_batch_0001.zip'
 $sample=Join-Path $Root 'simion/native_field_samples.csv'
-foreach($path in @($csv,$archive,$sample)){[IO.File]::WriteAllText($path,'inert')}
+$gas=Join-Path $Root 'simion/gas_field.lua';$binding=Join-Path $Root 'simion/collision_hs1_gas.lua'
+foreach($path in @($csv,$archive,$sample,$gas,$binding)){[IO.File]::WriteAllText($path,'inert')}
 [IO.File]::WriteAllText((Join-Path $Root 'run_config.json'),'{}')
-@{inputs=@{};outputs=@(@{path=$csv},@{path=$archive},@{path=$sample});run_config=@{path='run_config.json'}}|ConvertTo-Json -Depth 8|Set-Content (Join-Path $Root 'run_manifest.json')
+@{inputs=@{};outputs=@(@{path=$csv},@{path=$archive},@{path=$sample},@{path=$gas},@{path=$binding});run_config=@{path='run_config.json'}}|ConvertTo-Json -Depth 8|Set-Content (Join-Path $Root 'run_manifest.json')
 $context=@{streams=[Collections.Generic.List[object]]::new()}
 Protect-IonProcessorContinuationInputs -Predecessor $Root -Context $context
-foreach($path in @($csv,$archive,$sample,(Join-Path $Root 'run_manifest.json'))){
+foreach($path in @($csv,$archive,$sample,$gas,$binding,(Join-Path $Root 'run_manifest.json'))){
  $blocked=$false;try{$w=[IO.File]::Open($path,'Open','Write','ReadWrite');$w.Dispose()}catch{$blocked=$true}
  if(-not$blocked){throw 'continuation source remained writable'}
 }
 foreach($stream in $context.streams){$stream.Dispose()}
+foreach($path in @($gas,$binding)){$w=[IO.File]::Open($path,'Open','Write','ReadWrite');$w.Dispose()}
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -427,6 +429,24 @@ if(@($result.pending).Count-ne1-or$result.pending[0].scheduler_batch.index-ne2-o
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, "scientific identity differs: "+key):
                 batching._validate_continuation_science(fixture.run, parent)
         fixture.save_config()
+        for name in ("gas_field.lua", "collision_hs1_gas.lua"):
+            target = fixture.run / "simion" / name
+            original = target.read_bytes()
+            try:
+                target.write_bytes(original + b" changed")
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, "native input differs: " + name):
+                    batching._validate_continuation_science(fixture.run, parent)
+            finally:
+                target.write_bytes(original)
+        for name in ("gas_field.lua", "collision_hs1_gas.lua"):
+            target = parent / "simion" / name
+            original = target.read_bytes()
+            try:
+                target.unlink()
+                with self.subTest(missing=name), self.assertRaisesRegex(AssertionError, "manifest IP predecessor .* is missing"):
+                    batching._validate_continuation_science(fixture.run, parent)
+            finally:
+                target.write_bytes(original)
         (fixture.run/"simion/processor.fly2").write_text("changed source transport", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "native input differs: processor.fly2"):
             batching._validate_continuation_science(fixture.run, parent)
