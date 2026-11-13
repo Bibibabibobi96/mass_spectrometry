@@ -1441,10 +1441,34 @@ $results|ConvertTo-Json -Depth 8 -Compress
         expected = {prefix + name for name in ('test_candidate_workflow',
                     'test_candidate_causal_workflow', 'test_candidate_postprocess_workflow')}
         with tempfile.TemporaryDirectory(prefix='candidate_split_plans_') as directory:
+            # Each request is still the real public PlanOnly entry with a distinct
+            # output; script invocations have independent PowerShell script scope.
+            requests = [Path(directory) / f'plan-{index}.json' for index in range(len(paths))]
+            calls = []
+            for index, (path, request) in enumerate(zip(paths, requests, strict=True)):
+                command = ("& " + powershell_literal(REPO_ROOT / 'common/verify.ps1') +
+                           " -PythonExe " + powershell_literal(sys.executable) +
+                           " -PlanOnly -InternalRequestPath " + powershell_literal(request) +
+                           " -ChangedPath @(" + powershell_literal(path) + ")")
+                calls.append("try { " +
+                             "$global:LASTEXITCODE=0; " +
+                             "if ($null -eq $initialPython) { Remove-Item Env:SIMULATION_PYTHON_EXE -ErrorAction SilentlyContinue } " +
+                             "else { $env:SIMULATION_PYTHON_EXE=$initialPython }; " + command + " | Out-Null; " +
+                             "if ($global:LASTEXITCODE -ne 0) { throw ('planner returned nonzero exit code: ' + $global:LASTEXITCODE) }; " +
+                             "if (-not (Test-Path -LiteralPath " + powershell_literal(request) + ")) " +
+                             "{ throw 'planner did not write the request' }; " +
+                             "$cases += @{index=" + str(index) + "; error=$null} } " +
+                             "catch { $cases += @{index=" + str(index) + "; error=$_.ToString()} }")
+            script = "$ErrorActionPreference='Stop'; $initialPython=[Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE','Process'); $cases=@(); " + '; '.join(calls) + "; ConvertTo-Json -InputObject @($cases) -Depth 5 -Compress"
+            result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, encoding='utf-8', timeout=240)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            outcomes = json.loads(result.stdout)
+            self.assertEqual([case['index'] for case in outcomes], list(range(len(paths))))
             for index, path in enumerate(paths):
                 with self.subTest(path=path):
-                    request = Path(directory) / f'plan-{index}.json'
-                    write_planned_request(REPO_ROOT, request, [path])
+                    self.assertIsNone(outcomes[index]['error'], outcomes[index]['error'])
+                    request = requests[index]
                     stages = [row for row in json.loads(request.read_text(encoding='utf-8-sig'))['stages']
                               if row['selected'] and (row['name']=='single_reflection_oa_tof_mass_analyzer_static'
                               or row['name'].startswith('single_reflection_oa_tof_mass_analyzer_static__tests_'))]
