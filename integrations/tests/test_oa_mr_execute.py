@@ -1783,8 +1783,13 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
                     command = (
                         "$ErrorActionPreference='Stop'; $isBunchFlight=$true; $calls=0\n"
                         f"$trial=@{{execution_scope='{scope}'}}; $resultDir={quoted}\n"
-                        "$observation='unused'; function Invoke-ProjectPython { param($Arguments) "
-                        "$script:calls++; '{}' | Set-Content -LiteralPath $Arguments[-1] }\n"
+                        "$observation='unused'; $frozen='frozen-fixture'; "
+                        "$python='python-fixture'; $repoRoot='author-fixture'; "
+                        "function Invoke-FrozenCollectionGate { param($Frozen,$Observation,$Output,$Python,$AuthorRoot) "
+                        "if($Frozen-cne'frozen-fixture'-or$Observation-cne'unused'-or "
+                        "$Python-cne'python-fixture'-or$AuthorRoot-cne'author-fixture'-or "
+                        "$Output-cne(Join-Path $resultDir 'bunch_collection_gate.json')){throw 'Gate arguments differ'}; "
+                        "$script:calls++; '{}' | Set-Content -LiteralPath $Output }\n"
                         + block
                         + "\n@{calls=$calls; gate_is_null=($null-eq$collectionGate)}|ConvertTo-Json -Compress"
                     )
