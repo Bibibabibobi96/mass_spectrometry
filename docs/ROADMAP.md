@@ -237,8 +237,17 @@ in 992.550 test seconds (996.870 guarded wall), including both IP-reader probes;
 all 2,918 source records, HEAD/status/index stayed unchanged and the lease released.
 The original test now passes at this successor, but the earlier crash remains
 unexplained. This legacy harness reinstalls the rebuilt wheel into the same venv;
-it is not independent-environment L3 acceptance. A separate fresh-venv correction
-is prepared, unrun. The 15-minute budget remains open even for this parent alone.
+it is not independent-environment L3 acceptance. The source-pinned independent
+successor then passed the full parent in 1109.598 test seconds / 1114.280 guarded
+seconds, using fresh wheel and sdist-rebuilt venvs with full locked dependencies.
+Its exact test source SHA is `0e5f81ba9424f84353dd50ca9f6f42732f7306a18d494d0e394cab2e0027a75f`.
+All 2925 source records and HEAD/status/index stayed unchanged; the lease released.
+Both IP reader probes passed, without proving the old crash cause. Existing TOF
+case spans and file-operation counters are retained in the acceptance evidence;
+nested inclusive spans are not additive. The first/second full probes took
+448.115/431.178 seconds. This is a changed independent-environment harness with
+unmeasured instrumentation overhead, not a controlled speed comparison. Full
+Repository/native acceptance and the 15-minute budget remain OPEN.
 GitHub Changed at `097cf39f` (run `43395020909`) and `5bcd9b58` (run `43405061295`)
 succeeded with Repository skipped; neither establishes local crash root cause or
 final Repository/native qualification.

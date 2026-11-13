@@ -25,7 +25,14 @@ The existing 30-second timeout still kills and drains the observed Popen process
 before re-raising. On Windows a venv launcher PID can differ from its child Python
 startup PID; neither record guarantees the latter's identity before startup.
 Focused copied-installed cases and inert failure/timeout checks passed. The earlier
-full-parent failure remains unexplained, and these diagnostics do not close it.
+full-parent crash remains unexplained. The same full parent passed its subsequent
+independent-environment successor: direct wheel and sdist-rebuilt wheel install
+into separate fresh venvs with full locked offline dependencies. All original
+assertions and process deadlines remain. TOF timing spans label the five original
+cases and count existing freeze/verification operations; they preserve original
+returns/exceptions and are inclusive, so nested durations must not be summed.
+The 1109.598-second test result establishes installation coverage for that source,
+not crash root cause, Repository/native qualification or the 15-minute target.
 
 ## 按任务导航
 

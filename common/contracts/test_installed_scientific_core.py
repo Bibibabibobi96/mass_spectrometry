@@ -5156,6 +5156,47 @@ def main():
     context=load_environment(deployment,workspace=workspace,profile='installed_tof_test')
     assert context.capacity_policy_path==capacity_path and context.stage_policy_path==stage_path
     api=modules['source_comparison'];project='single_reflection_oa_tof_mass_analyzer'
+    from unittest.mock import patch as _timing_patch
+    timing_counts={}
+    timing_case=[None]
+    def counted(label, function):
+        def invoke(*args, **kwargs):
+            try: return function(*args, **kwargs)
+            finally:
+                try: timing_counts[label]=timing_counts.get(label,0)+1
+                except BaseException: pass
+        return invoke
+    def timed(label, function):
+        def invoke(*args, **kwargs):
+            begin=time.perf_counter_ns(); failure=None; counts_before=dict(timing_counts)
+            try:
+                return function(*args, **kwargs)
+            except BaseException as exc:
+                failure=type(exc).__module__+'.'+type(exc).__qualname__
+                raise
+            finally:
+                try:
+                    span=dict(label=label, case=timing_case[0], start_ns=begin, end_ns=time.perf_counter_ns(), exception=failure, counts_before=counts_before, counts_after=dict(timing_counts))
+                    print('TOF_OWNER_SPAN='+json.dumps(span), flush=True)
+                except BaseException: pass
+        return invoke
+    import msplatform.execution.inputs as _timing_inputs
+    import msplatform.execution.run_session as _timing_session
+    _timing_inputs.enumerate_python_sources=timed('enumerate_python_sources', _timing_inputs.enumerate_python_sources)
+    _timing_inputs.freeze_file=counted('freeze_file', _timing_inputs.freeze_file)
+    _timing_inputs.verify_record=counted('inputs.verify_record', _timing_inputs.verify_record)
+    _timing_inputs.freeze_python_package=timed('freeze_python_package', _timing_inputs.freeze_python_package)
+    _timing_session.verify_record=counted('session.verify_record', _timing_session.verify_record)
+    _timing_session.RunSession.add_inputs=timed('RunSession.add_inputs', _timing_session.RunSession.add_inputs)
+    api.verify_record=counted('owner.verify_record', api.verify_record)
+    original_freeze=api._freeze_worker_package
+    original_invoke=api._invoke_worker
+    def invoke_with_process_span(session, *args, **kwargs):
+        with _timing_patch.object(session, 'run_process', side_effect=timed('session.run_process', session.run_process)):
+            return timed('_invoke_worker', original_invoke)(session, *args, **kwargs)
+    api._freeze_worker_package=timed('_freeze_worker_package', original_freeze)
+    api._invoke_worker=invoke_with_process_span
+
     def run_id(label):return '20261111_220000__test__python__installed-tof-'+case_root.name+'-'+label.replace('_','-')
     def result_path(identity):return workspace/'artifacts/projects'/project/'scratch/workflow_results'/identity/'result.json'
     def assert_owner(run,identity,*,success=True):
@@ -5217,6 +5258,7 @@ def main():
         basic_parent=None;parent_before=None
         cases=(('basic',9,None),('resume',9,None),('single_candidate',41,2),('fixed_length',41,2),('slope',73,None))
         for name,seed,workers in cases:
+            timing_case[0]=name
             selected='basic' if name=='resume' else name
             identity=run_id(name)
             arguments=dict(input_root=input_root,context=context,seed=seed,run_id=identity)
@@ -5307,6 +5349,7 @@ def main():
         try:api.execute(config_paths['basic'],context=context,seed=9,run_id=run_id('no-input-root'))
         except TypeError:pass
         else:raise AssertionError('required input_root silently defaulted')
+        timing_case[0]=None
         sibling=case_root/'wrong-sibling';sibling.mkdir()
         try:api.execute(config_paths['basic'],input_root=sibling,context=context,seed=9,run_id=run_id('wrong-input-root'))
         except FileNotFoundError:pass
@@ -6909,8 +6952,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 target = source / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / name, target)
-            builder, consumer = root / 'builder', root / 'consumer'
-            for location in (builder, consumer):
+            builder = root / 'builder'
+            consumers = (root / 'consumer-wheel', root / 'consumer-sdist-rebuilt')
+            for location in (builder, *consumers):
                 self.run_command([sys.executable, '-m', 'venv', str(location)], cwd=root, environment=environment)
             python_name = Path('Scripts/python.exe') if os.name == 'nt' else Path('bin/python')
             build_python = str(builder / python_name)
@@ -7191,7 +7235,6 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               tof_acceptance_kernels=self.tof_acceptance_kernels_probe_fixture(),
                                               tof_workflow=self.tof_workflow_probe_fixture(),
                                               native_path_powershell=shutil.which('pwsh'))), encoding='utf-8')
-            consumer_python = str(consumer / python_name)
             probe_path = root / 'installed_scientific_probe.py'
             probe_path.write_text(INSTALLED_PROBE, encoding='utf-8')
             probe_source = source / 'common/contracts/test_support/installed_strict_json_probe.py'
@@ -7246,12 +7289,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
             (root/'sdist').rename(root/'sdist-offline')
-            for index, candidate in enumerate((wheel, rebuilt_wheel)):
-                # The rebuilt wheel has identical metadata and production bytes;
-                # replace that distribution without reinstalling unchanged dependencies.
-                replacement = ['--force-reinstall', '--no-deps'] if index else []
+            for index, (candidate, consumer) in enumerate(zip((wheel, rebuilt_wheel), consumers, strict=True)):
+                consumer_python = str(consumer / python_name)
                 self.run_command([consumer_python, '-m', 'pip', 'install', '--no-index', '--find-links', str(wheelhouse),
-                                  *replacement, '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
+                                  '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
                                  cwd=root, environment=environment, timeout=300)
                 probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
                 # SOFTWARE client only: prior ~61 s client + original ~110 s negative
