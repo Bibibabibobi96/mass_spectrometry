@@ -426,8 +426,8 @@ declaration in the observation draft; it describes the published (1, 1, 0.1) mm
 field and does not accept the draft's (0.5, 1, 0.05) mm field request. The Program,
 exact input identities and read scope are retained at workspace
 `.tools/phase04-codex-takeover-20261109/v87-sfi-slot4-program-audit-agent7-r1`.
-Finite real callback observations across the PA's forward vacuum boundary and
-COMSOL local-field convergence remain open; no point or physical entity was moved.
+Finite native callback observations at three retained points are now available below.
+COMSOL local-field convergence remains open; no point or physical entity was moved.
 
 The first attempt was refused before native startup by the unchanged 700 GiB
 capacity policy. Owner-controlled retirement subsequently removed only the obsolete
@@ -444,7 +444,37 @@ and sdist-rebuilt-wheel consumers each verified 522 matching runtime payloads,
 the actual planners, stock-Lua bootstrap cleanup and missing/tampered seed
 refusals in 108.192 seconds overall, with source and checkout identities stable.
 This selected installation result does not close the separate full-parent IP-reader
-child failure. Real-native validation of the repaired tracking bootstrap remains pending.
+child failure.
+
+Three independent installed N=1 diagnostics subsequently completed through the same
+public tracking owner: [z=0.10 mm](../../../artifacts/projects/instrument_assembly/runs/20261113_170308__sim__simion__track-a7d4829f8eb7/run_manifest.json),
+[z=0.19 mm](../../../artifacts/projects/instrument_assembly/runs/20261113_170423__sim__simion__track-ba759897b7af/run_manifest.json), and
+[z=0.21 mm](../../../artifacts/projects/instrument_assembly/runs/20261113_170528__sim__simion__track-72c3da5acd96/run_manifest.json).
+Each had three confirmed exit-zero operations (build, verify and Fly), normal
+completion and three released host resources. Independent small-receipt review
+matched the generated Program bytes, the published field manifest and the accepted
+522-file installed runtime inventory. These runs validate the repaired bootstrap
+for this diagnostic scope; they do not replay the original 100-particle flight.
+
+At x=44.575 mm, y=0 and t=55 us, the z=0.10 and 0.19 mm callback queries used
+slot 4 and returned zero entry and final gradients, with no added field query or
+pulse adjustment. The z=0.21 mm query used slot 3: its zero entry gradient became
+(-14.3012551069, 0.00000252902441816, -3.63069073705) after the actual pulse
+field query. Units are the observer's raw `V/gu_positive_grad_V`, not calibrated
+world E or total potential. This is actual Fly callback-query evidence rather than
+the old sampler's zero-fill branch. Candidate-instance observations remain separate
+from final callback queries; neither is an accepted particle-state record.
+
+Each observer retained four callback queries and five instance-candidate observations
+and reported `INCONCLUSIVE`: RF phase 0 and pi/2 neighborhoods and both sides of
+both pulse edges were not covered. The model still specifies the canonical 1 mm
+detector at z=-1..0. The discontinuous selected-domain response requires further
+field-domain work: the lower parent contains RF/OA rather than the full downstream
+TOF and does not cover the entire detector, so simply suppressing detector vacuum
+would not establish a common BVP. Complete-domain coverage/coupling, calibrated V/E,
+phase coverage, spatial/domain/solver convergence and representative trajectories
+remain open. The original point/error records and the failed bootstrap run remain
+preserved; no new audit of the original 100-particle metrics is claimed.
 
 The [read-only RF cold audit](../../../artifacts/projects/instrument_assembly/runs/20261113_092901__analysis__comsol__rf-cold-audit-b326a49c20ce/summary.json)
 matches all 50 actual potential selections to the sealed geometry report and finds

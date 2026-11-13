@@ -186,9 +186,14 @@ obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
 diagnostic through admission. Its first preparation operation then failed on a
 published-workbench source companion, before Fly. The structural-seed repair
 preserves the companion guard and original field inputs. Its selected ordinary
-wheel/sdist consumers passed; real-native verification and the separate full
-installation-parent failure remain open. Original point/error records and protected
-assets stay intact.
+wheel/sdist consumers passed. Three subsequent installed N=1 diagnostics completed
+all nine native build/verify/Fly operations with released resources: at 55 us,
+z=0.10/0.19 mm queried slot 4 with zero final gradient, while z=0.21 mm queried
+slot 3 with a nonzero pulse-adjusted gradient. These are raw GU callback queries,
+not calibrated world fields or accepted particle states. All observers remain
+INCONCLUSIVE because six phase/pulse buckets were not covered. Full-domain coupling,
+convergence, the original N=100 flight and the separate full installation-parent
+failure remain open. Original point/error records and protected assets stay intact.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.
