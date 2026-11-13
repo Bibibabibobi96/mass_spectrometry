@@ -514,13 +514,16 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.assertEqual(mirror["grid_numerics"]["cell_axial_mm"],.25)
         self.assertEqual(mirror["grid_numerics"]["cell_radial_mm"],1.)
         self.assertEqual((detector["x_mm"],detector["y_mm"]),(40.,-41.))
-        self.assertAlmostEqual(detector["z_mm"],12.35)
-        self.assertEqual((detector["nx"],detector["ny"],detector["nz"]),(165,165,36))
+        self.assertAlmostEqual(detector["z_mm"],11.45)
+        self.assertEqual((detector["nx"],detector["ny"],detector["nz"]),(165,165,126))
         marker = detector["numerical_marker"]
         self.assertEqual(marker["active_plane_z_mm"],12.5)
         self.assertEqual(marker["capture_depth_mm"],.02)
-        self.assertAlmostEqual(detector["z_mm"]+marker["back_margin_z_mm"]+marker["absorber_thickness_mm"],12.5)
-        self.assertEqual(detector["scope"],"numerical_detector_marker__not_mechanical_detector")
+        self.assertEqual(marker["absorber_thickness_mm"],.1)
+        self.assertEqual((detector["physical_back_cells"],detector["physical_front_cells"]),(105,20))
+        self.assertEqual(detector["physical_detector"]["height_mm"],1.0)
+        self.assertAlmostEqual(detector["z_mm"]+marker["back_margin_z_mm"]+detector["physical_detector"]["height_mm"],12.5)
+        self.assertEqual(detector["scope"],"physical_detector_with_numerical_observation_marker")
         self.assertEqual({item["frame_id"] for item in domains.values()},{"oatof_global"})
 
     def test_stale_derived_instances_and_samples_do_not_move_current_domains(self):

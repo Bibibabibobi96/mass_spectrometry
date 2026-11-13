@@ -65,7 +65,14 @@ before analysis. The fixture now materializes the witness's original geometry an
 its size and SHA, retaining every original input/output assertion. The active Formal Program now rejects outbound, stationary and unarmed detector splats,
 matching return observation while keeping the physical body present. Its generated-source sync
 and 18 Formal/contract tests passed (0.271 seconds), including all four real Lua termination
-cases. The complete ordinary wheel and sdist-rebuilt-wheel parent then passed on the same
+cases. Two later Changed runs exposed stale software checks: the integration detector-domain
+test still expected the former 0.1 mm body, and the Formal text guard required the former
+unconditional detector branch. Their successor preserves all geometry checks and explicitly
+checks detector instance, return direction and prior reflectron traversal. The full geometry
+module passed 25 parents / 55 records in 3.796 seconds; the complete Formal static geometry
+check and all three disabled-condition negatives passed. These are software results, not
+new native, Formal asset or Repository qualification. The original remote failures remain.
+The complete ordinary wheel and sdist-rebuilt-wheel parent then passed on the same
 production/test candidate in the normal host context (982.713 test seconds, 993.313 command
 seconds). Both arms exercised the saved-field SFI consumer, canonical detector projection,
 missing-resource and tamper controls. All 515 runtime payloads matched both distributions;
