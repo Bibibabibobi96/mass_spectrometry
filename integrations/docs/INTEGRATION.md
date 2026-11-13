@@ -581,13 +581,45 @@ installed COMSOL 6.4 Java interface requires zero-argument `detach()`.
 The mesh rebuild returned before that call; no fresh sequence, precompute report,
 new MPH or solution marker was produced. The wrapper recorded 422.396 seconds,
 confirmed stopped writers and a released host lease. This wiring failure does
-not explain the preceding solver failures. The corrected call is prepared but
-unrun; scientific geometry, inputs and budgets remain unchanged.
-The first N=1 scalar calibration, `20261113_185218__analysis__simion__scalar-cal-d7327527d1cc`,
-also stopped before Fly: its workbench assertion rejected the toy's assumed native
-rotation convention. The process exited one, writers stopped and its host lease
-released. No field/force calibration or expected-mask failure was observed; the
-negative owner has not been launched. The SFI instrument was not changed.
+not explain the preceding solver failures. The corrected zero-argument successor
+`20261113_194206__sim__comsol__basis-c16c9df58bc6` completed the native solve and
+saved a 2,719,053,728-byte MPH on the same 4.5-mm request (4,402,367 tetrahedra).
+The native process exited zero and released its host lease, but the owner remains
+FAILED: MATLAB struct cell expansion produced two JSON rows where postvalidation
+expected one object. A separate strict read-only normalization required both rows
+to agree except their dataset entry, matched both entries to the full solver
+readback and passed the original mesh, geometry, 50-group voltage and recorded
+solver-signature checks. Seven shape/mutation tests passed. The original receipts
+and failed status remain unchanged; this check did not open or hash the MPH.
+`dset1` still binds old `sol1`; fresh results require explicit `dset2` bound to
+`sfi_fresh` and cold readback before sampling. No fresh field samples, BVP
+equivalence or mesh convergence are yet established. Native wall was 584.349 s,
+peak working set 15,635,111,936 bytes, with no recorded resource warning. A working
+fresh solve does not establish the sole cause of the earlier solver failures.
+
+The controlled scalar calibration retained its initial pre-Fly rotation/save
+failures, then reproduced an actual application error in
+`20261113_190959__analysis__simion__scalar-cal-035c7feb388e`: raw world
+E=(1,-2,0.5) V/mm was correct, but the rotated anisotropic instance received
+GU gradients (8,2,-3), whereas the chain rule requires (4,4,-3). A task-only
+corrected explicit-instance adapter in
+`20261113_192656__analysis__simion__scalar-cal-661060e58199` produced (4,4,-3)
+and inverse world E=(1,-2,0.5). At 0.01 microseconds its velocity residual from
+the SI constant-field prediction was (4.30e-10,-8.61e-10,2.15e-10) mm/us.
+This is descriptive precision evidence for one N=1 fixture, not an instrument
+accuracy threshold or qualification. The corrected invalid-mask successor
+`20261113_193036__analysis__simion__scalar-cal-5692dfcdc863` failed in actual Fly
+at the intended coverage check, with source identities preserved, writers stopped
+and lease released. These two tests change neither instrument geometry nor its
+original detector point/error. The production adapter and actual MR caller now
+use the explicit conversion; 104 source/frozen parent tests (347 records), the
+actual Program callback suite and Ruff passed. The measured-source callback
+harness passed separately in 3.939 guarded seconds. Selected ordinary wheel and
+sdist-rebuilt consumers passed in independent environments (251.336 guarded
+seconds), with author-tree reads denied, matching 526-file runtime inventories,
+actual HS1/scalar origin checks, and missing/tamper negatives. This is selected
+software installation evidence, not full installed-parent or native HS1 acceptance.
+Full SFI field coupling, convergence and N=100 flight remain open.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

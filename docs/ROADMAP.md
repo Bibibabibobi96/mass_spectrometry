@@ -195,6 +195,19 @@ Exact unique-test identity comparison preserved all 98 identities while removing
 accidental fixture collection. Inert field/process fixtures do not establish native
 HS1, final installation/Repository or retirement of the still-needed segmented producer.
 Other named complete continuous consumers and remaining native acceptance stay open.
+The scalar field adapter's rotated-anisotropic conversion error was reproduced
+in a controlled N=1 native calibration and corrected by rotating world E into PA
+axes before pitch/scale multiplication. The actual MR Program uses the explicit
+instance/gradient contract. Source/frozen acceptance passed 104 parents / 347
+records plus the actual callback suite and lint. The actual measured-source
+callback harness passed; selected ordinary wheel and sdist-rebuilt consumers
+passed in independent environments (251.336 guarded seconds) with 526 matching
+runtime files, source-read denial and missing/tamper checks. Full installed-parent,
+Repository and native HS1/instrument acceptance remain open. Original scalar data and frozen Program/adapter pairs are unchanged.
+A fresh COMSOL sequence completed its native solve and saved the 4.5-mm MPH, but
+its owner failed on MATLAB two-row JSON expansion. Strict retained-receipt checks
+passed without altering that failure. Fresh field sampling must explicitly read
+`dset2 -> sfi_fresh`; BVP, convergence and full-flight claims remain open.
 The user retained the 700 GiB capacity target. Public-owner retirement of one
 obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
 diagnostic through admission. Its first preparation operation then failed on a
