@@ -6,6 +6,11 @@
 
 项目门禁由[verify_project.ps1](../verify_project.ps1)进入，逐测试输出耗时并保留失败传播；
 不同门禁等级和实际选择范围仍以该入口为准，不把软件门禁通过当作求解或科学资格。
+The complete-provider geometry regression now locates repository campaign inputs relative to its own test
+file, independently of the installed `msplatform` package location. CI run `43425201329` failed at that lookup;
+the same error was reproduced with a simulated runner package origin, and the unchanged assertion body
+passed after the path correction. The exact test also passed on the integrated worktree in 44.816 seconds.
+This closes the reproduced fixture-path defect, not the original full CI run or complete MR/native acceptance.
 The remaining P4 study/provider callers and their frozen tests use the canonical installed lifecycle
 and dispatch owners. The affected RF/MR software modules ran 134 tests successfully with three skips;
 the original IP/prism-distance module separately passed all 30 tests. These checks do not rerun native

@@ -6,9 +6,7 @@ from pathlib import Path
 
 class CompleteMRGeometryTest(unittest.TestCase):
     def test_complete_real_provider_geometry_and_refusals(self):
-        import msplatform
-
-        r = Path(msplatform.__file__).resolve().parents[2]
+        r = Path(__file__).resolve().parents[4]
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport import (
             _plans,
         )
