@@ -13,6 +13,7 @@ NATIVE_RESOURCES = frozenset({
     "validate_assembly_reference_selections.m", "classify_assembly_reference_faces.m",
     "assembly_electrostatic_model.m", "verify_assembly_electrostatic_bindings.m",
     "solve_assembly_stationary.m", "read_assembly_stationary_solution.m",
+    "export_assembly_world_scalar_field.m", "sample_scalar_grid_blocks.m",
     "build_and_solve_axisymmetric_gas_flow.m", "run_axisymmetric_gas_flow.m",
     "build_wehnelt_model.m", "write_wehnelt_build_only_report.m", "phase1_geometry_coil_transverse.m",
     "phase2_electrostatics_coil_transverse.m", "phase4_thermal_emission_coil_transverse.m",

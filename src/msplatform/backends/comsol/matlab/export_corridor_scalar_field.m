@@ -1,7 +1,7 @@
 function result = export_corridor_scalar_field(model, geometry, authority, grid, outputDirectory)
 %EXPORT_CORRIDOR_SCALAR_FIELD Export native FEM scalar V with strict conductor fill.
 % Normalizes the successful 003000 export; mphinterp recover=off, ext=0.
-% PA writing uses the frozen official SIMION simion_pa_save example on the path.
+% PA writing uses the selected frozen SIMION-format writer on the path.
 arguments
     model
     geometry (1,1) struct
@@ -25,39 +25,13 @@ assert(numel(pitch)==3 && all(isfinite(pitch) & pitch>0) && ...
     pointCount==grid.point_count && all(dimensions>=2) && ...
     all(abs(origin.'+(dimensions-1).*pitch.'-grid.maximum_mm(:).')<1e-10), ...
     'MRTOF:ExportGrid','Scalar export grid is inconsistent.');
-potential = zeros(pointCount,1);
-valid = false(pointCount,1);
-finiteFEM = 0;
-filledConductor = 0;
-queryTimer = tic;
-for first = 1:grid.block_points:pointCount
-    last = min(pointCount,first+grid.block_points-1);
-    index = first:last;
-    [ix,iy,iz] = ind2sub(dimensions,index);
-    coordinates = origin+pitch.*[ix-1;iy-1;iz-1];
-    queryCoordinates = coordinates;
-    queryCoordinates(1,:) = abs(queryCoordinates(1,:));
-    values = double(mphinterp(model,'V','coord',queryCoordinates, ...
-        'dataset',char(grid.dataset_tag),'ext',0,'coorderr','off', ...
-        'selection',vacuum.entities,'recover','off','unit','V'));
-    values = values(:).';
-    finite = isfinite(values);
-    finiteFEM = finiteFEM+nnz(finite);
-    missing = find(~finite);
-    if ~isempty(missing)
-        conductorVoltage = classify_corridor_conductor_voltage(coordinates(:,missing).', ...
-            geometry,voltages,authority.assembly,components);
-        known = isfinite(conductorVoltage);
-        values(missing(known)) = conductorVoltage(known).';
-        finite(missing(known)) = true;
-        filledConductor = filledConductor+nnz(known);
-    end
-    values(~finite) = 0; % Storage only: field adapter must consume the valid mask.
-    potential(index) = values;
-    valid(index) = finite;
-    fprintf('SCALAR_EXPORT_BLOCK %d/%d elapsed=%.3f\n',last,pointCount,toc(queryTimer));
-end
-querySeconds = toc(queryTimer);
+sampler = @(coordinates) mphinterp(model,'V','coord',[abs(coordinates(1,:));coordinates(2:3,:)], ...
+    'dataset',char(grid.dataset_tag),'ext',0,'coorderr','off', ...
+    'selection',vacuum.entities,'recover','off','unit','V');
+fillMissing = @(coordinates) classify_corridor_conductor_voltage(coordinates, ...
+    geometry,voltages,authority.assembly,components);
+[potential,valid,finiteFEM,filledConductor,querySeconds] = ...
+    sample_scalar_grid_blocks(grid,sampler,fillMissing);
 writeTimer = tic;
 simion_pa_save(fullfile(outputDirectory,'field_v.pa'),reshape(potential,dimensions), ...
     '3dplanar','electric_',0,pitch(1),pitch(2),pitch(3));

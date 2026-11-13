@@ -225,7 +225,7 @@ def prepare(
     for name in (
         "candidate_field.m",
         "update_corridor_workpoint_voltages.m",
-        "export_corridor_scalar_field.m",
+        "export_corridor_scalar_field.m", "sample_scalar_grid_blocks.m",
         "classify_corridor_conductor_voltage.m",
     ):
         sources[name] = native_resource_path(name)

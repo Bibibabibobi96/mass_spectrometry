@@ -684,15 +684,16 @@ class RefinementWindowProviderTest(unittest.TestCase):
         module = "msplatform.backends.comsol.corridor_field"
         resource_names = (
             "candidate_field.m", "update_corridor_workpoint_voltages.m",
-            "export_corridor_scalar_field.m", "classify_corridor_conductor_voltage.m",
+            "export_corridor_scalar_field.m", "sample_scalar_grid_blocks.m",
+            "classify_corridor_conductor_voltage.m",
         )
         with tempfile.TemporaryDirectory(prefix="mrtof-original-resources-") as directory:
             original = Path(directory)
+            resource_bytes = {name: (Path(__file__).resolve().parents[4] /
+                              "src/msplatform/backends/comsol/matlab" / name).read_bytes()
+                              for name in resource_names}
             for name in resource_names:
-                (original / name).write_bytes(
-                    (Path(__file__).resolve().parents[4] /
-                     "src/msplatform/backends/comsol/matlab" / name).read_bytes()
-                )
+                (original / name).write_bytes(resource_bytes[name])
             with patch(module + ".native_resource_path", side_effect=lambda name: original / name):
                 run, plan = self.candidate()
         inputs = run / "inputs"
@@ -701,6 +702,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
         self.assertFalse(original.exists())
         for name in resource_names:
             self.assertTrue((inputs / name).is_file())
+            self.assertEqual((inputs / name).read_bytes(), resource_bytes[name])
         bootstrap = (
             "import runpy,sys;"
             "from pathlib import Path;"
@@ -722,6 +724,16 @@ class RefinementWindowProviderTest(unittest.TestCase):
         frozen_key = frozen_module.relative_to(inputs).as_posix()
         self.assertIn(frozen_key, config["inputs"])
         self.assertEqual(Path(config["inputs"][frozen_key]), frozen_module)
+
+    def test_prepare_rejects_missing_scalar_sampling_helper(self):
+        from msplatform.backends.comsol import corridor_field
+        lookup = corridor_field.native_resource_path
+        missing = self.root / "missing" / "sample_scalar_grid_blocks.m"
+        with patch.object(corridor_field, "native_resource_path",
+                          side_effect=lambda name: missing if name == missing.name else lookup(name)):
+            with self.assertRaises(FileNotFoundError) as caught:
+                self.candidate()
+        self.assertIn(missing.name, str(caught.exception))
 
     def test_warning_artifact_observation_includes_nested_window_payload(self):
         repo = Path(__file__).resolve().parents[4]

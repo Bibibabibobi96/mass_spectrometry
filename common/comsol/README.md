@@ -126,6 +126,36 @@ Capacity protection is not transitive: a later managed consumer of a borrowed mo
 must explicitly protect both the field-product manifest and its recorded physical
 model producer, and use the existing immutable-input guard during consumption.
 
+### Saved Assembly scalar export
+
+`msplatform.backends.comsol.assembly_field_export.export_world_scalar` consumes a
+verified `field_solution`, an explicit world grid, a published adapted PA-writer
+manifest and an execution context with `export_assembly_world_scalar` policy.
+The grid declares the Assembly frame, origin and pitches in mm, dimensions,
+sampling block size, and the stored study/solution/dataset tags. It must lie
+inside the saved model's explicit numerical domain; it does not alter component
+geometry or select a mesh automatically. The writer reference must resolve the
+reviewed, manifest-bound adapted `simion_pa_save.m`; there is no installed-path
+or latest-run fallback.
+
+The stage cold-loads the existing solution and samples scalar potential in V
+only in its declared vacuum selection. It requests no Compute, model save or
+Fly. World coordinates remain signed; invalid samples retain a separate mask,
+and their storage zeros are not valid field values. A same-session coordinate
+witness compares requested and returned coordinates in mm using the frozen
+geometry sanity bound; an unavailable witness remains explicitly insufficient.
+Both output PA headers and payload lengths are checked against the selected
+grid before publishing `scalar_field_samples`. This is a sampled stationary
+workpoint, not a dynamic response basis, collision geometry, continuous-flight
+FieldBundle or convergence qualification.
+
+The shared sampling loop also serves the retained MR corridor exporter. That
+consumer keeps its explicit half-domain `abs(x)` mapping and conductor-fill
+policy, and freezes the helper with its other native resources. Assembly export
+does not inherit either policy. Focused tests and fake-MATLAB checks cover their
+separation; native export and ordinary installed consumption remain separate
+acceptance requirements.
+
 ## 正式启动入口
 
 `../../src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根

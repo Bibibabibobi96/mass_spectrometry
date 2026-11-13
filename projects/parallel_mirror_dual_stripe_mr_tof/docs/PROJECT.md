@@ -15,6 +15,10 @@ The remaining P4 study/provider callers and their frozen tests use the canonical
 and dispatch owners. The affected RF/MR software modules ran 134 tests successfully with three skips;
 the original IP/prism-distance module separately passed all 30 tests. These checks do not rerun native
 fields, Fly or historical assets, and do not establish a complete MR/Repository acceptance result.
+The corridor exporter freezes the [shared scalar sampler](../../../common/comsol/README.md#saved-assembly-scalar-export)
+with its native sources while retaining its own half-domain mapping and conductor
+policy. Its isolated-resource test checks exact frozen bytes and missing-helper
+refusal; this software change does not rerun or qualify an MR field.
 The native-corridor runner test now checks the canonical cache module in its actual `-m` invocation.
 The full-response inventory, probe ordering, physical mapping, capacity and cleanup assertions remain;
 this corrects a retired-path expectation, not a native geometry or field result.

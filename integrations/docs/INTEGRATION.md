@@ -284,8 +284,22 @@ Source and real-owner synthetic tests cover failure evidence, cold reopening,
 borrowed-product publication and tampering refusal before process launch. They
 do not replace native evidence. The normal post-fix Compute/reopen pair has not
 been repeated merely to relabel the failed carrier run. Dynamic RF/pulse bases,
-scalar export, SFI coupling, convergence, continuous flight, ordinary installation
+native scalar export, SFI coupling, convergence, continuous flight, ordinary installation
 and full Repository/performance acceptance remain open.
+
+The public [saved Assembly scalar stage](../../common/comsol/README.md#saved-assembly-scalar-export)
+samples an explicitly selected solution without Compute or save. Its output is
+masked `scalar_field_samples`, not a dynamic basis or flight FieldBundle. Software
+coverage includes signed world coordinates, frozen source protection, coordinate
+witness refusal, real PA header/length checks and legacy-writer records without
+retention metadata. The [first managed export attempt](../../../artifacts/projects/instrument_assembly/runs/20261114_053746__analysis__comsol__assembly-scalar-4732015d3b94/summary.json)
+failed before any native operation because that historical writer record lacked
+`retention_role`; its failed manifest and source remain unchanged. The consumer
+now classifies only the four small source records as required evidence, retaining
+their byte identities and the borrowed model's native role. A corrected-source
+attempt is separately managed; no native scalar-export acceptance is claimed yet.
+The controlled grid retains the original `detector_parent_vacuum` point and does
+not alter geometry or replace the historical errors.
 
 The current shared physical-member traversal is owned by
 `msplatform.components.geometry_members`; CAD and COMSOL consume that same

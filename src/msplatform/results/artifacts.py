@@ -20,7 +20,7 @@ from msplatform.io.manifest_records import (
 
 ArtifactResolver = Callable[[Mapping[str, Any], Path | None], Path]
 ARTIFACT_KINDS = frozenset({
-    "cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "field_solution", "gas_field", "trajectory_result",
+    "cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "field_solution", "scalar_field_samples", "gas_field", "trajectory_result",
 })
 
 
