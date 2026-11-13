@@ -153,7 +153,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             or propagation['scope'] not in {'continuous_assembly','segmented_upstream','state_relaunch'}):
         raise ValueError('explicit supported tracking propagation policy required')
     if (not isinstance(observations,Mapping) or 'plane_observations' not in observations
-            or set(observations)-{'plane_observations','observation_times_us'} or not isinstance(observations['plane_observations'],list)):
+            or set(observations)-{'plane_observations','observation_times_us','native_field_observation'} or not isinstance(observations['plane_observations'],list)):
         raise ValueError('tracking observations require the explicit existing plane definitions')
     definitions = copy.deepcopy(observations['plane_observations'])
     validate_propagation_stop(propagation['stop'], definitions)
@@ -214,6 +214,17 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         if raw_geometry['role']=='simion_independent_oa_geometry':flight['tracking_kind']='independent_oa'
     else:
         flight = validate_native_flight(flight_input,requires_rf=rf)
+    if 'native_field_observation' in observations:
+        if independent_component or isinstance(particles,HandoffResult) or not rows:
+            raise ValueError('native field observation requires a nonempty original-birth assembly flight')
+        from .frontend import native_frontend_instances
+        from .tracking_program import validate_native_field_observation
+        rf_instances,_ = native_frontend_instances(geometry['composition_plan'])
+        spec = validate_native_field_observation(observations['native_field_observation'],
+            particle_ids=provenance['mother_particle_ids'],source_instances=rf_instances,
+            domain_ids=list(geometry['numerical_domains']),clock_epoch_id=clock.clock_epoch_id,flight=flight)
+        if any(row['source_component_id'] != spec['source_instance_id'] for row in rows):
+            raise ValueError('native field observation source differs from the original births')
     from dataclasses import asdict
     result = dict(source_realization=asdict(particles) if isinstance(particles,HandoffResult) else copy.deepcopy(particles),
         schema_version=1,role='simion_tracking_plan',model_identity_sha256=document['model_identity_sha256'],
@@ -341,6 +352,14 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     multipoles,tof = native_frontend_instances(geometry['composition_plan'])
     ids = [row['particle_id'] for row in plan['rows']]
     metadata = {}
+    observation = plan['observations'].get('native_field_observation')
+    selected_observation = None
+    if observation is not None and observation['eligible_batch_anchor_particle_id'] in ids:
+        selected_observation = dict(specification=observation, evidence_context=dict(
+            phase='public_track', clock_epoch_id=document['drive']['clock']['clock_epoch_id'],
+            mother_particle_ids=copy.deepcopy(plan['source_provenance']['mother_particle_ids']),
+            field_records=copy.deepcopy(frontend_records),
+            field_manifest_identity=copy.deepcopy(plan['field_manifest_identity'])))
     program = build_successor_program({key:document['components_resolved'][key] for key in multipoles},
         field_design,document['components_resolved'][tof],frontend_geometry=geometry,flight=plan['flight'],
         birth_times_us=[row['instrument_time_us'] for row in plan['rows']],particle_ids=ids,
@@ -350,7 +369,7 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
         standalone_dynamic_field_bank=bank,standalone_dynamic_field_paths=paths,downstream_static_fields=static,
         build_metadata=metadata,plane_observations=plan['observations']['plane_observations'] or None,
         consumed_plane_events=plan['propagation']['consumed_plane_events'],propagation_stop=plan['propagation']['stop'],
-        prepared_model=model,**native_sources)
+        prepared_model=model,**({'field_observation':selected_observation} if selected_observation is not None else {}),**native_sources)
     return dict(program=program,build_metadata=metadata,carriers=carriers,response_fields=responses,
                 immutable_input_records=list(guards),flight=plan['flight'])
 
@@ -806,6 +825,9 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             verification='actual_native_stdout_readback_only_not_inferred_from_request',
             phase='before_fly_command_not_after_iob_load',
             stdout_data_keys=[key for key in records if key=='native_stdout' or key.startswith('native_stdout__')]))
+    if 'native_field_observation' in plan['observations']:
+        collection['native_field_observation_status'] = 'UNCOLLECTED'
+        collection['native_field_observation_scope'] = 'bounded raw callback traces; no structured validation or coverage claim'
     with output.open('x',encoding='utf-8',newline='\n') as stream:
         stream.write(json.dumps(collection,ensure_ascii=False,allow_nan=False,indent=2)+'\n')
     records['collection'] = file_record(session.canonical_path(output),'required_evidence')

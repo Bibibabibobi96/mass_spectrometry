@@ -196,6 +196,14 @@ retained. The complete affected Program module passed 38 parent tests and 154
 subtests; generated metadata stayed byte-identical. This code retirement does not
 establish native callback, installation or coupled-field acceptance for its successor.
 
+Public tracking accepts the existing optional `observations.native_field_observation`
+specification for a nonempty original-birth Assembly source. The clock, source,
+domains, eligible anchor and bounds are checked before an owner starts; the spec
+also participates in recovery applicability. Only the anchor unit emits the
+bounded existing callback trace. Collection marks it `UNCOLLECTED`: structured
+coverage, native phase/instance-adjust evidence and field equivalence remain open.
+Omitting the option retains the previous tracking behavior.
+
 公开 `run.ps1` 将本次冻结根上下文投影到执行环境，以持久 run 目录交接科学准备；短执行 alias 仅用于执行，失败收尾后清理并恢复调用者环境。
 
 

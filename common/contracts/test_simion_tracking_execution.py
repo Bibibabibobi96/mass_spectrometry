@@ -559,4 +559,112 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             self.assertEqual(rejected.calls,[])
 
 
+class PublicObservationTests(unittest.TestCase):
+    def setUp(self):
+        from integrations.tests.test_single_reflection_program import field_observation_spec
+        self.case = TrackingExecutionPlanTests()
+        self.case.setUp()
+        self.spec = field_observation_spec(anchor=self.case.packet['rows'][0]['particle_id'],
+            clock=self.case.packet['clock']['clock_epoch_id'], source_instance='multipole')
+        end_before, end_after = self.spec['buckets'][6:8]
+        end_before.update(time_min_us=11., time_max_us=12., target_time_us=12.)
+        end_after.update(time_min_us=12., time_max_us=13., target_time_us=12.)
+        self.observations = dict(plane_observations=[], native_field_observation=self.spec)
+
+    def plan(self, observations):
+        return plan_tracking_execution(self.case.model, particles=self.case.packet,
+            clock_records=self.case.clocks, propagation=self.case.policy,
+            observations=observations, numerics=self.case.numerics)
+
+    def test_real_public_track_passes_frozen_spec_and_default_is_unchanged(self):
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from msplatform.backends.simion import operations
+        before = copy.deepcopy((self.case.packet, self.observations))
+        with tempfile.TemporaryDirectory() as directory:
+            fields, Session, _ = tracking_action_fixture(self.case, Path(directory))
+            session = Session()
+            stage = {'limits': {'transient_run_directory_bytes': 1}, 'artifact_retention': {}}
+            with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
+                 patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
+                 patch('msplatform.results.artifacts.open_artifact', return_value='published'):
+                result = operations.track(fields, self.case.packet, propagation=self.case.policy,
+                    observations=self.observations, numerics=self.case.numerics, context=session.context)
+                self.assertEqual(result, 'published')
+                actual = owner.call_args.kwargs
+                self.assertEqual(actual['payload']['observations'], self.observations)
+                self.assertEqual(actual['action'].keywords['observations'], self.observations)
+                plain = dict(plane_observations=[])
+                operations.track(fields, self.case.packet, propagation=self.case.policy,
+                    observations=plain, numerics=self.case.numerics, context=session.context)
+                self.assertEqual(owner.call_args.kwargs['payload']['observations'], plain)
+        self.assertEqual((self.case.packet, self.observations), before)
+
+    def test_invalid_observation_rejected_before_owner(self):
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from msplatform.backends.simion import operations
+        with tempfile.TemporaryDirectory() as directory:
+            fields, Session, _ = tracking_action_fixture(self.case, Path(directory))
+            for key, value in [('clock_epoch_id','wrong'), ('source_instance_id','wrong'),
+                               ('eligible_batch_anchor_particle_id', 999999), ('max_rows', 17)]:
+                bad = copy.deepcopy(self.observations)
+                bad['native_field_observation'][key] = value
+                with self.subTest(key=key), patch('msplatform.execution.owner.run_managed_stage') as owner:
+                    with self.assertRaises(ValueError):
+                        operations.track(fields, self.case.packet, propagation=self.case.policy,
+                            observations=bad, numerics=self.case.numerics, context=Session().context)
+                    owner.assert_not_called()
+
+    def test_renderer_instruments_only_anchor_unit_using_actual_program(self):
+        from pathlib import Path
+        import tempfile
+        from msplatform.backends.simion.tracking_execution import _render_tracking_controls
+        from msplatform.backends.simion.native_plans import plan_solve_fields
+        from msplatform.backends.simion.field_bank import field_bank
+        from msplatform.backends.simion.field_identity import working_point_member_id
+        from msplatform.backends.simion.resources import native_resource_path
+        from msplatform.backends.simion.tracking_units import slice_tracking_plan
+        from msplatform.execution.resources import resource_path
+        numerical = copy.deepcopy(self.case.case.field_numerics)
+        numerical.pop('downstream_convergence_v')
+        design = plan_solve_fields(self.case.model, numerics=numerical)['field_design']
+        domains = [row['domain_id'] for row in design['domains']]
+        names = dict(analyzer_component_source='oatof_analyzer_component.lua', pulse_hook_source='single_flight_pulse_hook.lua',
+                     frontend_hook_source='single_flight_frontend_hook.lua', rf_drive_kernel_source='rf_drive.lua',
+                     voltage_waveforms_source='voltage_waveforms.lua')
+        sources = {key:native_resource_path(value).read_text(encoding='utf-8') for key,value in names.items()}
+        sources['native_path_source'] = resource_path('native_run_path.lua').read_text(encoding='utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def record(name):
+                return dict(path=str(root/name), exists=True, bytes=123, sha256='A'*64)
+            frontend = {domain:{working_point_member_id(point):record(
+                ('frontend' if domain=='parent' else 'frontend_entrance_refinement')+'.'+working_point_member_id(point)+'.pa')
+                for point in design['working_points']} for domain in domains}
+            downstream = {}
+            for role in ('flight_tube','reflectron','detector'):
+                family = [record(role+suffix) for suffix in ('.pa#','.pa0','.pa1','.pa-surf')] if role!='reflectron' else []
+                downstream[role] = dict(carrier_record=family[1] if family else record(role+'.pa'), family_records=family)
+            kwargs = dict(field_design=design, stored_bank=field_bank(design, domains), frontend_records=frontend,
+                          downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            plan = plan_tracking_execution(self.case.model, particles=self.case.packet,
+                clock_records=self.case.clocks, propagation=self.case.policy, observations=self.observations,
+                numerics=self.case.numerics, unit_size=50)
+            first = _render_tracking_controls(self.case.model, slice_tracking_plan(plan, plan['units'][0]), **kwargs)
+            second = _render_tracking_controls(self.case.model, slice_tracking_plan(plan, plan['units'][1]), **kwargs)
+            self.assertIn('applied_field_observation_header', first['program'])
+            self.assertEqual(first['build_metadata']['native_field_observation']['specification'], self.spec)
+            self.assertNotIn('applied_field_observation_header', second['program'])
+            self.assertNotIn('native_field_observation', second['build_metadata'])
+
+    def test_observation_affects_recovery_identity(self):
+        from msplatform.backends.simion.tracking_units import tracking_applicability
+        plain = self.plan(dict(plane_observations=[]))
+        observed = self.plan(self.observations)
+        self.assertNotEqual(tracking_applicability(plain), tracking_applicability(observed))
+        self.assertEqual(observed['observations'], self.observations)
+
 if __name__=='__main__': unittest.main()
