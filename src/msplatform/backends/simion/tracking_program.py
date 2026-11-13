@@ -1233,9 +1233,6 @@ def build_successor_program(
     rf_enabled = not native_local_oatof
     if rf_enabled and (isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0):
         raise ValueError("RF steps per period must be one positive integer")
-    sample_times_us = []
-    grid_origin_us = 0.0
-    grid_step_us = 1.0
     sources = {
         "analyzer component": analyzer_component_source,
         "pulse hook": pulse_hook_source,
@@ -1302,7 +1299,6 @@ def build_successor_program(
         str(item["role"]): int(item["instance_index"])
         for item in overlay_specs
     }
-    domain_active_roles = ["accelerator", *overlay_roles]
     expected_role_indices = {"accelerator_main":3, **overlay_roles}
     standalone_dynamic_specs = _resolve_standalone_dynamic_field_bank(
         standalone_dynamic_field_bank, expected_role_indices, requires_rf=not native_local_oatof,
@@ -1354,7 +1350,6 @@ def build_successor_program(
             "detector": downstream_static_carriers["detector"],
             **overlay_filenames,
         },
-        "pre_pulse_active_roles": domain_active_roles,
         "accelerator_overlays": [
             {"role": str(item["role"]), "instance_index": int(item["instance_index"]), "filename": str(item["filename"])}
             for item in overlay_specs
@@ -1431,9 +1426,6 @@ def build_successor_program(
     active_field_instance_indices = (
         ([3, *[int(item["instance_index"]) for item in overlay_specs]])
     )
-    pre_pulse_scope_instance_indices = (
-        (active_field_instance_indices)
-    )
     native_overlay_check_lua = ("""      assert(oi.x==overlay.origin_mm.x and oi.y==overlay.origin_mm.y and oi.z==overlay.origin_mm.z and
         oi.az==0 and oi.el==0 and oi.rt==0 and oi.scale==1,'native refinement placement differs')
       for _,axis in ipairs({'x','y','z'}) do
@@ -1444,7 +1436,6 @@ def build_successor_program(
     overlay_specs_lua = _lua_value(overlay_specs)
     standalone_dynamic_field_lua = _standalone_dynamic_field_lua(standalone_dynamic_specs, native_path_projection=native_path_projection, native_path_source=native_path_source)
     active_field_instance_indices_lua = _lua_value(active_field_instance_indices)
-    pre_pulse_scope_instance_indices_lua = _lua_value(pre_pulse_scope_instance_indices)
     time_origin_table = "{" + ",".join(
         f"[{index}]={_lua_number(value)}"
         for index, value in enumerate(birth_times_us, start=1)
@@ -1465,10 +1456,6 @@ def build_successor_program(
         f"[{index}]={value}" for index, value in enumerate(particle_ids, start=1)
     ) + "}"
     source_velocity_table = _lua_value(initial_velocities_mm_per_us)
-    screening_sample_table = "{" + ",".join(
-        f"[{index}]={_lua_number(value)}"
-        for index, value in enumerate(sample_times_us, start=1)
-    ) + "}"
     embedded_components = [
         ("single_flight_analyzer_component", normalized["analyzer component"]),
         ("single_flight_pulse_component", normalized["pulse hook"]),
@@ -1485,9 +1472,6 @@ def build_successor_program(
         for name, source in embedded_components
     )
     rf_grid_lua = "" if native_local_oatof else f"local single_flight_continuous_rf_grid_step_us={_lua_number(min(1.0e6 / config['frequency_hz'] / rf_steps_per_period for config in rf_configs))}"
-    screening_rf_assert = (
-        ("")
-    )
     rf_initializer = (f"    single_flight_rf_drives={{}}\n    for index,config in ipairs({_lua_value(rf_configs)}) do\n"
                       "      single_flight_rf_drives[index]=single_flight_rf_kernel.new_differential(config)\n    end\n") if rf_enabled else ""
     global_setup = (
@@ -1665,20 +1649,12 @@ local single_flight_source_velocity_mm_per_us={source_velocity_table}
 local single_flight_source_particle_id={particle_id_table}
 local single_flight_particle_id_offset={particle_offset_lua}
 local single_flight_terminate_after_pulse={(0)}
-local single_flight_pre_pulse_time_series={(0)}
-local single_flight_pre_pulse_natural_archive={(0)}
-local single_flight_pre_pulse_sample_times_us={screening_sample_table}
-local single_flight_pre_pulse_next_sample={{}}
-local single_flight_pre_pulse_grid_origin_us={_lua_number(grid_origin_us)}
-local single_flight_pre_pulse_grid_step_us={_lua_number(grid_step_us)}
 local single_flight_continuous_rf_next_sample={{}}
 {rf_grid_lua}
   local single_flight_overlay_enabled={1 if overlay_specs else 0}
   local single_flight_overlays={overlay_specs_lua}
 local single_flight_active_field_instances={active_field_instance_indices_lua}
-local single_flight_pre_pulse_scope_instances={pre_pulse_scope_instance_indices_lua}
 local single_flight_domain_split_enabled={(0)}
-local single_flight_pre_pulse_collision_only={(0)}
 local single_flight_pre_pulse_accelerator_zero_field={(0)}
 local single_flight_accelerator_instance_index={accelerator_instance_index}
 local single_flight_flight_tube_instance_index={int(analyzer_config['instance_roles']['flight_tube'])}
@@ -1734,17 +1710,6 @@ local function single_flight_require_particle_state()
   return state
 end
 local function single_flight_assert_formal_iob_roles(config)
-  if single_flight_pre_pulse_time_series~=0 then
-    for _,role in ipairs(config.pre_pulse_active_roles) do
-      local index=config.instance_roles[role]
-      local item=assert(simion.wb.instances[index],
-        'pre-pulse screening '..role..' instance is missing')
-      assert(single_flight_exact_basename(item.filename,
-        'formal IOB role '..role)==config.instance_filenames[role],
-        'formal IOB role '..role..' filename differs')
-    end
-    return
-  end
   local role_count=0
   for _ in pairs(config.instance_roles) do role_count=role_count+1 end
   assert(#simion.wb.instances==role_count,
@@ -1770,23 +1735,12 @@ local function single_flight_is_active_field_instance(instance_index)
   end
   return false
 end
-local function single_flight_is_pre_pulse_scope_instance(instance_index)
-  for _,index in ipairs(single_flight_pre_pulse_scope_instances) do
-    if index==instance_index then return true end
-  end
-  return false
-end
 local function single_flight_instance_state(instance)
   return {{filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
     nz=instance.pa.nz,dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,
     dz_mm=instance.pa.dz_mm,scale=instance.scale}}
 end
-local function single_flight_workbench_state(active_scope)
-  if active_scope=='pre_pulse_frontend_accelerator' then
-    return {{active_scope=active_scope,instances={{
-      [single_flight_accelerator_instance_index]=single_flight_instance_state(assert(simion.wb.instances[single_flight_accelerator_instance_index],
-        'pre-pulse screening accelerator instance is missing'))}}}}
-  end
+local function single_flight_workbench_state()
   local instances={{}}
   for index=1,#simion.wb.instances do
     local instance=simion.wb.instances[index]
@@ -1812,11 +1766,6 @@ function segment.load()
 end
 function segment.initialize_run()
   assert(single_flight_enable~=0,'single-flight Program requires explicit enable')
-  if single_flight_pre_pulse_time_series~=0 then
-    assert(handoff_pulse_mode==2,
-      'pre-pulse time-series screening requires the existing held-off pulse mode')
-{screening_rf_assert}
-  end
   sim_trajectory_quality=trajectory_quality
   local analyzer_config={analyzer_config_lua}
   local formal_iob_config={formal_iob_config_lua}
@@ -1842,10 +1791,8 @@ function segment.initialize_run()
     analyzer_config.instance_filenames.accelerator='frontend.pa0'
   end
   single_flight_analyzer=single_flight_analyzer_component.new(analyzer_config)
-  local active_scope=single_flight_pre_pulse_time_series~=0 and
-    'pre_pulse_frontend_accelerator' or 'full_flight'
   single_flight_analyzer.initialize_workbench(
-    single_flight_workbench_state(active_scope))
+    single_flight_workbench_state())
 {placement_initialization_lua}
   single_flight_initialize_rf_drives()
     single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,voltage_waveforms=single_flight_voltage_waveforms,
@@ -1870,10 +1817,6 @@ function segment.efield_adjust()
   -- active-scope instance to validate in that native SIMION state.
   local instance=simion.wb.instances[ion_instance]
   if instance==nil then return end
-  if single_flight_pre_pulse_time_series~=0 and single_flight_pre_pulse_collision_only==0 then
-    assert(single_flight_is_pre_pulse_scope_instance(ion_instance),
-      'pre-pulse screening particle escaped its frontend/accelerator active scope')
-  end
   local time=single_flight_instrument_time_us()
   single_flight_apply_standalone_dynamic_field(instance,time)
   local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
@@ -1908,51 +1851,29 @@ function segment.initialize()
     single_flight_restore_source_velocity(single_flight_source_velocity_mm_per_us)
   end
   local time=single_flight_instrument_time_us()
-  if single_flight_pre_pulse_time_series==0 then
-    single_flight_require_analyzer_particle(ion_time_of_flight)
-  end
+  single_flight_require_analyzer_particle(ion_time_of_flight)
   single_flight_particle_state[ion_number]={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
     previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
   single_flight_reported[ion_number]={{}}
-  single_flight_pre_pulse_next_sample[ion_number]=1
   single_flight_continuous_rf_next_sample[ion_number]=1
   single_flight_write_trace(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g source_instance=%d',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke,ion_instance))
 {native_observation_initialize_lua}end
 function segment.tstep_adjust()
 {native_step_limits_lua}{native_observation_step_lua}  local analyzer_dt=nil
-  if single_flight_pre_pulse_time_series==0 then
-    analyzer_dt=single_flight_analyzer.tstep_adjust{{x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
-      vx_mm_per_us=ion_vx_mm,vy_mm_per_us=ion_vy_mm,vz_mm_per_us=ion_vz_mm,
-      detector_cell_dx_mm=simion.wb.instances[single_flight_detector_instance_index].pa.dx_mm}}
-  end
+  analyzer_dt=single_flight_analyzer.tstep_adjust{{x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
+    vx_mm_per_us=ion_vx_mm,vy_mm_per_us=ion_vy_mm,vz_mm_per_us=ion_vz_mm,
+    detector_cell_dx_mm=simion.wb.instances[single_flight_detector_instance_index].pa.dx_mm}}
   if analyzer_dt and ion_time_step>analyzer_dt then ion_time_step=analyzer_dt end
   local time=single_flight_instrument_time_us()
-{observation_step_lua}  if single_flight_pre_pulse_time_series~=0 then
-    local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-    local next_time=nil
-    if single_flight_pre_pulse_natural_archive~=0 then
-      -- The release position is recorded separately by initialize().  Start
-      -- grid states at the next RF tick, then advance only from the persisted
-      -- discrete index below.  Re-deriving this from a binary float on every
-      -- SIMION step can skip a tick after accumulated roundoff.
-      if next_index==1 then next_index=2 end
-      next_time=single_flight_pre_pulse_grid_origin_us+(next_index-1)*single_flight_pre_pulse_grid_step_us
-    else
-      next_time=single_flight_pre_pulse_sample_times_us[next_index]
-    end
-    if next_time and time<next_time and ion_time_step>next_time-time then
-      ion_time_step=next_time-time
-    end
-  end
-  -- A continuous comparator must integrate the same pre-pulse RF waveform on
+{observation_step_lua}  -- A continuous comparator must integrate the same pre-pulse RF waveform on
   -- the same absolute native grid as its handoff producer.  Merely capping the
   -- maximum step permits SIMION's adaptive trajectory step to drift between
   -- RF nodes and changes which ions reach the aperture.  Persist the next
   -- discrete index per ion; derive it from floating point time only once at
   -- release, then advance monotonically at exact landings.
-  if #single_flight_rf_drives>0 and single_flight_pre_pulse_time_series==0 and
+  if #single_flight_rf_drives>0 and
       {pre_on_lua} then
     local next_index=single_flight_continuous_rf_next_sample[ion_number] or 1
     if next_index==1 then
@@ -1980,65 +1901,12 @@ function segment.tstep_adjust()
 end
 function segment.other_actions()
   local time=single_flight_instrument_time_us()
-  if single_flight_pre_pulse_time_series==0 then
-    single_flight_require_analyzer_particle(ion_time_of_flight)
-  end
+  single_flight_require_analyzer_particle(ion_time_of_flight)
   local state=single_flight_require_particle_state()
   local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
   single_flight_frontend.observe_step(state.previous,current,state.frontend)
   state.previous=current
   local p=single_flight_previous[ion_number]
-    if single_flight_pre_pulse_time_series~=0 then
-      local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-      local sample_time=nil
-      if single_flight_pre_pulse_natural_archive~=0 then
-      -- The persisted index, rather than the nearest current clock node, is
-      -- authoritative.  Re-rounding a stalled SIMION clock to its previous
-      -- node lets this callback emit an unlimited sequence of fictitious
-      -- later samples while physical time has not advanced.  The t=0 source
-      -- release is stored by initialize(), so the first native grid state is
-      -- index 2.
-      if next_index==1 then next_index=2 end
-      sample_time=single_flight_pre_pulse_grid_origin_us+(next_index-1)*single_flight_pre_pulse_grid_step_us
-    else
-      sample_time=single_flight_pre_pulse_sample_times_us[next_index]
-    end
-    while sample_time and time>=sample_time do
-      local x,y,z,vx,vy,vz=ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm
-      -- SIMION may shorten a final step to resolve a geometry collision.  That
-      -- endpoint is a terminal observation, not a state on the native RF grid:
-      -- retain it through segment.terminate and do not relabel it as a grid
-      -- sample.  All emitted time-series rows therefore remain native-grid
-      -- states; no interpolated state is ever manufactured here.  Keep the
-      -- historic finite-window contract strict, since its scheduled samples
-      -- are required landings rather than a natural trajectory archive.
-      if single_flight_pre_pulse_natural_archive~=0 and
-          math.abs(time-sample_time)>1e-9*math.max(1,math.abs(sample_time)) then break end
-      -- Lua doubles and SIMION's time accumulator can differ by a few ULP at
-      -- a requested RF landing.  This is still the same native grid event;
-      -- keep the stored canonical grid time and retain the actual clock in
-      -- its separate column.  The tolerance matches the preceding guard so
-      -- a genuine shortened collision endpoint is never relabelled.
-      assert(math.abs(time-sample_time)<=1e-9*math.max(1,math.abs(sample_time)),
-        'pre-pulse time-series sample did not land on its native SIMION timestep')
-      local energy=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)
-      if trajectory_log_enable~=0 then
-        single_flight_write_trace(string.format('TRACE: pre_pulse_time_series_state ion=%d particle_id=%d sample_index=%d instrument_time_us=%.17g actual_instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g kinetic_energy_eV=%.17g survival_status=alive',
-          ion_number,single_flight_canonical_particle_id(),next_index,sample_time,time,x,y,z,vx,vy,vz,energy))
-      end
-      next_index=next_index+1
-      single_flight_pre_pulse_next_sample[ion_number]=next_index
-      if single_flight_pre_pulse_natural_archive~=0 then
-        sample_time=nil
-      else
-        sample_time=single_flight_pre_pulse_sample_times_us[next_index]
-      end
-    end
-    single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
-      vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
-    if single_flight_pre_pulse_natural_archive==0 and next_index>#{screening_sample_table} then ion_splat=1 end
-    return
-  end
   local reported=single_flight_reported[ion_number] or {{}}
   single_flight_reported[ion_number]=reported
   local function crossing(plane,direction)
@@ -2098,18 +1966,6 @@ function segment.other_actions()
 end
 function segment.terminate()
 {native_timeout_terminate_lua}{exit_stop_terminal_lua}  local time=single_flight_instrument_time_us()
-  if single_flight_pre_pulse_time_series~=0 then
-    if trajectory_log_enable~=0 then
-      local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-      local terminal_reason=(single_flight_pre_pulse_natural_archive~=0 and
-        (ion_instance==0 and 'outside_pa_termination' or 'geometry_collision')) or
-        (next_index>#{screening_sample_table} and 'window_complete' or 'splat')
-      single_flight_write_trace(string.format('TRACE: pre_pulse_screening_terminal ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g terminal_reason=%s',
-        ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,
-        ion_vx_mm,ion_vy_mm,ion_vz_mm,terminal_reason))
-    end
-    return
-  end
   if {terminal_log_lua} and trajectory_log_enable~=0 then
     print(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us={state_precision} x_mm={state_precision} y_mm={state_precision} z_mm={state_precision} vx_mm_per_us={state_precision} vy_mm_per_us={state_precision} vz_mm_per_us={state_precision}',
       ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))

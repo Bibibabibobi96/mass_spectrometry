@@ -302,7 +302,11 @@ end
                                                                    pulse_delta_pa_path='C:/inert/delta.pa')})
         # The retained baseline witness and its full diff are recorded in the detector migration evidence: the detector PA origin, physical-domain fields and shared analyzer checks changed; the clock and capture controls did not. The later detector-selection change is captured in the always-physical evidence diff; metadata remains byte-identical.
         self.assertEqual(hashlib.sha256(program.encode()).hexdigest(),
-                         '5659d2a47cb1ef4441860f63964c874f010d409d6f961a9af52935104aa3a64b')
+                         '63018c1398162577cd30cb1714945bfea13be9ae2f331d081cd7ad58730f45da')
+        self.assertNotIn("single_flight_pre_pulse_time_series", program)
+        self.assertNotIn("pre_pulse_screening_terminal", program)
+        self.assertIn("pre_pulse_frontend_accelerator", program)
+        self.assertIn("single_flight_continuous_rf_next_sample", program)
         self.assertEqual(hashlib.sha256((json.dumps(metadata,sort_keys=True,indent=2)+'\n').encode()).hexdigest(),
                          '3d97ba859523ceaeb601e16a993838a25559acb2474804d134e13889529d7a9a')
 

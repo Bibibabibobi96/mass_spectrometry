@@ -113,7 +113,7 @@ plan 5与backend binding 2；具名旧request 9／plan 3仍按原协议读取。
 实际准备、后端接线和隔离冻结已通过定向软件验证；原生与GUI验收及可选观测规格见
 [当前单反射状态](docs/INTEGRATION.md#单反射整机)。
 
-单反射和local的科学request可写`"verify_saved_workbench_replay": true`，
+单反射的科学request可写`"verify_saved_workbench_replay": true`，
 显式请求保存工作台默认Fly回放；省略或false时记`not_requested`，正常Fly不再默认执行第二轮全母群。
 单反射只有请求回放时才要求`instrument_default_replay`预算。保存／源绑定／回调实现或交付承诺改变时，
 仍按相关变更执行相称原生验证；随机碰撞保留`saved_controls_only`，不能冒称默认Fly已通过。

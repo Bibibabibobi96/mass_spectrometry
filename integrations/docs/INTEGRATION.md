@@ -189,6 +189,13 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 
 ## 单反射整机
 
+The current Program generator no longer emits its unreachable, literal-zero
+pre-pulse screening branches. Continuous RF stepping, original births, full-flight
+callbacks, recorded-state consumers and the analyzer's partial-scope contract are
+retained. The complete affected Program module passed 38 parent tests and 154
+subtests; generated metadata stayed byte-identical. This code retirement does not
+establish native callback, installation or coupled-field acceptance for its successor.
+
 公开 `run.ps1` 将本次冻结根上下文投影到执行环境，以持久 run 目录交接科学准备；短执行 alias 仅用于执行，失败收尾后清理并恢复调用者环境。
 
 
