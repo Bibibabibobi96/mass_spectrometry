@@ -520,6 +520,24 @@ warning against the provisional 256 MiB commitment. Read-only COMSOL loading is
 therefore not storage-free; later cold operations must budget that observed native
 cache and overhead. The original warning and successful readback remain separate.
 
+A subsequent [read-only connectivity inventory](../../../artifacts/projects/instrument_assembly/runs/20261113_180034__analysis__comsol__connectivity-3631ce473a10/results/connectivity.json)
+queried the saved RF reference without geometry, mesh, Compute, Fly or save.
+The native operation exited zero and released its host resource in 103.22 seconds;
+no budget warning occurred. It observed finalization `union`, matching ES/vacuum
+domains [1,5,6], no pairs and 619 vacuum-adjacent faces. The sole face adjacent to
+two selected vacuum domains is face 21, the canonical `reflectron_entry_grid`
+ideal surface, assigned to `oatof/common_ground` and `/sfi_potential_009`.
+There are 51 active ElectricPotential features, one FreeSpace, one initialization
+and one ZeroCharge feature, with no selection-query errors. The ZeroCharge
+feature's reported face selection is empty; the earlier `native_zero_neumann`
+result label is not an observation of effective interior boundary conditions.
+Independent small-evidence review confirmed these counts and the 77-member /
+50-group descriptor binding. Singleton numeric selections in the retained MATLAB
+JSON may be scalars; counting them does not modify that source evidence.
+Reported selections do not resolve effective overrides, prove connectivity through
+open apertures, or establish BVP equivalence, mesh convergence or trajectory quality.
+The inventory remains `OBSERVED_NOT_QUALIFIED`; the source model was not rewritten.
+
 The [4.5 mm RF mesh sensitivity attempt](../../../artifacts/projects/instrument_assembly/runs/20261113_093559__sim__comsol__basis-919b17af3c73/summary.json)
 failed in stationary solver `sol1/s1` with `Pattern mismatch` after the mesh rebuild
 and geometry/selection/control checks. It returned no qualified field or convergence

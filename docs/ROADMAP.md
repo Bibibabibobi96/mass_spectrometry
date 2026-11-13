@@ -156,6 +156,11 @@ exact run and point records. A coarse common-domain carrier solution and its col
 17-point V/E export now exist, retaining all 45 point identities; the original solve's
 coordinate-rounding wrapper failure remains FAILED. This is a private reference diagnostic,
 not paired-field, RF/pulse, convergence, installed-capability or trajectory acceptance.
+A later read-only native connectivity inventory observed Form Union and the
+three selected vacuum domains; its shared interior face is the grounded reflectron
+entry-grid ideal surface. This resolves the saved finalization setting, while
+open-aperture connectivity, effective boundary interpretation and coupling remain
+unqualified; the model and original comparison were not modified.
 The earlier local Changed attempt recorded 10 PASS, one FAIL and 14 blocked stages
 (1524.752 command seconds); its normal-host installed successor does not turn it or the
 full Repository green. CI run `43258894135` subsequently completed Changed successfully after rerunning its two originally failed test IDs; Repository was skipped. The Windows process-query denial still needs diagnosis.
