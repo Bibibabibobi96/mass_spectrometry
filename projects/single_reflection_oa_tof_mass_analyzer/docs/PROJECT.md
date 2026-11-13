@@ -72,7 +72,7 @@ checks detector instance, return direction and prior reflectron traversal. The f
 module passed 25 parents / 55 records in 3.796 seconds; the complete Formal static geometry
 check and all three disabled-condition negatives passed. These are software results, not
 new native, Formal asset or Repository qualification. The original remote failures remain.
-The complete ordinary wheel and sdist-rebuilt-wheel parent then passed on the same
+The earlier complete ordinary wheel and sdist-rebuilt-wheel parent passed on its own
 production/test candidate in the normal host context (982.713 test seconds, 993.313 command
 seconds). Both arms exercised the saved-field SFI consumer, canonical detector projection,
 missing-resource and tamper controls. All 515 runtime payloads matched both distributions;

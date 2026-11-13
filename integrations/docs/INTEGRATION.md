@@ -368,6 +368,16 @@ reference or proof of a SIMION error. No geometry, mesh, Compute or save was
 performed by the audit. Actual Program callbacks, domain/grid/solver/trajectory
 convergence and coupled-field qualification remain OPEN.
 
+The [4.5 mm RF mesh sensitivity attempt](../../../artifacts/projects/instrument_assembly/runs/20261113_093559__sim__comsol__basis-919b17af3c73/summary.json)
+failed in stationary solver `sol1/s1` with `Pattern mismatch` after the mesh rebuild
+and geometry/selection/control checks. It returned no qualified field or convergence
+comparison. Recorded process wall was 553.226 seconds, peak working set 15.901 GB
+and minimum available RAM 9.455 GB, with no resource-limit warning. The source model
+was protected, all writers stopped and normal failed-run finalization completed.
+The log does not establish whether retained solution state, the new mesh or another
+numerical issue caused the failure. No tolerance or physical geometry was changed;
+any corrected experiment requires a new run and preserves this failed evidence.
+
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|
 | [110745单实例](../../../artifacts/projects/instrument_assembly/runs/20261025_110745__sim__simion__single-reflection-flight/summary.json) | 六工作场、100终态、默认回放差异为空；0检测，终态均non_detector_splat_instance_5 | 实例编号不证明真实碰撞实体，未到反射器不代表整机物理性能通过 |
