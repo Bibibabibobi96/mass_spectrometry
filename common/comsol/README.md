@@ -46,6 +46,12 @@ geometry = build_geometry(
 geometry_reference = geometry.reference
 ```
 
+The pure `msplatform.capabilities.capabilities` query accepts operation
+`build_comsol_geometry` with the same Assembly, outer box and validation arguments.
+It uses the builder's shared request resolver without a context, tool discovery,
+owner or native launch. Contract acceptance reports that the request can be
+projected; native save/reopen and scientific qualification remain separate.
+
 `study_geometry_domain` contains `min` and `max` triples in assembly-frame mm.
 `study_geometry_checks` contains `position_mm` and dimensionless `normal_abs`;
 these bound native outer-face sanity samples, not physical accuracy. No padding

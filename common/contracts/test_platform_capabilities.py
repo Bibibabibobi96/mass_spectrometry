@@ -101,6 +101,64 @@ class WehneltBuildCapabilitiesTests(unittest.TestCase):
         self.assertEqual(self.query(full)["contract_status"], "rejected")
 
 
+class ComsolGeometryCapabilitiesTests(unittest.TestCase):
+    def setUp(self):
+        study = example_api.load_example("rf_oatof_functional_v1")
+        components = {name: component_api.resolve_component(request)
+                      for name, request in study.component_requests.items()}
+        self.assembly = assembly_api.assemble(study.recipe, components)
+        self.arguments = dict(assembly=self.assembly, outer_box_mm={"min": [-1000]*3, "max": [1000]*3},
+                              geometry_validation={"position_mm": 0., "normal_abs": 0.})
+
+    def query(self, arguments, environment=None):
+        return capability_api.capabilities(dict(schema_version=1, operation="build_comsol_geometry",
+                                                arguments=arguments), environment=environment)
+
+    def test_actual_geometry_request_is_pure_and_uses_shared_resolver(self):
+        from msplatform.backends.comsol.geometry_execution import resolve_geometry_request
+        from msplatform.execution.owner import run_managed_stage
+        before = copy.deepcopy(self.assembly.composition_plan)
+        with patch("subprocess.Popen", side_effect=AssertionError("native")), \
+             patch("shutil.which", side_effect=AssertionError("discovery")), \
+             patch.object(Path, "mkdir", side_effect=AssertionError("write")), \
+             patch.object(Path, "write_text", side_effect=AssertionError("write")), \
+             patch("msplatform.backends.comsol.geometry_execution.run_managed_stage", side_effect=AssertionError("owner")):
+            result = self.query(self.arguments)
+            resolved = resolve_geometry_request(**self.arguments)
+        self.assertTrue(callable(run_managed_stage))
+        self.assertEqual(result["contract_status"], "accepted", result)
+        self.assertEqual(result["validator"], "msplatform.backends.comsol.geometry_execution.resolve_geometry_request")
+        self.assertEqual(len(resolved["projection"]["members"]), 77)
+        self.assertEqual(len(resolved["projection"]["electrode_groups"]), 50)
+        self.assertEqual(result["native_qualification"], "not_granted")
+        self.assertIn("native_save_and_fresh_reopen", result["execution_prerequisites"])
+        self.assertEqual(before, self.assembly.composition_plan)
+
+    def test_missing_invalid_and_explicit_unavailable(self):
+        from msplatform.backends.comsol.geometry_execution import build_geometry
+        missing = dict(self.arguments)
+        missing.pop("geometry_validation")
+        self.assertEqual(self.query(missing)["missing_arguments"], ["geometry_validation"])
+        tampered = copy.deepcopy(self.assembly)
+        first_component = next(iter(tampered._components.values()))
+        first_component._resolved_design["unexpected_tamper"] = True
+        for changed in (dict(self.arguments, assembly=tampered),
+                        dict(self.arguments, outer_box_mm={"min": [0]*3, "max": [1]*3}),
+                        dict(self.arguments, geometry_validation={"position_mm": -1, "normal_abs": 0}),
+                        dict(self.arguments, assembly=None)):
+            with self.subTest(changed=changed), \
+                 patch("msplatform.backends.comsol.geometry_execution.read_stage_policy", side_effect=AssertionError("stage")), \
+                 patch("msplatform.backends.comsol.geometry_execution.run_managed_stage", side_effect=AssertionError("owner")):
+                self.assertEqual(self.query(changed)["contract_status"], "rejected")
+                with self.assertRaises((ValueError, TypeError)):
+                    build_geometry(**changed, context=None)
+        environment = {"schema_version": 1, "tools": {"COMSOL": {"available": False}}}
+        result = self.query(self.arguments, environment)
+        self.assertEqual(result["contract_status"], "accepted")
+        self.assertEqual(result["environment_status"], "declared_unavailable")
+        self.assertEqual(result["execution_readiness"], "not_assessed")
+
+
 class PlatformCapabilitiesTests(unittest.TestCase):
     def setUp(self):
         self.case = example_api.load_example("rf_oatof_functional_v1")

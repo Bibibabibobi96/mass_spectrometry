@@ -44,13 +44,9 @@ def _validation(value: Mapping[str, float], box: Mapping[str, Sequence[float]]) 
     return result
 
 
-def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[float]],
-                   geometry_validation: Mapping[str, float], context: ExecutionContext) -> OpenedArtifact:
-    """Build and cold-reopen native geometry without physics or mesh.
-
-    Outer-box coordinates and position sanity are in mm; normal sanity is
-    dimensionless. Sanity samples do not establish whole-face accuracy.
-    """
+def resolve_geometry_request(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[float]],
+                             geometry_validation: Mapping[str, float]) -> dict[str, Any]:
+    """Resolve canonical assembly and explicit geometry sanity without execution."""
     if not isinstance(assembly, Assembly):
         raise ContractError('COMSOL build_geometry requires a complete Assembly')
     selected = Assembly(assembly.composition_plan, assembly.components)
@@ -58,6 +54,18 @@ def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[fl
                     components_resolved=selected.components_resolved, components_source=selected.components_source)
     projection = project_assembly_geometry(snapshot, outer_box_mm=copy.deepcopy(outer_box_mm))
     validation = _validation(geometry_validation, projection['outer_box_mm'])
+    return dict(assembly=snapshot, projection=projection, validation=validation)
+
+
+def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[float]],
+                   geometry_validation: Mapping[str, float], context: ExecutionContext) -> OpenedArtifact:
+    """Build and cold-reopen native geometry without physics or mesh.
+
+    Outer-box coordinates and position sanity are in mm; normal sanity is
+    dimensionless. Sanity samples do not establish whole-face accuracy.
+    """
+    request = resolve_geometry_request(assembly, outer_box_mm=outer_box_mm, geometry_validation=geometry_validation)
+    snapshot, projection, validation = request['assembly'], request['projection'], request['validation']
     for name in ('comsol_launcher', 'matlab_root'):
         path = context.tools.get(name)
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):

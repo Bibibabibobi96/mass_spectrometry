@@ -87,6 +87,11 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         from msplatform.backends.simion.native_plans import plan_geometry_build
         validator, scope = plan_geometry_build, "actual_native_geometry_operation_plan_not_built"
         result["execution_prerequisites"] = ["actual_seed_and_native_resource_records", "execution_owner_and_stage_policy", "explicit_SIMION"]
+    elif operation == "build_comsol_geometry":
+        from msplatform.backends.comsol.geometry_execution import resolve_geometry_request
+        validator, scope = resolve_geometry_request, "canonical_assembly_geometry_request_not_built"
+        result["execution_prerequisites"] = ["execution_owner_and_stage_policy", "explicit_COMSOL_and_MATLAB", "native_save_and_fresh_reopen"]
+        result["limitations"] = ["geometry_only_no_fields_or_scientific_qualification"]
     elif operation == "build_ei_model":
         from msplatform.backends.comsol.ei_model import resolve_ei_build_request
         validator, scope = resolve_ei_build_request, "resolved_EI_build_only_request_not_native_model"
