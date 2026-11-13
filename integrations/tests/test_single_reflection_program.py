@@ -388,7 +388,7 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
         rows = [json.loads(line.split(' ',2)[2]) for line in text.splitlines()
                 if line.startswith('TRACE: applied_field_observation ')]
         self.assertEqual(len(rows),16)
-        from msplatform.workflows.single_reflection_flight.collect import _validate_field_observation_row
+        from msplatform.backends.simion.tracking_field_observation import _validate_field_observation_row
         parser_context = dict(eligible_batch_particle_ids=[11,77],instance_index=3,world_frame_id='oatof_global',
             rf_sources=[{'instance_id':'multipole'}],field_records={'parent':{
                 'carrier_off':{'path':'C:/inert/front.pa'},'rf_reference':{'path':'C:/inert/rf.pa'},

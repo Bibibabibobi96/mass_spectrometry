@@ -200,16 +200,24 @@ Public tracking accepts the existing optional `observations.native_field_observa
 specification for a nonempty original-birth Assembly source. The clock, source,
 domains, eligible anchor and bounds are checked before an owner starts; the spec
 also participates in recovery applicability. Only the anchor unit emits the
-bounded existing callback trace. Collection marks it `UNCOLLECTED`: structured
-coverage, native phase/instance-adjust evidence and field equivalence remain open.
+bounded existing callback trace. The shared SIMION parser validates its saved
+header, source-row clock, native member records, rows and summary against the
+current model and per-unit metadata, including reused units. Missing windows stay
+`INCONCLUSIVE`; a complete bounded protocol is `RECORDED`, not a field-equivalence
+or accepted-particle-state result. Native phase/instance evidence remains open.
 Omitting the option retains the previous tracking behavior.
 The opt-in Program also records the original anchor particle's `instance_adjust`
 candidate/output pairs after calling the unchanged callback body. It records the
 first occurrence of each pair, at most 16 rows within a separate 64 KiB budget.
 These rows carry actual clock and position but explicitly describe callback
 candidates, not accepted field selection; the latter belongs to `efield_adjust`.
-The existing fine-overlay suppression remains in effect. Native execution and
-structured completeness of this candidate trace are still unverified.
+The existing fine-overlay suppression remains in effect. A header without any
+candidate callback rows is `INCONCLUSIVE`. The original workflow collector and
+public tracking use the same parser; neither a candidate row nor phase coverage
+proves accepted PA selection or coupled-field correctness. The complete affected
+five-module software run passed 96 parents / 358 records in 280.756 seconds on
+unchanged source, including the existing inert four-unit recovery path. Native
+execution of this observer and ordinary installed acceptance remain unverified.
 
 公开 `run.ps1` 将本次冻结根上下文投影到执行环境，以持久 run 目录交接科学准备；短执行 alias 仅用于执行，失败收尾后清理并恢复调用者环境。
 
@@ -367,6 +375,10 @@ This is an unresolved reference-model/discretization diagnostic, not a qualified
 reference or proof of a SIMION error. No geometry, mesh, Compute or save was
 performed by the audit. Actual Program callbacks, domain/grid/solver/trajectory
 convergence and coupled-field qualification remain OPEN.
+Its native recovery cache reached 1,235,207,743 bytes and raised a transient-storage
+warning against the provisional 256 MiB commitment. Read-only COMSOL loading is
+therefore not storage-free; later cold operations must budget that observed native
+cache and overhead. The original warning and successful readback remain separate.
 
 The [4.5 mm RF mesh sensitivity attempt](../../../artifacts/projects/instrument_assembly/runs/20261113_093559__sim__comsol__basis-919b17af3c73/summary.json)
 failed in stationary solver `sol1/s1` with `Pattern mismatch` after the mesh rebuild
@@ -377,6 +389,16 @@ was protected, all writers stopped and normal failed-run finalization completed.
 The log does not establish whether retained solution state, the new mesh or another
 numerical issue caused the failure. No tolerance or physical geometry was changed;
 any corrected experiment requires a new run and preserves this failed evidence.
+The [separate solution-data-clear experiment](../../../artifacts/projects/instrument_assembly/runs/20261113_100512__sim__comsol__basis-a42372dd41a3/summary.json)
+also failed: `sol1/s1` reported an internal solver vector error, not the earlier
+pattern-mismatch message. Its preserved pre-solve records show 3,615,230 to
+4,402,367 tetrahedra, the requested 5 to 4.5 mm maximum, unchanged physical
+selections and unchanged solver/dataset configuration across `clearSolutionData`.
+Recorded process wall was 589.789 seconds and peak working set 11.659 GB, with no
+resource warning; all writers stopped and failed finalization completed. Clearing
+solution data is not a demonstrated fix. The configured route references iterative
+CG; inactive direct/coarse nodes alone do not identify the executed solver path.
+No valid refined field or convergence result was produced.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

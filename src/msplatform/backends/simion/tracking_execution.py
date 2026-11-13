@@ -471,6 +471,27 @@ def _verified_handoff_source(session, source_reference, particles, plan, geometr
     return source
 
 
+def _collect_unit_field_observation(plan, batches, logs, render_unit):
+    """Bind native unit metadata to current inputs before parsing final logs."""
+    from .tracking_field_observation import collect_native_field_observations
+    observation=plan['observations']['native_field_observation']
+    source_rows={row['particle_id']:row for row in plan['rows']}
+    if len(plan['units'])!=len(batches):raise ValueError('tracking observation units differ')
+    expected={}
+    for unit,case in zip(plan['units'],batches,strict=True):
+        if unit['expected_particle_ids']!=case['expected_particle_ids']:
+            raise ValueError('tracking observation unit identity differs')
+        if observation['eligible_batch_anchor_particle_id'] not in unit['expected_particle_ids']:
+            continue
+        rebuilt=render_unit(unit)
+        actual=case.get('build_metadata',{}).get('native_field_observation')
+        if rebuilt is None or rebuilt!=actual or rebuilt['specification']!=observation:
+            raise ValueError('tracking unit observation context differs from current verified inputs')
+        expected[tuple(unit['expected_particle_ids'])]=rebuilt['context']
+    def expected_context(case):return expected[tuple(case['expected_particle_ids'])]
+    return collect_native_field_observations(logs,batches,source_rows,observation,expected_context)
+
+
 def _execute_tracking_units(session, *, model, plan, design, stored_bank, frontend, downstream, source,
                             compiled, field_workbench, borrowed, frozen, native_path, sources,
                             resource_names, small, records, limits, allow_asynchronous_io,
@@ -615,6 +636,17 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
     collection = collect_tracking_logs([Path(records[key]['path']) for key in stdout_keys],
         source_rows={row['particle_id']:row for row in plan['rows']},source_provenance=plan['source_provenance'],
         flight=plan['flight'],batches=batches)
+    observation=plan['observations'].get('native_field_observation')
+    if observation is not None:
+        def render_unit(unit):
+            subset=slice_tracking_plan(plan,unit)
+            return _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
+                frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa'} else _artifact_record(source,'downstream_audit'),
+                native_sources=sources)['build_metadata'].get('native_field_observation')
+        observed=_collect_unit_field_observation(plan,batches,[Path(records[key]['path']) for key in stdout_keys],render_unit)
+        collection['native_field_observation']=observed
+        collection['native_field_observation_status']=observed['status']
+        collection['native_field_observation_scope']=observed['claim']
     return collection,native_calls
 
 
@@ -825,9 +857,6 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             verification='actual_native_stdout_readback_only_not_inferred_from_request',
             phase='before_fly_command_not_after_iob_load',
             stdout_data_keys=[key for key in records if key=='native_stdout' or key.startswith('native_stdout__')]))
-    if 'native_field_observation' in plan['observations']:
-        collection['native_field_observation_status'] = 'UNCOLLECTED'
-        collection['native_field_observation_scope'] = 'bounded raw callback traces; no structured validation or coverage claim'
     with output.open('x',encoding='utf-8',newline='\n') as stream:
         stream.write(json.dumps(collection,ensure_ascii=False,allow_nan=False,indent=2)+'\n')
     records['collection'] = file_record(session.canonical_path(output),'required_evidence')
