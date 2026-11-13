@@ -1443,7 +1443,7 @@
           {
             "matches": [
               {
-                "regex": "^src/msplatform/(?:exporters/|components/[^/]+/geometry_members\\.py)",
+                "regex": "^src/msplatform/(?:exporters/|components/(?:[^/]+/)?geometry_members\\.py)",
                 "reason": "assembly_cad_projection_changed"
               },
               {
@@ -1459,7 +1459,29 @@
               "common/contracts/test_geometry_members.py",
               "common/contracts/test_dual_cone_cad.py",
               "common/contracts/test_step_export.py",
+              "common/contracts/test_ip_step_projection.py",
+              "common/contracts/test_mr_step_projection.py",
+              "common/contracts/test_step_probe_culling.py",
+              "common/contracts/test_step_probe_culling_kernel.py",
               "common/contracts/test_cad_execution.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/geometry_members.py",
+                "reason": "shared_comsol_geometry_consumer_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/comsol/(?:assembly_geometry\\.py|geometry_execution\\.py|matlab/(?:assembly_geometry_stage|build_assembly_reference_geometry|validate_assembly_reference_selections|classify_assembly_reference_faces)\\.m)$",
+                "reason": "comsol_geometry_stage_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_comsol_assembly_geometry.py",
+              "common/contracts/test_comsol_assembly_geometry_execution.py",
+              "common/contracts/test_installed_scientific_core.py"
             ],
             "dependency_profile": "locked"
           },

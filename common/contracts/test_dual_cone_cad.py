@@ -10,7 +10,8 @@ import unittest
 
 from msplatform import assembly, components
 from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
-from msplatform.exporters.step import assembly_geometry_members, step_member_names
+from msplatform.components.geometry_members import assembly_geometry_members
+from msplatform.exporters.step import step_member_names
 
 
 ROOT = Path(__file__).resolve().parents[2]

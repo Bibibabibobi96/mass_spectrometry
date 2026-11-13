@@ -19,7 +19,9 @@ PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection
                     "apertured_tube_electron_impact_ion_source", "transverse_helical_filament_wehnelt_electron_gun",
                     "dual_cone_tandem_quadrupole_ion_interface", "parallel_mirror_dual_stripe_mr_tof",
                     "dual_pressure_rectilinear_ion_processor"}
-COMPONENT_INFRASTRUCTURE = {"model", "catalog"}
+# Provider dispatch belongs to components; neutral Assembly data may not import
+# individual providers merely because this shared traversal exists.
+COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
@@ -257,6 +259,12 @@ def component_dependency_errors(sources: dict[str, str], declarations: dict[str,
 
 
 class ScientificCoreBoundaryTests(unittest.TestCase):
+    def test_physical_member_dispatch_stays_in_components(self):
+        source = "from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members"
+        self.assertEqual(core_boundary_errors(source, "msplatform.components.geometry_members", dependencies=set()), [])
+        errors = core_boundary_errors(source, "msplatform.assembly.geometry_members", dependencies=set())
+        self.assertTrue(any("assembly imports provider-specific physics" in error for error in errors))
+
     def test_component_imports_follow_the_declared_acyclic_provider_graph(self):
         sources = {".".join(path.relative_to(CORE_ROOT.parent).with_suffix("").parts):
                    path.read_text(encoding="utf-8")

@@ -21,6 +21,56 @@
 当前多极杆生产构建器使用几何与网格原语，oaTOF生产网格构建器使用同一个局部Size原语；“生产”
 只描述受维护的代码入口，不授予任何模型Formal资格。
 
+## Complete Assembly geometry stage
+
+`msplatform.components.geometry_members.assembly_geometry_members` is the provider-aware
+complete-member traversal used by CAD and the COMSOL projection. Component
+providers retain physical geometry; the traversal retains source references,
+scientific groups and explicit instance poses. STEP applies its own representation
+checks before resource admission, including in capability queries.
+
+The public `msplatform.backends.comsol.geometry_execution.build_geometry`
+accepts an existing complete `Assembly`, an explicit numerical outer box and
+explicit geometry-validation values. With `instrument` already assembled and
+`context` loaded from the machine deployment:
+
+```python
+from msplatform.backends.comsol.geometry_execution import build_geometry
+
+geometry = build_geometry(
+    instrument,
+    outer_box_mm=study_geometry_domain,
+    geometry_validation=study_geometry_checks,
+    context=context,
+)
+geometry_reference = geometry.reference
+```
+
+`study_geometry_domain` contains `min` and `max` triples in assembly-frame mm.
+`study_geometry_checks` contains `position_mm` and dimensionless `normal_abs`;
+these bound native outer-face sanity samples, not physical accuracy. No padding
+or tolerance is selected implicitly. The context requires the existing COMSOL
+launcher, MATLAB root and an explicit `build_comsol_geometry` engineering stage.
+The normal owner freezes inputs, admits resources, builds/saves the MPH, and
+cold-reopens it in a second operation. It publishes product `geometry` of kind
+`geometry_artifact`, including selection reports and the original projection.
+It requests no source, physics, mesh, study, solver or field computation.
+
+The initial COMSOL projector supports its declared box/circular-solid Boolean
+shapes, signed-permutation poses and world-xy ideal sheets. Unsupported shapes
+and poses, and a box touching or clipping any selected member, fail explicitly;
+IP/MR polygon support is not inferred from neutral traversal or CAD support.
+The retained SFI Assembly passed the public stage in
+[`20261114_015424__build__comsol__geometry-a9588289ec39`](../../../artifacts/projects/instrument_assembly/runs/20261114_015424__build__comsol__geometry-a9588289ec39/summary.json).
+Build and cold reopen both reported 77 members, 50 groups and 81 geometric domains,
+with zero physics, mesh, study and solver nodes. Inputs used the explicit retained
+diagnostic outer box and sanity values; the source/checkout guard stayed unchanged.
+The owner finalized successfully with writers stopped; its guarded wall time was
+104.511 seconds. Ordinary wheel and sdist-rebuilt-wheel acceptance passed through
+the full installed parent (1421.093 seconds), including both geometry consumers. This geometry evidence and the solver-free
+MATLAB classifier do not qualify a common electric field, full SFI coupling,
+GUI parity or continuous flight.
+
 ## 正式启动入口
 
 `../../src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根

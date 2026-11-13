@@ -2347,6 +2347,22 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 
 
 
+    def test_shared_geometry_changes_select_cad_and_comsol_consumers(self) -> None:
+        paths = ["src/msplatform/components/geometry_members.py",
+                 "src/msplatform/backends/comsol/assembly_geometry.py",
+                 "src/msplatform/backends/comsol/geometry_execution.py",
+                 "src/msplatform/backends/comsol/matlab/assembly_geometry_stage.m"]
+        selected = self.selections(REPO_ROOT, [dict(stage="common_contracts", paths=[path]) for path in paths])
+        for path, row in zip(paths, selected, strict=True):
+            with self.subTest(path=path):
+                self.assertTrue({"common/contracts/test_comsol_assembly_geometry.py",
+                                 "common/contracts/test_comsol_assembly_geometry_execution.py",
+                                 "common/contracts/test_installed_scientific_core.py"} <= set(row["Modules"]))
+        self.assertTrue({"common/contracts/test_geometry_members.py", "common/contracts/test_step_export.py",
+                         "common/contracts/test_ip_step_projection.py", "common/contracts/test_mr_step_projection.py",
+                         "common/contracts/test_step_probe_culling.py",
+                         "common/contracts/test_step_probe_culling_kernel.py"} <= set(selected[0]["Modules"]))
+
     def test_joint_geometry_changes_select_actual_consumers(self) -> None:
         common = "common_contracts"
         integration = "instrument_assembly_integration"

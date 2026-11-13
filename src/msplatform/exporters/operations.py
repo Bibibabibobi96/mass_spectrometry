@@ -66,7 +66,8 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     from datetime import datetime
     from functools import partial
     from uuid import uuid4
-    from msplatform.exporters.step import assembly_geometry_members
+    from msplatform.components.geometry_members import assembly_geometry_members
+    from msplatform.exporters.step import _validate_shape
     from msplatform.exporters.execution import execute_cad_export
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.io.manifest_records import file_record
@@ -76,7 +77,8 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     filename = _validate_step_export_options(assembly, format, options)
     snapshot = dict(composition_plan=assembly.composition_plan, components_resolved=assembly.components_resolved,
                     components_source=assembly.components_source)
-    assembly_geometry_members(snapshot)
+    for member in assembly_geometry_members(snapshot):
+        _validate_shape(member['shape'], surface=member['representation_role'] == 'ideal_surface')
     stage, authority = read_stage_policy(context, "export_cad", required_roles=("solver_native_binary",))
     if stage.get("runtime"):
         raise ContractError("The STEP exporter has no additional runtime mode")

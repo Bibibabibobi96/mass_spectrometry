@@ -185,6 +185,24 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         rejected = self.query("export_cad", dict(assembly=self.assembly,format="step",options=dict(self.case.cad_export,precision_mode=True)))
         self.assertEqual(rejected["contract_status"], "rejected")
 
+    def test_step_capability_rejects_zero_thickness_solid_before_owner(self):
+        from msplatform.components.geometry_members import assembly_geometry_members
+        snapshot = dict(composition_plan=self.assembly.composition_plan,
+                        components_resolved=self.assembly.components_resolved,
+                        components_source=self.assembly.components_source)
+        members = list(assembly_geometry_members(snapshot))
+        bad = copy.deepcopy(members)
+        bad[0]['shape'] = dict(kind='box', center_mm=[0, 0, 0], size_mm=[1, 1, 0])
+        bad[0]['representation_role'] = 'physical_solid'
+        arguments = dict(assembly=self.assembly, format='step', options=self.case.cad_export)
+        self.assertEqual(self.query('export_cad', arguments)['contract_status'], 'accepted')
+        with patch('msplatform.components.geometry_members.assembly_geometry_members', return_value=bad), \
+             patch('msplatform.execution.owner.run_managed_stage') as owner:
+            result = self.query('export_cad', arguments)
+        self.assertEqual(result['contract_status'], 'rejected', result)
+        self.assertEqual(result['reason'], {'type': 'ValueError', 'message': 'invalid box dimensions'})
+        owner.assert_not_called()
+
     def test_explicit_environment_is_separate_and_no_discovery_or_writes(self):
         args = dict(assembly=self.assembly,numerics=self.case.geometry_numerics)
         environment = dict(schema_version=1,tools=dict(simion=dict(available=False,release="SIMION 2020")))

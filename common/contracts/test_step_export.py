@@ -17,7 +17,8 @@ from msplatform.results.artifacts import open_artifact
 
 class StepExportTests(unittest.TestCase):
     def test_root_member_collision_rejects_before_engine_import_without_mutation(self):
-        from msplatform.exporters.step import assembly_geometry_members, step_member_names
+        from msplatform.components.geometry_members import assembly_geometry_members
+        from msplatform.exporters.step import step_member_names
         snapshot = real_snapshot()
         before = copy.deepcopy(snapshot)
         members = assembly_geometry_members(snapshot)
@@ -60,7 +61,8 @@ class StepExportTests(unittest.TestCase):
                 step_export_filename(dict(options, name=name))
 
     def test_member_labels_use_physical_rod_segment_and_instance_not_iteration(self):
-        from msplatform.exporters.step import assembly_geometry_members, step_member_names, _label_token
+        from msplatform.components.geometry_members import assembly_geometry_members
+        from msplatform.exporters.step import step_member_names, _label_token
         from msplatform.assembly.resolve_assembly import compile_assembly_layout
         snapshot = real_snapshot()
         recipe = copy.deepcopy(snapshot['composition_plan']['recipe'])
@@ -120,7 +122,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
 
     @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')
     def test_actual_stepcaf_cold_names_and_compound_keep_all_solids(self):
-        from msplatform.exporters.step import assembly_geometry_members
+        from msplatform.components.geometry_members import assembly_geometry_members
         snapshot = real_snapshot()
         before = copy.deepcopy(snapshot)
         name = "RF to TOF O'Brien-v2"
@@ -145,7 +147,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
             # not a second physical geometry or manufacturing qualification.
             member = copy.deepcopy(next(m for m in assembly_geometry_members(snapshot) if m['member_id']=='detector'))
             member['shape'] = dict(kind='union', parts=[dict(kind='box', center_mm=[x,0,0], size_mm=[1,1,1]) for x in (0,3)])
-            with patch('msplatform.exporters.step.assembly_geometry_members', return_value=(member,)):
+            with patch('msplatform.exporters.step._assembly_geometry_members', return_value=(member,)):
                 compound = export_assembly_step(snapshot, destination=root/'compound.step', representation='physical_solids',
                     options=dict(write_pcurves=True,precision_mode=0))
             self.assertEqual(compound['exported_members'][0]['solid_count'], 2)
@@ -159,7 +161,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
 
     @unittest.skipUnless(importlib.util.find_spec('cadquery'), 'optional CadQuery engine unavailable')
     def test_writer_failure_removes_partial_output_and_preserves_source(self):
-        from msplatform.exporters.step import assembly_geometry_members
+        from msplatform.components.geometry_members import assembly_geometry_members
         snapshot = real_snapshot()
         before = copy.deepcopy(snapshot)
         detector = next(m for m in assembly_geometry_members(snapshot) if m['member_id']=='detector')
@@ -168,7 +170,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
             raise RuntimeError('ORIGINAL_CAF_WRITE_FAILURE')
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory)/'partial.step'
-            with patch('msplatform.exporters.step.assembly_geometry_members',return_value=(detector,)), \
+            with patch('msplatform.exporters.step._assembly_geometry_members',return_value=(detector,)), \
                  patch('cadquery.Assembly.export',side_effect=failed_write):
                 with self.assertRaisesRegex(RuntimeError,'ORIGINAL_CAF_WRITE_FAILURE'):
                     export_assembly_step(snapshot,destination=destination,representation='physical_solids',
@@ -214,7 +216,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
         annulus=_shape(cq,fixtures[2][0])
         self.assertFalse(annulus.isInside((2,-3,3),1e-7))
         self.assertTrue(annulus.isInside((4,-3,3),1e-7))
-        from msplatform.exporters.step import assembly_geometry_members
+        from msplatform.components.geometry_members import assembly_geometry_members
         members=assembly_geometry_members(real_snapshot())
         shield=next(m for m in members if m['member_id']=='accelerator/grounded_shield')
         body=_shape(cq,shield['shape'])
@@ -276,7 +278,7 @@ print(json.dumps(dict(root=model.name,members=rows,volume_mm3=compound.Volume(),
     @unittest.skipUnless(importlib.util.find_spec('cadquery'),'optional CadQuery engine unavailable')
     def test_public_inspection_cold_step_probes_no_export_tools_or_writes(self):
         from msplatform import exporters
-        from msplatform.exporters.step import assembly_geometry_members
+        from msplatform.components.geometry_members import assembly_geometry_members
         from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
         snapshot = real_snapshot()
         shield = next(m for m in assembly_geometry_members(snapshot) if m['member_id']=='accelerator/grounded_shield')

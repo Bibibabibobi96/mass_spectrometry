@@ -51,11 +51,15 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
 
     def step_projection(assembly, *, format, options):
         from msplatform.exporters.operations import _validate_step_export_options
-        from msplatform.exporters.step import assembly_geometry_members
+        from msplatform.components.geometry_members import assembly_geometry_members
         _validate_step_export_options(assembly, format, options)
-        return assembly_geometry_members(dict(composition_plan=assembly.composition_plan,
-                                               components_resolved=assembly.components_resolved,
-                                               components_source=assembly.components_source))
+        from msplatform.exporters.step import _validate_shape
+        members = assembly_geometry_members(dict(composition_plan=assembly.composition_plan,
+                                                components_resolved=assembly.components_resolved,
+                                                components_source=assembly.components_source))
+        for member in members:
+            _validate_shape(member['shape'], surface=member['representation_role'] == 'ideal_surface')
+        return members
 
     if operation == "resolve_component":
         validator, scope = component_catalog.resolve_component, "provider_scientific_document_and_component_interface"

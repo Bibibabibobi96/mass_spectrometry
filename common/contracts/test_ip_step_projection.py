@@ -1,4 +1,5 @@
 """Canonical IP STEP planning: pure source identity, not a CAD qualification."""
+from msplatform.components.geometry_members import assembly_geometry_members
 import copy
 import unittest
 from integrations.tests import test_ip_compiler as fixtures
@@ -23,7 +24,7 @@ class IpStepProjectionTests(unittest.TestCase):
 
     def check_source(self, assembly, instance):
         data=snapshot(assembly); before=copy.deepcopy(data)
-        members=step.assembly_geometry_members(data)
+        members=assembly_geometry_members(data)
         selected=[m for m in members if m['instance_id']==instance]
         electrodes=data['components_resolved'][instance]['projection']['electrodes']
         self.assertEqual(len(selected),15)
@@ -90,7 +91,7 @@ class IpStepProjectionTests(unittest.TestCase):
                 data['components_resolved']['ion_processor']['projection']['electrodes'][4]['cutouts'][0]['min_mm'][1]+=.1
             else:
                 data['components_source']['ion_processor']['baseline']['geometry']['r0_mm']+=.1
-            with self.subTest(target=target),self.assertRaises(ValueError): step.assembly_geometry_members(data)
+            with self.subTest(target=target),self.assertRaises(ValueError): assembly_geometry_members(data)
     def test_zero_extent_ip_solids_refuse_before_kernel(self):
         shapes=[dict(kind='ip_box',min_mm=[0,0,0],max_mm=[0,1,1]),
                 dict(kind='ip_cylinder_x',x_min_mm=0,x_max_mm=0,center_y_mm=0,center_z_mm=0,radius_mm=1)]

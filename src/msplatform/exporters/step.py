@@ -1,92 +1,19 @@
 """Optional STEP projection of a complete explicit Assembly snapshot."""
 from __future__ import annotations
-import copy
 import math
 import re
 from importlib.metadata import version
 from pathlib import Path, PureWindowsPath
 from collections.abc import Mapping
 
+from msplatform.components.geometry_members import assembly_geometry_members as _assembly_geometry_members
 from msplatform.contracts.rigid_transform import RigidTransform
-from msplatform.assembly.resolve_assembly import compile_assembly_layout
-from msplatform.components.catalog import _from_provider
-from msplatform.components.rf_multipole.geometry_members import iter_geometry_members as rf_members
-from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members as oa_members
-from msplatform.components.single_reflection_oa_tof.geometry_members import iter_geometry_members as tof_members
 
 
-def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
-    """Resolve full selected member coverage without importing a CAD engine.
-
-    Local shapes are retained; the proper local-to-assembly transform is applied
-    once only by the exporter. Source refs address the exact resolved snapshot.
-    """
-    if not isinstance(assembly,Mapping) or set(assembly)!={'composition_plan','components_resolved','components_source'}:
-        raise ValueError('complete Assembly snapshot with component sources required')
-    plan,components=assembly['composition_plan'],assembly['components_resolved']
-    sources=assembly['components_source']
-    selected=plan['scope']['instance_ids']
-    if not selected or set(plan['components'])!=set(components) or set(sources)!=set(components):
-        raise ValueError('complete parent Assembly source/resolved coverage differs')
-    if compile_assembly_layout(plan['recipe'],plan['components'],local_scope=plan.get('local_scope'))!=plan:
-        raise ValueError('CAD Assembly plan differs from its canonical parent layout')
-    poses={row['instance_id']:row['transform'] for row in plan['recipe']['instances']}
-    result=[]
-    for instance in selected:
-        interface=plan['components'][instance]
-        project=interface['project_id'];resolved=components[instance]
-        if project=='rf_multipole_ion_optics':
-            provider='rf_multipole';members=rf_members(resolved)
-        elif project=='orthogonal_accelerator':
-            provider='orthogonal_accelerator';members=oa_members(resolved)
-        elif project=='single_reflection_oa_tof_mass_analyzer':
-            if interface['variant_id']!='three_zone_square': raise ValueError('complete TOF STEP requires three_zone_square')
-            provider='single_reflection_oa_tof';members=tof_members(resolved)
-        elif project=='dual_cone_tandem_quadrupole_ion_interface':
-            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry_members import iter_geometry_members
-            provider='dual_cone_tandem_quadrupole';members=iter_geometry_members(resolved)
-        elif project=='dual_pressure_rectilinear_ion_processor':
-            provider='dual_pressure_rectilinear_ion_processor';members=_ip_members(resolved)
-        else: raise ValueError('STEP provider not implemented: '+project)
-        _from_provider(provider,resolved,interface,source_design=sources[instance])
-        transform=RigidTransform.from_contract(poses[instance])
-        if transform.from_frame_id!=interface['local_frame_id']: raise ValueError('CAD source frame differs from interface')
-        identities=set()
-        for member in members:
-            if member['member_id'] in identities: raise ValueError('duplicate physical member identity')
-            identities.add(member['member_id'])
-            if member['local_frame_id']!=transform.from_frame_id: raise ValueError('member frame differs from its actual pose')
-            if member['representation_role'] not in {'physical_solid','ideal_surface'}: raise ValueError('unknown physical representation')
-            for ref in member['source_refs']:
-                value=resolved
-                for token in ref.split('/')[1:]: value=value[int(token)] if isinstance(value,(list,tuple)) else value[token]
-            _validate_shape(member['shape'],surface=member['representation_role']=='ideal_surface')
-            result.append(dict(copy.deepcopy(member),instance_id=instance,transform=copy.deepcopy(poses[instance])))
-    return tuple(result)
 
 
-def _ip_members(resolved):
-    """Project the provider's selected electrode CSG, retaining each source record."""
-    projection = resolved['projection']
-    electrodes = projection['electrodes']
-    if [row['electrode_id'] for row in electrodes] != list(range(1, 16)):
-        raise ValueError('IP STEP requires its complete ordered 15 electrode groups')
-    result = []
-    for index, row in enumerate(electrodes):
-        if set(row) != {'electrode_id', 'name', 'solids', 'cutouts'} or not row['solids']:
-            raise ValueError('IP STEP electrode source is incomplete')
-        def convert(shape):
-            from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
-            shape_bounds(shape)
-            return dict(kind='ip_'+shape['shape'], **{k: copy.deepcopy(v) for k,v in shape.items() if k != 'shape'})
-        parts = [convert(shape) for shape in row['solids']]
-        base = parts[0] if len(parts) == 1 else dict(kind='union', parts=parts)
-        tools = [convert(shape) for shape in row['cutouts']]
-        shape = dict(kind='difference', base=base, tools=tools) if tools else base
-        result.append(dict(member_id=row['name'], electrode_group_id=row['name'], shape=shape,
-            source_refs=[f'/projection/electrodes/{index}'], local_frame_id=projection['frame_id'],
-            length_unit='mm', representation_role='physical_solid'))
-    return tuple(result)
+
+
 
 
 def _finite(values):
@@ -114,6 +41,12 @@ def _validate_shape(spec, *, surface=False):
         lo, hi = shape_bounds(dict(shape=kind[3:], **{k:v for k,v in spec.items() if k != 'kind'}))
         if any(a >= b for a,b in zip(lo,hi,strict=True)):
             raise ValueError('IP CAD physical solid must have strictly positive extents')
+    elif kind=='extruded_yz_polygon':
+        x, points=spec['x'],spec['polygon_yz_mm']
+        if len(x)!=2 or len(points)<3 or any(len(p)!=2 for p in points):raise ValueError('MR polygon extrusion requires x bounds and yz vertices')
+        _finite([*x,*[v for p in points for v in p]])
+        if x[0]>=x[1] or sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(points,(*points[1:],points[0]),strict=True))==0:
+            raise ValueError('MR polygon extrusion requires nonzero physical span and area')
     elif kind=='box':
         _finite([*spec['center_mm'],*spec['size_mm']])
         if len(spec['center_mm'])!=3 or len(spec['size_mm'])!=3 or any(v<0 or (v==0 and not surface) for v in spec['size_mm']): raise ValueError('invalid box dimensions')
@@ -180,6 +113,9 @@ def _shape(cq, spec):
                 raise ValueError('IP convex hull did not form a valid CAD solid')
             return solid
         raise ValueError('unsupported IP physical CAD shape: '+kind)
+    if kind=='extruded_yz_polygon':
+        _validate_shape(spec)
+        return cq.Workplane('YZ').polyline([tuple(p) for p in spec['polygon_yz_mm']]).close().extrude(spec['x'][1]-spec['x'][0]).val().translate((spec['x'][0],0,0))
     if kind=='box':
         center,size=spec['center_mm'],spec['size_mm'];_finite([*center,*size])
         if min(size)<=0: raise ValueError('physical CAD box must have positive spans')
@@ -289,7 +225,7 @@ def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
                 tokens += [f'rod_{rod:04d}', f"rf_group_{row['electrode_group']}"]
             else:
                 tokens = [row['role']]
-        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole_ion_interface', 'dual_pressure_rectilinear_ion_processor'}:
+        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole_ion_interface', 'dual_pressure_rectilinear_ion_processor', 'parallel_mirror_dual_stripe_mr_tof'}:
             tokens = identity.split('/')
         else:
             raise ValueError('STEP naming provider is unsupported: ' + project)
@@ -311,7 +247,8 @@ def export_assembly_step(assembly: Mapping, *, destination: Path, representation
     """
     if representation!='physical_solids': raise ValueError('only physical_solids STEP is implemented')
     filename = step_export_filename(options)
-    members=assembly_geometry_members(assembly)
+    members=_assembly_geometry_members(assembly)
+    for member in members: _validate_shape(member['shape'],surface=member['representation_role']=='ideal_surface')
     names=step_member_names(assembly,members)
     root_name = options.get('name', 'mass_spectrometry')
     if any(root_name == names[(member['instance_id'], member['member_id'])]
@@ -369,6 +306,31 @@ def _inspection_probes(probes):
     return points
 
 
+def _probe_solid_bounds(solids):
+    """Cache conservative world-space CadQuery bounds for explicit probes."""
+    cached = []
+    for solid in solids:
+        box = solid.BoundingBox()
+        bounds = (box.xmin, box.xmax, box.ymin, box.ymax, box.zmin, box.zmax)
+        cached.append((solid, bounds))
+    return cached
+
+
+def _probe_inside(cached, point, tolerance):
+    """Use isInside unchanged for every solid whose expanded bounds admit point."""
+    for solid, bounds in cached:
+        # Nonfinite bounds cannot safely exclude a point; retain the original call.
+        if all(math.isfinite(value) for value in bounds) and all(
+            bounds[2 * axis] <= bounds[2 * axis + 1] for axis in range(3)
+        ):
+            if any(point[axis] < bounds[2*axis] - tolerance or
+                   point[axis] > bounds[2*axis+1] + tolerance for axis in range(3)):
+                continue
+        if solid.isInside(point, tolerance):
+            return True
+    return False
+
+
 def inspect_assembly_step(step_path: Path, *, assembly: Mapping, export_report: Mapping,
                           probes=()) -> dict:
     """Cold-read an existing STEP; compare only named source/serialization checks.
@@ -383,7 +345,8 @@ def inspect_assembly_step(step_path: Path, *, assembly: Mapping, export_report: 
             or projection.get("representation") != "physical_solids" or projection.get("length_unit") != "mm"):
         raise ValueError("current physical-solids STEP report required")
     points = _inspection_probes(probes)
-    members = assembly_geometry_members(assembly)
+    members = _assembly_geometry_members(assembly)
+    for member in members: _validate_shape(member['shape'],surface=member['representation_role']=='ideal_surface')
     try: import cadquery as cq
     except ImportError as error: raise RuntimeError("STEP inspection requires the optional cad-step CadQuery dependency") from error
     profile = _cad_precision_profile()
@@ -408,10 +371,13 @@ def inspect_assembly_step(step_path: Path, *, assembly: Mapping, export_report: 
     if len(solids) != expected_solids: failed.append('solid_count_differs')
     if abs(residual) > bound: failed.append('source_volume_serialization_bound_exceeded')
     probe_results = []
+    if points:
+        source_solids = _probe_solid_bounds(solid for shape in shapes for solid in shape.Solids())
+        imported_solids = _probe_solid_bounds(solids)
     for probe in points:
-        expected = any(solid.isInside(tuple(probe['point_mm']),profile['occt_confusion'])
-                       for shape in shapes for solid in shape.Solids())
-        actual = any(solid.isInside(tuple(probe['point_mm']),profile['occt_confusion']) for solid in solids)
+        point = tuple(probe['point_mm'])
+        expected = _probe_inside(source_solids, point, profile['occt_confusion'])
+        actual = _probe_inside(imported_solids, point, profile['occt_confusion'])
         if actual != expected: failed.append('probe:' + probe['probe_id'])
         probe_results.append(dict(probe,expected_source_inside=expected,actual_step_inside=actual,matches=actual==expected))
     box = loaded.BoundingBox()

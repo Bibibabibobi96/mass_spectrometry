@@ -246,6 +246,30 @@ with two complete posed instances and all 15 scientific groups in each case;
 and checkout guard remained unchanged. This is CadQuery kernel evidence, not
 ordinary-install, SolidWorks, native field/flight or Formal qualification; current
 IP scope and evidence are recorded in its [project state](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md).
+The current shared physical-member traversal is owned by
+`msplatform.components.geometry_members`; CAD and COMSOL consume that same
+provider-aware implementation. Neutral Assembly data does not import provider
+geometry. The complete MR analyzer CAD projection retains its source CSG and
+requires a connected OA to match the declared canonical geometry and relative
+pose; it never invents a second OA. Actual complete MR CAD and SolidWorks acceptance
+remain pending; ordinary-installed projection consumption is covered below.
+The public [COMSOL geometry stage](../../common/comsol/README.md#complete-assembly-geometry-stage)
+uses an explicit numerical box and sanity values, saves geometry and cold-reopens
+it through the existing managed owner. Its retained SFI case succeeded in
+[`20261114_015424__build__comsol__geometry-a9588289ec39`](../../../artifacts/projects/instrument_assembly/runs/20261114_015424__build__comsol__geometry-a9588289ec39/summary.json):
+both operations reported 77 members, 50 groups and 81 domains, with zero physics,
+mesh, study and solver nodes. Source/checkout identities stayed fixed; the owner
+finalized with writers stopped. The affected 92-test software suite passed with
+no skips, including real small CAD/cold-read, capability refusal and Changed
+selection consumers. The complete ordinary installed parent passed in 1421.093
+seconds: direct wheel and independently sdist-rebuilt wheel each contained 538
+members (534 runtime payloads plus four dist-info records), with 44 schemas and
+378 references checked per child outside the blocked checkout. The public Changed
+r3 run retained 19 PASS, one stale detector-fixture FAIL and four fail-fast BLOCKED
+stages (2757.519 seconds); repair `1379ff97` passed that exact supported Lua parent,
+and all four blocked checks passed separately on the successor. This is not a new
+full Changed or Repository PASS. A solved common field, coupled SFI, GUI parity,
+continuous flight and the 15-minute complete software target remain open.
 提供者拥有真实几何、电极与物理端口，装配只绑定实例。源保留原6D、ID、母群、出生时间、上游损失、
 RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新采样源。
 

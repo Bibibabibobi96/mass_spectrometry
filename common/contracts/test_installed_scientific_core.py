@@ -1226,7 +1226,8 @@ else:raise AssertionError('posed source accepted an unbound frame')
 source_world,_=dual_cone_transport.source_placement(cone['resolved'],cone['numerics'],cone['source_spec'],placement=placed_transform,source_to_device=registration)
 assert source_world.from_frame_id==cone['source_spec']['frame_id'] and source_world.to_frame_id=='installed_lab'
 from msplatform import components as dual_components, assembly as dual_assembly
-from msplatform.exporters.step import assembly_geometry_members as dual_cad_members, step_member_names as dual_cad_names
+from msplatform.components.geometry_members import assembly_geometry_members as dual_cad_members
+from msplatform.exporters.step import step_member_names as dual_cad_names
 from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import geometry_members as dual_member_owner, assembly_interface as dual_port_owner
 for module in (dual_member_owner,dual_port_owner):
     assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
@@ -1325,6 +1326,8 @@ assert matlab_directory.is_relative_to(pathlib.Path(sysconfig.get_path("purelib"
 from msplatform.backends.comsol.resources import LAUNCHER_RESOURCES, NATIVE_RESOURCES
 from msplatform.backends.comsol.resources import native_resource_path as comsol_resource_path
 assert {'ms_stage1_ei_source.m', 'load_ei_source_contract.m', 'comsolstartup.m'} <= NATIVE_RESOURCES
+assert {'assembly_geometry_stage.m', 'build_assembly_reference_geometry.m',
+        'validate_assembly_reference_selections.m', 'classify_assembly_reference_faces.m'} <= NATIVE_RESOURCES
 assert {'build_wehnelt_model.m', 'verify_wehnelt_model.m',
         'wehnelt_contract_parameter_bindings.m', 'verify_wehnelt_contract_parameters.m'} <= NATIVE_RESOURCES
 assert callable(comsol_backend.build_ei_model) and callable(comsol_backend.build_wehnelt_model)
@@ -1800,12 +1803,31 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     oa_components = {name:component_api.resolve_component(request)
                      for name,request in oa_study.component_requests.items()}
     oa_assembly = assembly_api.assemble(oa_study.recipe, oa_components)
-    from msplatform.exporters.step import assembly_geometry_members
+    from msplatform.components.geometry_members import assembly_geometry_members
     oa_members = assembly_geometry_members(dict(composition_plan=oa_assembly.composition_plan,
                                                components_resolved=oa_assembly.components_resolved,
                                                components_source=oa_assembly.components_source))
     assert len(oa_members) == 30
     assert sum(member['representation_role']=='physical_solid' for member in oa_members) == 25
+    from msplatform.backends.comsol import assembly_geometry as installed_comsol_geometry
+    from msplatform.backends.comsol import geometry_execution as installed_comsol_stage
+    for module in (installed_comsol_geometry, installed_comsol_stage):
+        assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+    installed_comsol_snapshot = dict(composition_plan=actual_assembly.composition_plan,
+        components_resolved=actual_assembly.components_resolved, components_source=actual_assembly.components_source)
+    installed_comsol_projection = installed_comsol_geometry.project_assembly_geometry(
+        installed_comsol_snapshot, outer_box_mm={'min': [-1000]*3, 'max': [1000]*3})
+    assert len(installed_comsol_projection['members']) == 77
+    assert len(installed_comsol_projection['electrode_groups']) == 50
+    assert actual_assembly.composition_plan == installed_comsol_snapshot['composition_plan']
+    try:
+        installed_comsol_stage.build_geometry(actual_assembly,
+            outer_box_mm={'min': [0]*3, 'max': [1]*3},
+            geometry_validation={'position_mm': 0, 'normal_abs': 0}, context=None)
+    except ValueError as error:
+        assert 'outer box' in str(error)
+    else:
+        raise AssertionError('COMSOL geometry accepted a clipped domain before native admission')
     from msplatform.backends.simion.oa_compiler import _extent
     from msplatform.backends.simion.model import compile_prepared_model, RF_PHYSICS
     oa_domains = {}

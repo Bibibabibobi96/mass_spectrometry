@@ -4,7 +4,7 @@ import unittest
 import hashlib
 
 from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-from msplatform.exporters.step import assembly_geometry_members
+from msplatform.components.geometry_members import assembly_geometry_members
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
 

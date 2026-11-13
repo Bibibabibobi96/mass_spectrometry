@@ -997,6 +997,19 @@ evidence: actual native rasterization, complete electrode coverage and fractiona
 surface readback remain unverified. OA–MR prepared models, fields and tracking are
 explicitly unsupported here; three independent PAs do not prove field coupling.
 
+The public STEP path now projects the complete canonical MR analyzer through its
+component-owned physical-member adapter. Mirror closures, shield apertures,
+Stripe slots/windows, prism clearances and detector remain source-derived CSG;
+instance poses are applied once. A separately selected complete OA must match
+MR's canonical OA geometry and declared relative pose. The analyzer adapter does
+not instantiate another OA or crop the selected instrument. CAD probe culling
+only excludes solids whose conservative, tolerance-expanded bounds cannot
+contain a point; admitted probes still use the unchanged kernel predicate.
+The complete ordinary wheel/sdist parent now covers the canonical MR projection
+and resource closure; full MR export/cold-import and SolidWorks remain pending.
+Source projection tests and the small real-kernel
+culling test do not grant full CAD, field, flight or scientific qualification.
+
 Two-zone OA snapshots, including MR's embedded OA geometry, use the shared
 `ClosedTwoZoneGeometry.as_dict()` projection. Rings and grid supports survive JSON
 write/read as lists while the internal dataclass and original serialized bytes stay

@@ -102,6 +102,14 @@ P4 retains the remaining approved designs and named COMSOL capabilities. P5 test
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
 
+The current B03 successor shares complete physical-member traversal in the component
+layer across CAD and the public COMSOL geometry-only stage. Real build/cold reopen
+and ordinary wheel/sdist acceptance are recorded in the [integration state](../integrations/docs/INTEGRATION.md).
+Changed r3 remains FAILED on its exact detector Lua fixture; `1379ff97` repairs that
+test, and its exact rerun plus the four originally blocked checks passed separately.
+Complete Repository, common-field coupling, continuous chains and performance remain
+open; those local results do not close B03 or the full goal.
+
 V8.7 is the active P4 scope. Its single goal continues the existing task branch and preserves
 all retained scientific, installation, recovery and performance obligations. Eight domain
 baselines share the existing stages and execution owner; they are not eight new runners.
