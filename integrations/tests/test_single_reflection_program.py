@@ -419,6 +419,98 @@ print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads
         self.assertTrue(summaries[0]['deadline_seen'])
         self.assertFalse(summaries[0]['coverage_complete'])
 
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_instance_candidate_observer_preserves_callback_and_bounds_trace(self):
+        # Controlled Lua callbacks only: no native SIMION or field selection claim.
+        directory = self.root/'candidate_observer'
+        directory.mkdir()
+        path,run,_ = scientific_preparation_fixture(directory,recorded_birth=True)
+        prepare(path,run)
+        self.upstream,self.oatof = read_designs(run)
+        self.geometry = json.loads((run/'inputs/frontend_geometry.json').read_text())
+        self.design = json.loads((run/'inputs/frontend_field_design.json').read_text())
+        observation = dict(specification=field_observation_spec(),evidence_context=dict(
+            phase='full_instrument',clock_epoch_id='test-clock',mother_particle_ids=[11,77]))
+        tail = "\nsegment.candidate_test_start=function() single_flight_field_observer.start_run() end\n"
+        script = self.root/'candidate_observer_test.lua'
+        script.write_text(r"""
+segment={}; simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+simion.wb.instances[4]={inside_wc=function() return false end}
+dofile(arg[1])
+ion_instance=3;ion_number=1;ion_time_of_flight=0;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6
+segment.instance_adjust();assert(ion_instance==3)
+segment.candidate_test_start()
+ion_number=2;ion_instance=3;segment.instance_adjust();assert(ion_instance==3)
+ion_number=1;ion_instance=3;segment.instance_adjust();assert(ion_instance==3)
+segment.instance_adjust();assert(ion_instance==3)
+ion_instance=2;segment.instance_adjust();assert(ion_instance==2)
+ion_instance=3;segment.instance_adjust();assert(ion_instance==3)
+for index=1,30 do ion_instance=index+5;segment.instance_adjust();assert(ion_instance==index+5) end
+""",encoding='utf-8',newline='\n')
+        program=self.build(native_path_projection=False,field_observation=observation)
+        target=self.root/'candidate_observed.lua'
+        target.write_text(re.sub(r'\badjustable\s+','',program)+tail,encoding='utf-8',newline='\n')
+        result=subprocess.run([str(LUA),str(script),str(target)],cwd=self.root,
+                              capture_output=True,text=True,timeout=30,check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        headers=[json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
+                 if line.startswith('TRACE: instance_adjust_observation_header ')]
+        rows=[json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
+              if line.startswith('TRACE: instance_adjust_observation ')]
+        self.assertEqual(len(headers),1)
+        self.assertEqual((headers[0]['max_rows'],headers[0]['max_output_bytes']),(16,65536))
+        self.assertEqual(len(rows),16)
+        self.assertTrue(all(row['particle_id']==11 and row['ion_number']==1 for row in rows))
+        self.assertEqual(rows[0]['world_position_mm'],[4,5,6])
+        self.assertEqual((rows[0]['candidate_instance'],rows[0]['output_instance']),(3,3))
+        self.assertEqual([row['candidate_instance'] for row in rows[:3]],[3,2,6])
+        self.assertEqual(rows[0]['instrument_time_us'],.25)
+        self.assertEqual([row['record_seq'] for row in rows],list(range(1,17)))
+        self.assertTrue(all(row['semantics']=='candidate_callback_not_accepted_field_selection' for row in rows))
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_instance_candidate_observer_keeps_actual_fine_suppression(self):
+        directory=self.root/'fine_candidate';directory.mkdir()
+        path,run,request=scientific_preparation_fixture(directory,recorded_birth=True)
+        template=self.root/'fine_template';template.mkdir()
+        _,_,fine_request=fixture(template,entrance_refinement=True)
+        request['numerics']['frontend_domains']['entrance_refinement']=fine_request['numerics']['frontend_domains']['entrance_refinement']
+        path.write_text(json.dumps(request),encoding='utf-8')
+        prepare(path,run)
+        self.upstream,self.oatof=read_designs(run)
+        self.geometry=json.loads((run/'inputs/frontend_geometry.json').read_text())
+        self.design=json.loads((run/'inputs/frontend_field_design.json').read_text())
+        fine=self.geometry['numerical_domains']['entrance_refinement']['active_bounds_mm']
+        midpoint=[(fine[axis+'_min']+fine[axis+'_max'])/2 for axis in 'xyz']
+        dynamic=copy.deepcopy(self.dynamic)
+        dynamic['dynamic_roles'].append(dict(role='entrance_refinement',instance_index=5,
+            carrier_pa_basename='frontend_entrance_refinement.carrier_off.pa',
+            rf_differential_pa_basenames=['fine-rf.pa'],pulse_delta_pa_basename='fine-delta.pa',
+            rf_reference_voltage_v=self.design['rf_reference_voltage_v']))
+        spec=field_observation_spec();spec['domain_id']='entrance_refinement'
+        observation=dict(specification=spec,evidence_context=dict(
+            phase='full_instrument',clock_epoch_id='test-clock',mother_particle_ids=[11,77]))
+        program=self.build(native_path_projection=False,standalone_dynamic_field_bank=dynamic,field_observation=observation)
+        target=self.root/'fine_observed.lua'
+        target.write_text(re.sub(r'\badjustable\s+','',program)+
+            "\nsegment.candidate_test_start=function() single_flight_field_observer.start_run() end\n",encoding='utf-8',newline='\n')
+        script=self.root/'fine_candidate.lua'
+        script.write_text(r"""
+segment={};simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+simion.wb.instances[4]={inside_wc=function() return false end}
+dofile(arg[1]); segment.candidate_test_start()
+ion_number=1;ion_time_of_flight=0;ion_px_mm=tonumber(arg[2]);ion_py_mm=tonumber(arg[3]);ion_pz_mm=tonumber(arg[4])
+ion_instance=5;segment.instance_adjust();assert(ion_instance==5,'inside fine changed')
+ion_px_mm=tonumber(arg[5]);ion_instance=5;segment.instance_adjust();assert(ion_instance==0,'fine boundary not suppressed')
+""",encoding='utf-8',newline='\n')
+        args=[str(LUA),str(script),str(target),*(str(value) for value in midpoint),str(fine['x_min'])]
+        result=subprocess.run(args,cwd=self.root,capture_output=True,text=True,timeout=30,check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        rows=[json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
+              if line.startswith('TRACE: instance_adjust_observation ')]
+        self.assertEqual([(row['candidate_instance'],row['output_instance']) for row in rows],[(5,5),(5,0)])
+        self.assertTrue(all(row['particle_id']==11 for row in rows))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

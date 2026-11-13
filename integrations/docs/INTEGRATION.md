@@ -203,6 +203,13 @@ also participates in recovery applicability. Only the anchor unit emits the
 bounded existing callback trace. Collection marks it `UNCOLLECTED`: structured
 coverage, native phase/instance-adjust evidence and field equivalence remain open.
 Omitting the option retains the previous tracking behavior.
+The opt-in Program also records the original anchor particle's `instance_adjust`
+candidate/output pairs after calling the unchanged callback body. It records the
+first occurrence of each pair, at most 16 rows within a separate 64 KiB budget.
+These rows carry actual clock and position but explicitly describe callback
+candidates, not accepted field selection; the latter belongs to `efield_adjust`.
+The existing fine-overlay suppression remains in effect. Native execution and
+structured completeness of this candidate trace are still unverified.
 
 公开 `run.ps1` 将本次冻结根上下文投影到执行环境，以持久 run 目录交接科学准备；短执行 alias 仅用于执行，失败收尾后清理并恢复调用者环境。
 

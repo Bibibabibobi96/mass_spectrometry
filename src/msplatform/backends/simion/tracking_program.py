@@ -177,6 +177,18 @@ local single_flight_observation_callbacks=0
 local single_flight_observation_bytes=0
 local single_flight_observation_stopped=false
 local single_flight_observation_deadline_seen=false
+local single_flight_instance_started=false
+local single_flight_instance_rows=0
+local single_flight_instance_bytes=0
+local single_flight_instance_seen={}
+local function single_flight_instance_write(event,value)
+  local line='TRACE: '..event..' '..single_flight_observation_json(value)
+  assert(single_flight_instance_bytes+#line+1<=65536,'instance candidate evidence byte cap exceeded')
+  local stream=single_flight_trace_stream or io.stdout
+  local ok,err=stream:write(line,'\n');assert(ok,err or 'instance candidate evidence write failed')
+  local flushed,reason=stream:flush();assert(flushed,reason or 'instance candidate evidence flush failed')
+  single_flight_instance_bytes=single_flight_instance_bytes+#line+1
+end
 local function single_flight_observation_write(event,encoded)
   local line='TRACE: '..event..' '..encoded
   assert(single_flight_observation_bytes+#line+1<=single_flight_observation_spec.max_output_bytes/2,'applied-field evidence phase byte cap exceeded')
@@ -190,8 +202,31 @@ function single_flight_field_observer.start_run()
   single_flight_observation_rows=0;single_flight_observation_callbacks=0
   single_flight_observation_bytes=0;single_flight_observation_stopped=false
   single_flight_observation_deadline_seen=false
+  single_flight_instance_started=true
+  single_flight_instance_rows=0;single_flight_instance_bytes=0
+  single_flight_instance_seen={}
+  single_flight_instance_write('instance_adjust_observation_header',{
+    schema_version=1,role='single_reflection_instance_candidate_observation',
+    semantics='candidate_callback_not_accepted_field_selection',particle_id=@ANCHOR@,
+    max_rows=16,max_output_bytes=65536,policy='first_observation_per_candidate_output_pair_before_deadline'})
   for _,bucket in ipairs(single_flight_observation_spec.buckets) do single_flight_observation_counts[bucket.bucket_id]=0 end
   single_flight_observation_write('applied_field_observation_header',@HEADER@)
+end
+function single_flight_field_observer.instance_candidate(candidate,output)
+  if not single_flight_instance_started or single_flight_instance_rows>=16 or type(ion_number)~='number' or ion_number<1 or ion_number%1~=0 then return end
+  local pid=single_flight_source_particle_id[single_flight_source_row_index()]
+  if pid~=@ANCHOR@ then return end
+  local time=single_flight_instrument_time_us()
+  if time>=single_flight_observation_spec.deadline_us then return end
+  local pair=tostring(candidate)..':'..tostring(output)
+  if single_flight_instance_seen[pair] then return end
+  single_flight_instance_write('instance_adjust_observation',{
+    schema_version=1,role='single_reflection_instance_candidate',
+    semantics='candidate_callback_not_accepted_field_selection',record_seq=single_flight_instance_rows+1,
+    particle_id=pid,ion_number=ion_number,instrument_time_us=time,solver_elapsed_us=ion_time_of_flight,
+    world_position_mm={ion_px_mm,ion_py_mm,ion_pz_mm},candidate_instance=candidate,output_instance=output})
+  single_flight_instance_rows=single_flight_instance_rows+1
+  single_flight_instance_seen[pair]=true
 end
 function single_flight_field_observer.begin(instance,time)
   -- Constant checks and scalar window scans precede allocation or extra PA queries.
@@ -252,6 +287,7 @@ end
     reference = next(index for index,row in enumerate(context['rf_sources'],1)
                      if row['instance_id']==specification['source_instance_id'])
     observer = observer.replace('@PHASE_REFERENCE_INDEX@',str(reference))
+    observer = observer.replace('@ANCHOR@',str(specification['eligible_batch_anchor_particle_id']))
     # ``@ELIGIBLE_IDS@[pid]`` needs parentheses around a Lua table constructor.
     observer = observer.replace('assert('+eligible+'[pid]', 'assert(('+eligible+')[pid]')
     insert('local function single_flight_trace_checkpoint',observer+'\nlocal function single_flight_trace_checkpoint')
@@ -263,6 +299,13 @@ end
         '  if field_observation then field_observation.after_dynamic_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu} end\n')
     anchor = '  end\nend\nfunction segment.instance_adjust()'
     insert(anchor,'  end\n  single_flight_field_observer.finish(field_observation,result)\nend\nfunction segment.instance_adjust()')
+    insert('function segment.instance_adjust()','local function single_flight_original_instance_adjust()')
+    insert('function segment.initialize()',''
+        'function segment.instance_adjust()\n'
+        '  local candidate=ion_instance\n'
+        '  single_flight_original_instance_adjust()\n'
+        '  single_flight_field_observer.instance_candidate(candidate,ion_instance)\n'
+        'end\nfunction segment.initialize()')
     return program+'\nfunction segment.terminate_run() single_flight_field_observer.summary() end\n'
 
 
