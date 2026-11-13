@@ -305,7 +305,18 @@ local function expose(field, mode)
       return v,ex,ey,ez
     end
   end
-  return simion.experimental.make_efield_adjust(field)
+  return function(inst,x,y,z)
+    assert(inst, 'selected instance required')
+    local scale=inst.scale
+    local dx,dy,dz=inst.pa.dx_mm,inst.pa.dy_mm,inst.pa.dz_mm
+    assert(type(scale)=='number' and scale==scale and scale>0 and scale<math.huge
+      and type(dx)=='number' and dx==dx and dx>0 and dx<math.huge
+      and type(dy)=='number' and dy==dy and dy>0 and dy<math.huge
+      and type(dz)=='number' and dz==dz and dz>0 and dz<math.huge, 'invalid instance scale or pitch')
+    local ex,ey,ez=field(x,y,z)
+    local lx,ly,lz=inst:wb_to_pa_orient(ex,ey,ez)
+    return -lx*dx*scale,-ly*dy*scale,-lz*dz*scale
+  end
 end
 
 return function(binding, mode)

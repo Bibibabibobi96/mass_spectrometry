@@ -554,7 +554,10 @@ end
 
 function segment.efield_adjust()
   if static_field_adjust then
-    if ion_instance >= 1 and ion_instance <= maximum_instance_number() then static_field_adjust() end
+    if ion_instance >= 1 and ion_instance <= maximum_instance_number() then
+      local inst=assert(simion.wb.instances[ion_instance], 'selected instance required')
+      ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=static_field_adjust(inst,ion_px_mm,ion_py_mm,ion_pz_mm)
+    end
     return
   end
   if not accelerator_field_gate_requested then return end

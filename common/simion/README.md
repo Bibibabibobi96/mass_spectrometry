@@ -725,3 +725,22 @@ substitute the current one. New planning still requires the selected installed
 resource. Software/source and native qualification remain separate.
 
 The public tracking API can carry an explicit recorded-birth producer authority alongside a saved FieldBundle. The owner verifies and freezes that authority with the original source for recovery; this does not itself qualify a native field or flight.
+
+### Scalar field adjustment coordinates
+
+`scalar_field_adapter.lua` returns a closure `(instance, x_mm, y_mm, z_mm)`
+that samples the validated world field and returns PA voltage gradients. The
+Program owns assignment of `ion_dvoltsx_gu`, `ion_dvoltsy_gu` and
+`ion_dvoltsz_gu`. For PA-to-world rotation R and local spacing matrix
+D = diag(scale * pitch), the chain rule is **g = -D R^T E**. Rotate first;
+componentwise world scaling before rotation is incorrect when D and R do not
+commute. The unchanged `raw_sample` mode returns `(V, Ex, Ey, Ez)` in the declared
+world frame. Current Program and adapter must be frozen together; old complete
+frozen pairs are not rewritten.
+
+The [official field-array documentation](https://simion.com/info/lua_simion.experimental.field_array.html)
+describes the experimental helper's opposite operation order. The installed
+SIMION 2020 controlled rotated-anisotropic N=1 calibration reproduced its force
+error and verified the explicit chain-rule correction; this is a project
+conversion using the instance orientation API, not a claim of vendor endorsement.
+See the [integration evidence and limits](../../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation).

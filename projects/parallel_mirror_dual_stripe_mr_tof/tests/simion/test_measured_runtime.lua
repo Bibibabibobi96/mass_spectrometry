@@ -51,11 +51,12 @@ local priority={role='mrtof_native_corridor_iob_priority_contract',schema_versio
     {role='ion_processor_collision',priority_number=3},{role='detector',priority_number=4}}}
 local original_loadfile,original_print=loadfile,print
 local scalar_calls=0
+local engine
 loadfile=function(path)
   if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/src/msplatform/backends/simion/resources/voltage_waveforms.lua') end
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.priority.lua' then return function() return priority end end
-  if path=='virtual/source.scalar_field_adapter.lua' then return function() return function() return function() scalar_calls=scalar_calls+1 end end end end
+  if path=='virtual/source.scalar_field_adapter.lua' then return function() return function() return function(inst,x,y,z) scalar_calls=scalar_calls+1;assert(inst==simion.wb.instances[engine.ion_instance] and x==engine.ion_px_mm and y==engine.ion_py_mm and z==engine.ion_pz_mm);return 11,22,33 end end end end
   if path=='virtual/source.source_runtime.lua' then
     local module_chunk=assert(original_loadfile(source_directory..'/source_runtime.lua'))
     -- Deliberately isolate loadfile modules from workbench reserved variables.
@@ -72,7 +73,7 @@ loadfile=function(path)
   return original_loadfile(path)
 end
 local records={}
-local engine=setmetatable({}, {__index=_G})
+engine=setmetatable({}, {__index=_G})
 print=function(line) records[#records+1]=line end
 simion={workbench_program=function() engine.segment={} end,wb={instances={
   {filename='full-c0.pa'},{filename='downstream.pa'},{filename='ip-collision.pa'},{filename='detector.pa'}}}}
@@ -168,7 +169,7 @@ priority.instances[5]={role='analyzer_collision_patch',priority_number=5}
 simion.wb.instances[5]={filename='patch.pa',pa={path='patch.pa'}}
 compile();begin()
 local before_scalar=scalar_calls
-engine.ion_instance=4;engine.segment.efield_adjust()
+engine.ion_instance=4;engine.segment.efield_adjust();assert(engine.ion_dvoltsx_gu==11 and engine.ion_dvoltsy_gu==22 and engine.ion_dvoltsz_gu==33)
 engine.ion_instance=5;engine.segment.efield_adjust()
 assert(scalar_calls==before_scalar+2,'vacuum in the patch must retain the same scalar field callback')
 simion.wb.instances[5].pa.path='different.pa'

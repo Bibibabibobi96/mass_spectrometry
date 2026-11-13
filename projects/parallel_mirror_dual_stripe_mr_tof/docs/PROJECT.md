@@ -119,11 +119,21 @@ This ownership move does not qualify finite fields, native transport or full MR.
 The segmented prism runners record the complete prism/phase triad in their audited
 source inputs. Their existing live-code execution mode remains unchanged; those
 audit copies do not constitute execution from a frozen source tree.
-The scalar field consumer Lua belongs to `msplatform.backends.simion.resources`;
-sampling and the existing source freezers select that same installed body. Its
-run-owned companion filenames and sealed record roles remain unchanged. The MR
-operating-PA identity and composer ownership are separate remaining work; this
-resource move changes neither field mathematics nor native qualification.
+The scalar field consumer Lua belongs to `msplatform.backends.simion.resources`.
+Its default closure now accepts the selected instance and world position and returns
+three PA voltage gradients; the actual MR Program assigns those reserved values.
+World E is rotated into PA axes before multiplication by local pitch and scale.
+Raw `(V, Ex, Ey, Ez)` sampling, field data, support masks and ordered windows remain
+unchanged. New preparations freeze the current Program and adapter together;
+historical frozen pairs remain intact. Source/frozen regressions passed 104 parent
+tests and 347 records in 160.260 test seconds (169.316 guarded wall), with actual
+Program callback and lint checks. The actual measured-source callback harness
+also passed with original IDs and absolute clock. Separate ordinary wheel and
+sdist-rebuilt environments passed selected joint/HS1/scalar consumers in 251.336
+guarded seconds; both contained 526 matching runtime files and denied source-tree
+reads. Full installed-parent and representative full MR native acceptance remain
+pending. The controlled N=1 native
+calibration and its limits are recorded in the [integration evidence](../../../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation).
 旧 `simion_candidate_reference.py`、`static_field_binding.py`、`mirror_geometry_parameters.py`、
 `analyzer_candidate_geometry.py` 已退役；所有活动消费者直接使用其新 owner，不保留转发。
 backend/component 均无 `projects.*` 或 `common.*` 依赖；

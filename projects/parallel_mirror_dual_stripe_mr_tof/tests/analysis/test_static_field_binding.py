@@ -46,7 +46,7 @@ class ScalarAdapterResourceTest(unittest.TestCase):
         self.assertEqual(selected.resolve(), provider.parent / "resources/scalar_field_adapter.lua")
         authority = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         self.assertEqual(selected.read_bytes(), authority.read_bytes())
-        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "82ac976cbf8edbd639063fd6c4eb4ec89077dbdc3cac969571c1e72830ee109f")
+        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "4190ce7477cb8b3375e71091d7c096169616446f05f0334f66778557ec29aad3")
         self.assertFalse((REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua").exists())
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory)
@@ -54,6 +54,44 @@ class ScalarAdapterResourceTest(unittest.TestCase):
             with patch.object(resources, "files", return_value=package):
                 with self.assertRaisesRegex(FileNotFoundError, "installed SIMION native resource is missing"):
                     resources.native_resource_path("scalar_field_adapter.lua")
+
+
+    def test_actual_adapter_world_to_local_gradient(self):
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "")
+        if not lua.is_file():
+            self.skipTest("standalone vendor Lua unavailable")
+        adapter = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
+        fixture = r"""
+local pa={symmetry='3dplanar',nx=9,ny=9,nz=9,dx_mm=1,dy_mm=1,dz_mm=1}
+function pa:potential() return 1 end
+function pa:potential_vc() return 17 end
+simion={pas={},experimental={},early_access=function() end}
+function simion.pas:open() return pa end
+function simion.experimental.field_array() return {efield=function(x,y,z)
+ assert(x==3 and y==3 and z==3);return 1,-2,.5 end} end
+local apply=assert(loadfile(arg[1]))()
+local bind={scalar_pa='scalar',valid_pa='mask',origin_mm={0,0,0},pitch_mm={1,1,1},ideal_sheet_projection={}}
+local sample=apply(bind,'raw_sample');local v,x,y,z=sample(3,3,3)
+assert(v==17 and x==1 and y==-2 and z==.5)
+local adjust=apply(bind);local instance={scale=2,pa={dx_mm=1,dy_mm=2,dz_mm=3}}
+function instance:wb_to_pa_orient(a,b,c) return b,-a,c end
+local gx,gy,gz=adjust(instance,3,3,3);assert(gx==4 and gy==4 and gz==-3)
+function instance:wb_to_pa_orient(a,b,c) return a,b,c end
+gx,gy,gz=adjust(instance,3,3,3);assert(gx==-2 and gy==8 and gz==-3)
+instance.pa.dx_mm,instance.pa.dy_mm,instance.pa.dz_mm=2,2,2
+local c,s=math.cos(.37),math.sin(.37)
+function instance:wb_to_pa_orient(a,b,z) return c*a+s*b,-s*a+c*b,z end
+gx,gy,gz=adjust(instance,3,3,3)
+assert(math.abs(gx+4*(c-2*s))<1e-12 and math.abs(gy-4*(s+2*c))<1e-12 and gz==-2)
+instance.pa.dx_mm=0;assert(not pcall(adjust,instance,3,3,3));assert(not pcall(adjust,nil,3,3,3))
+print('ACTUAL_ADAPTER_TRANSFORM_PASS')
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "fixture.lua"
+            source.write_text(fixture, encoding="utf-8")
+            result = subprocess.run([str(lua), str(source), str(adapter)], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, timeout=10, check=True)
+            self.assertIn("ACTUAL_ADAPTER_TRANSFORM_PASS", result.stdout)
 
 
 class RecordLookupScopeTest(unittest.TestCase):
@@ -987,7 +1025,14 @@ local function level(path)
  return {mode='native_static_pa',scalar_pa=path,origin_mm={0,-5,-10},pitch_mm={.5,1,2},
  dimensions={11,11,11},symmetry='x'}
 end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local b=level('C:/frozen/base.pa');local w=level('C:/frozen/window.pa')
 w.name='window';w.active_box_mm={{-3,3},{-2,2},{-4,4}};b.refinement_windows={w}
 local first=apply(b,'raw_sample');assert(opens==2)
@@ -1048,7 +1093,14 @@ local function level(path,box,mode)
  pitch_mm={1,1,1},dimensions={21,21,21},symmetry='x',name=path,active_box_mm=box,
  ideal_sheet_projection={}}
 end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local fine=level('fine',{{-3,3},{-3,3},{-3,3}})
 local hidden=level('hidden',{{-3,3},{-3,3},{-3,3}})
 local partial=level('partial',{{-4,4},{-2,2},{-2,2}})
@@ -1123,7 +1175,14 @@ end
 function simion.pas:open(path)opens=opens+1;return make_pa()end
 local binding={mode='native_static_pa',scalar_pa=[[c:\frozen\parent.pa]],origin_mm={0,-5,-10},
  pitch_mm={.5,1,2},dimensions={11,11,11},symmetry='x'}
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local function instance_list(items)
  local container=newproxy(true)
  local mt=getmetatable(container)
@@ -1188,7 +1247,14 @@ local function level(path)
  dimensions={11,11,11},symmetry='x'}
 end
 local b=level('parent');local w=level('local');w.name='local';w.active_box_mm={{-3,3},{-2,2},{-4,4}}
-b.refinement_windows={w};local apply=assert(loadfile(arg[1]))()
+b.refinement_windows={w};local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local fly=apply(b);assert(opens==2)
 local ex,ey,ez=fly(-1,0,0);assert(ex==-40 and ey==40 and ez==30)
 ex,ey,ez=fly(0,0,0);assert(ex==40,'mirror plane support allowed without forcing Ex zero')
@@ -1485,7 +1551,14 @@ function simion.experimental.field_array(t)
  return {efield=function() local v=t.V:potential();return v,2*v,3*v end}
 end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local function term(name,weight)
  return {coefficient=weight,scalar_pa=name,valid_pa='mask',origin_mm={0,0,0},
   pitch_mm={1,1,1},ideal_sheet_projection={}}
@@ -1538,7 +1611,14 @@ function simion.experimental.field_array(t)
  return {efield=function() local v=t.V:potential();return v,2*v,3*v end}
 end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local function level(name,mask)
  return {scalar_pa=name,valid_pa=mask,origin_mm={0,0,0},pitch_mm={1,1,1},ideal_sheet_projection={}}
 end
@@ -1655,7 +1735,14 @@ function simion.experimental.field_array(t)
 end
 function simion.experimental.make_efield_adjust(f) return f end
 local request=assert(loadfile(arg[2]))()
-local apply=assert(loadfile(request.adapter))()
+local actual_apply=assert(loadfile(request.adapter))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 if not unknown then
  local fly=apply(request.b);local raw=apply(request.b,'raw_sample')
  for _,point in ipairs(request.samples) do
@@ -1912,7 +1999,14 @@ end
 local first=window('first',{{.5,1},{.25,.5},{1,2}})
 local second=window('second',{{.75,1.5},{.375,.75},{1.5,3}})
 local binding={scalar_pa='base',valid_pa='base_mask',origin_mm={-4,-4,-4},pitch_mm={1,1,1},ideal_sheet_projection={}}
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local plain=apply(binding);assert(plain(.5,.25,1)==1)
 binding.refinement_windows={};assert(apply(binding)(.5,.25,1)==1)
 binding.refinement_windows={first,second};local field=apply(binding)
@@ -1983,7 +2077,14 @@ function simion.experimental.field_array(t)
  end}
 end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 '''
         fixture += generated
         fixture += r'''
@@ -2261,7 +2362,14 @@ simion={pas={},experimental={},early_access=function() end}
 function simion.pas:open(path) opens=opens+1;if path=='base' then return pa end;assert(path=='mask');return mask end
 function simion.experimental.field_array(t) return {efield=function() return 2,4,6 end} end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 '''+generated+r'''
 assert(#binding.response_terms==2 and binding.response_terms[2].coefficient==0)
 local field=apply(binding)
@@ -2505,7 +2613,14 @@ function simion.experimental.field_array(t)
  return {efield=function() local v=t.V:potential();return v,2*v,3*v end}
 end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 '''+generated+r'''
 local f=apply(binding);local ex,ey,ez=f(3,3,3)
 assert(ex==5.5 and ey==11 and ez==16.5)
@@ -2928,7 +3043,14 @@ function simion.experimental.field_array(t)
  end}
 end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 local binding={scalar_pa='V',valid_pa='mask',pitch_mm={.25,.125,.5},origin_mm={10,20,30},
  ideal_sheet_projection={}}
 local field=apply(binding)
@@ -3042,7 +3164,14 @@ simion={early_access=function() end,pas={},experimental={}}
 function simion.pas:open(path) if path=='V' then return pa else assert(path=='mask');return mask end end
 function simion.experimental.field_array(t) assert(t.V==pa);return {efield=function() return 0,0,0 end} end
 function simion.experimental.make_efield_adjust(f) return f end
-local apply=assert(loadfile(arg[1]))()
+local actual_apply=assert(loadfile(arg[1]))()
+local selected={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1}}
+function selected:wb_to_pa_orient(x,y,z) return x,y,z end
+local function apply(binding,mode)
+ local f=actual_apply(binding,mode)
+ if mode=='raw_sample' then return f end
+ return function(x,y,z) local gx,gy,gz=f(selected,x,y,z);return -gx,-gy,-gz end
+end
 apply{scalar_pa='V',valid_pa='mask',pitch_mm={1,1,1},origin_mm={0,0,0},
  ideal_sheet_projection={{i_min=0,i_max=2,j_min=0,j_max=2,k=1}}}
 assert(not marks['1:1:1'],'invalid node marked')
