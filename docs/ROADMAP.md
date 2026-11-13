@@ -108,7 +108,9 @@ also prepare unsolved models, solve one stationary workpoint, cold-recover an ex
 saved failed output, and export explicitly masked world scalar samples. Actual
 geometry/model/solution evidence and its limits are recorded in the
 [integration state](../integrations/docs/INTEGRATION.md); ordinary installed geometry
-does not qualify the later model, field or scalar stages. Native scalar acceptance
+does not qualify the later model, field or scalar stages. The later ordinary
+installation resource/validator probes are separately scoped in that state page;
+they do not execute the installed native owners. Native scalar acceptance
 and the dynamic/common-field chain remain open.
 Changed r3 remains FAILED on its exact detector Lua fixture; `1379ff97` repairs that
 test, and its exact rerun plus the four originally blocked checks passed separately.

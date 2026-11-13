@@ -1382,6 +1382,57 @@ for cmesh_name,cmesh_size,cmesh_sha in cmesh_records:
         cmesh_held.rename(cmesh_path)
     assert cmesh_path.read_bytes()==cmesh_bytes
 # COMSOL_MESH_RESOURCES_INSTALLED_END
+# Exercise the installed Assembly stages without invoking a solver.
+from msplatform.backends.comsol import assembly_electrostatic_model as asm_model
+from msplatform.backends.comsol import assembly_field_solution as asm_solution
+from msplatform.backends.comsol import assembly_field_export as asm_export
+asm_pure = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+for asm_module in (asm_model, asm_solution, asm_export):
+    assert pathlib.Path(asm_module.__file__).resolve().is_relative_to(asm_pure)
+assert callable(asm_model.prepare_model) and callable(asm_solution.solve_stationary)
+assert callable(asm_solution.recover_stationary) and callable(asm_export.export_world_scalar)
+asm_resources = {'assembly_electrostatic_model.m', 'verify_assembly_electrostatic_bindings.m',
+    'solve_assembly_stationary.m', 'read_assembly_stationary_solution.m',
+    'export_assembly_world_scalar_field.m', 'sample_scalar_grid_blocks.m'}
+assert asm_resources <= NATIVE_RESOURCES
+asm_projection = {'electrode_groups': [{'instance_id':'rf','electrode_group_id':'drive'}],
+    'assembly_frame_id':'world','outer_box_mm':{'min':[-2,-2,-2],'max':[2,2,2]}}
+asm_request = {'group_voltages':[{'instance_id':'rf','electrode_group_id':'drive','voltage_v':17.0}],
+    'relative_permittivity':1.0,'exterior':{'kind':'potential','voltage_v':0.0},
+    'mesh':{'global_automatic_level':5,'electrode_hmax_mm':4.0},'study':{'kind':'stationary'}}
+assert asm_model.validate_request(asm_projection, asm_request) == asm_request
+try:
+    asm_model.validate_request(asm_projection, dict(asm_request, group_voltages=[]))
+except ValueError:
+    pass
+else:
+    raise AssertionError('installed Assembly model accepted missing group voltage')
+asm_solution_record = {'study_tag':'std1','solution_tag':'sol1','dataset_tag':'dset1',
+    'dataset_solution':'sol1','solution_empty':False,'solution_count':1,
+    'stored_main_solutions':1,'solution_dofs':1}
+asm_solution.validate_solution_readback(asm_solution_record, study_tag='std1', solution_tag='sol1', dataset_tag='dset1')
+asm_grid = {'frame_id':'world','origin_mm':[-1,-1,-1],'pitch_mm':[1,1,1],
+    'dimensions':[3,3,3],'block_points':5,'study_tag':'std1','solution_tag':'sol1','dataset_tag':'dset1'}
+assert asm_export.validate_grid(asm_grid, asm_projection, asm_solution_record)['point_count'] == 27
+try:
+    asm_export.validate_grid(dict(asm_grid, dataset_tag='wrong'), asm_projection, asm_solution_record)
+except ValueError:
+    pass
+else:
+    raise AssertionError('installed scalar export accepted wrong dataset identity')
+asm_helper = comsol_resource_path('sample_scalar_grid_blocks.m').resolve()
+asm_helper_bytes = asm_helper.read_bytes()
+asm_held = asm_helper.with_suffix(asm_helper.suffix+'.assembly-held')
+assert not asm_held.exists(); asm_helper.rename(asm_held)
+try:
+    asm_missing = subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',cmesh_child,
+        json.dumps([str(source) for source in blocked_source_roots]),asm_helper.name],
+        cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert asm_missing.returncode != 0 and not asm_missing.stdout, asm_missing.stderr
+    assert asm_missing.stderr.splitlines()[-1:] == ['FileNotFoundError: installed COMSOL native resource is missing: '+asm_helper.name], asm_missing.stderr
+finally:
+    asm_held.rename(asm_helper)
+assert asm_helper.read_bytes() == asm_helper_bytes
 # The Wehnelt task report resource is independently byte-pinned; the shared
 # cold lookup probe denies author trees and checks physical missing-file refusal.
 wehnelt_report_name = 'write_wehnelt_build_only_report.m'
