@@ -346,9 +346,27 @@ mesh; before/after domain, mesh-statistic, feature-tag and size readbacks agree,
 claiming bytewise mesh identity. Their command walls were 220.87/236.84 s. The carrier
 solve exceeded its original 8 GiB working-set warning; these successors use an explicit
 16 GiB warning profile, not a claim of measured capacity bounds. Private reference sources
-do not establish an installed common-domain capability. RF/pulse phase comparisons,
-actual Program callbacks, domain/grid/solver/trajectory convergence and coupled-field
-qualification remain OPEN.
+do not establish an installed common-domain capability.
+
+The [eleven-phase descriptive comparison](../../../artifacts/projects/instrument_assembly/runs/20261113_092503__analysis__python__phase-compare-1177113e221a/summary.json)
+retains 45 point statuses and 17 finite pairs per case, including RF quadrants and
+both pulse edges. Frozen CSVs replay through the public core without native calls.
+It reconstructs fields from the recorded bases and actual clock, not measured
+tracking callbacks. E-vector RMS/max differences are 435.79/1644.89 V/m at t=0
+and 30773.70/126467.59 V/m at 55 us with the pulse on. The different boundary
+conditions and unqualified reference mesh prevent attributing these differences
+to coupling, discretization or a particular backend.
+
+The [read-only RF cold audit](../../../artifacts/projects/instrument_assembly/runs/20261113_092901__analysis__comsol__rf-cold-audit-b326a49c20ce/summary.json)
+matches all 50 actual potential selections to the sealed geometry report and finds
+at most 5.6844e-14 V solved boundary residual. It confirms the mm coordinate
+readback, V/m field units, vacuum permittivity 1, selected vacuum domains and 0 V
+exterior. Nevertheless, it reproduces Ey=877.219 V/m at the source geometry's
+y=0 symmetry plane near the RF exit, with asymmetric mirrored potential samples.
+This is an unresolved reference-model/discretization diagnostic, not a qualified
+reference or proof of a SIMION error. No geometry, mesh, Compute or save was
+performed by the audit. Actual Program callbacks, domain/grid/solver/trajectory
+convergence and coupled-field qualification remain OPEN.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|
