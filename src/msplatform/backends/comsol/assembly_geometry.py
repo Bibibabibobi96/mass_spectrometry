@@ -20,6 +20,14 @@ def _supported(shape: Mapping, *, ideal: bool) -> None:
         children = shape["parts"] if kind == "union" else [shape["base"], *shape["tools"]]
         for child in children:
             _supported(child, ideal=False)
+    elif kind in {"ip_box", "ip_cylinder_x", "ip_convex_polyhedron"}:
+        if ideal:
+            raise ValueError("COMSOL IP ideal surface is unsupported")
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        original = {"shape": kind[3:], **{k: v for k, v in shape.items() if k != "kind"}}
+        lower, upper = shape_bounds(original)
+        if any(a >= b for a, b in zip(lower, upper, strict=True)):
+            raise ValueError("COMSOL IP solid requires positive extents")
     elif kind == "box":
         if ideal and (shape["size_mm"][2] != 0 or min(shape["size_mm"][:2]) <= 0):
             raise ValueError("COMSOL ideal box must be an xy sheet")
@@ -61,6 +69,9 @@ def _local_bounds(shape: Mapping) -> tuple[list[float], list[float]]:
         boxes = [_local_bounds(part) for part in shape["parts"]]
         return ([min(b[0][i] for b in boxes) for i in range(3)],
                 [max(b[1][i] for b in boxes) for i in range(3)])
+    if kind.startswith("ip_"):
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        return shape_bounds({"shape": kind[3:], **{k: v for k, v in shape.items() if k != "kind"}})
     if kind == "extruded_yz_polygon":
         points = shape["polygon_yz_mm"]
         return ([shape["x"][0], min(p[0] for p in points), min(p[1] for p in points)],
@@ -84,6 +95,22 @@ def _world_bounds(member: Mapping) -> tuple[list[float], list[float]]:
         lower.append(translation[i]+sum(min(a,b) for a,b in contributions))
         upper.append(translation[i]+sum(max(a,b) for a,b in contributions))
     return lower,upper
+
+def _native_shape(shape: Mapping, transform: Mapping) -> tuple[dict, bool]:
+    """Keep source shapes intact; derive only a certified IP native representation."""
+    kind = shape["kind"]
+    if kind == "ip_convex_polyhedron":
+        from .ip_prism import certify_ip_prism
+        return certify_ip_prism(shape, transform), True
+    if kind == "union":
+        converted = [_native_shape(part, transform) for part in shape["parts"]]
+        return {"kind": kind, "parts": [item[0] for item in converted]}, any(item[1] for item in converted)
+    if kind == "difference":
+        base, base_ip = _native_shape(shape["base"], transform)
+        tools = [_native_shape(part, transform) for part in shape["tools"]]
+        return {"kind": kind, "base": base, "tools": [item[0] for item in tools]}, base_ip or any(item[1] for item in tools)
+    return copy.deepcopy(dict(shape)), kind.startswith("ip_")
+
 
 def project_assembly_geometry(assembly: Mapping, *, outer_box_mm: Mapping) -> dict:
     """Bind exact canonical members and an explicit assembly-frame outer box.
@@ -119,9 +146,13 @@ def project_assembly_geometry(assembly: Mapping, *, outer_box_mm: Mapping) -> di
             raise ValueError("explicit outer box clips or touches canonical member: " + member["member_id"])
         key = (member["instance_id"], member["electrode_group_id"])
         groups.setdefault(key, []).append(member["member_id"])
-    return {"role": "comsol_canonical_assembly_geometry_projection", "schema_version": 1,
+    native_shapes = [_native_shape(member["shape"], member["transform"]) for member in members]
+    result = {"role": "comsol_canonical_assembly_geometry_projection", "schema_version": 1,
             "assembly_frame_id": assembly["composition_plan"]["assembly_frame_id"],
             "outer_box_mm": {"min": list(lo), "max": list(hi)},
             "members": copy.deepcopy(list(members)),
             "electrode_groups": [{"instance_id": k[0], "electrode_group_id": k[1], "member_ids": v}
                                  for k,v in groups.items()]}
+    if any(item[1] for item in native_shapes):
+        result["native_shapes"] = [item[0] for item in native_shapes]
+    return result

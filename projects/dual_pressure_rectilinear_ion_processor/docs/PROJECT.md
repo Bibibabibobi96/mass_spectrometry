@@ -23,6 +23,14 @@ functional CAD result, not the software 15-minute benchmark. Ordinary-installed
 IP STEP execution and SolidWorks cold-open remain separate acceptance boundaries;
 no SIMION/COMSOL field, gas, flight or Formal qualification is added.
 
+The [public COMSOL geometry projector](../../../common/comsol/README.md#complete-assembly-geometry-stage)
+now accepts the same complete IP solids and Boolean tools, retaining all 15
+scientific groups and canonical contour vertices. Pure public RF–IP and formed
+contour consumers cover source identity, parameter changes, poses and numerical
+translation refusals. The prism/tetra representation does not modify the physical
+design. Native COMSOL geometry, selections, cold reopen and installed translation
+remain unverified; this does not replace the retained SIMION field/HS1 chain.
+
 Installed field-diagnostic acceptance keeps the original synthetic quadratic test contract:
 11-decimal coefficient agreement and finite nonnegative RMS below 1e-11 V. Identical
 inputs and NumPy produced different last bits with selected OpenBLAS kernels, so

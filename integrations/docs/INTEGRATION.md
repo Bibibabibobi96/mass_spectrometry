@@ -341,6 +341,13 @@ uses those same vertices and extents under the supported signed-permutation
 poses. This closes the source-level polygon refusal, not native kernel or selection
 verification. The SFI results below do not qualify the MR extension; installed
 polygon consumption, coupled fields and continuous MR flight remain open.
+The same public geometry stage now projects complete canonical IP members in the
+real RF–IP consumer. It keeps every original source solid/tool and all 15 IP groups,
+deriving only the backend prism/tetra representation. Source-only mixed dispatch
+also retains all MR polygons and ideal sheets when IP enables that representation;
+it is not an accepted connected IP–MR layout. Native geometry/Boolean selections,
+cold reopen, installed IP translation, coupled fields and full continuous flight
+remain open. The earlier ordinary-installation result predates this extension.
 The public [COMSOL geometry stage](../../common/comsol/README.md#complete-assembly-geometry-stage)
 uses an explicit numerical box and sanity values, saves geometry and cold-reopens
 it through the existing managed owner. Its retained SFI case succeeded in

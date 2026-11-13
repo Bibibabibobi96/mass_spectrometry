@@ -79,6 +79,22 @@ The translation follows COMSOL 6.4's [WorkPlane](https://doc.comsol.com/6.4/doc/
 [Polygon](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.125.html)
 and [Extrude](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.088.html)
 APIs (reviewed 2026-11-14); native verification remains a separate requirement.
+
+Complete IP members also retain their canonical boxes, x-axis cylinders and
+convex source vertices. A backend helper identifies translated prisms from exact
+source endpoint sets before applying the pose; its derived native representation
+reports binary64 transform and reconstruction effects separately from physical
+dimensions. Non-prisms use original-vertex tetrahedra only after exact facet
+support and closed/connected boundary checks. This is a bounded translation,
+not arbitrary hull repair or a change to the component's physical contour.
+The renderer uses the documented COMSOL 6.4 [Tetrahedron](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.139.html)
+3-by-4 vertex API where needed (reviewed 2026-11-14).
+
+Pure consumers cover the complete RF–IP Assembly, baseline and formed contours,
+parameter changes and two poses. A separately labelled synthetic mixed-dispatch
+fixture checks that IP's parallel native-shape array preserves every MR member
+and ideal sheet; it is not a connected IP–MR design. Native prism/tetra geometry,
+Boolean unions, selections/cold reopen and installed IP translation remain open.
 The retained SFI Assembly passed the public stage in
 [`20261114_015424__build__comsol__geometry-a9588289ec39`](../../../artifacts/projects/instrument_assembly/runs/20261114_015424__build__comsol__geometry-a9588289ec39/summary.json).
 Build and cold reopen both reported 77 members, 50 groups and 81 geometric domains,

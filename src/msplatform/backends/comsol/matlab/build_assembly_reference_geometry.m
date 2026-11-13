@@ -12,6 +12,12 @@ assert(strcmp(projection.role,'comsol_canonical_assembly_geometry_projection') &
 geom.lengthUnit('mm');
 members=projection.members;
 if isstruct(members), members=num2cell(members); end
+nativeShapes={};
+if isfield(projection,'native_shapes')
+    nativeShapes=projection.native_shapes;
+    if isstruct(nativeShapes), nativeShapes=num2cell(nativeShapes); end
+    assert(numel(nativeShapes)==numel(members),'assembly:Projection','Native shape coverage differs');
+end
 solidTags=cell(1,numel(members)); sheetTags=cell(1,numel(members));
 memberTags=cell(1,numel(members)); solidCount=0; sheetCount=0;
 counter=0;
@@ -22,7 +28,8 @@ for k=1:numel(members)
         tag=emitSheet(member.shape,R,T);
         sheetCount=sheetCount+1; sheetTags{sheetCount}=tag;
     else
-        tag=emitShape(member.shape,R,T);
+        shape=member.shape; if ~isempty(nativeShapes), shape=nativeShapes{k}; end
+        tag=emitShape(shape,R,T);
         solidCount=solidCount+1; solidTags{solidCount}=tag;
     end
     geom.feature(tag).set('selresult','on');
@@ -77,7 +84,56 @@ result=struct('members',{memberTags},'vacuum_feature','assembly_vac', ...
             end
             return
         end
-        if strcmp(kind,'box')
+        if strcmp(kind,'ip_box')
+            low=double(shape.min_mm(:)); high=double(shape.max_mm(:));
+            c=R*((low+high)/2)+T; sizeWorld=abs(R)*(high-low);
+            assert(all(sizeWorld>0),'assembly:IPBox','Positive IP solid dimensions required');
+            tag=nextTag();geom.feature.create(tag,'Block');
+            geom.feature(tag).set('pos',(c-sizeWorld/2)');geom.feature(tag).set('size',sizeWorld');
+        elseif strcmp(kind,'ip_cylinder_x')
+            base=[double(shape.x_min_mm);double(shape.center_y_mm);double(shape.center_z_mm)];
+            height=double(shape.x_max_mm)-double(shape.x_min_mm);radius=double(shape.radius_mm);
+            assert(height>0 && radius>0,'assembly:IPCylinder','Positive cylinder dimensions required');
+            tag=nextTag();geom.feature.create(tag,'Cylinder');geom.feature(tag).set('r',radius);
+            geom.feature(tag).set('h',height);geom.feature(tag).set('axistype','cartesian');
+            geom.feature(tag).set('axis',(R*[1;0;0])');geom.feature(tag).set('pos',(R*base+T)');
+        elseif strcmp(kind,'ip_certified_tetra_union')
+            tetra=shape.tetrahedra;
+            if iscell(tetra), count=numel(tetra); else, count=size(tetra,1); end
+            tags=cell(1,count);
+            for j=1:count
+                if iscell(tetra), vertices=double(tetra{j});
+                else, vertices=squeeze(double(tetra(j,:,:))); end
+                assert(isequal(size(vertices),[4,3]),'assembly:IPTetra','Four source vertices required');
+                tags{j}=nextTag();geom.feature.create(tags{j},'Tetrahedron');
+                geom.feature(tags{j}).set('type','solid');
+                geom.feature(tags{j}).set('p',R*vertices'+T);
+            end
+            if count==1, tag=tags{1};
+            else
+                tag=nextTag();geom.feature.create(tag,'Union');
+                geom.feature(tag).selection('input').set(tags);
+            end
+        elseif strcmp(kind,'ip_certified_prism')
+            assert(shape.reconstruction_residual_mm<=shape.arithmetic_bound_mm, ...
+                'assembly:IPPrism','Certified reconstruction residual exceeds its arithmetic bound');
+            wp=nextTag();geom.feature.create(wp,'WorkPlane');
+            plane=char(shape.plane);geom.feature(wp).set('quickplane',plane);
+            if strcmp(plane,'yz'), prop='quickx';
+            elseif strcmp(plane,'zx'), prop='quicky';
+            elseif strcmp(plane,'xy'), prop='quickz';
+            else, error('assembly:IPPrism','Unsupported certified plane'); end
+            geom.feature(wp).set(prop,double(shape.offset_mm));
+            w=geom.feature(wp).geom;w.feature.create('section','Polygon');
+            w.feature('section').set('source','table');w.feature('section').set('type','solid');
+            w.feature('section').set('table',double(shape.polygon_mm));
+            geom.run(wp);
+            tag=nextTag();geom.feature.create(tag,'Extrude');
+            geom.feature(tag).set('workplane',wp);
+            geom.feature(tag).selection('input').set({wp});
+            geom.feature(tag).set('distance',double(shape.distance_mm));
+            geom.feature(tag).set('displ',reshape(double(shape.displacement_mm),1,2));
+        elseif strcmp(kind,'box')
             c=R*double(shape.center_mm(:))+T; sizeWorld=abs(R)*double(shape.size_mm(:));
             tag=nextTag();geom.feature.create(tag,'Block');
             geom.feature(tag).set('pos',(c-sizeWorld/2)');geom.feature(tag).set('size',sizeWorld');

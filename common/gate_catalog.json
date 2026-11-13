@@ -1474,13 +1474,18 @@
                 "reason": "shared_comsol_geometry_consumer_changed"
               },
               {
-                "regex": "^src/msplatform/backends/comsol/(?:assembly_geometry\\.py|geometry_execution\\.py|matlab/(?:assembly_geometry_stage|build_assembly_reference_geometry|validate_assembly_reference_selections|classify_assembly_reference_faces)\\.m)$",
+                "regex": "^src/msplatform/backends/comsol/(?:assembly_geometry\\.py|geometry_execution\\.py|ip_prism\\.py|matlab/(?:assembly_geometry_stage|build_assembly_reference_geometry|validate_assembly_reference_selections|classify_assembly_reference_faces)\\.m)$",
                 "reason": "comsol_geometry_stage_changed"
+              },
+              {
+                "regex": "^src/msplatform/components/dual_pressure_rectilinear_ion_processor/(?:provider|section_geometry|native_geometry|electrode_contours|convex_geometry|assembly_interface)\\.py$",
+                "reason": "ip_comsol_geometry_consumer_changed"
               }
             ],
             "modules": [
               "common/contracts/test_comsol_assembly_geometry.py",
               "common/contracts/test_comsol_assembly_geometry_execution.py",
+              "common/contracts/test_ip_comsol_projection.py",
               "common/contracts/test_installed_scientific_core.py"
             ],
             "dependency_profile": "locked"

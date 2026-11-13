@@ -2375,12 +2375,15 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         paths = ["src/msplatform/components/geometry_members.py",
                  "src/msplatform/backends/comsol/assembly_geometry.py",
                  "src/msplatform/backends/comsol/geometry_execution.py",
+                 "src/msplatform/backends/comsol/ip_prism.py",
+                 "src/msplatform/components/dual_pressure_rectilinear_ion_processor/convex_geometry.py",
                  "src/msplatform/backends/comsol/matlab/assembly_geometry_stage.m"]
         selected = self.selections(REPO_ROOT, [dict(stage="common_contracts", paths=[path]) for path in paths])
         for path, row in zip(paths, selected, strict=True):
             with self.subTest(path=path):
                 self.assertTrue({"common/contracts/test_comsol_assembly_geometry.py",
                                  "common/contracts/test_comsol_assembly_geometry_execution.py",
+                                 "common/contracts/test_ip_comsol_projection.py",
                                  "common/contracts/test_installed_scientific_core.py"} <= set(row["Modules"]))
         self.assertTrue({"common/contracts/test_geometry_members.py", "common/contracts/test_step_export.py",
                          "common/contracts/test_ip_step_projection.py", "common/contracts/test_mr_step_projection.py",
