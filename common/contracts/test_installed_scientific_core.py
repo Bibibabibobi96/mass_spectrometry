@@ -7197,6 +7197,32 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             sfi_consumer_bytes = sfi_consumer_source.read_bytes()
             shutil.copyfile(sfi_consumer_source, root / 'installed_sfi_consumer_probe.py')
             self.assertEqual((root / 'installed_sfi_consumer_probe.py').read_bytes(), sfi_consumer_bytes)
+            observation_source = source / 'common/contracts/test_support/installed_observation_probe.py'
+            observation_bytes = observation_source.read_bytes()
+            shutil.copyfile(observation_source, root / 'installed_observation_probe.py')
+            self.assertEqual((root / 'installed_observation_probe.py').read_bytes(), observation_bytes)
+            # Generate the existing public-track fixture from its actual author tests
+            # before either source tree is moved offline; installed children only read JSON.
+            for relative in ('common/contracts/test_simion_tracking_execution.py',
+                             'integrations/tests/test_single_reflection_program.py'):
+                self.assertEqual((source / relative).read_bytes(), (REPO_ROOT / relative).read_bytes())
+            from common.contracts.test_simion_tracking_execution import PublicObservationTests
+            observation_case = PublicObservationTests()
+            try:
+                observation_case.setUp()
+                case = observation_case.case
+                observation_fixture = dict(model=case.model.document, packet=case.packet, policy=case.policy,
+                    numerics=case.numerics, observations=observation_case.observations,
+                    field_numerics=case.case.field_numerics)
+                observation_fixture_path = root / 'installed_observation_fixture.json'
+                with observation_fixture_path.open('x', encoding='utf-8', newline='\n') as stream:
+                    json.dump(observation_fixture, stream, ensure_ascii=False, allow_nan=False, sort_keys=True)
+                    stream.write('\n')
+                observation_fixture_bytes = observation_fixture_path.read_bytes()
+            finally:
+                if hasattr(observation_case, 'case'):
+                    observation_case.case.doCleanups()
+                observation_case.doCleanups()
             # Remove both private author trees from their original locations;
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
@@ -7215,6 +7241,12 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
+                observation = self.run_command([consumer_python, '-I', '-B', str(root / 'installed_observation_probe.py'),
+                    str(root / 'installed_observation_fixture.json'),
+                    json.dumps([str(REPO_ROOT), str(root / 'source-offline'), str(root / 'sdist-offline')])],
+                    cwd=root, environment=probe_environment, timeout=120)
+                self.assertIn('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1', observation)
+                self.assertEqual((root / 'installed_observation_fixture.json').read_bytes(), observation_fixture_bytes)
                 self.assertTrue(all(path.read_bytes() == data for path, data in tof_spectrum_input_bytes.items()))
                 self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))
             if retained:
@@ -7234,6 +7266,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/installed_static_field_probe.py',
                     'common/contracts/test_support/installed_recorded_birth_probe.py',
                     'common/contracts/test_support/installed_sfi_consumer_probe.py',
+                    'common/contracts/test_support/installed_observation_probe.py',
+                    'common/contracts/test_simion_tracking_execution.py',
+                    'integrations/tests/test_single_reflection_program.py',
                     'common/contracts/test_installed_scientific_core.py'))
                 source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
                 source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,

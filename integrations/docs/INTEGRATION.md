@@ -216,8 +216,18 @@ candidate callback rows is `INCONCLUSIVE`. The original workflow collector and
 public tracking use the same parser; neither a candidate row nor phase coverage
 proves accepted PA selection or coupled-field correctness. The complete affected
 five-module software run passed 96 parents / 358 records in 280.756 seconds on
-unchanged source, including the existing inert four-unit recovery path. Native
-execution of this observer and ordinary installed acceptance remain unverified.
+unchanged source, including the existing inert four-unit recovery path. The
+ordinary installed-core parent passed on both direct-wheel and sdist-rebuilt-wheel
+consumers in 1167.570 seconds (1179.730 seconds for the complete gate). All 516
+runtime payloads matched the captured build source and both archives; complete
+source, checkout and index guards were unchanged. Its isolated observation probe
+exercises actual planning, rendering and collection, incomplete/header-only
+evidence, pre-owner invalid-input refusal and fresh-child missing-parser refusal,
+with author-tree reads denied. Callback values in that probe are explicitly inert
+software fixtures. Evidence is retained in
+`.tools/phase04-codex-takeover-20261109/v87-installed-observation-launch-agent6-r2`
+at the workspace root. Native execution of this observer, coupled-field
+qualification, complete Repository and the original performance target remain open.
 
 公开 `run.ps1` 将本次冻结根上下文投影到执行环境，以持久 run 目录交接科学准备；短执行 alias 仅用于执行，失败收尾后清理并恢复调用者环境。
 
