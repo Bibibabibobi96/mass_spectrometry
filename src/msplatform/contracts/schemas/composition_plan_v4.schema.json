@@ -62,5 +62,5 @@
       "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"
     }
   },
-  "allOf": [{"if": {"properties": {"recipe": {"properties": {"instances": {"minItems": 2}}}}}, "then": {"properties": {"connection_checks": {"minItems": 1}}}}]
+  "allOf": [{"if": {"properties": {"recipe": {"properties": {"instances": {"minItems": 2}}}}}, "then": {"properties": {"connection_checks": {"minItems": 1}, "recipe": {"properties": {"connections": {"minItems": 1}}}}}}]
 }

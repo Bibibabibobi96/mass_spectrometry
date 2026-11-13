@@ -237,6 +237,9 @@ machines/device pressure. R01–R20 are not globally closed by this delivery.
 
 [配方解析](../README.md#配方解析)冻结完整父配方与组件直接位姿；默认运行其全部实例，局部范围必须显式派生。
 当前plan的`layout_only`不表示各求解器已支持任意器件；不支持的组件明确拒绝，不自动选择最新整机。
+Current version-5 layouts support complete, independently placed components without invented edges; see the
+[connection contract](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#配方实验和工作流).
+The layout/IP and legacy-provider regressions passed 37 tests; real IP STEP export remains a separate acceptance.
 提供者拥有真实几何、电极与物理端口，装配只绑定实例。源保留原6D、ID、母群、出生时间、上游损失、
 RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新采样源。
 

@@ -379,7 +379,7 @@
             }
           }
         },
-        {"if": {"properties": {"recipe": {"properties": {"instances": {"minItems": 2}}}}}, "then": {"properties": {"connection_checks": {"minItems": 1}}}}
+        {"if": {"properties": {"recipe": {"properties": {"instances": {"minItems": 2}}}}}, "then": {"properties": {"connection_checks": {"minItems": 1}, "recipe": {"properties": {"connections": {"minItems": 1}}}}}}
       ]
     }
   ]

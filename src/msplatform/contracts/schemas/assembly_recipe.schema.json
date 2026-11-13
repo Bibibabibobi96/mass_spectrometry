@@ -70,7 +70,6 @@
       }
     }
   },
-  "allOf": [{"if": {"properties": {"instances": {"minItems": 2}}}, "then": {"properties": {"connections": {"minItems": 1}}}}],
   "$defs": {
     "transform": {
       "type": "object",

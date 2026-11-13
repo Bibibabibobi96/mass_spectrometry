@@ -52,6 +52,12 @@ simulation_repo/
 连接器、驱动绑定和各连接的物理耦合模式。配方不携带运行路径、run ID、求解结果或复制的器件模型。
 局部组件名加实例身份构成装配身份；同一项目可以出现多个实例，不能仅凭`project_id`去重。
 
+For current version-5 layout plans, complete components may have explicit independent poses and an empty
+connection list. Geometry/CAD does not require an invented mechanical connection. Every declared connection
+still undergoes the existing port, normal and gap checks; a layout alone supplies no field-coupling or
+continuous-flight qualification. Each backend continues to require the connections its physical operation needs.
+Legacy version-3/4 plans retain their earlier connection requirements.
+
 每个实例分别绑定自己的提供者请求／resolved设计与工作点；同一提供者的不同实例可以采用不同尺寸、
 结构变体、电压、RF频率／相位及气体条件，不修改项目全局默认来依次冒充多个器件。相同设计可以复用同一
 提供者输出，实例位姿与驱动绑定仍各自独立；只有实际输入身份及适用边界相同的场资产才可复用。
