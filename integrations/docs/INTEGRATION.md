@@ -254,8 +254,9 @@ completed with 50 groups, no Compute and frozen source (105.371 seconds). The se
 accepted 5 mm and 0.005 m as equivalent and refused 7 mm (65.281 seconds), without
 meshing, solving or saving the source. The earlier failed model `20261114_022813__build__comsol__assembly-model-5848d44f9431`
 and hmax probe remain retained.
-The model stage has not yet received ordinary installed acceptance; the prior
-installed geometry result does not cover it. No field solution or scientific
+The prior installed geometry result does not cover the model's native execution.
+The later ordinary-installed resource and validator checks below also do not
+execute the installed managed model owner. No field solution or scientific
 qualification is claimed by these model receipts.
 
 #### Current stationary field evidence
@@ -313,6 +314,19 @@ their byte identities and the borrowed model's native role. A corrected-source
 attempt is separately managed; no native scalar-export acceptance is claimed yet.
 The controlled grid retains the original `detector_parent_vacuum` point and does
 not alter geometry or replace the historical errors.
+
+The full [ordinary-installation parent](../../common/contracts/test_installed_scientific_core.py)
+passed on candidate `812c20f3` plus test source
+`f535f4b6940bfc27fba2cf2fad64556360617cce63c6180482f48c3416105d00`
+in 1130.241 seconds, with tracked source unchanged and no skips. Direct wheel
+and independently sdist-rebuilt wheel ran in distinct environments outside the
+blocked author trees. Each child checked 288 module origins, 44 schemas and 378
+references. The added probes exercise the installed Assembly model, stationary
+solution and world-grid validators, six named native resources, and actual
+sampler removal/refusal/restoration. They do not run those new stages' managed
+owners or native COMSOL operations. This candidate predates the MR polygon
+renderer extension and does not qualify it. Full Repository and the complete
+15-minute software target remain open; no same-scope speedup is inferred.
 
 The current shared physical-member traversal is owned by
 `msplatform.components.geometry_members`; CAD and COMSOL consume that same

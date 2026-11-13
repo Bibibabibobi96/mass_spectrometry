@@ -134,7 +134,9 @@ policy key is `recover_assembly_stationary`.
 Native evidence and the retained numerical and engineering limits are recorded in
 the [integration state](../../integrations/docs/INTEGRATION.md#current-stationary-field-evidence).
 This is one stationary workpoint, not a dynamic response basis or SIMION FieldBundle.
-Ordinary installation, field/domain/grid convergence and complete flight remain open.
+The ordinary installation probe checks these modules/resources and their pure
+validators; installed native execution, field/domain/grid convergence and
+complete flight remain open. Its exact scope is recorded in the integration state.
 Capacity protection is not transitive: a later managed consumer of a borrowed model
 must explicitly protect both the field-product manifest and its recorded physical
 model producer, and use the existing immutable-input guard during consumption.
@@ -166,8 +168,9 @@ The shared sampling loop also serves the retained MR corridor exporter. That
 consumer keeps its explicit half-domain `abs(x)` mapping and conductor-fill
 policy, and freezes the helper with its other native resources. Assembly export
 does not inherit either policy. Focused tests and fake-MATLAB checks cover their
-separation; native export and ordinary installed consumption remain separate
-acceptance requirements.
+separation. Both ordinary wheel/sdist consumers also check the stage resources,
+model/solution/grid validators and missing-sampler refusal from site-packages.
+Native export and complete installed stage execution remain separate requirements.
 
 ## 正式启动入口
 
