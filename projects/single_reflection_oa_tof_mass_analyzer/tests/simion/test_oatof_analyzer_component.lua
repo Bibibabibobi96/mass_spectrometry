@@ -28,7 +28,9 @@ local function config()
       reflectron_entgrid_z_mm=600, reflectron_midgrid_z_mm=720,
       reflectron_backplate_z_mm=816.1563,
       detector_x_mm=48.8, detector_y_mm=0, detector_z_mm=0,
-      detector_radius_mm=40, detector_marker_front_margin_z_mm=0.2,
+      detector_radius_mm=40, detector_physical_thickness_mm=1,
+      detector_physical_back_cells=21, detector_physical_front_cells=4,
+      detector_marker_front_margin_z_mm=0.2,
       detector_marker_back_margin_z_mm=0.05,
       detector_marker_absorber_thickness_mm=0.1,
       diagnostic_return_plane_z_mm=20.5,
@@ -105,6 +107,19 @@ local three_off = three_zone.accelerator_electrode_write_plan('off',
 for index=1,#three_off do
   near(three_off[index].voltage_v, 7, 'three-zone off voltage ' .. index)
 end
+local short_detector = config()
+short_detector.geometry.detector_physical_back_cells = 20
+local short_ok, short_error = pcall(function()
+  component.new(short_detector).initialize_workbench({instances={
+    {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+    {filename='reflectron.pa0',nx=401,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+    {filename='accelerator.pa0',nx=101,ny=101,nz=101,dx_mm=.25,dy_mm=.25,dz_mm=.05,scale=1},
+    {filename='detector_ground.pa0',nx=3,ny=3,nz=25,dx_mm=1,dy_mm=1,dz_mm=.05,scale=1},
+  }})
+end)
+assert(not short_ok and tostring(short_error):find('detector physical', 1, true),
+  'insufficient physical detector domain was accepted: ' .. tostring(short_error))
+
 local workbench = analyzer.initialize_workbench({instances={
   {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,
     dy_mm=1,dz_mm=1,scale=1},
@@ -112,12 +127,12 @@ local workbench = analyzer.initialize_workbench({instances={
     dy_mm=1,dz_mm=1,scale=1},
   {filename='accelerator.pa0',nx=101,ny=101,nz=101,dx_mm=0.25,
     dy_mm=0.25,dz_mm=0.05,scale=1},
-  {filename='detector_ground.pa0',nx=3,ny=3,nz=8,dx_mm=1,
+  {filename='detector_ground.pa0',nx=3,ny=3,nz=26,dx_mm=1,
     dy_mm=1,dz_mm=0.05,scale=1},
 }})
 near(workbench.placements.accelerator.x_mm, -61.3,
   'accelerator linked x placement')
-near(workbench.placements.detector.z_mm, -0.15,
+near(workbench.placements.detector.z_mm, -1.05,
   'detector linked z placement')
 near(workbench.placements.flight_tube.z_mm, -64.92918680341103,
   'flight-tube linked z placement')
@@ -129,7 +144,7 @@ override_analyzer.initialize_workbench({instances={
   {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
   {filename='reflectron.pa0',nx=401,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
   {filename='frontend.pa0',nx=101,ny=101,nz=101,dx_mm=0.25,dy_mm=0.25,dz_mm=0.05,scale=1},
-  {filename='detector_ground.pa0',nx=3,ny=3,nz=8,dx_mm=1,dy_mm=1,dz_mm=0.05,scale=1},
+  {filename='detector_ground.pa0',nx=3,ny=3,nz=26,dx_mm=1,dy_mm=1,dz_mm=0.05,scale=1},
 }})
 local pre_pulse = override_analyzer.initialize_workbench({
   active_scope='pre_pulse_frontend_accelerator',
@@ -256,6 +271,8 @@ rejects(function(value) value.electrode_ids.grid2 = 12 end,
 rejects(function(value) value.instance_roles.detector = 3 end,
   'instance roles must be unique')
 rejects(function(value) value.unofficial = true end, 'unknown field')
+rejects(function(value) value.geometry.detector_physical_back_cells = nil end,
+  'geometry is missing field: detector_physical_back_cells')
 rejects(function(value) value.diagnostics.post_pulse_observation_window_us = true end,
   'diagnostics.post_pulse_observation_window_us')
 rejects(function(value) value.diagnostics.post_pulse_observation_window_us = 0 end,
@@ -287,7 +304,7 @@ local oa_state={instances={
  {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
  {filename='reflectron.pa0',nx=401,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
  {filename='accelerator.pa0',nx=101,ny=101,nz=101,dx_mm=.25,dy_mm=.25,dz_mm=.05,scale=1},
- {filename='detector_ground.pa0',nx=3,ny=3,nz=8,dx_mm=1,dy_mm=1,dz_mm=.05,scale=1}}}
+ {filename='detector_ground.pa0',nx=3,ny=3,nz=26,dx_mm=1,dy_mm=1,dz_mm=.05,scale=1}}}
 local initialized=oa.initialize_workbench(oa_state)
 assert(initialized.placements==oa_config.provider_placements,'OA-only provider placement was recomputed')
 assert(initialized.placements.accelerator.x_mm==7 and initialized.placements.detector.y_mm==-9)
