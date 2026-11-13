@@ -1,6 +1,7 @@
 """One existing run package's neutral action/observed-process facts, not another scheduler."""
 from __future__ import annotations
 from dataclasses import dataclass, field
+import copy
 import json
 from pathlib import Path
 from threading import RLock
@@ -8,7 +9,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.capacity_session import renew_capacity_session
 from msplatform.io.manifest_records import verify_record
-from msplatform.execution.processes import ProcessExecutionError, run_observed_process, run_observed_process_group
+from msplatform.execution.processes import ProcessExecutionError, _prepare_process_request, run_observed_process, run_observed_process_group
 from msplatform.execution.recorded_file_removal import write_json_atomic
 
 
@@ -227,20 +228,35 @@ class RunSession:
                for name, value in supplied_environment.items()):
             raise ValueError("Operation cannot override its frozen execution environment")
         actual_environment.update(supplied_environment)
-        self.renew_capacity()
+        # Capture caller-owned mutable input before validating or marking a writer.
+        arguments = copy.deepcopy(arguments)
+        immutable_input_records = copy.deepcopy(immutable_input_records)
+        limits = copy.deepcopy(limits)
+        actual_environment = copy.deepcopy(actual_environment)
         with self._lock:
             if operation_id not in self.expected_operation_ids or operation_id in self._attempted:
                 raise ValueError("Operation is undeclared or has already been attempted")
             if any(self._completed.get(parent) != 0 for parent in self.operation_dependencies.get(operation_id, ())):
                 raise ValueError("Operation prerequisites have not completed successfully")
+            ordinal = self.expected_operation_ids.index(operation_id) + 1
+            base = self.log_dir / f"operation_{ordinal:04d}"
+            stdout = self.canonical_path(base.with_suffix(".stdout.log"))
+            stderr = self.canonical_path(base.with_suffix(".stderr.log"))
+            usage = self.canonical_path(base.with_suffix(".usage.json"))
+            record_path = self.canonical_path(base.with_suffix(".process.json"))
+            _prepare_process_request(self.context, executable=executable, arguments=arguments,
+                working_directory=self.run_dir, run_directory=self.artifact_run_dir,
+                stdout_path=stdout, stderr_path=stderr, usage_path=usage,
+                role=role, stage=stage, run_id=self.run_id, limits=limits,
+                environment=actual_environment, window_style=window_style,
+                immutable_input_records=immutable_input_records)
+            self.renew_capacity()
+            self.declare_file(stdout, stdout_role)
+            self.declare_file(stderr, "required_evidence")
+            self.declare_file(usage, "required_evidence")
+            self.declare_file(record_path, "required_evidence")
             self._attempted.add(operation_id)
             self._active.add(operation_id)
-            ordinal = self.expected_operation_ids.index(operation_id) + 1
-        base = self.log_dir / f"operation_{ordinal:04d}"
-        stdout = self.declare_file(base.with_suffix(".stdout.log"), stdout_role)
-        stderr = self.declare_file(base.with_suffix(".stderr.log"), "required_evidence")
-        usage = self.declare_file(base.with_suffix(".usage.json"), "required_evidence")
-        record_path = self.declare_file(base.with_suffix(".process.json"), "required_evidence")
         receipt = None
         primary = None
         try:

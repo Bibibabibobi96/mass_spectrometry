@@ -716,6 +716,66 @@ class NormalOwnerTests(unittest.TestCase):
             self.assertFalse(context.host_state_path.exists())
             self.assertEqual(json.loads((Path(result["run_directory"]) / "run_config.json").read_text())["parameters"], {"science_input": 13})
 
+    def test_invalid_preflight_finalizes_failed_without_starting_writer(self):
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution import owner
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+        from msplatform.io.manifest_records import file_record
+        for defect in ("duplicate", "malformed", "json"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); context = self._context(root)
+                payload = root / "frozen.bin"; payload.write_bytes(b"UNCHANGED")
+                valid = file_record(payload, "required_evidence")
+                records = [valid, dict(valid)] if defect == "duplicate" else [dict(valid)]
+                if defect == "malformed": records[0]["sha256"] = "broken"
+                limits = {"invalid": float("nan")} if defect == "json" else None
+                marker = root / "writer-started"
+                def action(session):
+                    return session.run_process("fixture", executable=Path(sys.executable),
+                        arguments=["-c", "from pathlib import Path;Path(" + repr(str(marker)) + ").write_text('started')"],
+                        role="GATE", stage="software_tests", limits=limits, immutable_input_records=records)
+                arguments = self._arguments(root, action); arguments["expected_operation_ids"] = ["fixture"]
+                arguments["completion_api"] = lambda: native_completion
+                with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""}), \
+                     patch("msplatform.execution.capacity_admission._capacity_policy", return_value=self._policy()), \
+                     patch("msplatform.execution.run_session.run_observed_process") as launch:
+                    with self.assertRaises(ValueError) as caught:
+                        owner.run_managed_stage(context, **arguments)
+                    launch.assert_not_called()
+                expected = "Out of range float values" if defect == "json" else "immutable inputs require unique absolute frozen file records"
+                self.assertIn(expected, str(caught.exception))
+                self.assertFalse(marker.exists())
+                result = json.loads(next((context.workspace / "artifacts").rglob("result.json")).read_text())
+                self.assertEqual((result["status"], result["stage"]), ("failed", "complete"))
+                self.assertEqual(result["exception"]["message"], str(caught.exception))
+                completion = json.loads((Path(result["run_directory"]) / "results/execution_completion.json").read_text())
+                self.assertEqual(completion["writer_completion"], {"operations": [], "resource_releases": []})
+                self.assertEqual(load_capacity_protection_leases(context.workspace / "artifacts")["audit"], [])
+                self.assertEqual(payload.read_bytes(), b"UNCHANGED")
+
+    def test_post_bridge_unknown_writer_still_retains_capacity(self):
+        from msplatform.execution import owner
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); context = self._context(root)
+            receipt = {"observation": None, "host_release": None,
+                       "error": {"message": "AFTER_BRIDGE_UNKNOWN", "data": {}}}
+            def action(session):
+                session.run_process("fixture", executable=Path(sys.executable), arguments=["-V"],
+                    role="GATE", stage="software_tests", limits=None)
+            arguments = self._arguments(root, action); arguments["expected_operation_ids"] = ["fixture"]
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""}), \
+                 patch("msplatform.execution.capacity_admission._capacity_policy", return_value=self._policy()), \
+                 patch("msplatform.execution.run_session.run_observed_process",
+                       side_effect=ProcessExecutionError("AFTER_BRIDGE_UNKNOWN", receipt)):
+                with self.assertRaisesRegex(ProcessExecutionError, "AFTER_BRIDGE_UNKNOWN"):
+                    owner.run_managed_stage(context, **arguments)
+            result = json.loads(next((context.workspace / "artifacts").rglob("result.json")).read_text())
+            self.assertFalse(result["writers_confirmed"])
+            self.assertEqual(result["stage"], "writer_completion")
+            self.assertTrue(load_capacity_protection_leases(context.workspace / "artifacts")["audit"])
+            self.assertFalse((Path(result["run_directory"]) / "results/execution_completion.json").exists())
+
     def test_unknown_writer_retains_capacity_and_refuses_finalization(self):
         from msplatform.execution import owner
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
@@ -1011,7 +1071,7 @@ class NormalOwnerTests(unittest.TestCase):
             arguments["expected_operation_ids"] = ["fixture"]
             arguments["completion_api"] = lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set())
             policy = self._policy()
-            with patch(
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""}), patch(
                     "msplatform.execution.capacity_admission._capacity_policy", return_value=policy), patch(
                     "msplatform.execution.run_session.run_observed_process",
                     side_effect=ProcessExecutionError("ORIGINAL_PROCESS_FAILURE", receipt)):

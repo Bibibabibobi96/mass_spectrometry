@@ -116,6 +116,16 @@ writer与verifier共用保留策略入口，独立消费时仍重新验证完整
 
 ### Python工作流的公共生命周期owner
 
+`RunSession.run_process` validates the complete process request before marking an
+operation as an attempted or active writer. Caller-owned arguments, environment,
+limits and immutable records are copied first. Invalid duplicate/malformed frozen
+records or non-JSON limits fail through normal managed finalization without a
+launch receipt. A failure after the bridge with an unknown writer still retains
+its original protection; this change does not close historical checkpoints.
+The complete runtime module and nine actual inert consumer seams passed together
+on one source-stable candidate: 43 parents in 367.919 seconds. No commercial
+solver was run in that regression; complete Repository remains separate.
+
 RunSession.add_inputs accepts an ordered iterable of actual input records. It verifies
 and declares each item through the existing owner, then commits the batch with the
 same atomic JSON writer. Handled failures preserve the validated prefix; a secondary

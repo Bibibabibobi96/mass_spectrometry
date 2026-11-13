@@ -1,9 +1,11 @@
 """Gas-only request and inert native-wiring checks; no COMSOL execution."""
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from msplatform.backends.comsol import gas_flow
 from msplatform.io.manifest_records import file_record
 from common.contracts.test_support.comsol_model import InertComsolSession
@@ -329,6 +331,7 @@ class GasFlowCapabilityTests(unittest.TestCase):
 
 
 class GasFlowOwnerTests(unittest.TestCase):
+    @patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
     def test_public_operation_publishes_gas_data_and_failed_export_model_through_real_owner(self):
         import os
         import sys

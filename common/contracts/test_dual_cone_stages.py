@@ -2,9 +2,11 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from msplatform.backends.simion import dual_cone_stages as stages
 from msplatform.backends.simion.model import RF_PHYSICS
@@ -344,6 +346,7 @@ class IndependentStageTests(unittest.TestCase):
 
 
 class StageOwnerGraphTests(unittest.TestCase):
+    @patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
     def test_actual_plans_use_real_owner_dependencies_and_reject_undeclared_fallback(self):
         import os
         import sys

@@ -103,6 +103,7 @@ class EiModelTests(unittest.TestCase):
                     model_execution.execute_unsolved_model(session, resolved=resolved, limits={}, spec=ei_model.NATIVE_MODEL)
             self.assertTrue(any("inert secondary diagnostics" in note for note in caught.exception.__notes__))
 
+    @patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
     def test_public_operation_uses_real_owner_session_and_published_product(self):
         # This inert owner fixture reserves its own small real payload; it does
         # not require the workstation production policy's 295-GiB free disk floor.

@@ -24,6 +24,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
     def test_named_targets_call_existing_managed_stages_and_read_complete_trajectory_without_tools(self):
         self._exercise_independent_stages(targeted=True)
 
+    @patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
     def _exercise_independent_stages(self, *, placed=False, targeted=False):
         from common.contracts.test_execution_runtime import NormalOwnerTests
         from msplatform.workflows.dual_cone_stages import build_geometry, prepare_model, solve_fields, track_fields

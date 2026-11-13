@@ -89,7 +89,7 @@ def inherited_host_token(context: ExecutionContext, required: bool = False) -> s
     return token
 
 
-def run_observed_process(
+def _prepare_process_request(
     context: ExecutionContext, *, executable: Path, arguments: Sequence[str],
     working_directory: Path, run_directory: Path, stdout_path: Path, stderr_path: Path,
     usage_path: Path, role: str, stage: str, run_id: str,
@@ -97,12 +97,7 @@ def run_observed_process(
     immutable_input_records: Sequence[Mapping[str, Any]] = (),
     window_style: str = "Hidden",
 ) -> dict[str, Any]:
-    """Execute one explicit process under the unchanged owner, without a timeout.
-
-    The caller supplies authorization/stage, frozen engineering limits and native
-    arguments. Scientific/native completion remains the backend's responsibility.
-    A communication error drains and waits the same healthy owner handle.
-    """
+    """Validate and freeze the original single-process owner request."""
     if not isinstance(window_style, str) or window_style not in {"Hidden", "Normal"}:
         raise ValueError("window_style requires exactly Hidden or Normal")
     inherited_host_token(context)
@@ -135,6 +130,30 @@ def run_observed_process(
                 raise ValueError("immutable inputs require unique absolute frozen file records")
             seen.add(str(path.resolve()).casefold())
         request["immutable_input_records"] = records
+    # Validate JSON before any owner or writer can start.
+    json.dumps(request, ensure_ascii=False, allow_nan=False)
+    return request
+
+
+def run_observed_process(
+    context: ExecutionContext, *, executable: Path, arguments: Sequence[str],
+    working_directory: Path, run_directory: Path, stdout_path: Path, stderr_path: Path,
+    usage_path: Path, role: str, stage: str, run_id: str,
+    limits: Mapping[str, Any] | None, environment: Mapping[str, str] | None = None,
+    immutable_input_records: Sequence[Mapping[str, Any]] = (),
+    window_style: str = "Hidden",
+) -> dict[str, Any]:
+    """Execute one explicit process under the unchanged owner, without a timeout.
+
+    The caller supplies authorization/stage, frozen engineering limits and native
+    arguments. Scientific/native completion remains the backend's responsibility.
+    A communication error drains and waits the same healthy owner handle.
+    """
+    request = _prepare_process_request(context, executable=executable, arguments=arguments,
+        working_directory=working_directory, run_directory=run_directory, stdout_path=stdout_path,
+        stderr_path=stderr_path, usage_path=usage_path, role=role, stage=stage, run_id=run_id,
+        limits=limits, environment=environment, immutable_input_records=immutable_input_records,
+        window_style=window_style)
     return _invoke_process_owner(context, request, 'process_owner.ps1', _interpret_process_result)
 
 

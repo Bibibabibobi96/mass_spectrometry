@@ -2,11 +2,13 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 from msplatform.io.manifest_records import file_record
 
@@ -315,6 +317,7 @@ class TrackingBoundaryTests(unittest.TestCase):
 
 
 class ManagedTransportTests(unittest.TestCase):
+    @mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
     def test_actual_preparation_owner_graph_and_publication_with_inert_native_observations(self):
         import os
         from dataclasses import replace
