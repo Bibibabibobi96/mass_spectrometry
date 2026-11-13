@@ -385,6 +385,24 @@ accepted equivalent 5 mm and 0.005 m settings and rejected 7 mm. Material,
 selection, tensor and study checks remain active. This performs no solve and
 does not establish mesh or field convergence.
 
+### Preserve a computed model before metadata readback
+
+Save a separate MPH immediately after a successful study run, before dataset
+creation or solution getters that can fail. COMSOL 6.4 supports
+`mphsave(model, rawPath, 'copy', 'on')`; the official
+[loading and saving guide](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_model.6.07.html)
+(checked 2026-11-14) documents copy semantics. Keep the subsequent final save
+separate so a partial final write cannot replace the earlier evidence. Account
+for both files in capacity, preserve original errors, and qualify neither file
+solely because it exists.
+
+The Assembly case serialized the valid DOF count as `5.830174E+6`. JSON readers
+may decode this as an integer-valued float. Validate a positive finite integral
+number, rejecting booleans, fractions and nonfinite values; do not require an
+integer token or apply a tolerance. The retained
+[cold recovery](../../integrations/docs/INTEGRATION.md#current-stationary-field-evidence)
+verified the saved solution without another Compute or model save.
+
 ## 数值提取
 
 `mphinterp`适合指定坐标插值，`mpheval`适合在FEM网格实体上求值：

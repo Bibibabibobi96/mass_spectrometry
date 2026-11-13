@@ -91,6 +91,35 @@ and hmax probe remain retained. This is
 native model preparation evidence, not a solved field, installed-model acceptance,
 field convergence, particle flight or scientific qualification.
 
+### Stationary workpoints and read-only recovery
+
+`msplatform.backends.comsol.assembly_field_solution.solve_stationary` consumes
+that verified unsolved model, explicit `{"kind": "comsol_stationary_default"}`
+solver numerics and a `solve_assembly_stationary` engineering policy. Its existing
+owner requests one Compute and an independent cold reopen. It saves a separate
+raw MPH immediately after Compute, before dataset or metadata readback, and then
+saves the final solution MPH. Both files currently remain retained; the declared
+capacity must include both. A failure preserves actual existing models and small
+reports as unqualified evidence under the original failed status.
+
+`recover_stationary(failed_manifest_record, selected_output=output_record,
+context=context)` accepts an explicitly selected, manifest-bound computed model
+from a stopped failed producer. It requires a verified prepared source, successful
+Compute writer and confirmed subsequent writer exits and releases. A new managed
+run cold-verifies the saved physics, selections, study, solution and dataset with
+zero Compute or save. It publishes a `field_solution` borrowing that model as a
+verified input; it does not rewrite the failed run or copy the large MPH. Missing
+datasets and incompatible or changed sources refuse. The corresponding engineering
+policy key is `recover_assembly_stationary`.
+
+Native evidence and the retained numerical and engineering limits are recorded in
+the [integration state](../../integrations/docs/INTEGRATION.md#current-stationary-field-evidence).
+This is one stationary workpoint, not a dynamic response basis or SIMION FieldBundle.
+Ordinary installation, field/domain/grid convergence and complete flight remain open.
+Capacity protection is not transitive: a later managed consumer of a borrowed model
+must explicitly protect both the field-product manifest and its recorded physical
+model producer, and use the existing immutable-input guard during consumption.
+
 ## 正式启动入口
 
 `../../src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根

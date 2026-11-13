@@ -257,6 +257,36 @@ and hmax probe remain retained.
 The model stage has not yet received ordinary installed acceptance; the prior
 installed geometry result does not cover it. No field solution or scientific
 qualification is claimed by these model receipts.
+
+#### Current stationary field evidence
+
+The controlled 50-group Assembly used the same explicit geometry, voltages,
+relative permittivity, exterior potential, automatic mesh level 9 and electrode
+`hmax=5 mm`; these are diagnostic inputs, not platform defaults or convergence
+qualification. [The first field run](../../../artifacts/projects/instrument_assembly/runs/20261114_033547__sim__comsol__assembly-field-22335b1f7b69/summary.json)
+completed its native Compute and saved raw and final MPH files, then FAILED at
+Python readback because MATLAB encoded the integral 5,830,174 DOFs in scientific
+notation. Its original failed status, reports and both files remain unchanged.
+Guarded wall time was 466.228 seconds. Observed process-tree peak was
+13,732,384,768 bytes, exceeding its original 8-GiB engineering estimate; that
+warning remains recorded. Raw and final payloads total 2,467,595,550 bytes.
+
+[A new cold recovery](../../../artifacts/projects/instrument_assembly/runs/20261114_041514__analysis__comsol__stationary-recovery-249b722d0ca9/summary.json)
+passed in 73.972 guarded seconds, with writers stopped and source guards unchanged.
+It read the same final MPH, checked all frozen bindings and the nonempty stationary
+solution/dataset, and published a `field_solution` with zero Compute and zero save.
+Its model member is the original file under explicit source protection, not a copy
+or a promotion of the failed run. The new read-only engineering profile declared
+16 GiB process memory, 8 GiB transient/retained files, 4 GiB minimum available RAM,
+3600 seconds and zero retries; global capacity policy remained unchanged.
+
+Source and real-owner synthetic tests cover failure evidence, cold reopening,
+borrowed-product publication and tampering refusal before process launch. They
+do not replace native evidence. The normal post-fix Compute/reopen pair has not
+been repeated merely to relabel the failed carrier run. Dynamic RF/pulse bases,
+scalar export, SFI coupling, convergence, continuous flight, ordinary installation
+and full Repository/performance acceptance remain open.
+
 The current shared physical-member traversal is owned by
 `msplatform.components.geometry_members`; CAD and COMSOL consume that same
 provider-aware implementation. Neutral Assembly data does not import provider
