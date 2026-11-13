@@ -280,6 +280,19 @@ or a promotion of the failed run. The new read-only engineering profile declared
 16 GiB process memory, 8 GiB transient/retained files, 4 GiB minimum available RAM,
 3600 seconds and zero retries; global capacity policy remained unchanged.
 
+The two historical `owner_authority_0` records bind the same external Python
+path to different source bytes: failed Compute records 15,536 bytes / SHA-256
+`390fdae8c4525c0892822968fe2397234861adf2b5da5c1692ee79ae6b1cf4e7`,
+while successful recovery records 28,701 bytes /
+`338da85aac1427ff5a787b8eecf7fc3b796a3aa6e6bb4b6d50c78384f48e57e2`.
+The exact older bytes remain preserved separately. Restoring them at that shared
+path would invalidate the recovery's binding, so neither historical manifest nor
+the shared source is rewritten to force retirement. Both MPH outputs remain
+retained; safe public retirement of the raw checkpoint is still unresolved.
+The newer owner implementation freezes its verified action source in the run's
+owned inputs before execution. That prospective fix does not repair these older
+identities or promote their scientific qualification.
+
 Source and real-owner synthetic tests cover failure evidence, cold reopening,
 borrowed-product publication and tampering refusal before process launch. They
 do not replace native evidence. The normal post-fix Compute/reopen pair has not
