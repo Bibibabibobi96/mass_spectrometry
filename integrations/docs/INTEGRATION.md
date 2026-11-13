@@ -557,6 +557,19 @@ resource warning; all writers stopped and failed finalization completed. Clearin
 solution data is not a demonstrated fix. The configured route references iterative
 CG; inactive direct/coarse nodes alone do not identify the executed solver path.
 No valid refined field or convergence result was produced.
+The fresh-sequence successor `20261113_182136__sim__comsol__basis-723d2babb47c`
+failed before Compute: the diagnostic called `oldSol.detach('std1')`, but the
+installed COMSOL 6.4 Java interface requires zero-argument `detach()`.
+The mesh rebuild returned before that call; no fresh sequence, precompute report,
+new MPH or solution marker was produced. The wrapper recorded 422.396 seconds,
+confirmed stopped writers and a released host lease. This wiring failure does
+not explain the preceding solver failures. The corrected call is prepared but
+unrun; scientific geometry, inputs and budgets remain unchanged.
+The first N=1 scalar calibration, `20261113_185218__analysis__simion__scalar-cal-d7327527d1cc`,
+also stopped before Fly: its workbench assertion rejected the toy's assumed native
+rotation convention. The process exited one, writers stopped and its host lease
+released. No field/force calibration or expected-mask failure was observed; the
+negative owner has not been launched. The SFI instrument was not changed.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

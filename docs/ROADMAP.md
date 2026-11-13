@@ -201,8 +201,8 @@ z=0.10/0.19 mm queried slot 4 with zero final gradient, while z=0.21 mm queried
 slot 3 with a nonzero pulse-adjusted gradient. These are raw GU callback queries,
 not calibrated world fields or accepted particle states. All observers remain
 INCONCLUSIVE because six phase/pulse buckets were not covered. Full-domain coupling,
-convergence, the original N=100 flight and the separate full installation-parent
-failure remain open. Original point/error records and protected assets stay intact.
+convergence and the original N=100 flight remain open. Original point/error
+records and protected assets stay intact; the installation successor is scoped below.
 The separate local Changed candidate `v87-ci-regressions-main-root-r2` failed the
 full ordinary-install parent after 929.635 s: an IP-reader child exited nonzero
 with empty stdout/stderr. Its original return code, PID and case were not retained;
@@ -211,9 +211,16 @@ The diagnostic-only successor retains all twelve reader cases, exact missing-mod
 rejection and input immutability, adds faulthandler/startup identity and parent
 launcher context, and preserves the original 30-second kill/drain/rethrow behavior.
 Copied-installed fixtures and inert empty-failure/timeout checks passed; independent
-read-only review found no blocker. The full parent still needs a frozen-version rerun;
-neither this diagnostic change nor the earlier remote Changed success at `097cf39f`
-(run `43395020909`, Repository skipped) explains or closes this local failure.
+read-only review found no blocker. At `a5f21f94`, the original full parent passed
+in 992.550 test seconds (996.870 guarded wall), including both IP-reader probes;
+all 2,918 source records, HEAD/status/index stayed unchanged and the lease released.
+The original test now passes at this successor, but the earlier crash remains
+unexplained. This legacy harness reinstalls the rebuilt wheel into the same venv;
+it is not independent-environment L3 acceptance. A separate fresh-venv correction
+is prepared, unrun. The 15-minute budget remains open even for this parent alone.
+GitHub Changed at `097cf39f` (run `43395020909`) and `5bcd9b58` (run `43405061295`)
+succeeded with Repository skipped; neither establishes local crash root cause or
+final Repository/native qualification.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.
@@ -353,7 +360,7 @@ status table or a promise to preserve each historical workflow as a permanent pa
 | IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
 | Native execution path projection/context | `execution.run_paths` and its selected installed/frozen PowerShell resource; actual native consumers | Root projection/context bodies retired; explicit execution roots, canonical identity, shared ledger and existing junction/writer guards retained. Repository DEV root discovery remains outside the package. No new native or general historical-path portability claim. |
 | Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration and broader native seed/reopen qualification stay OPEN; the selected four-slot unsolved build and reopen are recorded above. |
-| Withdrawn local frontend; retained initial-state CSV | Local exclusive preparation/runtime/policies/resources/tests await removal; `backends.simion.source.load_initial_state` remains where actual retained consumers require it | User withdrawal is not PASS. Check SFI/IP/shared consumers before removing mixed resources; historical inputs and results remain unchanged. |
+| Withdrawn local frontend and cooled products; retained shared source support | Exclusive product code, recipes and policies were withdrawn; independently used shared resources, initial-state reader and SFI/IP functionality remain | Withdrawal is a scope decision, not scientific acceptance. Legacy shared-resource labels and the distinct MR IP/prism study are not the retired product; preserve historical records and verify installed/frozen closure separately. |
 | Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
 | MP-to-IP preparation | `workflows.multipole_ip.prepare` and `backends.simion.rf_observations`; active callers/frozen providers migrated, old Python bridge/schema retired | Ordinary-install preparation and real-owner software checks delivered; IP flight/native and remaining interface workflows stay OPEN |
 | Dual-cone SIMION input preparation | `backends.simion.dual_cone_transport` and canonical source serializers; Program resource/callers migrated, old preparation/source/Program copies retired | Ordinary installation and explicit observation cadence delivered; actual seven-electrode field/ion-flight integration stays OPEN |
