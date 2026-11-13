@@ -30,7 +30,7 @@ def plan_fields_execution(model, *, numerics: dict, reuse_fields_reference=None)
     closure, and builds/reopens the new run's field workbench. It is not whole-run
     zero-native reuse. Reference validation belongs to the admitted action.
     """
-    if model_geometry(model).frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}:
+    if model_geometry(model).frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}:
         from .rf_field_execution import plan_rf_fields
         return plan_rf_fields(model, numerics=numerics, reuse_fields_reference=reuse_fields_reference)
     if not isinstance(numerics, dict) or 'downstream_convergence_v' not in numerics:
@@ -122,7 +122,7 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
     if source_file is None or Path(source_file).resolve() != Path(materializer_record['path']).resolve():
         raise ValueError('field payload materializer source differs from its bound record')
     source = load_field_model(model_reference)
-    if model_geometry(source.model).frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}:
+    if model_geometry(source.model).frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}:
         from .rf_field_execution import execute_rf_fields
         return execute_rf_fields(session, source=source, numerics=numerics, limits=limits,
             materialize_geometry=materialize_geometry, materializer_record=materializer_record,

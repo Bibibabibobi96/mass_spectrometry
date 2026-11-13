@@ -137,3 +137,30 @@ def resolve_assembly_interface(
                    extraction_exit=_extraction_exit_port(native_projection)),
         component_electrodes=[dict(component_electrode_id=item["electrode_id"], role=item["name"],
                                    electrical_group_id=item["electrode_id"]) for item in electrodes])
+
+
+def build_assembly_interface(selected: dict[str, Any], *, geometry_profile_id: str | None = None) -> dict[str, Any]:
+    """Publish schema 3 from the complete explicitly selected physical projection."""
+    from msplatform.contracts.machine_contracts import validate_schema
+
+    if geometry_profile_id is not None:
+        raise ValueError("IP provider uses the explicit selected physical design")
+    if (not isinstance(selected, dict) or selected.get("schema_version") != 1
+            or type(selected.get("schema_version")) is not int
+            or selected.get("role") != "ip_legacy_selected_physical_design"):
+        raise ValueError("IP interface requires the selected physical design")
+    legacy = resolve_assembly_interface(selected["projection"])
+    expected = ["guide_positive", "guide_negative", "hp_y_rf", "hp_z_rf", "lp_pull",
+                "lp_push", "lp_side_upper", "lp_side_lower", "hp_corner_auxiliary",
+                "lp_outer_auxiliary", "lp_inner_auxiliary", "entrance_lens", "exit_lens",
+                "lp_commonmode_shield", "hp_commonmode_shield"]
+    rows = legacy["component_electrodes"]
+    if [(row["component_electrode_id"], row["role"]) for row in rows] != list(enumerate(expected, 1)):
+        raise ValueError("IP interface requires all 15 distinct physical electrode groups")
+    result = dict(schema_version=3, role=legacy["role"], project_id=legacy["project_id"],
+                  variant_id=legacy["variant_id"], geometry_profile_id=None,
+                  local_frame_id=legacy["local_frame_id"], length_unit=legacy["length_unit"],
+                  ports=legacy["ports"],
+                  component_electrodes=[dict(electrode_group_id=name, role=name) for name in expected])
+    validate_schema(result, "component_geometry_interface_v3.schema.json")
+    return result

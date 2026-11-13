@@ -68,6 +68,8 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
+    if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry"}:
+        return _plan_joint_geometry_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}:
         return _plan_rf_geometry_build(compiled, root, seed_record, path_resource)
     domains = compiled.frontend_geometry["numerical_domains"]
@@ -144,6 +146,95 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
                            tuple(operations),outputs)
 
 
+def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
+    """Use the existing geometry owner for explicit joint physical assets."""
+    geometry = compiled.frontend_geometry
+    rf_ip = geometry["role"] == "simion_rf_ip_geometry"
+    names = list(compiled.frontend_gems)
+    count = 1 if rf_ip else 3
+    if len(names) != count or (seed_record.get("bytes"), str(seed_record.get("sha256", "")).lower()) != STRUCTURAL_SEEDS[count]:
+        raise ValueError("joint geometry requires the exact asset count and reviewed structural seed")
+    _absolute(Path(seed_record["path"]))
+    if rf_ip:
+        from .geometry import _numerical_box
+        domain = geometry["parent_domain"]
+        box, dimensions = _numerical_box(domain["pa_bounds_mm"], domain["cell_mm_xyz"])
+        domains = {"parent": dict(dimensions=dimensions, cell_mm_xyz=domain["cell_mm_xyz"],
+                   instance_origin_mm={a: box[a+"_min"] for a in "xyz"})}
+        if names != ["parent"]:
+            raise ValueError("RF–IP requires exactly its parent geometry asset")
+    else:
+        domains = geometry["numerical_domains"]
+    samples = geometry.get("raw_physical_samples")
+    if set(domains) != set(names) or not isinstance(samples, Mapping) or set(samples) != set(names):
+        raise ValueError("joint geometry requires represented samples for every exact asset")
+    materializations, operations, instances = {}, [], []
+    for index, name in enumerate(names, 1):
+        domain = domains[name]
+        rows = samples[name]
+        if not isinstance(rows, list) or not rows or not any(row.get("metal") is False for row in rows):
+            raise ValueError("joint geometry requires explicit represented metal and vacuum samples")
+        if not any(row.get("metal") is not False and type(row.get("electrode_id")) is int and row["electrode_id"] > 0 for row in rows):
+            raise ValueError("joint geometry requires a positive physical metal sample")
+        if rf_ip:
+            allowed = {value for mapping in geometry["electrode_bindings"].values() for value in mapping.values()}
+        else:
+            allowed = set(geometry["electrode_bindings"][geometry["asset_components"][name]].values())
+        if any(type(value) is not int or value <= 0 for value in allowed):
+            raise ValueError("joint geometry mappings require positive native electrode IDs")
+        sampled = set()
+        for row in rows:
+            gu = row.get("gu")
+            if (not isinstance(gu, list) or len(gu) != 3 or any(type(v) is not int or v < 0 or v >= domain["dimensions"]["n"+a] for v,a in zip(gu,"xyz",strict=True))):
+                raise ValueError("joint geometry witness grid coordinate differs")
+            if row.get("metal") is not False:
+                eid = row.get("electrode_id")
+                if type(eid) is not int or (eid not in allowed and not (rf_ip and eid == 0)):
+                    raise ValueError("joint geometry sample has undeclared native electrode ID")
+                if eid > 0: sampled.add(eid)
+        if rf_ip and sampled != allowed:
+            raise ValueError("RF–IP witnesses must cover all physical groups")
+        zero = [row for row in rows if row.get("electrode_id") == 0]
+        if (rf_ip and (len(zero) != 1 or zero[0].get("metal") is not True or zero[0].get("label") != "declared_grounded_pa_face" or zero[0].get("gu") != [0, 0, 0])) or (not rf_ip and zero):
+            raise ValueError("numeric zero is reserved for the explicit RF–IP grounded PA face")
+        grid = dict(domain["dimensions"], **{"d"+a+"_mm":domain["cell_mm_xyz"][a] for a in "xyz"})
+        raw = root/"simion/geometry"/(name+".pa#")
+        surface, witnesses = raw.with_suffix(".pa-surf"), root/"results"/(name+"_surface.csv")
+        gem, audit = root/"inputs"/(name+".gem"), root/"inputs"/(name+"_build.lua")
+        materializations[str(gem)] = compiled.frontend_gems[name]
+        materializations[str(audit)] = "return "+lua_value(dict(schema_version=1, role="simion_frontend_raw_geometry",
+            domain_id=name, gem=str(gem), output=str(raw), grid=grid, physical_samples=rows,
+            fractional_surface=str(surface), surface_witnesses=str(witnesses)))+"\n"
+        operations.append(_operation("geometry_"+name, "prepare",
+            ["lua", str(native_resource_path("build_frontend_geometry.lua")), str(audit)],
+            [str(raw), str(surface), str(witnesses)], "BUILD_GEOMETRY=PASS ROLE="+name))
+        if rf_ip:
+            rotation = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
+            placement = dict(**{a+"_mm":domain["instance_origin_mm"][a] for a in "xyz"},
+                             az_deg=0.,el_deg=0.,rt_deg=0.,scale=1.)
+        else:
+            transform = geometry["asset_poses"][name]
+            rotation = transform["rotation"]
+            placement = rigid_iob_placement(transform, origin_mm=[domain["instance_origin_mm"][a] for a in "xyz"])
+        instances.append(dict(role=name, instance_index=index, priority_number=index, path=str(raw),
+            fractional_surface=str(surface), surface_witnesses=str(witnesses), grid=grid,
+            physical_samples=rows, rotation=rotation, placement=placement))
+    control = root/"inputs/no_particles.fly2"
+    materializations[str(control)] = render_restart_fly2([])
+    seed = root/"simion/geometry/iob_seed"/(str(count)+"_instance_seed.iob")
+    iob, spec = root/"simion/geometry/geometry.iob", root/"inputs/geometry_iob.lua"
+    role = "rf_ip_geometry_iob_build" if rf_ip else "oa_mr_geometry_iob_build"
+    marker = "RF_IP_GEOMETRY_IOB" if rf_ip else "OA_MR_GEOMETRY_IOB"
+    materializations[str(spec)] = "return "+lua_value(dict(schema_version=1, role=role, instances=instances,
+        seed_iob=str(seed), output_iob=str(iob), empty_particle_control=str(control),
+        bootstrap_paths=[str(seed.parent/f"iob_seed_placeholder_{i:02d}.pa0") for i in range(1,count+1)]))+"\n"
+    for mode in ("build_geometry", "verify_geometry"):
+        operations.append(_operation(mode,"prepare",["lua",str(native_resource_path("build_geometry_iob.lua")),
+            str(spec),mode,str(path_resource)], [str(iob),str(iob.with_suffix(".fly2"))] if mode=="build_geometry" else [],
+            marker+("_REOPEN" if mode=="verify_geometry" else "")+"=PASS"))
+    outputs = tuple(dict.fromkeys(path for operation in operations for path in operation["outputs"]))
+    return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),tuple(operations),outputs)
+
 def _plan_rf_geometry_build(compiled, root, seed_record, path_resource):
     """Use the same native owner and IOB transport for independent RF arrays."""
     geometry = compiled.frontend_geometry
@@ -205,7 +296,8 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
 
     compiled = model_geometry(model)
     root = _native_ascii(run_directory)
-    independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}
+    joint_ip = compiled.frontend_geometry.get('role') == 'simion_rf_ip_geometry'
+    independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}
     expected = (set(compiled.frontend_geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *compiled.frontend_geometry['numerical_domains']})
     if set(geometry_assets) != expected:
@@ -237,6 +329,8 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     native = dict(configuration=str(configuration), report=str(readback),
         consumer=str(sources/'model_drive.lua'), rf_drive=str(sources/'rf_drive.lua'),
         pulse_hook=str(sources/'single_flight_pulse_hook.lua'), waveforms=str(sources/'voltage_waveforms.lua'))
+    if joint_ip:
+        native['native_drive'] = str(sources/'native_drive.lua')
     original = projection.materializations[str(spec_path)]
     if not original.startswith('return '):
         raise ValueError('canonical IOB specification representation differs')
@@ -247,7 +341,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     native_operations = tuple(_operation(mode, 'prepare', ['lua', str(native_resource_path('build_model_iob.lua')),
         str(spec_path), mode, str(_native_ascii(native_path_resource))],
         [str(root/'simion/geometry/geometry.iob'), str(root/'simion/geometry/geometry.fly2')] if mode == 'build_model' else [str(readback)],
-        ('INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
+        ('RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
         for mode in ('build_model', 'verify_model'))
     materialization = dict(operation_id='materialize_geometry', role='GATE', stage='prepare',
         action='explicit_geometry_payload_callback', outputs=[row['destination'] for row in copies])

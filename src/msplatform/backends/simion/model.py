@@ -24,6 +24,7 @@ from .tof_geometry import resolve_physical_geometry
 
 
 RF_PHYSICS = dict(field_model='external_electrostatic_linear', boundary_policy='native_zero_neumann')
+RF_IP_PHYSICS = dict(field_model='external_electrostatic_linear', boundary_policy='grounded_pa_faces')
 
 PHYSICS = dict(field_model='external_electrostatic_linear', boundary_policy='native_zero_neumann',
     pulse_voltage_policy_id='all_accelerator_electrodes_zero_before_pulse_v1')
@@ -237,9 +238,86 @@ def _validate_oa_drive(drive: Mapping[str, Any], mappings: Mapping) -> None:
     _validate_timing(drive, requires_pulse=pulsed)
 
 
+def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[str, dict], *,
+                         drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
+    """Bind one explicit joint schedule to the exact public zero-epoch clock."""
+    from msplatform.contracts.clock import require_same_clock
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+    from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+
+    geometry = compiled.frontend_geometry
+    plan, maps = geometry['composition_plan'], geometry['electrode_bindings']
+    selected = plan['scope']['instance_ids']
+    rf = [n for n in selected if plan['components'][n]['project_id'] == 'rf_multipole_ion_optics']
+    ip = [n for n in selected if plan['components'][n]['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+    if len(selected) != 2 or len(rf) != 1 or len(ip) != 1 or set(components) != set(selected):
+        raise ValueError('joint model requires exact RF and IP providers')
+    rf, ip = rf[0], ip[0]
+    if not isinstance(physics, Mapping) or dict(physics) != RF_IP_PHYSICS or geometry.get('boundary') != 'grounded_pa_faces':
+        raise ValueError('RF–IP model requires its actual grounded-face BVP')
+    _exact(drive, {'groups', 'clock', 'ip_schedule'}, 'RF–IP drive')
+    _validate_timing(drive, requires_pulse=False)
+    schedule = drive['ip_schedule']
+    _exact(schedule, {'baseline', 'native_operating_point', 'clock'}, 'IP schedule authority')
+    _exact(schedule['clock'], {'clock_epoch_id', 'authority_sha256'}, 'IP schedule clock')
+    require_same_clock(ClockIdentity(**dict(schedule['clock'])), ClockIdentity(
+        drive['clock']['clock_epoch_id'], drive['clock']['authority_sha256']))
+    baseline, point = schedule['baseline'], schedule['native_operating_point']
+    if type(baseline['clock']['epoch_us']) not in (int, float) or baseline['clock']['epoch_us'] != 0:
+        raise ValueError('IP schedule requires the existing zero instrument epoch')
+    choice = baseline.get('physical_design_selection')
+    if not isinstance(choice, dict) or set(choice) != {'native_grid_mm', 'native_aux_segments'}:
+        raise ValueError('IP schedule requires its explicit selected geometry authority')
+    actual = select_legacy_physical_design(baseline, selection_grid_mm=choice['native_grid_mm'],
+                                          auxiliary_segments=choice['native_aux_segments'])
+    if actual != components[ip] or _content_sha256({'baseline':baseline}) != compiled.provider_content_identities[ip]['source_content_sha256']:
+        raise ValueError('IP schedule baseline differs from selected physical authority')
+    for name in selected:
+        identity = compiled.provider_content_identities[name]
+        if identity['resolved_content_sha256'] != _content_sha256(components[name]) or identity['component_interface_sha256'] != _content_sha256(plan['components'][name]):
+            raise ValueError('joint model provider identity differs')
+    point_fields = set('schema_version capture_hp_offset_v capture_lp_offset_v guide_offset_v hp_aux_capture_relative_v hp_aux_transfer_relative_v hp_transfer_offset_v lp_outer_relative_v lp_inner_relative_v entrance_lens_v end_lens_relative_v extraction_push_relative_v extraction_pull_relative_v extraction_shield_relative_v lift_v'.split())
+    _exact(point, point_fields, 'IP native operating point')
+    if type(point['schema_version']) is not int or point['schema_version'] != 1:
+        raise ValueError('unsupported IP native operating point')
+    for key in point_fields - {'schema_version'}: _finite(point[key], 'IP operating point '+key)
+    stage = baseline['schedule']
+    if not (0 < stage['capture_end_us'] < stage['transfer_end_us'] < stage['lift_end_us']
+            == stage['extraction_start_us'] < stage['terminal_us']):
+        raise ValueError('IP stage schedule differs from the existing ordered policy')
+    if _finite(baseline['electric']['rf_peak_to_peak_v'], 'IP RF amplitude') <= 0 or _finite(
+            baseline['electric']['guide_rf_peak_to_peak_v'], 'IP guide RF amplitude') <= 0:
+        raise ValueError('IP RF and guide amplitudes must be positive')
+    timing = derive_native_timing(baseline)
+    expected = {rf: scientific_multipole_drive(components[rf], maps[rf])}
+    _validate_groups(drive['groups'], expected)
+    electrodes = components[ip]['projection']['electrodes']
+    if len(electrodes) != 15 or set(maps[ip]) != {row['name'] for row in electrodes}:
+        raise ValueError('IP scientific groups differ from selected metal')
+    rows = [dict(instance_id=rf, electrode_group_id=group,
+                 native_targets=[dict(domain='parent', electrode_id=maps[rf][group])], **value)
+            for group, value in drive['groups'][rf].items()]
+    rows += [dict(instance_id=ip, electrode_group_id=row['name'], kind='ip_schedule',
+                  schedule_index=row['electrode_id'], native_targets=[dict(domain='parent', electrode_id=maps[ip][row['name']])])
+             for row in electrodes]
+    if len({row['native_targets'][0]['electrode_id'] for row in rows}) != len(rows):
+        raise ValueError('RF–IP model native labels are ambiguous')
+    frozen = dict(baseline=copy.deepcopy(baseline), native_operating_point=copy.deepcopy(point),
+                  native_timing=timing, clock=copy.deepcopy(schedule['clock']))
+    full_drive = dict(groups=copy.deepcopy(drive['groups']), clock=copy.deepcopy(drive['clock']), ip_schedule=frozen)
+    document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
+                    source_status='not_requested', native_frame_id=plan['assembly_frame_id'],
+                    geometry=asdict(compiled), components_resolved=copy.deepcopy(dict(components)),
+                    drive=full_drive, physics=copy.deepcopy(dict(physics)), native_drive_rows=rows)
+    document = json.loads(json.dumps(document, sort_keys=True, allow_nan=False))
+    document['model_identity_sha256'] = _content_sha256(document)
+    return CompiledPreparedModel(json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False))
+
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
+    if compiled.frontend_geometry.get('role') == 'simion_rf_ip_geometry':
+        return _compile_rf_ip_model(compiled, components_resolved, drive=drive, physics=physics)
     multipoles, tof, topology = _authorities(compiled, components_resolved)
     if tof is None:
         independent_oa = compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry'
@@ -333,6 +411,8 @@ def render_model_configuration(model: CompiledPreparedModel) -> str:
         groups=document['native_drive_rows'])
     if 'native_frame_id' in document:
         configuration['native_frame_id'] = document['native_frame_id']
+    if 'ip_schedule' in document['drive']:
+        configuration['ip_schedule'] = copy.deepcopy(document['drive']['ip_schedule'])
     if 'pulse' in document['drive']:
         configuration['pulse'] = document['drive']['pulse']
     return 'return ' + lua_value(configuration) + '\n'
@@ -341,6 +421,8 @@ def render_model_configuration(model: CompiledPreparedModel) -> str:
 def model_geometry(model: CompiledPreparedModel, *, downstream_drive: bool = False) -> CompiledSimionGeometry:
     """Restore the typed geometry view from the verified portable JSON snapshot."""
     document = require_prepared_model(model)
+    if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
+        raise ValueError('RF–IP continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry':
         raise ValueError('independent RF fields/tracking require a separately validated fractional field protocol')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_oa_geometry':

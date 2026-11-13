@@ -4,7 +4,8 @@ local directory=assert(source:match('^(.*)/'))
 local native_path=assert(loadfile(assert(arg[3],'native path resource required')))()
 local spec=dofile(native_path(assert(arg[1],'model IOB specification required')))
 local mode=assert(arg[2],'model operation required')
-local marker=spec.role=='dual_cone_geometry_iob' and 'DUAL_CONE_MODEL_' or
+local marker=spec.role=='rf_ip_geometry_iob_build' and 'RF_IP_MODEL_' or
+  spec.role=='dual_cone_geometry_iob' and 'DUAL_CONE_MODEL_' or
   spec.role=='independent_oa_geometry_iob_build' and 'INDEPENDENT_OA_MODEL_' or
   spec.role=='independent_rf_geometry_iob_build' and 'INDEPENDENT_RF_MODEL_' or 'SINGLE_REFLECTION_MODEL_'
 assert(mode=='build_model' or mode=='verify_model','unsupported model operation')
@@ -20,7 +21,8 @@ if mode=='build_model' then
 end
 local config=dofile(spec.model.configuration)
 local consumer=dofile(spec.model.consumer).new(config,dofile(spec.model.rf_drive),
-  dofile(spec.model.pulse_hook),dofile(spec.model.waveforms))
+  dofile(spec.model.pulse_hook),dofile(spec.model.waveforms),
+  spec.model.native_drive and assert(loadfile(spec.model.native_drive)) or nil)
 local description=consumer.describe()
 assert(description.model_identity_sha256==config.model_identity_sha256,'model consumer identity differs')
 local times,seen={0},{[0]=true}
@@ -44,6 +46,11 @@ for _,row in ipairs(description.groups) do
     assert(not bound[key],'model scientific groups alias a native label');bound[key]=true
   end
   if row.kind=='rf' then time(1e6/row.frequency_hz/4);time(1e6/row.frequency_hz/2) end
+end
+if config.ip_schedule then
+  local s=config.ip_schedule.baseline.schedule
+  local n=config.ip_schedule.native_timing
+  for _,value in ipairs({s.capture_end_us,s.transfer_end_us,s.lift_end_us,n.primary_quench_us,n.pulse_start_us}) do time(value) end
 end
 if config.pulse and config.pulse.mode=='timed' then
   time(config.pulse.time_us);time(config.pulse.time_us+config.pulse.width_us)

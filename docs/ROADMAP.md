@@ -172,6 +172,18 @@ scientific qualifications. SFI preparation/pulse, field planning, downstream pub
 workbench runtime, collection, continuation planning and their source/result adapters are installed;
 remaining PowerShell native orchestration and other workflows' legacy seed closure still require migration. Explicit deployment
 capacity policy and selected failed-output preservation use the existing owner and ledger.
+Complete RF–IP and OA–MR geometry now have public compiler/owner routes; RF–IP
+also has a source-free model and one-parent fractional-field software path with
+the original fifteen-group IP law and explicit shared zero-epoch authority.
+The same candidate passed 124 affected tests / 314 records and targeted direct-wheel
+and sdist-rebuilt-wheel consumers (522 runtime payloads per arm; 441.107 seconds).
+OA/MR JSON-stable projections preserve existing geometry bytes and full tamper
+checks. Native joint construction/refinement, OA–MR models and fields, RF–IP/other
+named complete continuous consumers, HS1 and final installation/Repository remain
+open; these software stages do not retire the still-needed segmented producer.
+The detector callback diagnostic was refused before any native operation at the
+700 GiB capacity target. The user retained that target; owner-controlled retirement
+review continues, preserving the original point/error records and protected assets.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.

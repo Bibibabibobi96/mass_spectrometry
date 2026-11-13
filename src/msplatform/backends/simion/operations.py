@@ -50,7 +50,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
-    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
@@ -113,10 +113,13 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
     values["downstream_specs"] = tuple(values["downstream_specs"])
     compiled = CompiledSimionGeometry(**values)
+    if compiled.frontend_geometry.get("role") == "simion_oa_mr_complete_geometry":
+        raise ContractError("joint geometry has no supported prepared model yet")
+    joint_ip = compiled.frontend_geometry.get("role") == "simion_rf_ip_geometry"
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
-    independent_component = independent_rf or independent_oa
-    required = {"clock", "clock_authority"} | ({"groups"} if independent_oa else set()) | (set() if independent_component else {"pulse"})
+    independent_component = independent_rf or independent_oa or joint_ip
+    required = {"clock", "clock_authority"} | ({"groups"} if independent_oa or joint_ip else set()) | ({"ip_schedule"} if joint_ip else set()) | (set() if independent_component else {"pulse"})
     if (not required <= drive.keys() or set(drive) - required - {"groups"} - ({"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
@@ -141,14 +144,20 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
     epoch_record = file_record((data_root / contract["authority"]["path"]).resolve(), "required_evidence")
     clock_reference = dict(contract=contract_record, authority=epoch_record, data_root=str(data_root))
+    if joint_ip:
+        epoch = json.loads((data_root / contract["authority"]["path"]).read_text(encoding="utf-8-sig"))
+        if type(epoch.get("instrument_time_us")) not in (int, float) or epoch["instrument_time_us"] != 0:
+            raise ContractError("RF–IP requires the existing zero instrument epoch")
     selected = compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]
     components = {name: compiled.components_resolved[name] for name in selected}
     clock = dict(clock_epoch_id=validation["clock_epoch_id"], authority_sha256=validation["authority_sha256"],
                  **dict(drive["clock"]))
-    expanded = (dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
+    expanded = (dict(groups=copy.deepcopy(drive["groups"]), clock=clock, ip_schedule=copy.deepcopy(drive["ip_schedule"])) if joint_ip else
+        (dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
         **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {})) if independent_oa else
         project_resolved_drive(compiled, components, clock=clock,
             **({} if independent_rf else dict(pulse=drive["pulse"]))))
+    )
     if "groups" in drive:
         expanded["groups"] = copy.deepcopy(drive["groups"])
     model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
@@ -279,6 +288,8 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
+    if document["geometry"]["frontend_geometry"].get("role") == "simion_rf_ip_geometry":
+        raise ContractError("RF–IP continuous tracking is not supported")
     packet = particles.to_dict() if isinstance(particles, ReleaseRealization) else copy.deepcopy(particles)
     birth_authority = None if birth_source_authority is None else validate_birth_authority(birth_source_authority, packet)
     clocks = {name: dict(source.data_records[name], path=str(source.data_path(name)))
@@ -359,6 +370,13 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
         raise ContractError("SIMION geometry compilation requires an explicitly assembled design")
     plan = assembly.composition_plan
     selected = plan["scope"]["instance_ids"]
+    projects = [plan["components"][name]["project_id"] for name in selected]
+    if len(projects) == 2 and set(projects) == {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor"}:
+        from .ip_compiler import compile_ip_assembly_geometry
+        return compile_ip_assembly_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
+    if len(projects) == 2 and set(projects) == {"orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"}:
+        from .mr_compiler import compile_complete_mr_geometry
+        return compile_complete_mr_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if selected and all(plan["components"][name]["project_id"] == "rf_multipole_ion_optics" for name in selected):
         return compile_independent_multipoles(
             dict(composition_plan=plan, components_resolved=assembly.components_resolved),

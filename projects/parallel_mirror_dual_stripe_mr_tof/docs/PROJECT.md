@@ -969,8 +969,18 @@ detector and the actual entry aperture remain in the resolved design. The compon
 names do not assert native electrode numbering. The current plan-5 OA-to-MR mechanical
 consumer re-resolves the selected authorities and compares the complete physical geometry;
 plan-3 source and interface interpretation is retained. The backend retains the existing
-OA support and PA placement checks. This mechanical slice does not create a complete native
-electrode-binding artifact or qualify fields, Fly, CAD, historical runs or full MR.
+OA support and PA placement checks. Public backend compilation now produces three
+complete assets for the selected external OA, full analyzer and detector, retaining
+their actual group mappings, poses and geometry witnesses. The external OA is not
+duplicated inside the analyzer. Default legacy GEM output stays byte-identical;
+explicit native-ID mapping does not merge separate physical grounds or cutouts.
+The existing geometry owner plans all three builds and a three-slot save/reopen.
+Ordinary wheel and sdist-rebuilt consumers exercised the real JSON-restored
+Assembly and compared complete geometry/GEM identities; the composed affected
+suite passed 124 tests and 314 successful records. This is software geometry/plan
+evidence: actual native rasterization, complete electrode coverage and fractional
+surface readback remain unverified. OA–MR prepared models, fields and tracking are
+explicitly unsupported here; three independent PAs do not prove field coupling.
 
 Two-zone OA snapshots, including MR's embedded OA geometry, use the shared
 `ClosedTwoZoneGeometry.as_dict()` projection. Rings and grid supports survive JSON

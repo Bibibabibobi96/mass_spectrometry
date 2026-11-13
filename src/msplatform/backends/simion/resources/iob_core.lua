@@ -14,13 +14,19 @@ local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geo
 local component_tracking=spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
 local tracking_role=component_tracking
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
-local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone
-local independent_marker=dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
+local joint_rf_ip=spec.role=='rf_ip_geometry_iob_build'
+local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
+local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr
+assert(not joint_oa_mr or mode=='build_geometry' or mode=='verify_geometry','OA–MR geometry only; model and fields unsupported')
+assert(not joint_rf_ip or mode=='build_geometry' or mode=='verify_geometry' or mode=='build_model' or mode=='verify_model','RF–IP tracking and fields workbench unsupported')
+local independent_marker=joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
   or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances
+assert(not joint_rf_ip or count==1,'RF–IP geometry requires one actual PA instance')
+assert(not joint_oa_mr or count==3,'OA–MR geometry requires three actual PA instances')
 assert(not dual_cone or
   (spec.role=='dual_cone_tracking_iob' and (mode=='build' or mode=='verify')) or
   (spec.role=='dual_cone_geometry_iob' and geometry_only),

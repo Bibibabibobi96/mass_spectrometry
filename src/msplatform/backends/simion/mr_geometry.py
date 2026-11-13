@@ -56,17 +56,18 @@ def _extrude_polygon_bands(x: list[float], polygon: list[list[float]]) -> list[s
     ]
 
 
-def _mirror_lines(resolved: dict[str, object]) -> list[str]:
+def _mirror_lines(resolved: dict[str, object], id_map: Mapping[int, int] | None = None) -> list[str]:
     lines = [
         "  ; Each active mirror electrode has its own CAD 580 x 30-mm bounded aperture.",
         "  ; The aperture terminates before both y ends and does not pass through end plates in z.",
     ]
     for electrode in resolved["mirror_electrodes"]:
+        native_id = electrode["id"] if id_map is None else id_map[electrode["id"]]
         if "polygon_yz_mm" in electrode:
-            lines.extend(_mirror_polygon_lines(electrode, electrode["id"]))
+            lines.extend(_mirror_polygon_lines(electrode, native_id))
             continue
         lines.extend((
-            f"  e({electrode['id']}) {{",
+            f"  e({native_id}) {{",
             f"    {_box(electrode['box'])}",
             f"    notin_inside {{ {_box(electrode['beam_slot'])} }}",
             "  }",
@@ -88,16 +89,26 @@ def _mirror_polygon_lines(solid: dict, electrode_id: int) -> list[str]:
     return [*lines, "  }"]
 
 
-def _mirror_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
+def _mirror_ground_shield_lines(resolved: dict[str, object], id_map: Mapping[int, int] | None = None, shield_ids: tuple[int, int] | None = None) -> list[str]:
     """Emit the CAD-derived inner grounded mirror end plates as shared 0-V ID 15."""
     if resolved.get("mirror_convergence_transform") is not None:
         lines = []
-        for shield in resolved["mirror_ground_shields"]:
-            lines.extend(_mirror_polygon_lines(shield, CENTRAL_GROUND_ELECTRODE_ID))
+        for index, shield in enumerate(resolved["mirror_ground_shields"]):
+            lines.extend(_mirror_polygon_lines(shield, CENTRAL_GROUND_ELECTRODE_ID if shield_ids is None else shield_ids[index]))
         for closure in resolved["mirror_e_closures"]:
-            lines.extend(_mirror_polygon_lines(closure, closure["id"]))
+            lines.extend(_mirror_polygon_lines(closure, closure["id"] if id_map is None else id_map[closure["id"]]))
         return lines
     inner_slot = _box(resolved["mirror_inner_shield_slot"])
+    if shield_ids is not None:
+        lines = []
+        for shield, native_id in zip(resolved["mirror_ground_shields"], shield_ids, strict=True):
+            lines.extend((f"  e({native_id}) {{", f"    {_box(shield['box'])}"))
+            if shield["role"] == "inner_stripe_facing_4mm_slot":
+                lines.append(f"    notin_inside {{ {inner_slot} }}")
+            lines.append("  }")
+        for closure in resolved["mirror_e_closures"]:
+            lines.extend((f"  e({id_map[closure['id']]}) {{", f"    {_box(closure['box'])}", "  }"))
+        return lines
     lines = [
         "  ; CAD inner end plates: Stripe-facing 5-mm shields have 4-mm slots.",
         f"  e({CENTRAL_GROUND_ELECTRODE_ID}) {{",
@@ -112,13 +123,14 @@ def _mirror_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
     return lines
 
 
-def _stripe_lines(resolved: dict[str, object]) -> list[str]:
+def _stripe_lines(resolved: dict[str, object], id_map: Mapping[int, int] | None = None) -> list[str]:
     slot = _box(resolved["stripe_slot"])
     lines = ["  ; Four physical curved Stripe conductors; pairs (11,12) and (13,14) share biases."]
     for electrode in resolved["stripe_electrodes"]:
+        native_id = electrode["id"] if id_map is None else id_map[electrode["id"]]
         lower, upper = electrode["x"]
         lines.extend((
-            f"  e({electrode['id']}) {{",
+            f"  e({native_id}) {{",
             *(f"    {term}" for term in _extrude_polygon_bands([lower, upper], electrode["polygon_yz_mm"])),
             *(f"    {term}" for term in _extrude_polygon_bands([lower, upper], electrode["terminal_polygon_yz_mm"])),
             # SIMION's official ``notin_inside`` preserves CAD-face nodes.
@@ -129,10 +141,11 @@ def _stripe_lines(resolved: dict[str, object]) -> list[str]:
     return lines
 
 
-def _central_ground_lines(resolved: dict[str, object]) -> list[str]:
+def _central_ground_lines(resolved: dict[str, object], id_map: Mapping[int, int] | None = None) -> list[str]:
     """Emit one whole native Foil-2 body minus its two rectangular windows."""
+    native_id = CENTRAL_GROUND_ELECTRODE_ID if id_map is None else id_map[CENTRAL_GROUND_ELECTRODE_ID]
     lines = ["  ; Whole Ion-Foil-2 with native short cubic and planar end features; no added bridges.",
-             f"  e({CENTRAL_GROUND_ELECTRODE_ID}) {{"]
+             f"  e({native_id}) {{"]
     for body in resolved["central_ground_electrodes"]:
         lines.extend(f"    {term}" for term in _extrude_polygon_bands(body["x"], body["polygon_yz_mm"]))
     lines.extend(f"    notin_inside {{ {_box(slot)} }}" for slot in resolved["central_ground_slots"])
@@ -140,7 +153,7 @@ def _central_ground_lines(resolved: dict[str, object]) -> list[str]:
     return lines
 
 
-def _prism_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
+def _prism_ground_shield_lines(resolved: dict[str, object], id_map: Mapping[int, int] | None = None) -> list[str]:
     """Emit finite-y grounded frames with CAD-audited apertures."""
     lines = [
         "  ; Grounded prism frames retain their CAD finite-y bodies and nested triangular apertures.",
@@ -149,7 +162,8 @@ def _prism_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
         outer = [term for section in shield["body_sections"]
                  for term in _extrude_polygon_bands(section["x"], section["polygon_yz_mm"])]
         aperture = _extrude_polygon_bands(shield["x"], shield["prism_clearance_polygon_yz_mm"])
-        lines.append(f"  e({shield['id']}) {{")
+        native_id = shield["id"] if id_map is None else id_map[shield["id"]]
+        lines.append(f"  e({native_id}) {{")
         lines.extend(f"    {term}" for term in outer)
         lines.append("    notin_inside_or_on {")
         lines.extend(f"      {term}" for term in aperture)
@@ -213,20 +227,34 @@ def ordinary_pa_file_bytes(dimensions: list[int], pitch_mm: list[float]) -> int:
     return header_bytes + math.prod(dimensions) * struct.calcsize("<d")
 
 
-def _analyzer_geometry_lines(resolved: dict[str, object]) -> list[str]:
-    """Return the geometry emitter shared by the global fallback and native corridor."""
+def _analyzer_geometry_lines(resolved: dict[str, object], *, native_group_ids: Mapping[str, int] | None = None) -> list[str]:
+    """Emit the same analyzer solids with optional explicit scientific-group IDs."""
+    id_map = None
+    shield_ids = None
+    if native_group_ids is not None:
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import _component_electrodes, _scientific_groups
+        from .rf_electrode_mapping import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+        electrodes = _component_electrodes(resolved)
+        groups = _scientific_groups(resolved, electrodes)
+        names = [row['electrode_group_id'] for row in groups]
+        if (not isinstance(native_group_ids, Mapping) or set(native_group_ids) != set(names)
+                or any(type(v) is not int or not 1 <= v <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID for v in native_group_ids.values())
+                or len(set(native_group_ids.values())) != len(names)):
+            raise ValueError('MR native IDs must uniquely cover all scientific groups')
+        id_map = {electrode['component_electrode_id']:native_group_ids[group['electrode_group_id']]
+                  for electrode, group in zip(electrodes, groups[:len(electrodes)], strict=True)}
+        shield_ids = (native_group_ids['positive_mirror_ground_shield'], native_group_ids['negative_mirror_ground_shield'])
     lines: list[str] = []
-    lines.extend(_mirror_lines(resolved))
-    lines.extend(_mirror_ground_shield_lines(resolved))
-    lines.extend(_stripe_lines(resolved))
-    lines.extend(_central_ground_lines(resolved))
+    lines.extend(_mirror_lines(resolved, id_map))
+    lines.extend(_mirror_ground_shield_lines(resolved, id_map, shield_ids))
+    lines.extend(_stripe_lines(resolved, id_map))
+    lines.extend(_central_ground_lines(resolved, id_map))
     lines.append("  ; CAD-constrained triangular prism electrodes, emitted after ground bodies.")
     for prism in resolved["prism_electrodes"]:
-        terms = " ".join(
-            term for part in prism["parts"] for term in _extrude_polygon_bands(part["x"], part["polygon_yz_mm"])
-        )
-        lines.append(f"  e({prism['id']}) {{ {terms} }}")
-    lines.extend(_prism_ground_shield_lines(resolved))
+        terms = " ".join(term for part in prism["parts"] for term in _extrude_polygon_bands(part["x"], part["polygon_yz_mm"]))
+        native_id = prism['id'] if id_map is None else id_map[prism['id']]
+        lines.append(f"  e({native_id}) {{ {terms} }}")
+    lines.extend(_prism_ground_shield_lines(resolved, id_map))
     return lines
 
 

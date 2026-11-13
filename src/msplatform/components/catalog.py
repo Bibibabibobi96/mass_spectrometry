@@ -11,6 +11,9 @@ from .model import ResolvedComponent
 
 def _component_interface(provider: str, resolved: dict[str, Any], profile: str | None) -> dict[str, Any]:
     """Derive the public interface from the same complete provider design."""
+    if provider == "dual_pressure_rectilinear_ion_processor":
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import build_assembly_interface
+        return build_assembly_interface(resolved, geometry_profile_id=profile)
     if provider == "parallel_mirror_dual_stripe_mr_tof":
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface
         return resolve_assembly_interface(resolved, geometry_profile_id=profile, schema_version=3)
@@ -51,6 +54,11 @@ def _from_provider(provider: str, resolved: Mapping[str, Any], interface: Mappin
         expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
         if expected["resolved_design"] != design:
             raise ContractError("MR resolved design differs from its explicit source authorities")
+    if provider == "dual_pressure_rectilinear_ion_processor":
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.provider import resolve_component as resolve
+        expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"] )
+        if expected["resolved_design"] != design:
+            raise ContractError("IP resolved design differs from its explicit source authority")
     if provider == "orthogonal_accelerator":
         from msplatform.components.orthogonal_accelerator.provider import resolve_component as resolve
         expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
@@ -83,6 +91,10 @@ def resolve_component(request: Mapping[str, Any]) -> ResolvedComponent:
     provider = request["provider_id"]
     if provider == "parallel_mirror_dual_stripe_mr_tof":
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component as resolve
+        result = resolve(design, geometry_profile_id=profile)
+        resolved, interface = result["resolved_design"], result["assembly_interface"]
+    elif provider == "dual_pressure_rectilinear_ion_processor":
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.provider import resolve_component as resolve
         result = resolve(design, geometry_profile_id=profile)
         resolved, interface = result["resolved_design"], result["assembly_interface"]
     elif provider == "rf_multipole":

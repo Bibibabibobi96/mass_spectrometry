@@ -636,3 +636,28 @@ empty-upstream analyzer, all five diagnostic exporters, source origins and missi
 refusals against the captured software inputs. The coherent prepared analyzer with all
 diagnostics and its native qualification remain OPEN P4; these checks do not establish
 a new HS1 trajectory, GUI result or complete Repository acceptance.
+
+### Complete RF–IP public stage software
+
+The installed component factory accepts an explicit IP baseline with its
+`physical_design_selection`; that selects the existing complete physical CSG, not
+the later parent PA grid. All fifteen IP groups and both real ports remain.
+The public SIMION compiler accepts one complete external RF and one complete IP,
+their explicit connection/poses, parent domain, native mapping, grounded-face
+boundary and fractional representation. It uses the existing geometry owner.
+
+`prepare_model` consumes the explicit RF groups and IP baseline/operating point
+under the same clock identity. It derives the existing native timing and freezes
+the original fifteen-voltage Lua law. The IP path retains its existing zero-epoch
+restriction; another identity with the same numerical zero is not silently joined.
+`solve_fields` routes the single parent through the existing producer-owned
+fractional family, checking every selected physical ID and producer identity.
+The source-free model and field plan do not sample particles or imply a Fly.
+
+The composed software candidate passed 124 affected tests and 314 successful
+records in 279.894 seconds; both ordinary distribution arms passed public
+geometry/model compilation and field planning outside the checkout, with 522
+runtime payloads per arm (441.107 seconds overall). Native geometry/model creation,
+Refine and field readback, continuous HS1 propagation, and complete Repository
+acceptance remain open. RF–IP tracking is explicitly unsupported at this boundary;
+the old segmented producer stays until its genuine continuous replacement passes.

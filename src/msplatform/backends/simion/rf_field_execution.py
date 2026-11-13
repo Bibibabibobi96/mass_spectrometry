@@ -16,7 +16,7 @@ from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import file_record
 from msplatform.results.artifacts import open_artifact
 from .field_closure import data_record
-from .model import model_geometry, require_prepared_model, RF_PHYSICS
+from .model import model_geometry, require_prepared_model, RF_PHYSICS, RF_IP_PHYSICS
 from .model_execution import _clock_reference, _protected_source, _require_materializer
 from .native_io import apply_native_io_mode
 from .resources import native_resource_path
@@ -28,6 +28,8 @@ REPRESENTATION = 'producer_owned_rf_fractional_family'
 def _field_contract(geometry):
     """Select actual produced component semantics; utility Lua report names are legacy."""
     role = geometry.get('role')
+    if role == 'simion_rf_ip_geometry':
+        return 'producer_owned_rf_ip_fractional_family', 'simion_rf_ip_fractional_spatial_identity'
     if role == 'simion_independent_rf_geometry':
         return REPRESENTATION, 'simion_rf_fractional_spatial_identity'
     if role == 'simion_independent_oa_geometry':
@@ -35,13 +37,22 @@ def _field_contract(geometry):
     raise ValueError('independent field families require actual RF or OA PreparedModel geometry')
 
 
+def _domain_labels(geometry, name):
+    if geometry.get('role') == 'simion_rf_ip_geometry':
+        if name != 'parent': raise ValueError('RF–IP field requires the parent domain')
+        labels = [value for mapping in geometry['electrode_bindings'].values() for value in mapping.values()]
+        if len(labels) != len(set(labels)) or any(type(value) is not int or value <= 0 for value in labels):
+            raise ValueError('RF–IP physical native labels differ')
+        return sorted(labels)
+    return sorted(set(geometry['electrode_bindings'][name].values()))
+
 def plan_rf_fields(model, *, numerics: Mapping, reuse_fields_reference=None) -> dict:
     """Select real domain Refine operations, retaining the explicit vendor default."""
     geometry = model_geometry(model).frontend_geometry
     _field_contract(geometry)
-    if require_prepared_model(model)['physics'] != RF_PHYSICS:
+    if require_prepared_model(model)['physics'] != (RF_IP_PHYSICS if geometry.get('role') == 'simion_rf_ip_geometry' else RF_PHYSICS):
         raise ValueError('independent field families require the existing linear external electrostatic physics')
-    names = list(geometry['composition_plan']['scope']['instance_ids'])
+    names = list(geometry['numerical_domains']) if geometry.get('role') == 'simion_rf_ip_geometry' else list(geometry['composition_plan']['scope']['instance_ids'])
     if not isinstance(numerics, Mapping):
         raise ValueError('RF fields require explicit refinement numerics')
     policy = numerics.get('refine_policy')
@@ -87,7 +98,7 @@ def _family_assets(artifact, geometry) -> dict:
     for name, keys in bindings.items():
         if set(keys) != {'carrier', 'family', 'surface_witnesses'} or not isinstance(keys['family'], list):
             raise ValueError('RF field family binding is incomplete')
-        labels = sorted(set(geometry['electrode_bindings'][name].values()))
+        labels = _domain_labels(geometry, name)
         family = [data_record(artifact, key) for key in keys['family']]
         carrier = data_record(artifact, keys['carrier'])
         paths = [Path(row['path']) for row in family]
@@ -207,7 +218,7 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         _copy_records(session, copies, callback=materialize_geometry, operation_id='materialize_geometry')
         for name in graph['numerical_domains']:
             raw = session.run_dir/'simion/fields'/name/(name+'.pa#')
-            labels = sorted(set(geometry['electrode_bindings'][name].values()))
+            labels = _domain_labels(geometry, name)
             paths = [raw.with_suffix(suffix) for suffix in ['.pa#','.pa0','.pa-surf', *('.pa'+str(eid) for eid in labels)]]
             if any(path.exists() for path in paths if path.suffix not in {'.pa#','.pa-surf'}):
                 raise FileExistsError('RF Refine refuses a preexisting response')
@@ -252,7 +263,7 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         guards.extend([*asset['family_records'], asset['witness_record']])
         audits.append(dict(domain_id=name, carrier_path=asset['carrier_record']['path'],
             family_paths=[row['path'] for row in asset['family_records']],
-            response_ids=sorted(set(geometry['electrode_bindings'][name].values())),
+            response_ids=_domain_labels(geometry, name),
             grid=dict(grid['dimensions'], **{'d'+axis+'_mm':grid['cell_mm_xyz'][axis] for axis in 'xyz'}),
             physical_samples=geometry['raw_physical_samples'][name], surface_witnesses=asset['witness_record']['path']))
     spec = small('field_audit_spec', session.input_dir/'rf_field_audit.lua', text='return '+lua_value(dict(assets=audits, output=str(audit_path)))+'\n')

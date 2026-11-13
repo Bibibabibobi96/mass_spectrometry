@@ -1,7 +1,7 @@
 -- Unsolved-model boundary consumer. No SIMION/particle/field API is accessed.
 local model = {}
 
-function model.new(config, rf_drive, pulse_hook, voltage_waveforms)
+function model.new(config, rf_drive, pulse_hook, voltage_waveforms, native_drive)
   assert(config.schema_version == 1 and config.role == 'simion_model_drive', 'invalid model drive')
   local modes = {held_on=0, timed=1, held_off=2}
   local mode = config.pulse and assert(modes[config.pulse.mode], 'unsupported model pulse') or nil
@@ -13,6 +13,14 @@ function model.new(config, rf_drive, pulse_hook, voltage_waveforms)
     -- The consumer below uses the explicit constant mode without a timing hook.
   end
   local pulse = mode and mode ~= 0 and pulse_hook.compile_physical(pulse_config) or nil
+  local ip_drive, ip_rf
+  if config.ip_schedule then
+    assert(type(native_drive)=='function','IP native schedule resource is required')
+    ip_drive=native_drive(voltage_waveforms)
+    local b=config.ip_schedule.baseline
+    ip_rf=rf_drive.compile_physical{waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
+      phase_rad=b.clock.rf_phase_rad,rf_amplitude_v=b.electric.rf_peak_to_peak_v/2,rf_scale=1}
+  end
   local compiled = {}
   for index, row in ipairs(config.groups) do
     local rf
@@ -20,7 +28,7 @@ function model.new(config, rf_drive, pulse_hook, voltage_waveforms)
       rf = rf_drive.compile_physical{waveform=row.waveform, frequency_hz=row.frequency_hz,
         phase_rad=row.phase_rad, rf_amplitude_v=row.rf_amplitude_v, rf_scale=1}
     end
-    assert(row.kind == 'static' or row.kind == 'rf' or row.kind == 'pulse', 'unsupported group drive')
+    assert(row.kind == 'static' or row.kind == 'rf' or row.kind == 'pulse' or (row.kind == 'ip_schedule' and ip_drive), 'unsupported group drive')
     assert(row.kind ~= 'pulse' or config.pulse, 'pulse group requires its actual pulse contract')
     compiled[index] = {row=row, rf=rf}
   end
@@ -29,11 +37,14 @@ function model.new(config, rf_drive, pulse_hook, voltage_waveforms)
       'model instrument time must be finite')
     local active = mode == 0 or (pulse and pulse.state_at(time_us).active)
     local values = {}
+    local ip_values = ip_drive and ip_drive.voltages(config.ip_schedule,time_us,
+      ip_rf.differential_at(config.ip_schedule.baseline.clock.epoch_us+time_us)) or nil
     for index, entry in ipairs(compiled) do
       local row, value = entry.row
       if row.kind == 'static' then value = row.voltage_v
       elseif row.kind == 'rf' then
         value = row.common_mode_v + row.dc_v + row.polarity * entry.rf.differential_at(time_us)
+      elseif row.kind == 'ip_schedule' then value = assert(ip_values[row.schedule_index], 'IP schedule index differs')
       else value = active and row.on_voltage_v or row.off_voltage_v end
       values[index] = {instance_id=row.instance_id, electrode_group_id=row.electrode_group_id,
         native_targets=row.native_targets, voltage_v=value, voltage_unit='V',

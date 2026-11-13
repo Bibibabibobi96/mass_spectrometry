@@ -2347,6 +2347,67 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 
 
 
+    def test_joint_geometry_changes_select_actual_consumers(self) -> None:
+        common = "common_contracts"
+        integration = "instrument_assembly_integration"
+        mr = "parallel_mirror_dual_stripe_mr_tof_static"
+        mr_test = MR + "/tests/analysis/test_mr_compiler.py"
+        cases = [
+            dict(stage=common, paths=["src/msplatform/backends/simion/operations.py"]),
+            dict(stage=common, paths=["src/msplatform/backends/simion/resources/iob_core.lua"]),
+            dict(stage=common, paths=["integrations/tests/test_ip_compiler.py"]),
+            dict(stage=common, paths=["common/contracts/test_dual_cone_iob.py"]),
+            dict(stage=integration, paths=["src/msplatform/backends/simion/ip_compiler.py"]),
+            dict(stage=integration, paths=["src/msplatform/components/dual_pressure_rectilinear_ion_processor/provider.py"]),
+            dict(stage=mr, paths=["src/msplatform/backends/simion/mr_compiler.py"]),
+            dict(stage=mr, paths=[MR + "/tests/analysis/fixtures/mr_legacy_analyzer.gem.txt"]),
+            dict(stage=common, paths=["src/msplatform/gas/field.py"]),
+        ]
+        selected = self.selections(REPO_ROOT, cases)
+        for row in selected[:2]:
+            for module in ("test_joint_geometry_plan.py", "test_joint_geometry_iob.py"):
+                self.assertIn("common/contracts/" + module, row["Modules"])
+        self.assertIn("common/contracts/test_joint_geometry_plan.py", selected[2]["Modules"])
+        self.assertIn("common/contracts/test_dual_cone_iob.py", selected[3]["Modules"])
+        self.assertIn("common/contracts/test_joint_geometry_iob.py", selected[3]["Modules"])
+        for row in selected[4:6]:
+            self.assertIn("integrations/tests/test_ip_compiler.py", row["Modules"])
+            self.assertIn("integrations/tests/test_selected_ip_provider.py", row["Modules"])
+            self.assertIn("integrations/tests/test_multipole_ip_prepare.py", row["Modules"])
+        for row in selected[6:8]:
+            self.assertIn(mr_test, row["Modules"])
+        self.assertIn("common/contracts/test_gas.py", selected[8]["Modules"])
+        self.assertNotIn("common/contracts/test_joint_geometry_plan.py", selected[8]["Modules"])
+        extra_cases = [
+            dict(stage=common, paths=["src/msplatform/backends/simion/model.py"]),
+            dict(stage=common, paths=["src/msplatform/backends/simion/rf_field_execution.py"]),
+            dict(stage=common, paths=["src/msplatform/backends/simion/resources/model_drive.lua"]),
+            dict(stage=common, paths=["integrations/tests/test_ip_compiler.py"]),
+            dict(stage=common, paths=["src/msplatform/components/orthogonal_accelerator/provider.py"]),
+            dict(stage=common, paths=["src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py"]),
+            dict(stage=mr, paths=["src/msplatform/components/orthogonal_accelerator/provider.py"]),
+            dict(stage=mr, paths=["src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py"]),
+            dict(stage=mr, paths=[MR + "/tests/analysis/test_mr_provider_trial_transport.py"]),
+        ]
+        extra = self.selections(REPO_ROOT, extra_cases)
+        for row in extra[:4]:
+            self.assertIn("common/contracts/test_joint_ip_model.py", row["Modules"])
+        for row in extra[4:6]:
+            self.assertIn("common/contracts/test_geometry_members.py", row["Modules"])
+        for row in extra[6:9]:
+            self.assertIn(MR + "/tests/analysis/test_mr_provider_trial_transport.py", row["Modules"])
+        self.assertIn(mr_test, extra[8]["Modules"])
+        script = (
+            ". " + powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1") + "; "
+            "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq "
+            "'dual_pressure_rectilinear_ion_processor_static')[0]; "
+            "foreach($p in @('src/msplatform/backends/simion/ip_assembly_geometry.py',"
+            "'src/msplatform/components/dual_pressure_rectilinear_ion_processor/assembly_interface.py')) "
+            "{if(-not (Get-ChangedRouteReason -Route $r -Paths @($p))){throw $p}}"
+        )
+        result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

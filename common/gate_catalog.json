@@ -629,6 +629,10 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+          {
+            "exact": "integrations/tests/test_ip_compiler.py",
+            "reason": "joint_geometry_fixture_changed"
+          },
         {
           "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
           "reason": "workbench_seed_consumer_changed"
@@ -931,6 +935,32 @@
           "common/contracts/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "integrations/tests/test_ip_compiler.py",
+                "reason": "joint_geometry_fixture_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_joint_geometry_plan.py",
+              "common/contracts/test_joint_ip_model.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/test_dual_cone_iob.py",
+                "reason": "joint_iob_harness_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_dual_cone_iob.py",
+              "common/contracts/test_joint_geometry_iob.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -1371,6 +1401,9 @@
               "common/contracts/test_platform_api.py",
               "common/contracts/test_platform_capabilities.py",
               "common/contracts/test_simion_geometry_compiler.py",
+              "common/contracts/test_joint_geometry_plan.py",
+              "common/contracts/test_joint_ip_model.py",
+              "common/contracts/test_joint_geometry_iob.py",
               "common/contracts/test_detector_physical_projection.py",
               "common/contracts/test_oa_geometry_compiler.py",
               "common/contracts/test_simion_native_plans.py",
@@ -1410,6 +1443,14 @@
               {
                 "regex": "^src/msplatform/(?:exporters/|components/[^/]+/geometry_members\\.py)",
                 "reason": "assembly_cad_projection_changed"
+              },
+              {
+                "exact": "src/msplatform/components/orthogonal_accelerator/provider.py",
+                "reason": "oa_roundtrip_geometry_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py",
+                "reason": "oa_roundtrip_geometry_consumer_changed"
               }
             ],
             "modules": [
@@ -2579,6 +2620,32 @@
           {
             "matches": [
               {
+                "exact": "src/msplatform/backends/simion/ip_compiler.py",
+                "reason": "joint_ip_compiler_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/ip_assembly_geometry.py",
+                "reason": "joint_ip_compiler_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/provider.py",
+                "reason": "joint_ip_compiler_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/assembly_interface.py",
+                "reason": "joint_ip_compiler_consumer_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_ip_compiler.py",
+              "integrations/tests/test_multipole_ip_prepare.py",
+              "integrations/tests/test_selected_ip_provider.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "exact": "src/msplatform/backends/simion/collision_overlay.py",
                 "reason": "collision_overlay_binding_consumer_changed"
               }
@@ -2941,6 +3008,18 @@
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
+          "exact": "src/msplatform/components/orthogonal_accelerator/provider.py",
+          "reason": "oa_mr_roundtrip_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py",
+          "reason": "oa_mr_roundtrip_consumer_changed"
+        },
+          {
+            "exact": "src/msplatform/backends/simion/mr_compiler.py",
+            "reason": "mr_joint_compiler_changed"
+          },
+        {
           "exact": "src/msplatform/backends/simion/collision_overlay.py",
           "reason": "collision_overlay_binding_consumer_changed"
         },
@@ -3216,6 +3295,51 @@
         "module_parameter": "ChangedTestModules",
         "preserve_command": true,
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/orthogonal_accelerator/provider.py",
+                "reason": "oa_mr_roundtrip_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py",
+                "reason": "oa_mr_roundtrip_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/mr_compiler.py",
+                "reason": "mr_joint_compiler_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/mr_geometry.py",
+                "reason": "mr_joint_compiler_consumer_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/fixtures/mr_legacy_analyzer.gem.txt",
+                "reason": "mr_joint_compiler_consumer_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py",
+                "reason": "mr_joint_compiler_consumer_changed"
+              },
+              {
+                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/tests/test_support/mr_geometry_inputs.py",
+                "reason": "mr_joint_compiler_consumer_changed"
+              }
+            ],
+            "modules": [
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_provider_trial_transport.py",
+              "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_mr_compiler.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {
@@ -4990,6 +5114,26 @@
       "repository_integration_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
+        {
+          "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/provider.py",
+          "reason": "ip_joint_geometry_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/assembly_interface.py",
+          "reason": "ip_joint_geometry_consumer_changed"
+        },
+          {
+            "exact": "src/msplatform/backends/simion/ip_assembly_geometry.py",
+            "reason": "ip_joint_geometry_consumer_changed"
+          },
+          {
+            "exact": "src/msplatform/backends/simion/ip_geometry.py",
+            "reason": "ip_joint_geometry_consumer_changed"
+          },
+          {
+            "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/native_geometry.py",
+            "reason": "ip_joint_geometry_consumer_changed"
+          },
         {
           "exact": "src/msplatform/backends/simion/resources.py",
           "reason": "workbench_seed_resource_resolver_changed"

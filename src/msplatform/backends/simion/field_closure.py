@@ -45,7 +45,7 @@ def load_field_model(reference: Mapping | OpenedArtifact) -> FieldModelSource:
     clock['data_root'] = str(Path(clock['contract']['path']).parent)
     _clock_reference(document, clock)
     geometry = model_geometry(model).frontend_geometry
-    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry'}
+    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}
     expected = (set(geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *geometry['numerical_domains']})
     bindings = metadata.get('native_assets')

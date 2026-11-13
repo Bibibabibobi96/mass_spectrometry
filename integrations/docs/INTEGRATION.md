@@ -58,6 +58,27 @@ consumer sets and bytes remain unchanged; the common PA placeholder remains with
 its original owner. Provider containment checks remain strict. This repairs frozen
 source ownership and does not claim a new native build or flight.
 
+The complete RF–IP and OA–MR compiler paths use the same public SIMION stages,
+without a new workflow runner. RF–IP binds the complete selected RF/IP to one
+explicit grounded parent and its native group map; OA–MR binds one selected OA,
+complete analyzer and detector to three posed assets. The existing build owner
+handles their declared geometry/IOB operations. RF–IP also supports source-free
+model preparation with the original IP drive law and explicit shared zero-epoch
+clock, and the existing fractional-field owner plans one actual parent family.
+OA–MR model/field/track and RF–IP track are explicitly unsupported at this point.
+These stage boundaries do not establish native construction, Refine, coupled
+fields, HS1 flight or the retirement of the segmented MP–IP producer.
+
+The single composed candidate passed all 124 affected software tests / 314
+successful records in 279.894 seconds. Direct-wheel and sdist-rebuilt-wheel
+consumers then exercised public restored assemblies, geometry/model compilation,
+field planning, packaged resources and rejection cases from new working directories;
+each arm contained 522 runtime payloads. Overall guarded wall time was 441.107
+seconds, with source, checkout and candidate identities unchanged. Earlier JSON
+roundtrip, role-expectation and omitted test-fixture failures remain separate failed
+records; the final run reran the full selected suite. This is selected installation
+evidence, not the full ordinary parent, Repository or the 15-minute target.
+
 | Public stage | Supported behavior and side-effect boundary |
 |---|---|
 | Resolve / assemble / compile | Versioned designs/interfaces/geometry; no solver, source sampling or field solve |
