@@ -149,6 +149,59 @@ class IndependentOAProviderTests(unittest.TestCase):
         changed['enclosure'].clear()
         self.assertNotEqual(parts['two'].resolved_design, changed)
 
+    def test_two_zone_persisted_assembly_roundtrip_preserves_physics_and_rejects_tampering(self):
+        import json
+        import tempfile
+        from dataclasses import asdict
+        from pathlib import Path
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
+
+        parts, instrument, snapshot = independent_oa_objects()
+        before = assembly_geometry_members(snapshot)
+        source = parts['two'].source_design
+        profile = parts['two'].assembly_interface['geometry_profile_id']
+        legacy = asdict(resolve_closed_two_zone_geometry(source['requirements'],
+            geometry_profile_id=profile, geometry_profile=source['geometry_profile']))
+        legacy.update(schema_version=1, role='orthogonal_accelerator_two_zone_geometry',
+                      variant_id='two_zone', geometry_profile_id=profile)
+        encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        self.assertEqual(encode(legacy), encode(parts['two'].resolved_design))
+        self.assertIsInstance(parts['two'].resolved_design['grid_supports'], list)
+        self.assertIsInstance(parts['two'].resolved_design['rings'], list)
+        payload = dict(recipe=instrument.composition_plan['recipe'], components={name:dict(
+            provider_id=item.provider_id, resolved_design=item.resolved_design,
+            assembly_interface=item.assembly_interface, source_design=item.source_design)
+            for name,item in parts.items()})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'assembly.json'
+            path.write_bytes(encode(payload))
+            restored = json.loads(path.read_bytes())
+        decoded = {name:component_api.ResolvedComponent(value['provider_id'], value['resolved_design'],
+            value['assembly_interface'], source_design=value['source_design'])
+            for name,value in restored['components'].items()}
+        rebuilt = assembly_api.assemble(restored['recipe'], decoded)
+        actual = dict(composition_plan=rebuilt.composition_plan, components_resolved=rebuilt.components_resolved,
+                      components_source=rebuilt.components_source)
+        self.assertEqual(actual, snapshot)
+        self.assertEqual(assembly_geometry_members(actual), before)
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot_path = Path(directory) / 'export_snapshot.json'
+            snapshot_path.write_bytes(encode(snapshot))
+            persisted_snapshot = json.loads(snapshot_path.read_bytes())
+        self.assertEqual(assembly_geometry_members(persisted_snapshot), before)
+        self.assertEqual(actual['composition_plan']['components']['two']['ports'],
+                         snapshot['composition_plan']['components']['two']['ports'])
+        self.assertEqual(actual['composition_plan']['components']['two']['component_electrodes'],
+                         snapshot['composition_plan']['components']['two']['component_electrodes'])
+        for family in ('grid_supports','rings'):
+            changed = copy.deepcopy(restored['components'])
+            field = 'grid_z_mm' if family == 'grid_supports' else 'center_z_mm'
+            changed['two']['resolved_design'][family][0][field] += 0.125
+            tampered = {name:component_api.ResolvedComponent(value['provider_id'], value['resolved_design'],
+                value['assembly_interface'], source_design=value['source_design']) for name,value in changed.items()}
+            with self.subTest(family=family), self.assertRaises(ValueError):
+                assembly_api.assemble(restored['recipe'], tampered)
+
     def test_oa_source_and_interface_mismatch_fail_at_public_boundaries(self):
         parts, instrument, _ = independent_oa_objects()
         request = {'provider_id': 'orthogonal_accelerator', 'geometry_profile_id': 'closed_two_zone_compact_mr_axial_r3_gap1_4mm',

@@ -46,6 +46,51 @@ def _plans():
 
 
 class MRProviderTrialTransportTests(unittest.TestCase):
+    def test_real_oa_mr_components_survive_json_and_reject_physical_tampering(self):
+        from dataclasses import asdict
+        from msplatform.assembly.factory import assemble
+        from msplatform.components.catalog import resolve_component as public_resolve
+        from msplatform.components.model import ResolvedComponent
+        from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
+        _, plan, contract = _plans()
+        authority = geometry_authority(contract)
+        profile = authority['geometry_profile_id']
+        oa = public_resolve(dict(provider_id='orthogonal_accelerator', geometry_profile_id=profile,
+            design=dict(requirements=authority['accelerator_requirements'], geometry_profile=authority['geometry_profile'])))
+        mr = public_resolve(dict(provider_id='parallel_mirror_dual_stripe_mr_tof', geometry_profile_id=profile,
+            design=dict(contract=contract, accelerator_requirements=authority['accelerator_requirements'],
+                        geometry_profile=authority['geometry_profile'])))
+        components = {key: oa if value['project_id'] == 'orthogonal_accelerator' else mr
+                      for key,value in plan['components'].items()}
+        assembly = assemble(plan['recipe'], components)
+        legacy = asdict(resolve_closed_two_zone_geometry(authority['accelerator_requirements'],
+            geometry_profile_id=profile, geometry_profile=authority['geometry_profile']))
+        legacy.update(role='orthogonal_accelerator_two_zone_geometry', variant_id='two_zone')
+        encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        embedded = mr.resolved_design['accelerator_component_geometry']
+        self.assertEqual(encode(legacy), encode(embedded))
+        self.assertIsInstance(embedded['grid_supports'], list)
+        self.assertIsInstance(embedded['rings'], list)
+        payload = {key:dict(provider_id=value.provider_id, resolved_design=value.resolved_design,
+                            assembly_interface=value.assembly_interface, source_design=value.source_design)
+                   for key,value in assembly.components.items()}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'components.json'
+            path.write_bytes(encode(payload))
+            decoded = json.loads(path.read_bytes())
+        rebuilt = {key:ResolvedComponent(value['provider_id'],value['resolved_design'],value['assembly_interface'],
+                                          source_design=value['source_design']) for key,value in decoded.items()}
+        restored = assemble(plan['recipe'],rebuilt)
+        self.assertEqual(restored.components_resolved,assembly.components_resolved)
+        self.assertEqual(restored.composition_plan,assembly.composition_plan)
+        changed = copy.deepcopy(decoded)
+        mr_id = next(key for key,value in changed.items() if value['provider_id']=='parallel_mirror_dual_stripe_mr_tof')
+        changed[mr_id]['resolved_design']['accelerator_component_geometry']['rings'][0]['center_z_mm'] += .125
+        tampered = {key:ResolvedComponent(value['provider_id'],value['resolved_design'],value['assembly_interface'],
+                                           source_design=value['source_design']) for key,value in changed.items()}
+        with self.assertRaises(ValueError):
+            assemble(plan['recipe'],tampered)
+
     def test_real_materializer_plan5_and_legacy_preserve_controls(self):
         legacy, current, contract = _plans()
         self.assertEqual((legacy["schema_version"], current["schema_version"]), (3, 5))

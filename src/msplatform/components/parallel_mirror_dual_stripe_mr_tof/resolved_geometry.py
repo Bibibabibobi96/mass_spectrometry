@@ -13,7 +13,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
@@ -1421,7 +1421,7 @@ def resolve_geometry(
         "prism_electrodes": prism_electrodes,
         "prism_ground_shields": prism_ground_shields,
         "two_prism_low_field_reference_section": low_field_reference_section,
-        "accelerator_component_geometry": {**asdict(accelerator_model),
+        "accelerator_component_geometry": {**accelerator_model.as_dict(),
             "role": "orthogonal_accelerator_two_zone_geometry", "variant_id": "two_zone"},
         "detector": {"id": 25, "box": detector_box, "normal_project": "+z", "separate_pa": True},
         "metadata": {

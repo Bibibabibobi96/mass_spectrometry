@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import isclose, isfinite
 
 
@@ -174,6 +174,13 @@ class ClosedTwoZoneGeometry:
     source_cylinder_height_mm: float
     source_center_z_mm: float
     side_entry: Mapping[str, Any] | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the canonical JSON-stable geometry without altering tuple mechanics."""
+        result = asdict(self)
+        result["grid_supports"] = list(result["grid_supports"])
+        result["rings"] = list(result["rings"])
+        return result
 
 
 def resolve_closed_two_zone_geometry(requirements: Mapping[str, Any], *, geometry_profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID, geometry_profile: Mapping[str, float | int]) -> ClosedTwoZoneGeometry:

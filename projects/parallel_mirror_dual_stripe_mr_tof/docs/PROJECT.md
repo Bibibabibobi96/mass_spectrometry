@@ -972,6 +972,14 @@ plan-3 source and interface interpretation is retained. The backend retains the 
 OA support and PA placement checks. This mechanical slice does not create a complete native
 electrode-binding artifact or qualify fields, Fly, CAD, historical runs or full MR.
 
+Two-zone OA snapshots, including MR's embedded OA geometry, use the shared
+`ClosedTwoZoneGeometry.as_dict()` projection. Rings and grid supports survive JSON
+write/read as lists while the internal dataclass and original serialized bytes stay
+unchanged. Actual public OA–MR reconstruction and persisted OA STEP-member tests
+reject physical mutations; the complete source-to-resolved comparison is retained.
+Direct-wheel and sdist-rebuilt consumers exercised the real roundtrip in the composed
+software candidate. This fixes a representation mismatch, not a physical design.
+
 For a static-field overlay, plan 5 requires the complete selected field geometry to
 equal the explicitly re-resolved provider design, including nonphysical metadata. A
 difference is refused; no historical geometry is reconstructed or supplemented.

@@ -329,6 +329,17 @@ Python进程OS lifetime峰值工作集33,173,504 B包含解释器／import／pro
 公共 GATE 的 OA/完整 TOF 相邻十模块共 93 项通过（10.420 秒、无 skip），
 包括原几何输出与非零物理参数回归。此为软件层证据；普通安装整合和 P3 全目标另行验收。
 
+### JSON-stable two-zone component snapshots
+
+`ClosedTwoZoneGeometry.as_dict()` supplies the canonical public geometry projection.
+Its `rings` and `grid_supports` arrays remain lists after JSON save/readback; the
+internal dataclass keeps its tuples. Independent OA and the MR embedded OA use
+this same projection. Existing serialized bytes, dimensions, groups and ports are
+unchanged. Public assembly and persisted STEP-member regressions retain complete
+source revalidation and reject modified rings/supports. Both ordinary distribution
+arms exercised the actual OA–MR JSON roundtrip in the composed software candidate;
+this does not establish native geometry, field, CAD export or flight qualification.
+
 ### 可安装COMSOL原生资源切片
 
 方形加速器的实体与零厚栅COMSOL helper已迁入`msplatform.backends.comsol/matlab/`，由oa-TOF静态场、

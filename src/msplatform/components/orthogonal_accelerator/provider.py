@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict
 from typing import Any
 
 from .assembly_interface import build_assembly_interface
@@ -25,7 +24,7 @@ def resolve_component(design: Mapping[str, Any], *, geometry_profile_id: str | N
             raise ValueError("two-zone OA requires explicit geometry_profile content")
         model = resolve_closed_two_zone_geometry(requirements, geometry_profile_id=geometry_profile_id,
                                                 geometry_profile=design["geometry_profile"])
-        resolved = {**asdict(model), "schema_version": 1, "role": "orthogonal_accelerator_two_zone_geometry",
+        resolved = {**model.as_dict(), "schema_version": 1, "role": "orthogonal_accelerator_two_zone_geometry",
                     "variant_id": "two_zone", "geometry_profile_id": geometry_profile_id}
     elif variant == "three_zone":
         if geometry_profile_id is not None or "geometry_profile" in design:
