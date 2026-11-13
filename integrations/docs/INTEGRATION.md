@@ -308,6 +308,12 @@ geometry. The complete MR analyzer CAD projection retains its source CSG and
 requires a connected OA to match the declared canonical geometry and relative
 pose; it never invents a second OA. Actual complete MR CAD and SolidWorks acceptance
 remain pending; ordinary-installed projection consumption is covered below.
+The canonical OA–MR extruded polygons can now pass the public COMSOL geometry
+request resolver with all 45 original members and 41 groups. The backend renderer
+uses those same vertices and extents under the supported signed-permutation
+poses. This closes the source-level polygon refusal, not native kernel or selection
+verification. The SFI results below do not qualify the MR extension; installed
+polygon consumption, coupled fields and continuous MR flight remain open.
 The public [COMSOL geometry stage](../../common/comsol/README.md#complete-assembly-geometry-stage)
 uses an explicit numerical box and sanity values, saves geometry and cold-reopens
 it through the existing managed owner. Its retained SFI case succeeded in

@@ -22,6 +22,12 @@ refusal; this software change does not rerun or qualify an MR field.
 The native-corridor runner test now checks the canonical cache module in its actual `-m` invocation.
 The full-response inventory, probe ordering, physical mapping, capacity and cleanup assertions remain;
 this corrects a retired-path expectation, not a native geometry or field result.
+The public [COMSOL geometry projector](../../../common/comsol/README.md#complete-assembly-geometry-stage)
+now translates the canonical extruded YZ polygons used by the complete OA–MR
+Assembly, retaining the original 45 members, 41 scientific groups and instance
+poses. Its pure consumer checks representation and refusal boundaries; actual
+COMSOL construction/selections, installed polygon execution, common fields and
+continuous flight remain open. It does not change the physical MR design.
 Joint-flight and IP/prism preparation now read structural IOB containers from the installed SIMION
 resource owner. Frozen dependency declarations follow that same owner while retaining the original
 template bytes and PA placeholders; opt-in native tests remain separately reported.

@@ -62,10 +62,23 @@ cold-reopens it in a second operation. It publishes product `geometry` of kind
 `geometry_artifact`, including selection reports and the original projection.
 It requests no source, physics, mesh, study, solver or field computation.
 
-The initial COMSOL projector supports its declared box/circular-solid Boolean
-shapes, signed-permutation poses and world-xy ideal sheets. Unsupported shapes
-and poses, and a box touching or clipping any selected member, fail explicitly;
-IP/MR polygon support is not inferred from neutral traversal or CAD support.
+The COMSOL projector supports its declared box/circular-solid Boolean shapes,
+solid YZ polygons extruded along their component x axis, signed-permutation poses
+and world-xy ideal sheets. Polygon vertices and extrusion extents come directly
+from the canonical component. The renderer applies the instance pose once and
+uses a workplane and positive extrusion along the corresponding world axis.
+Zero-area polygons fail without introducing a physical size tolerance. Unsupported
+shapes and poses, and a box touching or clipping any selected member, still fail
+explicitly. This is not arbitrary polygon repair or arbitrary-pose support.
+
+The complete canonical OA–MR request is covered by a pure public-stage consumer
+with 45 unchanged members and 41 scientific groups. Native polygon construction,
+resulting selections and ordinary-installed polygon use remain unverified; the
+retained SFI native and installed results below do not qualify this extension.
+The translation follows COMSOL 6.4's [WorkPlane](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.143.html),
+[Polygon](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.125.html)
+and [Extrude](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.088.html)
+APIs (reviewed 2026-11-14); native verification remains a separate requirement.
 The retained SFI Assembly passed the public stage in
 [`20261114_015424__build__comsol__geometry-a9588289ec39`](../../../artifacts/projects/instrument_assembly/runs/20261114_015424__build__comsol__geometry-a9588289ec39/summary.json).
 Build and cold reopen both reported 77 members, 50 groups and 81 geometric domains,

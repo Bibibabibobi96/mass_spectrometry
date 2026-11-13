@@ -84,6 +84,8 @@ result=struct('members',{memberTags},'vacuum_feature','assembly_vac', ...
         elseif strcmp(kind,'cylinder')
             center=double(shape.center_mm(:));radius=double(shape.radius_mm);height=double(shape.height_mm);
             tag=emitCylinder(center-[0;0;height/2],radius,height,R,T);
+        elseif strcmp(kind,'extruded_yz_polygon')
+            tag=emitYZPolygon(shape,R,T);
         elseif strcmp(kind,'rod')
             center=double(shape.center_xy_mm(:));z0=double(shape.z_min_mm);z1=double(shape.z_max_mm);
             tag=emitCylinder([center;z0],double(shape.radius_mm),z1-z0,R,T);
@@ -97,6 +99,23 @@ result=struct('members',{memberTags},'vacuum_feature','assembly_vac', ...
         else
             error('assembly:Shape','Unsupported physical shape');
         end
+    end
+    function tag=emitYZPolygon(shape,R,T)
+        % The component supplies its original polygon; apply its signed pose once.
+        bounds=double(shape.x(:)); vertices=double(shape.polygon_yz_mm);
+        assert(numel(bounds)==2 && bounds(2)>bounds(1) && size(vertices,2)==2 && size(vertices,1)>=3, ...
+            'assembly:Polygon','Finite positive extrusion and polygon required');
+        axisIndex=find(abs(R(:,1))==1);assert(numel(axisIndex)==1,'assembly:Pose','Signed axis pose required');
+        planeAxes={[2,3],[3,1],[1,2]};planeNames={'yz','zx','xy'};quickNames={'quickx','quicky','quickz'};
+        normal0=R*[bounds(1);0;0]+T;normal1=R*[bounds(2);0;0]+T;
+        lower=min(normal0(axisIndex),normal1(axisIndex));distance=abs(normal1(axisIndex)-normal0(axisIndex));
+        world=R*[repmat(bounds(1),1,size(vertices,1));vertices.']+T;
+        wp=nextTag();geom.feature.create(wp,'WorkPlane');geom.feature(wp).set('quickplane',planeNames{axisIndex});
+        geom.feature(wp).set(quickNames{axisIndex},lower);w=geom.feature(wp).geom;
+        w.feature.create('polygon','Polygon');w.feature('polygon').set('source','table');
+        w.feature('polygon').set('type','solid');w.feature('polygon').set('table',world(planeAxes{axisIndex},:).');
+        tag=nextTag();geom.feature.create(tag,'Extrude');geom.feature(tag).set('workplane',wp);
+        geom.feature(tag).selection('input').set({wp});geom.feature(tag).set('distance',distance);
     end
     function tag=emitCylinder(base,radius,height,R,T)
         assert(height>0 && radius>0,'assembly:Cylinder','Positive cylinder dimensions required');

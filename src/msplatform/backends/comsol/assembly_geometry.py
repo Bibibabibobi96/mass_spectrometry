@@ -26,6 +26,22 @@ def _supported(shape: Mapping, *, ideal: bool) -> None:
     elif kind == "annulus":
         if ideal and (shape["z_min_mm"] != shape["z_max_mm"] or shape["inner_radius_mm"] != 0):
             raise ValueError("COMSOL ideal annulus must be a full disk")
+    elif kind == "extruded_yz_polygon":
+        extent, vertices = shape.get("x"), shape.get("polygon_yz_mm")
+        if (ideal or not isinstance(extent, (list, tuple)) or len(extent) != 2
+                or not isinstance(vertices, (list, tuple)) or len(vertices) < 3
+                or any(type(v) not in (int, float) or not math.isfinite(v) for v in extent)
+                or extent[0] >= extent[1]
+                or any(not isinstance(row, (list, tuple)) or len(row) != 2
+                       or any(type(v) not in (int, float) or not math.isfinite(v) for v in row)
+                       for row in vertices)):
+            raise ValueError("COMSOL requires a finite solid extruded yz polygon")
+        # Exact arithmetic on the actual input numbers; no geometric tolerance.
+        from fractions import Fraction
+        points = [(Fraction(y), Fraction(z)) for y, z in vertices]
+        area2 = sum(y1*z2-y2*z1 for (y1,z1),(y2,z2) in zip(points, points[1:]+points[:1], strict=True))
+        if len(set(points)) < 3 or area2 == 0:
+            raise ValueError("COMSOL extruded yz polygon is degenerate")
     elif kind == "rod":
         if ideal or "radius_mm" not in shape:
             raise ValueError("COMSOL reference requires circular solid rods")
@@ -45,6 +61,10 @@ def _local_bounds(shape: Mapping) -> tuple[list[float], list[float]]:
         boxes = [_local_bounds(part) for part in shape["parts"]]
         return ([min(b[0][i] for b in boxes) for i in range(3)],
                 [max(b[1][i] for b in boxes) for i in range(3)])
+    if kind == "extruded_yz_polygon":
+        points = shape["polygon_yz_mm"]
+        return ([shape["x"][0], min(p[0] for p in points), min(p[1] for p in points)],
+                [shape["x"][1], max(p[0] for p in points), max(p[1] for p in points)])
     if kind in {"box", "cylinder"}:
         center = shape["center_mm"]
         size = shape["size_mm"] if kind == "box" else [2*shape["radius_mm"], 2*shape["radius_mm"], shape["height_mm"]]
