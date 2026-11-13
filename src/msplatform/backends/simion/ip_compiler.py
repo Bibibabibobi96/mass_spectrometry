@@ -9,10 +9,9 @@ from typing import Any
 
 from msplatform.assembly.model import Assembly
 from msplatform.backends.simion.compiler import CompiledSimionGeometry, _content_sha256
-from msplatform.backends.simion.gem_primitives import format_number
+from msplatform.backends.simion.gem_primitives import format_number, grounded_pa_face_lines
 from msplatform.backends.simion.geometry import MULTIPOLE_ROTATION, _numerical_box
 from msplatform.backends.simion.ip_assembly_geometry import render_selected_ip_body
-from msplatform.backends.simion.ip_geometry import _box, _primitive
 from msplatform.backends.simion.numerics import normalize_cell_mm_xyz
 from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
 from msplatform.backends.simion.rf_geometry import render_physical_gem
@@ -171,12 +170,7 @@ def compile_ip_assembly_geometry(assembly: Assembly, *, numerics: Mapping[str, A
              f"locate({translate([-v for v in origin])}) {{",
              f"  locate({translate(poses[rf].translation_mm)},1,90,90,0) {{", rf_body.rstrip(), "  }",
              f"  locate({translate(poses[ip].translation_mm)}) {{", ip_body, "  }", "  e(0) { ; numerical grounded faces"]
-    for axis in range(3):
-        for side in ("min", "max"):
-            low = [box[a + "_min"] for a in "xyz"]
-            high = [box[a + "_max"] for a in "xyz"]
-            low[axis] = high[axis] = box["xyz"[axis] + "_" + side]
-            lines.append("    fill { within { " + _primitive(_box(low, high)) + " } }")
+    lines.extend(grounded_pa_face_lines(box))
     lines.extend(["  }", "}", ""])
     identities = {n: dict(resolved_content_sha256=_content_sha256(components[n]),
                           component_interface_sha256=_content_sha256(plan["components"][n]),

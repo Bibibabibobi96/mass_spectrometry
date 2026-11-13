@@ -178,9 +178,13 @@ the original fifteen-group IP law and explicit shared zero-epoch authority.
 The same candidate passed 124 affected tests / 314 records and targeted direct-wheel
 and sdist-rebuilt-wheel consumers (522 runtime payloads per arm; 441.107 seconds).
 OA/MR JSON-stable projections preserve existing geometry bytes and full tamper
-checks. Native joint construction/refinement, OA–MR models and fields, RF–IP/other
-named complete continuous consumers, HS1 and final installation/Repository remain
-open; these software stages do not retire the still-needed segmented producer.
+checks. The successor adds source-free OA–MR model planning and complete RF–OA
+one-parent geometry. Main passed 75 focused tests / 204 records and both selected
+ordinary distribution arms passed with 524 matching runtime payloads (201.953 s),
+including actual new planners and negative resource/origin checks. Native joint
+construction/refinement, OA–MR fields, RF–IP/other named complete continuous
+consumers, HS1 and final installation/Repository remain open; these software
+stages do not retire the still-needed segmented producer.
 The user retained the 700 GiB capacity target. Public-owner retirement of one
 obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
 diagnostic through admission. Its first preparation operation then failed on a

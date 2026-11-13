@@ -68,7 +68,7 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
-    if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry"}:
+    if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_rf_oa_geometry"}:
         return _plan_joint_geometry_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}:
         return _plan_rf_geometry_build(compiled, root, seed_record, path_resource)
@@ -150,12 +150,14 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
     """Use the existing geometry owner for explicit joint physical assets."""
     geometry = compiled.frontend_geometry
     rf_ip = geometry["role"] == "simion_rf_ip_geometry"
+    rf_oa = geometry["role"] == "simion_rf_oa_geometry"
+    single_parent = rf_ip or rf_oa
     names = list(compiled.frontend_gems)
-    count = 1 if rf_ip else 3
+    count = 1 if single_parent else 3
     if len(names) != count or (seed_record.get("bytes"), str(seed_record.get("sha256", "")).lower()) != STRUCTURAL_SEEDS[count]:
         raise ValueError("joint geometry requires the exact asset count and reviewed structural seed")
     _absolute(Path(seed_record["path"]))
-    if rf_ip:
+    if single_parent:
         from .geometry import _numerical_box
         domain = geometry["parent_domain"]
         box, dimensions = _numerical_box(domain["pa_bounds_mm"], domain["cell_mm_xyz"])
@@ -176,7 +178,7 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
             raise ValueError("joint geometry requires explicit represented metal and vacuum samples")
         if not any(row.get("metal") is not False and type(row.get("electrode_id")) is int and row["electrode_id"] > 0 for row in rows):
             raise ValueError("joint geometry requires a positive physical metal sample")
-        if rf_ip:
+        if single_parent:
             allowed = {value for mapping in geometry["electrode_bindings"].values() for value in mapping.values()}
         else:
             allowed = set(geometry["electrode_bindings"][geometry["asset_components"][name]].values())
@@ -189,13 +191,13 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
                 raise ValueError("joint geometry witness grid coordinate differs")
             if row.get("metal") is not False:
                 eid = row.get("electrode_id")
-                if type(eid) is not int or (eid not in allowed and not (rf_ip and eid == 0)):
+                if type(eid) is not int or (eid not in allowed and not (single_parent and eid == 0)):
                     raise ValueError("joint geometry sample has undeclared native electrode ID")
                 if eid > 0: sampled.add(eid)
-        if rf_ip and sampled != allowed:
+        if single_parent and sampled != allowed:
             raise ValueError("RF–IP witnesses must cover all physical groups")
         zero = [row for row in rows if row.get("electrode_id") == 0]
-        if (rf_ip and (len(zero) != 1 or zero[0].get("metal") is not True or zero[0].get("label") != "declared_grounded_pa_face" or zero[0].get("gu") != [0, 0, 0])) or (not rf_ip and zero):
+        if (single_parent and (len(zero) != 1 or zero[0].get("metal") is not True or zero[0].get("label") != "declared_grounded_pa_face" or zero[0].get("gu") != [0, 0, 0])) or (not single_parent and zero):
             raise ValueError("numeric zero is reserved for the explicit RF–IP grounded PA face")
         grid = dict(domain["dimensions"], **{"d"+a+"_mm":domain["cell_mm_xyz"][a] for a in "xyz"})
         raw = root/"simion/geometry"/(name+".pa#")
@@ -208,7 +210,7 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
         operations.append(_operation("geometry_"+name, "prepare",
             ["lua", str(native_resource_path("build_frontend_geometry.lua")), str(audit)],
             [str(raw), str(surface), str(witnesses)], "BUILD_GEOMETRY=PASS ROLE="+name))
-        if rf_ip:
+        if single_parent:
             rotation = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
             placement = dict(**{a+"_mm":domain["instance_origin_mm"][a] for a in "xyz"},
                              az_deg=0.,el_deg=0.,rt_deg=0.,scale=1.)
@@ -223,8 +225,8 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
     materializations[str(control)] = render_restart_fly2([])
     seed = root/"simion/geometry/iob_seed"/(str(count)+"_instance_seed.iob")
     iob, spec = root/"simion/geometry/geometry.iob", root/"inputs/geometry_iob.lua"
-    role = "rf_ip_geometry_iob_build" if rf_ip else "oa_mr_geometry_iob_build"
-    marker = "RF_IP_GEOMETRY_IOB" if rf_ip else "OA_MR_GEOMETRY_IOB"
+    role = "rf_oa_geometry_iob_build" if rf_oa else "rf_ip_geometry_iob_build" if rf_ip else "oa_mr_geometry_iob_build"
+    marker = "RF_OA_GEOMETRY_IOB" if rf_oa else "RF_IP_GEOMETRY_IOB" if rf_ip else "OA_MR_GEOMETRY_IOB"
     materializations[str(spec)] = "return "+lua_value(dict(schema_version=1, role=role, instances=instances,
         seed_iob=str(seed), output_iob=str(iob), empty_particle_control=str(control),
         bootstrap_paths=[str(seed.parent/f"iob_seed_placeholder_{i:02d}.pa0") for i in range(1,count+1)]))+"\n"
@@ -297,7 +299,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     compiled = model_geometry(model)
     root = _native_ascii(run_directory)
     joint_ip = compiled.frontend_geometry.get('role') == 'simion_rf_ip_geometry'
-    independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}
+    independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}
     expected = (set(compiled.frontend_geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *compiled.frontend_geometry['numerical_domains']})
     if set(geometry_assets) != expected:
@@ -341,7 +343,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     native_operations = tuple(_operation(mode, 'prepare', ['lua', str(native_resource_path('build_model_iob.lua')),
         str(spec_path), mode, str(_native_ascii(native_path_resource))],
         [str(root/'simion/geometry/geometry.iob'), str(root/'simion/geometry/geometry.fly2')] if mode == 'build_model' else [str(readback)],
-        ('RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
+        ('OA_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry' else 'RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
         for mode in ('build_model', 'verify_model'))
     materialization = dict(operation_id='materialize_geometry', role='GATE', stage='prepare',
         action='explicit_geometry_payload_callback', outputs=[row['destination'] for row in copies])

@@ -61,8 +61,8 @@ class JointGeometryIobTests(unittest.TestCase):
                                   else "OA–MR geometry requires three actual PA instances")
                 self.assertIn(expected_count, refused.stderr)
                 expected_boundary = ("RF–IP tracking and fields workbench unsupported" if count == 1
-                                     else "OA–MR geometry only; model and fields unsupported")
-                unsupported_modes = ("build_fields", "build") if count == 1 else ("build_model", "build_fields", "build")
+                                     else "OA–MR fields and tracking workbench unsupported")
+                unsupported_modes = ("build_fields", "build") if count == 1 else ("build_fields", "build")
                 for mode in unsupported_modes:
                     with self.subTest(role=role, unsupported_mode=mode):
                         unsupported = call(mode, spec, failure="direct")

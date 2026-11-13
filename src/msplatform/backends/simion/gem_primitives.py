@@ -34,3 +34,15 @@ def cylinder_z(cx: float, cy: float, cz: float, radius: float, length: float) ->
         f"locate({format_number(cx)},{format_number(cy)},{format_number(cz)}) {{ "
         f"cylinder(0,0,0,{format_number(radius)},,{format_number(length)}) }}"
     )
+
+
+def grounded_pa_face_lines(box: dict) -> list[str]:
+    """Serialize the six explicitly declared grounded numerical faces."""
+    lines = []
+    for axis in range(3):
+        for side in ("min", "max"):
+            low = [box[a + "_min"] for a in "xyz"]
+            high = [box[a + "_max"] for a in "xyz"]
+            low[axis] = high[axis] = box["xyz"[axis] + "_" + side]
+            lines.append("    fill { within { " + centered_box3d(*[(a + b) / 2 for a, b in zip(low, high)], *[b - a for a, b in zip(low, high)]) + " } }")
+    return lines

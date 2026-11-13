@@ -65,7 +65,13 @@ complete analyzer and detector to three posed assets. The existing build owner
 handles their declared geometry/IOB operations. RF–IP also supports source-free
 model preparation with the original IP drive law and explicit shared zero-epoch
 clock, and the existing fractional-field owner plans one actual parent family.
-OA–MR model/field/track and RF–IP track are explicitly unsupported at this point.
+OA–MR source-free model preparation now binds the explicit OA waveform and MR
+voltage authority to those three assets, with 41 scientific groups and the actual
+three-slot build/readback role. Complete RF–OA geometry uses the canonical full
+providers in one grounded parent; its supported poses are signed axis permutations,
+and finite member witnesses do not prove global collision freedom or field coupling.
+RF–OA remains geometry-only. OA–MR field/track and RF–IP track remain explicitly
+unsupported; no refusal is bypassed to advertise those unfinished paths.
 These stage boundaries do not establish native construction, Refine, coupled
 fields, HS1 flight or the retirement of the segmented MP–IP producer.
 
@@ -78,6 +84,29 @@ seconds, with source, checkout and candidate identities unchanged. Earlier JSON
 roundtrip, role-expectation and omitted test-fixture failures remain separate failed
 records; the final run reran the full selected suite. This is selected installation
 evidence, not the full ordinary parent, Repository or the 15-minute target.
+The subsequent OA–MR-model/RF–OA-geometry candidate passed 54 focused source
+parents / 134 successful records in 74.052 test seconds (87.891 guarded wall),
+with no skips and unchanged source/candidate/checkout identities. This selected
+source result does not inherit the earlier candidate's installation evidence.
+Main then passed the full 75-parent / 204-record focused selection in 98.445 test
+seconds (103.470 guarded wall), including retained tracking and field-workbench
+consumers and exact new Changed routes. The preceding Main run retained one failed
+selector assertion: an isolated test uses direct Python arguments rather than a
+PowerShell module parameter. The corrected test checks both actual transports and
+keeps its required-consumer assertions.
+The new model file was subsequently normalized to required LF bytes with an
+identical Python AST; all six model parents / twelve records passed again in
+22.445 test seconds (27.012 guarded wall). The final-byte candidate then passed
+fresh direct-wheel and sdist-rebuilt-wheel consumers in 201.953 guarded seconds,
+with source and checkout unchanged. Each arm
+matched 524 wheel runtime payloads to source bytes and installed bytes. Both exercised
+two-/three-zone complete RF–OA compilation and its actual one-slot geometry plan,
+permuted OA–MR geometry/model equality, all 41 model drive rows and the three-asset
+model plan. Missing witness/drive, wrong bounds, bad seed identity, missing new
+modules/resources and inventory tamper/restore checks passed with source access
+denied in parent and cold children. This verifies selected packaged consumers,
+not full archive/RECORD auditing, the complete ordinary parent or native operation.
+Native joint construction and model reopening remain open.
 
 | Public stage | Supported behavior and side-effect boundary |
 |---|---|

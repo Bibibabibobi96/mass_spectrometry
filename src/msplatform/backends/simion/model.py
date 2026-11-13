@@ -316,6 +316,9 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
+    if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry':
+        from .mr_model import compile_oa_mr_model
+        return compile_oa_mr_model(compiled, components_resolved, drive=drive, physics=physics)
     if compiled.frontend_geometry.get('role') == 'simion_rf_ip_geometry':
         return _compile_rf_ip_model(compiled, components_resolved, drive=drive, physics=physics)
     multipoles, tof, topology = _authorities(compiled, components_resolved)
@@ -421,6 +424,8 @@ def render_model_configuration(model: CompiledPreparedModel) -> str:
 def model_geometry(model: CompiledPreparedModel, *, downstream_drive: bool = False) -> CompiledSimionGeometry:
     """Restore the typed geometry view from the verified portable JSON snapshot."""
     document = require_prepared_model(model)
+    if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_oa_mr_complete_geometry':
+        raise ValueError('OA–MR continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
         raise ValueError('RF–IP continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry':

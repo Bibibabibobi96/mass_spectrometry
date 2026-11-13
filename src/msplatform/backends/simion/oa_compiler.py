@@ -166,6 +166,25 @@ def _lattice_witness(shape, domain):
     return None
 
 
+def render_accelerator_body(
+    design: dict, variant_id: str, mapping: Mapping[str, int], cell: Mapping[str, float]
+) -> list[str]:
+    """Render every canonical OA member using explicitly selected native IDs."""
+    if variant_id == 'two_zone':
+        ids = {15:mapping['grounded_shield'],22:mapping['repeller'],23:mapping['intermediate_grid_1'],24:mapping['exit_grid'],
+               **{int(r['id']):mapping[f'ring_{i:04d}'] for i,r in enumerate(design['rings'],1)}}
+        projection = ResolvedClosedTwoZoneElectrodes(ShieldedRectangularEnclosure(**design['enclosure']),
+            design['local_exit_z_mm'],design['local_repeller_z_mm'],design['repeller_thickness_mm'],
+            design['aperture_half_x_mm'],design['aperture_half_y_mm'],0.,tuple(design['grid_supports']),tuple(design['rings']),ids,(None if design['side_entry'] is None else dict(design['side_entry'], boolean_cut_padding_y_mm=cell['y'], boolean_transverse_expansion_mm=0.)))
+        body = render_closed_two_zone_electrode_body(projection)
+    else:
+        ids = {1:mapping['grounded_shield'],2:mapping['repeller'],3:mapping['intermediate_grid_1'],
+               4:mapping['intermediate_grid_2'],5:mapping['exit_grid'],
+               **{eid:mapping[f'ring_{i:04d}'] for i,eid in enumerate(design['electrodes']['accelerator_ring_ids'],1)}}
+        body = render_bare_three_zone_electrode_body(design,cell_mm_xyz=cell,local_electrode_ids=ids)
+    return body
+
+
 def compile_independent_accelerators(assembly, *, numerics):
     """Compile selected OA instances with explicit grids/bounds and no source/TOF."""
     plan = copy.deepcopy(assembly['composition_plan'])
@@ -213,18 +232,7 @@ def compile_independent_accelerators(assembly, *, numerics):
                     raise ValueError('OA PA bounds do not contain actual mechanics')
         origin = {a:bounds[a+'_min'] for a in 'xyz'}
         domains[name] = dict(dimensions=dimensions,cell_mm_xyz=cell,instance_origin_mm=origin,bounds_mm=dict(bounds))
-        if plan['components'][name]['variant_id']=='two_zone':
-            ids = {15:mapping['grounded_shield'],22:mapping['repeller'],23:mapping['intermediate_grid_1'],24:mapping['exit_grid'],
-                   **{int(r['id']):mapping[f'ring_{i:04d}'] for i,r in enumerate(design['rings'],1)}}
-            projection = ResolvedClosedTwoZoneElectrodes(ShieldedRectangularEnclosure(**design['enclosure']),
-                design['local_exit_z_mm'],design['local_repeller_z_mm'],design['repeller_thickness_mm'],
-                design['aperture_half_x_mm'],design['aperture_half_y_mm'],0.,tuple(design['grid_supports']),tuple(design['rings']),ids,(None if design['side_entry'] is None else dict(design['side_entry'], boolean_cut_padding_y_mm=cell['y'], boolean_transverse_expansion_mm=0.)))
-            body = render_closed_two_zone_electrode_body(projection)
-        else:
-            ids = {1:mapping['grounded_shield'],2:mapping['repeller'],3:mapping['intermediate_grid_1'],
-                   4:mapping['intermediate_grid_2'],5:mapping['exit_grid'],
-                   **{eid:mapping[f'ring_{i:04d}'] for i,eid in enumerate(design['electrodes']['accelerator_ring_ids'],1)}}
-            body = render_bare_three_zone_electrode_body(design,cell_mm_xyz=cell,local_electrode_ids=ids)
+        body = render_accelerator_body(design, plan['components'][name]['variant_id'], mapping, cell)
         header = f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{cell['x']:.12g},{cell['y']:.12g},{cell['z']:.12g},surface=fractional)"
         gems[name] = '\n'.join([header,f"locate({-origin['x']:.12g},{-origin['y']:.12g},{-origin['z']:.12g}) {{",*body,'}',''])
         witnesses[name] = _samples(members,mapping,domains[name])

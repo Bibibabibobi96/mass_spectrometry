@@ -1403,6 +1403,8 @@
               "common/contracts/test_simion_geometry_compiler.py",
               "common/contracts/test_joint_geometry_plan.py",
               "common/contracts/test_joint_ip_model.py",
+              "common/contracts/test_oa_mr_model.py",
+              "common/contracts/test_rf_oa_geometry_iob.py",
               "common/contracts/test_joint_geometry_iob.py",
               "common/contracts/test_detector_physical_projection.py",
               "common/contracts/test_oa_geometry_compiler.py",
@@ -2617,6 +2619,42 @@
         "scope": "integrations/tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/rf_oa_compiler.py",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/oa_compiler.py",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/operations.py",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/native_plans.py",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/geometry_execution.py",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/iob_core.lua",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/gem_primitives.py",
+                "reason": "rf_oa_geometry_actual_consumer_changed"
+              }
+            ],
+            "modules": [
+              "integrations/tests/test_rf_oa_compiler.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

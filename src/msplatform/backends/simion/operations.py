@@ -50,7 +50,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
-    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry"}
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_rf_oa_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
@@ -113,14 +113,15 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
     values["downstream_specs"] = tuple(values["downstream_specs"])
     compiled = CompiledSimionGeometry(**values)
-    if compiled.frontend_geometry.get("role") == "simion_oa_mr_complete_geometry":
+    if compiled.frontend_geometry.get("role") == "simion_rf_oa_geometry":
         raise ContractError("joint geometry has no supported prepared model yet")
+    joint_oa_mr = compiled.frontend_geometry.get("role") == "simion_oa_mr_complete_geometry"
     joint_ip = compiled.frontend_geometry.get("role") == "simion_rf_ip_geometry"
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
-    independent_component = independent_rf or independent_oa or joint_ip
-    required = {"clock", "clock_authority"} | ({"groups"} if independent_oa or joint_ip else set()) | ({"ip_schedule"} if joint_ip else set()) | (set() if independent_component else {"pulse"})
-    if (not required <= drive.keys() or set(drive) - required - {"groups"} - ({"pulse"} if independent_oa else set())
+    independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr
+    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip else set()) | ({"ip_schedule"} if joint_ip else set()) | (set() if independent_component else {"pulse"})
+    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr else {"groups"}) - ({"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
         raise ContractError("model drive requires its actual clock/groups and declared pulse contract")
@@ -152,12 +153,18 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     components = {name: compiled.components_resolved[name] for name in selected}
     clock = dict(clock_epoch_id=validation["clock_epoch_id"], authority_sha256=validation["authority_sha256"],
                  **dict(drive["clock"]))
-    expanded = (dict(groups=copy.deepcopy(drive["groups"]), clock=clock, ip_schedule=copy.deepcopy(drive["ip_schedule"])) if joint_ip else
-        (dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
-        **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {})) if independent_oa else
-        project_resolved_drive(compiled, components, clock=clock,
-            **({} if independent_rf else dict(pulse=drive["pulse"]))))
-    )
+    if joint_oa_mr:
+        expanded = dict(oa_groups=copy.deepcopy(drive["oa_groups"]),
+            mr_authority=copy.deepcopy(drive["mr_authority"]), pulse=copy.deepcopy(drive["pulse"]), clock=clock)
+    elif joint_ip:
+        expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
+            ip_schedule=copy.deepcopy(drive["ip_schedule"]))
+    elif independent_oa:
+        expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
+            **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {}))
+    else:
+        expanded = project_resolved_drive(compiled, components, clock=clock,
+            **({} if independent_rf else dict(pulse=drive["pulse"])))
     if "groups" in drive:
         expanded["groups"] = copy.deepcopy(drive["groups"])
     model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
@@ -374,6 +381,9 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
     if len(projects) == 2 and set(projects) == {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor"}:
         from .ip_compiler import compile_ip_assembly_geometry
         return compile_ip_assembly_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
+    if len(projects) == 2 and set(projects) == {"rf_multipole_ion_optics", "orthogonal_accelerator"}:
+        from .rf_oa_compiler import compile_rf_oa_geometry
+        return compile_rf_oa_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if len(projects) == 2 and set(projects) == {"orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"}:
         from .mr_compiler import compile_complete_mr_geometry
         return compile_complete_mr_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))

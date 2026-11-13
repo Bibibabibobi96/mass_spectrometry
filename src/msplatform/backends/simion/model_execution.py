@@ -119,7 +119,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
     native_sources = geometry.metadata.get('native_assets')
     if not isinstance(native_sources, Mapping):
         raise ValueError('published geometry lacks explicit native asset bindings')
-    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}
+    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}
     for domain, names in native_sources.items():
         expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
@@ -240,7 +240,7 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
     freeze_file(Path(seed['source_record']['path']), Path(seed['destination']))
     records['structural_seed'] = bind('model_structural_seed', Path(seed['destination']))
     seed_parent = Path(seed['destination']).parent
-    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}
+    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}
              else 4 + int('entrance_refinement' in assets))
     for index in range(1, count+1):
         owned(seed_parent/f'iob_seed_placeholder_{index:02d}.pa0', 'solver_native_binary')

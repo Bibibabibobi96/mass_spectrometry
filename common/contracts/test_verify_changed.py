@@ -2291,6 +2291,39 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertIn('$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)',verify)
         self.assertIn('-m common.gate_unittest @coreTests',verify)
 
+    def test_joint_model_and_rf_oa_public_changed_plan_selects_actual_consumers(self):
+        def integration_modules(request):
+            result = set()
+            for row in request['stages']:
+                if row['selected'] and row['name'].startswith('instrument_assembly_integration'):
+                    command = row['command']
+                    values = [*command.get('parameters', {}).get('SelectedTestModules', []),
+                              *command.get('arguments', [])]
+                    result.update(value.removesuffix('.py').replace('/', '.').rsplit('.', 1)[-1]
+                                  for value in values)
+            return result
+        cases = (
+            ('src/msplatform/backends/simion/mr_model.py', {'test_oa_mr_model', 'test_rf_oa_geometry_iob'}, False),
+            ('src/msplatform/backends/simion/rf_oa_compiler.py', {'test_oa_mr_model', 'test_rf_oa_geometry_iob'}, True),
+            ('src/msplatform/backends/simion/resources/iob_core.lua', {'test_oa_mr_model', 'test_rf_oa_geometry_iob'}, True),
+            ('common/contracts/test_oa_mr_model.py', {'test_oa_mr_model'}, False),
+            ('common/contracts/test_rf_oa_geometry_iob.py', {'test_rf_oa_geometry_iob'}, False),
+        )
+        for path, required, integration in cases:
+            with self.subTest(path=path):
+                request, _ = self.plan('-ChangedPath', path)
+                common = {value.removesuffix('.py').replace('/', '.').rsplit('.', 1)[-1]
+                          for row in request['stages'] if row['selected'] and
+                          (row['name'] == 'common_contracts' or row['name'].startswith('common_contracts__tests_'))
+                          for value in row['command'].get('arguments', [])}
+                self.assertTrue(required <= common, (path, required, common))
+                if integration:
+                    modules = integration_modules(request)
+                    self.assertIn('test_rf_oa_compiler', modules, (path, modules))
+        request, _ = self.plan('-ChangedPath', 'integrations/tests/test_rf_oa_compiler.py')
+        modules = integration_modules(request)
+        self.assertIn('test_rf_oa_compiler', modules)
+
     def test_installed_mr_phase_public_plan_preserves_core_and_full_integration(self):
         request, _ = self.plan('-ChangedPath',
             'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/drift_phase_contract.py')
