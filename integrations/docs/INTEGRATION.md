@@ -288,14 +288,14 @@ Current Program source creates an `instance_adjust` overlay only for the optiona
 refinement (slot 5); this four-slot selection leaves all four instances unchanged on that
 source path. The source-free observations above do not execute or qualify this callback.
 The frontend parent uses its declared Neumann exterior while the tube is solved separately;
-the open OA-exit transition and detector vacuum margin still require a common-domain V/E
-reference. The common-domain COMSOL [geometry-only build and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261113_003938__build__comsol__geometry-only-6fa5e6a28135/summary.json)
+the open OA-exit transition and detector vacuum margin require independent common-domain
+V/E evidence. The common-domain COMSOL [geometry-only build and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261113_003938__build__comsol__geometry-only-6fa5e6a28135/summary.json)
 now report success for 77 canonical members, 50 groups, 81 geometry domains (including
 three vacuum domains) and six outer faces. The saved MPH is 4,782,576 bytes; its manifest
 SHA-256 is `0e340794fcaa1195aa3ccb32d527ac1b3c619bb0426de1ac5ae3007740de455c`.
-Both reports record zero physics, mesh, study and solver features. This is geometry
-and reopen evidence only; field, sampling, phase, convergence and trajectory comparisons
-remain open. No extra conductor, aperture plate, artificial thickness or physical crop has
+Both reports record zero physics, mesh, study and solver features. Their geometry-only
+scope is distinct from the subsequent controlled field cases below. No extra conductor,
+aperture plate, artificial thickness or physical crop has
 been introduced to close these numerical interfaces.
 
 The first controlled common-domain carrier diagnostic used that same geometry with a
@@ -308,14 +308,40 @@ then passed with round-trip binary64 precision, all 45 original IDs/statuses ret
 and no Compute, remesh or source-model rewrite. The original failed receipt is unchanged;
 the recovered model identity is explicitly captured from its stopped producer.
 
-At x=y=0, the coarse carrier reference reports V=0.50578171143547335 V at
-z=600.03540659829446 mm and V=3.571239077807832 V at z=600.25 mm; the latter
-has Ez=-14284.956256288338 V/m. These are reference samples, not a comparison PASS.
-The box Dirichlet boundary differs from the partitioned parent's Neumann boundary.
-The solve's working-set observation exceeded its 8 GiB warning threshold; it completed
-without a physical-memory stop. This private frozen-source diagnostic does not establish
-an installed reference capability. Paired SFI sampling, RF/pulse states, actual Program
-execution, domain/grid/solver/trajectory convergence and coupled-field qualification remain OPEN.
+The ordinary-installed [coarse split-field producer](../../../artifacts/projects/instrument_assembly/runs/20261113_012350__sim__simion__fields-792f9ffbdbdb/summary.json)
+published its carrier and RF/pulse bases without source release or Fly in 3,573.70 s.
+Its parent mesh is 1 x 1 x 0.1 mm; the physical components, poses and all 50 groups
+remain the same selected design. The [actual saved-IOB carrier sample](../../../artifacts/projects/instrument_assembly/runs/20261113_082554__analysis__simion__carrier-d442f83909a1/summary.json)
+passed in 91.76 s with all 45 original IDs/statuses, 17 selected finite vacuum samples,
+57 parent-node checks, two grounded carriers and three reflectron endpoints. This loaded
+voltage audit is bounded to those checks, not a whole-field proof. It invokes neither
+the tracking Program nor Fly.
+
+The [process-free carrier comparison](../../../artifacts/projects/instrument_assembly/runs/20261113_084815__analysis__python__carrier-compare-b7b69c0ee813/summary.json)
+retains all 45 rows and pairs 17 points at exactly equal world coordinates. It authenticates
+the physical scene, source clock and all 50 canonical carrier voltages. E-vector RMS/max
+differences are 0.00270081/0.00793043 V/m; potential RMS/max differences are
+4.82348e-7/1.96938e-6 V. Near-zero transverse components make relative percentages
+uninformative. Frozen round-trip CSVs, both BVP descriptions and source captures permit
+pure replay; publication took 12.43 s and started zero processes or native operations.
+
+`compare_static_field_samples` retains its strict same-BVP requirement. The same pure
+comparison core also serves `compare_same_scene_field_variants`: explicit caller-authenticated
+scene and excitation identities are required, both different BVPs and missing coverage
+are retained, and its result is always descriptive with equivalence `NOT_CLAIMED`.
+The finite 0 V common box differs from the split parent's Neumann boundary and independently
+refined downstream domains; the carrier result does not establish interface coupling.
+
+Common-domain [RF-reference](../../../artifacts/projects/instrument_assembly/runs/20261113_081926__sim__comsol__basis-473a28899191/summary.json)
+and [pulse-delta](../../../artifacts/projects/instrument_assembly/runs/20261113_082854__sim__comsol__basis-891be7302b44/summary.json)
+cases both published 17 finite samples while retaining all 45 rows. They reused the saved
+mesh; before/after domain, mesh-statistic, feature-tag and size readbacks agree, without
+claiming bytewise mesh identity. Their command walls were 220.87/236.84 s. The carrier
+solve exceeded its original 8 GiB working-set warning; these successors use an explicit
+16 GiB warning profile, not a claim of measured capacity bounds. Private reference sources
+do not establish an installed common-domain capability. RF/pulse phase comparisons,
+actual Program callbacks, domain/grid/solver/trajectory convergence and coupled-field
+qualification remain OPEN.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

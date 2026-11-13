@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Callable
 
 from msplatform.contracts.rigid_transform import RigidTransform
 import numpy as np
@@ -98,7 +98,7 @@ def normalized_rms_difference_pct(
     }
 
 
-def compare_static_field_samples(
+def _compare_static_field_samples(
     reference: pd.DataFrame,
     candidate: pd.DataFrame,
     *,
@@ -107,6 +107,7 @@ def compare_static_field_samples(
     reference_transform: RigidTransform,
     candidate_transform: RigidTransform,
     coordinate_tolerance_mm: float,
+    bvp_policy: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
 ) -> dict[str, Any]:
     """Compare explicit static samples after declared rigid frame transforms.
 
@@ -133,8 +134,7 @@ def compare_static_field_samples(
             raise ValueError(f"{label} frame transform differs")
     if reference_transform.to_frame_id != candidate_transform.to_frame_id:
         raise ValueError("common frame differs")
-    if reference_metadata["bvp"] != candidate_metadata["bvp"]:
-        raise ValueError("BVP differs")
+    selected_bvp = bvp_policy(reference_metadata["bvp"], candidate_metadata["bvp"])
     if reference_metadata["potential_reference"] != candidate_metadata["potential_reference"]:
         raise ValueError("potential reference differs")
     states = {"valid", "solid", "interface", "outside", "excluded", "sample_error"}
@@ -206,11 +206,78 @@ def compare_static_field_samples(
     return {"role": "static_field_sample_comparison", "status": "DESCRIPTIVE_ONLY",
             "common_frame_id": reference_transform.to_frame_id,
             "reference_source": copy.deepcopy(reference_metadata["source"]), "candidate_source": copy.deepcopy(candidate_metadata["source"]),
-            "bvp": copy.deepcopy(reference_metadata["bvp"]), "potential_reference": copy.deepcopy(reference_metadata["potential_reference"]),
+            "bvp": copy.deepcopy(selected_bvp), "potential_reference": copy.deepcopy(reference_metadata["potential_reference"]),
             "coverage": coverage, "coverage_counts": {"total_union": len(coverage),
                 "reference": {status: sum(row["reference"] == status for row in coverage) for status in sorted(states | {"missing"})},
                 "candidate": {status: sum(row["candidate"] == status for row in coverage) for status in sorted(states | {"missing"})}},
             "paired_valid_count": len(valid_left), "metrics": metrics}
+
+
+
+def _require_identical_bvp(reference: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    if reference != candidate:
+        raise ValueError("BVP differs")
+    return reference
+
+
+def _retain_distinct_bvps(reference: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    return reference
+
+
+def compare_static_field_samples(
+    reference: pd.DataFrame, candidate: pd.DataFrame, *,
+    reference_metadata: dict[str, Any], candidate_metadata: dict[str, Any],
+    reference_transform: RigidTransform, candidate_transform: RigidTransform,
+    coordinate_tolerance_mm: float,
+) -> dict[str, Any]:
+    """Compare samples only when their declared BVPs are exactly equal."""
+    return _compare_static_field_samples(reference, candidate,
+        reference_metadata=reference_metadata, candidate_metadata=candidate_metadata,
+        reference_transform=reference_transform, candidate_transform=candidate_transform,
+        coordinate_tolerance_mm=coordinate_tolerance_mm, bvp_policy=_require_identical_bvp)
+
+
+def compare_same_scene_field_variants(
+    reference: pd.DataFrame, candidate: pd.DataFrame, *,
+    reference_metadata: dict[str, Any], candidate_metadata: dict[str, Any],
+    reference_transform: RigidTransform, candidate_transform: RigidTransform,
+    coordinate_tolerance_mm: float,
+    reference_scene_sha256: str, candidate_scene_sha256: str,
+    reference_excitation: dict[str, Any], candidate_excitation: dict[str, Any],
+) -> dict[str, Any]:
+    """Describe differences for one declared scene, without claiming BVP equivalence.
+
+    Scene digests and excitation are explicit caller-owned identities; this pure
+    function does not open source artifacts or independently authenticate them.
+    """
+    import re
+
+    for digest in (reference_scene_sha256, candidate_scene_sha256):
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-fA-F]{64}", digest) is None:
+            raise ValueError("canonical physical scene SHA-256 is required")
+    if reference_scene_sha256.lower() != candidate_scene_sha256.lower():
+        raise ValueError("canonical physical scene differs")
+    for excitation in (reference_excitation, candidate_excitation):
+        if (not isinstance(excitation, dict)
+                or not isinstance(excitation.get("electrode_voltages_v"), dict)
+                or not excitation["electrode_voltages_v"]
+                or any(not isinstance(name, str) or not name for name in excitation["electrode_voltages_v"])
+                or any(isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, float))
+                       or not np.isfinite(value) for value in excitation["electrode_voltages_v"].values())):
+            raise ValueError("explicit finite electrode voltages are required")
+    if reference_excitation != candidate_excitation:
+        raise ValueError("excitation differs")
+    result = _compare_static_field_samples(reference, candidate,
+        reference_metadata=reference_metadata, candidate_metadata=candidate_metadata,
+        reference_transform=reference_transform, candidate_transform=candidate_transform,
+        coordinate_tolerance_mm=coordinate_tolerance_mm, bvp_policy=_retain_distinct_bvps)
+    result.pop("bvp")
+    result.update(role="same_scene_field_variant_comparison", bvp_equivalence="NOT_CLAIMED",
+        canonical_scene_sha256=reference_scene_sha256.lower(),
+        excitation=copy.deepcopy(reference_excitation),
+        reference_bvp=copy.deepcopy(reference_metadata["bvp"]),
+        candidate_bvp=copy.deepcopy(candidate_metadata["bvp"]))
+    return result
 
 
 def validate_static_comparison_authority(authority: dict[str, Any]) -> None:

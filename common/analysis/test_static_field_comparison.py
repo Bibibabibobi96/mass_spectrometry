@@ -2,7 +2,7 @@
 import copy
 import unittest
 import pandas as pd
-from msplatform.analysis.field_comparison import compare_static_field_samples
+from msplatform.analysis.field_comparison import compare_same_scene_field_variants, compare_static_field_samples
 from msplatform.contracts.rigid_transform import RigidTransform
 
 
@@ -103,6 +103,57 @@ class StaticFieldComparisonTests(unittest.TestCase):
         self.assertEqual(result['paired_valid_count'],1)
         self.assertEqual(result['coverage_counts']['reference']['sample_error'],1)
         self.assertEqual(result['coverage_counts']['candidate']['interface'],1)
+
+
+    def test_descriptive_variants_preserve_distinct_bvps_scene_and_coverage(self):
+        metadata=copy.deepcopy(self.meta);metadata['bvp']={'domain':'partitioned'}
+        excitation={'electrode_voltages_v':{'ground':0.,'rod':3.},'rf_phase':'positive_peak','pulse_state':'off'}
+        other=self.rows.copy();other.loc[0,'Ex_V_per_m']=3.;other.loc[0,'potential_V']=4.
+        missing=other.copy();missing.loc[0,'point_id']='missing';missing.loc[0,'status']='outside'
+        result=compare_same_scene_field_variants(self.rows,pd.concat([other,missing],ignore_index=True),
+            reference_metadata=self.meta,candidate_metadata=metadata,reference_transform=self.identity,
+            candidate_transform=self.identity,coordinate_tolerance_mm=0.,reference_scene_sha256='a'*64,
+            candidate_scene_sha256='A'*64,reference_excitation=excitation,candidate_excitation=excitation)
+        self.assertEqual(result['status'],'DESCRIPTIVE_ONLY');self.assertEqual(result['bvp_equivalence'],'NOT_CLAIMED')
+        self.assertEqual(result['reference_bvp'],self.meta['bvp']);self.assertEqual(result['candidate_bvp'],metadata['bvp'])
+        self.assertEqual(result['metrics']['field_vector']['rms_difference_V_per_m'],3.)
+        self.assertEqual(result['metrics']['potential']['rms_difference_V'],4.)
+        self.assertEqual(result['coverage_counts']['reference']['missing'],1)
+        metadata['bvp']['domain']='mutated';excitation['electrode_voltages_v']['rod']=99.
+        self.assertEqual(result['candidate_bvp']['domain'],'partitioned');self.assertEqual(result['excitation']['electrode_voltages_v']['rod'],3.)
+
+    def test_descriptive_static_excitation_needs_no_rf_or_pulse_placeholder(self):
+        excitation={'electrode_voltages_v':{'ground':0.,'plate':5.}}
+        result=compare_same_scene_field_variants(self.rows,self.rows,
+            reference_metadata=self.meta,candidate_metadata=self.meta,reference_transform=self.identity,
+            candidate_transform=self.identity,coordinate_tolerance_mm=0.,reference_scene_sha256='a'*64,
+            candidate_scene_sha256='a'*64,reference_excitation=excitation,candidate_excitation=copy.deepcopy(excitation))
+        self.assertEqual(result['excitation'],excitation)
+        self.assertEqual(result['bvp_equivalence'],'NOT_CLAIMED')
+    def test_descriptive_variants_reject_mismatch_and_preserve_numerical_guards(self):
+        def call(**changes):
+            excitation={'electrode_voltages_v':{'ground':0.},'rf_phase':'zero','pulse_state':'off'}
+            metadata=copy.deepcopy(self.meta);metadata['bvp']={'domain':'partitioned'}
+            args=dict(reference_metadata=self.meta,candidate_metadata=metadata,reference_transform=self.identity,
+                candidate_transform=self.identity,coordinate_tolerance_mm=0.,reference_scene_sha256='a'*64,
+                candidate_scene_sha256='a'*64,reference_excitation=excitation,candidate_excitation=copy.deepcopy(excitation))
+            left=changes.pop('left',self.rows);right=changes.pop('right',self.rows);args.update(changes)
+            return compare_same_scene_field_variants(left,right,**args)
+        with self.assertRaisesRegex(ValueError,'scene differs'):call(candidate_scene_sha256='b'*64)
+        with self.assertRaisesRegex(ValueError,'SHA-256'):call(candidate_scene_sha256='')
+        with self.assertRaisesRegex(ValueError,'excitation differs'):call(candidate_excitation={'electrode_voltages_v':{'ground':1.},'rf_phase':'zero','pulse_state':'off'})
+        with self.assertRaisesRegex(ValueError,'finite electrode'):call(candidate_excitation={'electrode_voltages_v':{'ground':float('nan')},'rf_phase':'zero','pulse_state':'off'})
+        meta=copy.deepcopy(self.meta);meta['potential_reference']='other'
+        with self.assertRaisesRegex(ValueError,'potential reference differs'):call(candidate_metadata=meta)
+        meta=copy.deepcopy(self.meta);meta['units']['electric_field']='V/mm'
+        with self.assertRaisesRegex(ValueError,'units differ'):call(candidate_metadata=meta)
+        bad=self.rows.copy();bad.loc[0,'x_mm']=2.
+        with self.assertRaisesRegex(ValueError,'coordinates differ'):call(right=bad)
+        bad=self.rows.copy();bad.loc[0,'Ex_V_per_m']=float('nan')
+        with self.assertRaises(ValueError):call(right=bad)
+        bad=self.rows.copy();bad.loc[0,'status']='not_known'
+        with self.assertRaisesRegex(ValueError,'unknown sample status'):call(right=bad)
+
 
 
 if __name__=='__main__':unittest.main()
