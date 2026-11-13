@@ -319,10 +319,14 @@ MATLAB 原生输出的写入授权现复用公共真实路径身份解析：现�
 
 The current executable three-zone funnel is v2. Its active authoring contract is refreshed
 through the existing `run_theory --refresh-authorities` compiler when repository-source imports change;
-strict authority byte/SHA checks remain in force. The deferred SciPy stats import in peak metrics
-and the canonical manifest-publication import in the CLI changed their source identities without
-updating this binding, so software verification correctly rejected it. The v2 refresh updates only
-those two source records, preserving all scientific fields and the other authorities.
+strict authority byte/SHA checks remain in force. The approved canonical-detector
+numerical projection changed the generated geometry to 10,603 bytes without
+refreshing its active campaign binding. The canonical renderer now updates that
+record's byte count and SHA while preserving every scientific field and the
+other authorities. Both original mapping and theory modules passed 22 tests /
+29 successful records in an isolated fixed candidate; missing, stale and
+tampered bindings still refuse. This source repair does not establish a full
+Repository, native or scientific result.
 
 V1 is retained as historical input under the C3/J3 contract and is not refreshed for current execution.
 Its current file bytes are preserved; strict loading rejects its stale source binding. Earlier maintenance
