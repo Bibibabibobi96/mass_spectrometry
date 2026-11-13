@@ -375,6 +375,27 @@ and 30773.70/126467.59 V/m at 55 us with the pulse on. The different boundary
 conditions and unqualified reference mesh prevent attributing these differences
 to coupling, discretization or a particular backend.
 
+Independent replay of the same 55 us CSV pair gives vector-field squared error
+16,099,348,246.6742 (V/m)^2 over the original 17 pairs. The unchanged
+`detector_parent_vacuum` point, (44.575, 0, 0.1) mm, contributes 99.3459483%.
+Its carrier sampler actually selected slot 4, `detector.pa0`, and measured zero.
+The RF/pulse zeros were emitted by the sampler's `inactive_by_selected_domain`
+branch, not measured dynamic fields or Fly callbacks. All 45 point statuses and
+the original error remain preserved; the point lies inside the detector PA's
+0.2 mm forward vacuum buffer.
+
+A source-only Program rendered from the publicly verified published FieldBundle
+and original 100-particle packet contains RF/pulse responses for slot 3 only.
+Slot 4 has disabled ideal-field modes and an identity region hook, so that
+Program leaves its native entry gradient unchanged. This is source evidence,
+not an observed final callback. The render also exposes a stale finer-grid
+declaration in the observation draft; it describes the published (1, 1, 0.1) mm
+field and does not accept the draft's (0.5, 1, 0.05) mm field request. The Program,
+exact input identities and read scope are retained at workspace
+`.tools/phase04-codex-takeover-20261109/v87-sfi-slot4-program-audit-agent7-r1`.
+Finite real callback observations across the PA's forward vacuum boundary and
+COMSOL local-field convergence remain open; no point or physical entity was moved.
+
 The [read-only RF cold audit](../../../artifacts/projects/instrument_assembly/runs/20261113_092901__analysis__comsol__rf-cold-audit-b326a49c20ce/summary.json)
 matches all 50 actual potential selections to the sealed geometry report and finds
 at most 5.6844e-14 V solved boundary residual. It confirms the mm coordinate
