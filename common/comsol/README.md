@@ -71,6 +71,26 @@ the full installed parent (1421.093 seconds), including both geometry consumers.
 MATLAB classifier do not qualify a common electric field, full SFI coupling,
 GUI parity or continuous flight.
 
+### Complete Assembly electrostatic model
+
+`msplatform.backends.comsol.assembly_electrostatic_model.prepare_model` consumes a
+verified published COMSOL `geometry_artifact`, an explicit request and an execution
+context. The request supplies one voltage per selected scientific group, relative
+permittivity, exterior potential, mesh automatic level and electrode `hmax`, and a
+stationary study. The context supplies the existing COMSOL and MATLAB tools and
+`prepare_assembly_electrostatic_model` stage policy. The owner protects the geometry
+source, saves an unsolved `prepared_model`, and cold-reopens it independently; it
+does not call Compute.
+
+The retained [model build](../../../artifacts/projects/instrument_assembly/runs/20261114_024952__build__comsol__assembly-model-19e95c7582cc/summary.json)
+and cold reopen succeeded for 50 groups in 105.371 seconds with frozen source and
+stopped writers. The separate [saved-model verifier QA](../../../artifacts/projects/instrument_assembly/runs/20261114_032400__analysis__comsol__model-qa-cc71e183c7fa/results/model_qa.json)
+accepted 5 mm and its equivalent 0.005 m and refused 7 mm; it did not mesh, solve,
+or save the source. The earlier failed model `20261114_022813__build__comsol__assembly-model-5848d44f9431`
+and hmax probe remain retained. This is
+native model preparation evidence, not a solved field, installed-model acceptance,
+field convergence, particle flight or scientific qualification.
+
 ## 正式启动入口
 
 `../../src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根

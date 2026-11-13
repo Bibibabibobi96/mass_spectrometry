@@ -374,6 +374,17 @@ operation；先`discardData()`、明确`source=file`、设置新filename再`impo
 分别定义importData的嵌入、discardData的丢弃及refresh的重新读取语义；按函数当前数据来源选择，
 不把三者无条件串联。2026-10-04的独立小函数试验与模型复用验证只证明接口交接，不是场收敛证据。
 
+### Read saved numerical expressions in an explicit unit
+
+COMSOL 6.4 `model.param.evaluate(expression, unit)` evaluates an expression in
+the requested unit. The electrode mesh `hmax` verifier requests `mm` before
+comparing against the frozen request. The official
+[ParamBase API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/ParamBase.html)
+(checked 2026-11-14) documents both arguments. Independent saved-model QA
+accepted equivalent 5 mm and 0.005 m settings and rejected 7 mm. Material,
+selection, tensor and study checks remain active. This performs no solve and
+does not establish mesh or field convergence.
+
 ## 数值提取
 
 `mphinterp`适合指定坐标插值，`mpheval`适合在FEM网格实体上求值：

@@ -246,6 +246,17 @@ with two complete posed instances and all 15 scientific groups in each case;
 and checkout guard remained unchanged. This is CadQuery kernel evidence, not
 ordinary-install, SolidWorks, native field/flight or Formal qualification; current
 IP scope and evidence are recorded in its [project state](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md).
+A subsequent public COMSOL model stage consumed the canonical saved geometry and
+explicit group voltages, material, exterior potential, mesh controls and stationary
+study. [Build and independent cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261114_024952__build__comsol__assembly-model-19e95c7582cc/summary.json)
+completed with 50 groups, no Compute and frozen source (105.371 seconds). The separate
+[saved-model QA](../../../artifacts/projects/instrument_assembly/runs/20261114_032400__analysis__comsol__model-qa-cc71e183c7fa/results/model_qa.json)
+accepted 5 mm and 0.005 m as equivalent and refused 7 mm (65.281 seconds), without
+meshing, solving or saving the source. The earlier failed model `20261114_022813__build__comsol__assembly-model-5848d44f9431`
+and hmax probe remain retained.
+The model stage has not yet received ordinary installed acceptance; the prior
+installed geometry result does not cover it. No field solution or scientific
+qualification is claimed by these model receipts.
 The current shared physical-member traversal is owned by
 `msplatform.components.geometry_members`; CAD and COMSOL consume that same
 provider-aware implementation. Neutral Assembly data does not import provider
