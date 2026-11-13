@@ -295,6 +295,108 @@ end
             with self.subTest(bad=bad),self.assertRaises(ValueError):
                 _instrument_plane_observations(skeleton,[definition],geometry,consumed_plane_events=[bad],particle_ids=[1009],start_times_us=[2.])
 
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_static_detector_observer_records_entry_without_extra_query(self):
+        directory = self.root / 'static_observer'
+        directory.mkdir()
+        request, run, _ = scientific_preparation_fixture(directory, recorded_birth=True)
+        prepare(request, run)
+        self.upstream, self.oatof = read_designs(run)
+        self.geometry = json.loads((run / 'inputs/frontend_geometry.json').read_text())
+        self.design = json.loads((run / 'inputs/frontend_field_design.json').read_text())
+        spec = field_observation_spec()
+        spec['domain_id'] = 'detector'
+        observation = dict(specification=spec, evidence_context=dict(
+            phase='full_instrument', clock_epoch_id='test-clock', mother_particle_ids=[11,77],
+            observation_basis='native_entry_gradient_no_extra_query',
+            static_carrier_record=dict(path='C:/inert/detector.pa0',bytes=123,sha256='A'*64)))
+        tail = r'''
+segment.observation_test_setup=function()
+  single_flight_standalone_dynamic_by_instance={}
+  single_flight_initialize_rf_drives()
+  single_flight_pulse=single_flight_pulse_component.new{canonical_clock=single_flight_instrument_time_us,
+    voltage_waveforms=single_flight_voltage_waveforms,pulse_time_us=10,pulse_width_us=3,
+    pulse_mode=function() return 1 end}
+  single_flight_analyzer={efield_adjust=function() body_calls=body_calls+1;return nil end}
+  single_flight_region_field={apply=function(base) return base end}
+  if single_flight_field_observer then single_flight_field_observer.start_run() end
+end
+segment.observation_test_end=function()
+  if single_flight_field_observer then single_flight_field_observer.summary() end
+end
+'''
+        script = self.root / 'static_observe.lua'
+        script.write_text(r'''
+segment={};body_calls=0;carrier_reads=0
+simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+local carrier={path='C:/inert/detector.pa0',dx_mm=.3,dy_mm=.25,dz_mm=.1,
+ field_vc=function() carrier_reads=carrier_reads+1;error('STATIC_EXTRA_QUERY') end}
+simion.wb.instances[4]={pa=carrier,scale=1,az=0,el=0,rt=0}
+dofile(arg[1]);segment.observation_test_setup()
+ion_instance=4;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6;ion_number=1;ion_time_of_flight=9.25
+ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+segment.efield_adjust();segment.observation_test_end()
+print('RESULT '..body_calls..' '..carrier_reads..' '..ion_dvoltsx_gu..' '..ion_dvoltsy_gu..' '..ion_dvoltsz_gu)
+''', encoding='utf-8', newline='\n')
+        outputs = {}
+        for enabled in (False, True):
+            program = self.build(native_path_projection=False, **({'field_observation':observation} if enabled else {}))
+            target = self.root / f'static_{enabled}.lua'
+            target.write_text(re.sub(r'\badjustable\s+', '', program) + tail, encoding='utf-8', newline='\n')
+            result = subprocess.run([str(LUA), str(script), str(target)], cwd=self.root,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            outputs[enabled] = result.stdout
+            self.assertIn('RESULT 1 0 10 20 30', result.stdout)
+        self.assertNotIn('applied_field_observation_header', outputs[False])
+        rows = [json.loads(line.split(' ',2)[2]) for line in outputs[True].splitlines()
+                if line.startswith('TRACE: applied_field_observation ')]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row['basis'], 'native_entry_gradient_no_extra_query')
+        self.assertEqual(row['entry_gradient_gu'], [10,20,30])
+        self.assertEqual(row['final_gradient_gu'], [10,20,30])
+        self.assertNotIn('pa_gu', row)
+        self.assertNotIn('rf_members', row)
+        self.assertNotIn('carrier_native_field_gu', row)
+        from msplatform.backends.simion.tracking_field_observation import _validate_field_observation_row
+        context = dict(eligible_batch_particle_ids=[11,77], instance_index=4, world_frame_id='oatof_global',
+            observation_basis='native_entry_gradient_no_extra_query', static_carrier_record=observation['evidence_context']['static_carrier_record'])
+        def validate(value, selected_context=context):
+            _validate_field_observation_row(value, spec, selected_context,
+                dict(record_seq=0,callback_seq=0), {item['bucket_id']:0 for item in spec['buckets']})
+        validate(row)
+        for key, value in [('basis','efield_adjust_query_only'),('instance_index',3),
+                           ('carrier_native_path','C:/inert/wrong.pa0'),('rf_members',[]),
+                           ('carrier_native_field_gu',[0,0,0]),('pulse_active_used',True)]:
+            bad = dict(row, **{key:value})
+            with self.subTest(key=key), self.assertRaises(ValueError): validate(bad)
+        for key,value in [('instance_index',3),('observation_basis','wrong'),
+                          ('static_carrier_record',dict(path='C:/inert/wrong.pa0'))]:
+            with self.subTest(context=key), self.assertRaises(ValueError): validate(row,dict(context,**{key:value}))
+        summary = next(json.loads(line.split(' ',2)[2]) for line in outputs[True].splitlines()
+                       if line.startswith('TRACE: applied_field_observation_summary '))
+        self.assertFalse(summary['coverage_complete'])
+        from msplatform.backends.simion.tracking_field_observation import collect_native_field_observations
+        header = next(json.loads(line.split(' ',2)[2]) for line in outputs[True].splitlines()
+                      if line.startswith('TRACE: applied_field_observation_header '))
+        log = self.root / 'static-observation.log'
+        case = dict(expected_particle_ids=[11,77], build_metadata={})
+        sources = {11:dict(instrument_time_us=.25),77:dict(instrument_time_us=2.5)}
+        log.write_text(outputs[True], encoding='utf-8')
+        collect = lambda: collect_native_field_observations([log],[case],sources,spec,lambda _:header['context'])
+        result = collect()
+        self.assertEqual(result['status'],'INCONCLUSIVE')
+        self.assertEqual(result['queries'],[row])
+        bad = dict(row,solver_elapsed_us=row['solver_elapsed_us']+1)
+        lines = [('TRACE: applied_field_observation '+json.dumps(bad))
+                 if line.startswith('TRACE: applied_field_observation ') else line for line in outputs[True].splitlines()]
+        log.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'clock differs'): collect()
+        log.write_text('\n'.join(line for line in outputs[True].splitlines()
+                         if line.startswith('TRACE: applied_field_observation_header '))+'\n',encoding='utf-8')
+        self.assertEqual(collect()['status'],'INCONCLUSIVE')
+
     def test_default_program_and_metadata_retain_pre_observer_exact_bytes(self):
         metadata = {}
         program = self.build(native_path_projection=False,build_metadata=metadata,

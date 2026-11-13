@@ -24,12 +24,18 @@ def _validate_field_observation_row(row: dict, spec: dict, context: dict, previo
         'grid_spacing_mm','instance_scale','instance_rotation_deg','entry_gradient_gu','rf_members','pulse_active_used',
         'pulse_basis','pa_gu','after_dynamic_gradient_gu','region_override','after_region_gradient_gu','final_gradient_gu',
         'actual_rf_phase_rad','rf_phase_basis','carrier_native_path','carrier_native_field_gu'}
+    static = context.get('observation_basis') == 'native_entry_gradient_no_extra_query'
+    if (context.get('observation_basis') not in (None, 'native_entry_gradient_no_extra_query')
+            or static != (spec['domain_id'] in {'flight_tube','reflectron','detector'})):
+        raise ValueError('applied-field context basis differs from domain')
+    if static:
+        required -= {'rf_members','pa_gu','carrier_native_field_gu'}
     active = row.get('pulse_active_used')
     if active is True: required.update(('pulse_scale_used','pulse_native_field_gu','pulse_native_path'))
     if set(row) != required or type(active) is not bool:
         raise ValueError('applied-field query fields differ')
     if (type(row['schema_version']) is not int or row['schema_version'] != 1
-            or row['role'] != 'single_reflection_applied_field_query' or row['basis'] != 'efield_adjust_query_only'):
+            or row['role'] != 'single_reflection_applied_field_query' or row['basis'] != ('native_entry_gradient_no_extra_query' if static else 'efield_adjust_query_only')):
         raise ValueError('applied-field query version/role/basis differs')
     if row['rf_phase_basis'] != 'unwrapped_kernel_phase_at':
         raise ValueError('applied-field RF phase is not the original unwrapped kernel phase')
@@ -45,8 +51,10 @@ def _validate_field_observation_row(row: dict, spec: dict, context: dict, previo
     def vector(value): return isinstance(value,list) and len(value)==3 and all(finite(item) for item in value)
     for key in ('instrument_time_us','solver_elapsed_us','instance_scale','actual_rf_phase_rad'):
         if not finite(row[key]): raise ValueError('nonfinite applied-field query scalar')
-    for key in ('world_position_mm','grid_spacing_mm','instance_rotation_deg','entry_gradient_gu','pa_gu',
-                'carrier_native_field_gu','after_dynamic_gradient_gu','after_region_gradient_gu','final_gradient_gu'):
+    vector_keys = ['world_position_mm','grid_spacing_mm','instance_rotation_deg','entry_gradient_gu',
+                   'after_dynamic_gradient_gu','after_region_gradient_gu','final_gradient_gu']
+    if not static: vector_keys += ['pa_gu','carrier_native_field_gu']
+    for key in vector_keys:
         if not vector(row[key]): raise ValueError('invalid applied-field query vector')
     if row['instance_scale'] <= 0 or min(row['grid_spacing_mm']) <= 0:
         raise ValueError('invalid applied-field native spacing/scale')
@@ -58,24 +66,31 @@ def _validate_field_observation_row(row: dict, spec: dict, context: dict, previo
     if (bucket is None or not bucket['time_min_us'] <= t < bucket['time_max_us']
             or t >= spec['deadline_us'] or counts[row['bucket_id']] >= 2):
         raise ValueError('applied-field query is outside its declared window/cap')
-    members = row['rf_members']
-    if (not isinstance(members,list) or len(members) != len(context['rf_sources'])
-            or any(not isinstance(item,dict) or set(item) != {'coefficient_used','native_field_gu','native_path'}
-                   or not finite(item['coefficient_used']) or not vector(item['native_field_gu']) for item in members)):
-        raise ValueError('applied-field actual RF basis/coefficient coverage differs')
-    records = context['field_records'][spec['domain_id']]
     def loaded_path(actual,expected):
         return isinstance(actual,str) and bool(actual) and Path(actual).name.casefold()==Path(expected['path']).name.casefold()
-    rf_records = [value for key,value in sorted(records.items()) if key.startswith('rf_reference')]
-    if (not loaded_path(row['carrier_native_path'],records['carrier_off']) or
-            any(not loaded_path(member['native_path'],record) for member,record in zip(members,rf_records,strict=True))):
-        raise ValueError('applied-field actual loaded native member name differs from its frozen record')
-    if active:
-        if (row['pulse_basis'] != 'actual_field_vc_used' or not finite(row['pulse_scale_used'])
-                or not vector(row['pulse_native_field_gu']) or not loaded_path(row['pulse_native_path'],records['pulse_delta'])):
-            raise ValueError('applied-field pulse evidence differs')
-    elif row['pulse_basis'] != 'not_applied_not_queried':
-        raise ValueError('inactive pulse cannot claim a native query')
+    if static:
+        if (active or row['pulse_basis'] != 'not_applied_not_queried'
+                or spec['domain_id'] not in {'flight_tube','reflectron','detector'}
+                or context['instance_index'] != {'flight_tube':1,'reflectron':2,'detector':4}[spec['domain_id']]
+                or not loaded_path(row['carrier_native_path'],context['static_carrier_record'])):
+            raise ValueError('static applied-field carrier, slot or local-query basis differs')
+    else:
+        members = row['rf_members']
+        if (not isinstance(members,list) or len(members) != len(context['rf_sources'])
+                or any(not isinstance(item,dict) or set(item) != {'coefficient_used','native_field_gu','native_path'}
+                       or not finite(item['coefficient_used']) or not vector(item['native_field_gu']) for item in members)):
+            raise ValueError('applied-field actual RF basis/coefficient coverage differs')
+        records = context['field_records'][spec['domain_id']]
+        rf_records = [value for key,value in sorted(records.items()) if key.startswith('rf_reference')]
+        if (not loaded_path(row['carrier_native_path'],records['carrier_off']) or
+                any(not loaded_path(member['native_path'],record) for member,record in zip(members,rf_records,strict=True))):
+            raise ValueError('applied-field actual loaded native member name differs from its frozen record')
+        if active:
+            if (row['pulse_basis'] != 'actual_field_vc_used' or not finite(row['pulse_scale_used'])
+                    or not vector(row['pulse_native_field_gu']) or not loaded_path(row['pulse_native_path'],records['pulse_delta'])):
+                raise ValueError('applied-field pulse evidence differs')
+        elif row['pulse_basis'] != 'not_applied_not_queried':
+            raise ValueError('inactive pulse cannot claim a native query')
     region = row['region_override']
     if (not isinstance(region,dict) or not {'replace_all'} <= set(region) <=
             {'replace_all','dvoltsx_gu','dvoltsy_gu','dvoltsz_gu'} or type(region['replace_all']) is not bool

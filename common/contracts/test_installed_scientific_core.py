@@ -7245,7 +7245,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     str(root / 'installed_observation_fixture.json'),
                     json.dumps([str(REPO_ROOT), str(root / 'source-offline'), str(root / 'sdist-offline')])],
                     cwd=root, environment=probe_environment, timeout=120)
-                self.assertIn('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1', observation)
+                self.assertIn('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1 static_render=1 static_collection=1', observation)
                 self.assertEqual((root / 'installed_observation_fixture.json').read_bytes(), observation_fixture_bytes)
                 self.assertTrue(all(path.read_bytes() == data for path, data in tof_spectrum_input_bytes.items()))
                 self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))

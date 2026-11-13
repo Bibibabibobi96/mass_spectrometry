@@ -279,6 +279,9 @@ function single_flight_field_observer.summary()
     stopped_by=single_flight_observation_stopped or 'native_end',deadline_seen=single_flight_observation_deadline_seen}))
 end
 '''
+    if context.get('observation_basis') == 'native_entry_gradient_no_extra_query':
+        observer = observer.replace("basis='efield_adjust_query_only'", "basis='native_entry_gradient_no_extra_query'")
+        observer = observer.replace("entry_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu},rf_members={},", "entry_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu},carrier_native_path=instance.pa.path,")
     # Source IDs are keys, not local ion numbers; no observation selects survivors.
     eligible = '{'+','.join(f'[{pid}]=true' for pid in context['eligible_batch_particle_ids'])+'}'
     observer = (observer.replace('@SPEC@',_lua_value(specification)).replace('@HEADER@',_lua_value(encoded))
@@ -1316,12 +1319,12 @@ def build_successor_program(
         evidence = field_observation['evidence_context']
         spec = validate_native_field_observation(field_observation['specification'],
             particle_ids=evidence['mother_particle_ids'],source_instances=tuple(rf_instances),
-            domain_ids=list(frontend_geometry['numerical_domains']),clock_epoch_id=evidence['clock_epoch_id'],flight=flight)
+            domain_ids=[*frontend_geometry['numerical_domains'],'flight_tube','reflectron','detector'],clock_epoch_id=evidence['clock_epoch_id'],flight=flight)
         if (spec['eligible_batch_anchor_particle_id'] not in particle_ids
                 or not set(particle_ids) <= set(evidence['mother_particle_ids'])):
             raise ValueError('native field observation belongs only to the unique anchor batch')
         observation_context = dict(evidence,eligible_batch_particle_ids=particle_ids,
-            instance_index=3 if spec['domain_id']=='parent' else 5,
+            instance_index={'parent':3,'entrance_refinement':5,'flight_tube':1,'reflectron':2,'detector':4}[spec['domain_id']],
             world_frame_id=frontend_geometry['native_frame_id'],
             gradient_unit='V/gu_positive_grad_V',basis_unit='field_vc_native_E_opposite_grad_V',
             query_semantics='efield_adjust_query_only_not_accepted_particle_state',
@@ -1367,6 +1370,16 @@ def build_successor_program(
     downstream_static_specs = _resolve_downstream_static_assets(downstream_static_fields, expected_downstream_indices)
     if {row["role"] for row in downstream_static_specs} != _DOWNSTREAM_STATIC_ROLES:
         raise ValueError("native full flight requires all three receipt-bound downstream static assets")
+    if observation_context is not None:
+        static_role = spec['domain_id'] in {'flight_tube','reflectron','detector'}
+        if static_role:
+            row = next(item for item in downstream_static_specs if item['role'] == spec['domain_id'])
+            record = observation_context.get('static_carrier_record')
+            if (observation_context.get('observation_basis') != 'native_entry_gradient_no_extra_query'
+                    or not isinstance(record, dict) or Path(record.get('path','')).name.casefold() != row['carrier_pa_basename'].casefold()):
+                raise ValueError('static observation requires its actual downstream carrier record')
+        elif 'observation_basis' in observation_context or 'static_carrier_record' in observation_context:
+            raise ValueError('dynamic observation cannot declare static carrier context')
     downstream_static_carriers = {
         str(item["role"]): str(item["carrier_pa_basename"])
         for item in downstream_static_specs

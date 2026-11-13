@@ -206,6 +206,18 @@ current model and per-unit metadata, including reused units. Missing windows sta
 `INCONCLUSIVE`; a complete bounded protocol is `RECORDED`, not a field-equivalence
 or accepted-particle-state result. Native phase/instance evidence remains open.
 Omitting the option retains the previous tracking behavior.
+The same bounded observer also accepts the actual downstream `flight_tube`,
+`reflectron` and `detector` domains. Their records use the explicit
+`native_entry_gradient_no_extra_query` basis: actual callback entry and final
+gradients are captured without querying a response PA or inventing RF/pulse
+zeros. The verified downstream carrier binds each slot; PA-query-only fields
+are absent. All five affected software modules passed 98 parents / 369 records
+in 267.189 seconds on unchanged source. A targeted direct-wheel and
+sdist-rebuilt-wheel witness also passed in 93.511 seconds, including actual
+installed static rendering/collection and matching runtime payloads. Its trace
+values are explicitly synthetic; it does not replace the complete ordinary
+installation parent. These are software checks, including a plain-Lua callback
+witness; real-native static-slot observations remain unverified.
 The opt-in Program also records the original anchor particle's `instance_adjust`
 candidate/output pairs after calling the unchanged callback body. It records the
 first occurrence of each pair, at most 16 rows within a separate 64 KiB budget.

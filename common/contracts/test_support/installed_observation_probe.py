@@ -107,6 +107,31 @@ with tempfile.TemporaryDirectory() as directory:
  collected=_collect_unit_field_observation(observed,cases,logs,lambda unit:bound)
  assert collected['status']=='INCONCLUSIVE' and collected['queries']==[query]
  assert collected['candidate_observations']['status']=='INCONCLUSIVE' and not collected['candidate_observations']['rows']
+ # Explicitly synthetic static-detector trace; no native PA query or measured RF/pulse value.
+ static_obs=copy.deepcopy(obs);static_obs['native_field_observation']['domain_id']='detector'
+ static_plan=plan_tracking_execution(model,observations=static_obs,unit_size=50,**common)
+ static_first=_render_tracking_controls(model,slice_tracking_plan(static_plan,static_plan['units'][0]),**kwargs)
+ static_second=_render_tracking_controls(model,slice_tracking_plan(static_plan,static_plan['units'][1]),**kwargs)
+ static_bound=static_first['build_metadata']['native_field_observation'];static_spec=static_bound['specification'];static_context=static_bound['context']
+ assert static_context['instance_index']==4 and static_context['observation_basis']=='native_entry_gradient_no_extra_query'
+ assert static_context['static_carrier_record']==downstream['detector']['carrier_record']
+ assert "basis='native_entry_gradient_no_extra_query'" in static_first['program'] and 'carrier_native_path=instance.pa.path' in static_first['program']
+ assert 'native_field_observation' not in static_second['build_metadata'] and 'applied_field_observation_header' not in static_second['program']
+ # The finite phase scalar is synthetic protocol input, not a native RF observation.
+ static_query=copy.deepcopy(query)
+ for key in ('rf_members','pa_gu','carrier_native_field_gu'): static_query.pop(key)
+ static_query.update(basis='native_entry_gradient_no_extra_query',domain_id='detector',instance_index=4,
+  carrier_native_path=downstream['detector']['carrier_record']['path'],actual_rf_phase_rad=0.)
+ static_header=dict(schema_version=1,role='single_reflection_applied_field_observation_header',specification=static_spec,context=static_context)
+ static_cases=[dict(expected_particle_ids=unit['expected_particle_ids'],build_metadata=controls['build_metadata'])
+  for unit,controls in zip(static_plan['units'],(static_first,static_second),strict=True)]
+ static_logs=[root/'static-anchor.log',root/'static-other.log'];static_logs[1].write_text('',encoding='utf-8')
+ static_events=[('instance_adjust_observation_header',candidate_header),('applied_field_observation_header',static_header),
+  ('applied_field_observation',static_query),('applied_field_observation_summary',summary)]
+ static_logs[0].write_text(''.join('TRACE: '+name+' '+json.dumps(value)+'\n' for name,value in static_events),encoding='utf-8')
+ static_result=_collect_unit_field_observation(static_plan,static_cases,static_logs,lambda unit:static_bound)
+ assert static_result['status']=='INCONCLUSIVE' and static_result['queries']==[static_query]
+ assert static_result['candidate_observations']['status']=='INCONCLUSIVE' and not static_result['candidate_observations']['rows']
  collection_input=root/'collection-input.json'
  collection_input.write_text(json.dumps(dict(plan=observed,cases=cases,logs=list(map(str,logs)),metadata=bound)),encoding='utf-8')
  parser_path=Path(observation_parser.__file__).resolve();parser_backup=parser_path.with_name(parser_path.name+'.observation-held')
@@ -128,4 +153,4 @@ with tempfile.TemporaryDirectory() as directory:
  finally:
   backup.rename(module_path)
  assert module_path.read_bytes()==original
- print('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1')
+ print('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1 static_render=1 static_collection=1')

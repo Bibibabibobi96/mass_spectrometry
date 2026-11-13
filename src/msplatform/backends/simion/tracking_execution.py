@@ -222,7 +222,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         rf_instances,_ = native_frontend_instances(geometry['composition_plan'])
         spec = validate_native_field_observation(observations['native_field_observation'],
             particle_ids=provenance['mother_particle_ids'],source_instances=rf_instances,
-            domain_ids=list(geometry['numerical_domains']),clock_epoch_id=clock.clock_epoch_id,flight=flight)
+            domain_ids=[*geometry['numerical_domains'],'flight_tube','reflectron','detector'],clock_epoch_id=clock.clock_epoch_id,flight=flight)
         if any(row['source_component_id'] != spec['source_instance_id'] for row in rows):
             raise ValueError('native field observation source differs from the original births')
     from dataclasses import asdict
@@ -360,6 +360,9 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
             mother_particle_ids=copy.deepcopy(plan['source_provenance']['mother_particle_ids']),
             field_records=copy.deepcopy(frontend_records),
             field_manifest_identity=copy.deepcopy(plan['field_manifest_identity'])))
+        if observation['domain_id'] in downstream_assets:
+            selected_observation['evidence_context']['observation_basis'] = 'native_entry_gradient_no_extra_query'
+            selected_observation['evidence_context']['static_carrier_record'] = copy.deepcopy(downstream_assets[observation['domain_id']]['carrier_record'])
     program = build_successor_program({key:document['components_resolved'][key] for key in multipoles},
         field_design,document['components_resolved'][tof],frontend_geometry=geometry,flight=plan['flight'],
         birth_times_us=[row['instrument_time_us'] for row in plan['rows']],particle_ids=ids,

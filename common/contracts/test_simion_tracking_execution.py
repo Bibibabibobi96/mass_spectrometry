@@ -660,6 +660,64 @@ class PublicObservationTests(unittest.TestCase):
             self.assertNotIn('applied_field_observation_header', second['program'])
             self.assertNotIn('native_field_observation', second['build_metadata'])
 
+    def test_renderer_binds_static_detector_carrier_and_slot(self):
+        self.spec["domain_id"] = "detector"
+        from pathlib import Path
+        import tempfile
+        from msplatform.backends.simion.tracking_execution import _render_tracking_controls
+        from msplatform.backends.simion.native_plans import plan_solve_fields
+        from msplatform.backends.simion.field_bank import field_bank
+        from msplatform.backends.simion.field_identity import working_point_member_id
+        from msplatform.backends.simion.resources import native_resource_path
+        from msplatform.backends.simion.tracking_units import slice_tracking_plan
+        from msplatform.execution.resources import resource_path
+        numerical = copy.deepcopy(self.case.case.field_numerics)
+        numerical.pop('downstream_convergence_v')
+        design = plan_solve_fields(self.case.model, numerics=numerical)['field_design']
+        domains = [row['domain_id'] for row in design['domains']]
+        names = dict(analyzer_component_source='oatof_analyzer_component.lua', pulse_hook_source='single_flight_pulse_hook.lua',
+                     frontend_hook_source='single_flight_frontend_hook.lua', rf_drive_kernel_source='rf_drive.lua',
+                     voltage_waveforms_source='voltage_waveforms.lua')
+        sources = {key:native_resource_path(value).read_text(encoding='utf-8') for key,value in names.items()}
+        sources['native_path_source'] = resource_path('native_run_path.lua').read_text(encoding='utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def record(name):
+                return dict(path=str(root/name), exists=True, bytes=123, sha256='A'*64)
+            frontend = {domain:{working_point_member_id(point):record(
+                ('frontend' if domain=='parent' else 'frontend_entrance_refinement')+'.'+working_point_member_id(point)+'.pa')
+                for point in design['working_points']} for domain in domains}
+            downstream = {}
+            for role in ('flight_tube','reflectron','detector'):
+                family = [record(role+suffix) for suffix in ('.pa#','.pa0','.pa1','.pa-surf')] if role!='reflectron' else []
+                downstream[role] = dict(carrier_record=family[1] if family else record(role+'.pa'), family_records=family)
+            kwargs = dict(field_design=design, stored_bank=field_bank(design, domains), frontend_records=frontend,
+                          downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            plan = plan_tracking_execution(self.case.model, particles=self.case.packet,
+                clock_records=self.case.clocks, propagation=self.case.policy, observations=self.observations,
+                numerics=self.case.numerics, unit_size=50)
+            first = _render_tracking_controls(self.case.model, slice_tracking_plan(plan, plan['units'][0]), **kwargs)
+            second = _render_tracking_controls(self.case.model, slice_tracking_plan(plan, plan['units'][1]), **kwargs)
+            self.assertIn('applied_field_observation_header', first['program'])
+            self.assertEqual(first['build_metadata']['native_field_observation']['specification'], self.spec)
+            context = first['build_metadata']['native_field_observation']['context']
+            self.assertEqual(context['instance_index'], 4)
+            self.assertEqual(context['observation_basis'], 'native_entry_gradient_no_extra_query')
+            self.assertEqual(context['static_carrier_record'], downstream['detector']['carrier_record'])
+            self.assertIn("basis='native_entry_gradient_no_extra_query'", first['program'])
+            self.assertIn('carrier_native_path=instance.pa.path', first['program'])
+            self.assertNotIn('applied_field_observation_header', second['program'])
+            self.assertNotIn('native_field_observation', second['build_metadata'])
+            for role, index in (('flight_tube',1),('reflectron',2)):
+                self.spec['domain_id'] = role
+                selected = plan_tracking_execution(self.case.model, particles=self.case.packet,
+                    clock_records=self.case.clocks, propagation=self.case.policy, observations=self.observations,
+                    numerics=self.case.numerics, unit_size=50)
+                value = _render_tracking_controls(self.case.model, slice_tracking_plan(selected, selected['units'][0]), **kwargs)
+                actual = value['build_metadata']['native_field_observation']['context']
+                self.assertEqual(actual['instance_index'], index)
+                self.assertEqual(actual['static_carrier_record'], downstream[role]['carrier_record'])
+
     def test_observation_affects_recovery_identity(self):
         from msplatform.backends.simion.tracking_units import tracking_applicability
         plain = self.plan(dict(plane_observations=[]))
