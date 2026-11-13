@@ -97,22 +97,39 @@ class FieldWorkbenchTests(unittest.TestCase):
             'path_wrong_directory','path_wrong_drive','path_unc_wrong_share','path_wrong_filename',
             'path_drive_relative','path_namespace','path_above_root','path_unc_above_root'))
 
-    def _check_field_modes(self, faults):
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_tracking_seed_uses_private_bootstrap_with_published_companion(self):
+        self._check_field_modes(('tracking_old', 'tracking_valid', 'tracking_seed_companion'), tracking=True)
+
+    def _check_field_modes(self, faults, *, tracking=False):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             assembly,compiled,design,carriers,responses=case(root)
             for fault in faults:
                 with self.subTest(fault=fault):
                     folder=root/fault;folder.mkdir()
-                    plan=plan_field_workbench(compiled,field_design=design,components_resolved=assembly['components_resolved'],
-                        carriers=carriers,response_fields=responses,run_directory=folder,seed_record=SEED,native_path_resource=NATIVE_PATH)
+                    if tracking:
+                        from msplatform.backends.simion.tracking_execution import plan_tracking_workbench
+                        from common.contracts.test_simion_tracking_execution import TrackingExecutionPlanTests
+                        fixture=TrackingExecutionPlanTests(methodName='runTest'); fixture.setUp()
+                        published=folder/'published/fields.iob'; published.parent.mkdir()
+                        published.write_bytes(b'PUBLISHED_IOB')
+                        published.with_suffix('.fly2').write_text('particles { coordinates = 0 }')
+                        plan=plan_tracking_workbench(compiled,field_design=design,components_resolved=assembly['components_resolved'],
+                            carriers=carriers,response_fields=responses,
+                            field_workbench_record=dict(path=str(published),bytes=13,sha256='B'*64),run_directory=folder,
+                            program='-- prepared Program',native_source_rows=fixture.plan()['native_source_rows'],native_path_resource=NATIVE_PATH)
+                    else:
+                        plan=plan_field_workbench(compiled,field_design=design,components_resolved=assembly['components_resolved'],
+                            carriers=carriers,response_fields=responses,run_directory=folder,seed_record=SEED,native_path_resource=NATIVE_PATH)
                     for path,text in plan.materializations.items():
                         p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf-8',newline='\n')
                     seed=Path(plan.input_copies[0]['destination']);seed.parent.mkdir(parents=True,exist_ok=True);seed.write_bytes(b'INERT_NOT_IOB')
-                    (folder/'simion/fields').mkdir(parents=True)
+                    (folder/('simion/tracking' if tracking else 'simion/fields')).mkdir(parents=True,exist_ok=True)
+                    if tracking and fault=='tracking_seed_companion': seed.with_suffix('.fly2').write_text('UNTRUSTED')
                     if fault=='ambient_program': (folder/'simion/fields/fields.lua').write_text('error("FORBIDDEN")')
                     if fault=='nonzero_source': (folder/'inputs/no_particles.fly2').write_text('particles { standard_beam {} }')
-                    program='spec=dofile('+lua_value(str(folder/'inputs/field_iob.lua'))+')\nfault='+lua_value(fault)+'\n'+r'''
+                    program='spec=dofile('+lua_value(str(folder/('inputs/tracking_iob.lua' if tracking else 'inputs/field_iob.lua')))+')\nfault='+lua_value(fault)+'\n'+r'''
 local function norm(s) return s:gsub('\\','/'):lower() end
 if fault=='path_unc_equivalent' or fault=='path_unc_wrong_share' or fault=='path_unc_above_root' then
  spec.instances[1].path='//server/share/carriers/flight_tube.pa'
@@ -210,6 +227,20 @@ else
 end
 print('INERT_FIELD_IOB=PASS FAULT='..fault)
 '''
+                    if tracking:
+                        program=program.replace("local loads,queries=0,0", "if fault=='tracking_old' then spec.seed_iob="+lua_value(str(published))+" end\nlocal loads,queries=0,0")
+                        program=program.replace("assert(text:gsub('%s','')=='particles{coordinates=0,}')", "assert(#text>0)")
+                        program=program.replace(" core(spec,'build_fields',function(x) return x end)\n core(spec,'verify_fields',function(x) return x end)", " core(spec,'build',function(x) return x end)")
+                        start=program.index("local path_positive=")
+                        program=program[:start]+"""if fault=='tracking_valid' then
+ assert(okay,message)
+ for _,path in ipairs(spec.bootstrap_paths) do assert(not io.open(path,'rb'),'bootstrap not cleaned') end
+else
+ assert(not okay,'untrusted seed companion accepted')
+ assert(tostring(message):find('seed has an unexpected source/Program companion',1,true),tostring(message))
+end
+print('INERT_FIELD_IOB=PASS FAULT='..fault)
+"""
                     program=program.replace('CORE',lua_value(str(native_resource_path('iob_core.lua'))))
                     script=folder/'inert.lua';script.write_text(program,encoding='utf-8',newline='\n')
                     result=subprocess.run([str(LUA),str(script)],cwd=folder,capture_output=True,text=True,encoding='utf-8',timeout=30)

@@ -246,8 +246,8 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
                              program, native_source_rows, native_path_resource) -> NativeStagePlan:
     """Reuse the sole full solved-slot projection, changing only control transport.
 
-    The existing solved source-free workbench is the bootstrap; no new raw PA,
-    neutral placeholder, GEM2PA or refinement is necessary for tracking.
+    The verified structural seed supplies private bootstrap slots; published
+    field records remain protected inputs and supply every solved carrier.
     """
     if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'}:
         from .rf_tracking_execution import plan_rf_tracking_workbench
@@ -277,7 +277,7 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
     output = root/'simion/tracking/instrument.iob'
     spec = root/'inputs/tracking_iob.lua'
     text = ('local spec=(function()\n'+original+'\nend)()\n'
-            +'spec.seed_iob='+lua_value(str(seed))+'\nspec.output_iob='+lua_value(str(output))+'\nreturn spec\n')
+            +'spec.output_iob='+lua_value(str(output))+'\nreturn spec\n')
     materializations = {str(spec):text,str(output.with_suffix('.lua')):program,
                         str(output.with_suffix('.fly2')):render_restart_fly2(native_source_rows)}
     wrapper = native_resource_path('build_tracking_iob.lua')
@@ -286,7 +286,7 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
         outputs=[str(output)] if mode=='build' else [],success_marker=marker)
         for name,mode,marker in [('build_tracking_iob','build','SINGLE_REFLECTION_IOB=PASS'),
                                  ('verify_tracking_iob','verify','SINGLE_REFLECTION_IOB_REOPEN=PASS')])
-    return NativeStagePlan(materializations,(),operations,(str(output),))
+    return NativeStagePlan(materializations,projection.input_copies,operations,(str(output),))
 
 
 def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_bank: dict,

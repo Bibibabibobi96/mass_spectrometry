@@ -429,6 +429,23 @@ exact input identities and read scope are retained at workspace
 Finite real callback observations across the PA's forward vacuum boundary and
 COMSOL local-field convergence remain open; no point or physical entity was moved.
 
+The first attempt was refused before native startup by the unchanged 700 GiB
+capacity policy. Owner-controlled retirement subsequently removed only the obsolete
+n3 unrefined parent PA, preserving its other 180 files and original manifest.
+The next diagnostic, `20261113_162306__sim__simion__track-a2c5f36f7a98`, passed
+capacity admission but failed `build_tracking_iob`: the published field workbench's
+required zero-particle `fields.fly2` companion conflicts with the bootstrap guard.
+Its failed completion confirms the native writer exited; no Fly or field callback
+was produced. Tracking now uses the existing pinned private structural seed and
+its owned bootstrap copies. The published field IOB, zero-particle control and
+field-family records remain verified and protected; the companion guard is
+unchanged. The complete two-module source selection passed 20 tests; direct-wheel
+and sdist-rebuilt-wheel consumers each verified 522 matching runtime payloads,
+the actual planners, stock-Lua bootstrap cleanup and missing/tampered seed
+refusals in 108.192 seconds overall, with source and checkout identities stable.
+This selected installation result does not close the separate full-parent IP-reader
+child failure. Real-native validation of the repaired tracking bootstrap remains pending.
+
 The [read-only RF cold audit](../../../artifacts/projects/instrument_assembly/runs/20261113_092901__analysis__comsol__rf-cold-audit-b326a49c20ce/summary.json)
 matches all 50 actual potential selections to the sealed geometry report and finds
 at most 5.6844e-14 V solved boundary residual. It confirms the mm coordinate

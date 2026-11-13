@@ -181,9 +181,14 @@ OA/MR JSON-stable projections preserve existing geometry bytes and full tamper
 checks. Native joint construction/refinement, OA–MR models and fields, RF–IP/other
 named complete continuous consumers, HS1 and final installation/Repository remain
 open; these software stages do not retire the still-needed segmented producer.
-The detector callback diagnostic was refused before any native operation at the
-700 GiB capacity target. The user retained that target; owner-controlled retirement
-review continues, preserving the original point/error records and protected assets.
+The user retained the 700 GiB capacity target. Public-owner retirement of one
+obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
+diagnostic through admission. Its first preparation operation then failed on a
+published-workbench source companion, before Fly. The structural-seed repair
+preserves the companion guard and original field inputs. Its selected ordinary
+wheel/sdist consumers passed; real-native verification and the separate full
+installation-parent failure remain open. Original point/error records and protected
+assets stay intact.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. Full Repository, the original 15-minute
 software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.

@@ -319,7 +319,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         self.assertEqual(result['expected_operation_ids'],[])
         self.assertFalse(result['native_requested'])
         self.assertEqual(len(result['source_provenance']['mother_records']),100)
-    def test_workbench_transport_reuses_full_solved_projection_without_refine_or_copy(self):
+    def test_workbench_transport_uses_structural_seed_and_solved_projection_without_refine(self):
         from common.contracts.test_simion_field_workbench import case
         from common.contracts.test_simion_native_plans import NATIVE_PATH
         from msplatform.backends.simion.tracking_execution import plan_tracking_workbench
@@ -335,13 +335,19 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 carriers=carriers,response_fields=responses,field_workbench_record=fields,run_directory=root/'run',
                 program='-- inert transport-only Program fixture\n',native_source_rows=source,native_path_resource=NATIVE_PATH)
             self.assertEqual((compiled,design,carriers,responses),before)
-            self.assertEqual(plan.input_copies,())
+            from msplatform.backends.simion.resources import structural_seed_path
+            self.assertEqual(len(plan.input_copies),1)
+            seed=plan.input_copies[0]
+            self.assertEqual(Path(seed['source_record']['path']), structural_seed_path(4))
+            self.assertEqual(Path(seed['destination']), root/'run/simion/geometry/iob_seed/4_instance_seed.iob')
             self.assertEqual([row['operation_id'] for row in plan.operations],['build_tracking_iob','verify_tracking_iob'])
             self.assertEqual([row['arguments'][-2] for row in plan.operations],['build','verify'])
             self.assertEqual(len(plan.materializations),3)
             self.assertFalse((root/'run').exists())
             spec=plan.materializations[str(root/'run/inputs/tracking_iob.lua')]
-            self.assertIn('spec.seed_iob=',spec)
+            self.assertIn('4_instance_seed.iob',spec)
+            self.assertNotIn('spec.seed_iob=',spec)
+            self.assertNotIn(str(root/'published/fields.iob'),spec)
             self.assertIn('response_fields',spec)
             self.assertIn('native_priority_occupancy_probes',spec)
             self.assertIn('interface_field_probes',spec)
@@ -507,6 +513,27 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                     observations={'plane_observations':[]},numerics=self.numerics,limits={})
             self.assertEqual(protection.call_count,1)
             self.assertEqual([row['id'] for row in session.calls],list(session.expected_operation_ids))
+            from msplatform.backends.simion.resources import structural_seed_path
+            seed_path = structural_seed_path(4)
+            for call in session.calls:
+                guarded = {Path(row['path']).name for row in call['inputs']}
+                self.assertIn('fields.iob', guarded)
+                self.assertIn('fields.fly2', guarded)
+                self.assertIn('4_instance_seed.iob', guarded)
+            original_seed = seed_path.read_bytes()
+            for fault in ('missing', 'tampered'):
+                fake = root/fault/'4_instance_seed.iob'
+                fake.parent.mkdir()
+                if fault == 'tampered':
+                    fake.write_bytes(bytes([original_seed[0] ^ 1]) + original_seed[1:])
+                failed = Session(root/('bad_'+fault))
+                with patch('msplatform.backends.simion.resources.structural_seed_path', return_value=fake), \
+                        patch('msplatform.backends.simion.model_execution._protected_source'), \
+                        self.subTest(fault=fault), self.assertRaises((AssertionError, FileNotFoundError, ValueError)):
+                    execute_tracking(failed, fields_reference=artifact, particles=self.packet, propagation=self.policy,
+                        observations={'plane_observations':[]}, numerics=self.numerics, limits={})
+                self.assertEqual(failed.calls, [])
+            self.assertEqual(seed_path.read_bytes(), original_seed)
             product=result['manifest_extra_fields']['products']['trajectory']
             self.assertNotIn('tracking_workbench',product['data'])
             self.assertIn('native_controls',product['data']);self.assertIn('native_stdout',product['data'])
