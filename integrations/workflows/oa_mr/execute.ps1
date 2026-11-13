@@ -70,6 +70,31 @@ function Invoke-ProjectPython {
   try{$env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $script:pythonRoot)-join[IO.Path]::PathSeparator;& $python -B @Arguments;if($LASTEXITCODE-ne 0){throw "Python stage failed: $($Arguments -join ' ')"}}
   finally{$env:PYTHONPATH=$saved;Pop-Location}
 }
+function Invoke-FrozenCollectionGate {
+  param([Parameter(Mandatory)]$Frozen,[Parameter(Mandatory)][string]$Observation,
+    [Parameter(Mandatory)][string]$Output,[Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$AuthorRoot)
+  $root=[IO.Path]::GetFullPath([string]$Frozen.execution_root)
+  $helperRelative='src/msplatform/execution/resources/frozen_python_package.ps1'
+  $helperIdentity=@($Frozen.identities|Where-Object{$_.source_repo_path-ceq$helperRelative})
+  if($helperIdentity.Count-ne 1){throw 'Frozen Python verifier identity is missing or ambiguous.'}
+  $helperPath=Join-Path $root $helperRelative
+  if(-not(Test-Path -LiteralPath $helperPath -PathType Leaf)-or
+      (Get-FileHash -LiteralPath $helperPath -Algorithm SHA256).Hash-cne[string]$helperIdentity[0].sha256){
+    throw 'Frozen Python verifier is missing or differs from its frozen identity.'
+  }
+  . $helperPath
+  $files=@(@($Frozen.identities)+@($Frozen.dependency_contract_identity)|ForEach-Object{
+    [pscustomobject]@{relative_path=[string]$_.source_repo_path;path=[string]$_.snapshot_path;sha256=[string]$_.sha256}
+  })
+  $package=[pscustomobject]@{code_root=$root;package_roots=@((Join-Path $root 'src'),$root);files=$files}
+  $result=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package `
+    -Module 'msplatform.workflows.oa_mr.collection_gate' `
+    -Arguments @('--observation',$Observation,'--output',$Output) `
+    -RequiredModuleNames @('msplatform.workflows.oa_mr.collection_gate') `
+    -ForbiddenRoots @($AuthorRoot) -WorkingDirectory $root
+  Write-Output $result.module_stdout
+}
 function Invoke-SimionStage {
   param([string]$Stage,[string[]]$Arguments,[Parameter(Mandatory)]$ResourceLease,[bool]$RegisterHostProcess=$true)
   $start=[Diagnostics.ProcessStartInfo]::new()
@@ -1168,8 +1193,8 @@ try{
     # flight remains a verified result even when its collection is below the
     # hard minimum, so no physical evidence is discarded here.
     $collectionGatePath=Join-Path $resultDir 'bunch_collection_gate.json'
-    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_collection_gate',
-      '--observation',$observation,'--output',$collectionGatePath)
+    Invoke-FrozenCollectionGate -Frozen $frozen -Observation $observation `
+      -Output $collectionGatePath -Python $python -AuthorRoot $repoRoot
     $collectionGate=Get-Content -LiteralPath $collectionGatePath -Raw -Encoding UTF8|ConvertFrom-Json
   }
   $observedResiduals=if($null-ne$observed.PSObject.Properties['residuals']){$observed.residuals}else{$null}

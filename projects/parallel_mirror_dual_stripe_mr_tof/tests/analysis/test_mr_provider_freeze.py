@@ -147,3 +147,161 @@ class MrProviderFreezeTests(unittest.TestCase):
             collision.write_bytes(collision_original)
             for name, source in {'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json', 'oa.json': ROOT / 'projects/orthogonal_accelerator/config/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'integrations/config/recipes/oa_mr_two_zone_gap30_plan.json'}.items():
                 self.assertEqual((fixture / name).read_bytes(), source.read_bytes())
+
+
+class FrozenCollectionGateBoundaryTests(unittest.TestCase):
+    def test_collection_gate_actual_executor_uses_frozen_identity(self):
+        pwsh = shutil.which('pwsh')
+        if not pwsh:
+            self.skipTest('PowerShell 7 unavailable')
+        with tempfile.TemporaryDirectory(prefix='oa_mr_gate_boundary_') as directory:
+            base = Path(directory)
+            snapshot = base / 'snapshot'
+            author = base / 'author'
+            fixture = base / 'fixture'
+            fixture.mkdir()
+            source_paths = (
+                'src/msplatform/__init__.py', 'src/msplatform/workflows/__init__.py',
+                'src/msplatform/workflows/oa_mr/__init__.py',
+                'src/msplatform/workflows/oa_mr/collection_gate.py',
+                'src/msplatform/execution/resources/frozen_python_package.ps1',
+            )
+            for relative in source_paths:
+                target = snapshot / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, target)
+            # A real competing author module is present throughout all cases.
+            shutil.copytree(snapshot / 'src/msplatform', author / 'src/msplatform')
+            (author / 'src/msplatform/workflows/oa_mr/collection_gate.py').write_text(
+                "raise RuntimeError('AUTHOR_FALLBACK_EXECUTED')\n", encoding='utf-8')
+            contract = snapshot / 'contract.json'
+            contract.write_text('{}', encoding='utf-8')
+            records = [dict(source_repo_path=p.relative_to(snapshot).as_posix(), snapshot_path=str(p),
+                            sha256=hashlib.sha256(p.read_bytes()).hexdigest().upper())
+                       for p in snapshot.rglob('*') if p.is_file()]
+            contract_record = next(x for x in records if x['source_repo_path'] == 'contract.json')
+            descriptor = base / 'descriptor.json'
+            descriptor.write_text(json.dumps(dict(execution_root=str(snapshot),
+                identities=[x for x in records if x is not contract_record],
+                dependency_contract_identity=contract_record)), encoding='utf-8')
+            observation = fixture / 'observation.json'
+            observation.write_text(json.dumps({'cohort_analysis': {'event_integrity_passed': True,
+                                                                  'detection_rate': 0.8}}), encoding='utf-8')
+            output = fixture / 'gate.json'
+            script = base / 'exercise.ps1'
+            script.write_text(r"""param($Runner,$Descriptor,$Observation,$Output,$Python,$Author)
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
+$fn=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Invoke-FrozenCollectionGate'},$true)
+if($null-eq$fn){throw 'Actual gate invocation function missing'}
+Invoke-Expression $fn.Extent.Text
+$frozen=Get-Content -LiteralPath $Descriptor -Raw|ConvertFrom-Json
+Invoke-FrozenCollectionGate -Frozen $frozen -Observation $Observation -Output $Output -Python $Python -AuthorRoot $Author
+""", encoding='utf-8')
+            env = {**os.environ, 'PYTHONPATH': str(author / 'src')}
+            def invoke():
+                return subprocess.run([pwsh, '-NoProfile', '-File', str(script),
+                    str(ROOT / 'integrations/workflows/oa_mr/execute.ps1'), str(descriptor),
+                    str(observation), str(output), sys.executable, str(author)], cwd=fixture,
+                    env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+            positive = invoke()
+            self.assertEqual(positive.returncode, 0, positive.stdout + positive.stderr)
+            self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['status'], 'accepted')
+            self.assertIn('MRTOF_BUNCH_COLLECTION_GATE=accepted', positive.stdout)
+            output.unlink()
+            module = snapshot / 'src/msplatform/workflows/oa_mr/collection_gate.py'
+            original = module.read_bytes()
+            try:
+                module.unlink()
+                missing = invoke()
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn('Frozen Python dependency is missing', missing.stderr)
+                self.assertNotIn('AUTHOR_FALLBACK_EXECUTED', missing.stderr)
+                self.assertFalse(output.exists())
+                full_descriptor = descriptor.read_text(encoding='utf-8')
+                omitted = json.loads(full_descriptor)
+                omitted['identities'] = [entry for entry in omitted['identities']
+                    if entry['source_repo_path'] != 'src/msplatform/workflows/oa_mr/collection_gate.py']
+                descriptor.write_text(json.dumps(omitted), encoding='utf-8')
+                no_fallback = invoke()
+                self.assertNotEqual(no_fallback.returncode, 0)
+                self.assertIn('msplatform.workflows.oa_mr.collection_gate', no_fallback.stderr)
+                self.assertNotIn('AUTHOR_FALLBACK_EXECUTED', no_fallback.stderr)
+                self.assertFalse(output.exists())
+                descriptor.write_text(full_descriptor, encoding='utf-8')
+                module.write_bytes(original + b'\n# changed\n')
+                tampered = invoke()
+                self.assertNotEqual(tampered.returncode, 0)
+                self.assertIn('Frozen Python dependency hash differs', tampered.stderr)
+                self.assertFalse(output.exists())
+            finally:
+                module.write_bytes(original)
+
+
+class PublicFrozenCollectionGateTests(unittest.TestCase):
+    def test_public_oa_mr_freezer_and_actual_gate_boundary(self):
+        pwsh = shutil.which('pwsh')
+        if not pwsh:
+            self.skipTest('PowerShell 7 unavailable')
+        with tempfile.TemporaryDirectory(prefix='oa_mr_public_gate_') as directory:
+            base = Path(directory)
+            inputs, fixture = base / 'inputs', base / 'fixture'
+            inputs.mkdir()
+            fixture.mkdir()
+            freeze_script = base / 'freeze.ps1'
+            freeze_script.write_text(SCRIPT, encoding='utf-8')
+            descriptor = base / 'frozen.json'
+            environment = {**os.environ, 'PYTHONPATH': str(ROOT / 'src')}
+            frozen = subprocess.run([pwsh, '-NoProfile', '-File', str(freeze_script), str(ROOT),
+                str(inputs), str(descriptor), 'freeze', sys.executable], cwd=fixture,
+                env=environment, capture_output=True, text=True, encoding='utf-8', timeout=180)
+            self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
+            data = json.loads(frozen.stdout)
+            snapshot = Path(data['execution_root'])
+            relative = 'src/msplatform/workflows/oa_mr/collection_gate.py'
+            module = snapshot / relative
+            self.assertEqual(module.read_bytes(), (ROOT / relative).read_bytes())
+            identities = [row for row in data['identities'] if row['source_repo_path'] == relative]
+            self.assertEqual(len(identities), 1)
+            self.assertEqual(identities[0]['sha256'], hashlib.sha256(module.read_bytes()).hexdigest().upper())
+            helper = [row for row in data['identities'] if row['source_repo_path'] ==
+                      'src/msplatform/execution/resources/frozen_python_package.ps1']
+            self.assertEqual(len(helper), 1)
+            descriptor.write_text(json.dumps(data), encoding='utf-8')
+            runner = base / 'actual-gate.ps1'
+            runner.write_text(r"""param($Repo,$Descriptor,$Observation,$Output,$Python)
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/oa_mr/execute.ps1'),[ref]$tokens,[ref]$errors)
+$fn=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Invoke-FrozenCollectionGate'},$true)
+if($null-eq$fn){throw 'Actual gate invocation function missing'}
+Invoke-Expression $fn.Extent.Text
+$frozen=Get-Content -LiteralPath $Descriptor -Raw|ConvertFrom-Json
+Invoke-FrozenCollectionGate -Frozen $frozen -Observation $Observation -Output $Output -Python $Python -AuthorRoot $Repo
+""", encoding='utf-8')
+            observation, output = fixture / 'observation.json', fixture / 'gate.json'
+            observation.write_text(json.dumps({'cohort_analysis': {'event_integrity_passed': True,
+                                                                  'detection_rate': 0.8}}), encoding='utf-8')
+            def invoke():
+                return subprocess.run([pwsh, '-NoProfile', '-File', str(runner), str(ROOT), str(descriptor),
+                    str(observation), str(output), sys.executable], cwd=fixture, env=environment,
+                    capture_output=True, text=True, encoding='utf-8', timeout=180)
+            accepted = invoke()
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['status'], 'accepted')
+            output.unlink()
+            original = module.read_bytes()
+            try:
+                module.unlink()
+                missing = invoke()
+                self.assertNotEqual(missing.returncode, 0)
+                self.assertIn('Frozen Python dependency is missing', missing.stderr)
+                self.assertFalse(output.exists())
+                module.write_bytes(original + b'\n# tampered\n')
+                tampered = invoke()
+                self.assertNotEqual(tampered.returncode, 0)
+                self.assertIn('Frozen Python dependency hash differs', tampered.stderr)
+                self.assertFalse(output.exists())
+            finally:
+                module.write_bytes(original)

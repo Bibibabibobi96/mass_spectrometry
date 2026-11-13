@@ -1009,7 +1009,8 @@
           "id": "msplatform_execution_frozen_python_package",
           "source_repo_path": "src/msplatform/execution/resources/frozen_python_package.ps1",
           "consumers": [
-            "prepared_joint"
+            "prepared_joint",
+            "oa_mr"
           ]
         },
         {

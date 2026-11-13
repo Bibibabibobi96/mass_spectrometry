@@ -978,3 +978,14 @@ difference is refused; no historical geometry is reconstructed or supplemented.
 Existing schema-1 field geometry was used with the retained plan-3 path, which does
 not establish its equivalence to a new plan-5 source. Use plan 3 for that historical
 interpretation, or select a field with a compatible complete plan-5 authority.
+
+The complete-cohort collection gate is implemented by `msplatform.workflows.oa_mr.collection_gate`.
+The OA–MR executor verifies the frozen helper and package before invoking that module in isolation;
+missing or changed frozen code cannot fall back to the author checkout. The migrated scientific body
+and cohort/flight evidence are unchanged, and the old project implementation has been removed.
+Six focused Main tests passed (18 successful records; 18.357 seconds), including the actual public
+freezer, executor boundary and missing/tampered dependency refusals. Direct-wheel and sdist-rebuilt
+wheel probes passed outside the checkout (84.453 seconds; 518 runtime payloads per arm), checking
+installed origin, accepted/invalid cohorts, missing-module refusal and unchanged installed payloads.
+Both test runs retained frozen source/index identities. These are selected software/installation
+checks, not full ordinary-install, Repository, native flight or scientific qualification.

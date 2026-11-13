@@ -2498,7 +2498,7 @@ def classify_z0_focus(z0: dict[str, Any] | None, detector_fwhm: float | None,
 
 def candidate_qualification(request: dict[str, Any]) -> dict[str, Any]:
     """Apply the existing Candidate outcome precedence to actual final receipts."""
-    from .bunch_collection_gate import accepted_receipt
+    from msplatform.workflows.oa_mr.collection_gate import accepted_receipt
 
     resolution = request["measured_resolution"]
     resolution_ok = resolution is not None and resolution >= request["minimum_resolution"]
