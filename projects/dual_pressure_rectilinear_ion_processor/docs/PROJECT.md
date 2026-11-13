@@ -11,6 +11,18 @@ flight, collision or scientific qualification.
 
 ## 当前状态与封存边界
 
+The STEP backend projects every canonical IP solid and Boolean tool, including
+all 15 scientific groups, without a cropped instrument view. The actual CadQuery
+2.8 export and cold-import checks completed for baseline, formed and perturbed
+IP designs, each with two differently posed complete instances. Their 10,298 /
+10,824 / 10,298 probes had no failed checks; source and checkout identities were
+unchanged across the run. Evidence is
+`.tools/phase04-codex-takeover-20261109/v87-ip-step-real-cad-root-r3`.
+The guarded wall was 7759.049 seconds under shared host admission; this is a
+functional CAD result, not the software 15-minute benchmark. Ordinary-installed
+IP STEP execution and SolidWorks cold-open remain separate acceptance boundaries;
+no SIMION/COMSOL field, gas, flight or Formal qualification is added.
+
 Installed field-diagnostic acceptance keeps the original synthetic quadratic test contract:
 11-decimal coefficient agreement and finite nonnegative RMS below 1e-11 V. Identical
 inputs and NumPy produced different last bits with selected OpenBLAS kernels, so

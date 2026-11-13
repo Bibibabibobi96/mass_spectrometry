@@ -239,7 +239,13 @@ machines/device pressure. R01–R20 are not globally closed by this delivery.
 当前plan的`layout_only`不表示各求解器已支持任意器件；不支持的组件明确拒绝，不自动选择最新整机。
 Current version-5 layouts support complete, independently placed components without invented edges; see the
 [connection contract](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#配方实验和工作流).
-The layout/IP and legacy-provider regressions passed 37 tests; real IP STEP export remains a separate acceptance.
+The layout/IP and legacy-provider regressions passed 37 tests. Actual IP STEP
+export and cold import then completed for baseline, formed and perturbed designs,
+with two complete posed instances and all 15 scientific groups in each case;
+10,298 / 10,824 / 10,298 probes had no failed checks. The complete 2925-file source
+and checkout guard remained unchanged. This is CadQuery kernel evidence, not
+ordinary-install, SolidWorks, native field/flight or Formal qualification; current
+IP scope and evidence are recorded in its [project state](../../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md).
 提供者拥有真实几何、电极与物理端口，装配只绑定实例。源保留原6D、ID、母群、出生时间、上游损失、
 RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新采样源。
 

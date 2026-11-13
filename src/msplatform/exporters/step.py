@@ -45,6 +45,8 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
         elif project=='dual_cone_tandem_quadrupole_ion_interface':
             from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry_members import iter_geometry_members
             provider='dual_cone_tandem_quadrupole';members=iter_geometry_members(resolved)
+        elif project=='dual_pressure_rectilinear_ion_processor':
+            provider='dual_pressure_rectilinear_ion_processor';members=_ip_members(resolved)
         else: raise ValueError('STEP provider not implemented: '+project)
         _from_provider(provider,resolved,interface,source_design=sources[instance])
         transform=RigidTransform.from_contract(poses[instance])
@@ -60,6 +62,30 @@ def assembly_geometry_members(assembly: Mapping) -> tuple[dict, ...]:
                 for token in ref.split('/')[1:]: value=value[int(token)] if isinstance(value,(list,tuple)) else value[token]
             _validate_shape(member['shape'],surface=member['representation_role']=='ideal_surface')
             result.append(dict(copy.deepcopy(member),instance_id=instance,transform=copy.deepcopy(poses[instance])))
+    return tuple(result)
+
+
+def _ip_members(resolved):
+    """Project the provider's selected electrode CSG, retaining each source record."""
+    projection = resolved['projection']
+    electrodes = projection['electrodes']
+    if [row['electrode_id'] for row in electrodes] != list(range(1, 16)):
+        raise ValueError('IP STEP requires its complete ordered 15 electrode groups')
+    result = []
+    for index, row in enumerate(electrodes):
+        if set(row) != {'electrode_id', 'name', 'solids', 'cutouts'} or not row['solids']:
+            raise ValueError('IP STEP electrode source is incomplete')
+        def convert(shape):
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+            shape_bounds(shape)
+            return dict(kind='ip_'+shape['shape'], **{k: copy.deepcopy(v) for k,v in shape.items() if k != 'shape'})
+        parts = [convert(shape) for shape in row['solids']]
+        base = parts[0] if len(parts) == 1 else dict(kind='union', parts=parts)
+        tools = [convert(shape) for shape in row['cutouts']]
+        shape = dict(kind='difference', base=base, tools=tools) if tools else base
+        result.append(dict(member_id=row['name'], electrode_group_id=row['name'], shape=shape,
+            source_refs=[f'/projection/electrodes/{index}'], local_frame_id=projection['frame_id'],
+            length_unit='mm', representation_role='physical_solid'))
     return tuple(result)
 
 
@@ -83,6 +109,11 @@ def _validate_shape(spec, *, surface=False):
         if any(point[1]<0 for point in points): raise ValueError('revolved profile radius cannot be negative')
         area=sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(points,(*points[1:],points[0]),strict=True))
         if area==0: raise ValueError('revolved profile must enclose a nonzero section')
+    elif kind in {'ip_box','ip_cylinder_x','ip_convex_polyhedron'}:
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        lo, hi = shape_bounds(dict(shape=kind[3:], **{k:v for k,v in spec.items() if k != 'kind'}))
+        if any(a >= b for a,b in zip(lo,hi,strict=True)):
+            raise ValueError('IP CAD physical solid must have strictly positive extents')
     elif kind=='box':
         _finite([*spec['center_mm'],*spec['size_mm']])
         if len(spec['center_mm'])!=3 or len(spec['size_mm'])!=3 or any(v<0 or (v==0 and not surface) for v in spec['size_mm']): raise ValueError('invalid box dimensions')
@@ -120,6 +151,35 @@ def _shape(cq, spec):
         _validate_shape(spec)
         # CadQuery workplane-local x/y are radial r / axial z on the XZ plane.
         return cq.Workplane('XZ').polyline([(r,z) for z,r in spec['points_zr_mm']]).close().revolve(360,(0,0),(0,1)).val()
+    if kind.startswith('ip_'):
+        _validate_shape(spec)
+        if kind == 'ip_box':
+            lo, hi = spec['min_mm'], spec['max_mm']
+            center = [(a+b)/2 for a,b in zip(lo,hi,strict=True)]
+            size = [b-a for a,b in zip(lo,hi,strict=True)]
+            return cq.Workplane('XY').box(*size).val().translate(tuple(center))
+        if kind == 'ip_cylinder_x':
+            return cq.Solid.makeCylinder(spec['radius_mm'], spec['x_max_mm']-spec['x_min_mm'],
+                (spec['x_min_mm'],spec['center_y_mm'],spec['center_z_mm']), (1,0,0))
+        if kind == 'ip_convex_polyhedron':
+            from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import _convex_hull
+            import numpy as np
+            hull = _convex_hull(dict(shape='convex_polyhedron',vertices_mm=spec['vertices_mm']))
+            faces = []
+            for indices, plane in zip(hull.simplices, hull.equations, strict=True):
+                points = hull.points[indices]
+                if np.dot(np.cross(points[1]-points[0],points[2]-points[0]),plane[:3]) < 0:
+                    points = points[[0,2,1]]
+                wire = cq.Wire.makePolygon([tuple(float(v) for v in point) for point in points],close=True)
+                faces.append(cq.Face.makeFromWires(wire))
+            shell = cq.Shell.makeShell(faces)
+            if not shell.isValid() or not shell.wrapped.Closed():
+                raise ValueError('IP convex hull did not form a valid closed CAD shell')
+            solid = cq.Solid.makeSolid(shell)
+            if not solid.isValid() or not solid.Solids() or solid.Volume() <= 0:
+                raise ValueError('IP convex hull did not form a valid CAD solid')
+            return solid
+        raise ValueError('unsupported IP physical CAD shape: '+kind)
     if kind=='box':
         center,size=spec['center_mm'],spec['size_mm'];_finite([*center,*size])
         if min(size)<=0: raise ValueError('physical CAD box must have positive spans')
@@ -229,7 +289,7 @@ def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
                 tokens += [f'rod_{rod:04d}', f"rf_group_{row['electrode_group']}"]
             else:
                 tokens = [row['role']]
-        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole_ion_interface'}:
+        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole_ion_interface', 'dual_pressure_rectilinear_ion_processor'}:
             tokens = identity.split('/')
         else:
             raise ValueError('STEP naming provider is unsupported: ' + project)
