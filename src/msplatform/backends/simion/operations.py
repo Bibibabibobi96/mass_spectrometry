@@ -259,7 +259,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
           source_reference: OpenedArtifact | Mapping[str, Any] | None = None,
           unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
           dispatch_profiles: Sequence[Mapping[str, Any]] = (),
-          birth_source_authority: Mapping[str, Any] | None = None) -> OpenedArtifact:
+          birth_source_authority: Mapping[str, Any] | None = None, hs1_request: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Publish an explicit fixed-field flight, preserving its original cohort/clock.
 
     A release realization starts at birth; a HandoffResult requires its published
@@ -269,6 +269,12 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     the full mother. recovery_reference is one explicit predecessor manifest
     file record: complete units are verified and reused, incomplete units fully
     replayed by the existing dispatcher. Opening a field never solves it.
+
+    Complete RF-IP tracking requires an explicit hs1_request: typed IP-local
+    bath_domain and outer GasFieldSpec, original vendor_record, and numerics
+    containing seed and hs1_steps_per_mfp. The selected IP pose maps gas queries
+    and velocities; the outer field must cover the complete parent. This route
+    requires sequential grouped=0 and never restarts particles at gas boundaries.
     """
     from dataclasses import asdict
     from datetime import datetime
@@ -278,7 +284,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     from msplatform.backends.simion.artifacts import CompiledPreparedModel
     from msplatform.backends.simion.model import require_prepared_model
     from msplatform.backends.simion.tracking_execution import execute_tracking, plan_tracking_execution, validate_birth_authority
-    from msplatform.backends.simion.tracking_units import inspect_tracking_recovery
+    from msplatform.backends.simion.tracking_units import inspect_tracking_recovery, tracking_applicability
     from msplatform.backends.simion import native_completion
     from msplatform.results.artifacts import OpenedArtifact
     from msplatform.io.manifest_records import file_record
@@ -295,8 +301,6 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
-    if document["geometry"]["frontend_geometry"].get("role") == "simion_rf_ip_geometry":
-        raise ContractError("RF–IP continuous tracking is not supported")
     packet = particles.to_dict() if isinstance(particles, ReleaseRealization) else copy.deepcopy(particles)
     birth_authority = None if birth_source_authority is None else validate_birth_authority(birth_source_authority, packet)
     clocks = {name: dict(source.data_records[name], path=str(source.data_path(name)))
@@ -315,8 +319,9 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     planning = dict(particles=packet, clock_records=clocks, propagation=propagation,
                     observations=observations, numerics=numerics, unit_size=unit_size,
                     field_manifest_record=source.reference["manifest"],
-                    **({'birth_source_authority': birth_authority} if birth_authority is not None else {}))
+                    **({'birth_source_authority': birth_authority} if birth_authority is not None else {}), hs1_request=hs1_request)
     graph = plan_tracking_execution(model, **planning)
+    planned_applicability = tracking_applicability(graph) if hs1_request is not None else None
     if recovery is not None:
         inspected = inspect_tracking_recovery(graph, recovery)
         graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
@@ -324,7 +329,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     references = [{"manifest_record": source.reference["manifest"]}]
     if birth_authority is not None:
         references.append({"manifest_record": birth_authority['manifest']})
-    if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family'}:
+    if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
     if recovery is not None:
@@ -355,6 +360,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             numerics=copy.deepcopy(dict(numerics)), source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
             **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
+            **({'hs1_identity': graph['hs1_identity'], 'hs1_vendor_record': dict(hs1_request['vendor_record'])} if hs1_request is not None else {}),
             stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
         commitment_inputs=[policy_record], retention=stage["artifact_retention"],
@@ -365,7 +371,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
             **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
+            hs1_request=hs1_request, expected_tracking_applicability=planned_applicability, allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
         action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import copy
 import math
+from pathlib import Path
 from .model import require_prepared_model,model_geometry,render_model_configuration
 from .source import lua_value,canonical_clock_lua
 from .resources import native_resource_path
@@ -36,7 +37,8 @@ def validate_rf_flight(flight,*,requires_rf):
 def render_rf_controls(model,plan,*,assets,native_sources):
     document=require_prepared_model(model)
     geometry=dict(model_geometry(model).frontend_geometry,native_frame_id=document['native_frame_id'])
-    names=geometry['composition_plan']['scope']['instance_ids']
+    joint=plan['flight'].get('tracking_kind')=='rf_ip'
+    names=['parent'] if joint else geometry['composition_plan']['scope']['instance_ids']
     ids=[row['particle_id'] for row in plan['rows']]
     if not ids:raise ValueError('zero RF cohort has no Program')
     config=render_model_configuration(model)
@@ -45,10 +47,11 @@ def render_rf_controls(model,plan,*,assets,native_sources):
     prefix+='local rf_model_config=(function()\n'+config+'\nend)()\n'
     prefix+='local rf_kernel=(function()\n'+resource('rf_drive.lua')+'\nend)()\n'
     oa=plan['flight'].get('tracking_kind')=='independent_oa'
-    if oa:
+    if oa or joint:
         prefix+='local oa_pulse_hook=(function()\n'+resource('single_flight_pulse_hook.lua')+'\nend)()\n'
         prefix+='local oa_waveforms=(function()\n'+resource('voltage_waveforms.lua')+'\nend)()\n'
-        prefix+='local rf_consumer=(function()\n'+resource('model_drive.lua')+'\nend)().new(rf_model_config,rf_kernel,oa_pulse_hook,oa_waveforms)\n'
+        ip_native=",(function(...)\n"+resource('native_drive.lua')+"\nend)" if joint else ''
+        prefix+='local rf_consumer=(function()\n'+resource('model_drive.lua')+'\nend)().new(rf_model_config,rf_kernel,oa_pulse_hook,oa_waveforms'+ip_native+')\n'
     else:
         prefix+='local rf_consumer=(function()\n'+resource('model_drive.lua')+'\nend)().new(rf_model_config,rf_kernel,nil,nil)\n'
     arrays=dict(single_flight_source_particle_id=ids,single_flight_time_origin_us=[r['instrument_time_us'] for r in plan['rows']],
@@ -63,6 +66,44 @@ def render_rf_controls(model,plan,*,assets,native_sources):
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
     program=prefix+resource('rf_tracking.lua')
+    if joint:
+        options=plan['hs1']
+        if set(options)!={'vendor_path','bath_path','outer_path','query_frame_id','numerics'}:
+            raise ValueError('RF-IP HS1 requires exact frozen runtime inputs')
+        numerics=options['numerics']
+        if (set(numerics)!={'seed','hs1_steps_per_mfp'} or type(numerics['seed']) is not int or numerics['seed']<0
+                or type(numerics['hs1_steps_per_mfp']) is not int or numerics['hs1_steps_per_mfp']<1):
+            raise ValueError('RF-IP HS1 requires positive explicit integer seed and steps')
+        for key in ('vendor_path','bath_path','outer_path'):
+            if not isinstance(options[key],str) or not Path(options[key]).is_absolute() or not options[key].isascii():
+                raise ValueError('RF-IP HS1 frozen input paths must be absolute')
+        from msplatform.contracts.rigid_transform import RigidTransform
+        composition = document['geometry']['frontend_geometry']['composition_plan']
+        ip_ids = [name for name, component in composition['components'].items()
+                  if component['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+        if len(ip_ids) != 1:
+            raise ValueError('RF-IP gas requires the selected IP component')
+        poses = [row['transform'] for row in composition['recipe']['instances']
+                 if row['instance_id'] == ip_ids[0]]
+        if len(poses) != 1:
+            raise ValueError('RF-IP gas requires the selected IP placement')
+        pose = RigidTransform.from_contract(poses[0])
+        if pose.to_frame_id != options['query_frame_id'] or pose.to_frame_id != document['native_frame_id']:
+            raise ValueError('RF-IP gas frame differs from the selected IP placement')
+        if plan['flight'].get('grouped') != 0:
+            raise ValueError('RF-IP HS1 requires sequential particle processing')
+        schedule=document['drive']['ip_schedule']
+        baseline=schedule['baseline']; timing=schedule['native_timing']
+        edges=sorted(set([baseline['schedule'][key] for key in ('capture_end_us','transfer_end_us','lift_end_us','terminal_us')]+[timing['primary_quench_us'],timing['pulse_start_us']]))
+        config=dict(baseline=baseline,numerics=numerics,query_frame_id=options['query_frame_id'],schedule_edges_us=edges)
+        program+='\nrf_step_cap_us=math.min(rf_step_cap_us,'+lua_value(1e6/baseline['electric']['rf_frequency_hz']/plan['flight']['rf_steps_per_period'])+')\n'
+        program+='\nlocal joint_hs=simion.import('+lua_value(options['vendor_path'])+')\n'
+        program+='local joint_bath=assert(loadfile('+lua_value(options['bath_path'])+'))()\n'
+        program+='local joint_outer=assert(loadfile('+lua_value(options['outer_path'])+'))()\n'
+        program+='local joint_selector=(function()\n'+resource('rf_ip_gas_selection.lua')+'\nend)().new(joint_bath,joint_outer)\n'
+        program+='local joint_binder=(function()\n'+resource('collision_hs1_gas.lua')+'\nend)()\n'
+        program+='local joint_hs1=(function()\n'+resource('rf_ip_tracking_hs1.lua')+'\nend)()\n'
+        program+='joint_hs1.install(joint_hs,joint_selector,joint_binder,'+lua_value(config)+',single_flight_instrument_time_us,single_flight_canonical_particle_id,oa_waveforms)\n'
     if oa and document['drive'].get('pulse',{}).get('mode')=='timed':
         pulse=document['drive']['pulse']
         program+='\nlocal oa_step_pulse=oa_pulse_hook.compile_physical{voltage_waveforms=oa_waveforms,pulse_mode=function() return 1 end,pulse_time_us='+lua_value(pulse['time_us'])+',pulse_width_us='+lua_value(pulse['width_us'])+'}\n'

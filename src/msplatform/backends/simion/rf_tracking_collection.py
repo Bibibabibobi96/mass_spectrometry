@@ -108,6 +108,10 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         result.update(component_kind='orthogonal_accelerator',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1',native_pulse_state_recording='not_requested')
         result['census']['role']='oa_full_mother_census'
         result['census']['terminal_taxonomy']['role']='oa_raw_terminal_taxonomy'
+    if flight.get('tracking_kind')=='rf_ip':
+        result.update(tracking_kind='rf_ip',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
+        result['census']['role']='rf_ip_full_mother_census'
+        result['census']['terminal_taxonomy']['role']='rf_ip_raw_terminal_taxonomy'
     if observation is not None:result['plane_observations']=observation
     if policy is not None:result.update(propagation_stop=policy,propagation_scope='segmented_upstream',observation_complete=observation['status']=='complete')
     return result

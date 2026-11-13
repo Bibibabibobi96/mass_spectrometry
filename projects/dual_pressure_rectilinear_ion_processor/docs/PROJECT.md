@@ -659,5 +659,16 @@ records in 279.894 seconds; both ordinary distribution arms passed public
 geometry/model compilation and field planning outside the checkout, with 522
 runtime payloads per arm (441.107 seconds overall). Native geometry/model creation,
 Refine and field readback, continuous HS1 propagation, and complete Repository
-acceptance remain open. RF–IP tracking is explicitly unsupported at this boundary;
-the old segmented producer stays until its genuine continuous replacement passes.
+acceptance remain open. The successor adds a software continuous RF–IP track
+consumer through the same public owner, with explicit finite bath and outer gas
+coverage, selected IP pose, original vendor/seed identity and sequential HS1 state.
+Original particles retain IDs, clock and collision stream across gas transitions.
+The API contract is documented at `msplatform.backends.simion.operations.track`;
+no implicit vacuum, second geometry source or new gas-property catalog is added.
+The integrated affected successor passed 39 parents / 81 records, including actual
+managed-owner/frozen-input and rendered-Lua checks with inert native substitutes.
+This is not a native HS1 or field qualification. Ordinary-install acceptance for
+this successor is pending. Existing standalone diagnostics and their scientific
+acceptance remain available; their exact force-audit/sample file layout is not
+claimed by the joint consumer. The old segmented producer stays until the genuine
+continuous replacement and its applicable native checks pass.

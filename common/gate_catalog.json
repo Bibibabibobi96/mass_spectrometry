@@ -629,10 +629,10 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
-          {
-            "exact": "integrations/tests/test_ip_compiler.py",
-            "reason": "joint_geometry_fixture_changed"
-          },
+        {
+          "exact": "integrations/tests/test_ip_compiler.py",
+          "reason": "joint_geometry_fixture_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/resources/1_instance_seed.iob",
           "reason": "workbench_seed_consumer_changed"
@@ -1777,6 +1777,30 @@
               "common/contracts/test_platform_api.py",
               "common/contracts/test_simion_tracking_execution.py",
               "common/contracts/test_simion_tracking_units.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/simion/(?:operations|resources|rf_tracking_(?:execution|program|collection)|tracking_(?:execution|collection|units))\\.py$",
+                "reason": "continuous_rf_ip_hs1_consumer_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/simion/resources/(?:iob_core|build_tracking_iob|model_drive|native_drive|rf_tracking|collision_hs1_gas|rf_ip_gas_selection|rf_ip_tracking_hs1|voltage_waveforms)\\.lua$",
+                "reason": "continuous_rf_ip_hs1_resources_changed"
+              },
+              {
+                "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py",
+                "reason": "continuous_rf_ip_gas_projection_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_rf_ip_composed.py",
+              "common/contracts/test_rf_ip_gas_selection.py",
+              "common/contracts/test_rf_ip_tracking_iob.py",
+              "common/contracts/test_rf_ip_tracking_plan.py",
+              "common/contracts/test_rf_ip_tracking_program.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3053,10 +3077,10 @@
           "exact": "src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py",
           "reason": "oa_mr_roundtrip_consumer_changed"
         },
-          {
-            "exact": "src/msplatform/backends/simion/mr_compiler.py",
-            "reason": "mr_joint_compiler_changed"
-          },
+        {
+          "exact": "src/msplatform/backends/simion/mr_compiler.py",
+          "reason": "mr_joint_compiler_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/collision_overlay.py",
           "reason": "collision_overlay_binding_consumer_changed"
@@ -5160,18 +5184,18 @@
           "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/assembly_interface.py",
           "reason": "ip_joint_geometry_consumer_changed"
         },
-          {
-            "exact": "src/msplatform/backends/simion/ip_assembly_geometry.py",
-            "reason": "ip_joint_geometry_consumer_changed"
-          },
-          {
-            "exact": "src/msplatform/backends/simion/ip_geometry.py",
-            "reason": "ip_joint_geometry_consumer_changed"
-          },
-          {
-            "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/native_geometry.py",
-            "reason": "ip_joint_geometry_consumer_changed"
-          },
+        {
+          "exact": "src/msplatform/backends/simion/ip_assembly_geometry.py",
+          "reason": "ip_joint_geometry_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/ip_geometry.py",
+          "reason": "ip_joint_geometry_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/native_geometry.py",
+          "reason": "ip_joint_geometry_consumer_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/resources.py",
           "reason": "workbench_seed_resource_resolver_changed"

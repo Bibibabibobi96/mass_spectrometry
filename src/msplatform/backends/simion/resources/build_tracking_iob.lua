@@ -15,3 +15,5 @@ if spec.role=='independent_rf_tracking_iob' then print(mode=='build' and 'INDEPE
 if spec.role=='dual_cone_tracking_iob' then print(mode=='build' and 'DUAL_CONE_TRACKING_IOB=PASS' or 'DUAL_CONE_TRACKING_IOB_REOPEN=PASS') end
 
 if spec.role=='independent_oa_tracking_iob' then print(mode=='build' and 'INDEPENDENT_OA_TRACKING_IOB=PASS' or 'INDEPENDENT_OA_TRACKING_IOB_REOPEN=PASS') end
+
+if spec.role=='rf_ip_tracking_iob' then print(mode=='build' and 'RF_IP_TRACKING_IOB=PASS' or 'RF_IP_TRACKING_IOB_REOPEN=PASS') end

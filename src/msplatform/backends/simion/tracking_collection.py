@@ -744,7 +744,7 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
     This parser preserves the existing single-species and nonempty-flight scope.
     It does not locate exact physical crossings or grant numerical qualification.
     """
-    if flight.get('tracking_kind') in {'independent_rf','independent_oa'}:
+    if flight.get('tracking_kind') in {'independent_rf','independent_oa','rf_ip'}:
         from .rf_tracking_collection import collect_rf_tracking_logs
         return collect_rf_tracking_logs(log_paths,source_rows=source_rows,source_provenance=source_provenance,flight=flight,batches=batches)
     source, provenance, cases = source_rows, source_provenance, list(batches)

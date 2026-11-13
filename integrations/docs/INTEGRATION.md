@@ -70,10 +70,28 @@ voltage authority to those three assets, with 41 scientific groups and the actua
 three-slot build/readback role. Complete RF–OA geometry uses the canonical full
 providers in one grounded parent; its supported poses are signed axis permutations,
 and finite member witnesses do not prove global collision freedom or field coupling.
-RF–OA remains geometry-only. OA–MR field/track and RF–IP track remain explicitly
-unsupported; no refusal is bypassed to advertise those unfinished paths.
-These stage boundaries do not establish native construction, Refine, coupled
-fields, HS1 flight or the retirement of the segmented MP–IP producer.
+RF–OA remains geometry-only and OA–MR fields/track remain unsupported.
+Complete RF–IP now has a software continuous-track route through the same public
+owner. It requires an explicit finite IP bath, explicit uniform outer gas/vacuum
+coverage, original HS1 vendor record, seed/step controls and sequential scheduling.
+The selected IP pose maps queries and bulk velocity once. The Program retains
+original birth IDs/clock, one per-particle collision stream and no automatic rerun;
+interfaces do not restart particles or introduce IP-only acceptance stop planes.
+Frozen gas/vendor/resources participate in the existing replay identity and guards.
+Native construction, Refine, coupled fields, actual HS1 flight and retirement of
+the still-needed segmented MP–IP producer remain open.
+The integrated software run recorded 124 parent occurrences (98 unique identities),
+555 successful records and one new selector-test failure in 466.582 test seconds
+(471.745 guarded wall). The failure expected a dotted name where the public runner
+supplied the equivalent file path; required-consumer checks now normalize transport.
+The final affected successor passed 39 parents / 81 records in 59.134 test seconds
+(63.954 guarded wall), with source and checkout unchanged. Removing imported fixture
+TestCase collection preserved exactly the same 98 unique identities; it did not remove
+assertions or original suites. The managed-owner test uses inert field bytes and
+observed Python process substitutes, with rendered Lua gas/HS1 wiring, source-write
+protection, sparse IDs, gas transitions, observations, missing/tamper refusals and
+whole-unit reuse. It is not real HS1 physics. Ordinary installation of this successor
+and the remaining full Repository/native acceptance have not yet run.
 
 The single composed candidate passed all 124 affected software tests / 314
 successful records in 279.894 seconds. Direct-wheel and sdist-rebuilt-wheel

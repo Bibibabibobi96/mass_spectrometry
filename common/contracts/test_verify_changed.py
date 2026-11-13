@@ -2324,6 +2324,26 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         modules = integration_modules(request)
         self.assertIn('test_rf_oa_compiler', modules)
 
+    def test_continuous_rf_ip_public_changed_plan_selects_actual_consumers(self):
+        required = {'test_rf_ip_' + name for name in
+                    ('composed', 'gas_selection', 'tracking_iob', 'tracking_plan', 'tracking_program')}
+        for path in ('src/msplatform/backends/simion/operations.py',
+                     'src/msplatform/backends/simion/resources/rf_ip_tracking_hs1.lua',
+                     'src/msplatform/components/dual_pressure_rectilinear_ion_processor/gas_regions.py'):
+            with self.subTest(path=path):
+                request, _ = self.plan('-ChangedPath', path)
+                common = {value.removesuffix('.py').replace('/', '.').rsplit('.', 1)[-1]
+                          for row in request['stages'] if row['selected'] and
+                          (row['name'] == 'common_contracts' or row['name'].startswith('common_contracts__tests_'))
+                          for value in row['command'].get('arguments', [])}
+                self.assertTrue(required <= common, (path, required, common))
+        request, _ = self.plan('-ChangedPath', 'common/contracts/test_rf_ip_composed.py')
+        values = [value for row in request['stages'] if row['selected'] and
+                  row['name'].startswith('common_contracts')
+                  for value in row['command'].get('arguments', [])]
+        normalized = [value.removesuffix('.py').replace('/', '.') for value in values]
+        self.assertIn('common.contracts.test_rf_ip_composed', normalized)
+
     def test_installed_mr_phase_public_plan_preserves_core_and_full_integration(self):
         request, _ = self.plan('-ChangedPath',
             'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/drift_phase_contract.py')

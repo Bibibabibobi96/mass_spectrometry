@@ -11,7 +11,8 @@ local model_only=mode=='build_model' or mode=='verify_model'
 local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_only
 local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
-local component_tracking=spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
+local joint_ip_tracking=spec.role=='rf_ip_tracking_iob'
+local component_tracking=joint_ip_tracking or spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
 local tracking_role=component_tracking
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local joint_rf_ip=spec.role=='rf_ip_geometry_iob_build'
@@ -35,6 +36,7 @@ assert(not dual_cone or
   (spec.role=='dual_cone_geometry_iob' and geometry_only),
   'dual-cone role differs from its actual source-free/tracking operation')
 assert(not dual_cone or count==1,'dual-cone monolithic geometry requires exactly one PA instance')
+assert(not joint_ip_tracking or count==1,'RF-IP tracking requires one parent PA instance')
 assert((independent_component and count>=1 and count<=10) or (not independent_component and (count==4 or count==5)), 'unsupported physical PA instance count')
 local roles={'flight_tube','reflectron','accelerator','detector','entrance_refinement'}
 if independent_component then
@@ -362,7 +364,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     -- The complete RF slot path/grid/pose, electrode map, metal/vacuum and
     -- fractional witnesses were checked above. TOF interface/priority probe
     -- definitions do not describe an independent RF instrument.
-    print((dual_cone and 'DUAL_CONE_TRACKING_COLD=PASS INSTANCES=' or spec.role=='independent_oa_tracking_iob' and 'INDEPENDENT_OA_TRACKING_COLD=PASS INSTANCES=' or 'INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES=')..count..' FLY=False REFINE=False')
+    print((joint_ip_tracking and 'RF_IP_TRACKING_COLD=PASS INSTANCES=' or dual_cone and 'DUAL_CONE_TRACKING_COLD=PASS INSTANCES=' or spec.role=='independent_oa_tracking_iob' and 'INDEPENDENT_OA_TRACKING_COLD=PASS INSTANCES=' or 'INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES=')..count..' FLY=False REFINE=False')
     return
   end
   -- SIMION 2020 official lua_simion.wb.html#simion.wb..find_at:

@@ -187,9 +187,14 @@ checks. The successor adds source-free OA–MR model planning and complete RF–
 one-parent geometry. Main passed 75 focused tests / 204 records and both selected
 ordinary distribution arms passed with 524 matching runtime payloads (201.953 s),
 including actual new planners and negative resource/origin checks. Native joint
-construction/refinement, OA–MR fields, RF–IP/other named complete continuous
-consumers, HS1 and final installation/Repository remain open; these software
-stages do not retire the still-needed segmented producer.
+construction/refinement and OA–MR fields remain open. Complete RF–IP now has a
+software continuous HS1 consumer using the existing tracking owner, explicit gas
+coverage and original identity/clock. Its final affected checks passed 39 parents /
+81 records; the preceding broad run retained one selector-test transport mismatch.
+Exact unique-test identity comparison preserved all 98 identities while removing
+accidental fixture collection. Inert field/process fixtures do not establish native
+HS1, final installation/Repository or retirement of the still-needed segmented producer.
+Other named complete continuous consumers and remaining native acceptance stay open.
 The user retained the 700 GiB capacity target. Public-owner retirement of one
 obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
 diagnostic through admission. Its first preparation operation then failed on a
