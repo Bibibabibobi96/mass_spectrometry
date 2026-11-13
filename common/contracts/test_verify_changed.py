@@ -2269,7 +2269,24 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
             loader=unittest.TestLoader()
             suite=loader.loadTestsFromName(prefix+module)
             self.assertEqual(loader.errors,[])
-            self.assertEqual(suite.countTestCases(),1 if module=='test_mr_provider_freeze' else 2)
+            def discovered_ids(item):
+                if isinstance(item, unittest.TestSuite):
+                    return {test_id for child in item for test_id in discovered_ids(child)}
+                return {item.id()}
+            required_methods = {
+                'test_mr_provider_freeze': (
+                    'MrProviderFreezeTests.test_actual_oa_mr_selection_is_isolated_and_fail_closed',
+                    'FrozenCollectionGateBoundaryTests.test_collection_gate_actual_executor_uses_frozen_identity',
+                    'PublicFrozenCollectionGateTests.test_public_oa_mr_freezer_and_actual_gate_boundary',
+                ),
+                'test_mr_provider_trial_transport': (
+                    'MRProviderTrialTransportTests.test_real_oa_mr_components_survive_json_and_reject_physical_tampering',
+                    'MRProviderTrialTransportTests.test_real_materializer_plan5_and_legacy_preserve_controls',
+                    'MRProviderTrialTransportTests.test_plan5_materializer_rejects_stale_mr_component',
+                ),
+            }
+            expected_ids = {prefix + module + '.' + method for method in required_methods[module]}
+            self.assertTrue(expected_ids <= discovered_ids(suite), (module, expected_ids - discovered_ids(suite)))
         verify=(REPO_ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1').read_text(encoding='utf-8')
         self.assertIn('$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)',verify)
         self.assertIn('-m common.gate_unittest @coreTests',verify)

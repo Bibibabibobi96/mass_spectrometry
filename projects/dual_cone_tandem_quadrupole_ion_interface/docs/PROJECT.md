@@ -230,6 +230,11 @@ actual clock authority/epoch and the existing external-linear field physics.
 The canonical timing adapter currently permits phase anchor instrument time zero;
 other anchors and general instance poses are not silently accepted.
 
+The shared clock-authority validator accepts this workflow's explicit clock-only
+projection without requiring a frontend geometry snapshot. Full RF–IP models
+still require their zero instrument epoch; byte, path and clock-identity checks
+remain unchanged. This restores the retained dual-cone caller contract.
+
 Field generation materializes only the unsolved raw PA#/fractional surface/witness
 closure through the existing guarded payload transport, then Refines and audits
 an independent producer family. Field identity excludes source, gas, observation

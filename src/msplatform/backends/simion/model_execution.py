@@ -49,7 +49,7 @@ def _clock_reference(document: dict, reference: Mapping[str, Any]) -> Path:
     authority = (root/pointer).resolve()
     if authority != Path(reference['authority']['path']).resolve() or not authority.is_relative_to(root.resolve()):
         raise ValueError('model epoch record differs from the actual contract authority path')
-    if document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
+    if 'geometry' in document and document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
         value = json.loads(authority.read_text(encoding='utf-8-sig')).get('instrument_time_us')
         if type(value) not in (int, float) or value != 0:
             raise ValueError('RF–IP model requires the existing zero instrument epoch')

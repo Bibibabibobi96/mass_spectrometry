@@ -49,7 +49,7 @@ class JointGeometryIobTests(unittest.TestCase):
                 def call(mode, value, failure="valid"):
                     request.write_text("return "+lua_value(value))
                     return subprocess.run([str(LUA),str(script),str(request),mode,failure,str(native_path),str(resources)],
-                                          cwd=root,capture_output=True,text=True,timeout=30)
+                                          cwd=root,capture_output=True,text=True,encoding="utf-8",timeout=30)
                 built=call("build_geometry",spec)
                 self.assertEqual(built.returncode,0,built.stderr);self.assertIn(marker+"=PASS",built.stdout)
                 reopened=call("verify_geometry",spec)

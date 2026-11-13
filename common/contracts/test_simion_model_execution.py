@@ -191,6 +191,27 @@ class ModelExecutionTests(unittest.TestCase):
                         with self.assertRaises((AssertionError, ValueError)):
                             _clock_reference(document, reference)
 
+    def test_clock_reference_accepts_dual_cone_clock_and_rejects_nonzero_joint_epoch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model, _, _, _ = model_plan(root)
+            reference = _clock_authority_reference(root)
+            document = {"drive": {"clock": model.document["drive"]["clock"]}}
+            self.assertEqual(_clock_reference(document, reference), Path("inputs/instrument_epoch.json"))
+            joint = {**document, "geometry": {"frontend_geometry": {"role": "simion_rf_ip_geometry"}}}
+            self.assertEqual(_clock_reference(joint, reference), Path("inputs/instrument_epoch.json"))
+            epoch = Path(reference["authority"]["path"])
+            epoch.write_text(json.dumps({"instrument_time_us": 1.0}), encoding="utf-8")
+            reference["authority"] = file_record(epoch, "required_evidence")
+            contract_path = Path(reference["contract"]["path"])
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            contract["authority"]["sha256"] = reference["authority"]["sha256"]
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            reference["contract"] = file_record(contract_path, "required_evidence")
+            joint["drive"]["clock"]["authority_sha256"] = reference["authority"]["sha256"]
+            with self.assertRaisesRegex(ValueError, "zero instrument epoch"):
+                _clock_reference(joint, reference)
+
     def test_action_binds_published_geometry_and_rejects_noop_transport(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
