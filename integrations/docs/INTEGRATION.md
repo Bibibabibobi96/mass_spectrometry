@@ -620,6 +620,21 @@ seconds), with author-tree reads denied, matching 526-file runtime inventories,
 actual HS1/scalar origin checks, and missing/tamper negatives. This is selected
 software installation evidence, not full installed-parent or native HS1 acceptance.
 Full SFI field coupling, convergence and N=100 flight remain open.
+The bounded cold export
+`20261113_202706__analysis__comsol__detector-patch-b5bc61b12c30` then completed
+three native load/interpolation operations, each exit zero with host release,
+and published success with stopped writers. It retained the original
+`detector_parent_vacuum` coordinate strings and required exact numeric agreement
+with all three original basis samples before accepting patch outputs. Independent
+small-file verification matched all 3 reports, 6 CSVs and 12 PAs to the manifest;
+every potential node equals its CSV and all validity nodes are one. The 12 PAs
+total 461,280 bytes. The 0.02-mm grid has 9x9x15 nodes; the 0.01-mm grid has
+17x17x29 nodes. These are export grids of the existing coarse solutions, not
+solver-mesh convergence. Native operation walls were 124.208, 51.494 and
+51.403 seconds; peak working sets were 4,715,868,160, 4,735,959,040 and
+4,647,251,968 bytes. No Compute, remesh, Fly or instrument geometry change ran.
+Patch use in an actual final field callback and representative phase/trajectory
+observations remain pending; reconstructed fields are not callback evidence.
 
 | 冻结运行 | 有效结果 | 不能据此声称 |
 |---|---|---|

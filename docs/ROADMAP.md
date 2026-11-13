@@ -218,8 +218,11 @@ all nine native build/verify/Fly operations with released resources: at 55 us,
 z=0.10/0.19 mm queried slot 4 with zero final gradient, while z=0.21 mm queried
 slot 3 with a nonzero pulse-adjusted gradient. These are raw GU callback queries,
 not calibrated world fields or accepted particle states. All observers remain
-INCONCLUSIVE because six phase/pulse buckets were not covered. Full-domain coupling,
-convergence and the original N=100 flight remain open. Original point/error
+INCONCLUSIVE because six phase/pulse buckets were not covered. A subsequent three-model cold export published 12 small detector-region
+potential/mask PAs with exact original-point joins and independent node/manifest
+checks. The two export pitches sample the existing coarse solutions; no Compute
+or Fly ran. Actual use in the final native field callback remains pending.
+Full-domain coupling, convergence and the original N=100 flight remain open. Original point/error
 records and protected assets stay intact; the installation successor is scoped below.
 The separate local Changed candidate `v87-ci-regressions-main-root-r2` failed the
 full ordinary-install parent after 929.635 s: an IP-reader child exited nonzero
