@@ -80,6 +80,28 @@ interfaces do not restart particles or introduce IP-only acceptance stop planes.
 Frozen gas/vendor/resources participate in the existing replay identity and guards.
 Native construction, Refine, coupled fields, actual HS1 flight and retirement of
 the still-needed segmented MP–IP producer remain open.
+The [continuous RF–IP application consumer](../workflows/multipole_ip/README.md)
+now calls those public stages from an explicit complete design, or directly tracks
+an explicitly selected complete RF–IP field. It validates the complete birth
+packet using the same source-only admission as the tracker before building or
+solving; no resampling is added. The named consumer requires continuous Assembly
+propagation with no interface cut stop. Existing fields never trigger a hidden
+rebuild. The existing managed artifact/replay/tamper test now exercises this
+consumer rather than duplicating its owner calls. The fixed affected batch passed
+41 parents and 69 subtests in 341.661 seconds, with source unchanged and no skips.
+Its native leaf is inert; the design-to-field call sequence is tested at the public
+stage boundaries. Ordinary installation of this new consumer/admission successor,
+real coupled fields and HS1 flight remain pending. The old segmented preparation
+entry remains until its actual continuous replacement is natively validated.
+
+The preceding fixed candidate `269e3665` passed both ordinary wheel and
+sdist-rebuilt-wheel consumers in 949.662 seconds. All 560 authored build-source
+records matched that clean commit; five generated egg-info records matched the
+retained sdist. Its raw runner outcome kept a stale descriptive source label;
+a separate identity record binds the unchanged source inventory and actual build
+records without rewriting it. This installation evidence includes optional scalar
+conductor support and the selected RF worker closure, not the later RF–IP consumer.
+The 15-minute and complete Repository targets remain open.
 The integrated software run recorded 124 parent occurrences (98 unique identities),
 555 successful records and one new selector-test failure in 466.582 test seconds
 (471.745 guarded wall). The failure expected a dotted name where the public runner

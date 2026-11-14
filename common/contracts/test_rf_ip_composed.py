@@ -12,6 +12,7 @@ from common.contracts.test_simion_native_plans import LUA
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.assembly.factory import assemble
 from msplatform.backends.simion import operations
+from msplatform.workflows.multipole_ip import continuous
 from msplatform.backends.simion.model import compile_prepared_model, RF_IP_PHYSICS
 from msplatform.backends.simion.rf_tracking_execution import prepare_rf_ip_hs1
 from msplatform.backends.simion.rf_tracking_program import render_rf_controls
@@ -259,24 +260,24 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
             return actual_process(actual_context,**dict(options,executable=Path(sys.executable),arguments=['-I','-c',protection+code],role='GATE',stage='inert_rf_ip_tracking'))
         private=dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
         with patch.dict(os.environ,private),patch.object(run_session,'run_observed_process',side_effect=inert_native):
-            result=operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
-                numerics=numerics,context=context,hs1_request=request)
-            reused=operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
-                numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
+            result=continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
+                tracking_numerics=numerics,context=context,hs1_request=request)
+            reused=continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
+                tracking_numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
             self.assertEqual(len(observed),3)
             self.assertEqual(reused.metadata['reused_unit_count'],1)
             wrong_seed=dict(request,numerics=dict(request['numerics'],seed=request['numerics']['seed']+1))
             with self.assertRaisesRegex(ValueError,'scientific applicability or partition differs'):
-                operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
-                    numerics=numerics,context=context,hs1_request=wrong_seed,recovery_reference=result.reference['manifest'])
+                continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
+                    tracking_numerics=numerics,context=context,hs1_request=wrong_seed,recovery_reference=result.reference['manifest'])
             self.assertEqual(len(observed),3)
             frozen_bath=result.manifest_location.parent/'inputs/hs1/bath.lua'
             original_bath=frozen_bath.read_bytes()
             try:
                 frozen_bath.write_bytes(bytes([original_bath[0]^1])+original_bath[1:])
                 with self.assertRaisesRegex((AssertionError,ValueError),'(SHA-256 changed|immutable input)'):
-                    operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
-                        numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
+                    continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
+                        tracking_numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
             finally:
                 frozen_bath.write_bytes(original_bath)
             self.assertEqual(len(observed),3)
@@ -284,16 +285,16 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
             try:
                 vendor_path.write_bytes(bytes([vendor_bytes[0]^1])+vendor_bytes[1:])
                 with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
-                    operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
-                        numerics=numerics,context=context,hs1_request=request)
+                    continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
+                        tracking_numerics=numerics,context=context,hs1_request=request)
             finally:
                 vendor_path.write_bytes(vendor_bytes)
             missing=native_resource_path('rf_ip_gas_selection.lua');held=missing.with_suffix('.lua.held')
             missing.rename(held)
             try:
                 with self.assertRaisesRegex(FileNotFoundError,'installed SIMION native resource is missing'):
-                    operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
-                        numerics=numerics,context=context,hs1_request=request)
+                    continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
+                        tracking_numerics=numerics,context=context,hs1_request=request)
             finally:
                 held.rename(missing)
         collection=json.loads(result.data_path('collection').read_text());self.assertEqual(collection['native_calls'],3)

@@ -70,7 +70,8 @@ def _mother_records(records):
     return result
 
 
-def _birth_states(packet, geometry):
+def validate_birth_source(packet: Mapping) -> tuple[list, HandoffMother, ClockIdentity]:
+    """Validate the complete canonical birth cohort independently of geometry."""
     if isinstance(packet, Mapping) and packet.get('role') == 'canonical_recorded_birth_realization':
         from msplatform.ion_release.authoring import load_recorded_release
         source = packet['recorded_source']
@@ -98,6 +99,11 @@ def _birth_states(packet, geometry):
     if set(ids) != set(records) or len(rows) != (count if count is not None else packet['realization']['spec']['particle_count']):
         raise ValueError('birth source must contain the complete actually released mother')
     mother = HandoffMother({pid:records[pid] for pid in ids}, copy.deepcopy(packet['mother']['fates']))
+    return rows, mother, ClockIdentity(**packet['clock'])
+
+
+def _birth_states(packet, geometry):
+    rows, mother, clock = validate_birth_source(packet)
     plan = geometry['composition_plan']
     poses = {row['instance_id']:RigidTransform.from_contract(row['transform']) for row in plan['recipe']['instances']}
     from .frontend import native_frontend_instances
@@ -127,7 +133,7 @@ def _birth_states(packet, geometry):
         item['kinetic_energy_eV'] = kinetic_energy_ev(item['mass_amu'],*state.velocity_m_s)
         projected.append(item)
     validate_component_particle_state_rows(projected)
-    return projected, mother, ClockIdentity(**packet['clock'])
+    return projected, mother, clock
 
 
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,

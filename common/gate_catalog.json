@@ -1381,6 +1381,23 @@
           {
             "matches": [
               {
+                "exact": "src/msplatform/workflows/multipole_ip/continuous.py",
+                "reason": "rf_ip_continuous_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/tracking_execution.py",
+                "reason": "birth_admission_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_simion_birth_admission.py",
+              "common/contracts/test_rf_ip_composed.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "exact": "src/msplatform/components/shape_query.py",
                 "reason": "assembly_scalar_shape_query_changed"
               }

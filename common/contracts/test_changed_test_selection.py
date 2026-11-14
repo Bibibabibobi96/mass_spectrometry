@@ -2371,6 +2371,21 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 
 
 
+    def test_rf_ip_consumer_and_birth_admission_select_actual_consumers(self) -> None:
+        source = 'src/msplatform/workflows/multipole_ip/continuous.py'
+        backend = 'src/msplatform/backends/simion/tracking_execution.py'
+        consumer = 'integrations/tests/test_multipole_ip_continuous.py'
+        selected = self.selections(REPO_ROOT, [
+            dict(stage='common_contracts', paths=[source]),
+            dict(stage='common_contracts', paths=[backend]),
+            dict(stage='instrument_assembly_integration', paths=[consumer])])
+        for row in selected[:2]:
+            self.assertTrue({'common/contracts/test_simion_birth_admission.py',
+                             'common/contracts/test_rf_ip_composed.py',
+                             'common/contracts/test_installed_scientific_core.py'} <= set(row['Modules']))
+        self.assertIn('common/contracts/test_simion_tracking_execution.py', selected[1]['Modules'])
+        self.assertEqual(selected[2]['Modules'], [consumer])
+
     def test_scalar_support_changes_select_actual_consumers(self) -> None:
         paths = ['src/msplatform/components/shape_query.py',
                  'src/msplatform/backends/comsol/assembly_scalar_fill.py',
