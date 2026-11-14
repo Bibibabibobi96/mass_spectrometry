@@ -1445,8 +1445,9 @@ hash-checked; the serial caller checked the same mesh, all 45 voltage/face
 bindings, one Compute per response, zero Compute on cold reopen and writer
 closure. The batch owner also checked all 26 usage records (known observations,
 no warnings), host releases and absence of its exact capacity leases/aliases.
-Together with the carrier and two preceding IP responses, 16 of the required 17
-workpoints now exist; this is not a complete RF response family or Fly evidence.
+At that batch stop, the carrier and two preceding IP responses brought the
+available family to 16 of the required 17 workpoints; it was not a complete RF
+response family or Fly evidence.
 
 The final RF-reference admission stopped before a producer manifest was returned:
 `MINIMUM_FREE_CAPACITY_UNAVAILABLE`. The receipt records 317,666,463,744 B free
@@ -1458,9 +1459,39 @@ The last successful IP response is
 `79d261b1ec3a429c612b256c69b3b961d7b6789ab80ccb828395189cf559b45d`.
 The exact batch inventory, source pins and terminal admission receipt remain in
 workspace `.tools/phase04-codex-takeover-20261109/v87-rf-ip-mr-remaining14-agent9-r1`.
-RF production, fine scalar coverage, field/domain convergence and full-mother
-continuous native flight remain open; no capacity for those later operations is
-implied by these completed responses.
+The subsequent RF-only successor,
+`20261114_231620__sim__comsol__assembly-field-5b657f8adf39`, passed normal admission
+and completed. Its manifest SHA-256 is
+`7cdaceed16d20f39dbba7a39281dfdeaf9ea1b96eba65c1889e3a677f1bea556`;
+all 20 output records were independently hash-verified. Compute and cold reopen
+retained the full mesh identity above, with one Compute and no additional Compute
+on reopen. Both writers exited zero and released host leases; its exact capacity
+lease and execution alias are absent. Admission recorded 317,931,163,648 B free
+against 317,827,579,904 B required, including the unchanged 1 GiB commitment.
+All 17 workpoints now exist; fine scalar coverage, field/domain convergence and
+full-mother continuous native flight remain open. No capacity for those later
+operations is implied.
+
+The RF-space recovery removed only two completed development-task Git archives:
+`.tools/phase04-codex-takeover-20261109/comsol-phase-snapshot-sandbox/baseline.tar`
+(215,592,960 B) and the corresponding `g3-source-quality-sandbox/baseline.tar`
+(215,705,600 B). Each was byte-identical to a fresh `git archive --format=tar`
+of `8e50471554f27e33441ca2d0fbf934cc474a4e53` and
+`7b4fe441deb227711e9429c58a547ccc8f59c07c`, respectively; measured regeneration
+took 1.469/1.532 s without a solver. Extracted sources, patches and all diagnostics
+remain. Restore the exact archive before rerunning the completed G3 scripts that
+open it. Allocated space removed was 431,298,560 B; observed free-space gain was
+431,292,416 B. The identity-bound public removal
+[receipt](../../../artifacts/common/capacity_disposal_receipts/p4-rf-git-archives-20261114T151511Z-278ae053.json)
+retains restore commands and the preceding failed hash-case preflight, which
+removed nothing. These archives were outside the managed artifact ranges, so no
+payload bytes were subtracted from that ledger; receipt metadata was reconciled
+through its existing public owner API. The 700 GiB target and 295 GiB free floor
+were unchanged. The nine legacy MR GUI corridor arrays remain protected: their
+74,729,926,796 logical bytes occupy 63,082,471,424 allocated bytes, two recorded
+IOBs reference the family, and neither an extant equivalent copy nor reliable
+rebuild closure was established. Recent completed COMSOL runtime temporary trees
+were empty; no PA, MPH, GUI package, scientific result or failure log was deleted.
 
 Within one IP–MR scalar admission call, canonical geometry/operator projection and
 the expected response plan are now constructed once and reused by that call's
