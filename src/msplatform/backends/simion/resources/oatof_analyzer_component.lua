@@ -440,6 +440,33 @@ function component.new(config)
     exact_keys(state, {particle_id=true, elapsed_us=true, pulse_elapsed_us=true,
       x_mm=true, y_mm=true, z_mm=true, vz_mm_per_us=true}, 'action_state')
     local record = assert(particles[state.particle_id], 'particle was not initialized')
+    local duplicate=(state.elapsed_us==record.last_elapsed_us and record.last_vz_mm_per_us~=nil and
+      state.x_mm==record.last_x_mm and state.y_mm==record.last_y_mm and state.z_mm==record.last_z_mm and
+      state.vz_mm_per_us==record.last_vz_mm_per_us)
+    if duplicate then
+      local pulse=state.pulse_elapsed_us
+      if pulse==false then assert(observation_window==false, 'missing pulse elapsed requires disabled observation window')
+      else pulse=finite(pulse, 'action_state.pulse_elapsed_us') end
+      return {splat=observation_window~=false and pulse>=observation_window,events={},
+        interval_start_max_z_mm=(record.before_action and record.before_action.max_z_mm or record.max_z_mm),
+        history_unreliable=record.history_unreliable or false}
+    end
+    if state.elapsed_us<record.last_elapsed_us or
+        (state.elapsed_us==record.last_elapsed_us and record.last_vz_mm_per_us~=nil) then
+      local before=record.before_action
+      if before and state.elapsed_us>=before.last_elapsed_us then
+        local unreliable=record.history_unreliable
+        record=before;record.history_unreliable=unreliable;particles[state.particle_id]=record
+      else
+        record.history_unreliable=true
+      end
+    end
+    -- Keep the pre-callback history until the native terminal is known.
+    local before = {}
+    for key, value in pairs(record) do
+      if key ~= 'before_action' then before[key] = value end
+    end
+    record.before_action = before
     record.step_count = record.step_count + 1
     record.max_z_mm = math.max(record.max_z_mm, state.z_mm)
     local events = {}
@@ -450,15 +477,17 @@ function component.new(config)
     end
     record.last_elapsed_us, record.last_x_mm, record.last_y_mm, record.last_z_mm =
       state.elapsed_us, state.x_mm, state.y_mm, state.z_mm
+    record.last_vz_mm_per_us=state.vz_mm_per_us
     local pulse_elapsed_us = state.pulse_elapsed_us
     if pulse_elapsed_us == false then
       assert(observation_window == false, 'missing pulse elapsed requires disabled observation window')
     else
       pulse_elapsed_us = finite(pulse_elapsed_us, 'action_state.pulse_elapsed_us')
     end
+    record.last_pulse_elapsed_us = pulse_elapsed_us
     local splat = observation_window ~= false and pulse_elapsed_us >= observation_window
     if splat then record.timed_out = true end
-    return {splat=splat, events=events}
+    return {splat=splat, events=events, interval_start_max_z_mm=before.max_z_mm, history_unreliable=record.history_unreliable or false}
   end
 
   -- Arm return observation from accepted trajectory history only after the
@@ -468,13 +497,42 @@ function component.new(config)
     return record ~= nil and record.max_z_mm >= g.reflectron_entgrid_z_mm
   end
 
+  local function termination_history_available(particle_id,elapsed_us)
+    local record=assert(particles[particle_id], 'particle was not initialized')
+    if record.history_unreliable then return false end
+    if elapsed_us>=record.last_elapsed_us then return true end
+    return record.before_action~=nil and elapsed_us>=record.before_action.last_elapsed_us
+  end
+
   local function terminate(state)
     exact_keys(state, {particle_id=true, instance_id=true, elapsed_us=true,
       x_mm=true, y_mm=true, z_mm=true, vx_mm_per_us=true,
-      vy_mm_per_us=true, vz_mm_per_us=true, detector_cell_dx_mm=true},
+      vy_mm_per_us=true, vz_mm_per_us=true, detector_cell_dx_mm=true,
+      native_contact=state.native_contact ~= nil and true or nil},
       'terminate_state')
     local record = assert(particles[state.particle_id], 'particle was not initialized')
-    if record.timed_out then
+    if state.elapsed_us < record.last_elapsed_us or
+        (state.elapsed_us == record.last_elapsed_us and record.before_action and
+         (state.x_mm ~= record.last_x_mm or state.y_mm ~= record.last_y_mm or
+          state.z_mm ~= record.last_z_mm)) then
+      local before = assert(record.before_action, 'terminal precedes retained analyzer history')
+      assert(state.elapsed_us >= before.last_elapsed_us,
+        'terminal precedes retained analyzer history')
+      local pulse_elapsed = record.last_pulse_elapsed_us
+      if pulse_elapsed ~= false and pulse_elapsed ~= nil then
+        pulse_elapsed = pulse_elapsed + state.elapsed_us - record.last_elapsed_us
+      end
+      record = before
+      particles[state.particle_id] = record
+      record.max_z_mm = math.max(record.max_z_mm, state.z_mm)
+      record.last_elapsed_us, record.last_x_mm, record.last_y_mm, record.last_z_mm =
+        state.elapsed_us, state.x_mm, state.y_mm, state.z_mm
+      if observation_window ~= false and pulse_elapsed ~= nil and pulse_elapsed ~= false then
+        record.timed_out = record.timed_out or pulse_elapsed >= observation_window
+      end
+    end
+    record.max_z_mm = math.max(record.max_z_mm, state.z_mm)
+    if record.timed_out and not state.native_contact then
       return {kind='timeout_splat', max_z_mm=record.max_z_mm}
     end
     if record.detector_crossed then return nil end
@@ -503,7 +561,8 @@ function component.new(config)
     accelerator_electrode_write_plan=accelerator_plan,
     efield_adjust=efield_adjust, initialize_particle=initialize_particle,
     tstep_adjust=tstep_adjust, other_actions=other_actions,
-    terminate=terminate, detector_marker_active=detector_marker_active}
+    terminate=terminate, termination_history_available=termination_history_available,
+    detector_marker_active=detector_marker_active}
 end
 
 return component

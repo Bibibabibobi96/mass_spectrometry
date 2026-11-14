@@ -1305,6 +1305,12 @@ detector-plane qualification still needs the existing explicit geometric/contact
 checks and an applicable reconciliation. Unknown acceptance must remain explicit,
 without publishing speculative scientific events or dropping mother particles.
 
+The current functional priority is existing compatible geometry/fields to original-birth
+public tracking and readable complete-mother results. Launch checks cover readable
+inputs, coordinates/units, usable field coverage and collision geometry. Field
+convergence, mesh optimization and accuracy qualification are separate work, not
+preconditions for this functional attempt; no physical accuracy is granted by it.
+
 The first coarse carrier export, run
 `20261114_185405__analysis__comsol__assembly-scalar-b116aef94ebc`, remains FAILED.
 Its native writer exited successfully with zero Compute, 5,312,307 queried nodes,

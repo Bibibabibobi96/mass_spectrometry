@@ -371,6 +371,73 @@ class SingleReflectionCollectionTests(unittest.TestCase):
         self.assertTrue(result['observation_complete'])
         self.assertEqual(result['census']['terminal_taxonomy']['role'],'segmented_upstream_terminal_taxonomy')
         self.assertTrue(compare_collections(result,self.collect())['passed'])
+        projected_lines=[line.replace('PLANE_OBSERVATION_V1:', 'PLANE_CUT_PROJECTION_V1:').replace(
+            'method=accepted_step_linear_interpolation','method=callback_step_linear_projection')
+            for line in lines if not line.startswith('TRACE: single_flight_handoff ')]
+        self.workbench['build_metadata']['plane_observation_authority']={'cut':dict(frame_id=old['target_frame_id'],center_mm=[0.,0.,0.],normal=[1.,0.,0.])}
+        projected_result=self.collect(self.write_log(projected_lines))
+        self.assertEqual(projected_result['plane_observations']['rows'],[])
+        projected_stop=projected_result['census']['terminal_taxonomy']['particle_outcomes'][0]
+        self.assertTrue(projected_stop['projected_cut'])
+        self.assertEqual(projected_stop['projection_event']['method'],'callback_step_linear_projection')
+        tampered=[line.replace('step_end_x_mm=1','step_end_x_mm=2') if line.startswith('PLANE_CUT_PROJECTION_V1:') else line for line in projected_lines]
+        with self.assertRaises(ValueError): self.collect(self.write_log(tampered))
+        ordinary=next(line for line in lines if line.startswith('PLANE_OBSERVATION_V1:'))
+        with self.assertRaisesRegex(ValueError,'ordinary plane bracket exceeds native terminal'):
+            self.collect(self.write_log(projected_lines+[ordinary]))
+        # Administrative age request can precede the native return without claiming physical loss.
+        row=selected[1];t=float(row['instrument_time_us'])
+        position={a:float(row[f'position_{a}_mm']) for a in 'xyz'}
+        velocity={a:float(row[f'velocity_{a}_m_s'])/1000 for a in 'xyz'}
+        callback=' '.join(f'callback_{a}_mm={position[a]:.17g}' for a in 'xyz')+' '+' '.join(f'callback_v{a}_mm_per_us={velocity[a]:.17g}' for a in 'xyz')
+        terminal=' '.join(f'terminal_{a}_mm={position[a]:.17g}' for a in 'xyz')+' '+' '.join(f'terminal_v{a}_mm_per_us={velocity[a]:.17g}' for a in 'xyz')
+        stop=(f'PROGRAMMATIC_AGE_STOP_V1: ion=2 particle_id=1009 preaction_splat=0 callback_instance=3 '
+              f'callback_instrument_time_us={t+2:.17g} deadline_instrument_time_us={t+2:.17g} {callback} '
+              f'terminal_instance=3 terminal_instrument_time_us={t+1.5:.17g} {terminal}')
+        age_lines=[line.replace(f'instrument_time_us={t+2:.17g}',f'instrument_time_us={t+1.5:.17g}')
+                   if line.startswith('TRACE: handoff_terminal_raw ion=2 ') else line for line in lines]
+        age_lines=[stop if line.startswith('TRACE: timeout_splat ion=2 ') else line for line in age_lines]
+        age_result=self.collect(self.write_log(age_lines))
+        age=age_result['census']['terminal_taxonomy']['particle_outcomes'][1]
+        self.assertEqual(age['category'],'programmatic_age_stop')
+        self.assertEqual(age['terminal_instrument_time_us'],t+1.5)
+        self.assertEqual(age['request']['deadline_instrument_time_us'],t+2)
+        for before,after in (('preaction_splat=0','preaction_splat=-1'),('particle_id=1009','particle_id=1010'),
+                             ('deadline_instrument_time_us=', 'deadline_instrument_time_us=9'),
+                             ('terminal_instance=3','terminal_instance=4'),('terminal_x_mm=', 'terminal_x_mm=9')):
+            altered=[line.replace(before,after) if line.startswith('PROGRAMMATIC_AGE_STOP_V1:') else line for line in age_lines]
+            with self.subTest(age_tamper=before), self.assertRaises(ValueError):self.collect(self.write_log(altered))
+        pre=' '.join(f'preaction_{a}_mm={position[a]:.17g}' for a in 'xyz')+' '+' '.join(f'preaction_v{a}_mm_per_us={velocity[a]:.17g}' for a in 'xyz')
+        request=' '.join(f'request_{a}_mm={position[a]:.17g}' for a in 'xyz')+' '+' '.join(f'request_v{a}_mm_per_us={velocity[a]:.17g}' for a in 'xyz')
+        unknown=(f'UNKNOWN_TERMINATION_V1: ion=2 particle_id=1009 reason=unconfirmed_terminal_cause terminal_splat=2 terminal_instance=3 '
+                 f'terminal_instrument_time_us={t+1.5:.17g} {terminal} preaction_available=1 preaction_splat=2 preaction_instance=3 '
+                 f'preaction_instrument_time_us={t+1.5:.17g} {pre} request_kind=none request_splat=0 request_instance=3 '
+                 f'request_instrument_time_us={t+1.5:.17g} {request}')
+        unknown_lines=[unknown if line.startswith('PROGRAMMATIC_AGE_STOP_V1:') else line for line in age_lines]
+        unknown_result=self.collect(self.write_log(unknown_lines))
+        unknown_outcome=unknown_result['census']['terminal_taxonomy']['particle_outcomes'][1]
+        self.assertEqual(unknown_outcome['category'],'unknown_termination')
+        self.assertEqual(unknown_outcome['last_preaction']['splat'],2)
+        self.assertIsNone(unknown_outcome['request'])
+        with_request=[line.replace('request_kind=none','request_kind=pulse_limit') if line.startswith('UNKNOWN_TERMINATION_V1:') else line for line in unknown_lines]
+        request_result=self.collect(self.write_log(with_request))
+        self.assertEqual(request_result['census']['terminal_taxonomy']['particle_outcomes'][1]['request']['kind'],'pulse_limit')
+        self.assertNotIn('non_detector_splat_instance_3',unknown_result['census']['terminal_taxonomy']['category_counts'])
+        for before,after in (('particle_id=1009','particle_id=1010'),('terminal_instance=3','terminal_instance=4'),
+                             ('preaction_splat=2','preaction_splat=-1'),('terminal_x_mm=','terminal_x_mm=9')):
+            altered=[line.replace(before,after) if line.startswith('UNKNOWN_TERMINATION_V1:') else line for line in unknown_lines]
+            with self.subTest(unknown_tamper=before), self.assertRaises(ValueError):self.collect(self.write_log(altered))
+        incomplete=lines[:-1]+['SFI_OBSERVATION_INCOMPLETE_V1: ion=1 particle_id=11 reason=terminal_before_committed_history',lines[-1]]
+        incomplete_result=self.collect(self.write_log(incomplete))
+        self.assertFalse(incomplete_result['observation_complete'])
+        self.assertEqual(incomplete_result['observation_incomplete'][0]['particle_id'],11)
+        self.assertTrue(incomplete_result['uncommitted_observations']['plane_observations'])
+        self.assertTrue(incomplete_result['uncommitted_observations']['canonical_events'])
+        self.assertFalse(any(row['particle_id']==11 and row['event']=='multipole_handoff' for row in incomplete_result['canonical_events']))
+        self.assertEqual(incomplete_result['census']['census']['multipole_handoff'],0)
+        self.assertEqual(len(incomplete_result['census']['terminal_taxonomy']['particle_outcomes']),2)
+        tampered=[line.replace('particle_id=11','particle_id=12') if line.startswith('SFI_OBSERVATION_INCOMPLETE_V1:') else line for line in incomplete]
+        with self.assertRaises(ValueError):self.collect(self.write_log(tampered))
         # Declared diagnostic cap stays incomplete, not evidence of no crossing.
         capped=lines[:-1]+['PLANE_OBSERVATION_INCOMPLETE_V1: observation_id=cut reason=declared_record_cap',lines[-1]]
         self.assertFalse(self.collect(self.write_log(capped))['observation_complete'])

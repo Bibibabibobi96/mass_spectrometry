@@ -240,6 +240,8 @@ def read_native_events(
     rows: list[dict[str, object]] = []
     seen: set[tuple[int, str]] = set()
     terminal_outcomes: dict[int, dict[str, object]] = {}
+    preaction_contacts: dict[int, dict[str, object]] = {}
+    age_stop_conflicts: dict[int, dict[str, object]] = {}
     pulse_times: list[float] = []
     offset = 0
     lines: list[tuple[str, int, int]] = []
@@ -353,6 +355,102 @@ def read_native_events(
                 "survival_status": "detected",
             })
             continue
+        if 'SFI_AGE_STOP_CONFLICT_V1:' in line:
+            pairs=re.findall(r"(\w+)=([^\s]+)",line.split('SFI_AGE_STOP_CONFLICT_V1:',1)[1]);fields=dict(pairs)
+            numeric={'callback_instrument_time_us','deadline_instrument_time_us'}|{a+'_mm' for a in 'xyz'}|{'v'+a+'_mm_per_us' for a in 'xyz'}
+            if len(pairs)!=len(fields) or set(fields)!=numeric|{'ion','particle_id','preaction_splat','callback_instance'}:
+                raise ValueError('age stop conflict fields differ')
+            native=int(fields['ion']);pid=int(fields['particle_id']);slot=int(fields['callback_instance'])
+            if (not 1<=native<=batch_count or ordered_particle_ids[particle_offset+native-1]!=pid or str(pid)!=fields['particle_id'] or
+                    fields['preaction_splat']!='0' or slot<0 or str(slot)!=fields['callback_instance'] or pid in age_stop_conflicts):
+                raise ValueError('age stop conflict identity differs')
+            values={key:float(fields[key]) for key in numeric}
+            if not all(math.isfinite(v) for v in values.values()) or values['callback_instrument_time_us']<values['deadline_instrument_time_us']:
+                raise ValueError('age stop conflict request differs')
+            age_stop_conflicts[pid]=dict(preaction_splat=0,callback_instance=slot,**values)
+            continue
+        if 'NATIVE_PREACTION_CONTACT_V1:' in line:
+            pairs=re.findall(r"(\w+)=([^\s]+)",line.split('NATIVE_PREACTION_CONTACT_V1:',1)[1]);fields=dict(pairs)
+            numeric={'callback_instrument_time_us'}|{a+'_mm' for a in 'xyz'}|{'v'+a+'_mm_per_us' for a in 'xyz'}
+            if len(pairs)!=len(fields) or set(fields)!=numeric|{'ion','particle_id','splat','instance'}:
+                raise ValueError('native preaction contact fields differ')
+            local_id=int(fields['ion']);pid=int(fields['particle_id']);instance=int(fields['instance'])
+            if (not 1<=local_id<=batch_count or ordered_particle_ids[particle_offset+local_id-1]!=pid or
+                    str(pid)!=fields['particle_id'] or fields['splat']!='-1' or instance<0 or str(instance)!=fields['instance'] or pid in preaction_contacts):
+                raise ValueError('native preaction contact identity or splat differs')
+            values={key:float(fields[key]) for key in numeric}
+            if not all(math.isfinite(v) for v in values.values()):raise ValueError('nonfinite native preaction contact')
+            preaction_contacts[pid]=dict(splat=-1,instance=instance,**values)
+            continue
+        if 'UNKNOWN_TERMINATION_V1:' in line:
+            pairs=re.findall(r"(\w+)=([^\s]+)",line.split('UNKNOWN_TERMINATION_V1:',1)[1]);fields=dict(pairs)
+            numeric={part+'_instrument_time_us' for part in ('terminal','preaction','request')}
+            numeric|={f'{part}_{axis}_mm' for part in ('terminal','preaction','request') for axis in 'xyz'}
+            numeric|={f'{part}_v{axis}_mm_per_us' for part in ('terminal','preaction','request') for axis in 'xyz'}
+            expected=numeric|{'ion','particle_id','reason','terminal_splat','terminal_instance','preaction_available','preaction_splat','preaction_instance','request_kind','request_splat','request_instance'}
+            if len(pairs)!=len(fields) or set(fields)!=expected:
+                raise ValueError('unknown termination fields differ')
+            local_id=int(fields['ion']);pid=int(fields['particle_id'])
+            if (not 1<=local_id<=batch_count or ordered_particle_ids[particle_offset+local_id-1]!=pid or
+                    str(pid)!=fields['particle_id'] or pid in terminal_outcomes or fields['preaction_available'] not in ('0','1') or
+                    fields['request_kind'] not in ('none','analyzer_observation','pulse_limit','age_limit')):
+                raise ValueError('unknown termination identity or request differs')
+            if fields['request_kind']!='none' and fields['request_splat']!='0':
+                raise ValueError('programmatic request lacks unsplatted native entry')
+            values={key:float(fields[key]) for key in numeric}
+            if not all(math.isfinite(v) for v in values.values()):raise ValueError('nonfinite unknown termination')
+            for key in ('terminal_instance','preaction_instance','request_instance'):
+                if int(fields[key])<0 or str(int(fields[key]))!=fields[key]:raise ValueError('unknown termination instance differs')
+            for key in ('preaction_splat','request_splat'):
+                if str(int(fields[key]))!=fields[key]:raise ValueError('unknown termination splat differs')
+            if fields['terminal_splat']!='unavailable' and str(int(fields['terminal_splat']))!=fields['terminal_splat']:
+                raise ValueError('unknown termination terminal splat differs')
+            if fields['terminal_splat']=='-1' and fields['reason']!='analyzer_history_unavailable':
+                raise ValueError('unknown termination contradicts native terminal contact')
+            for label,absent in (('preaction',fields['preaction_available']=='0'),('request',fields['request_kind']=='none')):
+                if absent and (fields[label+'_splat']!='0' or fields[label+'_instance']!=fields['terminal_instance'] or
+                        any(values[label+'_'+name]!=values['terminal_'+name] for name in
+                            ('instrument_time_us','x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us'))):
+                    raise ValueError('absent unknown termination provenance differs from terminal placeholder')
+            terminal_outcomes[pid]=dict(particle_id=pid,category='unknown_termination',terminal_event='unknown_termination',
+                instance_id=int(fields['terminal_instance']),terminal_instrument_time_us=values['terminal_instrument_time_us'],
+                x_mm=values['terminal_x_mm'],y_mm=values['terminal_y_mm'],z_mm=values['terminal_z_mm'],
+                terminal_velocity_mm_per_us=[values['terminal_v'+a+'_mm_per_us'] for a in 'xyz'],
+                terminal_splat=(None if fields['terminal_splat']=='unavailable' else int(fields['terminal_splat'])),unknown_reason=fields['reason'],
+                last_preaction=(dict(splat=int(fields['preaction_splat']),instance=int(fields['preaction_instance']),
+                    **{key:value for key,value in values.items() if key.startswith('preaction_')}) if fields['preaction_available']=='1' else None),
+                request=(dict(kind=fields['request_kind'],splat=int(fields['request_splat']),instance=int(fields['request_instance']),
+                    **{key:value for key,value in values.items() if key.startswith('request_')}) if fields['request_kind']!='none' else None))
+            continue
+        if 'PROGRAMMATIC_AGE_STOP_V1:' in line:
+            pairs=re.findall(r"(\w+)=([^\s]+)",line.split('PROGRAMMATIC_AGE_STOP_V1:',1)[1])
+            fields=dict(pairs)
+            numeric={'callback_instrument_time_us','deadline_instrument_time_us','terminal_instrument_time_us'}
+            numeric|={f'{part}_{axis}_mm' for part in ('callback','terminal') for axis in 'xyz'}
+            numeric|={f'{part}_v{axis}_mm_per_us' for part in ('callback','terminal') for axis in 'xyz'}
+            expected=numeric|{'ion','particle_id','preaction_splat','callback_instance','terminal_instance'}
+            if len(pairs)!=len(fields) or set(fields)!=expected:
+                raise ValueError('programmatic age stop fields differ')
+            local_id=int(fields['ion']); pid=int(fields['particle_id'])
+            if (not 1<=local_id<=batch_count or ordered_particle_ids[particle_offset+local_id-1]!=pid
+                    or str(pid)!=fields['particle_id'] or fields['preaction_splat']!='0'
+                    or pid in terminal_outcomes):
+                raise ValueError('programmatic age stop identity or preaction cause differs')
+            values={key:float(fields[key]) for key in numeric}
+            if (not all(math.isfinite(v) for v in values.values())
+                    or values['callback_instrument_time_us']<values['deadline_instrument_time_us']):
+                raise ValueError('programmatic age stop request precedes deadline or is nonfinite')
+            for key in ('callback_instance','terminal_instance'):
+                if int(fields[key])<0 or str(int(fields[key]))!=fields[key]:
+                    raise ValueError('programmatic age stop native instance differs')
+            terminal_outcomes[pid]=dict(particle_id=pid,category='programmatic_age_stop',
+                terminal_event='programmatic_age_stop',instance_id=int(fields['terminal_instance']),
+                terminal_instrument_time_us=values['terminal_instrument_time_us'],
+                x_mm=values['terminal_x_mm'],y_mm=values['terminal_y_mm'],z_mm=values['terminal_z_mm'],
+                request=dict(preaction_splat=0,callback_instance=int(fields['callback_instance']),
+                    **{key:value for key,value in values.items() if key.startswith('callback_') or key=='deadline_instrument_time_us'}),
+                terminal_velocity_mm_per_us=[values['terminal_v'+a+'_mm_per_us'] for a in 'xyz'])
+            continue
         match = NON_DETECTOR_SPLAT_PATTERN.search(line)
         if match:
             local_id = int(match["ion"])
@@ -399,6 +497,36 @@ def read_native_events(
         match = PULSE_PATTERN.search(line)
         if match:
             pulse_times.append(float(match["t"]))
+    for pid,request in age_stop_conflicts.items():
+        outcome=terminal_outcomes.get(pid)
+        if outcome is None or outcome['terminal_event'] not in ('detector_crossing','non_detector_splat','unknown_termination'):
+            raise ValueError('age stop conflict lacks a terminal')
+        if outcome['terminal_event']=='unknown_termination':
+            own=outcome['request']
+            if (own is None or own['kind']!='age_limit' or own['instance']!=request['callback_instance'] or
+                    own['request_instrument_time_us']!=request['callback_instrument_time_us'] or
+                    any(own['request_'+name]!=request[name] for name in ('x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us'))):
+                raise ValueError('age stop conflict request differs from unknown outcome')
+        outcome['age_stop_conflict']=request
+    for pid,outcome in terminal_outcomes.items():
+        if outcome['terminal_event']=='unknown_termination' and outcome.get('request') and outcome['request']['kind']=='age_limit' and pid not in age_stop_conflicts:
+            raise ValueError('unknown age request lacks conflict evidence')
+    for pid,outcome in terminal_outcomes.items():
+        pre=outcome.get('last_preaction')
+        if outcome['terminal_event']=='unknown_termination' and pre is not None and pre['splat']==-1 and pid not in preaction_contacts:
+            raise ValueError('unknown termination lacks its raw preaction contact')
+    for pid,contact in preaction_contacts.items():
+        outcome=terminal_outcomes.get(pid)
+        if outcome is None or outcome['terminal_event'] not in ('detector_crossing','non_detector_splat','unknown_termination'):
+            raise ValueError('native preaction contact lacks a compatible terminal')
+        if outcome['terminal_event']=='unknown_termination':
+            pre=outcome['last_preaction']
+            if (pre is None or pre['splat']!=-1 or pre['instance']!=contact['instance'] or
+                    pre['preaction_instrument_time_us']!=contact['callback_instrument_time_us'] or
+                    any(pre['preaction_'+name]!=contact[name] for name in
+                        ('x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us'))):
+                raise ValueError('unknown termination preaction contact evidence differs')
+        outcome['native_preaction_contact']=contact
     return dict(rows=rows, terminal_outcomes=terminal_outcomes, pulse_times=pulse_times)
 
 
@@ -476,7 +604,7 @@ def canonical_census(
     }
 
 
-def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, definitions, *, consumed_plane_events=()):
+def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, definitions, *, consumed_plane_events=(), projected=False, plane_authority=None, native_frame_id=None):
     """Read the explicit V1 observation wire without dropping recrossings.
 
     The caller verifies/freeze-binds the definitions and native producer logs.
@@ -502,12 +630,12 @@ def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, defin
     for path, count in zip(log_paths, batch_counts, strict=True):
         with Path(path).open(encoding="utf-8-sig") as stream:
             for line_number, line in enumerate(stream, 1):
-                if "PLANE_OBSERVATION_INCOMPLETE_V1:" in line:
+                if not projected and "PLANE_OBSERVATION_INCOMPLETE_V1:" in line:
                     fields = dict(re.findall(r"(\w+)=([^\s]+)", line.split("PLANE_OBSERVATION_INCOMPLETE_V1:", 1)[1]))
                     if set(fields) != {"observation_id", "reason"} or fields["observation_id"] not in allowed or fields["reason"] != "declared_record_cap":
                         raise ValueError("invalid plane observation incomplete fact")
                     incomplete.append(dict(fields, raw_line_number=line_number, log=str(path)))
-                elif "PLANE_BOUNDARY_RETURN_V1:" in line:
+                elif not projected and "PLANE_BOUNDARY_RETURN_V1:" in line:
                     pairs = re.findall(r"(\w+)=([^\s]+)", line.split("PLANE_BOUNDARY_RETURN_V1:", 1)[1])
                     fields = dict(pairs)
                     endpoint_keys = {f"step_{end}_{axis}_mm" for end in ("start","end") for axis in "xyz"}
@@ -532,15 +660,16 @@ def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, defin
                                consumed_occurrence=int(fields["consumed_occurrence"]),method=fields["method"],
                                raw_line_number=line_number,log=str(path))
                     unlocalized.append(row)
-                elif "PLANE_OBSERVATION_V1:" in line:
-                    pairs = re.findall(r"(\w+)=([^\s]+)", line.split("PLANE_OBSERVATION_V1:", 1)[1])
+                elif ("PLANE_CUT_PROJECTION_V1:" if projected else "PLANE_OBSERVATION_V1:") in line:
+                    prefix="PLANE_CUT_PROJECTION_V1:" if projected else "PLANE_OBSERVATION_V1:"
+                    pairs = re.findall(r"(\w+)=([^\s]+)", line.split(prefix, 1)[1])
                     fields = dict(pairs)
                     if len(fields) != len(pairs) or set(fields) != keys:
                         raise ValueError("malformed plane observation V1 fields")
                     native_id, pid, number = int(fields["ion"]), int(fields["particle_id"]), int(fields["occurrence"])
                     if (not 1 <= native_id <= count or pid != ordered_particle_ids[offset+native_id-1]
                             or fields["observation_id"] not in allowed or fields["direction"] not in {"outward", "inward"}
-                            or fields["method"] != "accepted_step_linear_interpolation"):
+                            or fields["method"] != ("callback_step_linear_projection" if projected else "accepted_step_linear_interpolation")):
                         raise ValueError("plane observation identity/direction/method differs")
                     row = {key: float(fields[key]) for key in numeric}
                     if not all(math.isfinite(value) for value in row.values()):
@@ -550,6 +679,30 @@ def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, defin
                             or row["step_start_instrument_time_us"] >= row["step_end_instrument_time_us"]
                             or not ((a < 0 <= b) if fields["direction"] == "outward" else (a > 0 >= b))):
                         raise ValueError("plane observation lacks a valid directed accepted-step bracket")
+                    if projected:
+                        authority=(plane_authority or {}).get(fields['observation_id'])
+                        if (not isinstance(authority,dict) or set(authority)!={'frame_id','center_mm','normal'}
+                                or authority['frame_id'] != native_frame_id
+                                or not all(isinstance(authority[key],list) and len(authority[key])==3 and
+                                           all(type(v) in (int,float) and math.isfinite(v) for v in authority[key])
+                                           for key in ('center_mm','normal'))):
+                            raise ValueError('projected cut lacks native plane frame authority')
+                        for boundary, measured in (('start',a),('end',b)):
+                            distance=sum((row[f'step_{boundary}_{axis}_mm']-c)*n
+                                for axis,c,n in zip('xyz',authority['center_mm'],authority['normal'],strict=True))
+                            if not binary64_serialization_close(distance,measured):
+                                raise ValueError('projected cut bracket differs from native plane frame')
+                        fraction=-a/(b-a)
+                        expected_time=row['step_start_instrument_time_us']+fraction*(row['step_end_instrument_time_us']-row['step_start_instrument_time_us'])
+                        if not binary64_serialization_close(row['instrument_time_us'],expected_time):
+                            raise ValueError('projected cut time differs from bracket interpolation')
+                        for axis in 'xyz':
+                            for prefix in ('', 'v'):
+                                suffix='_mm' if not prefix else '_mm_per_us'
+                                name=prefix+axis+suffix
+                                start=row['step_start_'+name]; end=row['step_end_'+name]
+                                if not binary64_serialization_close(row[name],start+fraction*(end-start)):
+                                    raise ValueError('projected cut state differs from bracket interpolation')
                     sequence = (pid, fields["observation_id"], fields["direction"])
                     key = (*sequence, number)
                     if key in seen or number != occurrence.get(sequence, 0)+1:
@@ -606,7 +759,7 @@ def _validate_accepted_cut_endpoint(accepted, stop, event, terminal):
         raise ValueError("accepted cut endpoint native instance differs")
 
 
-def read_cut_stop_events(log_paths, ordered_ids, batch_counts, policy, observations, native_terminals):
+def read_cut_stop_events(log_paths, ordered_ids, batch_counts, policy, observations, native_terminals, projected_observations=None):
     """Bind declared nonloss endpoint stops to raw terminals and plane estimates.
 
     This does not relocate either state. Ordinary physical terminal facts may
@@ -615,6 +768,7 @@ def read_cut_stop_events(log_paths, ordered_ids, batch_counts, policy, observati
     keys = {"observation_id", "ion", "particle_id", "direction", "occurrence", "event_instrument_time_us",
             "endpoint_instrument_time_us", "instance", "x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "method"}
     result, offset = {}, 0
+    projected_rows = [] if projected_observations is None else projected_observations["rows"]
     for path, count in zip(log_paths, batch_counts, strict=True):
         accepted = _read_accepted_cut_endpoints(path)
         used = set()
@@ -642,7 +796,8 @@ def read_cut_stop_events(log_paths, ordered_ids, batch_counts, policy, observati
                 numbers = {key: float(fields[key]) for key in keys-{"observation_id", "direction", "method"}}
                 if not all(math.isfinite(v) for v in numbers.values()):
                     raise ValueError("nonfinite cut stop")
-                events = [row for row in observations["rows"] if row["particle_id"] == pid and
+                projected = [row for row in projected_rows if row["particle_id"] == pid and row["observation_id"] == policy["observation_id"] and row["direction"] == "outward" and row["occurrence"] == 1]
+                events = [row for row in (projected if projected else observations["rows"]) if row["particle_id"] == pid and
                           row["observation_id"] == policy["observation_id"] and row["direction"] == "outward" and row["occurrence"] == 1]
                 if len(events) != 1:
                     raise ValueError("cut stop lacks its unique original plane event")
@@ -667,12 +822,14 @@ def read_cut_stop_events(log_paths, ordered_ids, batch_counts, policy, observati
                     observation_id=policy["observation_id"], direction="outward", occurrence=1,
                     event_instrument_time_us=numbers["event_instrument_time_us"],
                     method=fields["method"], native_termination_boundary=boundary,
-                    accepted_endpoint=(accepted[pid] if version == 2 else None),
+                    accepted_endpoint=(accepted[pid] if version == 2 else None), projection_event=event, projected_cut=bool(projected),
                     log=str(path), raw_line_number=number,
                     **{k:numbers[k] for k in ("x_mm","y_mm","z_mm","vx_mm_per_us","vy_mm_per_us","vz_mm_per_us")})
         if set(accepted) != used:
             raise ValueError("accepted cut endpoint lacks its unique V2 stop")
         offset += count
+    if {row["particle_id"] for row in projected_rows} != {pid for pid, stop in result.items() if stop["projected_cut"]}:
+        raise ValueError("projected cut bracket lacks its unique stop")
     return result
 
 
@@ -770,6 +927,23 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
     masses = {float(row['mass_amu']) for row in source.values()}
     if len(masses) != 1 or min(masses) <= 0:
         raise ValueError('existing single-flight analyzer requires one positive ion mass')
+    observation_incomplete=[]
+    seen_incomplete=set()
+    for path,case in zip(logs,cases,strict=True):
+        ids=case['expected_particle_ids']
+        for number,line in enumerate(path.read_text(encoding='utf-8-sig').splitlines(),1):
+            if 'SFI_OBSERVATION_INCOMPLETE_V1:' not in line:continue
+            pairs=re.findall(r"(\w+)=([^\s]+)",line.split('SFI_OBSERVATION_INCOMPLETE_V1:',1)[1]);fields=dict(pairs)
+            if len(pairs)!=len(fields) or set(fields)!={'ion','particle_id','reason'}:
+                raise ValueError('observation incomplete fields differ')
+            native=int(fields['ion']);pid=int(fields['particle_id'])
+            if (not 1<=native<=len(ids) or ids[native-1]!=pid or str(pid)!=fields['particle_id'] or pid in seen_incomplete or
+                    fields['reason'] not in ('equal_time_conflicting_callback','callback_before_retained_interval',
+                        'terminal_before_committed_history','terminal_before_retained_interval','analyzer_history_unavailable',
+                        'frontend_control_history_unavailable')):
+                raise ValueError('observation incomplete identity or reason differs')
+            seen_incomplete.add(pid)
+            observation_incomplete.append(dict(particle_id=pid,reason=fields['reason'],log=str(path),raw_line_number=number))
     plane_definitions = [case.get('build_metadata', {}).get('plane_observations') for case in cases]
     if any(value != plane_definitions[0] for value in plane_definitions):
         raise ValueError('batch plane observation definitions differ')
@@ -783,8 +957,53 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
     validate_propagation_stop(stop_policy, plane_definitions[0])
     if stop_policy is not None and (provenance.get('schema_version') != 2 or provenance.get('state_kind') != 'source_birth'):
         raise ValueError('segmented upstream cut stop requires a modern source_birth')
-    cut_stops = read_cut_stop_events(logs, list(source), counts, stop_policy, plane_observation, terminals)
+    authorities=[case.get('build_metadata',{}).get('plane_observation_authority') for case in cases]
+    if any(value != authorities[0] for value in authorities):
+        raise ValueError('batch plane frame authorities differ')
+    projected_observation = (read_plane_observations(logs, list(source), counts, plane_definitions[0], projected=True,
+                                plane_authority=authorities[0],native_frame_id=provenance.get('target_frame_id'))
+                             if plane_definitions[0] is not None else None)
+    cut_stops = read_cut_stop_events(logs, list(source), counts, stop_policy, plane_observation, terminals, projected_observation)
     evidence = read_native_events(logs, masses.pop(), list(source), counts)
+    for pid, outcome in evidence['terminal_outcomes'].items():
+        if outcome['category'] not in ('programmatic_age_stop','unknown_termination'):
+            continue
+        terminal=terminals[pid]; request=outcome['request']
+        if (outcome['instance_id'] != terminal['instance'] or
+                outcome['terminal_instrument_time_us'] != terminal['instrument_time_us'] or
+                any(outcome[a+'_mm'] != terminal[a+'_mm'] for a in 'xyz') or
+                any(outcome['terminal_velocity_mm_per_us'][i] != terminal['v'+a+'_mm_per_us'] for i,a in enumerate('xyz'))):
+            raise ValueError('administrative or unknown outcome differs from actual native terminal')
+        if outcome['category']=='unknown_termination':
+            birth=float(source[pid]['instrument_time_us'])
+            pre=outcome['last_preaction']; own=outcome['request']
+            if ((pre is not None and pre['preaction_instrument_time_us']<birth) or
+                    (own is not None and own['request_instrument_time_us']<birth)):
+                raise ValueError('unknown termination provenance precedes birth')
+            continue
+        owner=next(case for case in cases if pid in case['expected_particle_ids'])
+        clock=owner.get('build_metadata',{}).get('source_clock',{})
+        deadlines=clock.get('absolute_deadlines_us')
+        if deadlines is not None:
+            expected_deadline=deadlines[owner['expected_particle_ids'].index(pid)]
+        else:
+            expected_deadline=float(source[pid]['instrument_time_us'])+float(flight['maximum_flight_us'])
+        if not binary64_serialization_close(request['deadline_instrument_time_us'],expected_deadline):
+            raise ValueError('programmatic age stop deadline differs from frozen request')
+    for pid, outcome in evidence['terminal_outcomes'].items():
+        contact=outcome.get('native_preaction_contact')
+        if contact is not None and contact['callback_instrument_time_us']<float(source[pid]['instrument_time_us']):
+            raise ValueError('native preaction contact precedes birth')
+    for pid,outcome in evidence['terminal_outcomes'].items():
+        conflict=outcome.get('age_stop_conflict')
+        if conflict is None:continue
+        owner=next(case for case in cases if pid in case['expected_particle_ids'])
+        clock=owner.get('build_metadata',{}).get('source_clock',{})
+        deadlines=clock.get('absolute_deadlines_us')
+        expected_deadline=(deadlines[owner['expected_particle_ids'].index(pid)] if deadlines is not None else
+                           float(source[pid]['instrument_time_us'])+float(flight['maximum_flight_us']))
+        if not binary64_serialization_close(conflict['deadline_instrument_time_us'],expected_deadline):
+            raise ValueError('age stop conflict deadline differs from frozen request')
     cut_observation_windows = {}
     if stop_policy is not None:
         mother_births = {row['particle_id']:row['particle_birth_time_us'] for row in provenance['mother_records']}
@@ -810,9 +1029,7 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
             if stop['accepted_endpoint'] is not None:
                 # read_cut_stop_events already proved the unique original event
                 # and both raw boundaries; a physical terminal above still wins.
-                cut_observation_windows[pid] = next(row for row in plane_observation['rows']
-                    if row['particle_id'] == pid and row['observation_id'] == stop['observation_id']
-                    and row['direction'] == stop['direction'] and row['occurrence'] == stop['occurrence'])
+                cut_observation_windows[pid] = stop['projection_event']
         for terminal in evidence['terminal_outcomes'].values():
             if terminal['category'] == 'timeout_splat':
                 if terminal['terminal_instrument_time_us'] < deadlines[terminal['particle_id']]:
@@ -821,6 +1038,28 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
                 terminal['category'] = 'censored_no_handoff_by_deadline'
         evidence['propagation_scope'] = 'segmented_upstream'
 
+    uncommitted=dict(canonical_events=[],native_pulse_states=[],native_shared_states=[],plane_observations=[])
+    if seen_incomplete:
+        for row in evidence['rows']:
+            if row['particle_id'] in seen_incomplete and row['event'] not in ('source_release','detector_crossing'):
+                uncommitted['canonical_events'].append(row)
+        evidence['rows']=[row for row in evidence['rows'] if row not in uncommitted['canonical_events']]
+        uncommitted['native_pulse_states']=[row for row in pulse_states if row['particle_id'] in seen_incomplete]
+        pulse_states=[row for row in pulse_states if row['particle_id'] not in seen_incomplete]
+        evidence['pulse_times']=[row['instrument_time_us'] for row in pulse_states]
+        uncommitted['native_shared_states']=[row for row in shared_states if row['particle_id'] in seen_incomplete]
+        shared_states=[row for row in shared_states if row['particle_id'] not in seen_incomplete]
+        if plane_observation is not None:
+            uncommitted['plane_observations']=[row for row in plane_observation['rows'] if row['particle_id'] in seen_incomplete]
+            plane_observation['rows']=[row for row in plane_observation['rows'] if row['particle_id'] not in seen_incomplete]
+            plane_observation['status']='incomplete'
+    if plane_observation is not None:
+        for row in plane_observation['rows']:
+            terminal=terminals[row['particle_id']]['instrument_time_us']
+            stop=cut_stops.get(row['particle_id'])
+            legacy_cut=(stop is not None and not stop['projected_cut'] and row is stop['projection_event'])
+            if row['step_end_instrument_time_us'] > terminal and not legacy_cut:
+                raise ValueError('ordinary plane bracket exceeds native terminal')
     census = canonical_census(evidence, list(source), pulse_time_us=flight['pulse'].get('time_us'))
     if stop_policy is not None:
         census['analysis_scope'] = 'segmented_upstream_complete_mother_and_declared_cut'
@@ -839,6 +1078,10 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
     result = dict(census=census, canonical_events=rows, native_pulse_states=pulse_states,
                   native_shared_states=shared_states, native_terminals=[terminals[pid] for pid in source],
                   native_complete=True)
+    if observation_incomplete:
+        result['observation_complete']=False
+        result['observation_incomplete']=observation_incomplete
+        result['uncommitted_observations']=uncommitted
     if plane_observation is not None:
         result['plane_observations'] = plane_observation
     if stop_policy is not None:

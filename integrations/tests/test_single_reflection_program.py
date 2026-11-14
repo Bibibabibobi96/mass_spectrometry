@@ -133,59 +133,12 @@ cross(7,-1);cross(9,1)
 
     @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
     def test_explicit_cut_stop_only_stops_unsplatted_current_ion_at_endpoint(self):
-        from msplatform.backends.simion.tracking_program import _instrument_plane_observations, validate_propagation_stop
-        geometry=dict(native_frame_id="world",composition_plan=dict(scope=dict(instance_ids=["rf"]),
-            components=dict(rf=dict(local_frame_id="world",ports=dict(exit=dict(center_mm=[0,0,0],outward_normal=[1,0,0])))),
-            recipe=dict(instances=[dict(instance_id="rf",transform=dict(schema_version=1,role="rigid_transform",from_frame_id="world",to_frame_id="world",rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0]))])))
+        from msplatform.backends.simion.tracking_program import validate_propagation_stop
         definition=dict(schema_version=1,observation_id="cut",source_instance_id="rf",port_id="exit",max_records=10)
         policy=dict(schema_version=1,scope="segmented_upstream",observation_id="cut",direction="outward",occurrence=1)
-        skeleton="""segment={}
-local single_flight_absolute_deadline_us={100,100}
-local single_flight_reported={}
-local function single_flight_source_row_index() return ion_number end
-local function single_flight_canonical_particle_id() return ion_number==1 and 1009 or 77 end
-local function single_flight_instrument_time_us() return now end
-local function single_flight_write_trace(line) print(line) end
-function segment.other_actions()
- local p=previous
- local time=now
-  local reported=single_flight_reported[ion_number] or {}
- local result={splat=physical}
-  if result.splat then ion_splat=1 end
- print('ordinary_tail '..ion_number)
-end
-function segment.terminate()
- print('physical_terminal '..ion_number)
-end
-"""
-        program=_instrument_plane_observations(skeleton,[definition],geometry,propagation_stop=policy)
-        tail="""ion_instance=3;ion_time_step=2;ion_py_mm=0;ion_pz_mm=0;ion_vx_mm=1;ion_vy_mm=0;ion_vz_mm=0
-local function step(ion,pre_splat,collision)
- ion_number=ion;ion_splat=pre_splat;physical=collision
- previous={t=1,x=-1,y=0,z=0,vx=1,vy=0,vz=0};now=3;ion_px_mm=1
- segment.other_actions();now=1;ion_px_mm=-1;segment.terminate()
-end
-step(1,0,false);assert(ion_splat==1)
-step(2,1,false);assert(ion_splat==1)
-print('endpoint_current_ion_only')
-"""
-        script=self.root/'cutstop.lua';script.write_text(program+tail,encoding='utf-8',newline='\n')
-        result=subprocess.run([str(LUA),str(script)],cwd=self.root,capture_output=True,text=True,timeout=30)
-        self.assertEqual(result.returncode,0,result.stderr)
-        self.assertEqual(result.stdout.count('HANDOFF_CUT_STOP_V2:'),1)
-        self.assertIn('particle_id=1009 direction=outward occurrence=1 event_instrument_time_us=2 endpoint_instrument_time_us=1',result.stdout)
-        self.assertIn('HANDOFF_ACCEPTED_ENDPOINT_V1:',result.stdout)
-        self.assertIn('endpoint_instrument_time_us=3 instance=3 x_mm=1',result.stdout)
-        self.assertIn('raw_ion_splat=0 time_step_us=2',result.stdout)
-        self.assertIn('physical_terminal 2',result.stdout)
-        self.assertNotIn('physical_terminal 1',result.stdout)
-        self.assertNotIn('ordinary_tail 1',result.stdout)
-        # Analyzer physical decision on a fresh ion also wins over a recorded candidate.
-        physical_script=self.root/'cutstop_physical.lua'
-        physical_script.write_text(program+tail.replace('step(1,0,false)','step(1,0,true)'),encoding='utf-8',newline='\n')
-        physical_result=subprocess.run([str(LUA),str(physical_script)],cwd=self.root,capture_output=True,text=True,timeout=30)
-        self.assertEqual(physical_result.returncode,0,physical_result.stderr)
-        self.assertNotIn('HANDOFF_CUT_STOP_V2:',physical_result.stdout)
+        for case in ('cut','cut_contact','cut_unknown'):
+            with self.subTest(case=case):
+                self.check_plain_lua_callbacks(False,case)
         for change in (dict(scope='continuous_assembly'),dict(direction='inward'),dict(occurrence=2),dict(occurrence=True),dict(schema_version=True),dict(observation_id='missing')):
             with self.subTest(change=change),self.assertRaises(ValueError): validate_propagation_stop(dict(policy,**change),[definition])
         with self.assertRaises(ValueError): self.build(propagation_stop=policy)
@@ -209,7 +162,7 @@ print('endpoint_current_ion_only')
             self.build(particle_ids=[11,2**53+1])
 
     @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
-    def test_absolute_deadline_uses_each_arrival_once_and_preserves_original_age(self):
+    def test_absolute_deadline_uses_each_arrival_once_and_preserves_birth_authority(self):
         from msplatform.backends.simion.source import canonical_clock_lua, lua_value
         metadata = {}
         program = self.build(birth_times_us=[2.,5.],original_birth_times_us=[.25,.75],
@@ -218,7 +171,10 @@ print('endpoint_current_ion_only')
         self.assertIsNotNone(match)
         prefix = match.group(1)
         self.assertIn("time>=single_flight_absolute_deadline_us[single_flight_source_row_index()]",program)
-        self.assertIn("time-single_flight_original_birth_us[single_flight_source_row_index()]",program)
+        self.assertIn("local single_flight_original_birth_us={0.25,0.75}",program)
+        self.assertIn("PROGRAMMATIC_AGE_STOP_V1:",program)
+        self.assertIn("deadline_instrument_time_us=",program)
+        self.assertIn("terminal_instrument_time_us=",program)
         script = self.root / "absolute_deadline.lua"
         code = "local single_flight_time_origin_us="+lua_value([2.,5.])+"\nlocal single_flight_source_particle_id={11,77}\nlocal single_flight_particle_id_offset=0\n"
         code += "local single_flight_absolute_deadline_us="+lua_value([200.25,200.75])+"\n"+canonical_clock_lua()
@@ -227,7 +183,11 @@ print('endpoint_current_ion_only')
  ion_number=row[1];ion_time_of_flight=row[2];ion_time_step=1
  cap()
  if row[2]==0 then assert(ion_time_step<=0.002 and single_flight_instrument_time_us()==(row[1]==1 and 2 or 5))
- else assert(math.abs(ion_time_step-0.00025)<1e-12,'absolute deadline was reset at arrival') end
+ else
+  assert(math.abs(ion_time_step-0.00025)<1e-12,'absolute deadline was reset at arrival')
+  local original_birth=(row[1]==1 and .25 or .75)
+  assert(math.abs((single_flight_instrument_time_us()+ion_time_step)-original_birth-200)<1e-12,'original birth authority lost')
+ end
 end
 print('absolute_deadline_oracle_ok')
 """
@@ -397,14 +357,29 @@ print('RESULT '..body_calls..' '..carrier_reads..' '..ion_dvoltsx_gu..' '..ion_d
                          if line.startswith('TRACE: applied_field_observation_header '))+'\n',encoding='utf-8')
         self.assertEqual(collect()['status'],'INCONCLUSIVE')
 
-    def test_default_program_and_metadata_retain_pre_observer_exact_bytes(self):
+    def test_default_program_and_metadata_are_deterministic_and_keep_canonical_controls(self):
         metadata = {}
         program = self.build(native_path_projection=False,build_metadata=metadata,
             standalone_dynamic_field_paths={'accelerator_main':dict(rf_differential_pa_paths=['C:/inert/rf.pa'],
                                                                    pulse_delta_pa_path='C:/inert/delta.pa')})
-        # The retained baseline witness and its full diff are recorded in the detector migration evidence: the detector PA origin, physical-domain fields and shared analyzer checks changed; the clock and capture controls did not. The later detector-selection change is captured in the always-physical evidence diff; metadata remains byte-identical.
-        self.assertEqual(hashlib.sha256(program.encode()).hexdigest(),
-                         '63018c1398162577cd30cb1714945bfea13be9ae2f331d081cd7ad58730f45da')
+        # Terminal reconciliation intentionally changed the old Program bytes.
+        # Identical scientific inputs must still render deterministically, and a
+        # changed original identity must reach the actual generated Program.
+        repeat_metadata = {}
+        repeated = self.build(native_path_projection=False,build_metadata=repeat_metadata,
+            standalone_dynamic_field_paths={'accelerator_main':dict(rf_differential_pa_paths=['C:/inert/rf.pa'],
+                                                                   pulse_delta_pa_path='C:/inert/delta.pa')})
+        self.assertEqual(program,repeated)
+        self.assertEqual(metadata,repeat_metadata)
+        changed = self.build(native_path_projection=False,particle_ids=[11,1009],
+            standalone_dynamic_field_paths={'accelerator_main':dict(rf_differential_pa_paths=['C:/inert/rf.pa'],
+                                                                   pulse_delta_pa_path='C:/inert/delta.pa')})
+        self.assertNotEqual(program,changed)
+        self.assertIn('single_flight_source_particle_id={[1]=11,[2]=1009}',changed)
+        self.assertIn('single_flight_observation_pending',program)
+        self.assertIn('single_flight_commit_observation',program)
+        self.assertIn('PROGRAMMATIC_AGE_STOP_V1:',program)
+        self.assertNotIn('applied_field_observation_header',program)
         self.assertNotIn("single_flight_pre_pulse_time_series", program)
         self.assertNotIn("pre_pulse_screening_terminal", program)
         self.assertIn("pre_pulse_frontend_accelerator", program)
@@ -1456,7 +1431,12 @@ print('LOCAL_OATOF_NO_RF=PASS')
     def test_fine_domain_callbacks_select_one_field_and_preserve_clock(self):
         self.check_plain_lua_callbacks(True)
 
-    def check_plain_lua_callbacks(self, entrance_refinement):
+    def test_terminal_reconciled_plane_observations(self):
+        for case in ('before', 'straddle', 'deferred', 'age', 'contact', 'coincident', 'collision', 'unknown', 'cached_same', 'cached_different', 'duplicate', 'equal_conflict', 'rollback', 'unrecoverable', 'age_contact_conflict', 'terminal_nil', 'terminal_raises'):
+            with self.subTest(case=case):
+                self.check_plain_lua_callbacks(False, case)
+
+    def check_plain_lua_callbacks(self, entrance_refinement, reconciliation=None):
         if entrance_refinement:
             folder = self.root / "fine"
             folder.mkdir()
@@ -1484,7 +1464,26 @@ print('LOCAL_OATOF_NO_RF=PASS')
         for row in self.geometry["downstream_pa_instances"]:
             row.update(next(p for p in provider["simion_instances"] if p["role"]==row["role"]))
         metadata = {}
-        program = self.build(build_metadata=metadata)
+        if reconciliation:
+            plan=self.geometry['composition_plan']
+            instance=next(k for k,v in plan['components'].items() if v['project_id']=='rf_multipole_ion_optics')
+            definition=dict(schema_version=1,observation_id='replay_port',source_instance_id=instance,port_id='mechanical_exit',max_records=10)
+            from msplatform.contracts.rigid_transform import RigidTransform, PlaneSurface
+            item=next(v for v in plan['recipe']['instances'] if v['instance_id']==instance)
+            port=plan['components'][instance]['ports']['mechanical_exit']
+            plane=RigidTransform.from_contract(item['transform']).transform_plane(PlaneSurface(plan['components'][instance]['local_frame_id'],tuple(port['center_mm']),tuple(port['outward_normal'])))
+            center=list(plane.center_mm); normal=list(plane.normal)
+            if reconciliation in ('age','contact','coincident','collision','age_contact_conflict'):
+                self.flight['maximum_flight_us']=7.5 if reconciliation=='collision' else 5.5
+            if reconciliation in ('cut','cut_contact','cut_unknown'):
+                policy=dict(schema_version=1,scope='segmented_upstream',observation_id='replay_port',direction='outward',occurrence=1)
+                program=self.build(build_metadata=metadata,plane_observations=[definition],propagation_stop=policy,
+                                   original_birth_times_us=[.25,2.5],absolute_deadlines_us=[200.25,202.5])
+            else:
+                program = self.build(build_metadata=metadata,plane_observations=[definition])
+        else:
+            center=[0,0,0]; normal=[1,0,0]
+            program = self.build(build_metadata=metadata)
         self.assertEqual(metadata["provider_placements"]["reflectron"]["x_mm"],7.)
         self.assertEqual(metadata["provider_placements"]["flight_tube"]["y_mm"],-9.)
         self.assertEqual(metadata["provider_placements"]["detector"]["z_mm"],12.5 - 105 * .01)
@@ -1659,11 +1658,11 @@ if arg[2]=='snapshots' then
  ion_instance=2;ion_time_of_flight=.001-1e-15
  ion_px_mm=112;ion_py_mm=-9;ion_pz_mm=-338;ion_vx_mm=8;ion_vy_mm=9;ion_vz_mm=10
  segment.other_actions()
- assert(#snapshots==3,'early accepted native time within 32 ULP was omitted')
- segment.other_actions();assert(#snapshots==3,'same callback duplicated a candidate')
+ assert(#snapshots==2,'unconfirmed native sample was emitted')
+ segment.other_actions();assert(#snapshots==2,'duplicate callback prematurely committed a candidate')
  ion_instance=1;ion_time_of_flight=.5
  ion_px_mm=113;ion_py_mm=-10;ion_pz_mm=-337;ion_vx_mm=11;ion_vy_mm=12;ion_vz_mm=13
- segment.other_actions();assert(#snapshots==4,'downstream actual snapshot was omitted')
+ segment.other_actions();assert(#snapshots==3,'unconfirmed downstream sample was emitted')
  assert(ion_splat==0,'passive snapshot changed terminal state')
  ion_time_of_flight=2;segment.other_actions()
  assert(ion_splat==0 and #snapshots==4,'a skipped candidate aborted flight or invented a state')
@@ -1672,6 +1671,65 @@ if arg[2]=='snapshots' then
  assert(#snapshots==4,'terminal callback fabricated a missing candidate')
  print('NATIVE_ACTUAL_SNAPSHOTS=PASS')
  return
+end
+if arg[2]=='reconciled_before' or arg[2]=='reconciled_straddle' or arg[2]=='reconciled_age' or arg[2]=='reconciled_contact' or arg[2]=='reconciled_coincident' or arg[2]=='reconciled_deferred' or arg[2]=='reconciled_collision' or arg[2]=='reconciled_unknown' or arg[2]=='reconciled_cut' or arg[2]=='reconciled_cut_contact' or arg[2]=='reconciled_cut_unknown' or arg[2]=='reconciled_cached_same' or arg[2]=='reconciled_cached_different' or arg[2]=='reconciled_duplicate' or arg[2]=='reconciled_equal_conflict' or arg[2]=='reconciled_rollback' or arg[2]=='reconciled_unrecoverable' or arg[2]=='reconciled_age_contact_conflict' or arg[2]=='reconciled_terminal_nil' or arg[2]=='reconciled_terminal_raises' then
+ local c,n="""+_lua_value(center)+","+_lua_value(normal)+"""
+ ion_number=2;ion_instance=3;ion_time_of_flight=2;ion_splat=0;ion_mass=100;ion_ke=2;ion_time_step=.5
+ ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+ ion_vx_mm=n[1];ion_vy_mm=n[2];ion_vz_mm=n[3];segment.initialize()
+ if arg[2]=='reconciled_contact' or arg[2]=='reconciled_coincident' or arg[2]=='reconciled_collision' or arg[2]=='reconciled_cut_contact' or arg[2]=='reconciled_cached_same' or arg[2]=='reconciled_cached_different' or arg[2]=='reconciled_terminal_nil' or arg[2]=='reconciled_terminal_raises' then ion_splat=-1 elseif arg[2]=='reconciled_unknown' or arg[2]=='reconciled_cut_unknown' then ion_splat=2 end
+ ion_time_of_flight=((arg[2]=='reconciled_age' or arg[2]=='reconciled_coincident' or arg[2]=='reconciled_age_contact_conflict') and 5.5 or (arg[2]=='reconciled_collision' and 7.500000953674316 or (arg[2]=='reconciled_contact' and 5.6 or 2.5)));ion_px_mm=c[1]+.25*n[1];ion_py_mm=c[2]+.25*n[2];ion_pz_mm=c[3]+.25*n[3];ion_vx_mm=n[1];ion_vy_mm=n[2];ion_vz_mm=n[3];segment.other_actions()
+ if arg[2]=='reconciled_age_contact_conflict' then
+  assert(ion_splat==1,'age request absent');ion_splat=-1;ion_time_of_flight=5.6;ion_px_mm=c[1]+.5*n[1];ion_py_mm=c[2]+.5*n[2];ion_pz_mm=c[3]+.5*n[3];segment.other_actions()
+ end
+ if arg[2]=='reconciled_duplicate' then
+  segment.other_actions()
+ elseif arg[2]=='reconciled_equal_conflict' then
+  ion_px_mm=ion_px_mm+.1;segment.other_actions()
+ elseif arg[2]=='reconciled_rollback' then
+  ion_time_of_flight=2.25;ion_px_mm=c[1]-.1*n[1];ion_py_mm=c[2]-.1*n[2];ion_pz_mm=c[3]-.1*n[3];segment.other_actions()
+ elseif arg[2]=='reconciled_unrecoverable' then
+  ion_time_of_flight=3;ion_px_mm=c[1]+.5*n[1];ion_py_mm=c[2]+.5*n[2];ion_pz_mm=c[3]+.5*n[3];segment.other_actions()
+ end
+ if arg[2]=='reconciled_deferred' then
+  ion_time_of_flight=3;ion_px_mm=c[1]+.5*n[1];ion_py_mm=c[2]+.5*n[2];ion_pz_mm=c[3]+.5*n[3];segment.other_actions()
+ end
+ if arg[2]=='reconciled_cut' or arg[2]=='reconciled_cut_contact' or arg[2]=='reconciled_cut_unknown' then
+  if arg[2]=='reconciled_cut' then assert(ion_splat==1,'cut stop was delayed')
+  elseif arg[2]=='reconciled_cut_contact' then assert(ion_splat==-1,'contact overwritten')
+  else assert(ion_splat==2,'unknown pre-action overwritten') end
+  ion_time_of_flight=2;ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+  ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=1;segment.terminate();return
+ end
+ if arg[2]=='reconciled_age_contact_conflict' then
+  ion_time_of_flight=5;ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3];ion_splat=1
+ elseif arg[2]=='reconciled_cached_same' then
+  assert(ion_splat==-1);ion_splat=1
+ elseif arg[2]=='reconciled_cached_different' or arg[2]=='reconciled_terminal_nil' or arg[2]=='reconciled_terminal_raises' then
+  assert(ion_splat==-1);ion_splat=1;ion_time_of_flight=2;ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+ elseif arg[2]=='reconciled_duplicate' or arg[2]=='reconciled_equal_conflict' or arg[2]=='reconciled_unrecoverable' then
+  ion_time_of_flight=2;ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+ elseif arg[2]=='reconciled_rollback' then
+  ion_time_of_flight=2.4;ion_px_mm=c[1]+.15*n[1];ion_py_mm=c[2]+.15*n[2];ion_pz_mm=c[3]+.15*n[3]
+ elseif arg[2]=='reconciled_before' then
+  ion_time_of_flight=2;ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+ elseif arg[2]=='reconciled_deferred' then
+  ion_time_of_flight=2.5;ion_px_mm=c[1]+.25*n[1];ion_py_mm=c[2]+.25*n[2];ion_pz_mm=c[3]+.25*n[3]
+ elseif arg[2]=='reconciled_straddle' then
+  ion_time_of_flight=2.4;ion_px_mm=c[1]+.15*n[1];ion_py_mm=c[2]+.15*n[2];ion_pz_mm=c[3]+.15*n[3]
+ elseif arg[2]=='reconciled_age' then
+  assert(ion_splat==1,'age stop was delayed');ion_time_of_flight=5;ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+ elseif arg[2]=='reconciled_unknown' then
+  assert(ion_splat==2,'unknown native state overwritten');ion_time_of_flight=2.4
+ else
+  assert(ion_splat==-1,'native contact overwritten');ion_time_of_flight=(arg[2]=='reconciled_contact' and 5.4 or (arg[2]=='reconciled_collision' and 7.5 or 5.5));ion_px_mm=c[1]-.25*n[1];ion_py_mm=c[2]-.25*n[2];ion_pz_mm=c[3]-.25*n[3]
+ end
+ if arg[2]~='reconciled_contact' and arg[2]~='reconciled_coincident' and arg[2]~='reconciled_collision' and arg[2]~='reconciled_unknown' then ion_splat=1 end
+ if arg[2]=='reconciled_terminal_nil' or arg[2]=='reconciled_terminal_raises' then
+  ion_splat=nil
+  if arg[2]=='reconciled_terminal_raises' then setmetatable(_G,{__index=function(_,key) if key=='ion_splat' then error('reserved unavailable') end end}) end
+ end
+ segment.terminate();return
 end
 ion_number=2;ion_instance=3;ion_time_of_flight=.125
 ion_px_mm=0;ion_py_mm=0;ion_pz_mm=-340
@@ -1727,7 +1785,7 @@ if arg[2]=='precision' or arg[2]=='precision_timed' then
   captured={}
   ion_number=2;ion_instance=3;ion_time_of_flight=0;ion_pz_mm=plane.z-1;ion_splat=0
   segment.initialize()
-  ion_time_of_flight=terminal-2.5;ion_pz_mm=plane.z;ion_splat=1
+  ion_time_of_flight=terminal-2.5;ion_pz_mm=plane.z;ion_splat=-1
   segment.other_actions();segment.terminate()
   local seen={}
   for _,line in ipairs(captured) do
@@ -1804,7 +1862,7 @@ if arg[2]=='held' then
  return
 end
 if arg[2]=='outbound_detector' then
- ion_instance=4;ion_time_of_flight=.5;ion_px_mm=81;ion_py_mm=0;ion_pz_mm=12.5;ion_vz_mm=1;ion_splat=1
+ ion_instance=4;ion_time_of_flight=.5;ion_px_mm=81;ion_py_mm=0;ion_pz_mm=12.5;ion_vz_mm=1;ion_splat=-1
  segment.instance_adjust();assert(ion_instance==4,'physical detector suppressed before mirror')
  segment.terminate()
  return
@@ -1812,7 +1870,7 @@ end
 if arg[2]=='detector' then
  ion_time_of_flight=1;ion_pz_mm=700
  segment.other_actions()
- ion_instance=4;ion_time_of_flight=200;ion_px_mm=81;ion_py_mm=0;ion_pz_mm=12.5;ion_vz_mm=-1;ion_splat=1
+ ion_instance=4;ion_time_of_flight=200;ion_px_mm=81;ion_py_mm=0;ion_pz_mm=12.5;ion_vz_mm=-1;ion_splat=-1
  segment.other_actions()
  segment.terminate()
  print('EXISTING_DETECTOR_TERMINAL=PASS')
@@ -1903,19 +1961,112 @@ if arg[2]=='repeat' then
 end
 print('NATIVE_FULL_PROGRAM=PASS')
 """,encoding="utf-8")
+        if reconciliation:
+            replay = subprocess.run([str(LUA),str(script),str(path),'reconciled_'+reconciliation,
+                                     str(self.design['rf_reference_voltage_v'])],
+                                    cwd=self.root,capture_output=True,text=True,timeout=30)
+            if reconciliation in ('cut','cut_contact','cut_unknown'):
+                self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+                self.assertNotIn('PLANE_OBSERVATION_V1:',replay.stdout)
+                if reconciliation=='cut':
+                    self.assertIn('PLANE_CUT_PROJECTION_V1:',replay.stdout)
+                    self.assertIn('HANDOFF_ACCEPTED_ENDPOINT_V1:',replay.stdout)
+                    self.assertIn('HANDOFF_CUT_STOP_V2:',replay.stdout)
+                    self.assertIn('event_instrument_time_us=4.75 endpoint_instrument_time_us=4.5',replay.stdout)
+                else:
+                    self.assertNotIn('HANDOFF_CUT_STOP_V2:',replay.stdout)
+                    self.assertNotIn('PLANE_CUT_PROJECTION_V1:',replay.stdout)
+                    if reconciliation=='cut_contact':
+                        self.assertIn('NATIVE_PREACTION_CONTACT_V1:',replay.stdout)
+                        self.assertIn('TRACE: non_detector_splat ',replay.stdout)
+                    else:
+                        self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                return
+            if reconciliation in ('terminal_nil','terminal_raises'):
+                self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+                self.assertIn('terminal_splat=unavailable',replay.stdout)
+                self.assertIn('NATIVE_PREACTION_CONTACT_V1:',replay.stdout)
+                self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                self.assertNotIn('TRACE: non_detector_splat ',replay.stdout)
+                return
+            if reconciliation=='age_contact_conflict':
+                self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+                self.assertIn('SFI_AGE_STOP_CONFLICT_V1:',replay.stdout)
+                self.assertIn('NATIVE_PREACTION_CONTACT_V1:',replay.stdout)
+                self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                self.assertIn('request_kind=age_limit',replay.stdout)
+                self.assertNotIn('PROGRAMMATIC_AGE_STOP_V1:',replay.stdout)
+                self.assertNotIn('TRACE: non_detector_splat ',replay.stdout)
+                return
+            if reconciliation in ('cached_same','cached_different','duplicate','equal_conflict','rollback','unrecoverable'):
+                self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+                if reconciliation.startswith('cached_'):
+                    self.assertIn('NATIVE_PREACTION_CONTACT_V1:',replay.stdout)
+                    if reconciliation=='cached_same':
+                        self.assertIn('TRACE: non_detector_splat ',replay.stdout)
+                        self.assertNotIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                    else:
+                        self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                        self.assertNotIn('TRACE: non_detector_splat ',replay.stdout)
+                if reconciliation=='duplicate':
+                    self.assertNotIn('PLANE_OBSERVATION_V1:',replay.stdout)
+                    self.assertNotIn('SFI_OBSERVATION_INCOMPLETE_V1:',replay.stdout)
+                if reconciliation in ('equal_conflict','unrecoverable'):
+                    self.assertIn('SFI_OBSERVATION_INCOMPLETE_V1:',replay.stdout)
+                    self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                if reconciliation=='rollback':
+                    self.assertNotIn('PLANE_OBSERVATION_V1:',replay.stdout)
+                    self.assertIn('reason=frontend_control_history_unavailable',replay.stdout)
+                return
+            if reconciliation=='unknown':
+                self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+                self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+                self.assertNotIn('TRACE: non_detector_splat ',replay.stdout)
+                return
+            if reconciliation in ('age','contact','coincident','collision'):
+                self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+                if reconciliation=='age':
+                    self.assertIn('PROGRAMMATIC_AGE_STOP_V1:',replay.stdout)
+                    self.assertIn('preaction_splat=0',replay.stdout)
+                    self.assertIn('callback_instrument_time_us=8',replay.stdout)
+                    self.assertIn('deadline_instrument_time_us=8',replay.stdout)
+                    self.assertIn('terminal_instrument_time_us=7.5',replay.stdout)
+                else:
+                    self.assertIn('TRACE: non_detector_splat ',replay.stdout)
+                    self.assertIn('NATIVE_PREACTION_CONTACT_V1:',replay.stdout)
+                    self.assertIn('splat=-1',replay.stdout)
+                    self.assertNotIn('PROGRAMMATIC_AGE_STOP_V1:',replay.stdout)
+                self.assertNotIn('TRACE: timeout_splat ',replay.stdout)
+                return
+            self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
+            self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
+            rows=[line for line in replay.stdout.splitlines() if line.startswith('PLANE_OBSERVATION_V1:')]
+            handoffs=[line for line in replay.stdout.splitlines() if line.startswith('TRACE: single_flight_handoff ')]
+            if reconciliation=='before':
+                self.assertEqual(rows,[])
+                self.assertEqual(handoffs,[])
+            else:
+                self.assertEqual(len(rows),1)
+                self.assertEqual(len(handoffs),1)
+                values=dict(re.findall(r"(\w+)=([-+0-9.eE]+)",rows[0]))
+                self.assertEqual(int(values['particle_id']),77)
+                self.assertAlmostEqual(float(values['instrument_time_us']),4.75)
+                self.assertAlmostEqual(float(values['step_end_instrument_time_us']),5.0 if reconciliation=='deferred' else 4.9)
+            return
         reference = self.design["rf_reference_voltage_v"]
         self.assertEqual(reference, 10000.)
         result=subprocess.run([str(LUA),str(script),str(path),"good",str(reference)],cwd=self.root,capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn("NATIVE_FULL_PROGRAM=PASS",result.stdout)
-        self.assertEqual(result.stdout.count("TRACE: timeout_splat "), 1)
+        self.assertEqual(result.stdout.count("PROGRAMMATIC_AGE_STOP_V1:"), 1)
         self.assertIn("instrument_time_us=202.5", result.stdout)
-        self.assertIn("particle_id=77 particle_age_us=200", result.stdout)
+        self.assertIn("particle_id=77 preaction_splat=0", result.stdout)
+        self.assertIn("deadline_instrument_time_us=202.5", result.stdout)
         self.assertNotIn("TRACE: detector_crossing ", result.stdout)
         repeated=subprocess.run([str(LUA),str(script),str(path),"repeat",str(reference)],cwd=self.root,capture_output=True,text=True,timeout=30)
         self.assertEqual(repeated.returncode,0,repeated.stdout+repeated.stderr)
         self.assertIn("NATIVE_REPEAT_INITIALIZE=PASS",repeated.stdout)
-        self.assertEqual(repeated.stdout.count("TRACE: timeout_splat "),2)
+        self.assertEqual(repeated.stdout.count("PROGRAMMATIC_AGE_STOP_V1:"),2)
         refused=subprocess.run([str(LUA),str(script),str(path),"wrong",str(reference)],cwd=self.root,capture_output=True,text=True,timeout=30)
         self.assertEqual(refused.returncode,0,refused.stdout+refused.stderr)
         self.assertIn("WRONG_PLACEMENT_REJECTED=PASS",refused.stdout)
@@ -1964,7 +2115,7 @@ print('NATIVE_FULL_PROGRAM=PASS')
         self.assertNotIn("handoff_pulse_on",held.stdout)
         self.assertNotIn("pre_pulse_state",held.stdout)
         self.assertNotIn("tof_since_pulse_us",held.stdout)
-        self.assertEqual(held.stdout.count("TRACE: timeout_splat "),1)
+        self.assertEqual(held.stdout.count("PROGRAMMATIC_AGE_STOP_V1:"),1)
         snapshot_path = self.root / "snapshots.lua"
         snapshot_program = self.build(birth_times_us=[-2.,2.5],initial_velocities_mm_per_us=[[2.,3.,4.],[5.,6.,7.]],flight={**self.flight,
             "pulse":{"mode":"held_off"},"observation_times_us":[-3.,-2.,2.5,2.501,3.,4.]}) + inspect
@@ -1983,7 +2134,7 @@ print('NATIVE_FULL_PROGRAM=PASS')
         self.assertAlmostEqual(float(values[2]['kinetic_energy_eV']),.0051821348263402529*100*(8**2+9**2+10**2))
         self.assertNotIn('handoff_pulse_on',snapshots.stdout)
         self.assertIn('DIAG: native_shared_time_missing particle_id=77 candidate_time_us=4 actual_instrument_time_us=4.5',snapshots.stdout)
-        self.assertEqual(snapshots.stdout.count('TRACE: timeout_splat '),1)
+        self.assertEqual(snapshots.stdout.count('PROGRAMMATIC_AGE_STOP_V1:'),1)
         planes = subprocess.run([str(LUA),str(script),str(held_path),"planes",str(reference)],
                                 cwd=self.root,capture_output=True,text=True,timeout=30)
         self.assertEqual(planes.returncode,0,planes.stdout+planes.stderr)
@@ -2032,7 +2183,7 @@ print('NATIVE_FULL_PROGRAM=PASS')
                               cwd=self.root,capture_output=True,text=True,timeout=30)
         self.assertEqual(unit.returncode,0,unit.stdout+unit.stderr)
         self.assertIn("NATIVE_FULL_PROGRAM=PASS",unit.stdout)
-        self.assertEqual(unit.stdout.count("TRACE: timeout_splat "), 1)
+        self.assertEqual(unit.stdout.count("PROGRAMMATIC_AGE_STOP_V1:"), 1)
 
     def test_held_off_optional_pulse_bank_and_armed_missing_pulse_fails_closed(self):
         original=copy.deepcopy(self.design)

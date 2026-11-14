@@ -1619,22 +1619,27 @@ def build_successor_program(
     if flight.get("observation_times_us"):
         native_observation_lua = f"""local single_flight_observation_times={_lua_value(flight['observation_times_us'])}
 local single_flight_observation_indices={{}}
-local function single_flight_observe_actual(time)
-  local index=single_flight_observation_indices[ion_number]
+local single_flight_observation_output_indices={{}}
+local function single_flight_observe_actual(time,emit,e)
+  local ion_px_mm,ion_py_mm,ion_pz_mm=e.x,e.y,e.z
+  local ion_vx_mm,ion_vy_mm,ion_vz_mm=e.vx,e.vy,e.vz
+  local ion_instance=e.instance
+  local indices=emit and single_flight_observation_output_indices or single_flight_observation_indices
+  local index=indices[ion_number]
   while single_flight_observation_times[index] do
     local target=single_flight_observation_times[index]
     local _,exponent=math.frexp(math.max(1,math.abs(time),math.abs(target)))
     if math.abs(time-target)<=32*2^(exponent-53) then
       local energy=0.0051821348263402529*ion_mass*(ion_vx_mm^2+ion_vy_mm^2+ion_vz_mm^2)
-      single_flight_write_trace(string.format('TRACE: native_shared_time ion=%d particle_id=%d candidate_time_us=%.17g instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g kinetic_energy_eV=%.17g instance=%d',
-        ion_number,single_flight_canonical_particle_id(),target,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,energy,ion_instance))
+      if emit then single_flight_write_trace(string.format('TRACE: native_shared_time ion=%d particle_id=%d candidate_time_us=%.17g instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g kinetic_energy_eV=%.17g instance=%d',
+        ion_number,single_flight_canonical_particle_id(),target,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,energy,ion_instance)) end
     elseif time>target then
-      print(string.format('DIAG: native_shared_time_missing particle_id=%d candidate_time_us=%.17g actual_instrument_time_us=%.17g',
-        single_flight_canonical_particle_id(),target,time))
+      if emit then print(string.format('DIAG: native_shared_time_missing particle_id=%d candidate_time_us=%.17g actual_instrument_time_us=%.17g',
+        single_flight_canonical_particle_id(),target,time)) end
     else break end
     index=index+1
   end
-  single_flight_observation_indices[ion_number]=index
+  indices[ion_number]=index
 end
 """
         native_observation_initialize_lua = """  local observation_index=1
@@ -1642,7 +1647,10 @@ end
     observation_index=observation_index+1
   end
   single_flight_observation_indices[ion_number]=observation_index
-  single_flight_observe_actual(time)
+  single_flight_observation_output_indices[ion_number]=observation_index
+  local e={x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm,instance=ion_instance}
+  single_flight_observe_actual(time,false,e)
+  single_flight_observe_actual(time,true,e)
 """
         native_observation_step_lua = """  local observation_time=single_flight_observation_times[single_flight_observation_indices[ion_number]]
   if observation_time then
@@ -1650,7 +1658,7 @@ end
     if observation_remaining>0 then ion_time_step=math.min(ion_time_step,observation_remaining) end
   end
 """
-        native_observation_actual_lua = "  single_flight_observe_actual(time)\n"
+        native_observation_actual_lua = "  single_flight_observe_actual(time,false,{x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm,instance=ion_instance})\n"
     native_step_limits_lua = f"""  ion_time_step=math.min(ion_time_step,{_lua_number(flight['maximum_step_us'])})
   local remaining_age={_lua_number(flight['maximum_flight_us'])}-ion_time_of_flight
   if remaining_age>0 and ion_time_step>remaining_age then ion_time_step=remaining_age end
@@ -1658,20 +1666,37 @@ end
     native_age_limit_lua = f"""  -- Observe the complete accepted step before deciding the age limit.
   local state=single_flight_require_particle_state()
   if state.flight_timeout then return end
-  state.maximum_z_mm=math.max(state.maximum_z_mm or (p and p.z or ion_pz_mm),ion_pz_mm)
+  state.maximum_before_z_mm=state.maximum_z_mm or (p and p.z or ion_pz_mm)
+  state.maximum_z_mm=math.max(state.maximum_before_z_mm,ion_pz_mm)
+  state.maximum_callback_time=time
   if ion_splat~=0 then return end
   if ion_time_of_flight>={_lua_number(flight['maximum_flight_us'])} then
     state.flight_timeout=true
-    single_flight_write_trace(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g',
-      ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
-    single_flight_write_trace(string.format('TRACE: timeout_splat ion=%d instance=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g zmax_mm=%.17g particle_id=%d particle_age_us=%.17g',
-      ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,state.maximum_z_mm,single_flight_canonical_particle_id(),ion_time_of_flight))
+    state.age_stop_request=state.native_pre_action
     ion_splat=1
     return
   end
 """
     native_timeout_terminate_lua = """  local state=single_flight_particle_state[ion_number]
-  if state and state.flight_timeout then return end
+  if state and state.flight_timeout and (terminal_splat==-1 or (state.native_pre_action and state.native_pre_action.splat==-1)) then
+    local request=state.age_stop_request
+    single_flight_write_trace(string.format('SFI_AGE_STOP_CONFLICT_V1: ion=%d particle_id=%d preaction_splat=%d callback_instance=%d callback_instrument_time_us=%.17g deadline_instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g',ion_number,single_flight_canonical_particle_id(),request.splat,request.instance,request.t,state.age_deadline_us,request.x,request.y,request.z,request.vx,request.vy,request.vz))
+    state.other_stop_request={kind='age_limit',sample=request}
+    state.flight_timeout=false
+  end
+  if state and state.flight_timeout then
+    if state.flight_timeout_emitted then return end
+    state.flight_timeout_emitted=true
+    local time=single_flight_instrument_time_us()
+    if time<state.maximum_callback_time then
+      state.maximum_z_mm=math.max(state.maximum_before_z_mm,ion_pz_mm)
+    end
+    single_flight_write_trace(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g',
+      ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
+    single_flight_write_trace(string.format('TRACE: timeout_splat ion=%d instance=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g zmax_mm=%.17g particle_id=%d particle_age_us=%.17g',
+      ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,state.maximum_z_mm,single_flight_canonical_particle_id(),ion_time_of_flight))
+    return
+  end
 """
     if absolute_deadlines_us is not None:
         native_step_limits_lua = native_step_limits_lua.replace(
@@ -1684,10 +1709,36 @@ end
         native_age_limit_lua = native_age_limit_lua.replace(
             "single_flight_canonical_particle_id(),ion_time_of_flight))",
             "single_flight_canonical_particle_id(),time-single_flight_original_birth_us[single_flight_source_row_index()]))")
+        native_timeout_terminate_lua = native_timeout_terminate_lua.replace(
+            "single_flight_canonical_particle_id(),ion_time_of_flight))",
+            "single_flight_canonical_particle_id(),time-single_flight_original_birth_us[single_flight_source_row_index()]))")
     diagnostic_adjustable_lua = ("")
     observation_step_lua = ("")
     # A pulse observation needs a real state at/before the edge. The equal
     # endpoint retains the actual birth state when birth coincides with it.
+    age_deadline_lua = ("single_flight_absolute_deadline_us[single_flight_source_row_index()]"
+        if absolute_deadlines_us is not None else
+        "time-ion_time_of_flight+"+_lua_number(flight['maximum_flight_us']))
+    native_age_limit_lua = native_age_limit_lua.replace(
+        "    state.flight_timeout=true", "    state.age_deadline_us="+age_deadline_lua+"\n    state.flight_timeout=true")
+    native_timeout_terminate_lua = """  local state=single_flight_particle_state[ion_number]
+  if state and state.flight_timeout and (terminal_splat==-1 or (state.native_pre_action and state.native_pre_action.splat==-1)) then
+    local request=state.age_stop_request
+    single_flight_write_trace(string.format('SFI_AGE_STOP_CONFLICT_V1: ion=%d particle_id=%d preaction_splat=%d callback_instance=%d callback_instrument_time_us=%.17g deadline_instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g',ion_number,single_flight_canonical_particle_id(),request.splat,request.instance,request.t,state.age_deadline_us,request.x,request.y,request.z,request.vx,request.vy,request.vz))
+    state.other_stop_request={kind='age_limit',sample=request}
+    state.flight_timeout=false
+  end
+  if state and state.flight_timeout then
+    if state.flight_timeout_emitted then return end
+    state.flight_timeout_emitted=true
+    local time=single_flight_instrument_time_us()
+    local request=state.age_stop_request
+    assert(request and request.splat==0, 'programmatic age stop lacks known unsplatted callback')
+    single_flight_write_trace(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g',ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
+    single_flight_write_trace(string.format('PROGRAMMATIC_AGE_STOP_V1: ion=%d particle_id=%d preaction_splat=%d callback_instance=%d callback_instrument_time_us=%.17g deadline_instrument_time_us=%.17g callback_x_mm=%.17g callback_y_mm=%.17g callback_z_mm=%.17g callback_vx_mm_per_us=%.17g callback_vy_mm_per_us=%.17g callback_vz_mm_per_us=%.17g terminal_instance=%d terminal_instrument_time_us=%.17g terminal_x_mm=%.17g terminal_y_mm=%.17g terminal_z_mm=%.17g terminal_vx_mm_per_us=%.17g terminal_vy_mm_per_us=%.17g terminal_vz_mm_per_us=%.17g',ion_number,single_flight_canonical_particle_id(),request.splat,request.instance,request.t,state.age_deadline_us,request.x,request.y,request.z,request.vx,request.vy,request.vz,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
+    return
+  end
+"""
     pulse_observation_guard_lua = ("p and p.t<=handoff_pulse_time_us and ")
     pulse_interpolation_comparison = ("<=")
     held_off = flight["pulse"]["mode"] == "held_off"
@@ -2024,8 +2075,15 @@ function segment.other_actions()
   local time=single_flight_instrument_time_us()
   single_flight_require_analyzer_particle(ion_time_of_flight)
   local state=single_flight_require_particle_state()
+  state.native_pre_action=native_entry
   local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
-  single_flight_frontend.observe_step(state.previous,current,state.frontend)
+  if current.time_us<state.previous.time_us then
+    -- The frontend's timestep-control state is not a solver checkpoint.
+    -- Preserve it, continue native controls, and withdraw scientific claims.
+    single_flight_observation_incomplete(ion_number,'frontend_control_history_unavailable')
+  else
+    single_flight_frontend.observe_step(state.previous,current,state.frontend)
+  end
   state.previous=current
   local p=single_flight_previous[ion_number]
   local reported=single_flight_reported[ion_number] or {{}}
@@ -2074,28 +2132,52 @@ function segment.other_actions()
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
   local result=single_flight_analyzer.other_actions{{particle_id=single_flight_canonical_particle_id(),elapsed_us=ion_time_of_flight,pulse_elapsed_us={pulse_elapsed_lua},x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,vz_mm_per_us=ion_vz_mm}}
-  if trajectory_log_enable~=0 then
-    for _,event in ipairs(result.events) do
-      if event.kind=='diagnostic_return_plane' then
-        print(string.format('TRACE: diagnostic_return_plane ion=%d t={state_precision} x={state_precision} y={state_precision} z={state_precision} vz={state_precision} zmax={state_precision}',
-          ion_number,event.elapsed_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vz_mm,event.max_z_mm))
-      end
-    end
+  if result.history_unreliable then single_flight_observation_incomplete(ion_number,'analyzer_history_unavailable') end
+  if not observation_duplicate and single_flight_observation_pending[ion_number] then
+    single_flight_observation_pending[ion_number].start_max_z=result.interval_start_max_z_mm
   end
-  if result.splat{terminate_after_lua} then ion_splat=1 end
+  if ion_splat==0 and (result.splat{terminate_after_lua}) then
+    state.other_stop_request={{kind=(result.splat and 'analyzer_observation' or 'pulse_limit'),sample=state.native_pre_action}}
+    ion_splat=1
+  end
 {native_observation_actual_lua}{native_age_limit_lua}
 end
 function segment.terminate()
+  local terminal_splat_ok,terminal_splat=pcall(function() return ion_splat end)
+  if not terminal_splat_ok or type(terminal_splat)~='number' then terminal_splat=nil end
 {native_timeout_terminate_lua}{exit_stop_terminal_lua}  local time=single_flight_instrument_time_us()
   if {terminal_log_lua} and trajectory_log_enable~=0 then
     print(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us={state_precision} x_mm={state_precision} y_mm={state_precision} z_mm={state_precision} vx_mm_per_us={state_precision} vy_mm_per_us={state_precision} vz_mm_per_us={state_precision}',
       ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
   end
   single_flight_require_analyzer_particle(ion_time_of_flight)
+  local analyzer_history_available=single_flight_analyzer.termination_history_available(single_flight_canonical_particle_id(),ion_time_of_flight)
+  if not analyzer_history_available then single_flight_observation_incomplete(ion_number,'analyzer_history_unavailable') end
+  local pre=state and state.native_pre_action
+  local cached_contact_matches=pre and pre.splat==-1 and pre.instance==ion_instance and pre.t==time and
+    pre.x==ion_px_mm and pre.y==ion_py_mm and pre.z==ion_pz_mm and
+    pre.vx==ion_vx_mm and pre.vy==ion_vy_mm and pre.vz==ion_vz_mm
+  local native_terminal_contact=(terminal_splat==-1 or cached_contact_matches)
+  if state and state.native_pre_action and state.native_pre_action.splat==-1 and not state.native_contact_emitted then
+    local contact=state.native_pre_action
+    single_flight_write_trace(string.format('NATIVE_PREACTION_CONTACT_V1: ion=%d particle_id=%d splat=%d instance=%d callback_instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g',ion_number,single_flight_canonical_particle_id(),contact.splat,contact.instance,contact.t,contact.x,contact.y,contact.z,contact.vx,contact.vy,contact.vz))
+    state.native_contact_emitted=true
+  end
+  if not native_terminal_contact or not analyzer_history_available then
+    local pre=state and state.native_pre_action
+    local request=state and state.other_stop_request
+    local fallback={{splat=0,instance=ion_instance,t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
+    local a=pre or fallback
+    local r=request and request.sample or fallback
+    single_flight_write_trace(string.format('UNKNOWN_TERMINATION_V1: ion=%d particle_id=%d reason=%s terminal_splat=%s terminal_instance=%d terminal_instrument_time_us=%.17g terminal_x_mm=%.17g terminal_y_mm=%.17g terminal_z_mm=%.17g terminal_vx_mm_per_us=%.17g terminal_vy_mm_per_us=%.17g terminal_vz_mm_per_us=%.17g preaction_available=%d preaction_splat=%d preaction_instance=%d preaction_instrument_time_us=%.17g preaction_x_mm=%.17g preaction_y_mm=%.17g preaction_z_mm=%.17g preaction_vx_mm_per_us=%.17g preaction_vy_mm_per_us=%.17g preaction_vz_mm_per_us=%.17g request_kind=%s request_splat=%d request_instance=%d request_instrument_time_us=%.17g request_x_mm=%.17g request_y_mm=%.17g request_z_mm=%.17g request_vx_mm_per_us=%.17g request_vy_mm_per_us=%.17g request_vz_mm_per_us=%.17g',ion_number,single_flight_canonical_particle_id(),(analyzer_history_available and 'unconfirmed_terminal_cause' or 'analyzer_history_unavailable'),terminal_splat==nil and 'unavailable' or tostring(terminal_splat),ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,pre and 1 or 0,a.splat,a.instance,a.t,a.x,a.y,a.z,a.vx,a.vy,a.vz,request and request.kind or 'none',r.splat,r.instance,r.t,r.x,r.y,r.z,r.vx,r.vy,r.vz))
+    return
+  end
+  single_flight_require_analyzer_particle(ion_time_of_flight)
   local result=single_flight_analyzer.terminate{{particle_id=single_flight_canonical_particle_id(),instance_id=ion_instance,
     elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
     vx_mm_per_us=ion_vx_mm,vy_mm_per_us=ion_vy_mm,vz_mm_per_us=ion_vz_mm,
-    detector_cell_dx_mm=simion.wb.instances[single_flight_detector_instance_index].pa.dx_mm}}
+    detector_cell_dx_mm=simion.wb.instances[single_flight_detector_instance_index].pa.dx_mm,
+    native_contact=native_terminal_contact}}
   if trajectory_log_enable~=0 and result then
     if result.kind=='detector_crossing' then
       print(string.format('TRACE: detector_crossing ion=%d t={state_precision} x={state_precision} y={state_precision} z={state_precision} r={state_precision} zmax={state_precision}',
@@ -2126,7 +2208,7 @@ end
                 native_clock='per_row_start_origin_plus_native_elapsed_once')
     if plane_observations is not None:
         program = _instrument_plane_observations(program, plane_observations, frontend_geometry,
-                consumed_plane_events=consumed_plane_events, particle_ids=particle_ids, start_times_us=birth_times_us, propagation_stop=propagation_stop)
+                consumed_plane_events=consumed_plane_events, particle_ids=particle_ids, start_times_us=birth_times_us, propagation_stop=propagation_stop, build_metadata=build_metadata)
         if build_metadata is not None:
             build_metadata["plane_observations"] = plane_observations
             build_metadata["consumed_plane_events"] = consumed_plane_events or []
@@ -2140,6 +2222,7 @@ end
                 wire="HANDOFF_CUT_STOP_V2", endpoint_wire="HANDOFF_ACCEPTED_ENDPOINT_V1",
                 observed_callback_boundary="bracket_end", native_termination_boundary="bracket_start",
                 qualification="recorded_callback_and_native_boundaries_not_exact_plane_landing")
+    program = _instrument_committed_observations(program, propagation_stop is not None, bool(flight.get("observation_times_us")))
     if observation_context is not None:
         program = _instrument_native_field_observation(program,spec,observation_context)
     if scalar_field_basis is not None:
@@ -2155,7 +2238,7 @@ end
 
 
 def _instrument_plane_observations(program: str, definitions: list[dict], geometry: dict, *,
-                                   consumed_plane_events=None, particle_ids=None, start_times_us=None, propagation_stop=None) -> str:
+                                   consumed_plane_events=None, particle_ids=None, start_times_us=None, propagation_stop=None, build_metadata=None) -> str:
     """Add a versioned passive accepted-step wire; never change native motion.
 
     Each direction has its own occurrence sequence. Every recorded crossing is
@@ -2189,6 +2272,10 @@ def _instrument_plane_observations(program: str, definitions: list[dict], geomet
         planes[spec["observation_id"]] = plane
         declarations.append(dict(observation_id=spec["observation_id"], center=list(plane.center_mm),
                                  normal=list(plane.normal), max_records=spec["max_records"]))
+    if build_metadata is not None:
+        build_metadata['plane_observation_authority'] = {
+            key: dict(frame_id=plane.frame_id, center_mm=list(plane.center_mm),
+                      normal=list(plane.normal)) for key, plane in planes.items()}
     validate_propagation_stop(propagation_stop, definitions)
     consumed = consumed_plane_events or []
     if not isinstance(consumed, list):
@@ -2303,6 +2390,141 @@ end
     return program
 
 
+
+def _instrument_committed_observations(program, has_cut_stop, has_shared_times):
+    """Stage the latest passive interval until continuation or native termination."""
+    action = program.index('function segment.other_actions()')
+    start = program.index('  local p=single_flight_previous[ion_number]\n', action)
+    end = program.index('  single_flight_previous[ion_number]={', start)
+    body = program[start:end]
+    prefix = '  local p=single_flight_previous[ion_number]\n'
+    assert body.startswith(prefix)
+    body = body[len(prefix):]
+    cut_fragment = r"""
+          if plane.observation_id==single_flight_cut_policy.observation_id and direction=='outward' and occurrence==1 then
+            single_flight_cut_candidates[ion_number]={event_time=p.t+f*(time-p.t),endpoint_time=time}
+          end"""
+    if has_cut_stop:
+        if body.count(cut_fragment) != 1:
+            raise ValueError('cut decision observation insertion point differs')
+        body = body.replace(cut_fragment, '', 1)
+    projection_expression = ''
+    if has_cut_stop:
+        begin=body.index("single_flight_write_trace(string.format('PLANE_OBSERVATION_V1:")
+        terminator="p.vx,p.vy,p.vz,ion_vx_mm,ion_vy_mm,ion_vz_mm))"
+        finish=body.index(terminator,begin)+len(terminator)
+        projection_expression=body[begin+len('single_flight_write_trace('):finish-1]
+        projection_expression=projection_expression.replace('PLANE_OBSERVATION_V1:', 'PLANE_CUT_PROJECTION_V1:')
+        projection_expression=projection_expression.replace('accepted_step_linear_interpolation', 'callback_step_linear_projection')
+    immediate_cut = r"""  if p and time>p.t then
+    for _,plane in ipairs(single_flight_plane_observations) do
+      if plane.observation_id==single_flight_cut_policy.observation_id then
+        local c,n=plane.center,plane.normal
+        local d0=(p.x-c[1])*n[1]+(p.y-c[2])*n[2]+(p.z-c[3])*n[3]
+        local d1=(ion_px_mm-c[1])*n[1]+(ion_py_mm-c[2])*n[2]+(ion_pz_mm-c[3])*n[3]
+        local vn=ion_vx_mm*n[1]+ion_vy_mm*n[2]+ion_vz_mm*n[3]
+        local key=plane.observation_id..':'..ion_number..':outward'
+        if d0<0 and d1>=0 and vn>0 and (single_flight_plane_counts[key] or 0)==0 and
+            (single_flight_plane_totals[plane.observation_id] or 0)<plane.max_records then
+          local f=-d0/(d1-d0)
+          local occurrence,direction=1,'outward'
+          single_flight_cut_candidates[ion_number]={event_time=p.t+f*(time-p.t),endpoint_time=time,projection=__CUT_PROJECTION__}
+        end
+      end
+    end
+  end
+""".replace('__CUT_PROJECTION__',projection_expression) if has_cut_stop else ''
+    staged = prefix + immediate_cut + r"""  if not single_flight_observation_disabled[ion_number] and not observation_duplicate then
+  local endpoint={t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
+    vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm,instance=ion_instance,elapsed=ion_time_of_flight,splat=native_entry.splat}
+  local observation
+  observation={start=(observation_start_override or p),endpoint=endpoint,run=function(p,e)
+    local time=e.t
+    local ion_px_mm,ion_py_mm,ion_pz_mm=e.x,e.y,e.z
+    local ion_vx_mm,ion_vy_mm,ion_vz_mm=e.vx,e.vy,e.vz
+""" + body + ("  single_flight_observe_actual(time,true,e)\n" if has_shared_times else "") + f"""  if p and p.z>{_lua_number(_DIAGNOSTIC_RETURN_PLANE_Z_MM)} and e.z<={_lua_number(_DIAGNOSTIC_RETURN_PLANE_Z_MM)} and e.vz<0 and trajectory_log_enable~=0 then
+    print(string.format('TRACE: diagnostic_return_plane ion=%d t=%.17g x=%.17g y=%.17g z=%.17g vz=%.17g zmax=%.17g',
+      ion_number,e.elapsed,e.x,e.y,e.z,e.vz,math.max(observation.start_max_z,e.z)))
+  end
+  observation.start_max_z=math.max(observation.start_max_z,e.z)
+  end}}
+  single_flight_observation_pending[ion_number]=observation
+  end
+"""
+    program = program[:start] + staged + program[end:]
+    action = program.index('function segment.initialize_run()')
+    declaration = r"""local single_flight_observation_pending={}
+local single_flight_observation_disabled={}
+local single_flight_observation_last_commit={}
+local function single_flight_observation_incomplete(native_id,reason)
+  if not single_flight_observation_disabled[native_id] then
+    single_flight_write_trace(string.format('SFI_OBSERVATION_INCOMPLETE_V1: ion=%d particle_id=%d reason=%s',native_id,single_flight_canonical_particle_id(),reason))
+  end
+  single_flight_observation_disabled[native_id]=true
+  single_flight_observation_pending[native_id]=nil
+end
+local function single_flight_commit_observation(native_id,terminal)
+  local pending=single_flight_observation_pending[native_id]
+  if terminal and single_flight_observation_last_commit[native_id] and terminal.t<single_flight_observation_last_commit[native_id] then
+    single_flight_observation_incomplete(native_id,'terminal_before_committed_history')
+    return
+  end
+  if not pending or single_flight_observation_disabled[native_id] then return end
+  local endpoint=pending.endpoint
+  if terminal then
+    if not pending.start or terminal.t<pending.start.t then
+      single_flight_observation_incomplete(native_id,'terminal_before_retained_interval')
+      return
+    end
+    if terminal.t>endpoint.t then
+      pending.run(pending.start,endpoint)
+      single_flight_observation_last_commit[native_id]=endpoint.t
+      pending.start=endpoint
+      endpoint=terminal
+    else
+      endpoint=terminal
+    end
+  end
+  single_flight_observation_pending[native_id]=nil
+  pending.run(pending.start,endpoint)
+  single_flight_observation_last_commit[native_id]=endpoint.t
+end
+"""
+    program = program[:action] + declaration + program[action:]
+    program=program.replace('function segment.initialize_run()\n', 'function segment.initialize_run()\n  single_flight_observation_pending={}\n  single_flight_observation_disabled={}\n  single_flight_observation_last_commit={}\n', 1)
+    marker='function segment.other_actions()\n  local time=single_flight_instrument_time_us()\n'
+    assert program.count(marker)==1
+    program=program.replace(marker,marker+r"""  local native_entry={splat=ion_splat,instance=ion_instance,t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
+    vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}
+  local pending=single_flight_observation_pending[ion_number]
+  local observation_duplicate=false
+  local observation_start_override=nil
+  if pending and not single_flight_observation_disabled[ion_number] then
+    if time>pending.endpoint.t then
+      single_flight_commit_observation(ion_number,nil)
+    elseif time==pending.endpoint.t then
+      local same=true
+      for _,key in ipairs({'x','y','z','vx','vy','vz','instance','splat'}) do
+        if native_entry[key]~=pending.endpoint[key] then same=false end
+      end
+      if same then observation_duplicate=true
+      else single_flight_observation_incomplete(ion_number,'equal_time_conflicting_callback') end
+    elseif pending.start and time>=pending.start.t then
+      observation_start_override=pending.start
+      single_flight_observation_pending[ion_number]=nil
+    else
+      single_flight_observation_incomplete(ion_number,'callback_before_retained_interval')
+    end
+  end
+""",1)
+    marker='function segment.terminate()\n'
+    assert program.count(marker)==1
+    program=program.replace(marker,marker+r"""  single_flight_commit_observation(ion_number,{t=single_flight_instrument_time_us(),
+    x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm,instance=ion_instance,elapsed=ion_time_of_flight})
+""",1)
+    return program
+
+
 def validate_propagation_stop(policy, definitions):
     """Validate an optional first-outward segmented-upstream endpoint stop."""
     if policy is None:
@@ -2333,9 +2555,16 @@ def _instrument_cut_stop(program, policy):
           if plane.observation_id==single_flight_cut_policy.observation_id and direction=='outward' and occurrence==1 then
             single_flight_cut_candidates[ion_number]={event_time=p.t+f*(time-p.t),endpoint_time=time}
           end""", 1)
-    marker = "  if result.splat"
+    marker = "  if ion_splat==0 and (result.splat"
     index = program.find(marker, program.index("function segment.other_actions()"))
-    end = program.find("\n", index)
+    end = program.find("\n  end", index)
+    if end >= 0: end += len("\n  end")
+    if index < 0:
+        # The RF callback has the same native-stop boundary as the analyzer,
+        # expressed as a single-line decision rather than its compound plan.
+        marker = "  if result.splat then ion_splat=1 end"
+        index = program.find(marker, program.index("function segment.other_actions()"))
+        end = index + len(marker) if index >= 0 else -1
     if index < 0 or end < 0:
         raise ValueError("cut stop native decision insertion point differs")
     program = program[:end] + r"""
@@ -2344,6 +2573,7 @@ def _instrument_cut_stop(program, policy):
   if cut and ion_splat==0 and cut.endpoint_time==time and
       cut.event_time<=single_flight_absolute_deadline_us[single_flight_source_row_index()] then
     single_flight_cut_stopped[ion_number]=cut
+    if cut.projection then single_flight_write_trace(cut.projection) end
     -- Genuine current other_actions state, before requesting the native stop.
     single_flight_write_trace(string.format('HANDOFF_ACCEPTED_ENDPOINT_V1: observation_id=%s ion=%d particle_id=%d direction=outward occurrence=1 event_instrument_time_us=%.17g endpoint_instrument_time_us=%.17g instance=%d x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g method=other_actions_accepted_step_end raw_ion_splat=%d time_step_us=%.17g',
       single_flight_cut_policy.observation_id,ion_number,single_flight_canonical_particle_id(),cut.event_time,time,ion_instance,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_splat,ion_time_step))

@@ -311,3 +311,38 @@ assert(initialized.placements.accelerator.x_mm==7 and initialized.placements.det
 oa_config.provider_placements.accelerator.scale=2
 assert(not pcall(component.new,oa_config),'invalid OA-only provider placement accepted')
 print('OATOF_ANALYZER_COMPONENT_TEST=PASS')
+
+-- A future stopping callback must not arm a detector at an earlier native contact.
+local rollback = component.new(config())
+rollback.initialize_particle({particle_id=701,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+rollback.other_actions({particle_id=701,elapsed_us=1,pulse_elapsed_us=89,x_mm=48.8,y_mm=0,z_mm=2,vz_mm_per_us=1})
+local stop = rollback.other_actions({particle_id=701,elapsed_us=2,pulse_elapsed_us=90,x_mm=48.8,y_mm=0,z_mm=700,vz_mm_per_us=-1})
+assert(stop.splat, 'callback stop decision changed')
+local earlier = rollback.terminate({particle_id=701,instance_id=4,elapsed_us=1.5,x_mm=48.8,y_mm=0,z_mm=3,vx_mm_per_us=0,vy_mm_per_us=0,vz_mm_per_us=-1,detector_cell_dx_mm=1})
+assert(earlier.kind=='non_detector_splat' and earlier.max_z_mm==3, 'future timeout or max_z contaminated earlier native terminal')
+
+-- More than the retained interval cannot be silently classified.
+local conflict = component.new(config())
+conflict.initialize_particle({particle_id=702,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+conflict.other_actions({particle_id=702,elapsed_us=1,pulse_elapsed_us=1,x_mm=48.8,y_mm=0,z_mm=2,vz_mm_per_us=1})
+conflict.other_actions({particle_id=702,elapsed_us=2,pulse_elapsed_us=2,x_mm=48.8,y_mm=0,z_mm=3,vz_mm_per_us=1})
+local ok_rollback, err_rollback = pcall(conflict.terminate,{particle_id=702,instance_id=1,elapsed_us=.5,x_mm=48.8,y_mm=0,z_mm=1,vx_mm_per_us=0,vy_mm_per_us=0,vz_mm_per_us=-1,detector_cell_dx_mm=1})
+assert(not ok_rollback and tostring(err_rollback):find('terminal precedes retained analyzer history',1,true), 'unreconciled history was silently classified')
+print('OATOF_TERMINAL_RECONCILIATION_TEST=PASS')
+
+-- A genuine earlier detector contact remains a projected detector hit.
+local projected = component.new(config())
+projected.initialize_particle({particle_id=703,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+projected.other_actions({particle_id=703,elapsed_us=1,pulse_elapsed_us=89,x_mm=48.8,y_mm=0,z_mm=700,vz_mm_per_us=1})
+projected.other_actions({particle_id=703,elapsed_us=2,pulse_elapsed_us=90,x_mm=48.8,y_mm=0,z_mm=-1,vz_mm_per_us=-1})
+local genuine = projected.terminate({particle_id=703,instance_id=4,elapsed_us=1.5,x_mm=48.8,y_mm=0,z_mm=.1,vx_mm_per_us=0,vy_mm_per_us=0,vz_mm_per_us=-1,detector_cell_dx_mm=1})
+assert(genuine.kind=='detector_crossing' and genuine.max_z_mm==700, 'genuine detector contact was erased')
+near(genuine.elapsed_us,1.6,'detector face projection')
+print('OATOF_RECONCILED_CONTACT_TEST=PASS')
+
+local equal_time = component.new(config())
+equal_time.initialize_particle({particle_id=704,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+equal_time.other_actions({particle_id=704,elapsed_us=1,pulse_elapsed_us=1,x_mm=48.8,y_mm=0,z_mm=700,vz_mm_per_us=1})
+local equal_terminal = equal_time.terminate({particle_id=704,instance_id=4,elapsed_us=1,x_mm=48.8,y_mm=0,z_mm=3,vx_mm_per_us=0,vy_mm_per_us=0,vz_mm_per_us=-1,detector_cell_dx_mm=1})
+assert(equal_terminal.kind=='non_detector_splat' and equal_terminal.max_z_mm==3, 'equal-time differing endpoint retained speculative max')
+print('OATOF_EQUAL_TIME_CONFLICT_TEST=PASS')
