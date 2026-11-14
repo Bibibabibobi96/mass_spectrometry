@@ -20,6 +20,7 @@ local joint_rf_ip=spec.role=='rf_ip_geometry_iob_build'
 local joint_rf_oa=spec.role=='rf_oa_geometry_iob_build'
 local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
 local joint_ip_mr=spec.role=='ip_mr_geometry_iob_build'
+local generic_collision=spec.role=='neutral_world_geometry_iob_build'
 local collision_iob=sampled_tracking or spec.role=='ip_mr_collision_iob_build'
 assert(not collision_iob or sampled_tracking or mode=='build_geometry' or mode=='verify_geometry','collision IOB supports source-free build/reopen only')
 assert(not sampled_tracking or ((mode=='build' or mode=='verify') and spec.field_representation=='assembly_sampled_basis_with_collision_geometry'), 'sampled tracking requires its explicit field representation')
@@ -27,17 +28,19 @@ if sampled_tracking then
   local file=assert(io.open(assert(spec.scalar_binding),'rb'),'sampled tracking scalar binding missing')
   assert(file:seek('end')>0,'sampled tracking scalar binding empty');file:close()
 end
-local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob
+local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob or generic_collision
 assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
 assert(not joint_rf_oa or mode=='build_geometry' or mode=='verify_geometry','RF-OA geometry only; model and fields unsupported')
 assert(not joint_oa_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'OA–MR fields and tracking workbench unsupported')
 assert(not joint_rf_ip or mode=='build_geometry' or mode=='verify_geometry' or mode=='build_model' or mode=='verify_model','RF–IP tracking and fields workbench unsupported')
-local independent_marker=collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
+assert(not generic_collision or (mode=='build_geometry' or mode=='verify_geometry'),'neutral collision supports source-free build/reopen only')
+local independent_marker=generic_collision and 'NEUTRAL_WORLD_GEOMETRY_IOB' or collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
   or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances
+assert(not generic_collision or count==1,'neutral collision requires exactly one world slot')
 assert(not joint_rf_ip or count==1,'RF–IP geometry requires one actual PA instance')
 assert(not joint_rf_oa or count==1,'RF-OA geometry requires one actual PA instance')
 assert(not joint_oa_mr or count==3,'OA–MR geometry requires three actual PA instances')
@@ -244,6 +247,22 @@ local function verify_fractional_component(item,row)
     checked=checked+1
   end
   witnesses:close();assert(checked>0,'fractional surface witnesses empty')
+  if generic_collision then
+    local expected, remaining = {}, 0
+    for _, eid in ipairs(assert(row.electrode_witness_ids)) do
+      assert(type(eid)=='number' and eid>0 and eid==math.floor(eid) and not expected[eid], 'invalid neutral electrode identity')
+      expected[eid]=false;remaining=remaining+1
+    end
+    assert(remaining>0,'neutral geometry has no electrode groups')
+    for z=0,item.pa.nz-1 do for y=0,item.pa.ny-1 do for x=0,item.pa.nx-1 do
+      local eid,metal=item.pa:point(x,y,z)
+      if metal then
+        assert(expected[eid]~=nil,'neutral geometry contains an undeclared electrode')
+        if not expected[eid] then expected[eid]=true;remaining=remaining-1 end
+      end
+    end end end
+    assert(remaining==0,'neutral geometry is missing an electrode group')
+  end
   for _,sample in ipairs(row.physical_samples) do
     local potential,metal=item.pa:point(unpack(sample.gu))
     assert(metal==(sample.metal~=false) and ((component_tracking and not sampled_tracking) or sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')

@@ -51,7 +51,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
-    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry"}
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry", "simion_neutral_world_collision_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
@@ -509,6 +509,9 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
     """Compile native geometry specifications only; no source, writes, solve or Fly."""
     if not isinstance(assembly, Assembly):
         raise ContractError("SIMION geometry compilation requires an explicitly assembled design")
+    if isinstance(numerics, Mapping) and numerics.get("representation") == "neutral_world_collision":
+        from .generic_geometry import compile_generic_collision_geometry
+        return compile_generic_collision_geometry(assembly, numerics=numerics)
     plan = assembly.composition_plan
     selected = plan["scope"]["instance_ids"]
     projects = [plan["components"][name]["project_id"] for name in selected]

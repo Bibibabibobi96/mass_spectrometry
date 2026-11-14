@@ -24,3 +24,15 @@ def members(resolved,interface):
         source_refs=['/width_mm'],local_frame_id='toy_local',length_unit='mm',representation_role='physical_solid')]
 
 DESCRIPTOR=ProviderDescriptor('toy_registered','toy_registered',resolve,validate,members,('common.contracts.test_support.registered_component',))
+
+
+def ensure_registered():
+    """Register this test descriptor once without masking foreign registrations."""
+    from msplatform.components.registry import provider_descriptor, register_provider
+    try:
+        existing = provider_descriptor(DESCRIPTOR.provider_id)
+    except ContractError:
+        register_provider(DESCRIPTOR)
+    else:
+        if existing is not DESCRIPTOR:
+            raise ContractError('toy provider already bound to another descriptor')

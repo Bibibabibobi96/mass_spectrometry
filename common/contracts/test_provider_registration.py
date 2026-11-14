@@ -5,14 +5,14 @@ from msplatform import assembly, components
 from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
 from msplatform.components.geometry_members import assembly_geometry_members
 from msplatform.components.registry import ProviderDescriptor, provider_descriptor, register_provider
-from common.contracts.test_support.registered_component import DESCRIPTOR
+from common.contracts.test_support.registered_component import DESCRIPTOR, ensure_registered
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.exporters.step import _validate_shape
 
 class RegisteredProviderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        register_provider(DESCRIPTOR)
+        ensure_registered()
 
     def test_actual_assembly_and_existing_projections(self):
         a=components.resolve_component({'provider_id':'toy_registered','design':{'width_mm':2}})

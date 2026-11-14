@@ -87,6 +87,37 @@ positive/negative regression passed on the integrated successor, within a
 25-parent focused suite (44.047 seconds). This closes the reproduced local
 failures, not the historical failed CI record or final Repository acceptance.
 
+SIMION also accepts the explicit `neutral_world_collision` geometry representation
+through the same public `compile_geometry` and `build_geometry` stages. It traverses
+registered complete members rather than selecting a project-name combination.
+The current adapter supports signed-axis boxes, world-z cylinders and the stated
+union/difference subset, with an explicit world domain, isotropic pitch and native
+zero-Neumann boundary. Caller-declared metal witnesses cover every scientific
+group, and void witnesses are checked against canonical posed members before
+being checked again in build/cold reopen. Ambiguous overlapping conductor bounds
+are refused as unverified separation, not reported as proven solid intersections.
+Unsampled cuts/surfaces and other representations remain unqualified.
+
+A normally registered test component entered an unlisted two-instance Assembly,
+public compilation and the existing managed geometry owner. Fresh-process explicit
+registration, reversed declaration order, reverse-lexical instance renaming with
+native-number remapping, width propagation into actual GEM, and source/witness/
+unsupported-shape/overlap negatives passed in the same 25-parent focused suite.
+The owner used three real OS children with inert native leaves; Lua-stub build
+and reopen checks are software evidence, not an actual SIMION geometry build.
+The initial cold-test namespace-path failure was corrected without changing
+production dispatch or rejection assertions.
+
+Within these supported primitives, a new component needs its own canonical
+resolver, members, ports, validation and `ProviderDescriptor` registration; it
+does not edit other components or central catalog/member switches. A new Assembly
+needs instance/parameter/pose/connection declarations and explicit backend numerics.
+New primitives still require a local backend adapter. Generic prepared models,
+fields, drives/collisions and tracking are not established by this geometry slice;
+existing specialized physical adapters remain until real replacement validation.
+Ordinary installation, native geometry and durable external-provider discovery
+remain open.
+
 Frontend aperture discretization and its frozen declarations now use the installed
 SIMION backend directly; the former common aperture module bridge is retired.
 The one- and three-instance structural IOB seeds now belong to the existing

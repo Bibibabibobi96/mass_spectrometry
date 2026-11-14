@@ -68,6 +68,8 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
+    if compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
+        return _plan_neutral_world_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry"}:
         return _plan_joint_geometry_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}:
@@ -144,6 +146,38 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     outputs = tuple(dict.fromkeys(path for op in operations for path in op["outputs"]))
     return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),
                            tuple(operations),outputs)
+
+
+def _plan_neutral_world_build(compiled, root, seed_record, path_resource):
+    """Build and cold-reopen one explicitly positioned raw collision PA."""
+    from types import SimpleNamespace
+    from .generic_geometry import compile_generic_collision_geometry
+    geometry = compiled.frontend_geometry
+    snapshot = geometry['source_snapshot']
+    source = SimpleNamespace(**copy.deepcopy(snapshot))
+    rebuilt = compile_generic_collision_geometry(source, numerics=dict(
+        representation='neutral_world_collision', domain=geometry['domain'], pitch_mm=geometry['pitch_mm'],
+        boundary=geometry['boundary'], metal_witnesses=geometry['metal_witnesses'], void_witnesses=geometry['void_witnesses']))
+    if rebuilt != compiled:
+        raise ValueError('neutral geometry differs from its canonical source snapshot')
+    if set(compiled.frontend_gems) != {'world'} or (seed_record.get('bytes'), str(seed_record.get('sha256', '')).lower()) != STRUCTURAL_SEEDS[1]:
+        raise ValueError('neutral world geometry requires its registered one-slot seed')
+    _absolute(Path(seed_record['path']))
+    dims = geometry['dimensions']; pitch = geometry['pitch_mm']; origin = geometry['domain']['minimum_mm']
+    grid = dict(zip(('nx','ny','nz'),dims,strict=True), dx_mm=pitch, dy_mm=pitch, dz_mm=pitch)
+    raw=root/'simion/geometry/world.pa#'; surface=raw.with_suffix('.pa-surf'); witnesses=root/'results/world_surface.csv'
+    gem=root/'inputs/world.gem'; audit=root/'inputs/world_build.lua'; control=root/'inputs/no_particles.fly2'
+    seed=root/'simion/geometry/iob_seed/1_instance_seed.iob'; iob=root/'simion/geometry/geometry.iob'; spec=root/'inputs/geometry_iob.lua'
+    samples=copy.deepcopy(geometry['physical_samples'])
+    materializations={str(gem):compiled.frontend_gems['world'], str(control):render_restart_fly2([]),
+        str(audit):'return '+lua_value(dict(schema_version=1,role='simion_frontend_raw_geometry',domain_id='world',gem=str(gem),output=str(raw),grid=grid,physical_samples=samples,electrode_witness_ids=geometry['electrode_witness_ids'],fractional_surface=str(surface),surface_witnesses=str(witnesses)))+'\n'}
+    row=dict(role='world',instance_index=1,priority_number=1,path=str(raw),fractional_surface=str(surface),surface_witnesses=str(witnesses),grid=grid,physical_samples=samples,electrode_witness_ids=geometry['electrode_witness_ids'],rotation=[[1,0,0],[0,1,0],[0,0,1]],placement=dict(x_mm=origin[0],y_mm=origin[1],z_mm=origin[2],az_deg=0.,el_deg=0.,rt_deg=0.,scale=1.))
+    materializations[str(spec)]='return '+lua_value(dict(schema_version=1,role='neutral_world_geometry_iob_build',instances=[row],seed_iob=str(seed),output_iob=str(iob),empty_particle_control=str(control),bootstrap_paths=[str(seed.parent/'iob_seed_placeholder_01.pa0')]))+'\n'
+    operations=[_operation('geometry_world','prepare',['lua',str(native_resource_path('build_frontend_geometry.lua')),str(audit)],[str(raw),str(surface),str(witnesses)],'BUILD_GEOMETRY=PASS ROLE=world')]
+    for mode in ('build_geometry','verify_geometry'):
+        operations.append(_operation(mode,'prepare',['lua',str(native_resource_path('build_geometry_iob.lua')),str(spec),mode,str(path_resource)],[str(iob),str(iob.with_suffix('.fly2'))] if mode=='build_geometry' else [],'NEUTRAL_WORLD_GEOMETRY_IOB'+('_REOPEN' if mode=='verify_geometry' else '')+'=PASS'))
+    outputs=tuple(dict.fromkeys(path for operation in operations for path in operation['outputs']))
+    return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),tuple(operations),outputs)
 
 
 def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
