@@ -63,6 +63,31 @@ class OaMrModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'tracking is not supported'):
             model_geometry(self.compiled_model(), downstream_drive=True)
 
+    def test_component_group_voltages_and_native_binding_remain_independent(self):
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drive import scientific_group_voltages
+        from msplatform.backends.simion.mr_model import _validated_mr_voltages
+        authority = copy.deepcopy(self.drive['mr_authority'])
+        authority['candidate']['s1'] = -31.
+        authority['mirror_voltages_v'][0] = -11.
+        authority['detector_voltage_v'] = -50.
+        authority['mirror_shield_voltages_v']['positive_mirror_ground_shield'] = -51.
+        resolved = self.compiled.components_resolved[self.mr]
+        values = scientific_group_voltages(authority, resolved)
+        self.assertEqual(values['positive_stripe_set_1'], -31.)
+        self.assertEqual(values['positive_mirror_layer_1'], -11.)
+        self.assertEqual(values['detector'], -50.)
+        self.assertEqual(values['positive_mirror_ground_shield'], -51.)
+        mapping = self.compiled.frontend_geometry['electrode_bindings'][self.mr]
+        self.assertEqual(_validated_mr_voltages(authority, resolved, mapping), values)
+        permuted = dict(zip(mapping, reversed(list(mapping.values())), strict=True))
+        self.assertEqual(_validated_mr_voltages(authority, resolved, permuted), values)
+        missing = dict(mapping); missing.pop('detector')
+        with self.assertRaisesRegex(ValueError, 'exact scientific groups'):
+            _validated_mr_voltages(authority, resolved, missing)
+        for bad in (True, float('nan'), float('inf')):
+            changed = copy.deepcopy(authority); changed['detector_voltage_v'] = bad
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'detector voltage must be finite'):
+                scientific_group_voltages(changed, resolved)
     def test_missing_and_changed_authorities_refuse(self):
         for change in ('detector','shield','clock','oa_group','mapping','source'):
             with self.subTest(change=change):

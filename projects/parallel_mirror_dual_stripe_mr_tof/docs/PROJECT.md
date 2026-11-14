@@ -33,6 +33,14 @@ than the actual terminal state. The extracted observer and the existing wrapper
 therefore need applicable terminal reconciliation before claiming committed entry
 or mirror events; see the [integration evidence and limits](../../../integrations/docs/INTEGRATION.md#mr-observation-and-stopping-callbacks).
 The diagnostic does not change historical records or grant instrument qualification.
+The canonical MR component now owns `drive.scientific_group_voltages`: candidate,
+mirror, detector and shield authorities determine scientific group voltages there.
+Both existing OA-MR and IP-MR model consumers use that projection; SIMION retains
+exact native-group coverage and target binding checks. Six actual integrated model
+parents passed in 98.152 seconds with unchanged sources, including signed voltages,
+missing mappings and native-label permutations. No geometry or voltage policy was
+changed. The provider declares its complete package as a frozen source closure;
+installed/frozen inclusion of this new module and native execution remain unverified.
 Joint-flight and IP/prism preparation now read structural IOB containers from the installed SIMION
 resource owner. Frozen dependency declarations follow that same owner while retaining the original
 template bytes and PA placeholders; opt-in native tests remain separately reported.

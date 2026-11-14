@@ -7,39 +7,14 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import (
-    _component_electrodes, _scientific_groups,
-)
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drive import scientific_group_voltages
 from .artifacts import CompiledPreparedModel
 from .compiler import CompiledSimionGeometry, _content_sha256
 
 
 def _validated_mr_voltages(authority: Mapping[str, Any], resolved: dict, mapping: Mapping) -> dict:
     """Validate the actual candidate and project every MR scientific voltage."""
-    from .model import _exact, _finite
-
-    _exact(authority, {'source', 'candidate', 'mirror_voltages_v', 'detector_voltage_v', 'mirror_shield_voltages_v'}, 'MR authority')
-    voltage = candidate_authority(authority['source'], authority['candidate'], mirror_voltages_v=authority['mirror_voltages_v'])
-    shields = authority['mirror_shield_voltages_v']
-    _exact(shields, {'positive_mirror_ground_shield','negative_mirror_ground_shield'}, 'MR mirror shields')
-    rows = _component_electrodes(resolved)
-    groups = _scientific_groups(resolved, rows)
-    values = {}
-    if len(groups) != len(rows) + 2:
-        raise ValueError('MR physical groups differ from the two explicit shields')
-    for electrode, group in zip(rows, groups[:-2], strict=True):
-        physical_id = electrode['component_electrode_id']; name = group['electrode_group_id']
-        if group['role'] == 'detector':
-            values[name] = _finite(authority['detector_voltage_v'], 'MR detector voltage')
-        elif 1 <= physical_id <= 20:
-            values[name] = _finite(voltage['analyzer_electrode_voltages_v'][physical_id-1], name)
-        else:
-            raise ValueError(f'no declared analyzer voltage for {name}')
-    # Physical group order must survive JSON key sorting on a saved model.
-    for group in groups[-2:]:
-        name = group['electrode_group_id']
-        values[name] = _finite(shields[name], name)
+    values = scientific_group_voltages(authority, resolved)
     if set(values) != set(mapping):
         raise ValueError('MR voltage authority does not cover exact scientific groups')
     return values
