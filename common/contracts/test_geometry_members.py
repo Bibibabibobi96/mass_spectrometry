@@ -76,6 +76,32 @@ class GeometryMemberTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError,'source design documents'):
             assembly_geometry_members(changed)
 
+    def test_rf_source_radius_cannot_reuse_stale_resolved_rods(self):
+        snapshot = real_snapshot()
+        snapshot['components_source']['multipole']['geometry_mm']['inscribed_radius_r0'] += 1.
+        with self.assertRaisesRegex(ContractError, 'RF resolved design differs'):
+            assembly_geometry_members(snapshot)
+
+    def test_rf_recompiled_source_preserves_explicit_provenance(self):
+        from msplatform.components.rf_multipole.compile_design_request import compile_design_request
+        snapshot = real_snapshot()
+        source = snapshot['components_source']['multipole']
+        provenance = [{'label': 'explicit_test_source', 'path': 'document:rf_request', 'sha256': 'A' * 64}]
+        snapshot['components_resolved']['multipole'] = compile_design_request(
+            source, expected_identity=source['identity'], source_records=provenance)
+        before = copy.deepcopy(snapshot)
+        self.assertEqual(len(assembly_geometry_members(snapshot)), 77)
+        self.assertEqual(snapshot, before)
+
+    def test_rf_self_consistent_hash_does_not_replace_source_drive(self):
+        from msplatform.components.rf_multipole.compile_design_request import resolved_design_sha256
+        snapshot = real_snapshot()
+        changed = snapshot['components_resolved']['multipole']
+        changed['drive']['phase_rad'] += .1
+        changed['resolved_sha256'] = resolved_design_sha256(changed)
+        with self.assertRaisesRegex(ContractError, 'RF resolved design differs'):
+            assembly_geometry_members(snapshot)
+
     def test_explicit_local_scope_retains_parent_but_exports_only_selected_instance(self):
         from msplatform.assembly.resolve_assembly import compile_assembly_layout
         snapshot=real_snapshot();plan=snapshot['composition_plan']

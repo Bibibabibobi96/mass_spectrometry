@@ -41,6 +41,12 @@ setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请�
 当前已验证范围及尚未闭合的原生／恢复出口只查[集成状态](../integrations/docs/INTEGRATION.md#当前边界)。
 参数、单位和资格边界查上述离子释放、连接和分析说明；安装不授予原生或科学资格。
 
+RF component reconstruction recompiles the explicit author request and compares
+the complete resolved design, preserving its explicit provenance records.
+Changing a source radius or changing derived drive/rod data with a new hash
+cannot reuse a stale counterpart. This check applies to Assembly reconstruction
+and the shared physical-member projection used by CAD and COMSOL.
+
 根 `pyproject.toml` 是发行边界的唯一声明：发行实际 `msplatform` 实现及显式schema／例子／GEM／PS资源，
 不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。

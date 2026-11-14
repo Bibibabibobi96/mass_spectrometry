@@ -49,6 +49,14 @@ def _from_provider(provider: str, resolved: Mapping[str, Any], interface: Mappin
     canonical = _component_interface(provider, design, interface.get("geometry_profile_id"))
     if canonical != interface:
         raise ContractError(f"{provider}: assembly interface differs from the resolved design")
+    if provider == "rf_multipole":
+        from msplatform.components.rf_multipole.compile_design_request import compile_design_request
+        if not isinstance(source_design, Mapping):
+            raise ContractError("RF resolved design requires its explicit source request")
+        expected = compile_design_request(source_design, expected_identity=design["identity"],
+                                          source_records=design["sources"])
+        if expected != design:
+            raise ContractError("RF resolved design differs from its explicit source request")
     if provider == "parallel_mirror_dual_stripe_mr_tof":
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component as resolve
         expected = resolve(source_design, geometry_profile_id=interface["geometry_profile_id"])
