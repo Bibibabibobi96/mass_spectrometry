@@ -32,6 +32,24 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_stationary_workpoint_selects_actual_contract_and_recovery(self):
+        prefix = "src/msplatform/backends/comsol/"
+        required = {
+            "common.contracts.test_comsol_assembly_field_solution",
+            "common.contracts.test_comsol_stationary_recovery_managed",
+        }
+        for path in ("assembly_field_solution.py", "resources.py",
+                     "matlab/solve_assembly_stationary.m", "matlab/assembly_mesh_identity.m"):
+            with self.subTest(path=path):
+                request, _ = self.plan("-ChangedPath", prefix + path)
+                modules = [value.removesuffix(".py").replace("/", ".")
+                           for row in request["stages"]
+                           if row["selected"] and row["name"].startswith("common_contracts")
+                           for value in row["command"]["arguments"][2:]]
+                self.assertTrue(required <= set(modules))
+                for module in required:
+                    self.assertEqual(modules.count(module), 1)
+
     def test_detector_pipeline_preserves_owner_core_routes(self):
         backend = "src/msplatform/backends/simion/"
         workflow = "src/msplatform/workflows/single_reflection_flight/downstream_fields.py"

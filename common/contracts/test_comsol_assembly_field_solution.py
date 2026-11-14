@@ -20,6 +20,58 @@ class StationarySolutionReadbackTests(unittest.TestCase):
         self.assertLess(dataset, readback)
         self.assertLess(readback, final)
 
+    def test_reused_mesh_identity_requires_complete_exact_equal_digest(self):
+        from msplatform.backends.comsol.assembly_field_solution import _check_mesh_identity
+        identity={'schema_version':1,'role':'exact_mesh_identity','sha256':'a'*64,'types':['tet'],'vertex_shape':'3x4'}
+        first={'mesh_before':identity,'mesh_identity':identity}
+        _check_mesh_identity(first,first=None)
+        _check_mesh_identity(first,first=first)
+        for changed in ({},dict(first,mesh_before=dict(identity,sha256='b'*64)),dict(first,mesh_identity=dict(identity,sha256='bad')),dict(first,mesh_identity=dict(identity,types=[]))):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                _check_mesh_identity(changed,first=first)
+
+    def test_reuse_rejects_nonvoltage_and_incomplete_before_owner(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.comsol.assembly_field_solution import solve_stationary
+        from msplatform.results import artifacts
+        projection={'electrode_groups':[{'instance_id':'a','electrode_group_id':'g'}]}
+        original={'group_voltages':[{'instance_id':'a','electrode_group_id':'g','voltage_v':0.0}],'relative_permittivity':1.0,'exterior':{'kind':'potential','voltage_v':0.0},'mesh':{'global_automatic_level':9,'electrode_hmax_mm':5.0},'study':{'kind':'stationary'}}
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); (root/'request').write_text(json.dumps(original)); (root/'projection').write_text(json.dumps(projection))
+            source=SimpleNamespace(metadata={'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True},data_path=lambda name:root/name)
+            for new in (dict(original,group_voltages=[]),dict(original,relative_permittivity=2.0),dict(original,mesh={'global_automatic_level':8,'electrode_hmax_mm':5.0})):
+                with self.subTest(new=new),patch.object(artifacts,'open_artifact',return_value=source),self.assertRaises(ValueError):
+                    solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=new,context=None)
+
+    def test_explicit_changed_voltage_dispatches_existing_owner(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.comsol.assembly_field_solution import solve_stationary
+        from msplatform.execution import owner,stage_policy
+        from msplatform.results import artifacts
+        projection={'electrode_groups':[{'instance_id':'a','electrode_group_id':'g'}]}
+        original={'group_voltages':[{'instance_id':'a','electrode_group_id':'g','voltage_v':0.0}],'relative_permittivity':1.0,'exterior':{'kind':'potential','voltage_v':0.0},'mesh':{'global_automatic_level':9,'electrode_hmax_mm':5.0},'study':{'kind':'stationary'}}
+        changed=dict(original,group_voltages=[dict(original['group_voltages'][0],voltage_v=1.0)])
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); (root/'request').write_text(json.dumps(original));(root/'projection').write_text(json.dumps(projection));(root/'comsol').touch();(root/'matlab').mkdir()
+            source=SimpleNamespace(metadata={'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True},data_path=lambda name:root/name,data_records={'prepared_manifest':{'path':'../prepared_manifest','sha256':'a'*64,'bytes':1}},reference={'manifest':{}},manifest_location=root/'source.json')
+            context=SimpleNamespace(tools={'comsol_launcher':root/'comsol','matlab_root':root/'matlab'})
+            stage={'limits':{'transient_run_directory_bytes':100},'artifact_retention':{}}
+            with patch.object(artifacts,'open_artifact',side_effect=[source,'published']) as op,patch.object(stage_policy,'read_stage_policy',return_value=(stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as run:
+                self.assertEqual(solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context),'published')
+                self.assertEqual(op.call_args_list[0].kwargs['expected_kind'],'field_solution')
+                self.assertTrue(run.call_args.kwargs['action'].keywords['reuse'])
+                self.assertEqual(run.call_args.kwargs['action'].keywords['upstream_record']['path'],str(root/'prepared_manifest'))
+                self.assertEqual(run.call_args.kwargs['source_references'][1]['manifest_record']['path'],str(root/'prepared_manifest'))
+                self.assertEqual(run.call_args.kwargs['action'].keywords['request'],changed)
+
     def test_zero_field_has_no_special_nonzero_requirement(self):
         record = {'study_tag': 'std1', 'solution_tag': 'sol1', 'dataset_tag': 'dset',
                   'dataset_solution': 'sol1', 'solution_empty': False, 'solution_dofs': 12,
@@ -192,6 +244,59 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                         artifacts.open_artifact(reference, expected_kind='field_solution')
                     member.write_bytes(original)
                 artifacts.open_artifact(reference, expected_kind='field_solution')
+            # Exercise the same owner body with a saved-solution source and distinct workpoint.
+            old_request={'group_voltages':[{'instance_id':'one','electrode_group_id':'g','voltage_v':0.0}]}
+            Path(originals['request']['path']).write_text(json.dumps(old_request),encoding='utf-8')
+            originals['request']=file_record(Path(originals['request']['path']))
+            # Separate real terminal product tests legacy relative record resolution.
+            import os
+            relative_root=root/'relative-parent';relative_root.mkdir()
+            relative_record=dict(manifest_record,path=os.path.relpath(manifest_path,relative_root))
+            relative_data=dict(product['data'],prepared_manifest=relative_record)
+            relative_product=dict(product,data=relative_data)
+            relative_doc=dict(document,inputs=dict(added,relative_upstream=relative_record),products={'solution':relative_product})
+            publish_terminal_state(relative_root,{'status':'success','fixture':'relative'},relative_doc)
+            with patch.object(artifacts,'ARTIFACT_KINDS',artifacts.ARTIFACT_KINDS | {'field_solution'}):
+                relative_open=artifacts.open_artifact({'manifest':file_record(relative_root/'run_manifest.json'),'product_id':'solution'},expected_kind='field_solution')
+            resolved_upstream=dict(relative_open.data_records['prepared_manifest'],path=str(relative_open.data_path('prepared_manifest')))
+            self.assertEqual(resolved_upstream,manifest_record)
+            originals['prepared_manifest']=relative_record
+            changed_request={'group_voltages':[{'instance_id':'one','electrode_group_id':'g','voltage_v':1.0}]}
+            mesh={'schema_version':1,'role':'exact_mesh_identity','sha256':'a'*64,'types':['tet'],'vertex_shape':'3x4'}
+            for bad_mesh in (False,True):
+                target=root/('reuse-bad' if bad_mesh else 'reuse-good')
+                for item in ('inputs','results','logs'):(target/item).mkdir(parents=True)
+                session.input_dir=target/'inputs';session.result_dir=target/'results';session.log_dir=target/'logs';session.run_dir=target
+                target_output=target/'assembly-stationary-field.mph'
+                def reuse_simulate(operation,**kwargs):
+                    if operation=='solve_stationary':
+                        (target/'assembly-stationary-computed-raw.mph').write_bytes(b'inert raw reuse')
+                        target_output.write_bytes(b'inert reuse')
+                    (target/'logs'/(operation+'.bootstrap.log')).write_text('STATUS=PASS',encoding='utf-8')
+                    actual_mesh=dict(mesh,sha256='b'*64) if bad_mesh and operation=='reopen_solution' else mesh
+                    report=dict(baseline,operation='compute' if operation=='solve_stationary' else 'reopen',scope='single_stationary_workpoint',model_path=str(target_output),compute_calls=1 if operation=='solve_stationary' else 0,solution=solution,mesh_before=actual_mesh,mesh_identity=actual_mesh,prior_group_voltages_v=[0.0],group_voltages_v=[1.0])
+                    (target/'results'/(operation+'.json')).write_text(json.dumps(report),encoding='utf-8')
+                session.run_process=reuse_simulate
+                with patch.object(native_execution,'freeze_native_sources',return_value=(launcher,[])),patch.object(native_execution,'declare_runtime_files'),patch.object(native_execution,'require_launcher_completion'):
+                    if bad_mesh:
+                        with self.assertRaisesRegex(ValueError,'mesh identity changed') as failure:
+                            execute_stationary(session,source=source,manifest_record=manifest_record,names=names[:6],projection=projection,request=changed_request,solver_numerics={'kind':'comsol_stationary_default'},limits={},reuse=True,upstream_record=resolved_upstream)
+                        self.assertIn(target_output,failure.exception.failure_output_paths)
+                    else:
+                        reuse_result=execute_stationary(session,source=source,manifest_record=manifest_record,names=names[:6],projection=projection,request=changed_request,solver_numerics={'kind':'comsol_stationary_default'},limits={},reuse=True,upstream_record=resolved_upstream)
+                        self.assertEqual(reuse_result['status'],'success')
+                        self.assertEqual(json.loads((target/'inputs/new-workpoint-request.json').read_text()),changed_request)
+                        self.assertEqual(json.loads(Path(originals['request']['path']).read_text()),old_request)
+                        product=reuse_result['manifest_extra_fields']['products']['solution']
+                        self.assertEqual(product['data']['prepared_manifest']['path'],str(manifest_path))
+                        reuse_published=target/'published';reuse_published.mkdir()
+                        output_records=[file_record(Path(path),'solver_native_binary' if path.endswith('.mph') else 'required_evidence') for path in reuse_result['output_paths']]
+                        document=dict(schema_version=2,role='simulation_run_manifest',run_id='reuse-reader',project='software_fixture',mode='stationary_workpoint',status='success',inputs=added,outputs=output_records,products={'solution':product})
+                        publish_terminal_state(reuse_published,{'status':'success'},document)
+                        reference={'manifest':file_record(reuse_published/'run_manifest.json'),'product_id':'solution'}
+                        with patch.object(artifacts,'ARTIFACT_KINDS',artifacts.ARTIFACT_KINDS | {'field_solution'}):
+                            reopened=artifacts.open_artifact(reference,expected_kind='field_solution')
+                            self.assertEqual(reopened.data_path('prepared_manifest'),manifest_path.resolve())
             failure_root = root / 'failure'
             for name in ('inputs', 'results', 'logs'):
                 (failure_root / name).mkdir(parents=True)

@@ -630,6 +630,14 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/comsol/matlab/solve_assembly_stationary.m",
+          "reason": "stationary_workpoint_consumer_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/comsol/matlab/assembly_mesh_identity.m",
+          "reason": "stationary_workpoint_consumer_changed"
+        },
+        {
           "exact": "src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m",
           "reason": "assembly_scalar_sampler_changed"
         },
@@ -1440,6 +1448,19 @@
               "common/contracts/test_comsol_world_scalar_managed.py",
               "common/contracts/test_assembly_scalar_owner_fill.py",
               "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/comsol/(?:assembly_field_solution\\.py|resources\\.py|matlab/(?:solve_assembly_stationary|assembly_mesh_identity)\\.m)$",
+                "reason": "stationary_workpoint_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_comsol_assembly_field_solution.py",
+              "common/contracts/test_comsol_stationary_recovery_managed.py"
             ],
             "dependency_profile": "locked"
           },

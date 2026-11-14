@@ -9,6 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 
 NATIVE_RESOURCES = frozenset({
+    "assembly_mesh_identity.m",
     "assembly_geometry_stage.m", "build_assembly_reference_geometry.m",
     "validate_assembly_reference_selections.m", "classify_assembly_reference_faces.m",
     "assembly_electrostatic_model.m", "verify_assembly_electrostatic_bindings.m",

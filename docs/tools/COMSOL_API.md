@@ -278,6 +278,26 @@ ef.selection.set(vacuumDomains);
 
 ## Study、Solver与初值复用
 
+### Stationary voltage workpoints on a saved mesh
+
+Reviewed against COMSOL 6.4 documentation on 2026-11-14:
+[physics feature setters](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.51.html)
+update existing potential features, and
+[`mphmeshstats`](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.46.html)
+returns typed vertex coordinates, element connectivity and element-to-entity data.
+Calling a study again does not, by itself, establish that its mesh stayed unchanged.
+
+The existing `assembly_field_solution.solve_stationary` accepts an explicit new
+complete voltage request with a saved `field_solution`. Its reuse branch verifies
+the old bindings and unchanged non-voltage request, sets existing `V0` features,
+and writes a separate solution. `assembly_mesh_identity` compares typed and shaped
+mesh data before/after solving and during cold reopen. It does not explicitly
+run geometry or mesh generation. This project use of documented APIs still needs
+native validation; equal mesh controls or DOF counts are not the mesh identity.
+The fingerprint alone does not prove domain coverage, field convergence or the
+complete physical operator. Recovery requires retained compute-time mesh proof
+and independently matching reopened mesh and voltages; an unproven raw MPH refuses.
+
 典型流程先求静电/磁场稳态，再用时间相关粒子Study复用已存场：
 
 ```matlab

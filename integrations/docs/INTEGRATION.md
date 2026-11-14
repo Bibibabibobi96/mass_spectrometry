@@ -1293,6 +1293,25 @@ This is identity admission only. Equal requested mesh controls do not establish
 identical discrete meshes; actual fixed-mesh response lineage, refinement-window
 support and the complete native tracking owner remain open.
 
+The existing COMSOL stationary stage now accepts an explicit voltage-only request
+on a saved solution. It protects the original model and publishes a separate
+workpoint, comparing actual typed mesh data before/after solving and on cold
+reopen. The original prepared-model route remains available. Its managed recovery
+requires retained successful compute proof, including old/new voltages and the
+same mesh identity; it refuses an uncertified raw model. Both normal and recovery
+products bind their resolved upstream manifest records before publication.
+Twelve actual-source pure/inert managed parents passed in 127.199 seconds
+(131.324 guarded wall), including old-route parity, normal reuse, relative-record
+opening, raw/final recovery and mesh/voltage refusals. Evidence is in workspace
+`.tools/phase04-codex-takeover-20261109/v87-comsol-mesh-reuse-p-integrated-agent9-r1`.
+The MATLAB helper has not run with COMSOL; native mesh preservation and its memory
+cost remain unverified. No complete response family or native flight follows.
+The Changed-route regression initially exposed missing parent-route admission
+for both MATLAB files. The corrected catalog selects the actual stationary
+contract and managed-recovery modules exactly once for each of four Python and
+MATLAB paths. That parent passed in 9.480 seconds (13.725 guarded wall); the
+failed predecessor remains in the separate selector evidence.
+
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
 and checkout guards: 386 parent successes, 254 subtest successes and one inherited

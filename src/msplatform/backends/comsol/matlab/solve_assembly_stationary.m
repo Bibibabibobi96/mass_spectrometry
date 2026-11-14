@@ -1,4 +1,4 @@
-function result = solve_assembly_stationary(projectionPath, requestPath, baselinePath, sourcePath, outputPath, rawOutputPath, computeReportPath, operation)
+function result = solve_assembly_stationary(projectionPath, requestPath, baselinePath, sourcePath, outputPath, rawOutputPath, computeReportPath, operation, priorRequestPath)
 %SOLVE_ASSEMBLY_STATIONARY Compute one workpoint or cold-read it without sampling.
 arguments
     projectionPath (1,:) char
@@ -9,6 +9,7 @@ arguments
     rawOutputPath (1,:) char
     computeReportPath (1,:) char
     operation (1,:) char {mustBeMember(operation,{'compute','reopen','recover'})}
+    priorRequestPath (1,:) char = ''
 end
 import com.comsol.model.util.*
 projection=jsondecode(fileread(projectionPath));request=jsondecode(fileread(requestPath));
@@ -52,9 +53,30 @@ end
 assert(isequal(sort(selected.vacuum_domains(:)),sort(double(baseline.vacuum_domains(:)))) && ...
     isequal(sort(selected.outer_faces(:)),sort(double(baseline.outer_faces(:)))), ...
     'assembly:Selections','Source geometry vacuum or outer selection differs');
+reuse=~isempty(priorRequestPath);
+if reuse
+    previous=jsondecode(fileread(priorRequestPath));oldRows=previous.group_voltages;
+    if isstruct(oldRows),oldRows=num2cell(oldRows);end
+    assert(numel(oldRows)==numel(keys),'assembly:Groups','Prior group count differs');
+    oldValues=zeros(1,numel(keys));
+    for k=1:numel(keys)
+        assert(strcmp(keys{k},[char(oldRows{k}.instance_id) '/' char(oldRows{k}.electrode_group_id)]), ...
+            'assembly:Groups','Prior group order differs');
+        oldValues(k)=double(oldRows{k}.voltage_v);
+    end
+end
+if reuse && strcmp(operation,'compute')
+    verify_assembly_electrostatic_bindings(model,selected,previous,keys,oldValues);
+    meshBefore=assembly_mesh_identity(model);
+    for k=1:numel(keys)
+        comp.physics('es').feature(sprintf('assembly_potential_%03d',k)).set('V0',sprintf('%.17g[V]',values(k)));
+    end
+else
+    if reuse,meshBefore=assembly_mesh_identity(model);end
+end
 verify_assembly_electrostatic_bindings(model,selected,request,keys,values);
 if strcmp(operation,'compute')
-    assert(isempty(model.sol.tags),'assembly:Unsolved','Source contains a solution');
+    if ~reuse,assert(isempty(model.sol.tags),'assembly:Unsolved','Source contains a solution');end
     assert(strcmp(char(model.study('std1').feature('stat').getType()),'Stationary'), ...
         'assembly:Study','Explicit stationary study required');
     model.study('std1').run;
@@ -64,8 +86,14 @@ if strcmp(operation,'compute')
     assert(numel(tags)==1,'assembly:Solver','Expected exactly one study solver sequence');
     solutionTag=char(tags{1});datasetTag='assembly_field_solution';
     datasetTags=cellstr(string(cell(model.result.dataset.tags)));
-    assert(~any(strcmp(datasetTags,datasetTag)),'assembly:Dataset','Dataset tag already exists');
-    dataset=model.result.dataset.create(datasetTag,'Solution');dataset.set('solution',solutionTag);
+    if reuse
+        assert(any(strcmp(datasetTags,datasetTag)),'assembly:Dataset','Saved dataset is missing');
+        assert(strcmp(char(model.result.dataset(datasetTag).getString('solution')),solutionTag), ...
+            'assembly:Dataset','Saved dataset points to a different solution');
+    else
+        assert(~any(strcmp(datasetTags,datasetTag)),'assembly:Dataset','Dataset tag already exists');
+        dataset=model.result.dataset.create(datasetTag,'Solution');dataset.set('solution',solutionTag);
+    end
 elseif strcmp(operation,'recover')
     tags=cellstr(string(cell(model.study('std1').getSolverSequences('SolverSequence'))));
     assert(numel(tags)==1,'assembly:Solver','Expected exactly one study solver sequence');
@@ -86,8 +114,16 @@ solution.solver_policy='comsol_stationary_default';
 if strcmp(operation,'compute')
     mphsave(model,outputPath);
 end
+if reuse
+    meshAfter=assembly_mesh_identity(model);
+    assert(isequal(meshBefore,meshAfter),'assembly:MeshIdentity','Mesh changed during solve or reopen');
+end
 result=struct('operation',operation,'scope','single_stationary_workpoint', ...
     'model_path',outputPath,'solution',solution,'group_keys',{keys}, ...
     'group_faces',{faces},'vacuum_domains',selected.vacuum_domains, ...
     'outer_faces',selected.outer_faces,'compute_calls',double(strcmp(operation,'compute')));
+if reuse
+    result.mesh_before=meshBefore;result.mesh_identity=meshAfter;
+    result.prior_group_voltages_v=oldValues;result.group_voltages_v=values;
+end
 end
