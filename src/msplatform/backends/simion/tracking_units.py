@@ -74,9 +74,14 @@ def tracking_applicability(plan):
         if plan['flight']['tracking_kind']=='rf_ip':
             names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua',
                     'collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
+    if plan.get('scalar_field_basis') is not None:
+        names += ('scalar_field_adapter.lua', 'sfi_scalar_field.lua')
     resources = {name:hashlib.sha256(native_resource_path(name).read_bytes()).hexdigest() for name in names}
     resources['native_run_path.lua'] = hashlib.sha256(resource_path('native_run_path.lua').read_bytes()).hexdigest()
     resources['tracking_program.py'] = hashlib.sha256(Path(tracking_program.__file__).read_bytes()).hexdigest()
+    if plan.get('scalar_field_basis') is not None:
+        for name in ('sfi_scalar_binding.py', 'tracking_field_observation.py'):
+            resources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
     resources['tracking_execution.py'] = hashlib.sha256(Path(__file__).with_name('tracking_execution.py').read_bytes()).hexdigest()
     resources['tracking_units.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip'}:
@@ -89,6 +94,8 @@ def tracking_applicability(plan):
     value = {key:copy.deepcopy(plan[key]) for key in fields}
     if plan['flight'].get('tracking_kind') == 'rf_ip':
         value['hs1_identity'] = copy.deepcopy(plan['hs1_identity'])
+    if plan.get('scalar_field_basis') is not None:
+        value['scalar_field_basis'] = copy.deepcopy(plan['scalar_field_basis'])
     clocks = value['source_provenance']['clock_records']
     for key in ('clock_authority','instrument_epoch'):
         clocks[key].pop('path',None)

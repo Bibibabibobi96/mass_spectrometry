@@ -136,6 +136,20 @@ def _birth_states(packet, geometry):
     return projected, mother, clock
 
 
+def _resolve_scalar_basis(source, model, plan, selection):
+    """Admit selected scalar products against the actual source-free SFI model."""
+    import json
+    from .sfi_scalar_binding import resolve_sfi_scalar_basis
+    if not isinstance(selection, Mapping) or set(selection) != {'geometry_artifact', 'samples'}:
+        raise ValueError('scalar basis requires explicit geometry_artifact and samples')
+    if plan['propagation']['scope'] != 'continuous_assembly' or not plan['rows']:
+        raise ValueError('scalar basis requires a nonempty continuous original-birth flight')
+    geometry = model_geometry(model, downstream_drive=True).frontend_geometry
+    design = json.loads(source.data_path('field_design').read_text(encoding='utf-8-sig'))
+    return resolve_sfi_scalar_basis(model=model, geometry=geometry, field_design=design, flight=plan['flight'],
+                                    geometry_artifact=selection['geometry_artifact'], samples=selection['samples'])
+
+
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,
                             observations: Mapping, numerics: Mapping, unit_size=None,
                             reused_unit_keys=(), field_manifest_record=None, birth_source_authority=None, hs1_request=None) -> dict:
@@ -380,9 +394,16 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
             mother_particle_ids=copy.deepcopy(plan['source_provenance']['mother_particle_ids']),
             field_records=copy.deepcopy(frontend_records),
             field_manifest_identity=copy.deepcopy(plan['field_manifest_identity'])))
+        if plan.get('scalar_field_basis') is not None:
+            selected_observation['evidence_context']['scalar_sources'] = {
+                name: copy.deepcopy(item['records']) for name, item in plan['scalar_field_basis']['bases'].items()}
         if observation['domain_id'] in downstream_assets:
             selected_observation['evidence_context']['observation_basis'] = 'native_entry_gradient_no_extra_query'
             selected_observation['evidence_context']['static_carrier_record'] = copy.deepcopy(downstream_assets[observation['domain_id']]['carrier_record'])
+    scalar = plan.get('scalar_field_basis')
+    if scalar is not None:
+        for item in scalar['bases'].values():
+            guards.extend(item['records'].values())
     program = build_successor_program({key:document['components_resolved'][key] for key in multipoles},
         field_design,document['components_resolved'][tof],frontend_geometry=geometry,flight=plan['flight'],
         birth_times_us=[row['instrument_time_us'] for row in plan['rows']],particle_ids=ids,
@@ -392,7 +413,8 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
         standalone_dynamic_field_bank=bank,standalone_dynamic_field_paths=paths,downstream_static_fields=static,
         build_metadata=metadata,plane_observations=plan['observations']['plane_observations'] or None,
         consumed_plane_events=plan['propagation']['consumed_plane_events'],propagation_stop=plan['propagation']['stop'],
-        prepared_model=model,**({'field_observation':selected_observation} if selected_observation is not None else {}),**native_sources)
+        prepared_model=model,**({'field_observation':selected_observation} if selected_observation is not None else {}),
+        **({'scalar_field_basis':scalar} if scalar is not None else {}),**native_sources)
     return dict(program=program,build_metadata=metadata,carriers=carriers,response_fields=responses,
                 immutable_input_records=list(guards),flight=plan['flight'])
 
@@ -572,7 +594,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         iob = session.declare_file(native_plan.declared_outputs[0],'solver_native_binary')
         for generated in native_plan.declared_outputs[1:]:
             session.declare_file(generated,'solver_native_binary')
-        immutable = _unique_inputs([*borrowed,*seed_records,*frozen.values(),native_path,control_records[str(root/'inputs/tracking_iob.lua')]])
+        immutable = _unique_inputs([*borrowed,*controls['immutable_input_records'],*seed_records,*frozen.values(),native_path,control_records[str(root/'inputs/tracking_iob.lua')]])
         for operation,name in zip(native_plan.operations,unit['operation_ids'][:2],strict=True):
             arguments = [str(session.input_dir/'native_sources'/Path(value).name)
                          if Path(value).name in resource_names else value for value in operation['arguments']]
@@ -675,7 +697,8 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
 
 def execute_tracking(session, *, fields_reference, particles, propagation, observations, numerics,
                      limits, source_reference=None, allow_asynchronous_io=None, unit_size=None,
-                     recovery_reference=None, dispatch_profiles=(), birth_source_authority=None, hs1_request=None, expected_tracking_applicability=None) -> dict:
+                     recovery_reference=None, dispatch_profiles=(), birth_source_authority=None, hs1_request=None, expected_tracking_applicability=None,
+                     scalar_field_basis=None, expected_scalar_basis=None) -> dict:
     """Execute one explicit fixed-field cohort through the existing run owner.
 
     No Refine/GEM2PA/cache transaction occurs. The public observed-process owner
@@ -701,6 +724,8 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     if meta.get('model_identity_sha256')!=document['model_identity_sha256'] or meta.get('clock')!=document['drive']['clock']:
         raise ValueError('FieldBundle model/clock identity differs')
     if model_geometry(model).frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry'}:
+        if scalar_field_basis is not None:
+            raise ValueError('scalar basis is supported only for SFI tracking')
         from .rf_tracking_execution import execute_rf_tracking
         return execute_rf_tracking(session,source=source,model=model,document=document,particles=particles,
             propagation=propagation,observations=observations,numerics=numerics,limits=limits,
@@ -746,12 +771,14 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         field_workbench=field_workbench,borrowed=borrowed,original_clock=original_clock,relative_epoch=relative_epoch,
         particles=particles,propagation=propagation,observations=observations,numerics=numerics,limits=limits,
         source_reference=source_reference,allow_asynchronous_io=allow_asynchronous_io,unit_size=unit_size,
-        recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority,hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability)
+        recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority,hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability,
+        scalar_field_basis=scalar_field_basis,expected_scalar_basis=expected_scalar_basis)
 
 
 def _execute_tracking_bound_source(session,*,source,model,document,compiled,geometry,design,stored_bank,
         frontend,downstream,field_workbench,borrowed,original_clock,relative_epoch,particles,propagation,observations,
-        numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles,birth_source_authority=None,hs1_request=None,expected_tracking_applicability=None):
+        numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles,birth_source_authority=None,hs1_request=None,expected_tracking_applicability=None,
+        scalar_field_basis=None,expected_scalar_basis=None):
     """The same unit runner and result publisher for verified TOF/RF source bindings."""
     import json
     from dataclasses import asdict
@@ -781,6 +808,23 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     plan = plan_tracking_execution(model,particles=particles,clock_records=clocks,propagation=propagation,observations=observations,
         numerics=numerics,unit_size=unit_size,field_manifest_record=source.reference['manifest'],
         birth_source_authority=birth_source_authority,hs1_request=hs1_request)
+    if scalar_field_basis is not None:
+        from .model_execution import _protected_source
+        from msplatform.io.manifest_records import verify_record
+        admitted = _resolve_scalar_basis(source, model, plan, scalar_field_basis)
+        if admitted != expected_scalar_basis:
+            raise ValueError('selected scalar basis changed after planning')
+        plan['scalar_field_basis'] = admitted
+        _protected_source(session, admitted['geometry_reference']['manifest'],
+                          required_paths=[admitted['geometry_execution_request']['path']])
+        for name, item in admitted['bases'].items():
+            _protected_source(session, item['reference']['manifest'],
+                              required_paths=[record['path'] for record in item['records'].values()])
+            _protected_source(session, item['field_solution_reference']['manifest'])
+            for key, record in item['records'].items():
+                verify_record('selected scalar ' + name + ' ' + key, record)
+                session.add_input('scalar_' + name + '_' + key, record)
+        small('scalar_field_basis', session.input_dir/'scalar_field_basis.json', value=admitted)
     if birth_source_authority is not None:
         authority = validate_birth_authority(birth_source_authority, particles)
         _protected_source(session, authority['manifest'], required_paths=[record['path'] for record in authority['records'].values()])
@@ -881,6 +925,8 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             resource_names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
             if plan['flight']['tracking_kind']=='independent_oa':resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
             if plan['flight']['tracking_kind']=='rf_ip':resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua','collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
+        if plan.get('scalar_field_basis') is not None:
+            resource_names += ('scalar_field_adapter.lua', 'sfi_scalar_field.lua')
         frozen = {}
         for name in resource_names:
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))
@@ -892,6 +938,9 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             names = dict(analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',
                 frontend_hook_source='single_flight_frontend_hook.lua',rf_drive_kernel_source='rf_drive.lua',voltage_waveforms_source='voltage_waveforms.lua')
             sources = {key:Path(frozen[value]['path']).read_text(encoding='utf-8-sig') for key,value in names.items()}
+        if plan.get('scalar_field_basis') is not None:
+            sources['scalar_adapter_source'] = Path(frozen['scalar_field_adapter.lua']['path']).read_text(encoding='utf-8-sig')
+            sources['scalar_composer_source'] = Path(frozen['sfi_scalar_field.lua']['path']).read_text(encoding='utf-8-sig')
         sources['native_path_source'] = Path(native_path['path']).read_text(encoding='utf-8-sig')
         collection,native_calls = _execute_tracking_units(session,model=model,plan=plan,design=design,
             stored_bank=stored_bank,frontend=frontend,downstream=downstream,source=source,

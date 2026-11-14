@@ -259,7 +259,8 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
           source_reference: OpenedArtifact | Mapping[str, Any] | None = None,
           unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
           dispatch_profiles: Sequence[Mapping[str, Any]] = (),
-          birth_source_authority: Mapping[str, Any] | None = None, hs1_request: Mapping[str, Any] | None = None) -> OpenedArtifact:
+          birth_source_authority: Mapping[str, Any] | None = None, hs1_request: Mapping[str, Any] | None = None,
+          scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Publish an explicit fixed-field flight, preserving its original cohort/clock.
 
     A release realization starts at birth; a HandoffResult requires its published
@@ -321,14 +322,27 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
                     field_manifest_record=source.reference["manifest"],
                     **({'birth_source_authority': birth_authority} if birth_authority is not None else {}), hs1_request=hs1_request)
     graph = plan_tracking_execution(model, **planning)
-    planned_applicability = tracking_applicability(graph) if hs1_request is not None else None
+    if scalar_field_basis is not None:
+        if isinstance(packet, HandoffResult) or hs1_request is not None:
+            raise ContractError('scalar basis requires an original-birth SFI flight')
+        from msplatform.backends.simion.tracking_execution import _resolve_scalar_basis
+        graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
+    planned_applicability = tracking_applicability(graph) if hs1_request is not None or scalar_field_basis is not None else None
     if recovery is not None:
         inspected = inspect_tracking_recovery(graph, recovery)
         graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
+        if scalar_field_basis is not None:
+            graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
     if birth_authority is not None:
         references.append({"manifest_record": birth_authority['manifest']})
+    if scalar_field_basis is not None:
+        admitted = graph['scalar_field_basis']
+        references.append({'manifest_record': admitted['geometry_reference']['manifest']})
+        for entry in admitted['bases'].values():
+            references.append({'manifest_record': entry['reference']['manifest']})
+            references.append({'manifest_record': entry['field_solution_reference']['manifest']})
     if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
@@ -359,6 +373,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             propagation=copy.deepcopy(dict(propagation)), observations=copy.deepcopy(dict(observations)),
             numerics=copy.deepcopy(dict(numerics)), source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
+            **({'scalar_field_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
             **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
             **({'hs1_identity': graph['hs1_identity'], 'hs1_vendor_record': dict(hs1_request['vendor_record'])} if hs1_request is not None else {}),
             stage_policy=stage),
@@ -371,7 +386,9 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
             **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
-            hs1_request=hs1_request, expected_tracking_applicability=planned_applicability, allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
+            hs1_request=hs1_request, expected_tracking_applicability=planned_applicability,
+            **({'scalar_field_basis': scalar_field_basis, 'expected_scalar_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
+            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
         action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")

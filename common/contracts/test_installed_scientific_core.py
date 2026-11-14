@@ -24,6 +24,7 @@ from common.ion_release.test_cylinder import halton_spec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
 @contextmanager
 def retained_installed_workspace():
     """Keep the complete installed tree after any incomplete acceptance."""
@@ -2572,6 +2573,10 @@ for case in fixture['single_reflection_workflow']:
         recorded_birth_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
         sfi_consumer_probe = runpy.run_path(str(root / 'installed_sfi_consumer_probe.py'))
         sfi_consumer_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing, blocked_source_roots)
+        scalar_probe = runpy.run_path(str(root / 'installed_sfi_scalar_probe.py'))
+        scalar_leaf = runpy.run_path(str(root / 'sfi_scalar_owner_fixture.py'))
+        scalar_probe['run'](fixture['sfi_scalar_owner_fixtures'][int(sys.argv[2])], scalar_leaf['inert_native_leaf'],
+                            section_timing, sys.argv[2], blocked_source_roots)
         rf_ip_probe = runpy.run_path(str(root / 'rf_ip_installed_probe.py'))
         rf_ip_leaf = runpy.run_path(str(root / 'rf_ip_inert_leaf.py'))
         with section_timing('rf_ip_continuous_owner', sys.argv[2]):
@@ -7406,6 +7411,16 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 actual = Path(module.__file__).resolve()
                 relative = Path(*module_name.split('.')).with_suffix('.py')
                 self.assertEqual(actual.read_bytes(), (source / relative).read_bytes())
+            # Source owner fixtures remain outside the auto-deleted installed tree.
+            # Preserve both roots for explicit owner/lifecycle inspection on failure.
+            from common.contracts.test_support import sfi_scalar_owner_fixture
+            scalar_source = source / 'common/contracts/test_support/sfi_scalar_owner_fixture.py'
+            self.assertEqual(Path(sfi_scalar_owner_fixture.__file__).read_bytes(), scalar_source.read_bytes())
+            sfi_scalar_fixtures = []
+            for index in range(2):
+                scalar_root = Path(tempfile.mkdtemp(prefix='installed-sfi-scalar-owner-' + str(index) + '-')).resolve()
+                print('INSTALLED_SFI_SCALAR_FIXTURE_ROOT=' + str(scalar_root), flush=True)
+                sfi_scalar_fixtures.append(sfi_scalar_owner_fixture.make_fixture(scalar_root))
             rf_ip_fixtures = []
             for index in range(2):
                 rf_ip_root = root / ('rf-ip-inert-' + str(index))
@@ -7430,6 +7445,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               rf_ip_inert_fixtures=rf_ip_fixtures,
+                                              sfi_scalar_owner_fixtures=sfi_scalar_fixtures,
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
                                               tof_mass_spectrum_old_witness=tof_spectrum_old_witness,
@@ -7499,6 +7515,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             sfi_consumer_bytes = sfi_consumer_source.read_bytes()
             shutil.copyfile(sfi_consumer_source, root / 'installed_sfi_consumer_probe.py')
             self.assertEqual((root / 'installed_sfi_consumer_probe.py').read_bytes(), sfi_consumer_bytes)
+            for name in ('installed_sfi_scalar_probe.py', 'sfi_scalar_owner_fixture.py'):
+                helper_source = source / 'common/contracts/test_support' / name
+                shutil.copyfile(helper_source, root / name)
+                self.assertEqual((root / name).read_bytes(), helper_source.read_bytes())
             for name in ('rf_ip_installed_probe.py', 'rf_ip_inert_leaf.py'):
                 selected = source / 'common/contracts/test_support' / name
                 shutil.copyfile(selected, root / name)
@@ -7571,6 +7591,12 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/installed_static_field_probe.py',
                     'common/contracts/test_support/installed_recorded_birth_probe.py',
                     'common/contracts/test_support/installed_sfi_consumer_probe.py',
+                    'common/contracts/test_support/installed_sfi_scalar_probe.py',
+                    'common/contracts/test_support/sfi_scalar_owner_fixture.py',
+                    'common/contracts/test_sfi_scalar_binding.py',
+                    'common/contracts/test_simion_tracking_execution.py',
+                    'integrations/tests/test_single_reflection_preparation.py',
+                    'integrations/tests/test_single_reflection_geometry.py',
                     'common/contracts/test_support/installed_observation_probe.py',
                     'common/contracts/test_support/rf_ip_inert_field.py',
                     'common/contracts/test_support/rf_ip_inert_leaf.py',

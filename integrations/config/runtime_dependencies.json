@@ -636,7 +636,15 @@
           "consumers": [
             "prepared_joint",
             "accelerator_interface",
-            "oa_mr"
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "msplatform_sfi_scalar_field_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/sfi_scalar_field.lua",
+          "consumers": [
+            "single_reflection_flight"
           ]
         },
         {

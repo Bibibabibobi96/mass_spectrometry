@@ -24,18 +24,21 @@ def _validate_field_observation_row(row: dict, spec: dict, context: dict, previo
         'grid_spacing_mm','instance_scale','instance_rotation_deg','entry_gradient_gu','rf_members','pulse_active_used',
         'pulse_basis','pa_gu','after_dynamic_gradient_gu','region_override','after_region_gradient_gu','final_gradient_gu',
         'actual_rf_phase_rad','rf_phase_basis','carrier_native_path','carrier_native_field_gu'}
+    scalar = 'scalar_sources' in context
     static = context.get('observation_basis') == 'native_entry_gradient_no_extra_query'
     if (context.get('observation_basis') not in (None, 'native_entry_gradient_no_extra_query')
             or static != (spec['domain_id'] in {'flight_tube','reflectron','detector'})):
         raise ValueError('applied-field context basis differs from domain')
     if static:
         required -= {'rf_members','pa_gu','carrier_native_field_gu'}
+    if scalar:
+        required.update(('scalar_sources','scalar_rf_coefficient','scalar_pulse_coefficient','legacy_fields_intermediate_only'))
     active = row.get('pulse_active_used')
     if active is True: required.update(('pulse_scale_used','pulse_native_field_gu','pulse_native_path'))
     if set(row) != required or type(active) is not bool:
         raise ValueError('applied-field query fields differ')
     if (type(row['schema_version']) is not int or row['schema_version'] != 1
-            or row['role'] != 'single_reflection_applied_field_query' or row['basis'] != ('native_entry_gradient_no_extra_query' if static else 'efield_adjust_query_only')):
+            or row['role'] != 'single_reflection_applied_field_query' or row['basis'] != ('common_scalar_query_v1' if scalar else 'native_entry_gradient_no_extra_query' if static else 'efield_adjust_query_only')):
         raise ValueError('applied-field query version/role/basis differs')
     if row['rf_phase_basis'] != 'unwrapped_kernel_phase_at':
         raise ValueError('applied-field RF phase is not the original unwrapped kernel phase')
@@ -58,8 +61,16 @@ def _validate_field_observation_row(row: dict, spec: dict, context: dict, previo
         if not vector(row[key]): raise ValueError('invalid applied-field query vector')
     if row['instance_scale'] <= 0 or min(row['grid_spacing_mm']) <= 0:
         raise ValueError('invalid applied-field native spacing/scale')
-    if row['after_region_gradient_gu'] != row['final_gradient_gu']:
+    if not scalar and row['after_region_gradient_gu'] != row['final_gradient_gu']:
         raise ValueError('applied-field final capture is not after all region overrides')
+    if scalar:
+        sources = context['scalar_sources']
+        if (set(sources) != {'carrier','rf_reference','pulse_delta'}
+                or row['scalar_sources'] != {name: record['field_v']['path'] for name,record in sources.items()}
+                or not finite(row['scalar_rf_coefficient']) or type(row['scalar_pulse_coefficient']) is not int
+                or row['scalar_pulse_coefficient'] not in (0,1)
+                or row['legacy_fields_intermediate_only'] is not True):
+            raise ValueError('common scalar observation identity or coefficients differ')
     buckets = {item['bucket_id']:item for item in spec['buckets']}
     bucket = buckets.get(row['bucket_id'])
     t = row['instrument_time_us']

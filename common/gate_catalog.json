@@ -1899,6 +1899,29 @@
               "common/contracts/test_rf_ip_tracking_program.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/simion/(?:sfi_scalar_binding|operations|tracking_(?:execution|units|program|field_observation))\\.py$",
+                "reason": "sfi_scalar_actual_consumer_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/simion/resources/(?:sfi_scalar_field|scalar_field_adapter)\\.lua$",
+                "reason": "sfi_scalar_runtime_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
+                "reason": "sfi_scalar_recorded_birth_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_sfi_scalar_binding.py",
+              "common/contracts/test_sfi_scalar_runtime.py",
+              "common/contracts/test_sfi_scalar_sheets.py",
+              "common/contracts/test_sfi_scalar_tracking.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"
@@ -3022,6 +3045,14 @@
               {
                 "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
                 "reason": "recorded_birth_sfi_consumer_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/sfi_scalar_binding.py",
+                "reason": "recorded_birth_sfi_scalar_admission_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/sfi_scalar_field.lua",
+                "reason": "recorded_birth_sfi_scalar_runtime_changed"
               },
               {
                 "exact": "src/msplatform/workflows/single_reflection_flight/prepare.py",

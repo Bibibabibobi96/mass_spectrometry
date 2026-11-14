@@ -117,6 +117,61 @@ def validate_native_field_observation(spec: dict, *, particle_ids: list[int],
     return json.loads(json.dumps(spec,allow_nan=False))
 
 
+def _instrument_common_scalar(program: str, basis: dict, adapter: str, composer: str, observed: bool) -> str:
+    """Install the admitted world-scalar composition after existing region effects."""
+    if not isinstance(adapter, str) or not isinstance(composer, str):
+        raise ValueError('frozen scalar runtime sources required')
+    bindings = {}
+    for name in ('carrier', 'rf_reference', 'pulse_delta'):
+        item = basis['bases'][name]
+        grid, records = item['grid'], item['records']
+        bindings[name] = dict(mode='comsol_static_scalar_v', scalar_pa=records['field_v']['path'],
+                              valid_pa=records['field_valid']['path'], origin_mm=grid['origin_mm'],
+                              pitch_mm=grid['pitch_mm'], dimensions=grid['dimensions'],
+                              ideal_sheet_projection=item['ideal_sheet_projection'])
+    rf = dict(basis['rf'], phase_reference_instrument_time_us=basis['clock']['phase_reference_instrument_time_us'])
+    declarations = ('local single_flight_scalar_adapter=(function()\n' + adapter + '\nend)()\n'
+                    + 'local single_flight_scalar_module=(function()\n' + composer + '\nend)()\n'
+                    + 'local single_flight_scalar=nil\nlocal single_flight_scalar_rf=nil\n')
+    anchor = 'local single_flight_trace_path='
+    if program.count(anchor) != 1: raise ValueError('scalar declarations boundary differs')
+    program = program.replace(anchor, declarations + anchor, 1)
+    anchor = '    single_flight_frontend=single_flight_frontend_component.new'
+    initialize = ('    single_flight_scalar=single_flight_scalar_module.new(single_flight_scalar_adapter,'
+                  'single_flight_rf_kernel,single_flight_pulse,' + _lua_value(bindings) + ',' + _lua_value(rf) + ')\n'
+                  + '    single_flight_scalar_rf=single_flight_rf_kernel.compile_physical{waveform=' + _lua_value(rf['waveform'])
+                  + ',frequency_hz=' + _lua_number(rf['frequency_hz']) + ',phase_rad=' + _lua_number(rf['phase_rad'])
+                  + ',rf_amplitude_v=1,rf_scale=1}\n')
+    if program.count(anchor) != 1: raise ValueError('scalar initialization boundary differs')
+    program = program.replace(anchor, initialize + anchor, 1)
+    missing = '  if instance==nil then return end\n'
+    if program.count(missing) != 1: raise ValueError('scalar selected-instance boundary differs')
+    program = program.replace(missing, "  assert(instance~=nil,'selected instance required')\n", 1)
+    sample = ('  local scalar_region={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu}\n'
+              '  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,time)\n')
+    if observed:
+        sample += ('  if field_observation then\n'
+            '    field_observation.after_region_gradient_gu=scalar_region\n'
+            '    field_observation.scalar_sources=' + _lua_value({name:item['records']['field_v']['path'] for name,item in basis['bases'].items()}) + '\n'
+            '    field_observation.scalar_rf_coefficient=single_flight_scalar_rf.differential_at(time)\n'
+            '    field_observation.scalar_pulse_coefficient=single_flight_pulse.is_active_at(time) and 1 or 0\n'
+            '    field_observation.legacy_fields_intermediate_only=true\n'
+            '  end\n')
+        anchor = '  single_flight_field_observer.finish(field_observation,result)\n'
+        if program.count(anchor) != 1: raise ValueError('scalar observer boundary differs')
+        program = program.replace(anchor, sample + anchor, 1)
+        program = program.replace("basis='efield_adjust_query_only'", "basis='common_scalar_query_v1'", 1)
+        program = program.replace("basis='native_entry_gradient_no_extra_query'", "basis='common_scalar_query_v1'", 1)
+        anchor = '  row.after_region_gradient_gu={ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu}\n'
+        if program.count(anchor) != 1: raise ValueError('scalar region observation boundary differs')
+        program = program.replace(anchor, '', 1)
+    else:
+        anchor = '  end\nend\nfunction segment.instance_adjust()'
+        if program.count(anchor) != 1: raise ValueError('scalar callback boundary differs')
+        program = program.replace(anchor, '  end\n' + sample + 'end\nfunction segment.instance_adjust()', 1)
+    return program
+
+
 def _instrument_native_field_observation(program: str, specification: dict, context: dict) -> str:
     """Insert bounded read-only capture around this module's actual Lua arithmetic."""
     def insert(original: str, replacement: str) -> None:
@@ -1232,6 +1287,9 @@ def build_successor_program(
     absolute_deadlines_us: list[float] | None = None,
     propagation_stop: dict | None = None,
     prepared_model=None,
+    scalar_field_basis: dict | None = None,
+    scalar_adapter_source: str | None = None,
+    scalar_composer_source: str | None = None,
 ) -> str:
     """Assemble native full-flight callbacks from frozen source and field contracts."""
     from msplatform.backends.simion.frontend import frontend_electrode_maps
@@ -2077,6 +2135,9 @@ end
                 qualification="recorded_callback_and_native_boundaries_not_exact_plane_landing")
     if observation_context is not None:
         program = _instrument_native_field_observation(program,spec,observation_context)
+    if scalar_field_basis is not None:
+        program = _instrument_common_scalar(program, scalar_field_basis, scalar_adapter_source,
+                                            scalar_composer_source, observation_context is not None)
     if program.count("simion.workbench_program()") != 1:
         raise ValueError("combined single-flight Program must declare one workbench")
     for callback in _SUCCESSOR_CALLBACKS:

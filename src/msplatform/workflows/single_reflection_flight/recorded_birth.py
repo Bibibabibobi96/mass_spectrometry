@@ -21,7 +21,8 @@ def track_recorded_birth(*, preparation_manifest: Mapping[str, Any], fields: Ope
                          species_id: str, expected_particle_ids: Sequence[int], observations: Mapping[str, Any],
                          context: ExecutionContext, unit_size: int | None = None,
                          recovery_reference: Mapping[str, Any] | None = None,
-                         dispatch_profiles: Sequence[Mapping[str, Any]] = ()) -> OpenedArtifact:
+                         dispatch_profiles: Sequence[Mapping[str, Any]] = (),
+                         scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Track an explicitly prepared original mother; this does not qualify field coupling."""
     manifest_record = validate_file_record(preparation_manifest, 'SFI preparation manifest')
     manifest_path = Path(manifest_record['path'])
@@ -93,4 +94,5 @@ def track_recorded_birth(*, preparation_manifest: Mapping[str, Any], fields: Ope
     numerics = {key: flight[key] for key in ('maximum_step_us', 'trajectory_quality', 'rf_steps_per_period')}
     return simion.track(selected, packet, propagation=propagation, observations=observations, numerics=numerics,
         context=context, unit_size=unit_size, recovery_reference=recovery_reference, dispatch_profiles=dispatch_profiles,
-        birth_source_authority={'manifest': manifest_record, 'records': records})
+        birth_source_authority={'manifest': manifest_record, 'records': records},
+        **({'scalar_field_basis': scalar_field_basis} if scalar_field_basis is not None else {}))

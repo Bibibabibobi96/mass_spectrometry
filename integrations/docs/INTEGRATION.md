@@ -571,6 +571,26 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 
 ## 单反射整机
 
+The public recorded-birth consumer accepts an explicit `scalar_field_basis`
+selection containing a published `geometry_artifact` and three named `samples`:
+`carrier`, `rf_reference` and `pulse_delta`. Admission checks their canonical
+Assembly, scientific groups, workpoint voltages, saved solution identities,
+operator, frame and actual PA/mask/grid records. It does not grant interpolation
+coverage or scientific qualification. The existing owner freezes those inputs
+and the Lua resources, protects them through build/reopen/Fly, and binds the same
+basis in whole-unit recovery. Collision workbench geometry remains in place.
+
+The generated Program combines all three scalar queries with the existing
+absolute-clock RF and pulse kernels. Every basis must have valid support even
+when its coefficient is zero. Grid-specific interpolation markers come from
+the verified canonical sheet shapes and poses, including rectangular OA sheets
+and full-disk TOF sheets; disk bounding rectangles are not substituted. Exact
+grid-plane reconstruction is required, with no plane snap or artificial physical
+thickness. Unrepresentable intersecting sheets and invalid derivative support
+fail explicitly. Runtime coverage, FEM/domain convergence, actual callbacks and
+continuous-flight acceptance remain separate open requirements; small scalar
+exports and inert-owner tests cannot establish them.
+
 The current Program generator no longer emits its unreachable, literal-zero
 pre-pulse screening branches. Continuous RF stepping, original births, full-flight
 callbacks, recorded-state consumers and the analyzer's partial-scope contract are
