@@ -92,7 +92,11 @@ class ScalarWindowTests(unittest.TestCase):
         def resolve(ws):
             return resolve_ip_mr_scalar_basis(model=model,assembly=assembly,geometry_artifact=geometry,
                 operator=case.operator,samples=samples,refinement_windows=ws)
-        result=resolve(windows)
+        from unittest.mock import patch
+        from msplatform.backends.simion import ip_mr_scalar_binding as binding_module
+        with patch.object(binding_module, 'project_ip_mr_scalar_basis', wraps=binding_module.project_ip_mr_scalar_basis) as project:
+            result=resolve(windows)
+        self.assertEqual(project.call_count, 1)
         self.assertEqual(len(result['bases']),17)
         for item in result['bases'].values():
             self.assertEqual([x['name'] for x in item['refinement_windows']],['first','second'])

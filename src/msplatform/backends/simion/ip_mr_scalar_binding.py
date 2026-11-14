@@ -43,18 +43,22 @@ def resolve_ip_mr_scalar_basis(*, model: Any, assembly: Assembly,
     expected.update({'ip_'+str(row['schedule_index']): row['request'] for row in plan['ip_unit_volt']})
     if plan['rf_reference'] is not None:
         expected['rf_reference'] = plan['rf_reference']['request']
-    if not isinstance(samples, Mapping) or set(samples) != set(expected):
-        raise ValueError('complete explicit scalar basis products required')
-    bindings = {}; common_grid = None
-    for name, request in expected.items():
-        def check_workpoint(actual):
-            if actual != request: raise ValueError('scalar workpoint request differs')
-        binding = verify_scalar_sample(samples[name], projection, check_workpoint=check_workpoint, resolve_reference=True)
-        if common_grid is not None and binding['grid'] != common_grid:
-            raise ValueError('scalar basis grids differ')
-        common_grid = binding['grid']; bindings[name] = binding
-    attach_refinement_windows(bindings, refinement_windows, admit_level=lambda level: resolve_ip_mr_scalar_basis(
-        model=model, assembly=assembly, geometry_artifact=geometry_artifact, operator=operator, samples=level))
+    def admit_level(level_samples):
+        if not isinstance(level_samples, Mapping) or set(level_samples) != set(expected):
+            raise ValueError('complete explicit scalar basis products required')
+        level_bindings = {}; level_grid = None
+        for name, request in expected.items():
+            def check_workpoint(actual):
+                if actual != request: raise ValueError('scalar workpoint request differs')
+            binding = verify_scalar_sample(level_samples[name], projection, check_workpoint=check_workpoint, resolve_reference=True)
+            if level_grid is not None and binding['grid'] != level_grid:
+                raise ValueError('scalar basis grids differ')
+            level_grid = binding['grid']; level_bindings[name] = binding
+        return {'bases': level_bindings, 'grid': level_grid}
+
+    base = admit_level(samples)
+    bindings, common_grid = base['bases'], base['grid']
+    attach_refinement_windows(bindings, refinement_windows, admit_level=admit_level)
     reference = ({'manifest': dict(geometry_artifact.reference['manifest'], path=str(manifest_path)),
                   'product_id': geometry_artifact.product_id} if isinstance(geometry_artifact, OpenedArtifact)
                  else copy.deepcopy(dict(geometry_artifact)))

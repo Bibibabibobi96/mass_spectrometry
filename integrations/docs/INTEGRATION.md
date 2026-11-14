@@ -1396,8 +1396,25 @@ right-hand sides, field convergence, interpolation coverage or continuous Fly.
 Fourteen response workpoints remain: 13 IP groups and the RF reference; neither
 this run nor the earlier copy experiment guarantees capacity for that family.
 
-The next candidate extends existing scalar admission with explicit ordered named
-sampling windows. Each window revalidates every basis against the same published
+Within one IP–MR scalar admission call, canonical geometry/operator projection and
+the expected response plan are now constructed once and reused by that call's
+sampling levels. Every level still verifies its complete response set, source
+workpoint, scalar PA/mask/grid, identity and support halo. No cross-call cache or
+relaxed refusal is introduced. A frozen same-machine ABBA comparison on Windows
+10 19045, Python 3.11.0 and 16 logical CPUs used the same 17-product/two-window
+fixture: positive baseline calls took 26.149734/25.184426 s and candidate calls
+9.642331/9.833149 s (means 25.667080/9.737740 s). Full positive outputs and exact
+exception types/messages for five negative cases matched. OS caches were
+uncontrolled; this is an in-process admission result, not full-gate or native
+speed. The independent epoch took 326.575 s unittest / 339.119 s outer wall and
+preserved all 2,481 pinned files. Both actual integration-tree modules then
+passed 7 parents and 2 subtests with zero skips/failures/errors in 472.773 s
+(473.656 s guarded), including the one-projection assertion; all 2,742 tracked
+source/index identities and worktree status remained unchanged. That latter run
+overlapped unrelated work and is behavioral verification only. Full Repository,
+ordinary installation and the original 15-minute target remain open.
+
+Scalar admission supports explicit ordered named sampling windows. Each window revalidates every basis against the same published
 workpoint and requires a one-node support halo; overlaps use the existing Lua
 adapter's first match without fallback from an invalid selected mask. SFI tracking
 forwards these windows to the Program and includes every level in immutable input,
