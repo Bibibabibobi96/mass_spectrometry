@@ -850,19 +850,23 @@ class HostResourceSchedulerTests(unittest.TestCase):
             self.acquire(2)
 
     def test_live_owner_can_release_exact_waited_child_despite_unreadable_recycled_pid(self) -> None:
-        self.acquire(1, budget(cpu=4))
-        self.snapshot["processes"].append(
-            dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB)
-        )
-        self.call("register", token="1", process_id=99)
-        self.snapshot["processes"] = [process for process in self.snapshot["processes"] if process["pid"] != 99]
-        self.snapshot["unknown_process_ids"] = [99]
-        result = self.call(
-            "release", token="1",
-            completed_work_processes=[dict(pid=99, started="0000000000000000002")],
-        )
-        self.assertEqual(result["status"], "released")
-        self.assertEqual(self.acquire(2, budget(cpu=4))["status"], "acquired")
+        # This case exercises fresh release, independent of host clock resolution.
+        import itertools
+        ticks = itertools.count(time.time_ns())
+        with patch.object(time, "time_ns", side_effect=lambda: next(ticks)):
+            self.acquire(1, budget(cpu=4))
+            self.snapshot["processes"].append(
+                dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB)
+            )
+            self.call("register", token="1", process_id=99)
+            self.snapshot["processes"] = [process for process in self.snapshot["processes"] if process["pid"] != 99]
+            self.snapshot["unknown_process_ids"] = [99]
+            result = self.call(
+                "release", token="1",
+                completed_work_processes=[dict(pid=99, started="0000000000000000002")],
+            )
+            self.assertEqual(result["status"], "released")
+            self.assertEqual(self.acquire(2, budget(cpu=4))["status"], "acquired")
 
     def test_completion_evidence_rejects_descendant_and_unregistered_or_mismatched_identity(self) -> None:
         self.acquire(1)

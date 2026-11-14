@@ -82,7 +82,11 @@ class ExecutionCompilerTests(unittest.TestCase):
 
     def test_oa_and_variantless_mr_bind_the_actual_release_species_and_small_authorities(self):
         import contextlib
-        from msplatform.backends.simion import two_zone_candidate
+        from msplatform.backends.simion import oa_focus_plan, two_zone_candidate
+        # Bind the consumer before patching the compiler so its import-time
+        # reference cannot capture this test's temporary no-GEM sentinel.
+        self.assertIs(oa_focus_plan.compile_closed_two_zone_accelerator,
+                      two_zone_candidate.compile_closed_two_zone_accelerator)
         source = REPO_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/config"
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as guards:
             root = Path(directory)
