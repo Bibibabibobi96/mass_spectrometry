@@ -1347,6 +1347,36 @@ two exact diagnostic scripts were retired after closure (9,943 B); requests,
 guards, native files and evidence remain. This proves one same-mesh response,
 not the full 17-response family, interpolation coverage, convergence or Fly.
 
+A separate zero-Compute storage experiment,
+`20261114_204213__analysis__comsol__mph-size-35f1a42b2365`, saved a new copy of that
+unit MPH with the documented `optimize='size'`, `copy='on'`, `excludedata='off'`.
+The original 366,330,857 B file remains unchanged; the new copy is 108,390,825 B,
+70.41% smaller for this one model. Independent cold reopen retained the complete
+ordered double solution-vector SHA-256
+`e0c8f06135bc48859453e822c5afb696e08763660514d63b23f74cd5c5b631d4`
+(1,322,681 by 1), the same full mesh fingerprint and all 45 voltage bindings.
+Both native writers exited with code 0, leases and alias were released, and the
+full candidate source/index/HEAD/status guard matched; wall was 216.719 s.
+No Compute, geometry run or mesh run occurred. Sampled working-set maxima were
+3,325,120,512 B for save and 3,313,659,904 B for reopen, with no resource warnings.
+The successful manifest SHA-256 is
+`d8887b068d2b63b64a9a409af9a9bdbc0cb422a1335378195510aea218d0d07e`.
+Only the three exact completed diagnostic scripts were removed (17,626 B);
+their frozen code, reports, original and compressed MPH remain retained.
+
+The stationary-stage candidate now transports optional
+`runtime.mph_save_optimization` (`speed` by default or explicit `size`) through the
+existing frozen execution policy and both raw/final saves, retaining computed
+data. Reopen/recovery remain read-only. Both actual-source COMSOL modules passed
+13 parents with zero failures/errors/skips in 132.665 s (141.732 guarded wall),
+including default/size transport, invalid policy refusal before owner admission
+and existing managed failure/recovery checks. Source/index/status/runner guards,
+Ruff, PowerShell parsing and documentation structure passed. An initial test
+harness parser-argument failure occurred before tests and is retained separately;
+the corrected complete epoch supplied these results. A native size-solved
+workpoint remains pending; the preserved-model experiment does not qualify this
+new production path or guarantee capacity for the complete family.
+
 The next candidate extends existing scalar admission with explicit ordered named
 sampling windows. Each window revalidates every basis against the same published
 workpoint and requires a one-node support halo; overlaps use the existing Lua

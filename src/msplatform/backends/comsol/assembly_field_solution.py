@@ -28,6 +28,16 @@ def validate_solution_readback(record: Mapping[str, Any], *, study_tag: str,
         raise ValueError('stationary solution requires positive actual degrees of freedom')
 
 
+def _stationary_save_optimization(runtime: Mapping[str, Any]) -> str:
+    from msplatform.contracts.machine_contracts import ContractError
+    if not isinstance(runtime, Mapping) or set(runtime) - {'mph_save_optimization'}:
+        raise ContractError('COMSOL stationary save optimization requires speed or size only')
+    value = runtime.get('mph_save_optimization', 'speed')
+    if type(value) is not str or value not in ('speed', 'size'):
+        raise ContractError('COMSOL stationary save optimization requires speed or size only')
+    return value
+
+
 def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numerics: Mapping[str, Any],
                      context: ExecutionContext, request: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Solve a prepared model or a new voltage workpoint on a saved solution."""
@@ -76,8 +86,7 @@ def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numeri
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):
             raise ContractError('COMSOL stationary solve requires explicit tool: ' + name)
     stage, authority = read_stage_policy(context, 'solve_assembly_stationary', required_roles=('solver_native_binary',))
-    if stage.get('runtime'):
-        raise ContractError('COMSOL stationary solve has no runtime overrides')
+    save_optimization = _stationary_save_optimization(stage.get('runtime', {}))
     result = run_managed_stage(context,
         descriptor=dict(project='instrument_assembly', mode='stationary_workpoint', software=['COMSOL', 'MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__sim__comsol__assembly-field-' + uuid4().hex[:12],
@@ -87,7 +96,7 @@ def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numeri
         expected_operation_ids=('solve_stationary', 'reopen_solution'),
         operation_dependencies={'reopen_solution': ['solve_stationary']},
         action=partial(execute_stationary, source=source, manifest_record=manifest_record, names=names, projection=projection, request=request,
-                       solver_numerics=dict(solver_numerics), limits=stage['limits'], reuse=reuse, upstream_record=upstream_record),
+                       solver_numerics=dict(solver_numerics), limits=stage['limits'], reuse=reuse, upstream_record=upstream_record, save_optimization=save_optimization),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'), use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api)
     return open_artifact({'manifest': result['manifest'], 'product_id': 'solution'}, expected_kind='field_solution')
@@ -95,7 +104,7 @@ def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numeri
 
 def execute_stationary(session: RunSession, *, source: OpenedArtifact, manifest_record: Mapping[str, Any],
                        names: tuple[str, ...], projection: Mapping[str, Any], request: Mapping[str, Any],
-                       solver_numerics: Mapping[str, Any], limits: Mapping[str, Any], reuse: bool = False, upstream_record: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                       solver_numerics: Mapping[str, Any], limits: Mapping[str, Any], reuse: bool = False, upstream_record: Mapping[str, Any] | None = None, save_optimization: str = 'speed') -> dict[str, Any]:
     """Freeze the verified model, run one solve, then independently reopen it."""
     import json
     from msplatform.backends.comsol.native_execution import (
@@ -167,7 +176,7 @@ def execute_stationary(session: RunSession, *, source: OpenedArtifact, manifest_
             runtime.mkdir(parents=True)
             compute_report = session.result_dir / 'solve_stationary.json'
             call = 'solve_assembly_stationary(' + ','.join(map(matlab_text, (paths['projection'], paths['request'],
-                paths['reopen_geometry'], paths['model'], output, raw_output, compute_report, mode))) + (',' + matlab_text(old_request_path) if reuse else '') + ')'
+                paths['reopen_geometry'], paths['model'], output, raw_output, compute_report, mode, old_request_path if reuse else '', save_optimization))) + ')'
             task.write_text('addpath(' + matlab_text(matlab) + ');\nresult=' + call + ';\n'
                 'fid=fopen(' + matlab_text(report) + ",'w','n','UTF-8');\n"
                 "assert(fid>=0); cleanup=onCleanup(@() fclose(fid)); fprintf(fid,'%s',jsonencode(result));\n",
@@ -201,7 +210,7 @@ def execute_stationary(session: RunSession, *, source: OpenedArtifact, manifest_
             if 'STATUS=PASS' not in bootstrap.read_text(encoding='utf-8-sig'):
                 raise ValueError('COMSOL stationary bootstrap failed')
             row = json.loads(report.read_text(encoding='utf-8-sig'))
-            _check_stationary_report(row, mode=mode, projection=projection, baseline=baseline, model=output)
+            _check_stationary_report(row, mode=mode, projection=projection, baseline=baseline, model=output, expected_save_optimization=save_optimization if mode == 'compute' else None)
             if reuse:
                 _check_mesh_identity(row, first=first)
                 _check_workpoint_voltages(row, old_request=old_request, request=request)
@@ -221,7 +230,7 @@ def execute_stationary(session: RunSession, *, source: OpenedArtifact, manifest_
         outputs = [output, raw_output, *reports.values()]
         metadata = dict(backend='comsol', scope='single_stationary_workpoint', field_status='solved',
                         source_status='not_requested', scientific_qualification='not_granted',
-                        native_reopen_verified=True, solution=first['solution'])
+                        native_reopen_verified=True, solution=first['solution'], mph_save_optimization=save_optimization)
         return dict(status='success', summary=metadata, output_paths=[str(path) for path in outputs],
             required_output_paths=[str(path) for path in outputs], retention_preserve_paths=[],
             manifest_extra_fields=dict(products=dict(solution=dict(schema_version=1, kind='field_solution',
@@ -259,12 +268,14 @@ def _check_mesh_identity(row: Mapping[str, Any], *, first: Mapping[str, Any] | N
 
 
 def _check_stationary_report(row: Mapping[str, Any], *, mode: str, projection: Mapping[str, Any],
-                             baseline: Mapping[str, Any], model: Any) -> None:
+                             baseline: Mapping[str, Any], model: Any, expected_save_optimization: str | None = None) -> None:
     from pathlib import Path
     if (not isinstance(row, Mapping) or row.get('scope') != 'single_stationary_workpoint'
             or row.get('operation') != mode or row.get('compute_calls') != (1 if mode == 'compute' else 0)
             or Path(row.get('model_path', '')).resolve() != model.resolve()):
         raise ValueError('stationary workpoint report differs')
+    if expected_save_optimization is not None and row.get('mph_save_optimization') != expected_save_optimization:
+        raise ValueError('stationary save optimization report differs')
     keys = [g['instance_id'] + '/' + g['electrode_group_id'] for g in projection['electrode_groups']]
     if row.get('group_keys') != keys:
         raise ValueError('stationary scientific groups differ')

@@ -12,6 +12,8 @@ if($op -eq 'solve_stationary') {
  if($control.case -in @('reopen_failure','parent_success','reuse_reopen_failure','reuse_success')) {
   [IO.File]::WriteAllBytes($output,[Text.Encoding]::UTF8.GetBytes('INERT_FINAL'))
   $report=@{operation='compute';scope='single_stationary_workpoint';model_path=$output;compute_calls=1;group_keys=@('rf/drive');group_faces=@(,@(2,3));vacuum_domains=@(1);outer_faces=@(4,5);solution=@{study_tag='std1';solution_tag='sol1';dataset_tag='assembly_field_solution';dataset_solution='sol1';solution_empty=$false;solution_count=1;stored_main_solutions=1;solution_dofs=4;solver_policy='comsol_stationary_default';solver_type='stationary';solver_sequence_type='Stationary';solver_features=@('s1');comsol_version='synthetic'}}
+  $taskText=Get-Content -Raw -LiteralPath $TaskScript
+  $report.mph_save_optimization=if($taskText.Contains(",'size')")) {'size'} elseif($taskText.Contains(",'speed')")) {'speed'} else {throw 'Missing explicit save mode'}
   if($control.case -in @('reuse_reopen_failure','reuse_success')) {
    $mesh=@{schema_version=1;role='exact_mesh_identity';sha256=('a'*64);types=@('tet');vertex_shape='3x4'}
    $report.mesh_before=$mesh;$report.mesh_identity=$mesh;$report.prior_group_voltages_v=@(17.0);$report.group_voltages_v=@(18.0)

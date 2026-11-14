@@ -9,16 +9,25 @@ class StationarySolutionReadbackTests(unittest.TestCase):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[2] / 'src/msplatform/backends/comsol/matlab/solve_assembly_stationary.m').read_text(encoding='utf-8')
         run = source.index("model.study('std1').run;")
-        raw = source.index("mphsave(model,rawOutputPath,'copy','on');")
+        raw = source.index("mphsave(model,rawOutputPath,'copy','on','optimize',saveOptimization,'excludedata','off');")
         sequences = source.index("getSolverSequences('SolverSequence')")
         dataset = source.index("model.result.dataset.create(datasetTag,'Solution')")
         readback = source.index('read_assembly_stationary_solution(model,')
-        final = source.index('mphsave(model,outputPath);')
+        final = source.index("mphsave(model,outputPath,'optimize',saveOptimization,'excludedata','off');")
         self.assertLess(run, raw)
         self.assertLess(raw, sequences)
         self.assertLess(sequences, dataset)
         self.assertLess(dataset, readback)
         self.assertLess(readback, final)
+
+    def test_save_optimization_runtime_contract(self):
+        from msplatform.backends.comsol.assembly_field_solution import _stationary_save_optimization
+        self.assertEqual(_stationary_save_optimization({}),'speed')
+        self.assertEqual(_stationary_save_optimization({'mph_save_optimization':'speed'}),'speed')
+        self.assertEqual(_stationary_save_optimization({'mph_save_optimization':'size'}),'size')
+        for bad in ({'mph_save_optimization':'other'},{'mph_save_optimization':True},{'unknown':'size'},None):
+            with self.subTest(runtime=bad),self.assertRaises(ValueError):
+                _stationary_save_optimization(bad)
 
     def test_reused_mesh_identity_requires_complete_exact_equal_digest(self):
         from msplatform.backends.comsol.assembly_field_solution import _check_mesh_identity
@@ -71,6 +80,18 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                 self.assertEqual(run.call_args.kwargs['action'].keywords['upstream_record']['path'],str(root/'prepared_manifest'))
                 self.assertEqual(run.call_args.kwargs['source_references'][1]['manifest_record']['path'],str(root/'prepared_manifest'))
                 self.assertEqual(run.call_args.kwargs['action'].keywords['request'],changed)
+                self.assertEqual(run.call_args.kwargs['action'].keywords['save_optimization'],'speed')
+            for invalid in ({'mph_save_optimization':'fast'},{'mph_save_optimization':True},{'unrelated':1}):
+                invalid_stage=dict(stage,runtime=invalid)
+                with self.subTest(runtime=invalid),patch.object(artifacts,'open_artifact',return_value=source),patch.object(stage_policy,'read_stage_policy',return_value=(invalid_stage,{})),patch.object(owner,'run_managed_stage') as refused:
+                    with self.assertRaises(ValueError):
+                        solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context)
+                    refused.assert_not_called()
+            sized_stage=dict(stage,runtime={'mph_save_optimization':'size'})
+            with patch.object(artifacts,'open_artifact',side_effect=[source,'published']),patch.object(stage_policy,'read_stage_policy',return_value=(sized_stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as sized:
+                self.assertEqual(solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context),'published')
+                self.assertEqual(sized.call_args.kwargs['action'].keywords['save_optimization'],'size')
+                self.assertEqual(sized.call_args.kwargs['payload']['stage_policy']['runtime'],{'mph_save_optimization':'size'})
 
     def test_zero_field_has_no_special_nonzero_requirement(self):
         record = {'study_tag': 'std1', 'solution_tag': 'sol1', 'dataset_tag': 'dset',
@@ -197,7 +218,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                 (root / 'logs' / (operation + '.bootstrap.log')).write_text('STATUS=PASS', encoding='utf-8')
                 report = dict(baseline, operation='compute' if operation == 'solve_stationary' else 'reopen',
                     scope='single_stationary_workpoint', model_path=str(output),
-                    compute_calls=1 if operation == 'solve_stationary' else 0, solution=solution)
+                    compute_calls=1 if operation == 'solve_stationary' else 0, solution=solution, mph_save_optimization='speed')
                 (root / 'results' / (operation + '.json')).write_text(json.dumps(report), encoding='utf-8')
             session.run_process = simulate
             projection = {'electrode_groups': [{'instance_id': 'one', 'electrode_group_id': 'g'}]}
@@ -274,7 +295,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                         target_output.write_bytes(b'inert reuse')
                     (target/'logs'/(operation+'.bootstrap.log')).write_text('STATUS=PASS',encoding='utf-8')
                     actual_mesh=dict(mesh,sha256='b'*64) if bad_mesh and operation=='reopen_solution' else mesh
-                    report=dict(baseline,operation='compute' if operation=='solve_stationary' else 'reopen',scope='single_stationary_workpoint',model_path=str(target_output),compute_calls=1 if operation=='solve_stationary' else 0,solution=solution,mesh_before=actual_mesh,mesh_identity=actual_mesh,prior_group_voltages_v=[0.0],group_voltages_v=[1.0])
+                    report=dict(baseline,operation='compute' if operation=='solve_stationary' else 'reopen',scope='single_stationary_workpoint',model_path=str(target_output),compute_calls=1 if operation=='solve_stationary' else 0,solution=solution,mph_save_optimization='speed',mesh_before=actual_mesh,mesh_identity=actual_mesh,prior_group_voltages_v=[0.0],group_voltages_v=[1.0])
                     (target/'results'/(operation+'.json')).write_text(json.dumps(report),encoding='utf-8')
                 session.run_process=reuse_simulate
                 with patch.object(native_execution,'freeze_native_sources',return_value=(launcher,[])),patch.object(native_execution,'declare_runtime_files'),patch.object(native_execution,'require_launcher_completion'):
@@ -354,7 +375,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                 (cold_root / 'assembly-stationary-field.mph').write_bytes(b'inert final')
                 (cold_root / 'logs/solve_stationary.bootstrap.log').write_text('STATUS=PASS', encoding='utf-8')
                 report = dict(baseline, operation='compute', scope='single_stationary_workpoint',
-                    model_path=str(cold_root / 'assembly-stationary-field.mph'), compute_calls=1, solution=solution)
+                    model_path=str(cold_root / 'assembly-stationary-field.mph'), compute_calls=1, solution=solution, mph_save_optimization='speed')
                 (cold_root / 'results/solve_stationary.json').write_text(json.dumps(report), encoding='utf-8')
             session.run_process = fail_on_reopen
             with patch.object(native_execution, 'freeze_native_sources', return_value=(launcher, [])), \

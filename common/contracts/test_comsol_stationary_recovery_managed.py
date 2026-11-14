@@ -154,10 +154,14 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 new_request = json.loads(json.dumps(old_request))
                 new_request['group_voltages'][0]['voltage_v'] = 18.0
                 parent_bytes = parent.data_path('model').read_bytes()
+                stage['runtime']={'mph_save_optimization':'size'}
+                policy.write_text(json.dumps({'schema_version':1,'role':'execution_stage_policy','stages':{'solve_assembly_stationary':stage,'recover_assembly_stationary':{key:value for key,value in stage.items() if key!='runtime'}}}),encoding='utf-8')
                 control.write_text(json.dumps({'case':'reuse_success'}),encoding='utf-8')
                 normal=assembly_field_solution.solve_stationary(parent,solver_numerics={'kind':'comsol_stationary_default'},request=new_request,context=context)
                 self.assertEqual(normal.data_path('prepared_manifest'),source.manifest_location)
                 normal_manifest=json.loads(normal.manifest_location.read_text(encoding='utf-8-sig'))
+                self.assertEqual(normal.metadata['mph_save_optimization'],'size')
+                self.assertEqual(json.loads(normal.data_path('solve_stationary').read_text(encoding='utf-8-sig'))['mph_save_optimization'],'size')
                 bound=normal_manifest['inputs']['upstream_prepared_manifest']
                 self.assertTrue(Path(bound['path']).is_absolute())
                 self.assertEqual(normal_manifest['products']['solution']['data']['prepared_manifest'],bound)

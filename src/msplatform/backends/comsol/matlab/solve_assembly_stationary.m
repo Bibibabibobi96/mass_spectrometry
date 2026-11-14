@@ -1,4 +1,4 @@
-function result = solve_assembly_stationary(projectionPath, requestPath, baselinePath, sourcePath, outputPath, rawOutputPath, computeReportPath, operation, priorRequestPath)
+function result = solve_assembly_stationary(projectionPath, requestPath, baselinePath, sourcePath, outputPath, rawOutputPath, computeReportPath, operation, priorRequestPath, saveOptimization)
 %SOLVE_ASSEMBLY_STATIONARY Compute one workpoint or cold-read it without sampling.
 arguments
     projectionPath (1,:) char
@@ -10,6 +10,7 @@ arguments
     computeReportPath (1,:) char
     operation (1,:) char {mustBeMember(operation,{'compute','reopen','recover'})}
     priorRequestPath (1,:) char = ''
+    saveOptimization (1,:) char {mustBeMember(saveOptimization,{'speed','size'})} = 'speed'
 end
 import com.comsol.model.util.*
 projection=jsondecode(fileread(projectionPath));request=jsondecode(fileread(requestPath));
@@ -81,7 +82,7 @@ if strcmp(operation,'compute')
         'assembly:Study','Explicit stationary study required');
     model.study('std1').run;
     % Preserve the actual computed model before any dataset or readback getter.
-    mphsave(model,rawOutputPath,'copy','on');
+    mphsave(model,rawOutputPath,'copy','on','optimize',saveOptimization,'excludedata','off');
     tags=cellstr(string(cell(model.study('std1').getSolverSequences('SolverSequence'))));
     assert(numel(tags)==1,'assembly:Solver','Expected exactly one study solver sequence');
     solutionTag=char(tags{1});datasetTag='assembly_field_solution';
@@ -112,7 +113,7 @@ solution.solver_features=cellstr(string(cell(model.sol(solutionTag).feature.tags
 solution.comsol_version=char(ModelUtil.getComsolVersion());
 solution.solver_policy='comsol_stationary_default';
 if strcmp(operation,'compute')
-    mphsave(model,outputPath);
+    mphsave(model,outputPath,'optimize',saveOptimization,'excludedata','off');
 end
 if reuse
     meshAfter=assembly_mesh_identity(model);
@@ -122,6 +123,7 @@ result=struct('operation',operation,'scope','single_stationary_workpoint', ...
     'model_path',outputPath,'solution',solution,'group_keys',{keys}, ...
     'group_faces',{faces},'vacuum_domains',selected.vacuum_domains, ...
     'outer_faces',selected.outer_faces,'compute_calls',double(strcmp(operation,'compute')));
+if strcmp(operation,'compute'),result.mph_save_optimization=saveOptimization;end
 if reuse
     result.mesh_before=meshBefore;result.mesh_identity=meshAfter;
     result.prior_group_voltages_v=oldValues;result.group_voltages_v=values;

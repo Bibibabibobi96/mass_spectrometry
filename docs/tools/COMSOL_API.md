@@ -293,10 +293,26 @@ the old bindings and unchanged non-voltage request, sets existing `V0` features,
 and writes a separate solution. `assembly_mesh_identity` compares typed and shaped
 mesh data before/after solving and during cold reopen. It does not explicitly
 run geometry or mesh generation. This project use of documented APIs still needs
-native validation; equal mesh controls or DOF counts are not the mesh identity.
+native validation beyond the one controlled unit response recorded in the
+[integration state](../../integrations/docs/INTEGRATION.md#current-lp60-ipmr-geometry-case);
+equal mesh controls or DOF counts are not the mesh identity.
 The fingerprint alone does not prove domain coverage, field convergence or the
 complete physical operator. Recovery requires retained compute-time mesh proof
 and independently matching reopened mesh and voltages; an unproven raw MPH refuses.
+
+The stationary stage accepts optional execution-policy
+`runtime.mph_save_optimization` as `speed` or `size`; omission explicitly selects
+`speed`. This storage choice stays in the frozen stage policy, outside the
+physical operator request. Both raw and final saves retain computed data with
+`excludedata='off'`. Unknown runtime keys or choices fail before owner admission;
+reopen and recovery do not resave the model.
+[COMSOL 6.4 loading/saving documentation](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_model.6.07.html)
+describes `size` as compressed storage and `speed` as uncompressed storage
+(reviewed 2026-11-14). A separate preserved-model experiment reduced one MPH from
+366,330,857 to 108,390,825 B and matched its complete typed
+[`mphgetu`](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.31.html)
+vector, mesh and bindings on fresh reopen. This is one-model evidence, not a
+guaranteed compression ratio or native acceptance of the new stationary save path.
 
 典型流程先求静电/磁场稳态，再用时间相关粒子Study复用已存场：
 
