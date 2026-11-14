@@ -311,8 +311,13 @@ describes `size` as compressed storage and `speed` as uncompressed storage
 (reviewed 2026-11-14). A separate preserved-model experiment reduced one MPH from
 366,330,857 to 108,390,825 B and matched its complete typed
 [`mphgetu`](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.31.html)
-vector, mesh and bindings on fresh reopen. This is one-model evidence, not a
-guaranteed compression ratio or native acceptance of the new stationary save path.
+vector, mesh and bindings on fresh reopen. The production stationary owner then
+saved the distinct `guide_negative` unit workpoint with `size`: raw/final files
+were 108,390,314/108,390,344 B. One Compute and a fresh cold reopen with zero
+additional Compute matched all 45 bindings, full mesh identity and stored solution
+metadata; the exact run and limits are recorded in the integration state above.
+These observations qualify that one workpoint, not a guaranteed compression ratio,
+all future models or equal solution vectors for different voltage workpoints.
 
 典型流程先求静电/磁场稳态，再用时间相关粒子Study复用已存场：
 

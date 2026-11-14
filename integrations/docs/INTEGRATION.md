@@ -1373,9 +1373,28 @@ including default/size transport, invalid policy refusal before owner admission
 and existing managed failure/recovery checks. Source/index/status/runner guards,
 Ruff, PowerShell parsing and documentation structure passed. An initial test
 harness parser-argument failure occurred before tests and is retained separately;
-the corrected complete epoch supplied these results. A native size-solved
-workpoint remains pending; the preserved-model experiment does not qualify this
-new production path or guarantee capacity for the complete family.
+the corrected complete epoch supplied these results.
+
+The subsequent native production run on `24bdd89b`,
+`20261114_211130__sim__comsol__assembly-field-5f39783ba3f5`, computed
+`ion_processor/guide_negative` at 1 V with the other 44 groups at 0 V using the
+same carrier and explicit `mph_save_optimization=size`. Its raw/final MPH files
+are 108,390,314/108,390,344 B. Compute and independent cold reopen matched all
+45 voltage/face bindings, solution metadata and the full mesh fingerprint above;
+there was one Compute and zero additional Compute on reopen. The manifest SHA is
+`3f2c93c6322965bd9207e3323956c024bdf869c1d4525a4c88bd45be998d0cc7`.
+Both writers exited zero and released host leases; capacity closure and the
+unchanged source/index/status guard were recorded. Wall was 208.234 s; sampled
+Compute/reopen working sets were 5,533,569,024/3,325,460,480 B, and sampled
+run-directory maxima were 350,233,393/326,271,520 B, with no budget warning.
+The 3600 s, 8 GiB memory, 1 GiB transient/retained, 1 GiB available-RAM and zero
+retry settings and global 700/295 GiB capacity policy were unchanged. Samples
+are not guaranteed peaks. Two completed one-off scripts (9,788 B) were retired;
+their frozen code, inputs, reports and MPH files remain. This qualifies this
+single size-save workpoint, not full solution-vector equality across different
+right-hand sides, field convergence, interpolation coverage or continuous Fly.
+Fourteen response workpoints remain: 13 IP groups and the RF reference; neither
+this run nor the earlier copy experiment guarantees capacity for that family.
 
 The next candidate extends existing scalar admission with explicit ordered named
 sampling windows. Each window revalidates every basis against the same published
