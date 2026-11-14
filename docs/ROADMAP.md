@@ -105,8 +105,16 @@ On 2026-11-14 the sole active P4 integration line became
 then-current local and remote branch HEAD, including both preserved RF merge
 parents. Completed MR/software and P3 branch references were retired; obsolete
 platform/RF-IP remote references were retired while their dirty local worktrees
-and local recovery references remain untouched. The RF-continuation reference
-remains temporarily protected by its running CI. Detached worktrees, scientific
+and local recovery references remain untouched. RF-continuation CI
+`43589697529` subsequently finished with the already diagnosed OA-MR compiler-test
+mock contamination. Both its failing `94974116` commit and tested correction
+`4195ca48` are integrated; this does not turn that CI run into a pass. After
+confirming no dirty or unpushed work, active process or branch-name dependency,
+its local and remote references were retired and its worktree retained detached
+at the same commit. A later `24bdd89b` audit found every remaining worktree HEAD
+in the integration history and no unpushed commits. GitHub retains only master
+and the P4 integration branch. The two old dirty local P4 references remain
+recovery anchors, not competing integration lines. Detached worktrees, scientific
 artifacts, failed-run evidence and private worker candidates were not deleted.
 Branch consolidation does not grant P4 acceptance: master remains at `40a13e78`
 until the same final candidate completes all applicable P4 checks and the current
