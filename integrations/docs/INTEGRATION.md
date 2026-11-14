@@ -87,6 +87,17 @@ positive/negative regression passed on the integrated successor, within a
 25-parent focused suite (44.047 seconds). This closes the reproduced local
 failures, not the historical failed CI record or final Repository acceptance.
 
+The later `c5db7b06` CI structured artifact `14132290057` explicitly records
+success and valid canonical identities for those six original registry parents
+and their six associated subtests. The complete CI job still failed a different
+IP-MR missing-field negative: its expected text said "implemented" while the
+new public route required a "published" common-field binding. The same mismatch
+was reproduced locally in the exact parent (46.922 seconds). Only its exact
+message expectation changed; the ValueError and before-source/field-input refusal
+remain required. The full seven-parent IP-MR model module then passed in 73.189
+seconds, no skips and unchanged sources. This closes that local regression, not
+the old failed jobs, a new complete CI result or final Repository acceptance.
+
 SIMION also accepts the explicit `neutral_world_collision` geometry representation
 through the same public `compile_geometry` and `build_geometry` stages. It traverses
 registered complete members rather than selecting a project-name combination.

@@ -136,7 +136,7 @@ class RfIpMrModelTests(unittest.TestCase):
         from msplatform.backends.simion.tracking_execution import plan_tracking_execution
         model=compile_prepared_model(self.compiled,self.compiled.components_resolved,
             drive=self.drive,physics=RF_IP_PHYSICS)
-        with self.assertRaisesRegex(ValueError,'IP–MR tracking requires an implemented common-field binding'):
+        with self.assertRaisesRegex(ValueError,'IP–MR tracking requires a published common-field binding'):
             plan_tracking_execution(model,particles=None,clock_records=None,propagation=None,
                 observations=None,numerics=None)
 
