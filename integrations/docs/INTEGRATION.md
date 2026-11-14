@@ -27,9 +27,20 @@ The selected P3 delivery is accepted under the user scope below. Code is fixed a
 `f283b752a736dcfe703ffb2a6b56bef291c889b1`; the
 [milestone](../../docs/history/20261105__phase03-installed-pipeline.md) binds all
 29 Goal items and 54 C / 20 R / 8 U items to their declared evidence and later owners.
-Complete Repository acceptance remains bound to `a8815a81`; the small later
+P3 complete Repository acceptance remains bound to `a8815a81`; the small later
 gate repair has its own complete affected-module validation. These are separate
 source epochs, not a full Repository result at f283b752.
+
+The P4 public local Repository command passed on frozen `b90ac498` on 2026-11-14:
+51 PASS / 12 NOT_APPLICABLE stages, 7,369 successful parent tests, 21 explicit
+skips and 9,059 successful subtests. All source bytes and HEAD remained unchanged.
+The same machine used eight workers (16 logical processors, 51,457,728,512 bytes
+physical RAM); public-command wall time was 2,977.466696 seconds. This exceeds
+the original 900-second target. The retained summary lists every skip, including
+opt-in native checks and unavailable historical payloads; software success does
+not grant those native checks or scientific qualification. The later test-only
+resource-isolation fix has its own Changed/focused evidence; it is not part of
+this frozen run. Final combined P4, native and performance acceptance remain open.
 
 The user requires correct 3D files and independent geometry checks. SolidWorks
 repair, unattended startup, template repair and viewer refinement are **deferred
@@ -111,8 +122,9 @@ Their RF-IP owner spans were 24.730 and 23.754 seconds; the independent author
 field fixtures took 2.627 and 2.344 seconds. The full method remains 33.064
 seconds above 900 seconds, before outer admission/cleanup. This is not a
 same-scope speedup comparison with older candidates. Synthetic field assets do
-not establish native fields, HS1 flight or scientific qualification; full
-Repository and applicable native acceptance remain open.
+not establish native fields, HS1 flight or scientific qualification. The later
+`b90ac498` Repository result is recorded above; applicable native acceptance and
+the final combined P4 candidate remain open.
 
 The preceding fixed candidate `269e3665` passed both ordinary wheel and
 sdist-rebuilt-wheel consumers in 949.662 seconds. All 560 authored build-source
@@ -414,7 +426,9 @@ source/managed-owner regressions passed 41 parents and 162 subtests in 44.717
 seconds on the integrated repair, with frozen source identities and released
 GATE. Missing module and missing source file remain separate pre-native
 refusals. This focused rerun does not replace a successful full Changed run or
-complete Repository/performance acceptance. The later ordinary installation on
+complete Repository/performance acceptance at that repair alone. The later
+`b90ac498` full software result is recorded in the current boundary above;
+performance remains open. The later ordinary installation on
 `101b70b8` is recorded separately above.
 
 The full [ordinary-installation parent](../../common/contracts/test_installed_scientific_core.py)

@@ -114,8 +114,11 @@ they do not execute the installed native owners. Native scalar acceptance
 and the dynamic/common-field chain remain open.
 Changed r3 remains FAILED on its exact detector Lua fixture; `1379ff97` repairs that
 test, and its exact rerun plus the four originally blocked checks passed separately.
-Complete Repository, common-field coupling, continuous chains and performance remain
-open; those local results do not close B03 or the full goal.
+The later complete Repository command on frozen `b90ac498` passed; its exact
+counts, skips and 2,977.466696-second public wall time are recorded in the
+integration status. Common-field coupling, named continuous chains, final P4
+candidate acceptance and performance remain open; software success does not
+close B03 or the full goal.
 
 V8.7 is the active P4 scope. Its single goal continues the existing task branch and preserves
 all retained scientific, installation, recovery and performance obligations. Eight domain
@@ -267,8 +270,9 @@ GitHub Changed at `097cf39f` (run `43395020909`) and `5bcd9b58` (run `4340506129
 succeeded with Repository skipped; neither establishes local crash root cause or
 final Repository/native qualification.
 The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
-and project status pages own the detailed evidence. Full Repository, the original 15-minute
-software target and owner budgets remain OPEN; pending/cancelled CI is not acceptance.
+and project status pages own the detailed evidence. The latest complete software
+result is `b90ac498`; final combined P4 acceptance, the original 15-minute target
+and owner budgets remain OPEN. Pending/cancelled CI is not acceptance.
 The earlier diagnostic full Repository baseline, `778e7015`, ended with 38 PASS, 12 FAIL
 and 12 NOT_APPLICABLE stages: 7,006 parents (6,838 success, 21 skip, 56 failure, 91 error),
 plus one loader error; 7,996 subtests (7,894 success, 59 failure, 43 error). Its summary
@@ -284,7 +288,7 @@ Those scoped checks did not establish composed installation or full regression;
 the latest combined installation evidence is recorded below. Full regression and
 performance targets stay OPEN.
 
-The latest retained full Repository diagnostic is the uncommitted candidate based on
+An earlier retained full Repository diagnostic used the uncommitted candidate based on
 `abd983b8`, recorded as `v85-composed-repository-root-r2`: 8 PASS, 30 FAIL,
 12 BLOCKED and 12 NOT_APPLICABLE. The run lacked host-inspection permissions and recorded
 process-identity admission failures and CLOC temporary-directory failures; three independent MR selection

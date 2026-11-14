@@ -201,9 +201,11 @@ policy, and freezes the helper with its other native resources. Assembly export
 does not inherit that coordinate mapping or implicit fill policy. Focused tests
 and fake-MATLAB checks cover their separation. Both previously accepted ordinary wheel/sdist consumers check the stage resources,
 model/solution/grid validators and missing-sampler refusal from site-packages.
-The new optional support path has focused source and managed inert-child coverage;
-its ordinary installation and native acceptance remain pending. Native export
-and complete installed stage execution remain separate requirements.
+The optional support path has focused source and managed inert-child coverage;
+its resource/validator probe also passed both ordinary installation arms, as
+recorded in the [integration evidence](../../integrations/docs/INTEGRATION.md#依赖冻结与门禁).
+Native conductor support and complete installed native-stage execution remain
+separate, open requirements.
 
 ## 正式启动入口
 
