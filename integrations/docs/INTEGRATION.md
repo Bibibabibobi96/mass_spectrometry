@@ -1438,8 +1438,29 @@ are not guaranteed peaks. Two completed one-off scripts (9,788 B) were retired;
 their frozen code, inputs, reports and MPH files remain. This qualifies this
 single size-save workpoint, not full solution-vector equality across different
 right-hand sides, field convergence, interpolation coverage or continuous Fly.
-Fourteen response workpoints remain: 13 IP groups and the RF reference; neither
-this run nor the earlier copy experiment guarantees capacity for that family.
+The subsequent serial batch used an immutable, hash-verified `24bdd89b` source
+snapshot and the same carrier, operator and size-save policy. All 13 remaining IP
+unit responses completed. Their exact producer manifests were independently
+hash-checked; the serial caller checked the same mesh, all 45 voltage/face
+bindings, one Compute per response, zero Compute on cold reopen and writer
+closure. The batch owner also checked all 26 usage records (known observations,
+no warnings), host releases and absence of its exact capacity leases/aliases.
+Together with the carrier and two preceding IP responses, 16 of the required 17
+workpoints now exist; this is not a complete RF response family or Fly evidence.
+
+The final RF-reference admission stopped before a producer manifest was returned:
+`MINIMUM_FREE_CAPACITY_UNAVAILABLE`. The receipt records 317,666,463,744 B free
+against 317,827,579,904 B required, a 161,116,160 B deficit. Its projected resident
+747,727,184,470 B still fitted the 751,619,276,800 B target; the independent
+free-space floor caused refusal. No retry, policy override or deletion occurred.
+The last successful IP response is
+`20261114_222405__sim__comsol__assembly-field-7ab97876183a`, manifest SHA-256
+`79d261b1ec3a429c612b256c69b3b961d7b6789ab80ccb828395189cf559b45d`.
+The exact batch inventory, source pins and terminal admission receipt remain in
+workspace `.tools/phase04-codex-takeover-20261109/v87-rf-ip-mr-remaining14-agent9-r1`.
+RF production, fine scalar coverage, field/domain convergence and full-mother
+continuous native flight remain open; no capacity for those later operations is
+implied by these completed responses.
 
 Within one IP–MR scalar admission call, canonical geometry/operator projection and
 the expected response plan are now constructed once and reused by that call's
