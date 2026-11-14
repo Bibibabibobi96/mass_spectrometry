@@ -100,6 +100,17 @@ P4 retains the remaining approved designs and named COMSOL capabilities. P5 test
 其静态引用与桥候选只用于导航，不作为完整动态消费者或删除证明。当前`rf_oatof_functional_v1`已通过原公共API完成
 组件解析、完整装配和SIMION纯几何编译基线，无原生求解；P3及旧CI证据仍只绑定各自源码与环境，不冒充P4后继验收。
 本Goal内依次闭合领域接口、活动消费者、独立器件与具名后端、部署、性能、退役和安装验收，不另开P4子Goal。
+On 2026-11-14 the sole active P4 integration line became
+`task/phase04-ip-mr-lp60-20261114`. Its verified `c09a9cd2` snapshot contains every
+then-current local and remote branch HEAD, including both preserved RF merge
+parents. Completed MR/software and P3 branch references were retired; obsolete
+platform/RF-IP remote references were retired while their dirty local worktrees
+and local recovery references remain untouched. The RF-continuation reference
+remains temporarily protected by its running CI. Detached worktrees, scientific
+artifacts, failed-run evidence and private worker candidates were not deleted.
+Branch consolidation does not grant P4 acceptance: master remains at `40a13e78`
+until the same final candidate completes all applicable P4 checks and the current
+master is checked for intervening changes before integration.
 当前迁移任务图如下；它只记录本阶段对象归属和退出责任，不复制架构规范或授予新能力资格。
 
 The current B03 successor shares complete physical-member traversal in the component
