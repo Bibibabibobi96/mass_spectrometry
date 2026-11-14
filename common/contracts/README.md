@@ -34,6 +34,18 @@ returns/exceptions and are inclusive, so nested durations must not be summed.
 The 1109.598-second test result establishes installation coverage for that source,
 not crash root cause, Repository/native qualification or the 15-minute target.
 
+The combined MR/IP geometry and selected-TOF-closure successor passed ordinary
+wheel and sdist-rebuilt-wheel acceptance in 1000.732170 seconds, without failures
+or skips and with source, HEAD, status and index unchanged. Its installed IP probe
+uses explicit existing formed-contour fixture data to resolve a complete RF/IP
+Assembly through the public COMSOL geometry request; a fresh isolated child refuses
+the physically missing installed prism helper, which is then restored byte-for-byte.
+Both package arms retain the original assertions and deny author-tree access.
+The accepted probe source is `cdb884e106dd98b0dabbc5a95dd5ae9bd71d0991995da04fff480c405c5b4cb7`;
+the retained build-source inventory has 563 records. This checks installed geometry
+translation and dependency closure, not native IP/MR geometry, continuous flight,
+field coupling, full Repository acceptance or the still-open 15-minute target.
+
 ## 按任务导航
 
 只读本次任务对应的章节；本页说明公共 API，生命周期政策仍以[生命周期](../../docs/LIFECYCLE.md)为准。

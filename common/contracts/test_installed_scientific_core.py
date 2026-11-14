@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import hashlib
 import os
@@ -2001,6 +2002,61 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     planned_fields = plan_fields_execution(planned_model, numerics=study.field_numerics)
     assert len(planned_fields['expected_operation_ids']) == 8
     assert planned_fields['expected_operation_ids'][-2:] == ['build_fields','verify_fields']
+# Full installed RF–IP geometry request; the baseline comes from the existing
+# versioned IP fixture, and the physical selection is explicit.
+from msplatform.backends.comsol import ip_prism as installed_ip_prism
+from msplatform.components.geometry_members import assembly_geometry_members
+ip_comsol_pure = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+ip_prism_path = pathlib.Path(installed_ip_prism.__file__).resolve()
+assert ip_prism_path == ip_comsol_pure/'msplatform/backends/comsol/ip_prism.py'
+ip_comsol_baseline = copy.deepcopy(ip['baseline'])
+ip_comsol_baseline['physical_design_selection'] = {'native_grid_mm':.1,'native_aux_segments':60}
+ip_comsol_baseline['electrode_contours'] = copy.deepcopy(ip['formed_contours'])
+ip_comsol_rf = component_api.resolve_component(study.component_requests['multipole'])
+ip_comsol_ip = component_api.resolve_component(dict(provider_id='dual_pressure_rectilinear_ion_processor',
+    design=dict(baseline=ip_comsol_baseline)))
+ip_comsol_recipe = study.recipe
+ip_comsol_rf_row, ip_comsol_ip_row = ip_comsol_recipe['instances']
+ip_comsol_rf_row['transform']['translation_mm'] = [-ip_comsol_rf.assembly_interface['ports']['mechanical_exit']['center_mm'][2],0,0]
+ip_comsol_ip_row.update(instance_id='ion_processor',project_id='dual_pressure_rectilinear_ion_processor')
+ip_comsol_ip_row['transform']['from_frame_id'] = ip_comsol_ip.assembly_interface['local_frame_id']
+ip_comsol_recipe['connections'] = [dict(connection_id='mp_ip',upstream=dict(instance_id='multipole',port_id='mechanical_exit'),
+    downstream=dict(instance_id='ion_processor',port_id='guide_inlet'),gap_mm=0.,coupling_mode='monolithic_joint_solve')]
+ip_comsol_assembly = assembly_api.assemble(ip_comsol_recipe,{'multipole':ip_comsol_rf,'ion_processor':ip_comsol_ip})
+ip_comsol_before = copy.deepcopy((ip_comsol_assembly.composition_plan,ip_comsol_assembly.components_source,ip_comsol_assembly.components_resolved))
+ip_comsol_result = installed_comsol_stage.resolve_geometry_request(ip_comsol_assembly,
+    outer_box_mm={'min':[-10000]*3,'max':[10000]*3},geometry_validation={'position_mm':0,'normal_abs':0})
+ip_comsol_projection = ip_comsol_result['projection']
+assert ip_comsol_projection['members'] == list(assembly_geometry_members(ip_comsol_result['assembly']))
+ip_comsol_members = [m for m in ip_comsol_projection['members'] if m['instance_id']=='ion_processor']
+assert len(ip_comsol_members)==15 and len({m['electrode_group_id'] for m in ip_comsol_members})==15
+assert len(ip_comsol_projection['native_shapes'])==len(ip_comsol_projection['members'])
+assert 'ip_certified_prism' in repr(ip_comsol_projection['native_shapes'])
+assert (ip_comsol_assembly.composition_plan,ip_comsol_assembly.components_source,ip_comsol_assembly.components_resolved)==ip_comsol_before
+ip_prism_bytes = ip_prism_path.read_bytes(); ip_prism_held = ip_prism_path.with_suffix('.comsol-held')
+assert not ip_prism_held.exists(); ip_prism_path.rename(ip_prism_held)
+try:
+    ip_prism_child = r"""import importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author path accessed')
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import '+fullname)
+sys.meta_path.insert(0,Deny())
+import msplatform.backends.comsol.ip_prism
+"""
+    ip_prism_missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',ip_prism_child,
+        json.dumps([str(p) for p in blocked_source_roots])],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert ip_prism_missing.returncode!=0 and not ip_prism_missing.stdout,ip_prism_missing.stderr
+    assert ip_prism_missing.stderr.splitlines()[-1:]==["ModuleNotFoundError: No module named 'msplatform.backends.comsol.ip_prism'"],ip_prism_missing.stderr
+finally:
+    ip_prism_held.rename(ip_prism_path)
+assert ip_prism_path.read_bytes()==ip_prism_bytes
+
 assert len(actual_components['oatof'].assembly_interface['component_electrodes']) == 42
 assert len(actual_geometry.downstream_specs) == 3 and all(actual_geometry.frontend_gems.values())
 # Explicit inert RF wire fixture exercises the installed parser, not SIMION.
@@ -7141,6 +7197,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             ip_config = REPO_ROOT / 'projects/dual_pressure_rectilinear_ion_processor/config'
             ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
                   for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
+            from projects.dual_pressure_rectilinear_ion_processor.tests.test_electrode_contours import ElectrodeContourTests
+            ip_contour_fixture = ElectrodeContourTests()
+            ip_contour_fixture.setUp()
+            ip['formed_contours'] = copy.deepcopy(ip_contour_fixture.c)
             from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
             ip['preparation_config'] = {name: ip[name] for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
             ip['preparation_config'].update(source_profile='functional', source_authority_file='source.json')
