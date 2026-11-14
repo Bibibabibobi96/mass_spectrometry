@@ -39,6 +39,18 @@ class WorldScalarTests(unittest.TestCase):
         wrong=dict(self.solution,solution_dofs=5830175.0)
         with self.assertRaisesRegex(ValueError,'solution readback'):subject._check_report(dict(row,solution_readback=wrong),grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,model=model)
 
+    def test_large_scientific_notation_counts_are_integral_and_accounted(self):
+        import json
+        grid=subject.validate_grid(self.grid,self.projection,self.solution);grid.update(point_count=5312307,coordinate_sanity_mm=1e-6)
+        row=dict(grid,status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',coordinate_witness={'status':'verified','index':1,'requested_mm':[-1,-1,-1],'actual_mm':[-1,-1,-1],'geometry_length_unit':'mm'},model_path=str(HERE/'source.mph'),vacuum_domains=1,solution_readback=self.solution)
+        counts=json.loads('{"fem_valid":3.769772E+6,"invalid_count":1.542535E+6}')
+        row.update(counts);subject._check_report(row,grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,model=HERE/'source.mph')
+        self.assertEqual((row['fem_valid'],row['invalid_count']),(3769772,1542535))
+        self.assertIs(type(row['fem_valid']),int);self.assertIs(type(row['invalid_count']),int)
+        for bad in (True, -1, 1.5, float('nan'), float('inf'), 1542534.0):
+            with self.subTest(bad=bad),self.assertRaisesRegex(ValueError,'mask accounting'):
+                subject._check_report(dict(row,invalid_count=bad),grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,model=HERE/'source.mph')
+
     def test_inert_action_borrows_model_and_rejects_compute_report(self):
         import json
         import tempfile

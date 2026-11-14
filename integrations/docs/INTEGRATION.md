@@ -1260,6 +1260,18 @@ Evidence is in workspace
 These pieces are not yet wired into the complete tracking Program or qualified
 by native Fly, ordinary installation or a final Repository run.
 
+The first coarse carrier export, run
+`20261114_185405__analysis__comsol__assembly-scalar-b116aef94ebc`, remains FAILED.
+Its native writer exited successfully with zero Compute, 5,312,307 queried nodes,
+3,769,772 finite FEM samples and 1,542,535 invalid samples; no conductor filling
+was requested. Publication rejected MATLAB's scientific-notation integral counts
+as Python floats. The validator now accepts finite nonnegative integral JSON
+numbers while retaining exact total accounting and rejecting booleans, fractions,
+negative and nonfinite values. All seven world-scalar contract parents passed
+on the corrected source in 1.086 seconds (6.540 guarded wall), without skips.
+The failed output is retained with its original status and released leases;
+this software correction does not promote it to a published scalar product.
+
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
 and checkout guards: 386 parent successes, 254 subtest successes and one inherited

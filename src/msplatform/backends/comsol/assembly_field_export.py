@@ -391,8 +391,15 @@ def _check_report(row: Mapping[str, Any], *, grid: Mapping[str, Any], baseline: 
     if vacuum != expected_vacuum:
         raise ValueError('world scalar vacuum authority differs')
     finite, invalid = row.get('fem_valid'), row.get('invalid_count')
-    if type(finite) is not int or type(invalid) is not int or finite < 0 or invalid < 0 or finite + invalid != grid['point_count']:
+    if any(
+        not (
+            type(value) is int and value >= 0
+            or type(value) is float and math.isfinite(value) and value >= 0 and value.is_integer()
+        )
+        for value in (finite, invalid)
+    ) or finite + invalid != grid['point_count']:
         raise ValueError('world scalar mask accounting differs')
+    row['fem_valid'], row['invalid_count'] = int(finite), int(invalid)
     validate_solution_readback(row.get('solution_readback'), study_tag=grid['study_tag'],
                                solution_tag=grid['solution_tag'], dataset_tag=grid['dataset_tag'])
     for name in ('study_tag', 'solution_tag', 'dataset_tag', 'dataset_solution', 'solution_empty', 'solution_dofs', 'solution_count', 'stored_main_solutions'):
