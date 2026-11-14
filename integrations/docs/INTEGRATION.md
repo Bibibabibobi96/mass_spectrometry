@@ -1682,6 +1682,37 @@ was 1,074,900,992 B, including concurrent filesystem activity. Their
 records each path, hash and Git restoration command. Source trees, patches,
 handoffs and diagnostic evidence remain; no earlier removal was counted again.
 
+Two additional completed-task baselines, `integration-last-lua-d7/baseline.tar`
+and `rf-tof-lua-4f53/baseline.tar`, released 431,423,488 allocated bytes, with an
+observed free-space increase of 431,411,200 bytes. Their
+[receipt](../../../artifacts/common/capacity_disposal_receipts/p4-two-git-archives-20261114T194752Z-fcc901ea.json)
+retains exact identities and Git reconstruction commands. A later independent
+review cleared fourteen different completed-task baseline archives: all recorded
+commits remain ancestors of the integration HEAD, all files had one link and
+exclusive-open checks passed, with no active consumer identified. Public
+identity-bound removal released 3,014,946,816 allocated bytes; observed free space
+increased by 3,014,758,400 bytes, including concurrent filesystem activity. All
+fourteen paths are absent while their repositories and 55 hashed source, patch
+and handoff records remain unchanged. The
+[completed receipt](../../../artifacts/common/capacity_disposal_receipts/p4-fourteen-git-archives-20261114T210748Z-34e959ff.json)
+records every path, digest, commit and reconstruction command. The first API
+attempt rejected lowercase digest serialization and removed nothing; its failed
+receipt remains separate. Historical reruns must first restore their exact Git
+archive bytes. Restoration requires archive-sized temporary space; extraction
+cost was not measured. No PA, MPH, IOB, scientific result or failed diagnostic
+payload was removed. Receipt metadata alone was reconciled in the managed ledger;
+these outside archives were not subtracted from managed residency.
+
+The read-only capacity snapshot at 2026-11-14 21:30:12 UTC has calibrated residency
+746,878,388,572 bytes, zero active/unknown commitments and 320,877,088,768 free
+bytes. Against the unchanged 700-GiB target, 295-GiB floor and proposed 12-GiB RF
+geometry reservation, arithmetic shortfalls are 8,144,013,660 bytes of managed
+capacity and 8,761,651,200 bytes of free space. This is a snapshot, not owner
+admission. The two historical duplicate PA replay paths await the user's explicit
+retirement decision; protected MR GUI arrays and all scientific assets remain.
+RF geometry has not passed admission, and any eventual attempt must recalculate
+through the normal owner under the same limits.
+
 The public SIMION `solve_fields` stage now accepts an explicit
 `scalar_field_basis` for the selected complete RF–IP–MR model. It admits the
 published geometry/operator/scalar products and exact collision-priority evidence,
