@@ -2508,7 +2508,14 @@ end
         if native_entry[key]~=pending.endpoint[key] then same=false end
       end
       if same then observation_duplicate=true
-      else single_flight_observation_incomplete(ion_number,'equal_time_conflicting_callback') end
+      else
+        local previous=pending.endpoint
+        single_flight_write_trace(string.format('SFI_EQUAL_TIME_DIAGNOSTIC_V1: ion=%d particle_id=%d phase=previous_observation_stage time_us=%.17g elapsed_us=%.17g x=%.17g y=%.17g z=%.17g vx=%.17g vy=%.17g vz=%.17g instance=%s splat=%s',
+          ion_number,single_flight_canonical_particle_id(),previous.t,previous.elapsed,previous.x,previous.y,previous.z,previous.vx,previous.vy,previous.vz,tostring(previous.instance),tostring(previous.splat)))
+        single_flight_write_trace(string.format('SFI_EQUAL_TIME_DIAGNOSTIC_V1: ion=%d particle_id=%d phase=current_other_actions_entry time_us=%.17g elapsed_us=%.17g x=%.17g y=%.17g z=%.17g vx=%.17g vy=%.17g vz=%.17g instance=%s splat=%s',
+          ion_number,single_flight_canonical_particle_id(),native_entry.t,ion_time_of_flight,native_entry.x,native_entry.y,native_entry.z,native_entry.vx,native_entry.vy,native_entry.vz,tostring(native_entry.instance),tostring(native_entry.splat)))
+        single_flight_observation_incomplete(ion_number,'equal_time_conflicting_callback')
+      end
     elseif pending.start and time>=pending.start.t then
       observation_start_override=pending.start
       single_flight_observation_pending[ion_number]=nil

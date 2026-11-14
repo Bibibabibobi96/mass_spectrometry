@@ -1415,6 +1415,15 @@ pre-action contact is not an independently confirmed terminal cause. Three IDs
 are explicitly incomplete. Execution success and `native_complete=true` do not
 override `observation_complete=false` or confer transmission/accuracy qualification.
 
+The retained conflict markers did not contain the differing callback values.
+The Program now emits at most one labeled previous/current pair per affected ion
+before the unchanged quarantine: native/canonical ID, instrument/elapsed times,
+6D state, instance and raw splat value. This adds no PA query or dynamics assignment
+and does not reinterpret a staged endpoint as accepted state. The actual integrated
+SFI Program/collector and shared IP–MR Program suites passed 71 parents in 84.032 s
+(84.890 guarded), including the exact two-record conflict regression. Native use
+of this diagnostic and the cause of the three conflicts remain unverified.
+
 All three writers exited zero and released their host leases; the input protection
 lease and short execution alias were absent after finalization. Fly took 471.210 s,
 with observed peak process-tree working set 2,974,412,800 bytes and run directory

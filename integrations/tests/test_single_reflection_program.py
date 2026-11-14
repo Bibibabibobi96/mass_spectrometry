@@ -1436,6 +1436,9 @@ print('LOCAL_OATOF_NO_RF=PASS')
             with self.subTest(case=case):
                 self.check_plain_lua_callbacks(False, case)
 
+    def test_equal_time_diagnostic_observes_conflicting_pair(self):
+        self.check_plain_lua_callbacks(False, reconciliation='equal_conflict')
+
     def check_plain_lua_callbacks(self, entrance_refinement, reconciliation=None):
         if entrance_refinement:
             folder = self.root / "fine"
@@ -2011,6 +2014,20 @@ print('NATIVE_FULL_PROGRAM=PASS')
                 if reconciliation=='duplicate':
                     self.assertNotIn('PLANE_OBSERVATION_V1:',replay.stdout)
                     self.assertNotIn('SFI_OBSERVATION_INCOMPLETE_V1:',replay.stdout)
+                if reconciliation=='equal_conflict':
+                    diagnostic=[line.split('SFI_EQUAL_TIME_DIAGNOSTIC_V1:',1)[1].strip() for line in replay.stdout.splitlines() if 'SFI_EQUAL_TIME_DIAGNOSTIC_V1:' in line]
+                    self.assertEqual(len(diagnostic),2)
+                    rows=[dict(field.split('=',1) for field in line.split()) for line in diagnostic]
+                    self.assertEqual([row['phase'] for row in rows],['previous_observation_stage','current_other_actions_entry'])
+                    self.assertEqual(rows[0]['ion'],rows[1]['ion'])
+                    self.assertEqual(rows[0]['particle_id'],rows[1]['particle_id'])
+                    self.assertEqual(rows[0]['particle_id'],'77')
+                    for key in ('time_us','elapsed_us','y','z','vx','vy','vz','instance','splat'):
+                        self.assertEqual(rows[0][key],rows[1][key],key)
+                    self.assertAlmostEqual(float(rows[1]['x'])-float(rows[0]['x']),.1,places=12)
+                    self.assertEqual(replay.stdout.count('SFI_OBSERVATION_INCOMPLETE_V1:'),1)
+                    self.assertEqual(replay.stdout.count('UNKNOWN_TERMINATION_V1:'),1)
+                    self.assertNotIn('PLANE_OBSERVATION_V1:',replay.stdout)
                 if reconciliation in ('equal_conflict','unrecoverable'):
                     self.assertIn('SFI_OBSERVATION_INCOMPLETE_V1:',replay.stdout)
                     self.assertIn('UNKNOWN_TERMINATION_V1:',replay.stdout)
