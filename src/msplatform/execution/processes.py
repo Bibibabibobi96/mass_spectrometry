@@ -245,6 +245,8 @@ def _interpret_batch_result(output: bytes, errors: bytes, returncode: int) -> di
     if returncode and failure is None:
         failure = ProcessExecutionError(f'Execution batch owner failed with exit {returncode}',receipt)
     if failure is not None:
+        if errors:
+            failure.add_note(f'Execution batch bridge stderr: {errors.decode("utf-8", errors="replace")}')
         raise failure
     return receipt
 

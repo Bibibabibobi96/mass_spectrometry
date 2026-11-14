@@ -341,6 +341,11 @@ STEP与模板后打开自己的文档；导入完成后、进入查看等待前�
 宿主事务stdin断管时保留原异常，并附加已启动子进程的退出码与stdout/stderr收集结果；
 这不推断旧CI断管根因。RF恢复测试的外部诊断采用UTF-8替换解码，正式JSON/CSV仍严格校验编码。
 
+Structured batch failures retain captured bridge stderr as an exception note,
+including replacement decoding of invalid diagnostic UTF-8. The original error
+message and receipt remain unchanged. This preserves receipt-writer diagnostics;
+it neither changes child draining nor proves the cause of an earlier missing receipt.
+
 After a caught scheduler stdin failure, diagnostic collection uses the existing
 transaction allowance. Expiry permits termination of that owned scheduler and a
 separate two-second cleanup allowance; unavailable exit or stream evidence is
