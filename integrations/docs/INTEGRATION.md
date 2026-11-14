@@ -1272,6 +1272,27 @@ on the corrected source in 1.086 seconds (6.540 guarded wall), without skips.
 The failed output is retained with its original status and released leases;
 this software correction does not promote it to a published scalar product.
 
+The fresh export on `6a04fbde`, run
+`20261114_190503__analysis__comsol__assembly-scalar-5a9168114f4f`, succeeded with
+the same grid and saved solution: 5,312,307 nodes, 3,769,772 finite FEM samples,
+1,542,535 masked samples, zero conductor filling and zero Compute. Each PA is
+42,498,512 bytes. The native writer exited, leases were released and source guards
+matched. A separate source-derived 71-member Assembly witness reproduced the
+saved carrier's complete 45-group voltage request exactly. This is coarse
+carrier sampling, not a complete dynamic basis or valid IP derivative stencil.
+
+`resolve_ip_mr_scalar_basis` admits sixteen explicit published scalar products,
+or seventeen with external RF, against the actual source-derived basis planner.
+SFI and IP–MR share the same per-sample lineage, cold-readback, PA/mask header and
+support validation. The joint binding retains exact IP group/index/coefficient and
+RF signature metadata. Eighteen actual-source SFI/joint parents passed together
+in 244.525 seconds, with unchanged source guards; configured Ruff passed.
+Evidence is retained in workspace
+`.tools/phase04-codex-takeover-20261109/v87-ip-mr-scalar-admission-agent11-r1`.
+This is identity admission only. Equal requested mesh controls do not establish
+identical discrete meshes; actual fixed-mesh response lineage, refinement-window
+support and the complete native tracking owner remain open.
+
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
 and checkout guards: 386 parent successes, 254 subtest successes and one inherited
