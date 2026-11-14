@@ -199,17 +199,19 @@ def _checkpoint(session: RunSession, stage: str) -> None:
 def _prepare_frozen_request(session: RunSession, scientific_records: dict) -> tuple[Path, list[dict]]:
     """Freeze one provider and bind both worker actions before starting either."""
     from msplatform.execution.inputs import enumerate_python_sources, freeze_python_package
+    from msplatform.components.registry import provider_descriptor
     from msplatform.execution.recorded_file_removal import write_json_atomic
     from msplatform.io.manifest_records import file_record
     provider = _source_package_root()
     source_root = provider.parent
-    # Freeze the RF worker's scientific and execution packages, including the
-    # component initializer's explicit catalog/model dependencies.
+    # The selected RF provider declares its component package closure; the
+    # existing enumerator owns path validation and resource selection.
+    component_roots = [name.replace('.', '/') for name in provider_descriptor('rf_multipole').source_closure]
     selected = enumerate_python_sources(source_root, package_roots=[
         'msplatform/analysis', 'msplatform/contracts', 'msplatform/execution', 'msplatform/io',
-        'msplatform/ion_release', 'msplatform/components/rf_multipole',
-        'msplatform/workflows/rf_mass_filter',
-    ], module_paths=['msplatform/components/catalog.py', 'msplatform/components/model.py'],
+        'msplatform/ion_release', *component_roots, 'msplatform/workflows/rf_mass_filter',
+    ], module_paths=['msplatform/components/catalog.py', 'msplatform/components/model.py',
+                     'msplatform/components/registry.py'],
         provider_root=provider.name, resource_suffixes=('.json', '.ps1', '.lua', '.m', '.gem', '.iob'),
         require_python_source=True)
     code_root = session.input_dir / 'analysis_code'

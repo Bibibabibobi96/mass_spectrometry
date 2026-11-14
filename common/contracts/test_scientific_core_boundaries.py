@@ -21,7 +21,7 @@ PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection
                     "dual_pressure_rectilinear_ion_processor"}
 # Provider dispatch belongs to components; neutral Assembly data may not import
 # individual providers merely because this shared traversal exists.
-COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query"}
+COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query", "registry"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
@@ -250,7 +250,13 @@ def component_dependency_errors(sources: dict[str, str], declarations: dict[str,
                     targets.add(_dynamic_import_target(node, package))
                 except ValueError as error:
                     errors.append(f"{module}: {error}")
+        neutral = {'msplatform.components.registry', 'msplatform.components.registry.ProviderDescriptor',
+                   'msplatform.components.registry.register_provider', 'msplatform.components.registry.provider_descriptor',
+                   'msplatform.components.registry.project_descriptor', 'msplatform.components.registry.registered_providers',
+                   'msplatform.components.model', 'msplatform.components.model.ResolvedComponent'}
         for target in targets:
+            if target in neutral:
+                continue
             path = target.split(".")
             if len(path) > 2 and path[:2] == ["msplatform", "components"] and path[2] != provider:
                 if path[2] not in declarations[provider]:
@@ -292,6 +298,18 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
                 source = (CORE_ROOT / relative).read_text(encoding="utf-8")
                 _, _, targets = _import_errors(ast.parse(source), module, set(), module.split(".")[1], module)
                 self.assertFalse([target for target in targets if target.startswith(forbidden)])
+
+    def test_neutral_registration_imports_do_not_allow_provider_edges(self):
+        module = 'msplatform.components.rf_multipole.registration'
+        for source in ('from msplatform.components.registry import ProviderDescriptor',
+                       'from msplatform.components.model import ResolvedComponent'):
+            with self.subTest(source=source):
+                self.assertEqual(component_dependency_errors({module:source}, dict(PROVIDER_DEPENDENCIES)), [])
+        for source in ('import msplatform.components.registry.unlisted',
+                       'from msplatform.components.catalog import resolve_component',
+                       'from msplatform.components.single_reflection_oa_tof import provider'):
+            with self.subTest(source=source):
+                self.assertTrue(component_dependency_errors({module:source}, dict(PROVIDER_DEPENDENCIES)))
 
     def test_declarative_cycles_and_undeclared_python_provider_edges_are_rejected(self):
         for graph in ({"rf": ("oa",), "oa": ("rf",)}, {"rf": ("missing",)}, {"rf": ("rf",)}):

@@ -61,6 +61,21 @@ tampering fail closed. Paired-static minimal frozen materialization no longer
 requires unrelated `candidate_field.m`, and resource checks compare ownership,
 bytes and task content rather than checkout absolute paths. These are directed
 software checks, not a new native CAD/COMSOL qualification.
+
+Component resolution and complete physical-member traversal now use registered
+provider callbacks instead of central provider/project switch bodies. Each
+existing provider retains its canonical source validation and physical members;
+IP CSG projection and MR's real OA matching checks belong to those providers.
+A normally registered test component enters the existing Assembly, STEP planning
+and COMSOL geometry projection without adding a central dispatch branch.
+Two instances with different parameters and renamed/reordered declarations retain
+the same world geometry; invalid ports, source changes and unsupported shapes
+remain rejected. This establishes neutral geometry extensibility, not generic
+SIMION field/tracking support. Custom registration is process-local; durable
+external-provider cold execution remains open. The RF and TOF worker freezers
+must carry the registry and consume their selected provider's declared closure;
+missing frozen dependencies never fall back to the author tree.
+
 Frontend aperture discretization and its frozen declarations now use the installed
 SIMION backend directly; the former common aperture module bridge is retired.
 The one- and three-instance structural IOB seeds now belong to the existing

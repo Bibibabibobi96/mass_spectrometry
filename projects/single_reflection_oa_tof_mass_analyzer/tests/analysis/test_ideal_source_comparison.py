@@ -374,7 +374,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
                     package = provider / relative
                     package.mkdir(parents=True, exist_ok=True)
                     (package / "__init__.py").write_text("", encoding="utf-8")
-                for relative in ("components/catalog.py", "components/model.py"):
+                for relative in ("components/catalog.py", "components/model.py", "components/registry.py"):
                     (provider / relative).write_text("", encoding="utf-8")
                 source = provider / "components/single_reflection_oa_tof/selected_science.py"
                 source.write_text("VALUE = 1\n", encoding="utf-8")

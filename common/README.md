@@ -47,6 +47,17 @@ Changing a source radius or changing derived drive/rod data with a new hash
 cannot reuse a stale counterpart. This check applies to Assembly reconstruction
 and the shared physical-member projection used by CAD and COMSOL.
 
+Register a component in the current process with
+`msplatform.components.registry.ProviderDescriptor` and `register_provider`.
+The descriptor supplies source resolution and validation, complete physical
+members, ports through the canonical interface, and a declared source package
+closure. Assembly traverses these callbacks without a new catalog or member
+dispatch branch. The TOF worker freezes its selected provider's declared closure
+through the existing package freezer. Custom registration is currently
+process-local: durable installed discovery and external-provider replay in a
+cold frozen worker remain open. Registration does not implement an unsupported
+geometry primitive, field boundary, drive, collision law or tracking backend.
+
 根 `pyproject.toml` 是发行边界的唯一声明：发行实际 `msplatform` 实现及显式schema／例子／GEM／PS资源，
 不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
