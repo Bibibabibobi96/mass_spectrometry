@@ -1329,13 +1329,32 @@ varied only the frozen selector: 99.328 seconds for the full-package baseline,
 changed/missing-input refusals with source/fixture guards and released resources.
 Canonical and alias receipt paths are checked against the same owned frozen
 directory after finalization; a removed alias is not treated as missing science.
-This successor still requires ordinary wheel/sdist acceptance. These timings are
+Ordinary wheel and sdist-rebuilt acceptance subsequently passed at `269e3665`:
+one parent in 949.662 seconds, with both installed consumers and their immutable
+source closure verified. The retained runner label names the earlier working
+candidate; a separate identity receipt joins all 560 authored build records to
+the clean tested commit and five generated metadata records to the retained
+sdist. The original outcome label is preserved. This does not cover later
+consumer changes or close the 900-second software target. These timings are
 neither a replicated performance estimate nor full Repository/native acceptance.
 The combined scalar/RF/Changed-selection source batch also passed all 53 parent
 tests and 68 subtests in 350.403 seconds, including this project's complete
 14-method L1 module. Source identities stayed fixed and the shared GATE released.
 The cost exceeds the narrow owner budget and remains visible; no assertions or
 failure/recovery cases were removed to reduce it.
+
+A separate single-method timing diagnostic on unchanged `269e3665` exercised
+the existing managed analysis/tamper test in 58.519 seconds with no failure,
+error or skip. Its three provider copies took 1.328 seconds in total; the five
+public process calls occupied 40.229 seconds. Frozen-package construction took
+6.244 seconds, owner preparation including that freezing 7.671 seconds, and
+finalization 3.891 seconds. These are nested inclusive intervals and must not
+be added together. The process interval includes admission, observation, input
+guards and release; it is not worker CPU time or proof of lock contention.
+Source and checkout identities remained fixed, and the shared GATE released.
+A background SIMION diagnostic was active, so this is cost attribution for one
+execution, not a controlled speed comparison. The measured copy cost does not
+justify a new provider-copy optimization; deeper process attribution is needed.
 
 ## Installed neutral particle-state comparison
 
