@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import math
 from pathlib import Path
+from typing import Any, Mapping
 from .model import require_prepared_model,model_geometry,render_model_configuration
 from .source import lua_value,canonical_clock_lua
 from .resources import native_resource_path
@@ -34,11 +35,87 @@ def validate_rf_flight(flight,*,requires_rf):
     return dict(copy.deepcopy(flight),tracking_kind='independent_rf')
 
 
-def render_rf_controls(model,plan,*,assets,native_sources):
+def _ip_mr_bindings(document, admission):
+    """Project an admitted basis into the existing scalar composer contract."""
+    if (not isinstance(admission,dict) or admission.get('schema_version')!=1
+            or admission.get('role')!='ip_mr_scalar_basis_binding'
+            or admission.get('model_identity_sha256')!=document['model_identity_sha256']):
+        raise ValueError('matching admitted IP–MR scalar basis required')
+    bases=admission['bases']
+    rows=[row for row in document['native_drive_rows'] if row['kind']=='ip_schedule']
+    rf=[row for row in document['native_drive_rows'] if row['kind']=='rf']
+    if len(rows)!=15 or {row['schedule_index'] for row in rows}!=set(range(1,16)):
+        raise ValueError('complete explicit IP schedule group mapping required')
+    groups=[dict(instance_id=row['instance_id'],electrode_group_id=row['electrode_group_id'],
+        schedule_index=row['schedule_index'],coefficient='model_drive.evaluate_at.voltage_v') for row in rows]
+    if admission.get('ip_groups')!=groups:
+        raise ValueError('admitted IP group/index mapping differs from model')
+    if rf:
+        row=rf[0];rf_identity=dict(instance_id=row['instance_id'],waveform=row['waveform'],
+            frequency_hz=row['frequency_hz'],phase_rad=row['phase_rad'],coefficient='dimensionless_rf_waveform')
+        if admission.get('rf')!=rf_identity:
+            raise ValueError('admitted RF signature differs from model')
+    elif admission.get('rf') is not None:
+        raise ValueError('admitted RF signature differs from model')
+    expected={'carrier'}|{'ip_'+str(i) for i in range(1,16)}|({'rf_reference'} if rf else set())
+    if set(bases)!=expected:
+        raise ValueError('admitted scalar basis coverage differs from model')
+    records=[]
+    def binding(name):
+        item=bases[name];grid=item['grid'];selected=item['records']
+        records.extend(copy.deepcopy(list(selected.values())))
+        projected = dict(mode='comsol_static_scalar_v',scalar_pa=selected['field_v']['path'],
+            valid_pa=selected['field_valid']['path'],origin_mm=grid['origin_mm'],pitch_mm=grid['pitch_mm'],
+            dimensions=grid['dimensions'],ideal_sheet_projection=item['ideal_sheet_projection'])
+        if item.get('refinement_windows'):
+            projected['refinement_windows'] = []
+            for level in item['refinement_windows']:
+                records.extend(copy.deepcopy(list(level['records'].values())))
+                window_grid, window_records = level['grid'], level['records']
+                projected['refinement_windows'].append(dict(
+                    name=level['name'], active_box_mm=level['active_box_mm'], mode='comsol_static_scalar_v',
+                    scalar_pa=window_records['field_v']['path'], valid_pa=window_records['field_valid']['path'],
+                    origin_mm=window_grid['origin_mm'], pitch_mm=window_grid['pitch_mm'],
+                    dimensions=window_grid['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection']))
+        return projected
+    result=dict(carrier=binding('carrier'),ip_unit_volt=[dict(instance_id=row['instance_id'],
+        electrode_group_id=row['electrode_group_id'],binding=binding('ip_'+str(row['schedule_index']))) for row in rows])
+    if rf:
+        row=rf[0];signature=dict(waveform=row['waveform'],frequency_hz=row['frequency_hz'],phase_rad=row['phase_rad'],
+            phase_reference_instrument_time_us=document['drive']['clock']['phase_reference_instrument_time_us'])
+        result['rf_reference']=dict(binding=binding('rf_reference'),signature=signature)
+    return result,records
+
+def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[str, Any],
+                       native_sources: Mapping[str, str], scalar_bindings: dict[str, Any] | None = None,
+                       slot_domains: list[str | None] | None = None) -> dict[str, Any]:
+    """Render the existing Program with explicit scalar and native-slot bindings."""
     document=require_prepared_model(model)
     geometry=dict(model_geometry(model).frontend_geometry,native_frame_id=document['native_frame_id'])
-    joint=plan['flight'].get('tracking_kind')=='rf_ip'
-    names=['parent'] if joint else geometry['composition_plan']['scope']['instance_ids']
+    kind=plan['flight'].get('tracking_kind')
+    ip_mr=kind=='ip_mr'
+    joint=kind in {'rf_ip','ip_mr'}
+    if ip_mr:
+        if geometry.get('role')!='simion_ip_mr_complete_geometry':
+            raise ValueError('IP–MR tracking requires complete selected geometry')
+        expected=set(geometry['asset_components'])
+        if (not isinstance(slot_domains,list) or len(slot_domains)!=len(expected)+1
+                or sum(value is None for value in slot_domains)!=1
+                or len(set(value for value in slot_domains if value is not None))!=len(expected)
+                or set(value for value in slot_domains if value is not None)!=expected):
+            raise ValueError('explicit workbench slot domains must cover each selected asset once')
+        if not isinstance(scalar_bindings,dict):
+            raise ValueError('explicit admitted IP–MR scalar bindings required')
+        if not {'scalar_field_adapter.lua','ip_mr_scalar_field.lua'} <= native_sources.keys():
+            raise ValueError('frozen IP–MR scalar resources required')
+        if 'rf_steps_per_period' not in plan['flight']:
+            raise ValueError('IP–MR HS1 requires explicit IP RF step resolution')
+        composer_bindings,scalar_records=_ip_mr_bindings(document,scalar_bindings)
+        names=copy.deepcopy(slot_domains)
+    else:
+        if scalar_bindings is not None or slot_domains is not None:
+            raise ValueError('IP–MR inputs require IP–MR tracking')
+        names=['parent'] if joint else geometry['composition_plan']['scope']['instance_ids']
     ids=[row['particle_id'] for row in plan['rows']]
     if not ids:raise ValueError('zero RF cohort has no Program')
     config=render_model_configuration(model)
@@ -66,6 +143,14 @@ def render_rf_controls(model,plan,*,assets,native_sources):
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
     program=prefix+resource('rf_tracking.lua')
+    if ip_mr:
+        adapter=resource('scalar_field_adapter.lua')
+        composer=resource('ip_mr_scalar_field.lua')
+        program+='\nlocal ip_mr_scalar_adapter=(function()\n'+adapter+'\nend)()\n'
+        program+='local ip_mr_scalar_module=(function()\n'+composer+'\nend)()\n'
+        program+='local ip_mr_scalar=ip_mr_scalar_module.new(ip_mr_scalar_adapter,rf_consumer,rf_kernel,'+lua_value(composer_bindings)+')\n'
+        program+="function segment.efield_adjust()\n  local instance=assert(simion.wb.instances[ion_instance],'selected instance required')\n"
+        program+='  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=ip_mr_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,single_flight_instrument_time_us())\nend\n'
     if joint:
         options=plan['hs1']
         if set(options)!={'vendor_path','bath_path','outer_path','query_frame_id','numerics'}:
@@ -123,4 +208,4 @@ def render_rf_controls(model,plan,*,assets,native_sources):
             absolute_deadlines_us=[plan['absolute_deadlines_us_by_particle_id'][pid] for pid in ids]))
     if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
-        immutable_input_records=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]],flight=plan['flight'])
+        immutable_input_records=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]+(scalar_records if ip_mr else []),flight=plan['flight'])

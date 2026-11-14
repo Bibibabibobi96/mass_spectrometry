@@ -1347,6 +1347,24 @@ two exact diagnostic scripts were retired after closure (9,943 B); requests,
 guards, native files and evidence remain. This proves one same-mesh response,
 not the full 17-response family, interpolation coverage, convergence or Fly.
 
+The next candidate extends existing scalar admission with explicit ordered named
+sampling windows. Each window revalidates every basis against the same published
+workpoint and requires a one-node support halo; overlaps use the existing Lua
+adapter's first match without fallback from an invalid selected mask. SFI tracking
+forwards these windows to the Program and includes every level in immutable input,
+producer protection and recovery applicability. The IP–MR renderer also serializes
+all levels and their input records, but its public tracking guard remains closed
+pending the complete field/collision owner. The combined frozen-candidate check
+passed 41 parents and 11 subtests with zero failures/errors/skips in 708.380 s
+(708.938 guarded wall). It covered SFI owner/default/recovery, all 17 published
+response fixtures, three/four-asset emitted Lua and all seven Changed paths.
+All 2,742 source/index identities stayed unchanged; Ruff and documentation
+structure passed. The run overlapped the separately managed COMSOL compression
+diagnostic, so this is not a performance comparison; the original owner and
+15-minute budgets remain open. Ordinary installation of these windows remains
+pending. Synthetic publications and emitted Lua do not establish actual
+fixed-mesh lineage or native coverage.
+
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
 and checkout guards: 386 parent successes, 254 subtest successes and one inherited

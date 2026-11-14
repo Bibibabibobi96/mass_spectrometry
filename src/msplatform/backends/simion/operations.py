@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -348,9 +349,17 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if scalar_field_basis is not None:
         admitted = graph['scalar_field_basis']
         references.append({'manifest_record': admitted['geometry_reference']['manifest']})
+        scalar_manifests = {}
         for entry in admitted['bases'].values():
-            references.append({'manifest_record': entry['reference']['manifest']})
-            references.append({'manifest_record': entry['field_solution_reference']['manifest']})
+            for level in [entry, *entry.get('refinement_windows', [])]:
+                for manifest in (level['reference']['manifest'], level['field_solution_reference']['manifest']):
+                    key = os.path.normcase(str(Path(manifest['path']).resolve()))
+                    identity = (manifest['bytes'], manifest['sha256'], manifest.get('retention_role'))
+                    if key in scalar_manifests:
+                        if scalar_manifests[key] != identity: raise ValueError('conflicting scalar producer record: ' + key)
+                        continue
+                    scalar_manifests[key] = identity
+                    references.append({'manifest_record': manifest})
     if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})

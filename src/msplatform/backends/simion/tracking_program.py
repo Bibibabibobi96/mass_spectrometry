@@ -129,6 +129,13 @@ def _instrument_common_scalar(program: str, basis: dict, adapter: str, composer:
                               valid_pa=records['field_valid']['path'], origin_mm=grid['origin_mm'],
                               pitch_mm=grid['pitch_mm'], dimensions=grid['dimensions'],
                               ideal_sheet_projection=item['ideal_sheet_projection'])
+        if item.get('refinement_windows'):
+            bindings[name]['refinement_windows'] = [dict(
+                name=level['name'], active_box_mm=level['active_box_mm'], mode='comsol_static_scalar_v',
+                scalar_pa=level['records']['field_v']['path'], valid_pa=level['records']['field_valid']['path'],
+                origin_mm=level['grid']['origin_mm'], pitch_mm=level['grid']['pitch_mm'],
+                dimensions=level['grid']['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection'])
+                for level in item['refinement_windows']]
     rf = dict(basis['rf'], phase_reference_instrument_time_us=basis['clock']['phase_reference_instrument_time_us'])
     declarations = ('local single_flight_scalar_adapter=(function()\n' + adapter + '\nend)()\n'
                     + 'local single_flight_scalar_module=(function()\n' + composer + '\nend)()\n'

@@ -169,3 +169,38 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
                            'product_id': item.product_id} if resolve_reference else item.reference)
     return dict(reference=selected_reference, field_solution_reference=source_ref, grid=geometry, records=records,
                 ideal_sheet_projection=_ideal_sheet_projection(projection, geometry))
+
+
+def attach_refinement_windows(bindings: dict[str, Any], refinement_windows: list[Mapping[str, Any]] | None, *,
+                              admit_level: Callable[[Any], dict[str, Any]]) -> None:
+    """Apply the existing ordered named windows to every admitted basis."""
+    if refinement_windows is None:
+        return
+    if not isinstance(refinement_windows, list): raise ValueError('ordered scalar refinement windows must be a list')
+    names = set()
+    for window in refinement_windows:
+        if not isinstance(window, Mapping) or set(window) != {'name', 'active_box_mm', 'samples'}:
+            raise ValueError('scalar refinement window requires name, active box and samples')
+        label = window['name']; box = window['active_box_mm']
+        if not isinstance(label, str) or not label.strip() or label in names:
+            raise ValueError('scalar refinement window names must be nonempty and unique')
+        names.add(label)
+        if (not isinstance(box, (list, tuple)) or len(box) != 3 or
+            any(not isinstance(axis, (list, tuple)) or len(axis) != 2 or
+                any(type(value) not in (int, float) or not math.isfinite(value) for value in axis) or axis[0] >= axis[1] for axis in box)):
+            raise ValueError('scalar refinement active box must contain three finite ordered intervals')
+        levels = admit_level(window['samples'])['bases']
+        if set(levels) != set(bindings): raise ValueError('scalar refinement basis coverage differs')
+        for name, base in bindings.items():
+            level = levels[name]
+            left, right = base['field_solution_reference']['manifest'], level['field_solution_reference']['manifest']
+            if any(left[k] != right[k] for k in ('bytes', 'sha256')):
+                raise ValueError('scalar refinement source workpoint differs: ' + name)
+            grid = level['grid']
+            for i, (lo, hi) in enumerate(box):
+                qlo=(lo-grid['origin_mm'][i])/grid['pitch_mm'][i]
+                qhi=(hi-grid['origin_mm'][i])/grid['pitch_mm'][i]
+                if math.floor(qlo)-1 < 0 or math.ceil(qhi)+1 >= grid['dimensions'][i]:
+                    raise ValueError('scalar refinement active box lacks support halo: ' + label)
+            level.update(name=label, active_box_mm=copy.deepcopy(box))
+            base.setdefault('refinement_windows', []).append(level)

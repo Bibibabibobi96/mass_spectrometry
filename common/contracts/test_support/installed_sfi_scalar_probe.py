@@ -46,10 +46,23 @@ def run(fixture, leaf, timer, arm, blocked_roots):
     for reference in selection['samples'].values():
         selected_sample=open_artifact(reference,expected_kind='scalar_field_samples')
         expected_scalar_paths.update(selected_sample.data_path(key).resolve() for key in ('field_v','field_valid','grid'))
+    windows=selection.get('refinement_windows',[])
+    if windows:
+        assert [window['name'] for window in windows]==['first','second','repeat_first']
+        assert windows[0]['samples']==windows[2]['samples']
+        assert windows[0]['samples']!=windows[1]['samples']
+        for window in windows[:2]:
+            for reference in window['samples'].values():
+                sample=open_artifact(reference,expected_kind='scalar_field_samples')
+                expected_scalar_paths.update(sample.data_path(key).resolve() for key in ('field_v','field_valid','grid'))
+        assert len(expected_scalar_paths)==27, len(expected_scalar_paths)
+    assert len(observed)==3, len(observed)
     for item in observed:
         options=item[0] if isinstance(item,tuple) else item
-        guarded={Path(row['path']).resolve() for row in options['immutable_input_records']}
-        assert expected_scalar_paths <= guarded, expected_scalar_paths-guarded
+        records=options['immutable_input_records']
+        paths=[Path(row['path']).resolve() for row in records]
+        assert len(paths)==len(set(paths)), 'native immutable inputs contain duplicate paths'
+        assert expected_scalar_paths <= set(paths), expected_scalar_paths-set(paths)
     assert result.kind=='trajectory_result'
     run=result.manifest_location.parent
     manifest=json.loads(result.manifest_location.read_text(encoding='utf8'))
@@ -79,6 +92,28 @@ def run(fixture, leaf, timer, arm, blocked_roots):
     assert set(basis['bases'])==set(selection['samples'])
     for name,entry in selection['samples'].items():
         assert basis['bases'][name]['reference']==entry,name
+    if windows:
+        from msplatform.backends.simion.tracking_program import _lua_value
+        request=json.loads((run/'inputs/execution_request.json').read_text(encoding='utf8'))
+        sources=request['capacity']['source_references']
+        for name in ('carrier','rf_reference','pulse_delta'):
+            levels=basis['bases'][name]['refinement_windows']
+            assert [level['name'] for level in levels]==['first','second','repeat_first']
+            for index,window in enumerate(windows):
+                assert levels[index]['reference']==window['samples'][name]
+            assert levels[0]['reference']==levels[2]['reference'] and levels[0]['reference']!=levels[1]['reference']
+            for level in levels[:2]:
+                ref=level['reference']['manifest']
+                assert sum(row.get('manifest_record')==ref for row in sources)==1
+                for key in ('field_v','field_valid','grid'):
+                    assert inputs['scalar_'+name+'_window_'+str(levels.index(level)+1)+'_'+key]==level['records'][key]
+        program_path=run/'simion/tracking/instrument.lua'
+        program_records=[row for row in manifest['outputs'] if record_path(row,base_dir=run)==program_path]
+        assert len(program_records)==1
+        verify_record('installed scalar tracking program',program_records[0],base_dir=run)
+        program=program_path.read_text(encoding='utf8')
+        positions=[program.index('name='+_lua_value(window['name'])) for window in windows]
+        assert positions==sorted(positions) and len(set(positions))==3
     collection=json.loads(result.data_path('collection').read_text(encoding='utf8'))
     assert collection['original_mother']['mother_particle_ids']==fixture['expected_particle_ids']
     # Whole-unit recovery must retain the same basis and mother, with no native replay.
@@ -100,6 +135,17 @@ def run(fixture, leaf, timer, arm, blocked_roots):
                     expected='byte count changed' if mode=='tamper' else 'is missing'
                     assert expected in str(error),str(error)
                 else: raise AssertionError('changed scalar PA accepted')
+        finally: selected.write_bytes(original)
+        assert selected.read_bytes()==original
+    if windows:
+        selected=Path(fixture['tamper_scalar_window_pa']); original=selected.read_bytes()
+        try:
+            selected.write_bytes(original+b'\x00')
+            with patch.object(run_session,'run_observed_process',side_effect=AssertionError('unexpected native leaf')):
+                try: recorded_birth.track_recorded_birth(**call)
+                except AssertionError as error:
+                    assert 'byte count changed' in str(error) and str(selected) in str(error),str(error)
+                else: raise AssertionError('changed window-only scalar PA accepted')
         finally: selected.write_bytes(original)
         assert selected.read_bytes()==original
     # Physical removal is confined to this arm and restored byte-for-byte.

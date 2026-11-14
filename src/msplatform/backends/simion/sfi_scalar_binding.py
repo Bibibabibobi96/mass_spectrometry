@@ -16,7 +16,7 @@ from msplatform.backends.simion.tracking_program import _bound_tracking_model, v
 from msplatform.io.manifest_records import record_path, validate_file_record, verify_record
 from msplatform.results.artifacts import OpenedArtifact
 from .scalar_sample_binding import _ideal_sheet_projection as _ideal_sheet_projection
-from .scalar_sample_binding import _read, _small_product, verify_scalar_sample
+from .scalar_sample_binding import _read, _small_product, verify_scalar_sample, attach_refinement_windows
 
 _NAMES = ('carrier', 'rf_reference', 'pulse_delta')
 
@@ -45,7 +45,8 @@ def _group_vectors(drive: Mapping[str, Any]) -> tuple[dict[str, dict[tuple[str, 
 
 def resolve_sfi_scalar_basis(*, model: Any, geometry: Mapping[str, Any], field_design: Mapping[str, Any],
                              flight: Mapping[str, Any], geometry_artifact: Mapping[str, Any] | OpenedArtifact,
-                             samples: Mapping[str, Mapping[str, Any] | OpenedArtifact]) -> dict[str, Any]:
+                             samples: Mapping[str, Mapping[str, Any] | OpenedArtifact],
+                             refinement_windows: list[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Verify public geometry and three scalar products for the existing SFI model.
 
     All paths remain owned by their producers; callers must protect returned
@@ -93,6 +94,9 @@ def resolve_sfi_scalar_basis(*, model: Any, geometry: Mapping[str, Any], field_d
             if shared_request is not None and shared_request != other: raise ValueError('scalar BVP operator or mesh differs')
             shared_request = other
         bindings[name] = verify_scalar_sample(samples[name], projection, check_workpoint=check_workpoint)
+    attach_refinement_windows(bindings, refinement_windows, admit_level=lambda level: resolve_sfi_scalar_basis(
+        model=model, geometry=geometry, field_design=field_design, flight=flight,
+        geometry_artifact=geometry_artifact, samples=level))
     return dict(model_identity_sha256=document['model_identity_sha256'], clock=copy.deepcopy(document['drive']['clock']),
                 pulse=copy.deepcopy(document['drive']['pulse']), rf=rf, carrier_exterior_voltage_v=carrier_exterior,
                 geometry_reference=geometry_artifact.reference if isinstance(geometry_artifact, OpenedArtifact) else copy.deepcopy(dict(geometry_artifact)), geometry_execution_request=dict(record, path=str(path)),

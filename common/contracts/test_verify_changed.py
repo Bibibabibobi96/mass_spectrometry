@@ -32,6 +32,23 @@ FROZEN_INPUT_CONTRACT_TESTS = {
 
 
 class ChangedGateContractTests(unittest.TestCase):
+    def test_scalar_windows_select_admission_program_and_owner_consumers(self):
+        required = {
+            'common.contracts.test_sfi_scalar_refinement',
+            'common.contracts.test_ip_mr_scalar_windows',
+            'common.contracts.test_ip_mr_tracking_program',
+        }
+        for name in ('scalar_sample_binding', 'sfi_scalar_binding', 'ip_mr_scalar_binding',
+                     'tracking_program', 'rf_tracking_program', 'tracking_execution', 'operations'):
+            with self.subTest(path=name):
+                request, _ = self.plan('-ChangedPath', 'src/msplatform/backends/simion/' + name + '.py')
+                modules = [value.removesuffix('.py').replace('/', '.')
+                           for row in request['stages']
+                           if row['selected'] and row['name'].startswith('common_contracts')
+                           for value in row['command']['arguments'][2:]]
+                for module in required:
+                    self.assertEqual(modules.count(module), 1)
+
     def test_stationary_workpoint_selects_actual_contract_and_recovery(self):
         prefix = "src/msplatform/backends/comsol/"
         required = {

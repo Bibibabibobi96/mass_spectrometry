@@ -7,7 +7,7 @@ from typing import Any
 
 from msplatform.assembly.model import Assembly
 from msplatform.backends.comsol.ip_mr_scalar_basis import project_ip_mr_scalar_basis
-from .scalar_sample_binding import _read, _small_product, verify_scalar_sample
+from .scalar_sample_binding import _read, _small_product, verify_scalar_sample, attach_refinement_windows
 from msplatform.io.manifest_records import record_path, validate_file_record, verify_record
 from msplatform.results.artifacts import OpenedArtifact
 
@@ -15,7 +15,8 @@ from msplatform.results.artifacts import OpenedArtifact
 def resolve_ip_mr_scalar_basis(*, model: Any, assembly: Assembly,
                                geometry_artifact: Mapping[str, Any] | OpenedArtifact,
                                operator: Mapping[str, Any],
-                               samples: Mapping[str, Mapping[str, Any] | OpenedArtifact]) -> dict[str, Any]:
+                               samples: Mapping[str, Mapping[str, Any] | OpenedArtifact],
+                               refinement_windows: list[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Bind all actual carrier/unit/RF products to one complete source-derived model.
 
     The admission does not assert interpolation coverage or scientific qualification.
@@ -52,6 +53,8 @@ def resolve_ip_mr_scalar_basis(*, model: Any, assembly: Assembly,
         if common_grid is not None and binding['grid'] != common_grid:
             raise ValueError('scalar basis grids differ')
         common_grid = binding['grid']; bindings[name] = binding
+    attach_refinement_windows(bindings, refinement_windows, admit_level=lambda level: resolve_ip_mr_scalar_basis(
+        model=model, assembly=assembly, geometry_artifact=geometry_artifact, operator=operator, samples=level))
     reference = ({'manifest': dict(geometry_artifact.reference['manifest'], path=str(manifest_path)),
                   'product_id': geometry_artifact.product_id} if isinstance(geometry_artifact, OpenedArtifact)
                  else copy.deepcopy(dict(geometry_artifact)))

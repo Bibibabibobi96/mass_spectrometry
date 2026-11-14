@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import os
 from pathlib import Path
 from typing import Mapping
 
@@ -140,14 +141,15 @@ def _resolve_scalar_basis(source, model, plan, selection):
     """Admit selected scalar products against the actual source-free SFI model."""
     import json
     from .sfi_scalar_binding import resolve_sfi_scalar_basis
-    if not isinstance(selection, Mapping) or set(selection) != {'geometry_artifact', 'samples'}:
+    if not isinstance(selection, Mapping) or not {'geometry_artifact', 'samples'} <= set(selection) or set(selection) - {'geometry_artifact', 'samples', 'refinement_windows'}:
         raise ValueError('scalar basis requires explicit geometry_artifact and samples')
     if plan['propagation']['scope'] != 'continuous_assembly' or not plan['rows']:
         raise ValueError('scalar basis requires a nonempty continuous original-birth flight')
     geometry = model_geometry(model, downstream_drive=True).frontend_geometry
     design = json.loads(source.data_path('field_design').read_text(encoding='utf-8-sig'))
     return resolve_sfi_scalar_basis(model=model, geometry=geometry, field_design=design, flight=plan['flight'],
-                                    geometry_artifact=selection['geometry_artifact'], samples=selection['samples'])
+                                    geometry_artifact=selection['geometry_artifact'], samples=selection['samples'],
+                                    refinement_windows=selection.get('refinement_windows'))
 
 
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,
@@ -406,6 +408,16 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     if scalar is not None:
         for item in scalar['bases'].values():
             guards.extend(item['records'].values())
+            for level in item.get('refinement_windows', []): guards.extend(level['records'].values())
+        unique = {}; distinct = []
+        for record in guards:
+            key = os.path.normcase(str(Path(record['path']).resolve()))
+            identity = (record['bytes'], record['sha256'], record.get('retention_role'))
+            if key in unique:
+                if unique[key] != identity: raise ValueError('conflicting immutable input record: ' + key)
+                continue
+            unique[key] = identity; distinct.append(record)
+        guards = distinct
     program = build_successor_program({key:document['components_resolved'][key] for key in multipoles},
         field_design,document['components_resolved'][tof],frontend_geometry=geometry,flight=plan['flight'],
         birth_times_us=[row['instrument_time_us'] for row in plan['rows']],particle_ids=ids,
@@ -820,12 +832,13 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         _protected_source(session, admitted['geometry_reference']['manifest'],
                           required_paths=[admitted['geometry_execution_request']['path']])
         for name, item in admitted['bases'].items():
-            _protected_source(session, item['reference']['manifest'],
-                              required_paths=[record['path'] for record in item['records'].values()])
-            _protected_source(session, item['field_solution_reference']['manifest'])
-            for key, record in item['records'].items():
-                verify_record('selected scalar ' + name + ' ' + key, record)
-                session.add_input('scalar_' + name + '_' + key, record)
+            for index, level in enumerate([item, *item.get('refinement_windows', [])]):
+                _protected_source(session, level['reference']['manifest'],
+                                  required_paths=[record['path'] for record in level['records'].values()])
+                _protected_source(session, level['field_solution_reference']['manifest'])
+                for key, record in level['records'].items():
+                    verify_record('selected scalar ' + name + ' ' + key, record)
+                    session.add_input('scalar_' + name + ('_window_' + str(index) if index else '') + '_' + key, record)
         small('scalar_field_basis', session.input_dir/'scalar_field_basis.json', value=admitted)
     if birth_source_authority is not None:
         authority = validate_birth_authority(birth_source_authority, particles)

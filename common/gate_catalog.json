@@ -1467,6 +1467,20 @@
           {
             "matches": [
               {
+                "regex": "^src/msplatform/backends/simion/(?:scalar_sample_binding|sfi_scalar_binding|ip_mr_scalar_binding|tracking_program|rf_tracking_program|tracking_execution|operations)\\.py$",
+                "reason": "scalar_refinement_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_sfi_scalar_refinement.py",
+              "common/contracts/test_ip_mr_scalar_windows.py",
+              "common/contracts/test_ip_mr_tracking_program.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "exact": "src/msplatform/execution/inputs.py",
                 "reason": "frozen_input_mechanism_changed"
               },

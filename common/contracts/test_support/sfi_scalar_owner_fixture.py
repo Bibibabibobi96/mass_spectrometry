@@ -180,6 +180,34 @@ def registered_scalar_fixture(context, budget, retention):
     return case
 
 
+def publish_refinement_samples(case, label):
+    """Create distinct registered 7³ software-only samples for each basis."""
+    from msplatform.backends.simion.standalone_pa_composition import PaHeader
+    from msplatform.results.artifacts import open_artifact
+
+    result = {}
+    for name, reference in case.sample_refs.items():
+        item = open_artifact(reference, expected_kind="scalar_field_samples")
+        data = {}
+        for key in item.data_records:
+            if key == "field_solution_manifest":
+                continue
+            path = item.data_path(key)
+            data[key] = path.read_bytes() if key in ("field_v", "field_valid") else json.loads(path.read_text(encoding="utf-8"))
+        data["grid"].update(origin_mm=[-2., -2., -2.], pitch_mm=[1., 1., 1.],
+                            dimensions=[7, 7, 7], point_count=343, maximum_mm=[4., 4., 4.])
+        data["report"].update(data["grid"])
+        data["report"].update(fem_valid=343, invalid_count=0)
+        pa = PaHeader(-2, 1, 10000., 7, 7, 7, 1 << 28, 1., 1., 1.).pack() + bytes(343 * 8)
+        data["field_v"] = pa
+        data["field_valid"] = pa
+        manifest = json.loads(item.manifest_location.read_text(encoding="utf-8"))
+        result[name] = case.publish("window-" + label + "-" + name, "scalar_field_samples", data, item.metadata,
+            linked={"field_solution_manifest": item.data_records["field_solution_manifest"],
+                    "field_solution_model": manifest["inputs"]["field_solution_model"]})
+    return result
+
+
 def inert_native_leaf(actual_process, observed):
     """Replace only the commercial executable with a controlled Python child."""
 
@@ -280,7 +308,7 @@ def publish_sfi_fields(context, budget, retention, artifact):
     return {"manifest": result["manifest"], "product_id": "fields"}
 
 
-def make_fixture(root: Path):
+def make_fixture(root: Path, *, refinement_windows: bool = False):
     """Construct same-example preparation, fields and registered scalar producers."""
     from importlib.resources import files
     from common.contracts import test_simion_tracking_execution as tracking_test
@@ -293,6 +321,8 @@ def make_fixture(root: Path):
 
     root = Path(root).resolve()
     context, budget, retention = make_context(root)
+    if type(refinement_windows) is not bool:
+        raise ValueError("refinement_windows must be a boolean")
     scalar = registered_scalar_fixture(context, budget, retention)
     try:
         case = example_api.load_example("rf_oatof_functional_v1")
@@ -391,11 +421,23 @@ def make_fixture(root: Path):
             tracking.doCleanups()
         from msplatform.results.artifacts import open_artifact
         carrier = open_artifact(scalar.sample_refs["carrier"], expected_kind="scalar_field_samples")
+        selection = dict(geometry_artifact=scalar.geometry_ref, samples=scalar.sample_refs)
+        window_carrier = None
+        if refinement_windows:
+            first = publish_refinement_samples(scalar, "a")
+            second = publish_refinement_samples(scalar, "b")
+            selection["refinement_windows"] = [
+                dict(name="first", active_box_mm=[[0., .5]] * 3, samples=first),
+                dict(name="second", active_box_mm=[[0., .5]] * 3, samples=second),
+                dict(name="repeat_first", active_box_mm=[[0., .5]] * 3, samples=copy.deepcopy(first)),
+            ]
+            window_carrier = str(open_artifact(first["carrier"], expected_kind="scalar_field_samples").data_path("field_v"))
         return dict(
             tamper_scalar_pa=str(carrier.data_path("field_v")),
             preparation_manifest=result["manifest"],
             fields=field_ref,
-            scalar_field_basis=dict(geometry_artifact=scalar.geometry_ref, samples=scalar.sample_refs),
+            scalar_field_basis=selection,
+            tamper_scalar_window_pa=window_carrier,
             expected_particle_ids=list(range(1, 101)),
             species_id="inert_fixture_species",
             context=dict(

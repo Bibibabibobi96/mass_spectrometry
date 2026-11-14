@@ -7423,7 +7423,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             for index in range(2):
                 scalar_root = Path(tempfile.mkdtemp(prefix='installed-sfi-scalar-owner-' + str(index) + '-')).resolve()
                 print('INSTALLED_SFI_SCALAR_FIXTURE_ROOT=' + str(scalar_root), flush=True)
-                sfi_scalar_fixtures.append(sfi_scalar_owner_fixture.make_fixture(scalar_root))
+                sfi_scalar_fixtures.append(sfi_scalar_owner_fixture.make_fixture(scalar_root, refinement_windows=True))
             rf_ip_fixtures = []
             for index in range(2):
                 rf_ip_root = root / ('rf-ip-inert-' + str(index))
