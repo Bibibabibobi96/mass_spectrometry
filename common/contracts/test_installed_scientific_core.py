@@ -1671,7 +1671,7 @@ for name, count, digest in (
     ('build_iob.lua', 1260, 'ea609486410f5d8a388cc51a9df193625b8f00356b8a78ce354c222d9eff35d6'),
     ('build_dirichlet_patch_operating_pa.lua', 5359, 'ae69a4ebb153f21652d69a712cab9fe9a19fa4b70c03dfb343f8d169231ea7dd'),
     ('export_standalone_pa.lua', 2592, '2152afe2af738c9cf715518847617ce858fdaef2c874aa29f44fb1f5db93924b'),
-    ('export_detached_standalone_pa.lua', 2813, '78985820fb41a696ad4097f973c5dd5888384683ad1551ba7b54bf9f66c9715b'),
+    ('export_detached_standalone_pa.lua', 5048, 'a6722d9c0e39ba10f3666eeed3111c8ad5ae07f73c1ddce6405a7ab94a287309'),
 ):
     payload = native_resource_path(name).read_bytes()
     assert len(payload) == count and hashlib.sha256(payload).hexdigest() == digest

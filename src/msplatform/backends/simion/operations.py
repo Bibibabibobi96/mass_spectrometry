@@ -318,6 +318,9 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
         if reused.metadata.get("field_representation") in {"producer_owned_rf_fractional_family", "producer_owned_oa_fractional_family", "producer_owned_static_world_fractional_family"}:
             original = reused.metadata.get("family_producer_reference", reused.reference)
             references.append({"manifest_record": original["manifest"]})
+        if reused.metadata.get("field_representation") == "producer_owned_static_world_standalone_operating_pa":
+            original = reused.metadata.get("operating_producer_reference", reused.reference)
+            references.append({"manifest_record": original["manifest"]})
     graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference)
     result = run_managed_stage(context,
         descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
@@ -388,8 +391,8 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
     if (document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry'
-            and meta.get('field_representation') != 'producer_owned_static_world_fractional_family'):
-        raise ContractError('static world tracking requires its exact published fractional field representation')
+            and meta.get('field_representation') != 'producer_owned_static_world_standalone_operating_pa'):
+        raise ContractError('static world tracking requires its published standalone operating field; fractional families must be finalized before publication')
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     ip_mr_admission = None
     if sampled_ip_mr:
@@ -462,6 +465,9 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family','producer_owned_static_world_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
+    if meta.get('field_representation') == 'producer_owned_static_world_standalone_operating_pa':
+        original = meta.get('operating_producer_reference', source.reference)
+        references.append({'manifest_record': original['manifest']})
     if recovery is not None:
         references.append({"manifest_record": recovery})
     if isinstance(packet, HandoffResult):

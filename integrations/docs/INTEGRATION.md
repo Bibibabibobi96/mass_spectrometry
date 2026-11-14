@@ -122,58 +122,68 @@ Registered-provider, both-axis-sign, parameter, source-tamper, overlap, nonround
 and unsupported-rotation cases remain covered. This is software compilation and
 witness evidence; native rotated-cylinder rasterization and flight remain open.
 
-The same neutral-world representation now consumes explicit finite static group
-voltages, the existing linear fractional-field owner and continuous original-birth
-tracking. It traverses the compiled world members and native group map, without
-selecting a component name, combination name or component count. RF, pulse, gas
-and space-charge support are not inferred from this static adapter. The stored
-field is an electrode response family; the Program applies the selected workpoint
-through Fast Adjust, rather than treating PA0 as an already voltage-bound solution.
+The neutral-world representation consumes explicit finite static group voltages
+and continuous original-birth tracking without selecting a provider, combination
+name or component count. Its field stage now applies the complete native DC
+vector to a fresh, producer-owned family, then exports a new standalone operating
+PA and its enhanced-surface companion before publication. The new operating
+identity binds the exact voltages and native mapping as well as the spatial
+operator, numerics and actual native resource identities. Reuse checks the
+original producer's four successful native receipts and cold audit. Changed
+workpoints and altered/missing assets refuse; no published family is opened.
+Tracking protects only the operating PA, surface and witness, uses the existing
+one-slot workbench and original-birth collector, and installs no Fast Adjust
+callback for this static representation. RF/OA/IP dynamics keep their separate
+existing paths; this does not grant generic RF, pulse, gas or space-charge support.
+The previous fractional static family remains readable as historical data but
+cannot enter new static tracking as an operating field.
+
 Static DC permits finite nonzero phase-reference metadata without changing the
-existing RF phase convention. Births outside the explicit world domain refuse
-before owner creation; particle callbacks outside that domain or without the
-selected PA fail explicitly, instead of continuing with an undefined zero field.
-Cold model and tracking IOB roles remain distinct, with no implicit Refine/Fly.
+RF convention. Births outside the world refuse before owner creation; callbacks
+outside it or without the selected PA report missing coverage. Model and tracking
+IOB roles remain distinct, with no implicit Refine/Fly. The native exporter keeps
+the short execution alias for its output. Frozen surface witnesses must match
+the original model-bound identity across their guarded copy, and every Refine/
+audit child guards its actual script and specification. The fresh family remains
+writable during its intended Fast Adjust, while original published inputs remain
+protected. Metal-voltage readback permits only the binary64 encode/decode bound
+for V + 2*max_voltage - 2*max_voltage; it is not a field-accuracy tolerance.
 
-The integrated source batch passed 158 parents in 448.732 seconds, no skips and
-unchanged sources, covering the new public managed chain plus retained model,
-field, RF/OA/IP-MR tracking, SFI Program and collector consumers. Native leaves in
-the managed tests are explicitly inert OS processes. The deliberate exit-7 Refine
-retains failed evidence, publishes no field product and releases its writers and
-source/capacity protection. An earlier private test failed because it expected a
-cross-root lease where same-root protected paths were used; that failed receipt
-remains separate from the corrected successful test. Both targeted ordinary-install
-arms on `c49aced1` passed the registered Assembly's static model, field/tracking
-planning, packaged Program resources and outside-domain refusal, plus the installed
-22-group MR drive projection. Each arm joined 576 runtime members to the frozen
-source with author-tree imports/reads denied. These are planning checks, not the
-full installation parent or native static execution. The latter also has an
-implementation boundary: the reused producer publishes a fractional PA family,
-while current standalone exporters reject enhanced `.pa-surf` inputs. A faithful
-standalone export and cold reopen must be established before claiming that native
-route. No published family was opened in this investigation and no private family
-copy/alias workaround was adopted. Existing RF/OA family behavior remains a
-separately unqualified native boundary, not a demonstrated corruption result.
+The integrated 34-parent focused suite passed in 209.688 seconds, no skips and
+unchanged sources. It includes actual Windows public geometry/model/field/reuse/
+tracking owners with explicitly inert native leaves, complete original IDs and
+clock, standalone-only guards, no new Refine/export on reuse, and exit-7 failure
+preservation and lease release. Retained RF Program/owner behavior, normal and
+invalid workpoints, missing/tampered surface, mutated model-bound witnesses,
+wrong geometry/voltage and Lua IOB readback were checked separately within that
+same suite. Earlier attempts failed a stale three-operation expectation and a
+canonical-versus-alias output-path mismatch; those receipts remain separate.
+Both targeted ordinary-install arms on earlier `c49aced1` checked the predecessor
+planning path and 22-group MR drive with 576 source-joined runtime members and
+author-tree access denied. That does not qualify this new operating-field path;
+its ordinary-install and native acceptance remain open.
 
-A normally registered two-instance toy subsequently built real geometry through
-three public native operations in run
+A normally registered two-instance toy built actual geometry through three public
+native operations in run
 `20261115_055743__build__simion__geometry-274275bb93c4`; no Refine or Fly occurred.
-A synthetic finalization experiment on frozen `e899bf3c` then established why
-native `pa:copy` alone is insufficient: it saved the point array but no surface
-sidecar (run `20261115_061314__analysis__simion__surface-copy-181e2dd81b7a`, failed).
+A synthetic finalization experiment on frozen `e899bf3c` showed native `pa:copy`
+alone saved the point array without a surface sidecar (run
+`20261115_061314__analysis__simion__surface-copy-181e2dd81b7a`, failed).
 Installed `SIMION-2020/docs/simion.chm::lua_simion.pas.html` documents copying
-points separately from the `surface_info` getter/setter (available since 8.1.1.11).
-An explicitly changed experiment transferred every surface tuple before saving.
+points separately from the `surface_info` getter/setter (since 8.1.1.11).
+An explicitly changed experiment transferred the surface tuples before save.
 Run `20261115_061738__analysis__simion__surface-copy-25d7333db83a` matched all
 41^3 node potentials/metal flags, grid metadata, surface tuples and three off-grid
 potential/field samples exactly after fresh-process reopen. Its five producer-family
-files were held read-denied, independently verified before the cold reader; all four
-operations exited zero and released their host leases. No published family was opened.
-The outer owner nevertheless failed because the one-time action omitted mandatory
-`manifest_extra_fields` from its success return. Its failed status and partial outputs
-are preserved, not rewritten as a published field. The observations establish only
-this synthetic SIMION 2020 copy/set/save/cold-read compatibility; production export,
-field publication, original-birth static Fly and physical accuracy remain open.
+files were held read-denied and independently tested before the cold reader; all
+four operations exited zero and released their host leases. No published family
+was opened. The outer action omitted a mandatory completion field, leaving a
+failed workflow Result and initialization checkpoint manifest, not a published
+field. Public capacity-only closure retained all 43 files (10,002,340 bytes)
+unchanged and pinned, released its exact 1 GiB reservation and requires a new run;
+normal workflow completion was not invented. These observations establish only
+this synthetic SIMION 2020 compatibility, not production Fly, field convergence
+or instrument accuracy.
 
 A normally registered test component entered an unlisted two-instance Assembly,
 public compilation and the existing managed geometry owner. Fresh-process explicit

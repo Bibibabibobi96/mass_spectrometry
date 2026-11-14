@@ -335,7 +335,8 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
     if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         from .rf_tracking_execution import plan_rf_tracking_workbench
         return plan_rf_tracking_workbench(compiled,carriers=carriers,run_directory=run_directory,
-            program=program,native_source_rows=native_source_rows,native_path_resource=native_path_resource)
+            program=program,native_source_rows=native_source_rows,native_path_resource=native_path_resource,
+            program_metadata=program_metadata)
     from .native_plans import plan_field_workbench
     from .resources import structural_seed_path, STRUCTURAL_SEEDS, native_resource_path
     from .field_identity import _require_sha256
@@ -797,6 +798,9 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     if meta.get('model_identity_sha256')!=document['model_identity_sha256'] or meta.get('clock')!=document['drive']['clock']:
         raise ValueError('FieldBundle model/clock identity differs')
     geometry_role = model_geometry(model).frontend_geometry.get('role')
+    if (geometry_role == 'simion_neutral_world_collision_geometry'
+            and meta.get('field_representation') != 'producer_owned_static_world_standalone_operating_pa'):
+        raise ValueError('static world tracking requires its published standalone operating field')
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     if sampled_ip_mr:
         if geometry_role != 'simion_ip_mr_complete_geometry':

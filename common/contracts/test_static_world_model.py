@@ -43,11 +43,42 @@ class StaticWorldModelTests(unittest.TestCase):
         from msplatform.backends.simion.field_execution import plan_fields_execution
         model=compile_prepared_model(self.compiled,self.assembly.components_resolved,drive=self.drive,physics=RF_PHYSICS)
         graph=plan_fields_execution(model,numerics=dict(refine_policy='explicit_convergence',convergence_v={'world':1e-5}))
-        self.assertEqual(graph['expected_operation_ids'],['materialize_geometry','refine_world','audit_fields'])
+        self.assertEqual(graph['expected_operation_ids'],['materialize_geometry','refine_world','audit_family','export_operating','audit_fields'])
+        self.assertEqual(graph['operation_dependencies'],{'refine_world':['materialize_geometry'],
+            'audit_family':['refine_world'],'export_operating':['audit_family'],'audit_fields':['export_operating']})
+        self.assertFalse(graph['reuse_requested'])
+        # This pure planner only chooses the graph; the owner validates the reference.
+        reuse=plan_fields_execution(model,numerics=dict(refine_policy='explicit_convergence',convergence_v={'world':1e-5}),reuse_fields_reference={'fixture':'reference'})
+        self.assertEqual(reuse['expected_operation_ids'],['audit_fields'])
+        self.assertEqual(reuse['operation_dependencies'],{'audit_fields':[]})
+        self.assertTrue(reuse['reuse_requested'])
         for value in (True,0,-1,float('nan')):
             with self.subTest(value=value),self.assertRaises(ValueError):
                 plan_fields_execution(model,numerics=dict(refine_policy='explicit_convergence',convergence_v={'world':value}))
         with self.assertRaises(ValueError):plan_fields_execution(model,numerics=dict(refine_policy='vendor_default',convergence_v=1))
+
+    def test_tracking_refuses_changed_operating_identity_before_reuse(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.simion.rf_tracking_execution import execute_rf_tracking
+        from msplatform.io.file_identity import canonical_json_sha256
+        model=compile_prepared_model(self.compiled,self.assembly.components_resolved,drive=self.drive,physics=RF_PHYSICS)
+        vector=sorted((dict(electrode_id=row['native_targets'][0]['electrode_id'],voltage_v=row['voltage_v']) for row in model.document['native_drive_rows']),key=lambda row:row['electrode_id'])
+        identity=dict(schema_version=1,role='simion_static_world_operating_identity',spatial_operator={'fixture':'bound'},voltages=vector)
+        identity['identity_sha256']=canonical_json_sha256(identity)
+        source=SimpleNamespace(reference={'fixture':'reference'},metadata={'spatial_identity':identity})
+        class ReachedReuse(Exception):pass
+        with patch('msplatform.backends.simion.rf_field_execution.static_world_voltage_vector',return_value=vector,create=True), patch('msplatform.backends.simion.rf_field_execution.require_static_world_reuse',side_effect=ReachedReuse,create=True) as loader:
+            wrong=copy.deepcopy(identity);wrong['voltages'][0]['voltage_v']+=1;wrong['identity_sha256']=canonical_json_sha256({key:value for key,value in wrong.items() if key!='identity_sha256'})
+            source.metadata['spatial_identity']=wrong
+            with self.assertRaisesRegex(ValueError,'workpoint identity'):execute_rf_tracking(None,source=source,model=model,document=model.document)
+            loader.assert_not_called()
+            source.metadata['spatial_identity']=dict(identity,identity_sha256='0'*64)
+            with self.assertRaisesRegex(ValueError,'workpoint identity'):execute_rf_tracking(None,source=source,model=model,document=model.document)
+            loader.assert_not_called()
+            source.metadata['spatial_identity']=identity
+            with self.assertRaises(ReachedReuse):execute_rf_tracking(None,source=source,model=model,document=model.document)
+            loader.assert_called_once()
 
     def test_public_model_plan_binds_world_assets(self):
         from pathlib import Path
@@ -91,18 +122,19 @@ class StaticWorldModelTests(unittest.TestCase):
         self.assertIn('world',program);self.assertIn('1.25',program);self.assertIn('12.5',program)
         from msplatform.backends.simion.rf_tracking_execution import plan_rf_tracking_workbench
         base=Path.cwd()/'static-tracking-plan-only'
-        carrier=dict(path=str(base/'world.pa0'))
-        assets={'world':dict(carrier_record=carrier,family_records=[carrier,dict(path=str(base/'world.pa-surf'))],witness_record=dict(path=str(base/'witness.csv')))}
-        workbench=plan_rf_tracking_workbench(self.compiled,carriers=assets,run_directory=base,program=program,native_source_rows=plan['native_source_rows'],native_path_resource=base/'native.lua')
+        carrier=dict(path=str(base/'world.pa'))
+        assets={'world':dict(carrier_record=carrier,surface_record=dict(path=str(base/'world.pa-surf')),witness_record=dict(path=str(base/'witness.csv')))}
+        workbench=plan_rf_tracking_workbench(self.compiled,carriers=assets,run_directory=base,program=program,native_source_rows=plan['native_source_rows'],native_path_resource=base/'native.lua',program_metadata=controls['build_metadata'])
         spec=workbench.materializations[str(base/'inputs/tracking_iob.lua')]
-        self.assertIn('static_world_tracking_iob',spec);self.assertIn('world.pa0',spec)
+        self.assertIn('static_world_tracking_iob',spec);self.assertIn('world.pa',spec);self.assertIn('operating_voltages',spec)
         self.assertEqual(workbench.operations[0]['success_marker'],'STATIC_WORLD_TRACKING_IOB=PASS')
         with self.assertRaises(ValueError):plan_rf_tracking_workbench(self.compiled,carriers={},run_directory=base,program=program,native_source_rows=plan['native_source_rows'],native_path_resource=base/'native.lua')
         import subprocess, tempfile
         from common.contracts.test_simion_prepared_model import LUA as lua
         if not lua.is_file(): self.skipTest('verified Lua interpreter unavailable')
         ids={(r['instance_id'],r['electrode_group_id']):r['native_id'] for r in self.compiled.frontend_geometry['electrode_mapping']}
-        script="simion={workbench_program=function() segment={} end};ion_number=1;ion_instance=1;ion_time_of_flight=0;adj_elect={}\n"+program+"\nsegment.fast_adjust();assert(adj_elect["+str(ids[('first','body')])+"]==1.25);assert(adj_elect["+str(ids[('second','body')])+"]==0);print('STATIC_VALUES_PASS')\n"
+        self.assertEqual(controls['build_metadata']['static_operating_voltages'],sorted([dict(electrode_id=ids[('first','body')],voltage_v=1.25),dict(electrode_id=ids[('second','body')],voltage_v=0.)],key=lambda row:row['electrode_id']))
+        script="simion={workbench_program=function() segment={} end};ion_number=1;ion_instance=1;ion_time_of_flight=0;adj_elect={}\n"+program+"\nassert(segment.fast_adjust==nil);assert(next(adj_elect)==nil);print('STATIC_VALUES_PASS')\n"
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'static.lua';path.write_text(script,encoding='utf-8')
             child=subprocess.run([str(lua),str(path)],cwd=directory,capture_output=True,text=True,timeout=30)

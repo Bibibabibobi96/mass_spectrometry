@@ -49,7 +49,7 @@ def run(root):
     from importlib.resources import files
     for selected_module in (model,field_execution,tracking_execution,rf_tracking_program,examples,ion_release):
         assert Path(selected_module.__file__).resolve().is_relative_to(purelib), selected_module.__file__
-    for name in ('model_drive.lua','rf_drive.lua','rf_tracking.lua'):
+    for name in ('model_drive.lua','rf_drive.lua','rf_tracking.lua','export_detached_standalone_pa.lua','audit_static_operating_pa.lua'):
         assert native_resource_path(name).resolve().is_relative_to(purelib), name
     release=copy.deepcopy(examples.load_example('rf_oatof_functional_v1').release)
     release['source_component_id']='first'
@@ -66,7 +66,7 @@ def run(root):
     mapped={(row['instance_id'],row['electrode_group_id']):row['native_targets'][0]['electrode_id'] for row in doc['native_drive_rows']}
     assert mapped=={(row['instance_id'],row['electrode_group_id']):row['native_id'] for row in compiled.frontend_geometry['electrode_mapping']}
     graph=field_execution.plan_fields_execution(prepared,numerics=dict(refine_policy='vendor_default'))
-    assert graph['expected_operation_ids']==['materialize_geometry','refine_world','audit_fields']
+    assert graph['expected_operation_ids']==['materialize_geometry','refine_world','audit_family','export_operating','audit_fields']
     epoch=Path(str(files('msplatform.examples').joinpath('instrument_epoch_v1.json')))
     authority=Path(str(files('msplatform.examples').joinpath('instrument_clock_authority_v1.json')))
     assert epoch.resolve().is_relative_to(purelib) and authority.resolve().is_relative_to(purelib)
@@ -79,7 +79,10 @@ def run(root):
     tracking=tracking_execution.plan_tracking_execution(prepared,**options)
     assert tracking['flight']['tracking_kind']=='static_world' and len(tracking['rows'])==2
     controls=rf_tracking_program.render_rf_controls(prepared,tracking,assets={},native_sources={})
-    assert 'function segment.fast_adjust()' in controls['program'] and '1.25' in controls['program']
+    assert 'local rf_static_operating=true' in controls['program']
+    assert controls['build_metadata']['static_operating_voltages']==sorted(
+        [dict(electrode_id=row['native_targets'][0]['electrode_id'],voltage_v=row['voltage_v'])
+         for row in doc['native_drive_rows']],key=lambda row:row['electrode_id'])
     outside=copy.deepcopy(packet)
     outside['rows'][0]['position_x_mm']=1000.
     try: tracking_execution.plan_tracking_execution(prepared,**dict(options,particles=outside))

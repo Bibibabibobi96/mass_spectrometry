@@ -18,8 +18,21 @@ def execute_rf_tracking(session,*,source,model,document,**options):
     from .tracking_execution import _execute_tracking_bound_source,_artifact_record
     compiled=model_geometry(model)
     geometry=dict(compiled.frontend_geometry,native_frame_id=document['native_frame_id'])
-    selected,producer,assets=require_rf_reuse(source.reference,identity=source.metadata['spatial_identity'],geometry=geometry)
-    borrowed=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]
+    if geometry.get('role') == 'simion_neutral_world_collision_geometry':
+        from .rf_field_execution import require_static_world_reuse, static_world_voltage_vector
+        from msplatform.io.file_identity import canonical_json_sha256
+        identity=source.metadata['spatial_identity']
+        if (not isinstance(identity,Mapping) or set(identity)!={'schema_version','role','spatial_operator','voltages','identity_sha256'}
+                or type(identity['schema_version']) is not int or identity['schema_version']!=1
+                or identity['role']!='simion_static_world_operating_identity'
+                or identity['voltages']!=static_world_voltage_vector(model)
+                or canonical_json_sha256({key:identity[key] for key in identity if key!='identity_sha256'})!=identity['identity_sha256']):
+            raise ValueError('static operating workpoint identity differs from the prepared model')
+        selected,producer,assets=require_static_world_reuse(source.reference,identity=source.metadata['spatial_identity'],geometry=geometry)
+        borrowed=[record for row in assets.values() for record in (row['carrier_record'],row['surface_record'],row['witness_record'])]
+    else:
+        selected,producer,assets=require_rf_reuse(source.reference,identity=source.metadata['spatial_identity'],geometry=geometry)
+        borrowed=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]
     for artifact in [selected,producer]:
         _protected_source(session,artifact.reference['manifest'],required_paths=[row['path'] for row in borrowed])
     clocks=dict(contract=_artifact_record(source,'clock_authority'),authority=_artifact_record(source,'instrument_epoch'))
@@ -30,7 +43,7 @@ def execute_rf_tracking(session,*,source,model,document,**options):
         borrowed=borrowed,original_clock=clocks,relative_epoch=relative,**options)
 
 
-def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_source_rows,native_path_resource):
+def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_source_rows,native_path_resource,program_metadata=None):
     root=Path(run_directory)
     joint=compiled.frontend_geometry.get('role')=='simion_rf_ip_geometry'
     static_world=compiled.frontend_geometry.get('role')=='simion_neutral_world_collision_geometry'
@@ -47,7 +60,23 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
     text+="spec.role="+lua_value('static_world_tracking_iob' if static_world else 'rf_ip_tracking_iob' if joint else 'independent_'+kind.lower()+'_tracking_iob')+"\nspec.output_iob="+lua_value(str(output))+"\nspec.response_fields={}\n"
     for index,name in enumerate(names,1):
         asset=carriers[name]
-        surface=next(row for row in asset['family_records'] if row['path'].endswith('.pa-surf'))
+        if static_world:
+            import math
+            if set(asset)!={'carrier_record','surface_record','witness_record'}:
+                raise ValueError('static operating field requires exact operating, surface and witness records')
+            surface=asset['surface_record']; carrier=Path(asset['carrier_record']['path'])
+            if carrier.suffix.lower()!='.pa' or carrier.with_suffix('.pa-surf') != Path(surface['path']):
+                raise ValueError('static operating PA and fractional surface must be matching standalone siblings')
+            values=program_metadata.get('static_operating_voltages') if isinstance(program_metadata,Mapping) else None
+            labels=sorted(row['native_id'] for row in compiled.frontend_geometry['electrode_mapping'])
+            if (not isinstance(values,list) or len(values)!=len(labels)
+                    or [row.get('electrode_id') for row in values if isinstance(row,Mapping)]!=labels
+                    or any(set(row)!={'electrode_id','voltage_v'} or type(row['electrode_id']) is not int or type(row['voltage_v']) not in (int,float)
+                           or not math.isfinite(row['voltage_v']) for row in values)):
+                raise ValueError('static operating voltage map differs from native electrodes')
+            text+='spec.instances['+str(index)+'].operating_voltages='+lua_value(values)+'\n'
+        else:
+            surface=next(row for row in asset['family_records'] if row['path'].endswith('.pa-surf'))
         text+='spec.instances['+str(index)+'].path='+lua_value(asset['carrier_record']['path'])+'\n'
         text+='spec.instances['+str(index)+'].fractional_surface='+lua_value(surface['path'])+'\n'
         text+='spec.instances['+str(index)+'].surface_witnesses='+lua_value(asset['witness_record']['path'])+'\n'

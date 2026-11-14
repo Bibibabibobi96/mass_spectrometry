@@ -30,6 +30,7 @@ function segment.initialize()
   single_flight_reported[ion_number]={}
   rf_previous[ion_number]={t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm,instance=ion_instance}
 end
+if not rf_static_operating then
 function segment.fast_adjust()
   local domain=rf_instance_domains[ion_instance]
   if not domain then return end
@@ -39,6 +40,7 @@ function segment.fast_adjust()
       if target.domain==domain then adj_elect[target.electrode_id]=row.voltage_v end
     end
   end
+end
 end
 function segment.tstep_adjust()
   local time=single_flight_instrument_time_us()

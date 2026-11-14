@@ -116,6 +116,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     geometry=dict(model_geometry(model).frontend_geometry,native_frame_id=document['native_frame_id'])
     kind=plan['flight'].get('tracking_kind')
     ip_mr=kind=='ip_mr'
+    static_world=kind=='static_world'
     joint=kind in {'rf_ip','ip_mr'}
     priority=plan.get('collision_priority')
     if priority is not None and not ip_mr:
@@ -167,6 +168,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         prefix+='for _,row in ipairs(rf_model_config.groups) do if row.kind=="rf" then local value=rf_kernel.new_differential{waveform=row.waveform,frequency_hz=row.frequency_hz,phase_rad=row.phase_rad,rf_amplitude_v=row.rf_amplitude_v,rf_scale=1,rf_steps_per_period='+lua_value(plan['flight']['rf_steps_per_period'])+'}; rf_step_cap_us=math.min(rf_step_cap_us,value.timestep_cap_us) end end\n'
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
+    prefix+='local rf_static_operating='+lua_value(static_world)+'\n'
     if ip_mr:prefix+='local rf_committed_observations=true\n'
     program=prefix+resource('rf_tracking.lua')
     if ip_mr:
@@ -248,6 +250,11 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         source_clock=dict(original_birth_times_us=[r['particle_birth_time_us'] for r in plan['rows']],
             absolute_deadlines_us=[plan['absolute_deadlines_us_by_particle_id'][pid] for pid in ids]))
     if ip_mr:metadata['collision_priority_applied']=priority is not None
+    if static_world:
+        metadata['static_operating_voltages']=sorted(
+            (dict(electrode_id=row['native_targets'][0]['electrode_id'],voltage_v=row['voltage_v'])
+             for row in document['native_drive_rows']), key=lambda row:row['electrode_id'])
     if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
-        immutable_input_records=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]+(scalar_records if ip_mr else []),flight=plan['flight'])
+        immutable_input_records=([record for row in assets.values() for record in (row['carrier_record'],row['surface_record'],row['witness_record'])]
+            if static_world else [record for row in assets.values() for record in [*row['family_records'],row['witness_record']]])+(scalar_records if ip_mr else []),flight=plan['flight'])

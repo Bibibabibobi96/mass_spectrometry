@@ -47,12 +47,14 @@ class StaticWorldManagedTests(unittest.TestCase):
         for row in packet['rows']:row['frame_id']='toy_local'
         for row in packet['mother']['records'].values():row['frame_id']='toy_local'
         prior_process=RunSession.run_process
-        fail_refine=[False]; calls=[]
+        fail_refine=[False]; calls=[]; tracking_guards={}; export_requests=[]
         def inert_process(session,operation_id,*,immutable_input_records=(),**kwargs):
             if kwargs['role'] != 'SIMION':
                 return prior_process(session,operation_id,immutable_input_records=immutable_input_records,**kwargs)
             calls.append(operation_id);run=session.run_dir
             guards=[str(record['path']) for record in immutable_input_records]
+            if operation_id.startswith(('build_tracking_iob','verify_tracking_iob','track_fly')):
+                tracking_guards[operation_id]=set(guards)
             code='from pathlib import Path\nimport json\n'
             if guards:
                 code+='for p in '+repr(guards)+':\n try:\n  f=open(p,"ab");f.close()\n except PermissionError: pass\n else: raise AssertionError("immutable input was writable")\n'
@@ -82,9 +84,25 @@ class StaticWorldManagedTests(unittest.TestCase):
                     for suffix in ['.pa0',*('.pa'+str(n) for n in labels)]:
                         code+='Path('+repr(str(raw.with_suffix(suffix)))+').write_bytes(b"INERT_RESPONSE_NOT_NATIVE")\n'
                     code+='print("INDEPENDENT_RF_REFINE=PASS")\n'
-            elif operation_id=='audit_fields':
-                output=run/'results/rf_field_audit.json'
+            elif operation_id=='audit_family':
+                output=run/'results/static_family_audit.json'
                 code+='p=Path('+repr(str(output))+');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({"role":"simion_rf_fractional_field_audit","status":"success","checked_domains":["world"],"fixture":"INERT_ONLY"}),encoding="utf-8")\nprint("INDEPENDENT_RF_FIELDS_READBACK=PASS")\n'
+            elif operation_id=='export_operating':
+                source,output,workpoint=map(Path,kwargs['arguments'][-3:])
+                self.assertEqual(source.name,'world.pa0');self.assertEqual(output.name,'world_operating.pa')
+                self.assertEqual(output.parent,source.parent)
+                self.assertEqual(output.parent,run/'simion/fields/world')
+                self.assertEqual(workpoint.name,'static_workpoint.lua');self.assertTrue(workpoint.is_file())
+                self.assertNotIn(str(session.canonical_path(source)),guards)
+                exporter=session.input_dir/'native_sources/export_detached_standalone_pa.lua'
+                self.assertEqual(set(guards),{str(session.canonical_path(workpoint)),str(session.canonical_path(exporter))})
+                export_requests.append((str(source),str(output),workpoint.read_text(encoding='utf-8')))
+                for path in (output,output.with_suffix('.pa-surf')):
+                    code+='p=Path('+repr(str(path))+');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b"INERT_STANDALONE_NOT_NATIVE")\n'
+                code+='print("DETACHED_STANDALONE_PA_EXPORT=PASS")\n'
+            elif operation_id=='audit_fields':
+                output=run/'results/static_operating_audit.json'
+                code+='p=Path('+repr(str(output))+');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps({"role":"simion_static_operating_field_audit","status":"success","checked_domains":["world"],"fixture":"INERT_ONLY"}),encoding="utf-8")\nprint("STATIC_OPERATING_FIELDS_READBACK=PASS")\n'
             elif operation_id.startswith(('build_tracking_iob','verify_tracking_iob')):
                 building=operation_id.startswith('build_tracking_iob')
                 if building:
@@ -120,19 +138,44 @@ class StaticWorldManagedTests(unittest.TestCase):
                 readback=json.loads(model.data_path('drive_readback').read_text(encoding='utf-8'))
                 self.assertEqual(readback['fixture'],'INERT_ONLY');self.assertEqual(readback['groups'],document['native_drive_rows']);self.assertEqual(readback['clock'],document['drive']['clock'])
                 field=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
-                self.assertEqual(field.metadata['field_representation'],'producer_owned_static_world_fractional_family')
-                self.assertEqual(set(field.metadata['native_assets']),{'world'})
-                original={name:Path(row['path']).read_bytes() for name,row in field.data_records.items() if '_family_' in name}
+                self.assertEqual(field.metadata['field_representation'],'producer_owned_static_world_standalone_operating_pa')
+                self.assertEqual(field.metadata['native_assets'],{'world':dict(operating='world_operating',surface='world_surface',surface_witnesses='world_surface_witnesses')})
+                native_names=('world_operating','world_surface','world_surface_witnesses')
+                native_paths={str(field.data_path(name)) for name in native_names}
+                original={name:field.data_path(name).read_bytes() for name in native_names}
+                self.assertEqual(field.metadata['spatial_identity']['voltages'],sorted((dict(electrode_id=row['native_targets'][0]['electrode_id'],voltage_v=row['voltage_v']) for row in document['native_drive_rows']),key=lambda row:row['electrode_id']))
+                self.assertEqual(len(export_requests),1)
+                self.assertIn('[1]=1.25',export_requests[0][2]);self.assertIn('[2]=0',export_requests[0][2])
+                native_receipts=json.loads(field.data_path('field_native_receipts').read_text(encoding='utf-8'))
+                self.assertEqual({row['operation_id'] for row in native_receipts},{'refine_world','audit_family','export_operating','audit_fields'})
+                self.assertTrue(all(row['observation']['exit_confirmed'] and row['observation']['returncode']==0 for row in native_receipts))
+                operating_audit=json.loads(field.data_path('field_audit').read_text(encoding='utf-8'))
+                self.assertEqual((operating_audit['role'],operating_audit['status'],operating_audit['checked_domains']),('simion_static_operating_field_audit','success',['world']))
+                self.assertEqual(calls.count('refine_world'),1)
+                reused=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context,reuse_fields=field)
+                self.assertTrue(reused.metadata['fields_reused'])
+                self.assertEqual(reused.metadata['operating_producer_reference'],field.reference)
+                self.assertEqual({name:reused.data_records[name] for name in native_names},{name:field.data_records[name] for name in native_names})
+                self.assertEqual(calls.count('refine_world'),1);self.assertEqual(calls.count('export_operating'),1)
                 protected={str(artifact.data_path(name)):artifact.data_path(name).read_bytes() for artifact in (geometry,model) for name in artifact.data_records if ('raw_geometry' in name or name.startswith('geometry_'))}
                 packet['clock']={key:document['drive']['clock'][key] for key in ('clock_epoch_id','authority_sha256')}
                 for row in packet['rows']:row['clock_epoch_id']=packet['clock']['clock_epoch_id']
                 for row in packet['mother']['records'].values():row['clock_epoch_id']=packet['clock']['clock_epoch_id']
-                trajectory=operations.track(field,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                trajectory=operations.track(reused,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
                 reopened=open_artifact(trajectory.reference,expected_kind='trajectory_result')
                 collection=json.loads(reopened.data_path('collection').read_text(encoding='utf-8'))
                 self.assertEqual([row['particle_id'] for row in collection['native_terminals']],[7,91])
                 self.assertEqual(collection['original_mother']['mother_records'],list(packet['mother']['records'].values()))
-                self.assertEqual(original,{name:Path(field.data_records[name]['path']).read_bytes() for name in original})
+                program=(trajectory.manifest_location.parent/'simion/tracking/instrument.lua').read_text(encoding='utf-8')
+                self.assertIn('local rf_static_operating=true',program)
+                self.assertIn('if not rf_static_operating then\nfunction segment.fast_adjust()',program)
+                self.assertEqual(original,{name:field.data_path(name).read_bytes() for name in native_names})
+                tracking_names=[name for name in tracking_guards if name.startswith(('build_tracking_iob','verify_tracking_iob','track_fly'))]
+                self.assertEqual(len(tracking_names),3)
+                for name in tracking_names:self.assertTrue(native_paths <= tracking_guards[name],name)
+                family_paths={str(path) for path in (field.manifest_location.parent/'simion/fields/world').glob('world.pa[0-9]')}
+                for name in tracking_names:self.assertTrue(tracking_guards[name].isdisjoint(family_paths),name)
+
                 fail_refine[0]=True
                 with self.assertRaisesRegex(ProcessExecutionError, '7'):operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
             self.assertEqual(calls.count('refine_world'),2)
@@ -155,7 +198,7 @@ class StaticWorldManagedTests(unittest.TestCase):
             self.assertFalse(_lease_path(Path(failed_capacity['artifact_root']),failed_capacity['lease_id']).exists())
             for source_lease in failed_capacity.get('source_protection_leases',[]):
                 self.assertFalse(_lease_path(Path(source_lease['artifact_root']),source_lease['lease_id']).exists())
-            for artifact,source in ((geometry,None),(model,geometry),(field,model),(trajectory,field)):
+            for artifact,source in ((geometry,None),(model,geometry),(field,model),(reused,field),(trajectory,reused)):
                 result_path=context.workspace/'artifacts/projects/instrument_assembly/scratch/workflow_results'/artifact.manifest_location.parent.name/'result.json'
                 result=json.loads(result_path.read_text(encoding='utf-8'));capacity=result['capacity_session']
                 self.assertEqual(capacity['status'],'released');self.assertFalse(_lease_path(Path(capacity['artifact_root']),capacity['lease_id']).exists())

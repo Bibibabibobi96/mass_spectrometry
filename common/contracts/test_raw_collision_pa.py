@@ -84,5 +84,5 @@ class RawCollisionContractTests(unittest.TestCase):
 
     def test_solved_export_guard_is_unchanged(self):
         solved=native_resource_path('export_detached_standalone_pa.lua').read_text(encoding='utf8')
-        self.assertIn('surface-enhanced source PAs are unsupported',solved)
+        self.assertIn('surface offset transfer differs',solved)
         self.assertIn('never .paN',solved)

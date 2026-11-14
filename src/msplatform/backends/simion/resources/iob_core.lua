@@ -217,7 +217,17 @@ local function verify_fractional_component(item,row)
       assert(near(value,expected),'RF point differs from original rigid transform')
     end
   end
-  if component_tracking and not sampled_tracking then
+  local static_voltages=nil
+  if static_tracking then
+    assert(row.path:match('%.pa$') and item.pa.refinable==false,'static tracking requires standalone nonrefinable operating PA')
+    static_voltages={}
+    assert(type(row.operating_voltages)=='table' and #row.operating_voltages==#row.response_ids,'static operating voltage map differs')
+    for index,value in ipairs(row.operating_voltages) do
+      local id,voltage=value.electrode_id,value.voltage_v
+      assert(id==row.response_ids[index] and type(voltage)=='number' and voltage==voltage and math.abs(voltage)<math.huge and static_voltages[id]==nil,'invalid static operating voltage')
+      static_voltages[id]=voltage
+    end
+  elseif component_tracking and not sampled_tracking then
     assert(row.path:match('%.pa0$'),'RF tracking requires the original solved carrier')
     local actual={}
     for _,eid in ipairs(item.pa.electrode_numbers) do actual[eid]=true end
@@ -270,7 +280,19 @@ local function verify_fractional_component(item,row)
   end
   for _,sample in ipairs(row.physical_samples) do
     local potential,metal=item.pa:point(unpack(sample.gu))
-    assert(metal==(sample.metal~=false) and ((component_tracking and not sampled_tracking) or sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')
+    local expected=static_tracking and static_voltages[sample.electrode_id] or sample.electrode_id
+    local matches=potential==expected
+    if static_tracking and sample.metal~=false then
+      assert(type(expected)=='number' and type(potential)=='number' and type(item.pa.max_voltage)=='number'
+        and expected==expected and potential==potential and item.pa.max_voltage==item.pa.max_voltage
+        and math.abs(expected)<math.huge and math.abs(potential)<math.huge and item.pa.max_voltage>0 and item.pa.max_voltage<math.huge,
+        'static operating metal voltage must be finite')
+      local u=2^-53;local gamma2=(2*u)/(1-2*u)
+      local bound=gamma2*(math.abs(expected)+4*item.pa.max_voltage)
+      assert(bound<math.huge,'static operating voltage encoding bound overflow')
+      matches=math.abs(potential-expected)<=bound
+    end
+    assert(metal==(sample.metal~=false) and ((component_tracking and not sampled_tracking and not static_tracking) or sample.metal==false or matches),'cold RF physical node differs')
   end
 end
 
