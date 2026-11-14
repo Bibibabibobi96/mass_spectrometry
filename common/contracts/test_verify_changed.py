@@ -1250,10 +1250,14 @@ exit 0
                     if (path.stem.startswith('test_single_reflection_') and
                         path.stem not in ('test_single_reflection_checkpoint_diagnostics',
                                           'test_single_reflection_recorded_birth_consumer')) or
-                    path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy')}
+                    path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy',
+                                  'test_sfi_preparation_numerics')}
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                 for path in (REPO_ROOT / 'integrations/tests').rglob('test_*.py')}
         cases = [(('-ChangedPath', source), expected)]
+        for name in ('prepare.py', 'downstream_fields.py', 'request_v11.schema.json'):
+            selected = expected | ({'integrations.tests.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
+            cases.append((('-ChangedPath', 'src/msplatform/workflows/single_reflection_flight/' + name), selected))
         for name in ('test_multipole_ip_prepare', 'test_oa_mr_execute', 'test_paired_accelerator_static_field_execute'):
             cases.append((('-ChangedPath', source, 'integrations/tests/' + name + '.py'),
                           expected | {'integrations.tests.' + name}))
