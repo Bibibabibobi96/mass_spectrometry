@@ -203,8 +203,15 @@ def _prepare_frozen_request(session: RunSession, scientific_records: dict) -> tu
     from msplatform.io.manifest_records import file_record
     provider = _source_package_root()
     source_root = provider.parent
-    selected = enumerate_python_sources(source_root, package_roots=[provider.name],
-        provider_root=provider.name, resource_suffixes=('.json', '.ps1', '.lua', '.m', '.gem', '.iob'))
+    # Freeze the RF worker's scientific and execution packages, including the
+    # component initializer's explicit catalog/model dependencies.
+    selected = enumerate_python_sources(source_root, package_roots=[
+        'msplatform/analysis', 'msplatform/contracts', 'msplatform/execution', 'msplatform/io',
+        'msplatform/ion_release', 'msplatform/components/rf_multipole',
+        'msplatform/workflows/rf_mass_filter',
+    ], module_paths=['msplatform/components/catalog.py', 'msplatform/components/model.py'],
+        provider_root=provider.name, resource_suffixes=('.json', '.ps1', '.lua', '.m', '.gem', '.iob'),
+        require_python_source=True)
     code_root = session.input_dir / 'analysis_code'
     package = freeze_python_package(source_root, code_root, relative_paths=selected)
     code_records = []
@@ -433,7 +440,7 @@ def run(context: ExecutionContext, *, baseline_path: Path, resolved_path: Path, 
         operation_dependencies={'simulation': ['prepare'], 'analysis': ['simulation']},
         action=partial(_run_action, requested=requested, original_records=original, stage=policy),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
-        completion_api=no_particle_batch_completion_api)
+        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
     if result['status'] == 'failed':
         raise RuntimeError('mass-filter L1 functional gate failed')
     return result

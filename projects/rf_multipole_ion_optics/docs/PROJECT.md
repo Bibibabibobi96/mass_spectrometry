@@ -1314,6 +1314,29 @@ This installation acceptance remains distinct from finite3D/native solver
 qualification, complete research-campaign retirement, and the full
 Repository/performance targets.
 
+New finite-length runs use the existing managed short execution alias and freeze
+the selected RF worker closure rather than unrelated backend packages. The
+scientific inputs, scan, source/RNG order, immutable-input checks and failure
+finalization remain unchanged. A controlled Windows launch contrast reproduced
+`Start-Process` refusal with an existing 271-character working directory while
+the identical trivial command succeeded from an 88-character directory. This
+supports cwd-length sensitivity; it does not establish the original failed
+launch's missing process-completion identity, which remains unresolved.
+
+A single sequential private comparison used the short alias in both arms and
+varied only the frozen selector: 99.328 seconds for the full-package baseline,
+66.906 seconds for the selected closure. Both arms passed the positive scan and
+changed/missing-input refusals with source/fixture guards and released resources.
+Canonical and alias receipt paths are checked against the same owned frozen
+directory after finalization; a removed alias is not treated as missing science.
+This successor still requires ordinary wheel/sdist acceptance. These timings are
+neither a replicated performance estimate nor full Repository/native acceptance.
+The combined scalar/RF/Changed-selection source batch also passed all 53 parent
+tests and 68 subtests in 350.403 seconds, including this project's complete
+14-method L1 module. Source identities stayed fixed and the shared GATE released.
+The cost exceeds the narrow owner budget and remains visible; no assertions or
+failure/recovery cases were removed to reduce it.
+
 ## Installed neutral particle-state comparison
 
 The same-solver and cross-solver analyzers share the sole installed

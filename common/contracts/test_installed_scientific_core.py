@@ -4396,6 +4396,16 @@ try:
                 raise
             rf_l1_error=error
         session=rf_l1_seen['session'];project=rf_l1_workspace/'artifacts/projects/rf_multipole_ion_optics'
+        def rf_l1_owned_path(path):
+            path=pathlib.Path(path)
+            assert path.is_absolute(),path
+            try:
+                relative=path.relative_to(session.run_dir)
+            except ValueError:
+                relative=path.relative_to(session.artifact_run_dir)
+            assert '..' not in relative.parts,path
+            return session.artifact_run_dir/relative
+
         result_path=project/'scratch/workflow_results'/rf_l1_id/'result.json'
         result=json.loads(result_path.read_text(encoding='utf-8'))
         rf_l1_failure_detail=''
@@ -4410,9 +4420,9 @@ try:
                     rf_l1_diagnostic_dir=pathlib.Path(rf_l1_retained)/('rf-l1-writer-failure-'+sys.argv[2]+'-'+rf_l1_case)
                     rf_l1_diagnostic_dir.mkdir(exist_ok=False)
                     rf_l1_evidence=[('workflow_result.json',result_path)]
-                    rf_l1_evidence += [('result_'+name,session.result_dir/name) for name in
+                    rf_l1_evidence += [('result_'+name,(session.artifact_run_dir/'results')/name) for name in
                         ('failure_context.json','prepare_execution.json','simulation_execution.json','analysis_execution.json')]
-                    rf_l1_evidence += [('log_'+name,session.log_dir/name) for name in
+                    rf_l1_evidence += [('log_'+name,(session.artifact_run_dir/'logs')/name) for name in
                         [*(stage+'_module.stdout.log' for stage in ('prepare','simulation','analysis')),
                          *(f'operation_{index:04d}.{suffix}' for index in range(1,4)
                            for suffix in ('stdout.log','stderr.log','usage.json','process.json'))]]
@@ -4435,10 +4445,10 @@ try:
         assert rf_l1_captured_capacity['snapshot']==rf_l1_capacity_selection['snapshot']
         assert rf_l1_captured_capacity['snapshot_sha256']==rf_l1_capacity_selection['snapshot_sha256']
         rf_l1_verify('owner frozen TEST capacity policy',rf_l1_captured_capacity['frozen_record'])
-        assert pathlib.Path(rf_l1_captured_capacity['frozen_record']['path'])==session.input_dir/'capacity_policy.json'
+        assert pathlib.Path(rf_l1_captured_capacity['frozen_record']['path'])==(session.artifact_run_dir/'inputs')/'capacity_policy.json'
         assert json.loads(pathlib.Path(rf_l1_captured_capacity['frozen_record']['path']).read_text(encoding='utf-8'))==rf_l1_capacity_snapshot
-        assert (session.input_dir/'analysis_request.json').read_bytes()==rf_l1_seen['request']
-        assert (session.input_dir/'analysis_package.json').read_bytes()==rf_l1_seen['package']
+        assert ((session.artifact_run_dir/'inputs')/'analysis_request.json').read_bytes()==rf_l1_seen['request']
+        assert ((session.artifact_run_dir/'inputs')/'analysis_package.json').read_bytes()==rf_l1_seen['package']
         if rf_l1_case=='positive':
             assert rf_l1_error is None,str(rf_l1_error)
             assert result['status']=='success' and result['resume_action'] is None
@@ -4447,12 +4457,12 @@ try:
                 observation=op['observation']
                 assert observation['exit_confirmed'] and observation['returncode']==0
                 assert observation['process_id']>0 and observation['process_started_at_utc_ticks']>0
-            assert (session.result_dir/'mass-response__finite-length.csv').read_bytes()==bytes.fromhex(rf_l1_fixture['expected_csv_hex'])
-            rf_l1_metrics=json.loads((session.result_dir/'mass-filter__functional-metrics.json').read_text(encoding='utf-8'))
+            assert ((session.artifact_run_dir/'results')/'mass-response__finite-length.csv').read_bytes()==bytes.fromhex(rf_l1_fixture['expected_csv_hex'])
+            rf_l1_metrics=json.loads(((session.artifact_run_dir/'results')/'mass-filter__functional-metrics.json').read_text(encoding='utf-8'))
             for key,value in rf_l1_fixture['expected_metrics'].items():assert rf_l1_metrics[key]==value,key
             package=json.loads(rf_l1_seen['package'])['package']
             for row in package['files']:
-                assert hashlib.sha256(pathlib.Path(row['path']).read_bytes()).hexdigest().upper()==row['sha256']
+                assert hashlib.sha256(rf_l1_owned_path(row['path']).read_bytes()).hexdigest().upper()==row['sha256']
             assert any(row['relative_path']=='msplatform/execution/resources/frozen_python_package.ps1' for row in package['files'])
             request=json.loads(rf_l1_seen['request'])
             assert request['schema_version']==2
@@ -4466,19 +4476,19 @@ try:
                 assert release['inherited'] is False and release['error'] is None
                 assert release['result']=={'status':'released','token':release['token']}
             for stage in ('simulation','analysis'):
-                receipt=json.loads((session.result_dir/(stage+'_execution.json')).read_text(encoding='utf-8'))
+                receipt=json.loads(((session.artifact_run_dir/'results')/(stage+'_execution.json')).read_text(encoding='utf-8'))
                 assert receipt['schema_version']==2 and receipt['status']=='success'
                 rf_l1_module_origins={row['name']:pathlib.Path(row['origin']) for row in receipt['environment']['frozen_modules']}
                 assert 'msplatform.workflows.rf_mass_filter.finite_length' in rf_l1_module_origins
                 assert 'msplatform.components.rf_multipole.finite_length_transport' in rf_l1_module_origins
                 for row in receipt['environment']['frozen_modules']:
-                    assert pathlib.Path(row['origin']).is_relative_to(session.input_dir/'analysis_code')
+                    assert rf_l1_owned_path(row['origin']).is_relative_to(session.artifact_run_dir/'inputs'/'analysis_code')
         else:
             assert rf_l1_error is not None and ('hash differs' if rf_l1_case=='changed' else 'missing') in str(rf_l1_error),str(rf_l1_error)
             assert result['status']=='failed' and [op['operation_id'] for op in session.operations]==['prepare']
-            assert not (session.result_dir/'simulation_execution.json').exists()
-            failure=session.result_dir/'failure_context.json';failure_before=failure.read_bytes()
-            target=rf_l1_seen['target'];raw=rf_l1_seen['original'];record=rf_l1_seen['record']
+            assert not ((session.artifact_run_dir/'results')/'simulation_execution.json').exists()
+            failure=(session.artifact_run_dir/'results')/'failure_context.json';failure_before=failure.read_bytes()
+            target=rf_l1_owned_path(rf_l1_seen['target']);raw=rf_l1_seen['original'];record=rf_l1_seen['record']
             if rf_l1_case=='missing':
                 assert not target.exists() and result['resume_action']=='resume_finalization'
                 assert hashlib.sha256(raw).hexdigest().upper()==record['sha256']

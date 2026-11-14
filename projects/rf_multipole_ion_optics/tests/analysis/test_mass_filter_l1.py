@@ -5,6 +5,7 @@ import json
 from contextlib import contextmanager
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -28,6 +29,19 @@ PROJECT_ROOT = Path(__file__).parents[2]
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _owned_path(session, path: Path) -> Path:
+    path = Path(path)
+    if not path.is_absolute():
+        raise ValueError(f"Expected an absolute owned path: {path}")
+    try:
+        relative = path.relative_to(session.run_dir)
+    except ValueError:
+        relative = path.relative_to(session.artifact_run_dir)
+    if ".." in relative.parts:
+        raise ValueError(f"Parent traversal in owned path: {path}")
+    return session.artifact_run_dir / relative
 
 
 class MassFilterL1Tests(unittest.TestCase):
@@ -453,6 +467,86 @@ class MassFilterL1Tests(unittest.TestCase):
         self.assertFalse(zero["checks"]["low_boundary_alignment"])
         self.assertFalse(zero["checks"]["high_boundary_alignment"])
 
+    def test_selected_rf_worker_probe_rejects_missing_and_tampered_closure(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from msplatform.io.manifest_records import file_record
+        pwsh = shutil.which('pwsh')
+        self.assertIsNotNone(pwsh)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('inputs', 'results', 'logs'):
+                (root / name).mkdir()
+            run_config = root / 'run_config.json'
+            run_config.write_text('{}', encoding='utf-8')
+            records = {}
+            session = SimpleNamespace(input_dir=root / 'inputs', result_dir=root / 'results',
+                log_dir=root / 'logs', run_config=run_config,
+                context=SimpleNamespace(python_executable=Path(sys.executable), powershell_executable=Path(pwsh)),
+                declare_file=lambda path, role: Path(path),
+                add_input=lambda name, record: records.update({name: record}), add_inputs=records.update,
+                run_process=Mock())
+            scientific = {}
+            for name in ('baseline', 'mode', 'source', 'resolved_design'):
+                path = root / (name + '.json')
+                path.write_text('{}', encoding='utf-8')
+                scientific[name] = file_record(path, 'required_evidence')
+            request, guards = MODULE._prepare_frozen_request(session, scientific)
+            package_path = Path(records['analysis_package']['path'])
+            document = load_json(package_path)
+            package = document['package']
+            selected = {entry['relative_path']: entry for entry in package['files']}
+            module = 'msplatform/components/rf_multipole/finite_length_transport.py'
+            resource = 'msplatform/execution/resources/frozen_python_package.ps1'
+            self.assertIn(module, selected)
+            self.assertIn('msplatform/ion_release/numpy_box_cone.py', selected)
+            self.assertIn(resource, selected)
+            self.assertNotIn('msplatform/backends/simion/ip_geometry.py', selected)
+            executor = Path(selected[resource]['path'])
+            driver = root / 'probe.ps1'
+            driver.write_text("""param($Executor,$Package,$Python,$Forbidden)
+$ErrorActionPreference='Stop'
+. $Executor
+$p=Get-Content -LiteralPath $Package -Raw -Encoding UTF8 | ConvertFrom-Json
+$r=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $p.package `
+ -Module 'msplatform.workflows.rf_mass_filter.finite_length' -Arguments @('--help') `
+ -RequiredModuleNames @('msplatform.components.rf_multipole.finite_length_transport','msplatform.ion_release.numpy_box_cone') `
+ -ForbiddenRoots @($Forbidden) -ProbeOnly
+$r | ConvertTo-Json -Depth 20 -Compress
+""", encoding='utf-8')
+            provider = MODULE._source_package_root()
+            command = [pwsh, '-NoProfile', '-NonInteractive', '-File', str(driver), str(executor),
+                       str(package_path), sys.executable, str(provider.parent)]
+            positive = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(positive.returncode, 0, positive.stderr)
+            observation = json.loads(positive.stdout)
+            origins = {row['name']: Path(row['origin']).resolve() for row in observation['frozen_modules']}
+            self.assertEqual(origins['msplatform.components.rf_multipole.finite_length_transport'],
+                             (root / 'inputs/analysis_code' / module).resolve())
+            original = executor.read_bytes()
+            try:
+                executor.unlink()
+                with self.assertRaisesRegex(RuntimeError, 'Frozen Python dependency is missing'):
+                    MODULE._invoke_frozen_stage(session, request, 'prepare', guards, {})
+                session.run_process.assert_not_called()
+                executor.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+                with self.assertRaisesRegex(RuntimeError, 'Frozen Python dependency hash differs'):
+                    MODULE._invoke_frozen_stage(session, request, 'prepare', guards, {})
+                session.run_process.assert_not_called()
+            finally:
+                executor.write_bytes(original)
+            target = Path(selected[module]['path'])
+            target.unlink()
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn('Frozen Python dependency is missing', missing.stderr)
+            package['files'] = [row for row in package['files'] if row['relative_path'] != module]
+            package_path.write_text(json.dumps(document), encoding='utf-8')
+            cold = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertNotEqual(cold.returncode, 0)
+            self.assertIn('required frozen module has no file origin', cold.stderr)
+            self.assertTrue(provider.is_dir())
+
     def test_frozen_l1_analysis_runs_from_snapshot_and_rejects_changed_peak_source(self) -> None:
         with self._workspace() as temporary:
             root = Path(temporary)
@@ -512,7 +606,7 @@ class MassFilterL1Tests(unittest.TestCase):
             files = package["package"]["files"]
             self.assertEqual(len({entry["relative_path"] for entry in files}), len(files))
             self.assertEqual(
-                {entry["path"] for entry in files},
+                {str(_owned_path(captured['session'], Path(entry['path']))) for entry in files},
                 {str(path.resolve()) for path in (inputs / "analysis_code").rglob("*") if path.is_file()},
             )
             self.assertEqual([row['operation_id'] for row in captured['session'].operations],
@@ -553,8 +647,8 @@ class MassFilterL1Tests(unittest.TestCase):
                     if seen:
                         self.assertEqual([row['operation_id'] for row in seen['session'].operations], ['prepare'])
                         self.assertTrue(seen['session'].writers_stopped)
-                        self.assertEqual((seen['session'].input_dir / 'analysis_request.json').read_bytes(), seen['request'])
-                        self.assertEqual((seen['session'].input_dir / 'analysis_package.json').read_bytes(), seen['package'])
+                        self.assertEqual((seen['session'].artifact_run_dir / 'inputs/analysis_request.json').read_bytes(), seen['request'])
+                        self.assertEqual((seen['session'].artifact_run_dir / 'inputs/analysis_package.json').read_bytes(), seen['package'])
                         from msplatform.execution.capacity_protection import load_capacity_protection_leases
                         from msplatform.execution.completion import no_particle_batch_completion_api
                         from msplatform.execution.owner import resume_finalization
@@ -564,6 +658,7 @@ class MassFilterL1Tests(unittest.TestCase):
                         failure_bytes = failure_path.read_bytes()
                         self.assertEqual(result['status'], 'failed')
                         self.assertTrue(result['writers_confirmed'])
+                        seen['peak'] = _owned_path(seen['session'], seen['peak'])
                         if case == 'missing':
                             # Restore only this test-owned original, after the
                             # missing-input rejection. Never adopt new bytes or
