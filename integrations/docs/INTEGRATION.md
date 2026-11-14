@@ -348,12 +348,27 @@ The newer owner implementation freezes its verified action source in the run's
 owned inputs before execution. That prospective fix does not repair these older
 identities or promote their scientific qualification.
 
-Source and real-owner synthetic tests cover failure evidence, cold reopening,
-borrowed-product publication and tampering refusal before process launch. They
-do not replace native evidence. The normal post-fix Compute/reopen pair has not
-been repeated merely to relabel the failed carrier run. Dynamic RF/pulse bases,
-SFI coupling, convergence, continuous flight, latest-consumer ordinary installation
-and full Repository/performance acceptance remain open.
+The normal post-fix public path has now completed a new RF-reference workpoint
+on `b90ac498`, without rerunning or relabelling the historical failed carrier.
+[Model build and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261114_124728__build__comsol__assembly-model-a77ba946c713/summary.json)
+and [stationary solve and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261114_124920__sim__comsol__assembly-field-8ba462dcd05a/summary.json)
+all succeeded. The complete 77-member/50-group geometry, zero exterior, material
+and mesh stayed fixed; the RF response vector uses the validated signed group
+amplitudes, with all other response voltages zero. The published solution has
+5,830,174 DOFs, one stored main solution and the verified `std1`/`sol1`/
+`assembly_field_solution` dataset. The four-operation caller took 627.564822
+seconds with source/HEAD/caller guards unchanged. All writer exits and host
+releases were confirmed; both exact capacity leases are absent and the public
+ledger records the completed owners as ready/pinned. No retry or capacity-policy
+increase occurred. One incomplete resource-observation sample lacks its original
+trigger details, so the record does not establish a complete resource peak.
+
+Source and real-owner synthetic tests separately cover failure evidence,
+borrowed publication and pre-native tamper refusal. The new RF workpoint proves
+normal solve/reopen execution, not field accuracy or convergence. A complete
+public RF/pulse basis, derivative support, SFI field coupling, continuous flight
+and their installed/native qualification remain open. The complete software
+Repository result is recorded above; the original performance target remains open.
 
 The public [saved Assembly scalar stage](../../common/comsol/README.md#saved-assembly-scalar-export)
 samples an explicitly selected solution without Compute or save. Its output is
