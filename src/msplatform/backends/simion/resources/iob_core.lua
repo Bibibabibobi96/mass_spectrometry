@@ -13,7 +13,8 @@ local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
 local joint_ip_tracking=spec.role=='rf_ip_tracking_iob'
 local sampled_tracking=spec.role=='ip_mr_sampled_tracking_iob'
-local component_tracking=sampled_tracking or joint_ip_tracking or spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
+local static_tracking=spec.role=='static_world_tracking_iob'
+local component_tracking=static_tracking or sampled_tracking or joint_ip_tracking or spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
 local tracking_role=component_tracking
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local joint_rf_ip=spec.role=='rf_ip_geometry_iob_build'
@@ -21,6 +22,7 @@ local joint_rf_oa=spec.role=='rf_oa_geometry_iob_build'
 local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
 local joint_ip_mr=spec.role=='ip_mr_geometry_iob_build'
 local generic_collision=spec.role=='neutral_world_geometry_iob_build'
+local generic_model=spec.role=='neutral_world_model_iob_build'
 local collision_iob=sampled_tracking or spec.role=='ip_mr_collision_iob_build'
 assert(not collision_iob or sampled_tracking or mode=='build_geometry' or mode=='verify_geometry','collision IOB supports source-free build/reopen only')
 assert(not sampled_tracking or ((mode=='build' or mode=='verify') and spec.field_representation=='assembly_sampled_basis_with_collision_geometry'), 'sampled tracking requires its explicit field representation')
@@ -28,12 +30,14 @@ if sampled_tracking then
   local file=assert(io.open(assert(spec.scalar_binding),'rb'),'sampled tracking scalar binding missing')
   assert(file:seek('end')>0,'sampled tracking scalar binding empty');file:close()
 end
-local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob or generic_collision
+local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob or generic_collision or generic_model
 assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
 assert(not joint_rf_oa or mode=='build_geometry' or mode=='verify_geometry','RF-OA geometry only; model and fields unsupported')
 assert(not joint_oa_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'OA–MR fields and tracking workbench unsupported')
 assert(not joint_rf_ip or mode=='build_geometry' or mode=='verify_geometry' or mode=='build_model' or mode=='verify_model','RF–IP tracking and fields workbench unsupported')
 assert(not generic_collision or (mode=='build_geometry' or mode=='verify_geometry'),'neutral collision supports source-free build/reopen only')
+assert(not generic_model or model_only,'neutral model supports source-free model operations only')
+assert(not generic_model or #spec.instances==1,'neutral model requires one world slot')
 local independent_marker=generic_collision and 'NEUTRAL_WORLD_GEOMETRY_IOB' or collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
   or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
@@ -63,6 +67,7 @@ assert(not dual_cone or
   (spec.role=='dual_cone_geometry_iob' and geometry_only),
   'dual-cone role differs from its actual source-free/tracking operation')
 assert(not dual_cone or count==1,'dual-cone monolithic geometry requires exactly one PA instance')
+assert(not static_tracking or count==1,'static world tracking requires one world slot')
 assert(not joint_ip_tracking or count==1,'RF-IP tracking requires one parent PA instance')
 assert((independent_component and count>=1 and count<=10) or (not independent_component and (count==4 or count==5)), 'unsupported physical PA instance count')
 local roles={'flight_tube','reflectron','accelerator','detector','entrance_refinement'}

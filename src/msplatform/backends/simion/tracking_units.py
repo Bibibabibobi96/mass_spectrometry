@@ -68,7 +68,7 @@ def tracking_applicability(plan):
     from msplatform.execution.resources import resource_path
     names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
              'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
         names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
         if plan['flight']['tracking_kind']=='independent_oa':names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
         if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:
@@ -85,7 +85,7 @@ def tracking_applicability(plan):
             resources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
     resources['tracking_execution.py'] = hashlib.sha256(Path(__file__).with_name('tracking_execution.py').read_bytes()).hexdigest()
     resources['tracking_units.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
         for name in ('rf_tracking_program.py','rf_tracking_execution.py','rf_tracking_collection.py'):
             resources[name]=hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
     if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'}:

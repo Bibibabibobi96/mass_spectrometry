@@ -98,6 +98,31 @@ being checked again in build/cold reopen. Ambiguous overlapping conductor bounds
 are refused as unverified separation, not reported as proven solid intersections.
 Unsampled cuts/surfaces and other representations remain unqualified.
 
+The same neutral-world representation now consumes explicit finite static group
+voltages, the existing linear fractional-field owner and continuous original-birth
+tracking. It traverses the compiled world members and native group map, without
+selecting a component name, combination name or component count. RF, pulse, gas
+and space-charge support are not inferred from this static adapter. The stored
+field is an electrode response family; the Program applies the selected workpoint
+through Fast Adjust, rather than treating PA0 as an already voltage-bound solution.
+Static DC permits finite nonzero phase-reference metadata without changing the
+existing RF phase convention. Births outside the explicit world domain refuse
+before owner creation; particle callbacks outside that domain or without the
+selected PA fail explicitly, instead of continuing with an undefined zero field.
+Cold model and tracking IOB roles remain distinct, with no implicit Refine/Fly.
+
+The integrated source batch passed 158 parents in 448.732 seconds, no skips and
+unchanged sources, covering the new public managed chain plus retained model,
+field, RF/OA/IP-MR tracking, SFI Program and collector consumers. Native leaves in
+the managed tests are explicitly inert OS processes. The deliberate exit-7 Refine
+retains failed evidence, publishes no field product and releases its writers and
+source/capacity protection. An earlier private test failed because it expected a
+cross-root lease where same-root protected paths were used; that failed receipt
+remains separate from the corrected successful test. An ordinary-install probe now
+also requires the registered Assembly's static model, field/tracking planning,
+packaged Program resources and outside-domain refusal. That new probe and native
+static execution remain unverified until their separate acceptance runs.
+
 A normally registered test component entered an unlisted two-instance Assembly,
 public compilation and the existing managed geometry owner. Fresh-process explicit
 registration, reversed declaration order, reverse-lexical instance renaming with

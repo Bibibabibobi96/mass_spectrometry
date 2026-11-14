@@ -121,13 +121,13 @@ def project_resolved_drive(compiled: CompiledSimionGeometry, components_resolved
     return dict(groups=groups, pulse=copy.deepcopy(dict(pulse)), clock=copy.deepcopy(dict(clock)))
 
 
-def _validate_timing(drive: Mapping[str, Any], *, requires_pulse: bool = True) -> None:
+def _validate_timing(drive: Mapping[str, Any], *, requires_pulse: bool = True, static_only: bool = False) -> None:
     clock = drive['clock']
     _exact(clock, {'clock_epoch_id', 'authority_sha256', 'phase_reference_instrument_time_us'}, 'model clock')
     ClockIdentity(clock['clock_epoch_id'], clock['authority_sha256'])
-    # This first adapter preserves the existing RF definition omega*t + phase.
+    # Dynamic adapters preserve the existing RF definition omega*t + phase.
     # Supporting another anchor requires an explicit physical projection change.
-    if _finite(clock['phase_reference_instrument_time_us'], 'phase reference') != 0.:
+    if _finite(clock['phase_reference_instrument_time_us'], 'phase reference') != 0. and not static_only:
         raise ValueError('this SIMION model adapter supports phase reference instrument time 0 only')
     if not requires_pulse:
         return
@@ -319,9 +319,54 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
     document['model_identity_sha256'] = _content_sha256(document)
     return CompiledPreparedModel(json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False))
 
+def _compile_static_world_model(compiled, components, *, drive, physics):
+    """Bind a complete static voltage workpoint to revalidated world geometry."""
+    from types import SimpleNamespace
+    from .generic_geometry import compile_generic_collision_geometry
+    geometry = compiled.frontend_geometry
+    snapshot = geometry['source_snapshot']
+    if components != snapshot['components_resolved']:
+        raise ValueError('static world model providers differ from the source snapshot')
+    rebuilt = compile_generic_collision_geometry(SimpleNamespace(**copy.deepcopy(snapshot)), numerics=dict(
+        representation='neutral_world_collision', domain=geometry['domain'], pitch_mm=geometry['pitch_mm'],
+        boundary=geometry['boundary'], metal_witnesses=geometry['metal_witnesses'],
+        void_witnesses=geometry['void_witnesses']))
+    if rebuilt != compiled:
+        raise ValueError('static world geometry differs from its canonical source snapshot')
+    if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
+        raise ValueError('static world model requires linear zero-Neumann physics')
+    _exact(drive, {'groups', 'clock'}, 'static world model drive')
+    _validate_timing(drive, requires_pulse=False, static_only=True)
+    mapping = geometry['electrode_mapping']
+    groups = {}
+    for row in mapping:
+        groups.setdefault(row['instance_id'], {})[row['electrode_group_id']] = row['native_id']
+    _exact(drive['groups'], set(groups), 'static world drive instances')
+    rows = []
+    for instance, bindings in groups.items():
+        _exact(drive['groups'][instance], set(bindings), 'static world drive groups')
+        for group, electrode in bindings.items():
+            value = drive['groups'][instance][group]
+            _exact(value, {'kind', 'voltage_v'}, 'static world voltage')
+            if value['kind'] != 'static':
+                raise ValueError('static world drive accepts static voltages only')
+            _finite(value['voltage_v'], 'static world voltage')
+            rows.append(dict(instance_id=instance, electrode_group_id=group,
+                native_targets=[dict(domain='world', electrode_id=electrode)], **copy.deepcopy(dict(value))))
+    document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
+        source_status='not_requested', native_frame_id=geometry['domain']['frame_id'], geometry=asdict(compiled),
+        components_resolved=copy.deepcopy(dict(components)), drive=copy.deepcopy(dict(drive)),
+        physics=copy.deepcopy(dict(physics)), native_drive_rows=rows)
+    document = json.loads(json.dumps(document, sort_keys=True, allow_nan=False))
+    document['model_identity_sha256'] = _content_sha256(document)
+    return CompiledPreparedModel(json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False))
+
+
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
+    if compiled.frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry':
+        return _compile_static_world_model(compiled, components_resolved, drive=drive, physics=physics)
     if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
         from .ip_model import compile_ip_mr_model
         return compile_ip_mr_model(compiled, components_resolved, drive=drive, physics=physics)

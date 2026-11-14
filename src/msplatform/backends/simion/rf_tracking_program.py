@@ -140,7 +140,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     else:
         if scalar_bindings is not None or slot_domains is not None:
             raise ValueError('IP–MR inputs require IP–MR tracking')
-        names=['parent'] if joint else geometry['composition_plan']['scope']['instance_ids']
+        names=['world'] if geometry.get('role')=='simion_neutral_world_collision_geometry' else ['parent'] if joint else geometry['composition_plan']['scope']['instance_ids']
     ids=[row['particle_id'] for row in plan['rows']]
     if not ids:raise ValueError('zero RF cohort has no Program')
     config=render_model_configuration(model)
@@ -231,6 +231,18 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             if program.count(marker)!=1:raise ValueError('RF cut terminal hook differs')
             program=program.replace(marker,marker+"    rf_emit_current('terminal','accepted_cut')\n",1)
     if ip_mr and definitions:program=_stage_rf_plane_observations(program)
+    if geometry.get('role') == 'simion_neutral_world_collision_geometry':
+        domain = geometry['domain']
+        program += '\nlocal static_world_min=' + lua_value(domain['minimum_mm']) + '\n'
+        program += 'local static_world_max=' + lua_value(domain['maximum_mm']) + '\n'
+        program += "local function require_static_world_coverage()\n"
+        program += "  local position={ion_px_mm,ion_py_mm,ion_pz_mm}\n"
+        program += "  local valid=ion_instance==1\n"
+        program += "  for i=1,3 do valid=valid and position[i]>=static_world_min[i] and position[i]<=static_world_max[i] end\n"
+        program += "  if not valid then error(string.format('STATIC_WORLD_FIELD_COVERAGE_MISSING particle=%.0f time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g slot=%s',single_flight_canonical_particle_id(),single_flight_instrument_time_us(),position[1],position[2],position[3],tostring(ion_instance))) end\nend\n"
+        for callback in ('initialize', 'other_actions', 'terminate'):
+            program += 'local static_world_original_' + callback + '=segment.' + callback + '\n'
+            program += 'function segment.' + callback + '() require_static_world_coverage(); return static_world_original_' + callback + '() end\n'
     metadata=dict(tracking_kind=plan['flight']['tracking_kind'],plane_observations=copy.deepcopy(definitions) if definitions else None,
         consumed_plane_events=copy.deepcopy(plan['propagation']['consumed_plane_events']),propagation_stop=copy.deepcopy(plan['propagation']['stop']),
         source_clock=dict(original_birth_times_us=[r['particle_birth_time_us'] for r in plan['rows']],

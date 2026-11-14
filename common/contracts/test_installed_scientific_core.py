@@ -7608,6 +7608,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
                 self.assertIn('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',result)
+                self.assertIn('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',result)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
                 observation = self.run_command([consumer_python, '-I', '-B', str(root / 'installed_observation_probe.py'),
                     str(root / 'installed_observation_fixture.json'),

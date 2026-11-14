@@ -20,3 +20,5 @@ if spec.role=='independent_oa_tracking_iob' then print(mode=='build' and 'INDEPE
 if spec.role=='rf_ip_tracking_iob' then print(mode=='build' and 'RF_IP_TRACKING_IOB=PASS' or 'RF_IP_TRACKING_IOB_REOPEN=PASS') end
 
 if spec.role=='ip_mr_sampled_tracking_iob' then print(mode=='build' and 'IP_MR_SAMPLED_TRACKING_IOB=PASS' or 'IP_MR_SAMPLED_TRACKING_IOB_REOPEN=PASS') end
+
+if spec.role=='static_world_tracking_iob' then print(mode=='build' and 'STATIC_WORLD_TRACKING_IOB=PASS' or 'STATIC_WORLD_TRACKING_IOB_REOPEN=PASS') end

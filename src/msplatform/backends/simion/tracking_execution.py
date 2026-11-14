@@ -167,6 +167,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     raw_geometry = model_geometry(model).frontend_geometry
     ip_mr = raw_geometry.get('role') == 'simion_ip_mr_complete_geometry'
     joint_ip = raw_geometry.get('role') == 'simion_rf_ip_geometry'
+    static_world = raw_geometry.get('role') == 'simion_neutral_world_collision_geometry'
     if ip_mr:
         if ip_mr_field_reference is None:
             raise ValueError('IP–MR tracking requires a published common-field binding')
@@ -184,7 +185,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
                                  common_world_frame_id=admission['world_frame_id'])
     elif ip_mr_field_reference is not None:
         raise ValueError('IP–MR field reference requires IP–MR geometry')
-    independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip or ip_mr
+    independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip or ip_mr or static_world
     if joint_ip:
         from .rf_tracking_execution import prepare_rf_ip_hs1
         hs1 = prepare_rf_ip_hs1(model, hs1_request)
@@ -192,6 +193,10 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         raise ValueError('HS1 request is supported only for joint IP tracking')
     geometry = (dict(raw_geometry,native_frame_id=document['native_frame_id']) if independent_component else
                 model_geometry(model,downstream_drive=True).frontend_geometry)
+    if static_world:
+        if isinstance(particles, HandoffResult) or not isinstance(propagation, Mapping) or propagation.get('scope') != 'continuous_assembly':
+            raise ValueError('static world tracking requires original births in one continuous assembly')
+        geometry['composition_plan'] = copy.deepcopy(raw_geometry['source_snapshot']['composition_plan'])
     expected = {'schema_version','scope','end_policy','consumed_plane_events','stop'}
     if independent_component:
         expected.add('dynamics')
@@ -226,6 +231,12 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         if propagation['scope']=='state_relaunch':
             raise ValueError('state_relaunch requires an actual canonical handoff result')
         rows,mother,source_clock = _birth_states(particles,geometry)
+        if static_world:
+            domain = raw_geometry['domain']
+            for row in rows:
+                if any(not domain['minimum_mm'][i] <= row['position_'+axis+'_mm'] <= domain['maximum_mm'][i]
+                       for i, axis in enumerate('xyz')):
+                    raise ValueError('static world birth is outside the explicit field domain')
         require_same_clock(source_clock,clock)
         native,provenance = project_source_states(rows,mother=mother,clock=clock,state_kind='source_birth',
             clock_records=clock_records,consumed_plane_events=consumed)
@@ -261,6 +272,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         from .rf_tracking_program import validate_rf_flight
         flight = validate_rf_flight(flight_input,requires_rf=rf)
         if raw_geometry['role']=='simion_independent_oa_geometry':flight['tracking_kind']='independent_oa'
+        if static_world:flight['tracking_kind']='static_world'
         if joint_ip: flight['tracking_kind']='rf_ip'
         if ip_mr: flight['tracking_kind']='ip_mr'
     else:
@@ -320,7 +332,7 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
             program=program, program_metadata=program_metadata, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
     if ip_mr_admission is not None:
         raise ValueError('sampled IP–MR admission requires the matching geometry role')
-    if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry'}:
+    if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         from .rf_tracking_execution import plan_rf_tracking_workbench
         return plan_rf_tracking_workbench(compiled,carriers=carriers,run_directory=run_directory,
             program=program,native_source_rows=native_source_rows,native_path_resource=native_path_resource)
@@ -378,7 +390,7 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
         if result['build_metadata'].get('collision_priority_applied') is not True:
             raise ValueError('sampled tracking requires the verified collision priority Program')
         return result
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','static_world'}:
         from .rf_tracking_program import render_rf_controls
         return render_rf_controls(model,plan,assets=frontend_records,native_sources=native_sources)
     from .field_bank import field_bank
@@ -630,7 +642,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             continue
         subset = slice_tracking_plan(plan,unit)
         controls = _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
-            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'} else _artifact_record(source,'downstream_audit'),
+            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'} else _artifact_record(source,'downstream_audit'),
             native_sources=sources)
         row['build_metadata'] = controls['build_metadata']
         batches.append(dict(source_row_range=unit['source_row_range'],expected_particle_ids=unit['expected_particle_ids'],
@@ -747,7 +759,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         def render_unit(unit):
             subset=slice_tracking_plan(plan,unit)
             return _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
-                frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'} else _artifact_record(source,'downstream_audit'),
+                frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'} else _artifact_record(source,'downstream_audit'),
                 native_sources=sources)['build_metadata'].get('native_field_observation')
         observed=_collect_unit_field_observation(plan,batches,[Path(records[key]['path']) for key in stdout_keys],render_unit)
         collection['native_field_observation']=observed
@@ -799,7 +811,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
             hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability)
     if geometry_role == 'simion_ip_mr_complete_geometry':
         raise ValueError('IP–MR tracking requires its published sampled FieldBundle')
-    if geometry_role in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry'}:
+    if geometry_role in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         if scalar_field_basis is not None:
             raise ValueError('scalar basis is supported only for SFI tracking')
         from .rf_tracking_execution import execute_rf_tracking
@@ -992,7 +1004,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     small('propagation',session.input_dir/'propagation.json',value=plan['propagation'])
     small('observations',session.input_dir/'observations.json',value=plan['observations'])
     small('tracking_numerics',session.input_dir/'tracking_numerics.json',value=plan['numerics'])
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
         import inspect
         from . import rf_tracking_execution,rf_tracking_program,rf_tracking_collection
         for module in (rf_tracking_execution,rf_tracking_program,rf_tracking_collection):
@@ -1010,7 +1022,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     else:
         resource_names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
             'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
-        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'}:
+        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
             resource_names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
             if plan['flight']['tracking_kind']=='independent_oa':resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
             if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua','collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
@@ -1021,7 +1033,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))
         frozen.update(hs1_frozen)
         native_path = small('resource_native_run_path.lua',session.input_dir/'native_sources/native_run_path.lua',source_path=resource_path('native_run_path.lua'))
-        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr'}:
+        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
             sources={name:Path(frozen[name]['path']).read_text(encoding='utf-8-sig') for name in resource_names if name not in {'build_tracking_iob.lua','iob_core.lua'}}
         else:
             names = dict(analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',

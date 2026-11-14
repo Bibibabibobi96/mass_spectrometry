@@ -41,4 +41,49 @@ def run(root):
     bad=copy.deepcopy(numerics);bad['boundary']='grounded_faces'
     capability=capabilities(dict(schema_version=1,operation='compile_geometry',arguments=dict(assembly=product,numerics=bad)))
     assert capability['contract_status']=='rejected',capability
+    # Exercise the installed static scientific and tracking planners; no solver or Fly.
+    from msplatform import examples, ion_release
+    from msplatform.backends.simion import model, field_execution, tracking_execution, rf_tracking_program
+    from msplatform.backends.simion.resources import native_resource_path
+    from msplatform.io.manifest_records import file_record
+    from importlib.resources import files
+    for selected_module in (model,field_execution,tracking_execution,rf_tracking_program,examples,ion_release):
+        assert Path(selected_module.__file__).resolve().is_relative_to(purelib), selected_module.__file__
+    for name in ('model_drive.lua','rf_drive.lua','rf_tracking.lua'):
+        assert native_resource_path(name).resolve().is_relative_to(purelib), name
+    release=copy.deepcopy(examples.load_example('rf_oatof_functional_v1').release)
+    release['source_component_id']='first'
+    release['release_spec']['frame_id']='toy_local'
+    release['release_spec']['particle_count']=release['release_spec']['mother_particle_count']=2
+    release['particle_ids']=release['particle_ids'][:2]
+    packet=ion_release.sample_release(release).to_dict()
+    clock=dict(packet['clock'],phase_reference_instrument_time_us=0.)
+    drive=dict(clock=clock,groups={'first':{'body':dict(kind='static',voltage_v=1.25)},
+                                  'second':{'body':dict(kind='static',voltage_v=0.)}})
+    prepared=model.compile_prepared_model(compiled,product.components_resolved,drive=drive,physics=model.RF_PHYSICS)
+    doc=model.require_prepared_model(prepared)
+    assert doc['field_status']=='not_solved' and doc['drive']==drive
+    mapped={(row['instance_id'],row['electrode_group_id']):row['native_targets'][0]['electrode_id'] for row in doc['native_drive_rows']}
+    assert mapped=={(row['instance_id'],row['electrode_group_id']):row['native_id'] for row in compiled.frontend_geometry['electrode_mapping']}
+    graph=field_execution.plan_fields_execution(prepared,numerics=dict(refine_policy='vendor_default'))
+    assert graph['expected_operation_ids']==['materialize_geometry','refine_world','audit_fields']
+    epoch=Path(str(files('msplatform.examples').joinpath('instrument_epoch_v1.json')))
+    authority=Path(str(files('msplatform.examples').joinpath('instrument_clock_authority_v1.json')))
+    assert epoch.resolve().is_relative_to(purelib) and authority.resolve().is_relative_to(purelib)
+    clocks={'instrument_epoch':file_record(epoch),'clock_authority':file_record(authority)}
+    propagation=dict(schema_version=1,scope='continuous_assembly',end_policy=dict(maximum_particle_age_us=200.),
+        consumed_plane_events=[],stop=None,dynamics=dict(kinematics='nonrelativistic',collisions='none',space_charge='none'))
+    tracking_numerics=dict(maximum_step_us=.01,trajectory_quality=5,grouped=0)
+    options=dict(particles=packet,clock_records=clocks,propagation=propagation,
+                 observations=dict(plane_observations=[]),numerics=tracking_numerics)
+    tracking=tracking_execution.plan_tracking_execution(prepared,**options)
+    assert tracking['flight']['tracking_kind']=='static_world' and len(tracking['rows'])==2
+    controls=rf_tracking_program.render_rf_controls(prepared,tracking,assets={},native_sources={})
+    assert 'function segment.fast_adjust()' in controls['program'] and '1.25' in controls['program']
+    outside=copy.deepcopy(packet)
+    outside['rows'][0]['position_x_mm']=1000.
+    try: tracking_execution.plan_tracking_execution(prepared,**dict(options,particles=outside))
+    except ValueError as exc: assert 'outside' in str(exc),exc
+    else: raise AssertionError('outside-domain original birth was accepted')
+    print('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',flush=True)
     print('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',flush=True)

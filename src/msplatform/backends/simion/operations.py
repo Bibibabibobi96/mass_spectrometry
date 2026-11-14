@@ -122,10 +122,11 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     ip_mr_has_rf = joint_ip_mr and any(row["project_id"] == "rf_multipole_ion_optics"
         for name, row in compiled.frontend_geometry["composition_plan"]["components"].items()
         if name in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"])
+    static_world = compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry"
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
-    independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr
-    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip or ip_mr_has_rf else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
+    independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr or static_world
+    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip or ip_mr_has_rf or static_world else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
     if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
@@ -154,7 +155,8 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
         epoch = json.loads((data_root / contract["authority"]["path"]).read_text(encoding="utf-8-sig"))
         if type(epoch.get("instrument_time_us")) not in (int, float) or epoch["instrument_time_us"] != 0:
             raise ContractError("IP schedule requires the existing zero instrument epoch")
-    selected = compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]
+    geometry_plan = (compiled.frontend_geometry['source_snapshot']['composition_plan'] if static_world else compiled.frontend_geometry['composition_plan'])
+    selected = geometry_plan['scope']['instance_ids']
     components = {name: compiled.components_resolved[name] for name in selected}
     clock = dict(clock_epoch_id=validation["clock_epoch_id"], authority_sha256=validation["authority_sha256"],
                  **dict(drive["clock"]))
@@ -168,7 +170,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     elif joint_ip:
         expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
             ip_schedule=copy.deepcopy(drive["ip_schedule"]))
-    elif independent_oa:
+    elif independent_oa or static_world:
         expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
             **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {}))
     else:
@@ -313,7 +315,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
                                expected_kind="field_bundle")
         reuse_reference = reused.reference
         references.append({"manifest_record": reuse_reference["manifest"]})
-        if reused.metadata.get("field_representation") in {"producer_owned_rf_fractional_family", "producer_owned_oa_fractional_family"}:
+        if reused.metadata.get("field_representation") in {"producer_owned_rf_fractional_family", "producer_owned_oa_fractional_family", "producer_owned_static_world_fractional_family"}:
             original = reused.metadata.get("family_producer_reference", reused.reference)
             references.append({"manifest_record": original["manifest"]})
     graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference)
@@ -385,6 +387,9 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
+    if (document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry'
+            and meta.get('field_representation') != 'producer_owned_static_world_fractional_family'):
+        raise ContractError('static world tracking requires its exact published fractional field representation')
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     ip_mr_admission = None
     if sampled_ip_mr:
@@ -454,7 +459,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
                         continue
                     scalar_manifests[key] = identity
                     references.append({'manifest_record': manifest})
-    if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family'}:
+    if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family','producer_owned_static_world_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
     if recovery is not None:

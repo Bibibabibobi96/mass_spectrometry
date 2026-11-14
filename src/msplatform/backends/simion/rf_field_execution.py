@@ -25,9 +25,19 @@ from .source import lua_value
 REPRESENTATION = 'producer_owned_rf_fractional_family'
 
 
+def _field_domains(geometry):
+    if geometry.get('role') != 'simion_neutral_world_collision_geometry':
+        return geometry['numerical_domains']
+    pitch = geometry['pitch_mm']
+    return {'world': {'dimensions': dict(zip(('nx','ny','nz'), geometry['dimensions'], strict=True)),
+                      'cell_mm_xyz': {axis: pitch for axis in 'xyz'}}}
+
+
 def _field_contract(geometry):
     """Select actual produced component semantics; utility Lua report names are legacy."""
     role = geometry.get('role')
+    if role == 'simion_neutral_world_collision_geometry':
+        return 'producer_owned_static_world_fractional_family', 'simion_static_world_fractional_spatial_identity'
     if role == 'simion_rf_ip_geometry':
         return 'producer_owned_rf_ip_fractional_family', 'simion_rf_ip_fractional_spatial_identity'
     if role == 'simion_independent_rf_geometry':
@@ -38,11 +48,17 @@ def _field_contract(geometry):
 
 
 def _domain_labels(geometry, name):
+    if geometry.get('role') == 'simion_neutral_world_collision_geometry':
+        if name != 'world': raise ValueError('static world field requires one world domain')
+        labels = [row['native_id'] for row in geometry['electrode_mapping']]
+        if len(labels) != len(set(labels)) or any(type(value) is not int or value <= 0 for value in labels):
+            raise ValueError('static world native labels differ')
+        return sorted(labels)
     if geometry.get('role') == 'simion_rf_ip_geometry':
-        if name != 'parent': raise ValueError('RF–IP field requires the parent domain')
+        if name != 'parent': raise ValueError('RF闁炽儲褰侾 field requires the parent domain')
         labels = [value for mapping in geometry['electrode_bindings'].values() for value in mapping.values()]
         if len(labels) != len(set(labels)) or any(type(value) is not int or value <= 0 for value in labels):
-            raise ValueError('RF–IP physical native labels differ')
+            raise ValueError('RF闁炽儲褰侾 physical native labels differ')
         return sorted(labels)
     return sorted(set(geometry['electrode_bindings'][name].values()))
 
@@ -52,7 +68,7 @@ def plan_rf_fields(model, *, numerics: Mapping, reuse_fields_reference=None) -> 
     _field_contract(geometry)
     if require_prepared_model(model)['physics'] != (RF_IP_PHYSICS if geometry.get('role') == 'simion_rf_ip_geometry' else RF_PHYSICS):
         raise ValueError('independent field families require the existing linear external electrostatic physics')
-    names = list(geometry['numerical_domains']) if geometry.get('role') == 'simion_rf_ip_geometry' else list(geometry['composition_plan']['scope']['instance_ids'])
+    names = ['world'] if geometry.get('role') == 'simion_neutral_world_collision_geometry' else list(geometry['numerical_domains']) if geometry.get('role') == 'simion_rf_ip_geometry' else list(geometry['composition_plan']['scope']['instance_ids'])
     if not isinstance(numerics, Mapping):
         raise ValueError('RF fields require explicit refinement numerics')
     policy = numerics.get('refine_policy')
@@ -83,16 +99,18 @@ def rf_spatial_identity(source, *, numerics, tool_identity, auditor_identity) ->
     result = dict(schema_version=1, role=_field_contract(geometry)[1],
         raw_geometry={name: records([row['raw_record'], *row['surface_records']])
                       for name, row in source.native_assets.items()},
-        numerical_domains=geometry['numerical_domains'], electrode_bindings=geometry['electrode_bindings'],
+        numerical_domains=_field_domains(geometry), electrode_bindings=(geometry['electrode_mapping'] if geometry.get('role') == 'simion_neutral_world_collision_geometry' else geometry['electrode_bindings']),
         physics=require_prepared_model(source.model)['physics'], numerics=dict(numerics),
         tool_identity=dict(tool_identity), auditor_identity=auditor_identity)
+    if geometry.get('role') == 'simion_neutral_world_collision_geometry':
+        result['world_domain'] = geometry['domain']
     result = json.loads(json.dumps(result, allow_nan=False))
     return dict(result, identity_sha256=canonical_json_sha256(result))
 
 
 def _family_assets(artifact, geometry) -> dict:
     bindings = artifact.metadata.get('native_assets')
-    if not isinstance(bindings, Mapping) or set(bindings) != set(geometry['numerical_domains']):
+    if not isinstance(bindings, Mapping) or set(bindings) != set(_field_domains(geometry)):
         raise ValueError('RF FieldBundle lacks exactly its actual numerical domains')
     assets, used = {}, set()
     for name, keys in bindings.items():
@@ -136,7 +154,7 @@ def require_rf_reuse(reference, *, identity, geometry):
            for row in assets.values() for record in [*row['family_records'], row['witness_record']]):
         raise ValueError('RF fractional family is not owned by its declared original producer')
     receipts = json.loads(producer.data_path('field_native_receipts').read_text(encoding='utf-8'))
-    expected = {'refine_'+name for name in geometry['numerical_domains']}
+    expected = {'refine_'+name for name in _field_domains(geometry)}
     if (not isinstance(receipts, list) or {row.get('operation_id') for row in receipts} != expected
             or len(receipts) != len(expected)
             or any(row.get('observation', {}).get('exit_confirmed') is not True
@@ -250,7 +268,7 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
     native_assets = {}
     for name in graph['numerical_domains']:
         asset = assets[name]
-        grid = geometry['numerical_domains'][name]
+        grid = _field_domains(geometry)[name]
         keys = []
         for index, record in enumerate(asset['family_records']):
             key = name+'_family_'+str(index)
@@ -265,7 +283,7 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
             family_paths=[row['path'] for row in asset['family_records']],
             response_ids=_domain_labels(geometry, name),
             grid=dict(grid['dimensions'], **{'d'+axis+'_mm':grid['cell_mm_xyz'][axis] for axis in 'xyz'}),
-            physical_samples=geometry['raw_physical_samples'][name], surface_witnesses=asset['witness_record']['path']))
+            physical_samples=(geometry['physical_samples'] if geometry.get('role') == 'simion_neutral_world_collision_geometry' else geometry['raw_physical_samples'][name]), surface_witnesses=asset['witness_record']['path']))
     spec = small('field_audit_spec', session.input_dir/'rf_field_audit.lua', text='return '+lua_value(dict(assets=audits, output=str(audit_path)))+'\n')
     argv = apply_native_io_mode([str(executable),'--nogui','--noprompt','lua',str(auditor),str(spec)], allow_asynchronous_io=allow_asynchronous_io)
     session.run_process('audit_fields', executable=executable, arguments=argv[1:], role='SIMION', stage='inspect', limits=limits,

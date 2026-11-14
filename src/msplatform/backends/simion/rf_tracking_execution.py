@@ -33,7 +33,8 @@ def execute_rf_tracking(session,*,source,model,document,**options):
 def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_source_rows,native_path_resource):
     root=Path(run_directory)
     joint=compiled.frontend_geometry.get('role')=='simion_rf_ip_geometry'
-    names=['parent'] if joint else compiled.frontend_geometry['composition_plan']['scope']['instance_ids']
+    static_world=compiled.frontend_geometry.get('role')=='simion_neutral_world_collision_geometry'
+    names=['world'] if static_world else ['parent'] if joint else compiled.frontend_geometry['composition_plan']['scope']['instance_ids']
     if not native_source_rows or set(carriers)!=set(names):
         raise ValueError('RF tracking workbench needs its nonempty source and exact field domains')
     seed=file_record(structural_seed_path(len(names)),'required_evidence')
@@ -42,16 +43,16 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
     spec=root/'inputs/tracking_iob.lua'
     original=projection.materializations[str(root/'inputs/geometry_iob.lua')]
     text='local spec=(function()\n'+original+'\nend)()\n'
-    kind='RF_IP' if joint else 'OA' if compiled.frontend_geometry['role']=='simion_independent_oa_geometry' else 'RF'
-    text+="spec.role="+lua_value('rf_ip_tracking_iob' if joint else 'independent_'+kind.lower()+'_tracking_iob')+"\nspec.output_iob="+lua_value(str(output))+"\nspec.response_fields={}\n"
+    kind='STATIC_WORLD' if static_world else 'RF_IP' if joint else 'OA' if compiled.frontend_geometry['role']=='simion_independent_oa_geometry' else 'RF'
+    text+="spec.role="+lua_value('static_world_tracking_iob' if static_world else 'rf_ip_tracking_iob' if joint else 'independent_'+kind.lower()+'_tracking_iob')+"\nspec.output_iob="+lua_value(str(output))+"\nspec.response_fields={}\n"
     for index,name in enumerate(names,1):
         asset=carriers[name]
         surface=next(row for row in asset['family_records'] if row['path'].endswith('.pa-surf'))
         text+='spec.instances['+str(index)+'].path='+lua_value(asset['carrier_record']['path'])+'\n'
         text+='spec.instances['+str(index)+'].fractional_surface='+lua_value(surface['path'])+'\n'
         text+='spec.instances['+str(index)+'].surface_witnesses='+lua_value(asset['witness_record']['path'])+'\n'
-        mappings=compiled.frontend_geometry['electrode_bindings']
-        labels=sorted({value for group in mappings.values() for value in group.values()}) if joint else sorted(set(mappings[name].values()))
+        mappings=compiled.frontend_geometry.get('electrode_bindings', {})
+        labels=sorted(row['native_id'] for row in compiled.frontend_geometry['electrode_mapping']) if static_world else sorted({value for group in mappings.values() for value in group.values()}) if joint else sorted(set(mappings[name].values()))
         text+='spec.instances['+str(index)+'].response_ids='+lua_value(labels)+'\n'
     text+='return spec\n'
     materials={str(spec):text,str(output.with_suffix('.lua')):program,str(output.with_suffix('.fly2')):render_restart_fly2(native_source_rows)}
@@ -60,7 +61,7 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
     # replacing all slots. Declare them even if a failed writer retains them.
     bootstraps=tuple(str(Path(projection.input_copies[0]['destination']).parent/f'iob_seed_placeholder_{index:02d}.pa0')
         for index in range(1,len(names)+1))
-    marker_prefix='RF_IP' if joint else 'INDEPENDENT_'+kind
+    marker_prefix='STATIC_WORLD' if static_world else 'RF_IP' if joint else 'INDEPENDENT_'+kind
     operations=tuple(dict(operation_id=name,role='SIMION',stage='prepare',
         arguments=['--nogui','--noprompt','lua',str(wrapper),str(spec),mode,str(native_path_resource)],
         outputs=[str(output),*bootstraps] if mode=='build' else [],success_marker=marker)
