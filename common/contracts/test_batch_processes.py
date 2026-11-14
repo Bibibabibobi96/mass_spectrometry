@@ -17,6 +17,24 @@ from msplatform.execution.simion_dispatch import plan_simion_dispatch,prepare_fi
 from msplatform.execution.simion_dispatch import FORMAL_OBSERVATION_SECONDS,LAUNCH_STAGGER_SECONDS
 
 
+class BatchBridgeErrorTests(unittest.TestCase):
+    def test_structured_failure_preserves_bridge_stderr(self):
+        from msplatform.execution.processes import _interpret_batch_result
+        receipt = dict(observations={}, attempts=[], not_started=[],
+                       error={'message': 'original batch failure'},
+                       host_release=dict(inherited=True, token='fixture', result=None, error=None))
+        output = ('EXECUTION_BATCH_RESULT=' + json.dumps(receipt)).encode('utf-8')
+        for stderr in (b'writer import failure\xff', b''):
+            with self.subTest(stderr=stderr), self.assertRaises(ProcessExecutionError) as caught:
+                _interpret_batch_result(output, stderr, 1)
+            self.assertEqual(str(caught.exception), 'original batch failure')
+            self.assertEqual(caught.exception.receipt, receipt)
+            notes = getattr(caught.exception, '__notes__', [])
+            if stderr:
+                self.assertEqual(notes, ['Execution batch bridge stderr: writer import failure\ufffd'])
+            else:
+                self.assertEqual(notes, [])
+
 @unittest.skipUnless(os.name=='nt' and shutil.which('pwsh'),'Windows PowerShell required')
 class BatchProcessTests(unittest.TestCase):
     def _inert_payload_code(self):
