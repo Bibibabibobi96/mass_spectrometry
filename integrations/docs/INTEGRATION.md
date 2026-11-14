@@ -1130,9 +1130,67 @@ IP阶段恢复的原`-MultipoleIpRunId`须指成功封存准备，当前请求�
 MR-local几何、原IP→MR直接位姿和唯一clock保持，不按锚点反算放置。真实115429准备已完成81粒子源的
 IOB保存／独立重开及接口场审计；审计完成不等于物理匹配或边缘场截断资格。
 
-### Approved IP–MR pose preflight
+### Current LP60 IP–MR geometry case
 
-The approved layout keeps IP and upstream poses fixed and translates the entire
+The selected temporary case keeps the complete MR at identity and uses the
+canonical IP with explicit `lp_length_mm=60`; the default remains 80 mm and
+the separately authored `lp_center_mm=170` is unchanged. The IP rotation is
+`[[0,0,-1],[1,0,0],[0,-1,0]]` and translation is `[0,-225,3]` mm. No OA is added.
+The full selected MR request uses profile
+`closed_two_zone_compact_mr_axial_r3_gap1_4mm`; the profile name alone does not
+identify its complete contract. The recorded full request, including its existing
+explicit shield extension and mirror convergence, is re-resolved unchanged by
+the canonical provider. The old joint preparer's shield/slot mutations are not used.
+
+A fresh CadQuery 2.8.0 / OCP 7.9.3.1.1 check resolved all 15 IP and 24 MR
+physical members. The ports are `[0,-55,-0.5]` and `[0,-55,-1.5]` mm with opposed
+normals and a 1 mm gap. Of 360 cross-component pairs, 359 have conservative
+bounding-box separation at least 1.5 mm; the remaining pair,
+`lp_commonmode_shield` / `prism_ground_shields/0`, has CAD-kernel distance 1 mm.
+Pruning includes the declared 1e-6 mm CAD precision margin. A world-Z sweep of
+the 0.8 by 8 mm aperture from z=-1.49999 to -0.50001 mm has no positive-volume
+metal intersections; the excluded port faces are not certified by this sweep.
+Execution took 45.625 seconds, with source/HEAD/index/status guards unchanged
+and the heavy GATE released. Full requests, poses, members, bounds and pair
+records are retained in workspace
+`.tools/phase04-codex-takeover-20261109/v87-ip-mr-lp60-clearance-root-r1`.
+
+This permits the provisional IP–MR geometry case to proceed, not an upstream
+multipole, full-field, insulation, native flight or convergence qualification.
+LP80 fields and trajectories are not reused as LP60 results. The public mixed
+geometry/model/field/tracking stages still require implementation and acceptance.
+The user selected the simplest existing supported complete upstream instance,
+without adding historical shells, endcaps or plates. The selected bare octupole
+request is the versioned `rf_oatof_functional_v1` multipole already consumed by
+the public RF–IP path, including its existing rod segmentation. This is not
+a reconstruction of the old octupole with its solid entrance disk and plates.
+Fresh port resolution gives the RF exit at local z=79.6 mm, not the historical
+82.1 mm proxy. The complete RF instance has rotation
+`[[0,-1,0],[0,0,1],[-1,0,0]]` and translation `[0,-305.6,3]` mm; its world exit
+`[0,-226,3]` faces the IP inlet `[0,-225,3]` with a 1 mm gap.
+The full 71-member CAD precheck checked all 1608 cross-instance pairs: nine
+kernel distances and 1599 conservative lower-bound exclusions establish a
+minimum kernel distance of 1 mm and no solid intersections. The radius-2-mm
+common RF/IP aperture sweep and the original IP/MR rectangular sweep have no
+positive-volume metal intersections, each excluding 1e-5 mm at its end faces.
+The 54.422-second run retained unchanged source/checkout guards and released
+its heavy GATE. Its full author requests and pair evidence are in workspace
+`.tools/phase04-codex-takeover-20261109/v87-rf-ip-mr-lp60-clearance-root-r1`.
+This confirms this selected layout only; common field domains, attached
+source/gas/observations and continuous native propagation still require validation.
+
+The explicit LP60/80 provider regression passed all four focused tests. Its
+public Changed check passed six stages in 358.313 seconds with unchanged source
+and checkout guards: 386 parent successes, 254 subtest successes and one inherited
+HS1 software-tier skip. The exact skipped zero-pressure HS1 test subsequently
+passed in 7.161 seconds with the pinned standalone Lua provider; the original
+skip record is unchanged. Neither run starts a native SIMION Fly or qualifies
+the LP60 field/collision dynamics. Evidence is retained in workspace
+`.tools/phase04-codex-takeover-20261109/v87-ip-lp60-regression-root-r1`.
+
+### Superseded LP80 pose preflight
+
+The earlier approved layout kept IP and upstream poses fixed and translated the entire
 selected MR analyzer by world z = +6.8 mm. No IP cut, shield edit or internal
 component change is authorized. A fresh source-only preflight re-resolved both
 canonical components, checked unchanged source bytes/designs, and verified
@@ -1158,8 +1216,8 @@ mapping error. The first wrapper attempt failed before CAD because PowerShell's
 automatic argument variable hid the command arguments; its failure is retained.
 The corrected wrapper used the same snapshot and unchanged diagnostic code.
 The port gap therefore does not establish surrounding-metal clearance. Physical
-validation of this layout is held pending a design decision; no component is
-trimmed and no alternative placement is silently selected. Applicable field
+validation of this superseded LP80 layout is not resumed. Its nine intersections
+remain a negative result; the current LP60 case above does not erase them. Applicable field
 domains and observation bindings remain open. MR-attached observation coordinates translate
 with MR; IP/upstream and world-fixed observations do not move implicitly.
 
