@@ -207,14 +207,26 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
                         tracking_numerics=numerics,context=context,hs1_request=request)
             finally:
                 vendor_path.write_bytes(vendor_bytes)
-            missing=native_resource_path('rf_ip_gas_selection.lua');held=missing.with_suffix('.lua.held')
-            missing.rename(held)
-            try:
-                with self.assertRaisesRegex(FileNotFoundError,'installed SIMION native resource is missing'):
+            # Keep the actual resolver but select a private resource package whose
+            # one missing file cannot affect concurrent installed consumers.
+            import shutil
+            from msplatform.backends.simion import resources as simion_resources
+            original_package = Path(simion_resources.files('msplatform.backends.simion'))
+            isolated_package = root/'missing-resource-package'
+            shutil.copytree(original_package/'resources', isolated_package/'resources',
+                            ignore=shutil.ignore_patterns('rf_ip_gas_selection.lua'))
+            missing = isolated_package/'resources/rf_ip_gas_selection.lua'
+            self.assertFalse(missing.exists())
+            self.assertTrue((original_package/'resources/rf_ip_gas_selection.lua').is_file())
+            self.assertEqual((isolated_package/'resources/rf_ip_tracking_hs1.lua').read_bytes(),
+                             (original_package/'resources/rf_ip_tracking_hs1.lua').read_bytes())
+            before_missing = len(observed)
+            with patch.object(simion_resources, 'files', return_value=isolated_package):
+                with self.assertRaisesRegex(FileNotFoundError, 'installed SIMION native resource is missing: rf_ip_gas_selection.lua'):
                     continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
                         tracking_numerics=numerics,context=context,hs1_request=request)
-            finally:
-                held.rename(missing)
+            self.assertEqual(len(observed), before_missing)
+            self.assertTrue((original_package/'resources/rf_ip_gas_selection.lua').is_file())
         collection=json.loads(result.data_path('collection').read_text());self.assertEqual(collection['native_calls'],3)
         self.assertEqual(result.metadata['tracking_kind'],'rf_ip');self.assertEqual(result.metadata['collision_model'],'hs1')
         self.assertEqual([row['particle_id'] for row in collection['native_terminals']],[7,91]);self.assertEqual(len(observed),3)

@@ -46,6 +46,12 @@ the retained build-source inventory has 563 records. This checks installed geome
 translation and dependency closure, not native IP/MR geometry, continuous flight,
 field coupling, full Repository acceptance or the still-open 15-minute target.
 
+The composed RF-IP missing-resource regression uses a private copy of the
+installed resource directory, with the selected Lua file physically absent.
+It retains the real resolver and public continuous consumer, verifies refusal
+before native dispatch, and leaves the shared package unchanged. Other package
+consumers can therefore run concurrently with this negative case.
+
 ## 按任务导航
 
 只读本次任务对应的章节；本页说明公共 API，生命周期政策仍以[生命周期](../../docs/LIFECYCLE.md)为准。
