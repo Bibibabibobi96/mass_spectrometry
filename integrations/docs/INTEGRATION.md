@@ -1422,7 +1422,8 @@ before the unchanged quarantine: native/canonical ID, instrument/elapsed times,
 and does not reinterpret a staged endpoint as accepted state. The actual integrated
 SFI Program/collector and shared IP–MR Program suites passed 71 parents in 84.032 s
 (84.890 guarded), including the exact two-record conflict regression. Native use
-of this diagnostic and the cause of the three conflicts remain unverified.
+of this diagnostic is recorded below; the cause of the three conflicts remains
+unverified.
 
 All three writers exited zero and released their host leases; the input protection
 lease and short execution alias were absent after finalization. Fly took 471.210 s,
@@ -1432,6 +1433,24 @@ capacity policy, approved limits, synchronous I/O and zero retries were unchange
 Full per-step trajectories, common-domain field coupling, convergence, installed
 execution of this exact successor and final Repository acceptance were not tested
 by this run. The separate complete RF–IP–MR chain remains open.
+
+The unchanged-source diagnostic on frozen `821e3a0c` then completed in
+[run cef2b84922ed](../../../artifacts/projects/instrument_assembly/runs/20261115_043055__sim__simion__track-cef2b84922ed/run_manifest.json),
+using the same original 100 births, selected fields, drives, numerical controls
+and approved limits. The public caller and its post-run source guards passed in
+558.404 seconds. Its three native writers exited zero and their host leases were
+released; no Refine or Compute ran. The
+[readable collection](../../../artifacts/projects/instrument_assembly/runs/20261115_043055__sim__simion__track-cef2b84922ed/results/collection.json)
+still reports native completion with incomplete observations for IDs 2, 34 and 48.
+Their three raw previous/current pairs have identical instrument and elapsed
+times, instance 3 and splat 0. Position differences reach approximately
+5.5e-14 mm and velocity differences 7.4e-14 mm/us. Both samples are direct native
+callback reads; no application coordinate conversion or serialization between
+them has been established. This scale is consistent with roundoff but does not
+prove its cause or an accepted-step identity. No empirical tolerance was added
+to suppress the conflicts. Original evidence, quarantine and unknown terminal
+classification remain intact; native execution success grants no field accuracy,
+convergence or transmission qualification.
 
 The first coarse carrier export, run
 `20261114_185405__analysis__comsol__assembly-scalar-b116aef94ebc`, remains FAILED.
