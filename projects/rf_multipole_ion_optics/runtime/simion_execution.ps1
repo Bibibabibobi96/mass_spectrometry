@@ -103,7 +103,7 @@ function Initialize-RfSimionPreparedContinuation {
     $context=[pscustomobject]@{capacity=$null;guards=[Collections.Generic.List[IDisposable]]::new();units=@{};all_reused=$false;chain=@();predecessor=$parent}
     Push-Location $RepositoryRoot
     try{
-        $chain=& $PythonExe -m projects.rf_multipole_ion_optics.runtime.simion_batch_continuation `
+        $chain=& $PythonExe -m msplatform.workflows.rf_batch_continuation `
             --predecessor $parent --project $RunConfig.project --mode $RunConfig.mode
         if($LASTEXITCODE-ne0){throw 'RF continuation ancestry is invalid.'}
         $context.chain=@(($chain-join"`n")|ConvertFrom-Json)
@@ -112,7 +112,7 @@ function Initialize-RfSimionPreparedContinuation {
             -ArtifactRoot $ArtifactRoot -RunDirectory $RunDir -CommittedNewBytes 0 -ProtectedPaths $context.chain `
             -Owner $(if($CapacityOwner){$CapacityOwner}else{$RunConfig.project})
         Protect-RfSimionContinuationEvidence -Chain $context.chain -Guards $context.guards
-        $arguments=@('-m','projects.rf_multipole_ion_optics.runtime.simion_batch_continuation',
+        $arguments=@('-m','msplatform.workflows.rf_batch_continuation',
             '--predecessor',$parent,'--project',$RunConfig.project,'--run-dir',$RunDir,'--case',$CaseName,'--output-layout','prepared')
         foreach($name in $InputNames){$arguments+=@('--input',$name)}
         $planned=& $PythonExe @arguments

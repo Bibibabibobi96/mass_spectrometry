@@ -1425,3 +1425,29 @@ The frozen COMSOL analysis fixture materializes the project, common and package
 resources selected by the production freezer, including its canonical MATLAB mesh
 helpers. Its detached-execution and missing-frozen-input assertions remain in force;
 the fixture does not run COMSOL or establish a new native result.
+
+The RF whole-batch continuation planner is available through the installed
+`msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
+to the retired project runtime body. All six production calls use the installed API
+or module CLI; explicit predecessor identity, complete-unit replay and field-checkpoint
+ancestry remain unchanged. The old project implementation is removed, with no forwarding
+alias. The remaining RF runtime package still has active consumers and is not retired.
+
+Focused ordinary wheel and sdist-rebuilt-wheel probes passed from external working
+directories with author-tree imports denied. Both direct and CLI paths reused one
+complete unit and replayed one incomplete unit; corrupt/missing predecessors and a
+physically missing installed module were rejected. Each arm's 551 installed payloads
+matched its wheel before and after the probe. The exact missing-module assertion
+reran in 3.859/3.891 seconds (12.515 guarded wall), reusing the same immutable builds.
+The first task harness failed to locate the already-built sdist; that failure remains
+recorded, and the successor consumed that exact archive rather than rebuilding it.
+Evidence is retained in workspace
+`.tools/phase04-codex-takeover-20261109/v87-rf-continuation-installed-agent8-r1`
+through `v87-rf-continuation-installed-agent8-r3`.
+These are focused migration and installation results, not a full installed-parent,
+Repository, commercial-solver or native-flight qualification.
+The integration merge then passed all three RF continuation/checkpoint/runner
+modules and both RF/COMSOL Changed selectors in one frozen epoch: 71 parents,
+zero skips/failures, 107.136 seconds (112.839 guarded wall). Actual candidate
+module origins, child import paths, Ruff, PowerShell parsing and source/index
+guards were verified. This did not rebuild the installation or run a solver.

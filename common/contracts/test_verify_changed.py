@@ -50,6 +50,24 @@ class ChangedGateContractTests(unittest.TestCase):
                 for module in required:
                     self.assertEqual(modules.count(module), 1)
 
+    def test_rf_batch_continuation_selects_actual_consumers_and_installation(self):
+        request, _ = self.plan('-ChangedPath', 'src/msplatform/workflows/rf_batch_continuation.py')
+        selected = [row for row in request['stages'] if row['selected']]
+        domain = next(row for row in selected if row['name'] == 'rf_multipole_domain_tests')
+        self.assertEqual(domain['command']['arguments'][:2], ['-m', 'common.gate_unittest'])
+        modules = [value.removesuffix('.py').replace('/', '.')
+                   for value in domain['command']['arguments'][2:]]
+        self.assertCountEqual(modules, [
+            'projects.rf_multipole_ion_optics.tests.domain.test_simion_batch_continuation',
+            'projects.rf_multipole_ion_optics.tests.domain.test_simion_field_checkpoint',
+            'projects.rf_multipole_ion_optics.tests.domain.test_simion_runner_contract',
+        ])
+        self.assertEqual(len(modules), len(set(modules)))
+        common = {value.removesuffix('.py').replace('/', '.') for row in selected
+                  if row['name'].startswith('common_contracts')
+                  for value in row['command']['arguments'][2:]}
+        self.assertIn('common.contracts.test_installed_scientific_core', common)
+
     def test_detector_pipeline_preserves_owner_core_routes(self):
         backend = "src/msplatform/backends/simion/"
         workflow = "src/msplatform/workflows/single_reflection_flight/downstream_fields.py"

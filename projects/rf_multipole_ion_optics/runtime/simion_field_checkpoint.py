@@ -142,7 +142,7 @@ def read_checkpoint(source: Path, identity_path: Path, program: Path, *, templat
     expected = validate_identity(load_json_object(identity_path))
     manifest = _terminal(source)
     # Reuse the existing explicit batch ancestry; never search for a latest run.
-    from projects.rf_multipole_ion_optics.runtime.simion_batch_continuation import ancestry
+    from msplatform.workflows.rf_batch_continuation import ancestry
     candidates = ancestry(source, PROJECT, manifest["mode"])
     checkpoint_record = None
     for ancestor in candidates:
