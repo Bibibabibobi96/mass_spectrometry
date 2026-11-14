@@ -363,6 +363,17 @@ ledger records the completed owners as ready/pinned. No retry or capacity-policy
 increase occurred. One incomplete resource-observation sample lacks its original
 trigger details, so the record does not establish a complete resource peak.
 
+The same normal public path completed one controlled `pulse_delta` workpoint
+on `21db737b`: [model build and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261114_130455__build__comsol__assembly-model-68da9a59674b/summary.json)
+and [stationary solve and cold reopen](../../../artifacts/projects/instrument_assembly/runs/20261114_130645__sim__comsol__assembly-field-718a2f7ca455/summary.json)
+succeeded with 5,830,174 DOFs, one stored main solution and the same verified
+dataset. All four writers exited zero and host leases were released; both exact
+capacity leases and execution aliases are absent. The guarded caller took
+614.971505 seconds with source, HEAD and caller unchanged. The sealed retention
+reason says “RF-delta”; the frozen scientific request uses `pulse_delta`.
+That wording is not the input authority and has not been rewritten. This proves
+one solved and cold-reopened workpoint, not convergence or continuous flight.
+
 Source and real-owner synthetic tests separately cover failure evidence,
 borrowed publication and pre-native tamper refusal. The new RF workpoint proves
 normal solve/reopen execution, not field accuracy or convergence. A complete
@@ -372,8 +383,24 @@ Repository result is recorded above; the original performance target remains ope
 
 The public [saved Assembly scalar stage](../../common/comsol/README.md#saved-assembly-scalar-export)
 samples an explicitly selected solution without Compute or save. Its output is
-masked `scalar_field_samples`, not a dynamic basis or flight FieldBundle. Software
-coverage includes signed world coordinates, frozen source protection, coordinate
+masked `scalar_field_samples`, not a dynamic basis or flight FieldBundle.
+On `9b178f5d`, three new public exports read the saved
+[carrier](../../../artifacts/projects/instrument_assembly/runs/20261114_134036__analysis__comsol__assembly-scalar-f16c7b7b55cf/summary.json),
+[RF reference](../../../artifacts/projects/instrument_assembly/runs/20261114_134255__analysis__comsol__assembly-scalar-ef2e3d26da50/summary.json)
+and [pulse delta](../../../artifacts/projects/instrument_assembly/runs/20261114_134416__analysis__comsol__assembly-scalar-64b867588596/summary.json)
+solutions on the same 6×6×9 world grid, with 0.05-mm pitch. The unchanged original
+detector point and z=0.1999/0.2/0.2001-mm front-edge probes have an interior
+derivative halo in this sampling box. All 77 physical members remain in the
+solved model; the small export box is not a physical crop. Each report records
+252 valid and 72 masked nodes, zero conductor fills and zero Compute calls.
+Each voltage/mask PA is 2,648 bytes; invalid storage zeros remain masked.
+Guarded walls were 82.810/81.327/77.657 seconds, respectively, with all 553
+public source records, HEAD and caller unchanged. All writers exited zero,
+host leases were released, capacity leases and aliases are absent, and the
+owners remain pinned. These are saved-solution exports, not actual Fly callbacks,
+gradient-support qualification, field/grid convergence or a full-flight result.
+
+Software coverage includes signed world coordinates, frozen source protection, coordinate
 witness refusal, real PA header/length checks and legacy-writer records without
 retention metadata. The [first managed export attempt](../../../artifacts/projects/instrument_assembly/runs/20261114_053746__analysis__comsol__assembly-scalar-4732015d3b94/summary.json)
 failed before any native operation because that historical writer record lacked
