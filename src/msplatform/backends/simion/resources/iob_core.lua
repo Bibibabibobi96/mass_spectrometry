@@ -283,12 +283,12 @@ local function verify_fractional_component(item,row)
     local expected=static_tracking and static_voltages[sample.electrode_id] or sample.electrode_id
     local matches=potential==expected
     if static_tracking and sample.metal~=false then
-      assert(type(expected)=='number' and type(potential)=='number' and type(item.pa.max_voltage)=='number'
-        and expected==expected and potential==potential and item.pa.max_voltage==item.pa.max_voltage
-        and math.abs(expected)<math.huge and math.abs(potential)<math.huge and item.pa.max_voltage>0 and item.pa.max_voltage<math.huge,
+      assert(type(expected)=='number' and type(potential)=='number' and type(item.pa.debug_max_voltage)=='number'
+        and expected==expected and potential==potential and item.pa.debug_max_voltage==item.pa.debug_max_voltage
+        and math.abs(expected)<math.huge and math.abs(potential)<math.huge and item.pa.debug_max_voltage>0 and item.pa.debug_max_voltage<math.huge,
         'static operating metal voltage must be finite')
       local u=2^-53;local gamma2=(2*u)/(1-2*u)
-      local bound=gamma2*(math.abs(expected)+4*item.pa.max_voltage)
+      local bound=gamma2*(math.abs(expected)+4*item.pa.debug_max_voltage)
       assert(bound<math.huge,'static operating voltage encoding bound overflow')
       matches=math.abs(potential-expected)<=bound
     end

@@ -20,7 +20,7 @@ class StaticWorldIobTests(unittest.TestCase):
             row=dict(role='world',instance_index=1,priority_number=1,path=str(raw),fractional_surface=str(surface),surface_witnesses=str(witness),response_ids=[1],operating_voltages=[dict(electrode_id=1,voltage_v=1.1)],grid=dict(nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1),rotation=[[1,0,0],[0,1,0],[0,0,1]],placement=dict(x_mm=0,y_mm=0,z_mm=0,az_deg=0,el_deg=0,rt_deg=0,scale=1),physical_samples=[dict(gu=[0,0,0],metal=True,electrode_id=1),dict(gu=[1,0,0],metal=False)])
             spec=dict(schema_version=1,role='static_world_tracking_iob',instances=[row],seed_iob=str(seed),output_iob=str(iob),response_fields=[],bootstrap_paths=[str(root/'iob_seed_placeholder_01.pa0')])
             request=root/'spec.lua';script=root/'harness.lua';native=root/'native.lua';native.write_text('return function(path)return path end')
-            code=(HARNESS.replace('arg={arg[1],mode,arg[5]}','local resources=arg[5];arg={arg[1],mode,arg[4]}').replace("arg[3]..'/build_tracking_iob.lua'","resources..'/build_tracking_iob.lua'").replace("arg[3]..'/iob_core.lua'","resources..'/iob_core.lua'").replace('local result={nx=3','local result={refinable=false,max_voltage=(failure=="huge" and 1e308 or 1000000),nx=3').replace('return 1,x==0','return (1.1+2000000)-2000000,x==0'))
+            code=(HARNESS.replace('arg={arg[1],mode,arg[5]}','local resources=arg[5];arg={arg[1],mode,arg[4]}').replace("arg[3]..'/build_tracking_iob.lua'","resources..'/build_tracking_iob.lua'").replace("arg[3]..'/iob_core.lua'","resources..'/iob_core.lua'").replace('local result={nx=3','local result={refinable=false,debug_max_voltage=1000000,nx=3').replace('function result:size', 'assert(result.max_voltage == nil); if failure=="huge" then result.debug_max_voltage=1e308 elseif failure=="missing_max" then result.debug_max_voltage=nil elseif failure=="nonnumeric_max" then result.debug_max_voltage="invalid" end; function result:size').replace('return 1,x==0','return (1.1+2000000)-2000000,x==0'))
             script.write_text(code);resources=native_resource_path('iob_core.lua').parent
             def run(mode,value,condition='valid'):
                 request.write_text('return '+lua_value(value))
@@ -34,6 +34,9 @@ class StaticWorldIobTests(unittest.TestCase):
             bad=copy.deepcopy(spec);bad['instances'][0]['surface_witnesses']=str(root/'missing.csv')
             self.assertNotEqual(run('verify',bad).returncode,0)
             result=run('verify',spec,'huge');self.assertNotEqual(result.returncode,0);self.assertIn('encoding bound overflow',result.stderr)
+            for condition in ('missing_max', 'nonnumeric_max'):
+                with self.subTest(condition=condition):
+                    self.assertNotEqual(run('verify',spec,condition).returncode,0)
 
     def test_distinct_static_model_build_reopen(self):
         with tempfile.TemporaryDirectory() as directory:

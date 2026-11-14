@@ -1,6 +1,7 @@
 -- Read-only cold audit of an already adjusted standalone electrostatic PA.
 -- SIMION 2020 docs/simion.chm::lua_simion.pas.html: point, surface_info,
--- potential_vc, field_vc and grid properties. Never Refine, Fast Adjust or save.
+-- potential_vc, field_vc and grid properties. Official examples/pa2text/lua/pa2text.lua
+-- reads the stored encoding limit as debug_max_voltage. Never Refine, Fast Adjust or save.
 local spec=assert(dofile(assert(arg[1],'static operating audit spec required')))
 local function finite(v) return type(v)=='number' and v==v and math.abs(v)<math.huge end
 local function nonempty(path)
@@ -31,11 +32,11 @@ for _,asset in ipairs(spec.assets) do
     if sample.metal then
       metal_count=metal_count+1
       local expected=sample.expected_voltage_v
-      assert(finite(expected) and finite(pa.max_voltage) and pa.max_voltage>0,'finite static workpoint required')
+      assert(finite(expected) and finite(pa.debug_max_voltage) and pa.debug_max_voltage>0,'finite static workpoint required')
       -- Official ordinary PA encodes metal as V + 2*max_voltage. Bound only
       -- binary64 addition/subtraction roundoff; this is not a field tolerance.
       local u=2^-53;local gamma2=2*u/(1-2*u)
-      local bound=gamma2*(math.abs(expected)+4*math.abs(pa.max_voltage))
+      local bound=gamma2*(math.abs(expected)+4*math.abs(pa.debug_max_voltage))
       assert(finite(bound),'static encoding roundoff bound overflow')
       assert(math.abs(voltage-expected)<=bound,'static electrode voltage differs')
     else void_count=void_count+1 end

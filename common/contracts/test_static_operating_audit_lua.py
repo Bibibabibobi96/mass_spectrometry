@@ -24,9 +24,12 @@ class StaticOperatingAuditLuaTests(unittest.TestCase):
             script = root/'double.lua'
             script.write_text('''
 local mode=arg[1]
-local pa={nx=5,ny=5,nz=5,dx_mm=1,dy_mm=1,dz_mm=1,potential_type="electric",symmetry="3dplanar",max_voltage=10}
+local pa={nx=5,ny=5,nz=5,dx_mm=1,dy_mm=1,dz_mm=1,potential_type="electric",symmetry="3dplanar",debug_max_voltage=10}
+if mode=="missing_max" then pa.debug_max_voltage=nil end
+if mode=="nonnumeric_max" then pa.debug_max_voltage="invalid" end
+assert(pa.max_voltage == nil)
 if mode=="grid" then pa.nx=6 end
-if mode=="overflow" then pa.max_voltage=1e308 end
+if mode=="overflow" then pa.debug_max_voltage=1e308 end
 function pa:point(x,y,z)
   if x==1 then return mode=="voltage" and 6 or 5, mode~="metal" end
   if x==2 then return -3,true end
@@ -46,7 +49,7 @@ f:write('return {assets={{domain_id="world",carrier_path="'..root..'/world.pa",s
 f:close();arg={[1]=root.."/spec.lua"};assert(loadfile(root.."/audit.lua"))()
 ''', encoding='utf-8')
             (root/'audit.lua').write_bytes(audit.read_bytes())
-            for mode in ('pass', 'grid', 'metal', 'voltage', 'surface', 'nonfinite', 'outside', 'overflow', 'missing'):
+            for mode in ('pass', 'grid', 'metal', 'voltage', 'surface', 'nonfinite', 'outside', 'overflow', 'missing_max', 'nonnumeric_max', 'missing'):
                 report = root/'report.json'
                 report.unlink(missing_ok=True)
                 surface = root/'world.pa-surf'

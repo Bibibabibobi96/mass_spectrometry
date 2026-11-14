@@ -158,10 +158,25 @@ invalid workpoints, missing/tampered surface, mutated model-bound witnesses,
 wrong geometry/voltage and Lua IOB readback were checked separately within that
 same suite. Earlier attempts failed a stale three-operation expectation and a
 canonical-versus-alias output-path mismatch; those receipts remain separate.
-Both targeted ordinary-install arms on earlier `c49aced1` checked the predecessor
-planning path and 22-group MR drive with 576 source-joined runtime members and
-author-tree access denied. That does not qualify this new operating-field path;
-its ordinary-install and native acceptance remain open.
+Both targeted ordinary-install arms on `76c7f605` checked static operating-field
+planning and the 22-group MR drive with 577 source-joined runtime members per arm,
+fresh site-packages and author-tree access denied. This is planning evidence,
+not full installation or native qualification. The successor API correction below
+still requires installation evidence for its changed resource bytes.
+
+The first public native model/field attempt on `76c7f605` prepared the model in
+`20261115_071941__build__simion__model-502cae342ab4`, then completed Refine,
+family audit and standalone export before cold audit failed in
+`20261115_072011__sim__simion__fields-5b13826def11`. No field was published and
+no Fly ran. The failed owner retained its evidence, confirmed stopped writers and
+released its capacity reservation. The auditor and IOB reader used the nonexistent
+`pa.max_voltage` property. The installed SIMION 2020 official example
+`examples/pa2text/lua/pa2text.lua` reads `pa.debug_max_voltage`; the existing scalar
+adapter uses it too (reviewed 2026-11-15). Both new readers now use that property,
+with finite/range and encoding-bound checks intact. Seventeen focused tests passed
+in 2.247 seconds, including API doubles exposing only the supported property and
+refusing absent, nonnumeric or overflowing values. Native successor validation
+remains open; no header default or physical tolerance was substituted.
 
 A normally registered two-instance toy built actual geometry through three public
 native operations in run
