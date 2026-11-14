@@ -201,6 +201,20 @@ while reporting 100 request boundaries. Original run bytes and classifications
 were not rewritten. The native callback-state ordering cause remains unestablished;
 no tolerance, stopping physics or source was changed.
 
+Saved-field tracking on `58aac761` then completed a new public N100 attempt,
+`20261115_075205__sim__simion__track-81e646f9f32b`, in 31.938 seconds. It read
+the exact `a021fd860187` standalone field in a new process, with zero model/field
+builds and zero Refine. All three actual native operation receipts exited zero;
+the owner confirmed stopped writers and released host/capacity leases. Source and
+field guards stayed unchanged. The source realization is byte-identical to the
+preceding attempt; all 100 original IDs and mother/clock facts are retained, with
+100 honest `programmatic_deadline_stop` request boundaries separate from native
+terminals. Independent review confirmed the public field reference and native
+operation logs. The callback-state ordering difference persists and is not
+described as accepted-terminal accuracy. This closes the controlled generic
+static saved-field-to-flight functional slice; dynamic RF/pulse generalization,
+retained instrument chains and final P4 acceptance remain separate open work.
+
 A normally registered two-instance toy built actual geometry through three public
 native operations in run
 `20261115_055743__build__simion__geometry-274275bb93c4`; no Refine or Fly occurred.
