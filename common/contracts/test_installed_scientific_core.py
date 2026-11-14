@@ -2559,6 +2559,10 @@ for case in fixture['single_reflection_workflow']:
         recorded_birth_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
         sfi_consumer_probe = runpy.run_path(str(root / 'installed_sfi_consumer_probe.py'))
         sfi_consumer_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing, blocked_source_roots)
+        rf_ip_probe = runpy.run_path(str(root / 'rf_ip_installed_probe.py'))
+        rf_ip_leaf = runpy.run_path(str(root / 'rf_ip_inert_leaf.py'))
+        with section_timing('rf_ip_continuous_owner', sys.argv[2]):
+            rf_ip_probe['run'](fixture['rf_ip_inert_fixtures'][int(sys.argv[2])], rf_ip_leaf['inert_native_leaf'])
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -7374,6 +7378,29 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             tof_spectrum_geometry = tof_spectrum_root / 'resolved_geometry.json'
             tof_spectrum_geometry.write_bytes(tof_spectrum_geometry_bytes)
             tof_spectrum_input_bytes = {path: path.read_bytes() for path in tof_spectrum_root.rglob('*') if path.is_file()}
+            # Two independent inert RF-IP fields are published before author sources go offline.
+            import runpy
+            rf_ip_author_path = source / 'common/contracts/test_support/rf_ip_inert_field.py'
+            rf_ip_author = runpy.run_path(str(rf_ip_author_path))
+            import importlib
+            for module_name in ('common.contracts.test_joint_ip_model', 'common.contracts.test_simion_rf_fields',
+                                'common.contracts.test_simion_rf_prepared_model', 'common.contracts.test_simion_rf_tracking',
+                                'common.contracts.test_simion_geometry_compiler', 'common.contracts.test_simion_model_execution',
+                                'common.contracts.test_simion_prepared_model', 'common.contracts.test_component_particle_state',
+                                'integrations.tests.test_ip_compiler',
+                                'projects.dual_pressure_rectilinear_ion_processor.tests.test_functional'):
+                module = importlib.import_module(module_name)
+                actual = Path(module.__file__).resolve()
+                relative = Path(*module_name.split('.')).with_suffix('.py')
+                self.assertEqual(actual.read_bytes(), (source / relative).read_bytes())
+            rf_ip_fixtures = []
+            for index in range(2):
+                rf_ip_root = root / ('rf-ip-inert-' + str(index))
+                rf_ip_root.mkdir()
+                rf_ip_started = time.perf_counter_ns()
+                rf_ip_fixtures.append(rf_ip_author['make_installed_fixture'](rf_ip_root))
+                print('INSTALLED_SECTION_TIMING=' + json.dumps(dict(section='rf_ip_inert_field_fixture',
+                    case=str(index), elapsed_ns=time.perf_counter_ns()-rf_ip_started, exception=False)), flush=True)
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
                                               author_source_roots=[str(REPO_ROOT)],
@@ -7389,6 +7416,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
+                                              rf_ip_inert_fixtures=rf_ip_fixtures,
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
                                               tof_mass_spectrum_old_witness=tof_spectrum_old_witness,
@@ -7458,6 +7486,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             sfi_consumer_bytes = sfi_consumer_source.read_bytes()
             shutil.copyfile(sfi_consumer_source, root / 'installed_sfi_consumer_probe.py')
             self.assertEqual((root / 'installed_sfi_consumer_probe.py').read_bytes(), sfi_consumer_bytes)
+            for name in ('rf_ip_installed_probe.py', 'rf_ip_inert_leaf.py'):
+                selected = source / 'common/contracts/test_support' / name
+                shutil.copyfile(selected, root / name)
+                self.assertEqual((root / name).read_bytes(), selected.read_bytes())
             observation_source = source / 'common/contracts/test_support/installed_observation_probe.py'
             observation_bytes = observation_source.read_bytes()
             shutil.copyfile(observation_source, root / 'installed_observation_probe.py')
@@ -7499,6 +7531,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 # This 900 s harness bound does not change the stage's 120 s warning.
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
+                self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
                 observation = self.run_command([consumer_python, '-I', '-B', str(root / 'installed_observation_probe.py'),
                     str(root / 'installed_observation_fixture.json'),
@@ -7526,6 +7559,20 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/installed_recorded_birth_probe.py',
                     'common/contracts/test_support/installed_sfi_consumer_probe.py',
                     'common/contracts/test_support/installed_observation_probe.py',
+                    'common/contracts/test_support/rf_ip_inert_field.py',
+                    'common/contracts/test_support/rf_ip_inert_leaf.py',
+                    'common/contracts/test_support/rf_ip_installed_probe.py',
+                    'common/contracts/test_rf_ip_composed.py',
+                    'common/contracts/test_joint_ip_model.py',
+                    'common/contracts/test_simion_rf_fields.py',
+                    'common/contracts/test_simion_rf_prepared_model.py',
+                    'common/contracts/test_simion_rf_tracking.py',
+                    'common/contracts/test_simion_geometry_compiler.py',
+                    'common/contracts/test_simion_model_execution.py',
+                    'common/contracts/test_simion_prepared_model.py',
+                    'common/contracts/test_component_particle_state.py',
+                    'integrations/tests/test_ip_compiler.py',
+                    'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py',
                     'common/contracts/test_simion_tracking_execution.py',
                     'integrations/tests/test_single_reflection_program.py',
                     'common/contracts/test_installed_scientific_core.py'))

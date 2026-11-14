@@ -94,6 +94,18 @@ stage boundaries. Ordinary installation of this new consumer/admission successor
 real coupled fields and HS1 flight remain pending. The old segmented preparation
 entry remains until its actual continuous replacement is natively validated.
 
+The installation harness now prepares a separate inert RF-IP field fixture for
+each ordinary-install arm. Both children call the installed consumer and real
+artifact reader/managed tracking owner with the existing HS1 guards; only the
+SIMION leaf is replaced by a Python test process. The source composed test
+shares that leaf/field fixture and retains its recovery, wrong-seed, source,
+vendor and missing-resource refusals. Its full parent plus three installation
+isolation checks passed in 31.410 seconds with unchanged sources; the subsequent
+timing-only probe edit passed all three isolation checks in 0.350 seconds.
+Fixture construction and installed owner spans have explicit section timings.
+Both ordinary wheel/sdist arms for this successor remain pending; synthetic
+field assets do not establish native fields, HS1 flight or scientific qualification.
+
 The preceding fixed candidate `269e3665` passed both ordinary wheel and
 sdist-rebuilt-wheel consumers in 949.662 seconds. All 560 authored build-source
 records matched that clean commit; five generated egg-info records matched the
