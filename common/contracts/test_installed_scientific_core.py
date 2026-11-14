@@ -7,6 +7,7 @@ import json
 import hashlib
 import os
 from pathlib import Path
+from contextlib import contextmanager
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,18 @@ from common.ion_release.test_cylinder import halton_spec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+@contextmanager
+def retained_installed_workspace():
+    """Keep the complete installed tree after any incomplete acceptance."""
+    directory = Path(tempfile.mkdtemp(prefix='installed-scientific-core-')).resolve()
+    try:
+        yield directory
+    except BaseException:
+        print('RETAINED_INSTALLED_WORKSPACE=' + str(directory), flush=True)
+        raise
+    else:
+        shutil.rmtree(directory)
 
 # This runs with -I in a clean installed environment, without repository imports.
 INSTALLED_PROBE = r'''
@@ -7124,7 +7137,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             retained.mkdir(parents=True, exist_ok=False)
             (retained / 'acceptance.json').write_text(json.dumps(dict(status='not_completed',
                 purpose='ordinary_installation_acceptance', test_source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())), encoding='utf-8')
-        with tempfile.TemporaryDirectory(prefix='installed-scientific-core-') as directory:
+        with retained_installed_workspace() as directory:
             root = Path(directory).resolve()
             self.assertFalse(root.is_relative_to(REPO_ROOT))
             environment = {key: value for key, value in os.environ.items()

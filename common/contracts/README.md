@@ -16,6 +16,15 @@ or malformed publications fail closed; the protocol wait uses a monotonic
 deadline. Both fixtures retain small receipts before temporary cleanup.
 These tests do not constitute native solver qualification.
 
+The ordinary-installation parent now preserves its entire temporary workspace
+on any exception, including a failed child or timeout. It reports the retained
+absolute path and re-raises the original exception; only normal completion
+removes the owned tree. This prevents test cleanup from deleting installed files
+when a nested writer's exit has not been confirmed. Two focused tests and two
+subtests cover successful cleanup, failure and timeout retention without starting
+a native solver. Retained failed trees still require explicit lifecycle review;
+these checks do not establish complete installation acceptance.
+
 The ordinary-installation IP reader probe retains its twelve input/expected-result
 cases and exact missing-module error. Its two child paths now enable Python
 faulthandler, flush interpreter startup identity to stderr and record the parent
