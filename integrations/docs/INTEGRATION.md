@@ -1311,6 +1311,41 @@ inputs, coordinates/units, usable field coverage and collision geometry. Field
 convergence, mesh optimization and accuracy qualification are separate work, not
 preconditions for this functional attempt; no physical accuracy is granted by it.
 
+On frozen `4438170a`, the public `load_recorded_release` and SIMION `track`
+stages completed the original 100-birth SFI attempt in
+[run d7538122462e](../../../artifacts/projects/instrument_assembly/runs/20261115_011608__sim__simion__track-d7538122462e/run_manifest.json).
+The selected existing FieldBundle owns the current geometry and drive; the
+older preparation supplies only the original recorded source. Its complete RF
+design, source frame/pose, clock and pulse joins matched. The older preparation's
+0.1-mm detector marker and numerical grid were not used as the new field authority;
+the selected fields retain the approved canonical 1.0-mm detector. Whole-preparation
+identity validation remains strict; the first mismatched preparation attempt
+refused before creating an owner or starting SIMION.
+
+The successful native attempt built and checked one IOB, then ran one continuous
+Fly: three native calls, zero Refine/Compute, no interface restart or source
+resampling. Independent readback verified all 100 original IDs, positions,
+velocities, masses, charges, weights and birth times, and all 100 native release
+IDs/times. The
+[readable collection](../../../artifacts/projects/instrument_assembly/runs/20261115_011608__sim__simion__track-d7538122462e/results/collection.json)
+retains all 100 terminal records and 488 canonical events. It reports 97 multipole
+handoffs, sidewall entries, pre-pulse states and first-grid crossings, and zero
+analyzer-exit, reflectron or detector crossings. All 100 terminal causes remain
+`unknown_termination`: the terminal splat flag was unavailable, and a cached
+pre-action contact is not an independently confirmed terminal cause. Three IDs
+(2, 34, 48) retain `equal_time_conflicting_callback`; their scientific observations
+are explicitly incomplete. Execution success and `native_complete=true` do not
+override `observation_complete=false` or confer transmission/accuracy qualification.
+
+All three writers exited zero and released their host leases; the input protection
+lease and short execution alias were absent after finalization. Fly took 471.210 s,
+with observed peak process-tree working set 2,974,412,800 bytes and run directory
+2,501,717 bytes; the finalized run retains 3,254,822 bytes in 55 files. The 700/295 GiB
+capacity policy, approved limits, synchronous I/O and zero retries were unchanged.
+Full per-step trajectories, common-domain field coupling, convergence, installed
+execution of this exact successor and final Repository acceptance were not tested
+by this run. The separate complete RF–IP–MR chain remains open.
+
 The first coarse carrier export, run
 `20261114_185405__analysis__comsol__assembly-scalar-b116aef94ebc`, remains FAILED.
 Its native writer exited successfully with zero Compute, 5,312,307 queried nodes,
