@@ -21,7 +21,7 @@ PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection
                     "dual_pressure_rectilinear_ion_processor"}
 # Provider dispatch belongs to components; neutral Assembly data may not import
 # individual providers merely because this shared traversal exists.
-COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members"}
+COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
@@ -264,6 +264,16 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
         self.assertEqual(core_boundary_errors(source, "msplatform.components.geometry_members", dependencies=set()), [])
         errors = core_boundary_errors(source, "msplatform.assembly.geometry_members", dependencies=set())
         self.assertTrue(any("assembly imports provider-specific physics" in error for error in errors))
+
+    def test_shape_query_is_neutral_without_allowing_provider_imports(self):
+        source = "from msplatform.components.shape_query import query_members"
+        self.assertEqual(core_boundary_errors(source, "msplatform.assembly.example", dependencies=set()), [])
+        provider = "from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members"
+        self.assertTrue(any("provider-specific physics" in error for error in
+                            core_boundary_errors(provider, "msplatform.assembly.example", dependencies=set())))
+        dynamic = "import importlib; importlib.import_module(name)"
+        self.assertTrue(any("unresolved dynamic import" in error for error in
+                            core_boundary_errors(dynamic, "msplatform.backends.comsol.example", dependencies=set())))
 
     def test_component_imports_follow_the_declared_acyclic_provider_graph(self):
         sources = {".".join(path.relative_to(CORE_ROOT.parent).with_suffix("").parts):

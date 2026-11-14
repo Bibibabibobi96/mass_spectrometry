@@ -73,11 +73,19 @@ class ScalarOwnerFillTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'support failure') as caught:self.action(True)
         self.assertTrue(any(str(x).endswith('field_v.pa') for x in caught.exception.failure_output_paths))
     def test_missing_code_fails_before_native(self):
-        actual=subject.importlib.import_module
-        def missing(name):
-            if name=='msplatform.components.shape_query':return SimpleNamespace(__file__=str(self.root/'absent.py'))
-            return actual(name)
-        with patch.object(subject.importlib,'import_module',side_effect=missing),self.assertRaises(FileNotFoundError):self.action(True)
+        from msplatform.components import shape_query
+        with patch.object(shape_query, '__file__', str(self.root/'absent.py')), self.assertRaises(FileNotFoundError):
+            self.action(True)
+        self.assertFalse(self.calls)
+    def test_missing_module_fails_before_native(self):
+        import builtins
+        actual = builtins.__import__
+        def missing(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == 'msplatform.components' and 'shape_query' in fromlist:
+                raise ImportError('selected shape query unavailable')
+            return actual(name, globals, locals, fromlist, level)
+        with patch('builtins.__import__', side_effect=missing), self.assertRaisesRegex(ImportError, 'selected shape query unavailable'):
+            self.action(True)
         self.assertFalse(self.calls)
     def test_public_opt_in_is_frozen_in_payload_and_action(self):
         self.projection['outer_box_mm']={'min':[-2,-2,-2],'max':[3,3,3]}

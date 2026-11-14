@@ -1,7 +1,6 @@
 """Export a saved Assembly stationary solution as masked world scalar samples."""
 from __future__ import annotations
 
-import importlib
 import json
 import math
 from collections.abc import Mapping
@@ -320,12 +319,14 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
 
 def _freeze_support_sources(session: Any) -> list[dict[str, Any]]:
     """Record only the actual selected small Python support source files."""
-    names = ('msplatform.backends.comsol.assembly_scalar_fill', 'msplatform.components.shape_query',
-             'msplatform.contracts.rigid_transform', 'msplatform.backends.simion.standalone_pa_composition',
-             'msplatform.backends.simion.collision_overlay')
+    from msplatform.backends.comsol import assembly_scalar_fill
+    from msplatform.components import shape_query
+    from msplatform.contracts import rigid_transform
+    from msplatform.backends.simion import standalone_pa_composition, collision_overlay
+    modules = (assembly_scalar_fill, shape_query, rigid_transform, standalone_pa_composition, collision_overlay)
     records = []
-    for index, name in enumerate(names):
-        module = importlib.import_module(name)
+    for index, module in enumerate(modules):
+        name = module.__name__
         src = Path(module.__file__).resolve(strict=True)
         if src.suffix != '.py' or not src.is_file():
             raise ValueError('scalar support module source is unavailable: ' + name)

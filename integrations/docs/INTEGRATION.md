@@ -387,8 +387,14 @@ neutral `shape_query` module was not declared as component infrastructure.
 The downloaded artifact and pure-checker reproduction identify all seven
 findings. The same CI installation parent passed in 1006.219 seconds, but that
 does not turn the overall Changed result green; Repository was skipped. A
-repair and actual failed-parent rerun remain required, separately from the
-latest-consumer installation and complete Repository/performance acceptance.
+repair now uses explicit local support-module imports and declares only the
+neutral shape-query infrastructure; arbitrary dynamic and provider imports
+remain rejected. The actual failed parent, full boundary module and scalar
+source/managed-owner regressions passed 41 parents and 162 subtests in 44.717
+seconds on the integrated repair, with frozen source identities and released
+GATE. Missing module and missing source file remain separate pre-native
+refusals. This focused rerun does not replace a successful full Changed run,
+latest-consumer installation or complete Repository/performance acceptance.
 
 The full [ordinary-installation parent](../../common/contracts/test_installed_scientific_core.py)
 passed on candidate `812c20f3` plus test source
