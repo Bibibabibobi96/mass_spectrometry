@@ -1239,6 +1239,27 @@ IP drive or a complete response family. Native writers and capacity leases were
 released and source/input guards matched. Field solving, full continuous flight,
 collision coverage at PA overlaps and numerical convergence remain open.
 
+The carrier-only stationary successor on `260c354d`, run
+`20261114_182828__sim__comsol__assembly-field-3128d4790aef`, completed one Compute
+and an independent cold reopen. Both report 1,322,681 degrees of freedom and
+COMSOL 6.4 build 293. Native writers exited successfully, leases were released,
+and source/input guards matched. This is one coarse carrier workpoint, with IP
+unit responses and external RF response still outstanding; it does not establish
+field convergence, the complete dynamic field or native flight.
+
+The callback-neutral scalar composer uses the existing model-drive evaluator
+for all fifteen IP voltages and the existing RF waveform kernel. Every basis
+support is queried even when its coefficient is zero. The IP HS1 binding takes
+the explicit common world query box and selected IP pose; it does not infer
+coverage from a local PA or change the original RF–IP parent-domain policy.
+Five focused software parents passed without skips in 57.064 seconds
+(62.621 guarded wall), including actual Lua voltage-law resources, invalid
+support/resource rejection, rotated gas queries and existing RF–IP parity.
+Evidence is in workspace
+`.tools/phase04-codex-takeover-20261109/v87-ip-mr-runtime-focused-agent8-r1`.
+These pieces are not yet wired into the complete tracking Program or qualified
+by native Fly, ordinary installation or a final Repository run.
+
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
 and checkout guards: 386 parent successes, 254 subtest successes and one inherited

@@ -1479,6 +1479,8 @@
               "common/contracts/test_ip_mr_model.py",
               "common/contracts/test_ip_mr_native_model.py",
               "common/contracts/test_ip_mr_scalar_basis.py",
+              "common/contracts/test_ip_mr_scalar_runtime.py",
+              "common/contracts/test_ip_mr_hs1_binding.py",
               "common/contracts/test_joint_ip_model.py",
               "common/contracts/test_oa_mr_model.py",
               "common/contracts/test_rf_oa_geometry_iob.py",

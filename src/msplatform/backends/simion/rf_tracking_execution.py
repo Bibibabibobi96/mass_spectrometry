@@ -85,7 +85,8 @@ def compile_continuous_hs1_gas(baseline: dict, *, bath_domain: BoxDomain,
     return (compile_gas_runtime(prepare_gas_field(bath), placement=placement),
             compile_gas_runtime(prepare_gas_field(outer), placement=placement))
 
-def prepare_rf_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any]) -> dict[str, Any]:
+def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *, role: str,
+                    common_world_domain: BoxDomain | None = None, common_world_frame_id: str | None = None) -> dict[str, Any]:
     """Validate explicit gas and vendor inputs and derive a deterministic runtime."""
     import hashlib
     from dataclasses import asdict
@@ -113,7 +114,7 @@ def prepare_rf_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any]) 
     adapted = adapt_hs1_for_repeat_fly(original.decode('utf-8-sig'))
     document = require_prepared_model(model)
     geometry = document['geometry']['frontend_geometry']
-    if geometry['role'] != 'simion_rf_ip_geometry':
+    if geometry['role'] != role:
         raise ValueError('RF-IP HS1 requires the actual selected joint model')
     composition = geometry['composition_plan']
     ids = [name for name, row in composition['components'].items()
@@ -125,9 +126,16 @@ def prepare_rf_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any]) 
     pose = RigidTransform.from_contract(poses[0])
     if pose.from_frame_id != outer.frame_id or pose.to_frame_id != document['native_frame_id']:
         raise ValueError('RF-IP HS1 gas frame differs from selected placement')
-    bounds = geometry['numerical_domains']['parent']['bounds_mm']
-    parent = BoxDomain(tuple(bounds[a+'_min'] for a in 'xyz'), tuple(bounds[a+'_max'] for a in 'xyz'),
-                       (True, True, True), (True, True, True))
+    if role == 'simion_rf_ip_geometry':
+        bounds = geometry['numerical_domains']['parent']['bounds_mm']
+        parent = BoxDomain(tuple(bounds[a+'_min'] for a in 'xyz'), tuple(bounds[a+'_max'] for a in 'xyz'),
+                           (True, True, True), (True, True, True))
+    else:
+        if not isinstance(common_world_domain, BoxDomain):
+            raise ValueError('IP-MR HS1 requires an explicit common world BoxDomain')
+        if common_world_frame_id != document['native_frame_id']:
+            raise ValueError('IP-MR common world box frame differs from model')
+        parent = common_world_domain
     baseline = document['drive']['ip_schedule']['baseline']
     bath, outside = compile_continuous_hs1_gas(baseline, bath_domain=bath_domain, outer=outer,
                                                 placement=pose, parent_domain=parent)
@@ -138,6 +146,20 @@ def prepare_rf_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any]) 
                     vendor_adapted_sha256=sha(adapted.encode('utf-8')),
                     bath_runtime_sha256=sha(bath.encode('utf-8')),
                     outer_runtime_sha256=sha(outside.encode('utf-8')))
+    if role == 'simion_ip_mr_complete_geometry':
+        identity['common_world_domain'] = asdict(parent)
+        identity['common_world_frame_id'] = common_world_frame_id
     return dict(identity=identity, vendor_record=dict(vendor), vendor_original=original,
                 vendor_adapted=adapted, bath_runtime=bath, outer_runtime=outside,
                 query_frame_id=pose.to_frame_id)
+
+def prepare_rf_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain the existing RF-IP parent-domain authority and validation."""
+    return _prepare_ip_hs1(model, request, role='simion_rf_ip_geometry')
+
+
+def prepare_ip_mr_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
+                      common_world_domain: BoxDomain, common_world_frame_id: str) -> dict[str, Any]:
+    """Bind selected IP gas to the caller's verified common world query box."""
+    return _prepare_ip_hs1(model, request, role='simion_ip_mr_complete_geometry',
+                           common_world_domain=common_world_domain, common_world_frame_id=common_world_frame_id)
