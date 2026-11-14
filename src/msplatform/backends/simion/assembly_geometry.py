@@ -28,6 +28,17 @@ def _record_rounding(values: list[float], rounding: list[dict[str, Any]]) -> Non
 
 def _world_primitive(shape: Mapping[str, Any], transform: RigidTransform, rounding: list[dict[str, Any]]) -> tuple[str, list[float], list[float]]:
     kind = shape.get('kind'); rotation = transform.rotation
+    if kind == 'rod':
+        if set(shape) != {'kind', 'center_xy_mm', 'z_min_mm', 'z_max_mm', 'radius_mm'}:
+            raise ValueError('GEM supports only canonical round rods')
+        center_xy = shape['center_xy_mm']; low = shape['z_min_mm']; high = shape['z_max_mm']
+        if (not isinstance(center_xy, (list, tuple)) or len(center_xy) != 2
+                or any(type(value) not in (int, float) or not math.isfinite(value)
+                       for value in (*center_xy, low, high)) or high <= low):
+            raise ValueError('GEM round rod requires finite center and positive axial extent')
+        shape = dict(kind='cylinder', center_mm=[*center_xy, (low + high) / 2],
+                     radius_mm=shape['radius_mm'], height_mm=high - low)
+        kind = 'cylinder'
     if any(sum(abs(x) for x in row) != 1 or any(x not in (-1, 0, 1) for x in row) for row in rotation):
         raise ValueError('GEM pose requires a signed axis-permutation rotation')
     center = _vector(shape.get('center_mm'), 'primitive center')
@@ -42,10 +53,21 @@ def _world_primitive(shape: Mapping[str, Any], transform: RigidTransform, roundi
         radius, height = shape.get('radius_mm'), shape.get('height_mm')
         if any(type(x) not in (int,float) or not math.isfinite(x) or x <= 0 for x in (radius,height)):
             raise ValueError('GEM physical cylinder requires positive finite radius and height')
-        if abs(rotation[2][2]) != 1: raise ValueError('GEM cylinder pose must preserve the world z axis')
-        radius,height=float(radius),float(height); top=world[2]+height/2
-        _record_rounding([world[0],world[1],radius,height,top], rounding)
-        return cylinder_z(world[0],world[1],top,radius,height), [world[0]-radius,world[1]-radius,world[2]-height/2], [world[0]+radius,world[1]+radius,world[2]+height/2]
+        radius, height = float(radius), float(height)
+        axis = next(i for i in range(3) if abs(rotation[i][2]) == 1)
+        span = [2 * radius] * 3; span[axis] = height
+        low = [world[i] - span[i] / 2 for i in range(3)]
+        high = [world[i] + span[i] / 2 for i in range(3)]
+        top = list(world); top[axis] += height / 2
+        if axis == 2:
+            _record_rounding([world[0], world[1], radius, height, top[2]], rounding)
+            primitive = cylinder_z(top[0], top[1], top[2], radius, height)
+        else:
+            _record_rounding(top + [radius, height], rounding)
+            rotate = 'rotate_y(90)' if axis == 0 else 'rotate_x(-90)'
+            primitive = ('locate(' + ','.join(format_number(v) for v in top) + ') { '
+                         + rotate + ' { ' + cylinder_z(0., 0., 0., radius, height) + ' } }')
+        return primitive, low, high
     raise ValueError('unsupported GEM physical primitive: '+str(kind))
 
 
@@ -79,7 +101,7 @@ def render_assembly_gem(assembly: Mapping[str, Any], *, domain: Mapping[str, Any
                         boundary: str) -> dict[str, Any]:
     """Render a source-validated neutral Assembly, without a native process.
 
-    Only signed-permutation boxes and world-z cylinders are admitted. Distinct
+    Only signed-permutation boxes and cylinders are admitted. Distinct
     conductor AABBs must be strictly separated; ambiguous overlap is refused.
     """
     if not isinstance(domain,Mapping) or set(domain)!={'frame_id','minimum_mm','maximum_mm'}:

@@ -101,13 +101,26 @@ the old failed jobs, a new complete CI result or final Repository acceptance.
 SIMION also accepts the explicit `neutral_world_collision` geometry representation
 through the same public `compile_geometry` and `build_geometry` stages. It traverses
 registered complete members rather than selecting a project-name combination.
-The current adapter supports signed-axis boxes, world-z cylinders and the stated
-union/difference subset, with an explicit world domain, isotropic pitch and native
+The current adapter supports signed-axis boxes, cylinders and canonical round
+rods, plus the stated union/difference subset, with an explicit world domain, isotropic pitch and native
 zero-Neumann boundary. Caller-declared metal witnesses cover every scientific
 group, and void witnesses are checked against canonical posed members before
 being checked again in build/cold reopen. Ambiguous overlapping conductor bounds
 are refused as unverified separation, not reported as proven solid intersections.
 Unsampled cuts/surfaces and other representations remain unqualified.
+
+The round-rod projection consumes the existing canonical center, radius and axial
+endpoints; it does not regenerate the component. Signed-axis X/Y cylinders use
+the installed SIMION 2020 GEM rotation syntax and existing cylinder primitive.
+Fifteen focused parents passed on the integrated worktree (1.360 seconds), with
+source bytes unchanged and the GATE released. Eight additional registered public
+geometry/static-model consumer parents passed in 24.752 seconds, also with an
+unchanged source guard and released GATE. The retained bare-RF consumer keeps
+all 32 member/source identities at its original pose and eight scientific groups;
+one source-derived interior witness per group and a vacuum witness are checked.
+Registered-provider, both-axis-sign, parameter, source-tamper, overlap, nonround
+and unsupported-rotation cases remain covered. This is software compilation and
+witness evidence; native rotated-cylinder rasterization and flight remain open.
 
 The same neutral-world representation now consumes explicit finite static group
 voltages, the existing linear fractional-field owner and continuous original-birth
@@ -141,6 +154,26 @@ standalone export and cold reopen must be established before claiming that nativ
 route. No published family was opened in this investigation and no private family
 copy/alias workaround was adopted. Existing RF/OA family behavior remains a
 separately unqualified native boundary, not a demonstrated corruption result.
+
+A normally registered two-instance toy subsequently built real geometry through
+three public native operations in run
+`20261115_055743__build__simion__geometry-274275bb93c4`; no Refine or Fly occurred.
+A synthetic finalization experiment on frozen `e899bf3c` then established why
+native `pa:copy` alone is insufficient: it saved the point array but no surface
+sidecar (run `20261115_061314__analysis__simion__surface-copy-181e2dd81b7a`, failed).
+Installed `SIMION-2020/docs/simion.chm::lua_simion.pas.html` documents copying
+points separately from the `surface_info` getter/setter (available since 8.1.1.11).
+An explicitly changed experiment transferred every surface tuple before saving.
+Run `20261115_061738__analysis__simion__surface-copy-25d7333db83a` matched all
+41^3 node potentials/metal flags, grid metadata, surface tuples and three off-grid
+potential/field samples exactly after fresh-process reopen. Its five producer-family
+files were held read-denied, independently verified before the cold reader; all four
+operations exited zero and released their host leases. No published family was opened.
+The outer owner nevertheless failed because the one-time action omitted mandatory
+`manifest_extra_fields` from its success return. Its failed status and partial outputs
+are preserved, not rewritten as a published field. The observations establish only
+this synthetic SIMION 2020 copy/set/save/cold-read compatibility; production export,
+field publication, original-birth static Fly and physical accuracy remain open.
 
 A normally registered test component entered an unlisted two-instance Assembly,
 public compilation and the existing managed geometry owner. Fresh-process explicit
