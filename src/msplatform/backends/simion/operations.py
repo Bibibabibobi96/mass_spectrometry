@@ -385,6 +385,13 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
+    sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
+    ip_mr_admission = None
+    if sampled_ip_mr:
+        if scalar_field_basis is not None:
+            raise ContractError('sampled IP-MR tracking uses the basis already published in its FieldBundle')
+        from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields
+        ip_mr_admission = admit_ip_mr_tracking_fields(source.reference)
     packet = particles.to_dict() if isinstance(particles, ReleaseRealization) else copy.deepcopy(particles)
     birth_authority = None if birth_source_authority is None else validate_birth_authority(birth_source_authority, packet)
     clocks = {name: dict(source.data_records[name], path=str(source.data_path(name)))
@@ -403,7 +410,8 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     planning = dict(particles=packet, clock_records=clocks, propagation=propagation,
                     observations=observations, numerics=numerics, unit_size=unit_size,
                     field_manifest_record=source.reference["manifest"],
-                    **({'birth_source_authority': birth_authority} if birth_authority is not None else {}), hs1_request=hs1_request)
+                    **({'birth_source_authority': birth_authority} if birth_authority is not None else {}), hs1_request=hs1_request,
+                    **({'ip_mr_field_reference': source.reference} if sampled_ip_mr else {}))
     graph = plan_tracking_execution(model, **planning)
     if scalar_field_basis is not None:
         if isinstance(packet, HandoffResult) or hs1_request is not None:
@@ -418,6 +426,18 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
+    if ip_mr_admission is not None:
+        selected_manifests = {}
+        for record in (source.reference['manifest'], *ip_mr_admission['source_manifests']):
+            key = os.path.normcase(str(Path(record['path']).resolve()))
+            identity = (record['bytes'], str(record['sha256']).lower())
+            if key in selected_manifests:
+                if selected_manifests[key] != identity:
+                    raise ContractError('conflicting IP-MR source manifest identity: ' + key)
+                continue
+            selected_manifests[key] = identity
+            if key != os.path.normcase(str(Path(source.reference['manifest']['path']).resolve())):
+                references.append({'manifest_record': record})
     if birth_authority is not None:
         references.append({"manifest_record": birth_authority['manifest']})
     if scalar_field_basis is not None:

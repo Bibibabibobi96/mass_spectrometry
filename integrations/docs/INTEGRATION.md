@@ -1580,8 +1580,31 @@ between-operation tamper, incomplete source protection and explicit Lua-provider
 refusal. Earlier fixture-token and empty-product setup failures remain preserved;
 they were corrected in tests without relaxing production ownership or readers.
 Ordinary wheel/sdist acceptance and native full-size conversion/background/IOB
-remain open. Public IP–MR tracking still refuses this representation until its
-continuous consumer and MR observation contract are complete.
+remain open. Public `track` now admits this published sampled representation,
+revalidates its model, clock, scalar products and collision-priority evidence,
+and protects their original producers through the shared tracking owner. The
+original birth cohort uses the existing unit dispatcher, generated HS1 controls,
+IOB build/reopen and collector; no combination-specific runner was added.
+Native-frame projection now follows the explicit Assembly frame or unique
+selected local-frame anchor rather than assuming a TOF instance.
+
+A fresh inert field producer followed by the actual public tracking owner and
+collector passed in 348.548 seconds (349.371 guarded). All 100 original mothers,
+generated terminals and outcomes were retained. Three real OS child operations
+ran with inert build/reopen leaves and generated Lua in place of SIMION; no
+native Fly, Refine or Compute was performed. Basis override, relative recovery
+and published-basis tampering were refused. The affected tracking/RF/SFI suite
+then passed 106 parents in 263.272 seconds (264.357 guarded), with PATH-only Lua
+and no failures, errors or skips. An initial priority test lacked its shared
+fixture initialization; the corrected test retains all original assertions.
+
+The consumer records unavailable terminal causes as unknown, preserves explicit
+preaction-contact evidence separately, and quarantines conflicting observation
+history without dropping mothers or terminals. Optional MR scientific events
+remain `not_recorded`; this is not mirror-cycle or detector qualification.
+Real full-size RF–IP–MR geometry, native continuous flight, ordinary installation,
+recovery and final Repository/performance acceptance remain open. This test epoch
+does not qualify the available COMSOL fields or remove the storage admission block.
 
 Within one IP–MR scalar admission call, canonical geometry/operator projection and
 the expected response plan are now constructed once and reused by that call's
@@ -1606,8 +1629,8 @@ workpoint and requires a one-node support halo; overlaps use the existing Lua
 adapter's first match without fallback from an invalid selected mask. SFI tracking
 forwards these windows to the Program and includes every level in immutable input,
 producer protection and recovery applicability. The IP–MR renderer also serializes
-all levels and their input records, but its public tracking guard remains closed
-pending the complete field/collision owner. The combined frozen-candidate check
+all levels and their input records; the published field/collision owner and its
+public tracking consumer are described above. The earlier frozen-candidate check
 passed 41 parents and 11 subtests with zero failures/errors/skips in 708.380 s
 (708.938 guarded wall). It covered SFI owner/default/recovery, all 17 published
 response fixtures, three/four-asset emitted Lua and all seven Changed paths.

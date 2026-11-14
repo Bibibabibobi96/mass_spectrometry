@@ -752,4 +752,27 @@ class PublicObservationTests(unittest.TestCase):
         self.assertNotEqual(tracking_applicability(plain), tracking_applicability(observed))
         self.assertEqual(observed['observations'], self.observations)
 
+from unittest.mock import patch
+from msplatform.backends.simion.tracking_execution import _birth_states
+
+def pose(src,rotation,translation):
+ return dict(schema_version=1,role='rigid_transform',from_frame_id=src,to_frame_id='world',rotation=rotation,translation_mm=translation)
+class BirthFrameTests(unittest.TestCase):
+ def setUp(self):
+  self.row=dict(source_component_id='source',frame_id='source_local',particle_id=77,instrument_time_us=12.5,mass_amu=100,position_x_mm=1,position_y_mm=0,position_z_mm=0,velocity_x_m_s=0,velocity_y_m_s=1,velocity_z_m_s=0)
+  source=pose('source_local',[[0,-1,0],[1,0,0],[0,0,1]],[10,0,0]);anchor=pose('native_local',[[1,0,0],[0,0,-1],[0,1,0]],[0,2,0])
+  self.plan=dict(assembly_frame_id='world',scope=dict(instance_ids=['source','anchor']),components={'source':dict(local_frame_id='source_local'),'anchor':dict(local_frame_id='native_local')},recipe=dict(instances=[dict(instance_id='anchor',transform=anchor),dict(instance_id='source',transform=source)]))
+ def call(self,frame,plan=None):
+  with patch('msplatform.backends.simion.tracking_execution.validate_birth_source',return_value=([self.row],object(),object())),patch('msplatform.backends.simion.tracking_execution.validate_component_particle_state_rows'):
+   return _birth_states({},dict(composition_plan=plan or self.plan,native_frame_id=frame))[0][0]
+ def test_world_and_noncommuting_native_anchor(self):
+  world=self.call('world');self.assertEqual([world['position_'+a+'_mm'] for a in 'xyz'],[10,1,0]);self.assertEqual([world['velocity_'+a+'_m_s'] for a in 'xyz'],[-1,0,0]);self.assertEqual(world['instrument_time_us'],12.5)
+  native=self.call('native_local');self.assertEqual([native['position_'+a+'_mm'] for a in 'xyz'],[10,0,1]);self.assertEqual([native['velocity_'+a+'_m_s'] for a in 'xyz'],[-1,0,0]);self.assertEqual(native['instrument_time_us'],12.5)
+  renamed=copy.deepcopy(self.plan);renamed['scope']['instance_ids']=['renamed','source'];renamed['components']['renamed']=renamed['components'].pop('anchor');renamed['recipe']['instances'][0]['instance_id']='renamed';self.assertEqual(self.call('native_local',renamed),native)
+ def test_missing_and_ambiguous_anchor(self):
+  with self.assertRaisesRegex(ValueError,'missing or ambiguous'):self.call('missing')
+  p=copy.deepcopy(self.plan);p['scope']['instance_ids'].append('other');p['components']['other']=dict(local_frame_id='native_local');row=copy.deepcopy(p['recipe']['instances'][0]);row['instance_id']='other';p['recipe']['instances'].append(row)
+  with self.assertRaisesRegex(ValueError,'missing or ambiguous'):self.call('native_local',p)
+
+
 if __name__=='__main__': unittest.main()

@@ -2525,6 +2525,30 @@ end
     return program
 
 
+
+def _stage_rf_plane_observations(program: str) -> str:
+    """Move the existing plane observer into RF's terminal-reconciled interval."""
+    if 'local single_flight_cut_policy=' in program:
+        raise ValueError('continuous RF observation staging does not support a cut stop')
+    action=program.index('function segment.other_actions()')
+    start=program.find('  if p and time>p.t then\n    for _,plane in ipairs(single_flight_plane_observations)',action)
+    if start<0:
+        raise ValueError('RF plane observation body is unavailable')
+    end=program.find('  local reported=single_flight_reported[ion_number] or {}',start)
+    if end<0:
+        raise ValueError('RF plane observation callback anchor differs')
+    body=program[start:end]
+    program=program[:start]+program[end:]
+    hook='local function rf_observe_extra(p,e)\nend'
+    if program.count(hook)!=1:
+        raise ValueError('RF reconciled plane observation hook differs')
+    replacement=('local function rf_observe_extra(p,e)\n'
+        '  local time=e.t\n'
+        '  local ion_px_mm,ion_py_mm,ion_pz_mm=e.x,e.y,e.z\n'
+        '  local ion_vx_mm,ion_vy_mm,ion_vz_mm=e.vx,e.vy,e.vz\n'+body+'end')
+    return program.replace(hook,replacement,1)
+
+
 def validate_propagation_stop(policy, definitions):
     """Validate an optional first-outward segmented-upstream endpoint stop."""
     if policy is None:

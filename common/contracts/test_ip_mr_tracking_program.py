@@ -1,4 +1,4 @@
-"""Private IP–MR emitted callback tests; inert PA/HS1, no native claim."""
+"""IP–MR generated callback software tests with inert PA and HS1 doubles."""
 import copy
 import os
 import shutil
@@ -168,3 +168,140 @@ print('IP_MR_PROGRAM_INERT_LUA=PASS')
             run=subprocess.run([str(LUA),str(script)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30,check=False)
             self.assertEqual(run.returncode,0,run.stdout+run.stderr)
             self.assertIn('IP_MR_PROGRAM_INERT_LUA=PASS',run.stdout)
+            # Actual generated IP–MR Program, committed samples and original mother census.
+            import json
+            from msplatform.backends.simion.tracking_collection import collect_tracking_logs
+            plan2=copy.deepcopy(plan)
+            plan2['flight']['observation_times_us']=[4.25]
+            source=[]
+            for pid in (7,91):
+                row=dict(particle_id=pid,instrument_time_us=4.,particle_birth_time_us=4.,mass_amu=100.,charge_state=1,
+                         position_x_mm=1.,position_y_mm=1.,position_z_mm=1.,velocity_x_m_s=1.,velocity_y_m_s=2.,velocity_z_m_s=3.)
+                source.append(row)
+            plan2['rows']=source
+            plan2['absolute_deadlines_us_by_particle_id']={7:5.,91:4.5}
+            resources2=dict(resources,**{'rf_tracking.lua':native_resource_path('rf_tracking.lua').read_text(encoding='utf8')})
+            rendered=renderer.render_rf_controls(self.model,plan2,assets={},native_sources=resources2,
+                scalar_bindings=bindings,slot_domains=[*names,None])
+            continuation=r"""
+segment.initialize_run()
+for ion=1,2 do
+ ion_number=ion;ion_instance=1;ion_splat=0;ion_time_of_flight=0;ion_mass=100;ion_charge=1
+ ion_px_mm=1;ion_py_mm=1;ion_pz_mm=1;ion_vx_mm=.001;ion_vy_mm=.002;ion_vz_mm=.003
+ segment.initialize()
+ ion_time_of_flight=.5;ion_px_mm=2;segment.other_actions()
+ if ion==1 then assert(ion_splat==0);ion_time_of_flight=0;ion_px_mm=1
+ else assert(ion_splat==1);ion_time_of_flight=.4;ion_px_mm=1.8 end
+ segment.terminate()
+end
+print('status,Fly completed. 2 splats')
+"""
+            actual=root/'ip_mr_collect.lua';actual.write_text(prefix+rendered['program']+continuation,encoding='utf8')
+            flown=subprocess.run([str(LUA),str(actual)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30)
+            self.assertEqual(flown.returncode,0,flown.stdout+flown.stderr)
+            log=root/'ip_mr_collect.log';log.write_text(flown.stdout,encoding='utf8')
+            provenance=dict(state_kind='source_birth',execution_particle_ids=[7,91],mother_particle_ids=[7,91],
+                mother_records=[dict(particle_id=pid,particle_birth_time_us=4.) for pid in (7,91)],
+                mother_fates=[dict(particle_id=pid,status='not_propagated') for pid in (7,91)],
+                clock_authority_sha256='A'*64,clock_records={})
+            batch=dict(source_row_range=[1,2],expected_particle_ids=[7,91],build_metadata=rendered['build_metadata'])
+            result=collect_tracking_logs([log],source_rows={r['particle_id']:r for r in source},
+                source_provenance=provenance,flight=plan2['flight'],batches=[batch])
+            self.assertEqual(result['tracking_kind'],'ip_mr')
+            self.assertEqual(result['census']['mother_particle_ids'],[7,91])
+            outcomes=result['census']['terminal_taxonomy']['particle_outcomes']
+            self.assertEqual([r['category'] for r in outcomes],['unknown_native_terminal','programmatic_deadline_stop'])
+            self.assertEqual(outcomes[1]['terminal_instrument_time_us'],4.4)
+            self.assertEqual(outcomes[1]['request_boundary']['instrument_time_us'],4.5)
+            self.assertEqual([(r['particle_id'],r['instrument_time_us']) for r in result['native_shared_states']],[(91,4.25)])
+            self.assertFalse(result['census']['unknown_is_loss'])
+            self.assertEqual(result['mr_observations']['status'],'not_recorded')
+            # A later callback contact is retained separately from the cached terminal;
+            # terminal ion_splat is unavailable and is never used as contact proof.
+            contact_case=continuation.replace("if ion==1 then assert(ion_splat==0)", "if ion==2 then ion_splat=-1;segment.other_actions() end\n if ion==1 then assert(ion_splat==0)")
+            contact_case=contact_case.replace("else assert(ion_splat==1);ion_time_of_flight=.4", "else assert(ion_splat==-1);ion_time_of_flight=.4")
+            contact_case=contact_case.replace(" segment.terminate()", " ion_splat=nil;segment.terminate()")
+            actual.write_text(prefix+rendered['program']+contact_case,encoding='utf8')
+            contact_run=subprocess.run([str(LUA),str(actual)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30)
+            self.assertEqual(contact_run.returncode,0,contact_run.stdout+contact_run.stderr)
+            log.write_text(contact_run.stdout,encoding='utf8')
+            contact_result=collect_tracking_logs([log],source_rows={r['particle_id']:r for r in source},source_provenance=provenance,flight=plan2['flight'],batches=[batch])
+            fact=contact_result['census']['terminal_taxonomy']['particle_outcomes'][1]
+            self.assertEqual(fact['category'],'unknown_native_terminal')
+            self.assertEqual(fact['native_preaction_contact']['reason'],'native_splat_minus_one')
+            self.assertEqual(fact['terminal_splat_availability'],'not_read')
+            self.assertIsNone(fact['terminal_splat'])
+            self.assertEqual(fact['request_boundary']['instrument_time_us'],4.5)
+            log.write_text(flown.stdout,encoding='utf8')
+            for fault,step in [('equal_time_conflict','ion_time_of_flight=.6;ion_px_mm=2.2;segment.other_actions();ion_px_mm=2.3'),('callback_before_pending','ion_time_of_flight=.6;ion_px_mm=2.2;segment.other_actions();ion_time_of_flight=.3;ion_px_mm=1.6')]:
+                fault_case=continuation.replace("if ion==1 then assert(ion_splat==0)", "if ion==2 then "+step+";segment.other_actions() end\n if ion==1 then assert(ion_splat==0)")
+                actual.write_text(prefix+rendered['program']+fault_case,encoding='utf8')
+                fault_run=subprocess.run([str(LUA),str(actual)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30)
+                self.assertEqual(fault_run.returncode,0,fault_run.stdout+fault_run.stderr)
+                log.write_text(fault_run.stdout,encoding='utf8')
+                fault_result=collect_tracking_logs([log],source_rows={r['particle_id']:r for r in source},source_provenance=provenance,flight=plan2['flight'],batches=[batch])
+                self.assertFalse(fault_result['observation_complete'])
+                self.assertEqual(fault_result['observation_incomplete'][91],fault)
+                self.assertEqual(fault_result['census']['mother_particle_ids'],[7,91])
+                self.assertEqual(len(fault_result['native_terminals']),2)
+                self.assertEqual(fault_result['native_shared_states'],[])
+                self.assertEqual(len(fault_result['uncommitted_observations']['shared']),1)
+                self.assertFalse(any(row['event']=='shared' for row in fault_result['canonical_events']))
+            log.write_text(flown.stdout,encoding='utf8')
+            altered=copy.deepcopy(provenance);altered['mother_particle_ids']=[7]
+            with self.assertRaisesRegex(ValueError,'complete original birth cohort'):
+                collect_tracking_logs([log],source_rows={r['particle_id']:r for r in source},
+                    source_provenance=altered,flight=plan2['flight'],batches=[batch])
+            rows=[json.loads(line.split('RF_NATIVE_STATE_V1:',1)[1]) for line in flown.stdout.splitlines() if 'RF_NATIVE_STATE_V1:' in line]
+            future=next(row for row in rows if row['event']=='shared');future['instrument_time_us']=4.75
+            bad=flown.stdout.replace(next(line for line in flown.stdout.splitlines() if 'RF_NATIVE_STATE_V1:' in line and '"event":"shared"' in line),
+                                     'RF_NATIVE_STATE_V1: '+json.dumps(future))
+            log.write_text(bad,encoding='utf8')
+            with self.assertRaisesRegex(ValueError,'shared observation exceeds native lifetime'):
+                collect_tracking_logs([log],source_rows={r['particle_id']:r for r in source},
+                    source_provenance=provenance,flight=dict(plan2['flight'],observation_times_us=[4.75]),batches=[batch])
+            # The same generated Program uses the canonical provider plane math.
+            from msplatform.contracts.rigid_transform import RigidTransform, PlaneSurface
+            composition=self.model.document['geometry']['frontend_geometry']['composition_plan']
+            connection=next(item for item in composition['recipe']['connections'] if item['connection_id']=='ip_to_mr')
+            provider=connection['upstream']['instance_id'];port_id=connection['upstream']['port_id']
+            component=composition['components'][provider]
+            pose=next(item['transform'] for item in composition['recipe']['instances'] if item['instance_id']==provider)
+            port=component['ports'][port_id]
+            plane=RigidTransform.from_contract(pose).transform_plane(PlaneSurface(component['local_frame_id'],tuple(port['center_mm']),tuple(port['outward_normal'])))
+            center=list(plane.center_mm);normal=list(plane.normal)
+            definition=dict(schema_version=1,observation_id='ip_mr_port',source_instance_id=provider,port_id=port_id,max_records=10)
+            for row in source:
+                for index,axis in enumerate('xyz'):
+                    row['position_'+axis+'_mm']=center[index]-.25*normal[index]
+                    row['velocity_'+axis+'_m_s']=1000*normal[index]
+            plan2['observations']['plane_observations']=[definition]
+            rendered=renderer.render_rf_controls(self.model,plan2,assets={},native_sources=resources2,
+                scalar_bindings=bindings,slot_domains=[*names,None])
+            from msplatform.backends.simion.tracking_program import _lua_value
+            plane_case=r"""
+local center=__CENTER__;local normal=__NORMAL__
+segment.initialize_run()
+for ion=1,2 do
+ ion_number=ion;ion_instance=1;ion_splat=0;ion_time_of_flight=0;ion_mass=100;ion_charge=1
+ ion_px_mm=center[1]-.25*normal[1];ion_py_mm=center[2]-.25*normal[2];ion_pz_mm=center[3]-.25*normal[3]
+ ion_vx_mm=normal[1];ion_vy_mm=normal[2];ion_vz_mm=normal[3];segment.initialize()
+ ion_time_of_flight=.5;ion_px_mm=center[1]+.25*normal[1];ion_py_mm=center[2]+.25*normal[2];ion_pz_mm=center[3]+.25*normal[3]
+ segment.other_actions()
+ if ion==1 then ion_time_of_flight=0;ion_px_mm=center[1]-.25*normal[1];ion_py_mm=center[2]-.25*normal[2];ion_pz_mm=center[3]-.25*normal[3]
+ else ion_time_of_flight=.4;ion_px_mm=center[1]+.15*normal[1];ion_py_mm=center[2]+.15*normal[2];ion_pz_mm=center[3]+.15*normal[3] end
+ segment.terminate()
+end
+print('status,Fly completed. 2 splats')
+""".replace('__CENTER__',_lua_value(center)).replace('__NORMAL__',_lua_value(normal))
+            actual.write_text(prefix+rendered['program']+plane_case,encoding='utf8')
+            flown=subprocess.run([str(LUA),str(actual)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30)
+            self.assertEqual(flown.returncode,0,flown.stdout+flown.stderr)
+            log.write_text(flown.stdout,encoding='utf8')
+            batch['build_metadata']=rendered['build_metadata']
+            result=collect_tracking_logs([log],source_rows={r['particle_id']:r for r in source},
+                source_provenance=provenance,flight=plan2['flight'],batches=[batch])
+            planes=result['plane_observations']['rows']
+            self.assertEqual([r['particle_id'] for r in planes],[91])
+            self.assertAlmostEqual(planes[0]['instrument_time_us'],4.25)
+            self.assertEqual(planes[0]['step_end_instrument_time_us'],4.4)

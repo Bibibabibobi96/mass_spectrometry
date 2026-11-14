@@ -163,3 +163,85 @@ def prepare_ip_mr_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], 
     """Bind selected IP gas to the caller's verified common world query box."""
     return _prepare_ip_hs1(model, request, role='simion_ip_mr_complete_geometry',
                            common_world_domain=common_world_domain, common_world_frame_id=common_world_frame_id)
+
+def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any],
+                                run_directory: Path, program: str,
+                                program_metadata: Mapping[str, Any],
+                                native_source_rows: list[Mapping[str, Any]],
+                                native_path_resource: Path) -> NativeStagePlan:
+    """Project the verified five-slot sampled bundle into the existing writer."""
+    import copy
+    import json
+    from .ip_mr_collision_priority import project_ip_mr_collision_iob
+    if not native_source_rows or not isinstance(program, str) or not program:
+        raise ValueError('sampled tracking requires original source and Program')
+    if not isinstance(program_metadata, dict) or program_metadata.get('collision_priority_applied') is not True:
+        raise ValueError('sampled tracking requires the verified collision priority Program')
+    root = Path(run_directory)
+    if not root.is_absolute() or not str(root).isascii():
+        raise ValueError('tracking requires the existing absolute ASCII native projection')
+    source, policy = admission['source'], admission['priority']
+    roles = policy['roles']
+    def record(key):
+        return dict(source.data_records[key], path=str(source.data_path(key)))
+    assets = {roles['background']: {'pa': record('background')}}
+    for name in (roles['rf'], roles['ip'], roles['analyzer'], roles['detector']):
+        assets[name] = {'pa': record(name + '_collision'),
+                        'fractional_surface': record(name + '_surface'),
+                        'surface_witnesses': record(name + '_witness')}
+    evidence = dict(zip(('boxes_record', 'clearance_record', 'source_record'),
+                        policy['evidence_records'], strict=True))
+    seed_record = file_record(structural_seed_path(5), 'required_evidence')
+    seed = root/'inputs/structural_seed/5_instance_seed.iob'
+    output = root/'simion/tracking/instrument.iob'
+    projected = project_ip_mr_collision_iob(compiled, instances=policy['instances'], roles=roles,
+        background_bounds_mm=policy['background_bounds_mm'], **evidence, asset_records=assets,
+        seed_record=seed_record, empty_control_record=record('zero_particle_format_control'), output_iob=output)
+    if projected['policy'] != policy:
+        raise ValueError('tracking collision projection differs from admitted priority')
+    spec = copy.deepcopy(projected['spec'])
+    binding = root/'inputs/sampled_basis.json'
+    spec.update(role='ip_mr_sampled_tracking_iob',
+                field_representation='assembly_sampled_basis_with_collision_geometry',
+                scalar_binding=str(binding), seed_iob=str(seed), response_fields=[],
+                bootstrap_paths=[str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1, 6)])
+    spec_path = root/'inputs/tracking_iob.lua'
+    materializations = {str(spec_path): 'return '+lua_value(spec)+'\n',
+        str(binding): json.dumps(admission['basis'], ensure_ascii=False, allow_nan=False, indent=2)+'\n',
+        str(output.with_suffix('.lua')): program,
+        str(output.with_suffix('.fly2')): render_restart_fly2(native_source_rows)}
+    wrapper = native_resource_path('build_tracking_iob.lua')
+    bootstraps = tuple(spec['bootstrap_paths'])
+    operations = tuple(dict(operation_id=name, role='SIMION', stage='prepare',
+        arguments=['--nogui', '--noprompt', 'lua', str(wrapper), str(spec_path), mode, str(native_path_resource)],
+        outputs=[str(output), *bootstraps] if mode == 'build' else [], success_marker=marker)
+        for name, mode, marker in [('build_tracking_iob', 'build', 'IP_MR_SAMPLED_TRACKING_IOB=PASS'),
+                                    ('verify_tracking_iob', 'verify', 'IP_MR_SAMPLED_TRACKING_IOB_REOPEN=PASS')])
+    return NativeStagePlan(materializations, (dict(source_record=seed_record, destination=str(seed)),),
+                           operations, (str(output), *bootstraps))
+
+
+def execute_ip_mr_tracking(session: Any, *, source: Any, model: CompiledPreparedModel,
+                         document: Mapping[str, Any], **options: Any) -> dict[str, Any]:
+    """Bind a published sampled bundle to the existing tracking-unit owner."""
+    from .tracking_execution import _artifact_record, _execute_tracking_bound_source
+    from .ip_mr_tracking_admission import admit_ip_mr_tracking_fields
+    admission = admit_ip_mr_tracking_fields(source.reference)
+    if admission['model'].document != model.document:
+        raise ValueError('tracking model differs from admitted sampled field')
+    policy = admission['priority']; roles = policy['roles']
+    assets = {}
+    for name in (roles['rf'], roles['ip'], roles['analyzer'], roles['detector']):
+        pa = _artifact_record(source, name+'_collision')
+        surface = _artifact_record(source, name+'_surface')
+        witness = _artifact_record(source, name+'_witness')
+        assets[name] = dict(carrier_record=pa, family_records=[pa,surface], witness_record=witness)
+    clocks = dict(contract=_artifact_record(source,'clock_authority'), authority=_artifact_record(source,'instrument_epoch'))
+    clocks['data_root'] = str(Path(clocks['contract']['path']).parent)
+    relative = _clock_reference(document,clocks)
+    compiled = model_geometry(model)
+    geometry = dict(compiled.frontend_geometry, native_frame_id=document['native_frame_id'])
+    return _execute_tracking_bound_source(session, source=source,model=model,document=document,compiled=compiled,
+        geometry=geometry,design=None,stored_bank=None,frontend=assets,downstream={},field_workbench=None,
+        borrowed=admission['immutable_input_records'],original_clock=clocks,relative_epoch=relative,
+        ip_mr_admission=admission,**options)

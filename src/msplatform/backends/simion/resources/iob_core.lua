@@ -12,15 +12,21 @@ local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_o
 local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
 local joint_ip_tracking=spec.role=='rf_ip_tracking_iob'
-local component_tracking=joint_ip_tracking or spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
+local sampled_tracking=spec.role=='ip_mr_sampled_tracking_iob'
+local component_tracking=sampled_tracking or joint_ip_tracking or spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
 local tracking_role=component_tracking
 local independent_oa=spec.role=='independent_oa_geometry_iob_build'
 local joint_rf_ip=spec.role=='rf_ip_geometry_iob_build'
 local joint_rf_oa=spec.role=='rf_oa_geometry_iob_build'
 local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
 local joint_ip_mr=spec.role=='ip_mr_geometry_iob_build'
-local collision_iob=spec.role=='ip_mr_collision_iob_build'
-assert(not collision_iob or mode=='build_geometry' or mode=='verify_geometry','collision IOB supports source-free build/reopen only')
+local collision_iob=sampled_tracking or spec.role=='ip_mr_collision_iob_build'
+assert(not collision_iob or sampled_tracking or mode=='build_geometry' or mode=='verify_geometry','collision IOB supports source-free build/reopen only')
+assert(not sampled_tracking or ((mode=='build' or mode=='verify') and spec.field_representation=='assembly_sampled_basis_with_collision_geometry'), 'sampled tracking requires its explicit field representation')
+if sampled_tracking then
+  local file=assert(io.open(assert(spec.scalar_binding),'rb'),'sampled tracking scalar binding missing')
+  assert(file:seek('end')>0,'sampled tracking scalar binding empty');file:close()
+end
 local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob
 assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
 assert(not joint_rf_oa or mode=='build_geometry' or mode=='verify_geometry','RF-OA geometry only; model and fields unsupported')
@@ -136,8 +142,9 @@ for _,extension in ipairs(source_free and {'.lua','.ion','.con','.rec'} or {'.lu
     companions[path]=input:read('*a');input:close()
   end
 end
-if independent_component and not tracking_role then
-  for _,base in ipairs({stem,assert(spec.seed_iob):gsub('%.iob$','')}) do
+if independent_component and (not tracking_role or sampled_tracking) then
+  local checked_bases=sampled_tracking and {assert(spec.seed_iob):gsub('%.iob$','')} or {stem,assert(spec.seed_iob):gsub('%.iob$','')}
+  for _,base in ipairs(checked_bases) do
     for _,extension in ipairs({'.wgem','.lua','.ion','.con','.rec'}) do
       local file=io.open(base..extension,'rb')
       if file then file:close();error('RF raw geometry forbids automatic-build/source/Program companion') end
@@ -202,7 +209,7 @@ local function verify_fractional_component(item,row)
       assert(near(value,expected),'RF point differs from original rigid transform')
     end
   end
-  if component_tracking then
+  if component_tracking and not sampled_tracking then
     assert(row.path:match('%.pa0$'),'RF tracking requires the original solved carrier')
     local actual={}
     for _,eid in ipairs(item.pa.electrode_numbers) do actual[eid]=true end
@@ -239,7 +246,7 @@ local function verify_fractional_component(item,row)
   witnesses:close();assert(checked>0,'fractional surface witnesses empty')
   for _,sample in ipairs(row.physical_samples) do
     local potential,metal=item.pa:point(unpack(sample.gu))
-    assert(metal==(sample.metal~=false) and (component_tracking or sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')
+    assert(metal==(sample.metal~=false) and ((component_tracking and not sampled_tracking) or sample.metal==false or potential==sample.electrode_id),'cold RF physical node differs')
   end
 end
 
@@ -408,7 +415,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     -- The complete RF slot path/grid/pose, electrode map, metal/vacuum and
     -- fractional witnesses were checked above. TOF interface/priority probe
     -- definitions do not describe an independent RF instrument.
-    print((joint_ip_tracking and 'RF_IP_TRACKING_COLD=PASS INSTANCES=' or dual_cone and 'DUAL_CONE_TRACKING_COLD=PASS INSTANCES=' or spec.role=='independent_oa_tracking_iob' and 'INDEPENDENT_OA_TRACKING_COLD=PASS INSTANCES=' or 'INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES=')..count..' FLY=False REFINE=False')
+    print((sampled_tracking and 'IP_MR_SAMPLED_TRACKING_COLD=PASS INSTANCES=' or joint_ip_tracking and 'RF_IP_TRACKING_COLD=PASS INSTANCES=' or dual_cone and 'DUAL_CONE_TRACKING_COLD=PASS INSTANCES=' or spec.role=='independent_oa_tracking_iob' and 'INDEPENDENT_OA_TRACKING_COLD=PASS INSTANCES=' or 'INDEPENDENT_RF_TRACKING_COLD=PASS INSTANCES=')..count..' FLY=False REFINE=False')
     return
   end
   -- SIMION 2020 official lua_simion.wb.html#simion.wb..find_at:

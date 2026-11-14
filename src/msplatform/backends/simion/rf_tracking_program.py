@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from .model import require_prepared_model,model_geometry,render_model_configuration
 from .source import lua_value,canonical_clock_lua
 from .resources import native_resource_path
-from .tracking_program import _instrument_plane_observations,validate_program_trajectory_quality
+from .tracking_program import _instrument_plane_observations,validate_program_trajectory_quality,_stage_rf_plane_observations
 
 
 def validate_rf_flight(flight,*,requires_rf):
@@ -86,6 +86,28 @@ def _ip_mr_bindings(document, admission):
         result['rf_reference']=dict(binding=binding('rf_reference'),signature=signature)
     return result,records
 
+def _ip_mr_priority_program(policy: Mapping[str, Any], slot_domains: list[str | None]) -> str:
+    """Compose the admitted collision policy into this Program's native hook."""
+    from .ip_mr_collision_priority import render_ip_mr_instance_adjust
+    required = {'background', 'rf', 'ip', 'analyzer', 'detector'}
+    if not isinstance(policy, Mapping) or set(policy.get('roles', {})) != required:
+        raise ValueError('complete five-slot IP–MR priority roles required')
+    instances = policy.get('instances')
+    if (not isinstance(instances, list) or len(instances) != 5
+            or any(not isinstance(row, Mapping) or type(row.get('instance_index')) is not int for row in instances)
+            or {row['instance_index'] for row in instances} != set(range(1, 6))):
+        raise ValueError('complete five-slot IP–MR priority instances required')
+    ordered = sorted(instances, key=lambda row: row['instance_index'])
+    roles = policy['roles']
+    names = [None if row.get('role') == roles['background'] else row.get('role') for row in ordered]
+    if names != slot_domains or {row.get('role') for row in ordered} != set(roles.values()):
+        raise ValueError('IP–MR priority differs from actual tracking slot domains')
+    analyzer = policy.get('analyzer_slot')
+    if type(analyzer) is not int or not 1 <= analyzer <= 5 or ordered[analyzer-1]['role'] != roles['analyzer']:
+        raise ValueError('IP–MR analyzer priority slot differs')
+    return render_ip_mr_instance_adjust(policy) + '\nfunction segment.instance_adjust() ip_mr_priority_adjust() end\n'
+
+
 def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[str, Any],
                        native_sources: Mapping[str, str], scalar_bindings: dict[str, Any] | None = None,
                        slot_domains: list[str | None] | None = None) -> dict[str, Any]:
@@ -95,6 +117,9 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     kind=plan['flight'].get('tracking_kind')
     ip_mr=kind=='ip_mr'
     joint=kind in {'rf_ip','ip_mr'}
+    priority=plan.get('collision_priority')
+    if priority is not None and not ip_mr:
+        raise ValueError('collision priority requires IP–MR tracking')
     if ip_mr:
         if geometry.get('role')!='simion_ip_mr_complete_geometry':
             raise ValueError('IP–MR tracking requires complete selected geometry')
@@ -142,6 +167,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         prefix+='for _,row in ipairs(rf_model_config.groups) do if row.kind=="rf" then local value=rf_kernel.new_differential{waveform=row.waveform,frequency_hz=row.frequency_hz,phase_rad=row.phase_rad,rf_amplitude_v=row.rf_amplitude_v,rf_scale=1,rf_steps_per_period='+lua_value(plan['flight']['rf_steps_per_period'])+'}; rf_step_cap_us=math.min(rf_step_cap_us,value.timestep_cap_us) end end\n'
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
+    if ip_mr:prefix+='local rf_committed_observations=true\n'
     program=prefix+resource('rf_tracking.lua')
     if ip_mr:
         adapter=resource('scalar_field_adapter.lua')
@@ -149,6 +175,8 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         program+='\nlocal ip_mr_scalar_adapter=(function()\n'+adapter+'\nend)()\n'
         program+='local ip_mr_scalar_module=(function()\n'+composer+'\nend)()\n'
         program+='local ip_mr_scalar=ip_mr_scalar_module.new(ip_mr_scalar_adapter,rf_consumer,rf_kernel,'+lua_value(composer_bindings)+')\n'
+        if priority is not None:
+            program+=_ip_mr_priority_program(priority,slot_domains)
         program+="function segment.efield_adjust()\n  local instance=assert(simion.wb.instances[ion_instance],'selected instance required')\n"
         program+='  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=ip_mr_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,single_flight_instrument_time_us())\nend\n'
     if joint:
@@ -202,10 +230,12 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             marker='  if cut then\n'
             if program.count(marker)!=1:raise ValueError('RF cut terminal hook differs')
             program=program.replace(marker,marker+"    rf_emit_current('terminal','accepted_cut')\n",1)
+    if ip_mr and definitions:program=_stage_rf_plane_observations(program)
     metadata=dict(tracking_kind=plan['flight']['tracking_kind'],plane_observations=copy.deepcopy(definitions) if definitions else None,
         consumed_plane_events=copy.deepcopy(plan['propagation']['consumed_plane_events']),propagation_stop=copy.deepcopy(plan['propagation']['stop']),
         source_clock=dict(original_birth_times_us=[r['particle_birth_time_us'] for r in plan['rows']],
             absolute_deadlines_us=[plan['absolute_deadlines_us_by_particle_id'][pid] for pid in ids]))
+    if ip_mr:metadata['collision_priority_applied']=priority is not None
     if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
         immutable_input_records=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]+(scalar_records if ip_mr else []),flight=plan['flight'])
