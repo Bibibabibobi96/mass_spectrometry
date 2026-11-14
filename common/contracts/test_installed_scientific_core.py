@@ -2564,6 +2564,9 @@ try:
 finally:
     recording_backup.rename(recording_path)
 
+rf_continuation_probe = runpy.run_path(str(root / 'installed_rf_continuation_probe.py'))
+rf_continuation_probe['run'](root, sys.argv[2], section_timing, blocked_source_roots)
+
 for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
     (prepared_run/'inputs').mkdir(parents=True)
@@ -7519,6 +7522,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 helper_source = source / 'common/contracts/test_support' / name
                 shutil.copyfile(helper_source, root / name)
                 self.assertEqual((root / name).read_bytes(), helper_source.read_bytes())
+            rf_continuation_source = source / 'common/contracts/test_support/installed_rf_continuation_probe.py'
+            shutil.copyfile(rf_continuation_source, root / 'installed_rf_continuation_probe.py')
+            self.assertEqual((root / 'installed_rf_continuation_probe.py').read_bytes(), rf_continuation_source.read_bytes())
             for name in ('rf_ip_installed_probe.py', 'rf_ip_inert_leaf.py'):
                 selected = source / 'common/contracts/test_support' / name
                 shutil.copyfile(selected, root / name)
@@ -7591,6 +7597,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/installed_static_field_probe.py',
                     'common/contracts/test_support/installed_recorded_birth_probe.py',
                     'common/contracts/test_support/installed_sfi_consumer_probe.py',
+                    'common/contracts/test_support/installed_rf_continuation_probe.py',
                     'common/contracts/test_support/installed_sfi_scalar_probe.py',
                     'common/contracts/test_support/sfi_scalar_owner_fixture.py',
                     'common/contracts/test_sfi_scalar_binding.py',

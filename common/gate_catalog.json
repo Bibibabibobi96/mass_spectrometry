@@ -1922,6 +1922,18 @@
               "common/contracts/test_sfi_scalar_tracking.py"
             ],
             "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/rf_batch_continuation.py",
+                "reason": "installed_rf_batch_continuation_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
           }
         ],
         "scope": "common/contracts/"
@@ -2251,6 +2263,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_batch_continuation.py",
+          "reason": "installed_rf_batch_continuation_changed"
+        },
+        {
           "exact": "src/msplatform/analysis/particle_styles.py",
           "reason": "migrated_actual_consumer_changed"
         },
@@ -2381,6 +2397,20 @@
             ],
             "modules": [
               "projects/rf_multipole_ion_optics/tests/domain/test_exit_state_plot.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/rf_batch_continuation.py",
+                "reason": "installed_rf_batch_continuation_changed"
+              }
+            ],
+            "modules": [
+              "projects/rf_multipole_ion_optics/tests/domain/test_simion_batch_continuation.py",
+              "projects/rf_multipole_ion_optics/tests/domain/test_simion_field_checkpoint.py",
+              "projects/rf_multipole_ion_optics/tests/domain/test_simion_runner_contract.py"
             ],
             "dependency_profile": "locked"
           },

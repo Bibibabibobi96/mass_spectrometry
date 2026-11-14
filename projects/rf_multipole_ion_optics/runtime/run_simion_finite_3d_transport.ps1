@@ -231,7 +231,7 @@ if($ContinuationPredecessorManifestPath){
   if(-not[IO.Path]::GetFullPath($continuationPredecessor).StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)-or
      [IO.Path]::GetFileName($continuationPredecessor)-ceq$RunId){throw 'Continuation requires a distinct same-project predecessor.'}
   Push-Location $repoRoot
-  try{$chainJson=& $python -m projects.rf_multipole_ion_optics.runtime.simion_batch_continuation --predecessor $continuationPredecessor --project $ProjectId
+  try{$chainJson=& $python -m msplatform.workflows.rf_batch_continuation --predecessor $continuationPredecessor --project $ProjectId
     if($LASTEXITCODE-ne0){throw 'RF continuation ancestry is invalid.'}}
   finally{Pop-Location}
   $continuationChain=@(($chainJson-join"`n")|ConvertFrom-Json)
@@ -249,7 +249,7 @@ if($ContinuationPredecessorManifestPath){
   try{
     Protect-RfSimionContinuationEvidence -Chain $continuationChain -Guards $continuationGuards
     Push-Location $repoRoot
-    try{$chainCheck=& $python -m projects.rf_multipole_ion_optics.runtime.simion_batch_continuation --predecessor $continuationPredecessor --project $ProjectId
+    try{$chainCheck=& $python -m msplatform.workflows.rf_batch_continuation --predecessor $continuationPredecessor --project $ProjectId
       if($LASTEXITCODE-ne0-or(($chainCheck-join"`n")|ConvertFrom-Json|ConvertTo-Json -Compress)-cne($continuationChain|ConvertTo-Json -Compress)){throw 'RF continuation ancestry changed during admission.'}}
     finally{Pop-Location}
   }catch{
@@ -961,7 +961,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     $continuationCases=if($segmented){
       @('axial_acceleration_rf_on')+$(if($CaseSet-eq'primary_and_zero_axial_control'){@('zero_axial_drop_rf_on')}elseif($CaseSet-eq'primary_and_rf_off_energy_control'){@('axial_acceleration_rf_off')}else{@()})
     }else{@('rf_on')+$(if($CaseSet-ne'primary_only'){@('zero_rf_control')}else{@()})}
-    $planArguments=@('-m','projects.rf_multipole_ion_optics.runtime.simion_batch_continuation',
+    $planArguments=@('-m','msplatform.workflows.rf_batch_continuation',
       '--predecessor',$continuationPredecessor,'--project',$ProjectId,'--run-dir',$runDir,'--retention',$RetentionClass)
     foreach($case in $continuationCases){$planArguments+=@('--case',$case)}
     if($mechanicalExitEnabled){$planArguments+='--mechanical'}
