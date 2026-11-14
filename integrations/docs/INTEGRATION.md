@@ -1260,6 +1260,51 @@ Evidence is in workspace
 These pieces are not yet wired into the complete tracking Program or qualified
 by native Fly, ordinary installation or a final Repository run.
 
+
+#### MR observation and stopping callbacks
+
+A controlled SIMION 2020 diagnostic used one 100 u, +1 particle in a 21-cubed
+zero-field PA, with the same 0.5 us maximum step and source in all four cases.
+The observation plane was z=10.25 mm; the PA electrode face was z=5 mm. It ran
+through the previously accepted ordinary installation, not a modified instrument.
+The last `other_actions` time and actual `terminate`/vendor-recording TOF were:
+
+| Case | Last callback (us) | Terminal and vendor TOF (us) |
+|---|---:|---:|
+| Control stop guard | 8 | 7.5 |
+| Immediate crossing stop | 5 | 4.5 |
+| Deferred crossing stop | 5.5 | 5 |
+| Native electrode contact | 10.000000953674316 | 10 |
+
+In the immediate case the callback bracket was t=4.5/z=10.500000000018769 to
+t=5/z=10.000000000020854, but termination remained at the first point, before
+the observation plane. Committing entry or mirror state from that stopping
+callback would therefore create an unconfirmed crossing. The private extracted
+observer is held for caller-side pending-sample and terminal reconciliation;
+its eager callback state is not qualified for the new continuous chain. The
+existing MR wrapper must be reviewed against the same reproduced failure,
+rather than treating old callback parity as proof of correct acceptance.
+
+The four retained diagnostic runs are
+[control](../../../artifacts/projects/instrument_assembly/runs/20261114_214513__analysis__simion__diagnostic-callback-5c856071d625/run_manifest.json),
+[immediate](../../../artifacts/projects/instrument_assembly/runs/20261114_214554__analysis__simion__diagnostic-callback-44a1ad34cb91/run_manifest.json),
+[deferred](../../../artifacts/projects/instrument_assembly/runs/20261114_214639__analysis__simion__diagnostic-callback-72b63f4fb382/run_manifest.json)
+and [contact](../../../artifacts/projects/instrument_assembly/runs/20261114_214723__analysis__simion__diagnostic-callback-e5811c27cdaf/run_manifest.json).
+All twelve build/reopen/Fly operations exited zero with recorded host releases;
+normal capacity finalization and source-pin checks completed. The unchanged
+700/295 GiB policy, synchronous I/O and zero retries applied. Manifest-bound
+original diagnostic sources and frozen copies remain preserved.
+
+This N=1 observation is not instrument-flight qualification, a general accepted-step
+or rollback theorem, or evidence that an advancing callback is always committed.
+The vendor recording labels even programmatic stops `Hit Electrode`; that text
+cannot identify physical contact. Native pre-action splat observations, programmatic
+stop requests and the actual terminal state must remain distinct. Raw contact
+facts must not be erased merely because callback and terminal times differ;
+detector-plane qualification still needs the existing explicit geometric/contact
+checks and an applicable reconciliation. Unknown acceptance must remain explicit,
+without publishing speculative scientific events or dropping mother particles.
+
 The first coarse carrier export, run
 `20261114_185405__analysis__comsol__assembly-scalar-b116aef94ebc`, remains FAILED.
 Its native writer exited successfully with zero Compute, 5,312,307 queried nodes,

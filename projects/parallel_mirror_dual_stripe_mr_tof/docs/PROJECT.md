@@ -28,6 +28,11 @@ Assembly, retaining the original 45 members, 41 scientific groups and instance
 poses. Its pure consumer checks representation and refusal boundaries; actual
 COMSOL construction/selections, installed polygon execution, common fields and
 continuous flight remain open. It does not change the physical MR design.
+A controlled native diagnostic reproduced a stopping-callback observation later
+than the actual terminal state. The extracted observer and the existing wrapper
+therefore need applicable terminal reconciliation before claiming committed entry
+or mirror events; see the [integration evidence and limits](../../../integrations/docs/INTEGRATION.md#mr-observation-and-stopping-callbacks).
+The diagnostic does not change historical records or grant instrument qualification.
 Joint-flight and IP/prism preparation now read structural IOB containers from the installed SIMION
 resource owner. Frozen dependency declarations follow that same owner while retaining the original
 template bytes and PA placeholders; opt-in native tests remain separately reported.
