@@ -34,12 +34,52 @@ def _creation_filetime(handle: int) -> int:
     return (values[0].dwHighDateTime << 32) | values[0].dwLowDateTime
 
 
+def _job_process_ids(job, *, query=None, last_error=None) -> list[int]:
+    """Query a complete owned-Job PID list; never accept a partial response."""
+    # Microsoft requires retry when returned IDs are fewer than assigned.
+    # https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list
+    # pywin32 b312 allocates by assigned but fills only returned IDs:
+    # https://github.com/mhammond/pywin32/blob/b312/win32/src/win32job.i
+    # Reviewed 2026-11-14; eight attempts bound this test fixture only.
+    if query is None:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        query = kernel.QueryInformationJobObject
+        query.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                          wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        query.restype = wintypes.BOOL
+        last_error = ctypes.get_last_error
+    if last_error is None:
+        raise ValueError("explicit error reader required with injected query")
+    capacity = 16
+    pointer_size = ctypes.sizeof(ctypes.c_size_t)
+    offset = 2 * ctypes.sizeof(wintypes.DWORD)
+    for _ in range(8):
+        size = offset + pointer_size * capacity
+        if size > 0xffffffff:
+            raise OverflowError("Job PID query buffer exceeds Win32 DWORD")
+        buf = ctypes.create_string_buffer(size)
+        returned = wintypes.DWORD()
+        ok = query(int(job), 3, buf, size, ctypes.byref(returned))
+        assigned = wintypes.DWORD.from_buffer(buf, 0).value
+        count = wintypes.DWORD.from_buffer(buf, ctypes.sizeof(wintypes.DWORD)).value
+        if ok and count <= assigned and count <= capacity and count == assigned:
+            values = (ctypes.c_size_t * count).from_buffer(buf, offset)
+            return [int(value) for value in values]
+        if not ok:
+            error = last_error()
+            if error != 234:  # ERROR_MORE_DATA
+                raise ctypes.WinError(error)
+        elif count > assigned or count > capacity:
+            raise ValueError("Job PID query returned inconsistent counts")
+        capacity = max(capacity * 2, assigned)
+    raise RuntimeError(f"Job PID query incomplete after eight attempts: assigned={assigned}, returned={count}")
+
 def _job_processes(job) -> list[dict]:
     import win32api
     import win32job
 
     rows = []
-    for pid in win32job.QueryInformationJobObject(job, win32job.JobObjectBasicProcessIdList):
+    for pid in _job_process_ids(job):
         handle = win32api.OpenProcess(0x1000, False, pid)
         try:
             if not win32job.IsProcessInJob(handle, job):

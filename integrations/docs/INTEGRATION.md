@@ -1312,6 +1312,18 @@ contract and managed-recovery modules exactly once for each of four Python and
 MATLAB paths. That parent passed in 9.480 seconds (13.725 guarded wall); the
 failed predecessor remains in the separate selector evidence.
 
+The Windows ACK-owned test fixture now queries Job process IDs through the
+documented Win32 buffer contract, retrying partial lists within a bounded test
+budget while preserving process creation-time and Job-membership checks. This
+avoids the pywin32 b312 PID-list conversion path seen in the fatal CI stack;
+the exact CI access-violation mechanism was not reproduced and remains unproved.
+Three query regressions and the original journal/seal-recovery parent passed on
+the actual candidate in 58.568 seconds (62.923 guarded wall), with unchanged
+source and checkout guards. The commit hook then caught a missing explicit cwd
+in the new inert-child test; after correction that affected parent passed again
+in 0.040 seconds (3.967 guarded wall). This changes test support only, not solver
+timeouts.
+
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
 and checkout guards: 386 parent successes, 254 subtest successes and one inherited
