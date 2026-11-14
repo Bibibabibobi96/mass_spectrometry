@@ -1304,8 +1304,8 @@ Twelve actual-source pure/inert managed parents passed in 127.199 seconds
 (131.324 guarded wall), including old-route parity, normal reuse, relative-record
 opening, raw/final recovery and mesh/voltage refusals. Evidence is in workspace
 `.tools/phase04-codex-takeover-20261109/v87-comsol-mesh-reuse-p-integrated-agent9-r1`.
-The MATLAB helper has not run with COMSOL; native mesh preservation and its memory
-cost remain unverified. No complete response family or native flight follows.
+The subsequent native witness below covers one workpoint only; no complete
+response family or native flight follows from these software tests.
 The Changed-route regression initially exposed missing parent-route admission
 for both MATLAB files. The corrected catalog selects the actual stationary
 contract and managed-recovery modules exactly once for each of four Python and
@@ -1323,6 +1323,29 @@ source and checkout guards. The commit hook then caught a missing explicit cwd
 in the new inert-child test; after correction that affected parent passed again
 in 0.040 seconds (3.967 guarded wall). This changes test support only, not solver
 timeouts.
+
+On `59a2c801`, the single controlled native run
+`20261114_201411__sim__comsol__assembly-field-c4752fbe4e77` computed the actual
+projector's `ion_processor/guide_positive` unit response: that group is 1 V and
+all other 44 groups are 0 V. The complete selected geometry, carrier source,
+permittivity, exterior, mesh controls and stationary study were unchanged.
+Compute and independent cold reopen retained actual mesh SHA-256
+`7b5f127a58fbb1853cf44c10dd638d83412f5919191bc37d1ab9ddecae59dd10`, including
+typed vertices, connectivity and entity assignments (3 by 202413 vertices;
+1,322,681 solution DOF). All 45 old/new voltage bindings were checked.
+There was one Compute and one cold reopen with zero additional Compute.
+The successful manifest SHA-256 is
+`d57f7373c8d9f4ae7f7e97b31de6c286f2769ecd5d2753aef5d6bc617ebdc45a`.
+Both writers exited with code 0, leases and alias were released, and the sealed
+candidate's full source, HEAD, index and status guards matched; wall was 209.078 s.
+
+Sampled Compute working-set/run-directory maxima were 5,527,072,768/733,753,026 B;
+reopen observations were 3,378,888,704/1,100,091,092 B. These are sampled maxima,
+not guaranteed peaks. Reopen triggered the existing 1 GiB transient warning;
+the approved limits and 700/295 GiB capacity policy were not changed. Only the
+two exact diagnostic scripts were retired after closure (9,943 B); requests,
+guards, native files and evidence remain. This proves one same-mesh response,
+not the full 17-response family, interpolation coverage, convergence or Fly.
 
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source
