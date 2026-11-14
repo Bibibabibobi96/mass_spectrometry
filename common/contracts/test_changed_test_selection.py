@@ -761,6 +761,27 @@ foreach($scope in @('Owner','Repository')){
             self.assertEqual(len(selected), len(cases))
             return selected
 
+    def test_sampled_ip_mr_field_changes_select_actual_consumers(self) -> None:
+        paths = [
+            "src/msplatform/backends/simion/" + name + ".py"
+            for name in ("ip_mr_field_execution", "ip_mr_collision_lineage",
+                         "ip_mr_collision_priority", "ip_mr_scalar_binding",
+                         "field_closure", "operations", "resources")
+        ] + [
+            "src/msplatform/backends/simion/resources/" + name + ".lua"
+            for name in ("raw_collision_pa", "create_numerical_background",
+                         "reopen_numerical_background", "iob_core", "build_geometry_iob")
+        ]
+        expected = {"common/contracts/" + name + ".py" for name in (
+            "test_ip_mr_sampled_dispatch", "test_ip_mr_sampled_field_execution",
+            "test_ip_mr_collision_priority", "test_ip_mr_collision_iob",
+            "test_raw_collision_pa", "test_numerical_background")}
+        cases = [dict(stage="common_contracts", paths=[path]) for path in paths]
+        for path, result in zip(paths, self.selections(REPO_ROOT, cases), strict=True):
+            with self.subTest(path=path):
+                self.assertTrue(expected <= set(result["Modules"]))
+                self.assertEqual(result["Reason"], "declared_owner_module_dependencies")
+
     def test_dual_cone_operation_and_terminal_analysis_select_actual_consumers(self) -> None:
         paths = ["src/msplatform/backends/simion/dual_cone_stage_execution.py",
                  "src/msplatform/workflows/dual_cone_stages.py",

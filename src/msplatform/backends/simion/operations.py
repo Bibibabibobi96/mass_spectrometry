@@ -202,7 +202,8 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
 
 def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping[str, Any],
                  context: ExecutionContext,
-                 reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None) -> OpenedArtifact:
+                 reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None,
+                 scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Explicitly solve an unsolved model, without source sampling or flight.
 
     Optional reuse names one published field product, never a latest lookup.
@@ -230,6 +231,79 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
     if (set(runtime) - {"simion_allow_asynchronous_io"}
             or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION field runtime only accepts explicit boolean simion_allow_asynchronous_io")
+    if scalar_field_basis is not None:
+        from msplatform.backends.simion.ip_mr_field_execution import prepare_ip_mr_field_inputs, execute_ip_mr_sampled_fields
+        if reuse_fields is not None:
+            raise ContractError('sampled scalar fields cannot be combined with field reuse')
+        if numerics:
+            raise ContractError('saved scalar basis requires empty numerics; its grids and operator are explicit in the source products')
+        required={'geometry_artifact','operator','samples','collision_priority_evidence'}
+        if (not isinstance(scalar_field_basis, Mapping) or not required <= scalar_field_basis.keys()
+                or set(scalar_field_basis)-required-{'refinement_windows'}):
+            raise ContractError('sampled scalar selection requires geometry, operator, samples and collision priority evidence')
+        evidence=copy.deepcopy(scalar_field_basis['collision_priority_evidence'])
+        if not isinstance(evidence, Mapping) or set(evidence)!={'boxes_record','clearance_record','source_record'}:
+            raise ContractError('collision priority evidence requires boxes, clearance and source records')
+        if not isinstance(scalar_field_basis['samples'], Mapping):
+            raise ContractError('sampled scalar basis requires an explicit sample mapping')
+        windows=scalar_field_basis.get('refinement_windows')
+        if windows is not None and (not isinstance(windows,list) or any(
+                not isinstance(window,Mapping) or set(window)!={'name','active_box_mm','samples'}
+                or not isinstance(window['samples'],Mapping) for window in windows)):
+            raise ContractError('sampled scalar refinement windows require explicit sample mappings')
+        def reference(value):
+            if not isinstance(value, OpenedArtifact):
+                return copy.deepcopy(value)
+            result=value.reference
+            result['manifest']=dict(result['manifest'],path=str(value.manifest_location))
+            return result
+        selection=dict(geometry_artifact=reference(scalar_field_basis['geometry_artifact']),
+            operator=copy.deepcopy(scalar_field_basis['operator']),
+            samples={key:reference(value) for key,value in scalar_field_basis['samples'].items()})
+        if windows is not None:
+            selection['refinement_windows']=[dict(name=window['name'],active_box_mm=copy.deepcopy(window['active_box_mm']),
+                samples={key:reference(value) for key,value in window['samples'].items()})
+                for window in windows]
+        selected_model=reference(model)
+        planning_root=context.execution_root/'sampled-fields-plan'
+        prepared=prepare_ip_mr_field_inputs(selected_model,scalar_field_basis=selection,
+            priority_evidence=evidence,output_directory=planning_root/'simion/collision')
+        # Each converted collision array and the numerical background has one
+        # ordinary PA payload. Surface copies are additional known output bytes.
+        # This is a lower bound, not an estimate of peak or retained usage.
+        from msplatform.backends.simion.standalone_pa_composition import PaHeader
+        lower_bound=0
+        for row in prepared['priority_projection']['instances']:
+            grid=row['grid']
+            lower_bound+=PaHeader(-2,1,1.0,grid['nx'],grid['ny'],grid['nz'],0,
+                                  grid['dx_mm'],grid['dy_mm'],grid['dz_mm']).file_bytes
+        lower_bound+=sum(task['source_records']['fractional_surface']['bytes']
+                         for task in prepared['geometry_plan']['tasks'])
+        limits=stage['limits']
+        if (limits['reserved_run_payload_bytes'] < lower_bound or
+                limits['transient_run_directory_bytes'] < lower_bound):
+            raise ContractError(f'sampled collision output lower bound {lower_bound} bytes exceeds declared reservation or transient limit')
+        ids=prepared['expected_operation_ids']
+        output_paths=[str(Path(task['output_path']).relative_to(planning_root)) for task in prepared['geometry_plan']['tasks']]
+        output_paths += [str(Path(path).with_suffix('.pa-surf')) for path in output_paths]
+        output_paths += ['simion/collision/background.pa','simion/collision/collision.iob',
+                         'simion/collision/collision.fly2']
+        result=run_managed_stage(context,
+            descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+            run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
+            payload=dict(action='solve_fields',model=prepared['prepared_source'],numerics={},reuse_fields=None,
+                         scalar_field_basis=dict(selection,collision_priority_evidence=evidence),stage_policy=stage),
+            committed_new_bytes=stage['limits']['transient_run_directory_bytes'],
+            commitment_inputs=[policy_record,*evidence.values()],retention=stage['artifact_retention'],
+            expected_operation_ids=ids,
+            operation_dependencies={name:[ids[index-1]] for index,name in enumerate(ids) if index},
+            action=partial(execute_ip_mr_sampled_fields,model_reference=prepared['prepared_source'],
+                scalar_field_basis=selection,priority_evidence=evidence,limits=stage['limits'],
+                allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')),
+            action_record=file_record(Path(execute_ip_mr_sampled_fields.__code__.co_filename).resolve(),'required_evidence'),
+            source_references=prepared['source_references'],expected_relative_paths=output_paths,
+            use_short_execution_path=True,completion_api=lambda: native_completion)
+        return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
     source = load_field_model(model.reference if isinstance(model, OpenedArtifact) else model)
     selected_numerics = copy.deepcopy(dict(numerics))
     reuse_reference = None

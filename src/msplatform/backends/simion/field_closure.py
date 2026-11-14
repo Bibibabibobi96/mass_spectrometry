@@ -28,7 +28,7 @@ def data_record(artifact: OpenedArtifact, key: str) -> dict:
     return dict(record, path=str(artifact.data_locations[key]))
 
 
-def load_field_model(reference: Mapping | OpenedArtifact) -> FieldModelSource:
+def load_field_model(reference: Mapping | OpenedArtifact, *, field_representation: str | None = None) -> FieldModelSource:
     """Require an actual PreparedModel, original clock pair and full raw/surface closure."""
     source = reference if isinstance(reference, OpenedArtifact) else open_artifact(reference, expected_kind='prepared_model')
     if source.kind != 'prepared_model':
@@ -44,13 +44,18 @@ def load_field_model(reference: Mapping | OpenedArtifact) -> FieldModelSource:
     role = document['geometry']['frontend_geometry'].get('role')
     if role == 'simion_oa_mr_complete_geometry':
         raise ValueError('OA–MR field solve is not supported')
-    if role == 'simion_ip_mr_complete_geometry':
+    sampled = field_representation == 'assembly_sampled_basis_with_collision_geometry'
+    if field_representation is not None and not sampled:
+        raise ValueError('unsupported explicit field representation')
+    if sampled and role != 'simion_ip_mr_complete_geometry':
+        raise ValueError('sampled assembly field representation requires complete IP–MR geometry')
+    if role == 'simion_ip_mr_complete_geometry' and not sampled:
         raise ValueError('IP–MR field solve requires an implemented common-field binding')
     clock = dict(contract=data_record(source, 'clock_authority'), authority=data_record(source, 'instrument_epoch'))
     clock['data_root'] = str(Path(clock['contract']['path']).parent)
     _clock_reference(document, clock)
     geometry = model_geometry(model).frontend_geometry
-    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'}
+    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry'} or sampled
     expected = (set(geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *geometry['numerical_domains']})
     bindings = metadata.get('native_assets')

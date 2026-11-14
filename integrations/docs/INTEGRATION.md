@@ -1493,6 +1493,40 @@ IOBs reference the family, and neither an extant equivalent copy nor reliable
 rebuild closure was established. Recent completed COMSOL runtime temporary trees
 were empty; no PA, MPH, GUI package, scientific result or failure log was deleted.
 
+Five further completed-task Git baseline archives (beam analysis, gas contract,
+prepared admission, RF freshness cost and peak-statistics import) were likewise
+verified byte-for-byte against their recorded commits before exact retirement.
+They occupied 1,074,790,400 allocated bytes; the observed volume free-space change
+was 1,074,900,992 B, including concurrent filesystem activity. Their
+[separate receipt](../../../artifacts/common/capacity_disposal_receipts/p4-software-git-archives-20261114T153045Z-10fba8ab.json)
+records each path, hash and Git restoration command. Source trees, patches,
+handoffs and diagnostic evidence remain; no earlier removal was counted again.
+
+The public SIMION `solve_fields` stage now accepts an explicit
+`scalar_field_basis` for the selected complete RF–IP–MR model. It admits the
+published geometry/operator/scalar products and exact collision-priority evidence,
+then uses the existing managed owner for four raw-collision build/reopen pairs,
+a numerical-background build/reopen pair and a five-slot IOB build/reopen pair.
+The output FieldBundle records source-independent model/clock identity, original
+scalar sources, collision PA/surface/witness closure and zero-particle format
+controls. It performs no Refine, Compute or Fly and grants no field-coverage,
+collision or scientific qualification. Known output-size lower bounds must fit
+both the declared reservation and transient limit before owner admission.
+
+One unchanged actual-source candidate passed all six focused contract modules
+and its Changed-routing regression: 14 parents and 40 subtests, zero failures,
+errors or skips, in 842.785 s (843.610 s guarded). The same candidate's three
+existing shared-IOB consumer modules passed 21 parents and 26 subtests in 30.483 s
+(31.172 s guarded), also without failures, errors or skips. Source/index/HEAD/status
+guards matched. These are synthetic published-artifact and inert-process/Lua
+software tests, including real owner publication, failure, OS write protection,
+between-operation tamper, incomplete source protection and explicit Lua-provider
+refusal. Earlier fixture-token and empty-product setup failures remain preserved;
+they were corrected in tests without relaxing production ownership or readers.
+Ordinary wheel/sdist acceptance and native full-size conversion/background/IOB
+remain open. Public IP–MR tracking still refuses this representation until its
+continuous consumer and MR observation contract are complete.
+
 Within one IP–MR scalar admission call, canonical geometry/operator projection and
 the expected response plan are now constructed once and reused by that call's
 sampling levels. Every level still verifies its complete response set, source

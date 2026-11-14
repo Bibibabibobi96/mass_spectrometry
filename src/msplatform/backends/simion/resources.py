@@ -21,6 +21,7 @@ NATIVE_RESOURCES = frozenset({
     "model_drive.lua", "rf_tracking.lua",
     "build_model_iob.lua",
     "build_field_iob.lua",
+    "raw_collision_pa.lua", "create_numerical_background.lua", "reopen_numerical_background.lua",
     "build_tracking_iob.lua",
     "voltage_waveforms.lua", "rf_drive.lua", "single_flight_pulse_hook.lua", "single_flight_frontend_hook.lua",
     'build_dirichlet_patch_operating_pa.lua', 'export_detached_standalone_pa.lua', 'export_standalone_pa.lua', 'audit_frontend_working_fields.lua', 'audit_downstream_fields.lua',

@@ -19,12 +19,14 @@ local joint_rf_ip=spec.role=='rf_ip_geometry_iob_build'
 local joint_rf_oa=spec.role=='rf_oa_geometry_iob_build'
 local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
 local joint_ip_mr=spec.role=='ip_mr_geometry_iob_build'
-local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr
+local collision_iob=spec.role=='ip_mr_collision_iob_build'
+assert(not collision_iob or mode=='build_geometry' or mode=='verify_geometry','collision IOB supports source-free build/reopen only')
+local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob
 assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
 assert(not joint_rf_oa or mode=='build_geometry' or mode=='verify_geometry','RF-OA geometry only; model and fields unsupported')
 assert(not joint_oa_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'OA–MR fields and tracking workbench unsupported')
 assert(not joint_rf_ip or mode=='build_geometry' or mode=='verify_geometry' or mode=='build_model' or mode=='verify_model','RF–IP tracking and fields workbench unsupported')
-local independent_marker=joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
+local independent_marker=collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
   or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
@@ -34,6 +36,19 @@ assert(not joint_rf_ip or count==1,'RF–IP geometry requires one actual PA inst
 assert(not joint_rf_oa or count==1,'RF-OA geometry requires one actual PA instance')
 assert(not joint_oa_mr or count==3,'OA–MR geometry requires three actual PA instances')
 assert(not joint_ip_mr or count==3 or count==4,'IP–MR geometry requires three or four actual PA instances')
+if collision_iob then
+  local names=assert(spec.collision_roles,'explicit verified collision roles required')
+  assert(count==5,'selected collision IOB requires five actual slots')
+  local expected={names.background,names.rf,names.ip,names.analyzer,names.detector}
+  assert(#expected==count,'five explicit collision roles required')
+  local seen={}
+  for i,row in ipairs(spec.instances) do
+    assert(type(expected[i])=='string' and expected[i]~='' and not seen[expected[i]],'collision role missing or duplicated')
+    seen[expected[i]]=true
+    assert(row.role==expected[i] and row.instance_index==i and row.priority_number==i,
+      'collision IOB actual slot order differs at slot '..i)
+  end
+end
 assert(not dual_cone or
   (spec.role=='dual_cone_tracking_iob' and (mode=='build' or mode=='verify')) or
   (spec.role=='dual_cone_geometry_iob' and geometry_only),
@@ -129,8 +144,21 @@ if independent_component and not tracking_role then
     end
   end
   for _,row in ipairs(spec.instances) do
-    assert(row.path:match('%.pa#$'),'RF geometry requires the actual raw PA representation')
-    for _,key in ipairs({'path','fractional_surface','surface_witnesses'}) do
+    assert(row.path:match(collision_iob and '%.pa$' or '%.pa#$'),
+      'geometry PA representation differs from declared role')
+    if collision_iob then
+      local pa_stem=assert(row.path:match('^(.*)%.pa$'))
+      for _,extension in ipairs({'.wgem','.lua','.fly2','.ion','.con','.rec','.pa0','.pa#'}) do
+        local file=io.open(pa_stem..extension,'rb')
+        if file then file:close();error('collision PA forbids automatic/source companion: '..pa_stem..extension) end
+      end
+      for i=1,1000 do
+        local file=io.open(pa_stem..'.pa'..i,'rb')
+        if file then file:close();error('collision PA forbids response family') end
+      end
+    end
+    local keys=collision_iob and row.role==spec.collision_roles.background and {'path'} or {'path','fractional_surface','surface_witnesses'}
+    for _,key in ipairs(keys) do
       local file=assert(io.open(assert(row[key]),'rb'),'RF geometry input missing before IOB load: '..key)
       assert(file:seek('end')>0,'RF geometry input empty: '..key);file:close()
     end
@@ -180,6 +208,19 @@ local function verify_fractional_component(item,row)
     for _,eid in ipairs(item.pa.electrode_numbers) do actual[eid]=true end
     for _,eid in ipairs(row.response_ids) do assert(actual[eid],'RF solved carrier mapping differs');actual[eid]=nil end
     assert(next(actual)==nil,'RF carrier contains an undeclared electrode')
+  end
+  if collision_iob then
+    assert(item.pa.refinable==false,'collision PA must be nonrefinable')
+    if row.role==spec.collision_roles.background then
+      local count_nodes=0
+      for x,y,z in item.pa:points() do
+        local value,metal=item.pa:point(x,y,z)
+        assert(value==0 and metal==false,'background PA must contain only zero vacuum nodes')
+        count_nodes=count_nodes+1
+      end
+      assert(count_nodes==item.pa.nx*item.pa.ny*item.pa.nz,'background PA node count differs')
+      return
+    end
   end
   local surface=assert(io.open(row.fractional_surface,'rb'),'fractional companion missing before IOB load')
   assert(surface:seek('end')>0);surface:close()
