@@ -50,7 +50,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
-    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_rf_oa_geometry"}
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
@@ -113,7 +113,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
     values["downstream_specs"] = tuple(values["downstream_specs"])
     compiled = CompiledSimionGeometry(**values)
-    if compiled.frontend_geometry.get("role") == "simion_rf_oa_geometry":
+    if compiled.frontend_geometry.get("role") in {"simion_rf_oa_geometry", "simion_ip_mr_complete_geometry"}:
         raise ContractError("joint geometry has no supported prepared model yet")
     joint_oa_mr = compiled.frontend_geometry.get("role") == "simion_oa_mr_complete_geometry"
     joint_ip = compiled.frontend_geometry.get("role") == "simion_rf_ip_geometry"
@@ -408,6 +408,11 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
         from .rf_oa_compiler import compile_rf_oa_geometry
         return compile_rf_oa_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if len(projects) == 2 and set(projects) == {"orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"}:
+        from .mr_compiler import compile_complete_mr_geometry
+        return compile_complete_mr_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
+    if (len(projects) in (2, 3) and set(projects) in (
+            {"dual_pressure_rectilinear_ion_processor", "parallel_mirror_dual_stripe_mr_tof"},
+            {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor", "parallel_mirror_dual_stripe_mr_tof"})):
         from .mr_compiler import compile_complete_mr_geometry
         return compile_complete_mr_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if selected and all(plan["components"][name]["project_id"] == "rf_multipole_ion_optics" for name in selected):

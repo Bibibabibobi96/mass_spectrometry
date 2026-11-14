@@ -19,10 +19,19 @@ from msplatform.components.orthogonal_accelerator.geometry_members import (
 from msplatform.backends.simion.compiler import CompiledSimionGeometry, _content_sha256
 from msplatform.backends.simion.mr_geometry import (
     _analyzer_geometry_lines,
+    _polygon_bands,
     validate_generation_grid_pitch,
 )
+from msplatform.backends.simion.mrtof_observations import _polygon_contains, _strict_polygon_hole
 from msplatform.backends.simion.oa_compiler import compile_independent_accelerators
+from msplatform.backends.simion.rf_compiler import compile_independent_multipoles
 from msplatform.backends.simion.physical_samples import box_sample, sample_node
+from msplatform.backends.simion.geometry import _numerical_box
+from msplatform.backends.simion.numerics import normalize_cell_mm_xyz
+from msplatform.backends.simion.ip_assembly_geometry import render_selected_ip_body
+from msplatform.backends.simion.ip_compiler import _ip_physical_samples
+from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+from msplatform.components.geometry_members import assembly_geometry_members
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import (
     _component_electrodes,
     _scientific_groups,
@@ -232,19 +241,14 @@ def _mr_samples(
     groups = _scientific_groups(resolved, _component_electrodes(resolved))
     for index, solid in enumerate(resolved["mirror_electrodes"]):
         if "polygon_yz_mm" in solid:
-            continue
-        try:
-            gu = box_sample(
-                _sample_box(solid["box"]),
-                _sample_box(solid["beam_slot"]),
-                rotation,
-                translation,
-                origin,
-                pitch,
-                dimensions,
-            )
-        except ValueError:
-            continue
+            gu = _polygon_mirror_witness(solid,domain,members,index)
+        else:
+            try:
+                gu = box_sample(
+                    _sample_box(solid["box"]), _sample_box(solid["beam_slot"]),
+                    rotation, translation, origin, pitch, dimensions)
+            except ValueError:
+                continue
         if gu is None:
             continue
         point = [origin[axis] + gu[i] * pitch[axis] for i, axis in enumerate("xyz")]
@@ -270,8 +274,31 @@ def _mr_samples(
             ),
         ]
     raise ValueError(
-        "MR analyzer has no unambiguous represented box-mirror witness; polygon-only or unrepresented geometry requires another supported witness"
+        "MR analyzer has no unambiguous represented mirror witness on the declared grid"
     )
+
+
+def _polygon_mirror_witness(solid: Mapping[str, Any], domain: Mapping[str, Any],
+                            members: list[dict[str, Any]], index: int) -> list[int] | None:
+    """Prove one grid node inside rendered polygon metal and outside every hole."""
+    origin, pitch, dims = (domain[key] for key in ('instance_origin_mm','cell_mm_xyz','dimensions'))
+    breaks = sorted({solid['x'][0],solid['x'][1],*(x for hole in solid['holes'] for x in hole['x']
+                    if solid['x'][0] < x < solid['x'][1])})
+    for band in _polygon_bands(solid['polygon_yz_mm']):
+        for x0,x1 in zip(breaks,breaks[1:]):
+            point = [(x0+x1)/2,sum(p[0] for p in band)/len(band),sum(p[1] for p in band)/len(band)]
+            try:
+                gu, snapped = sample_node(point, [[1,0,0],[0,1,0],[0,0,1]], [0,0,0], origin, pitch, dims)
+            except ValueError:
+                continue
+            if not solid['x'][0] < snapped[0] < solid['x'][1]: continue
+            if not _strict_polygon_hole((snapped[1],snapped[2]),solid['polygon_yz_mm'],0.): continue
+            if any(hole['x'][0] <= snapped[0] <= hole['x'][1]
+                   and _polygon_contains((snapped[1],snapped[2]),hole['polygon_yz_mm'],0.) for hole in solid['holes']):
+                continue
+            if not _outside_member_bounds(snapped,members,skip=('mirror_electrodes',index)): continue
+            return gu
+    return None
 
 
 def _detector_samples(
@@ -319,6 +346,37 @@ def _wrap_gem(domain: Mapping[str, Any], body: list[str]) -> str:
     )
 
 
+def _ip_asset(assembly: Assembly, instance_id: str, domain: Mapping[str, Any],
+              mapping: Mapping[str, int] | None) -> tuple[str, dict, dict, list, list]:
+    """Render the selected complete IP in its own local frame and explicit grid."""
+    if not isinstance(domain, Mapping) or set(domain) != {'cell_mm_xyz', 'pa_bounds_mm'}:
+        raise ValueError('IP domain requires explicit cell_mm_xyz and pa_bounds_mm')
+    cells = normalize_cell_mm_xyz(domain['cell_mm_xyz'])
+    box, dimensions = _numerical_box(domain['pa_bounds_mm'], cells)
+    selected = assembly.components_resolved[instance_id]
+    source = assembly.components[instance_id].source_design
+    rows = selected['projection']['electrodes']
+    names = [row['name'] for row in rows]
+    native_ids = mapping if mapping is not None else dict(zip(names, range(1, len(names)+1), strict=True))
+    body, native_map = render_selected_ip_body(selected, baseline=source['baseline'], native_ids=native_ids)
+    bounds = []
+    for row in rows:
+        for shape in row['solids']:
+            lo, hi = shape_bounds(shape)
+            if any(lo[i] <= box[a+'_min'] or hi[i] >= box[a+'_max'] for i,a in enumerate('xyz')):
+                raise ValueError('IP domain clips a physical solid')
+            bounds.append({'family':row['name'], 'index':0, 'bounds_mm':[*lo,*hi]})
+    grid = dict(dimensions=dimensions,cell_mm_xyz=cells,bounds_mm=box,
+                instance_origin_mm={a:box[a+'_min'] for a in 'xyz'})
+    samples = _ip_physical_samples(selected, native_map, (0,0,0), box, cells, dimensions)
+    samples.append(dict(label='ip_vacuum',gu=_vacuum_witness(grid,bounds),metal=False))
+    snapshot = dict(composition_plan=assembly.composition_plan,
+                    components_resolved=assembly.components_resolved,
+                    components_source=assembly.components_source)
+    members = [row for row in assembly_geometry_members(snapshot) if row['instance_id'] == instance_id]
+    return _wrap_gem(grid, body.splitlines()),grid,native_map,members,samples
+
+
 def compile_complete_mr_geometry(
     assembly: Assembly, *, numerics: Mapping[str, Any]
 ) -> CompiledSimionGeometry:
@@ -348,51 +406,69 @@ def compile_complete_mr_geometry(
     oa = [
         name for name, project in groups.items() if project == "orthogonal_accelerator"
     ]
+    ip = [name for name, project in groups.items() if project == 'dual_pressure_rectilinear_ion_processor']
+    rf = [name for name, project in groups.items() if project == 'rf_multipole_ion_optics']
     mr = [
         name
         for name, project in groups.items()
         if project == "parallel_mirror_dual_stripe_mr_tof"
     ]
-    if len(selected) != 2 or len(oa) != 1 or len(mr) != 1:
+    if (len(mr) != 1 or not ((len(selected),len(oa),len(ip),len(rf))
+                              in ((2,1,0,0),(2,0,1,0),(3,0,1,1)))):
         raise ValueError(
             "OA鈥揗R geometry requires exactly one canonical OA and one complete MR; mixed IP is unsupported"
         )
-    oa_id, mr_id = oa[0], mr[0]
+    is_ip = bool(ip)
+    oa_id, mr_id = (ip if is_ip else oa)[0], mr[0]
     oa_design = components[oa_id]
     mr_design = components[mr_id]
     edges = [
         e
         for e in plan["recipe"]["connections"]
         if e["connection_id"] in plan["scope"]["connection_ids"]
-        and e["upstream"] == {"instance_id": oa_id, "port_id": "axial_exit"}
+        and e["upstream"] == {"instance_id": oa_id, "port_id": "extraction_exit" if is_ip else "axial_exit"}
         and e["downstream"] == {"instance_id": mr_id, "port_id": "accelerator_entry"}
     ]
     if len(edges) != 1:
         raise ValueError(
             "exactly one selected OA axial-exit to MR entry connection required"
         )
+    if rf:
+        rf_edges = [e for e in plan['recipe']['connections']
+                    if e['connection_id'] in plan['scope']['connection_ids']
+                    and e['upstream'] == {'instance_id':rf[0],'port_id':'mechanical_exit'}
+                    and e['downstream'] == {'instance_id':oa_id,'port_id':'guide_inlet'}]
+        if len(rf_edges) != 1:
+            raise ValueError('exactly one selected RF mechanical-exit to IP inlet connection required')
+    if is_ip:
+        selected_edges = [e for e in plan['recipe']['connections'] if e['connection_id'] in plan['scope']['connection_ids']]
+        if (len(selected_edges) != (2 if rf else 1)
+                or any(e['coupling_mode'] != 'monolithic_joint_solve' for e in selected_edges)):
+            raise ValueError('IP–MR geometry requires exactly the selected continuous mechanical connections')
     poses = {
         item["instance_id"]: copy.deepcopy(item["transform"])
         for item in plan["recipe"]["instances"]
         if item["instance_id"] in selected
     }
-    if iter_geometry_members(oa_design) != iter_geometry_members(
+    if not is_ip and iter_geometry_members(oa_design) != iter_geometry_members(
         mr_design["accelerator_component_geometry"]
     ):
         raise ValueError(
             "selected canonical OA mechanics differ from MR matching authority"
         )
     domains = numerics["domains"]
-    if not isinstance(domains, Mapping) or set(domains) != {
-        "oa",
-        "analyzer",
-        "detector",
-    }:
+    expected_domains = {'ip' if is_ip else 'oa','analyzer','detector'}
+    if rf: expected_domains.add('multipole')
+    if not isinstance(domains, Mapping) or set(domains) != expected_domains:
         raise ValueError("exact OA, analyzer and detector domains required")
     mappings = numerics.get("electrode_group_native_ids", {})
-    if not isinstance(mappings, Mapping) or set(mappings) - {oa_id, mr_id}:
+    if not isinstance(mappings, Mapping) or set(mappings) - set(selected):
         raise ValueError("native mappings name unselected component")
-    local = compile_assembly_layout(
+    if is_ip:
+        upstream_gem, upstream_grid, upstream_map, upstream_members, upstream_samples = _ip_asset(
+            assembly, oa_id, domains['ip'], mappings.get(oa_id))
+    else:
+        local = compile_assembly_layout(
         plan["recipe"],
         plan["components"],
         local_scope={
@@ -401,15 +477,16 @@ def compile_complete_mr_geometry(
             "boundary_assumptions": "Geometry asset only; no field boundary or coupling is asserted",
         },
     )
-    oa_numerics = {"component_domains": {oa_id: copy.deepcopy(domains["oa"])}}
-    if oa_id in mappings:
-        oa_numerics["electrode_group_native_ids"] = {
-            oa_id: copy.deepcopy(mappings[oa_id])
-        }
-    oa_geometry = compile_independent_accelerators(
-        {"composition_plan": local, "components_resolved": {oa_id: oa_design}},
-        numerics=oa_numerics,
-    )
+        oa_numerics = {"component_domains": {oa_id: copy.deepcopy(domains["oa"])}}
+        if oa_id in mappings:
+            oa_numerics["electrode_group_native_ids"] = {oa_id: copy.deepcopy(mappings[oa_id])}
+        oa_geometry = compile_independent_accelerators(
+            {"composition_plan": local, "components_resolved": {oa_id: oa_design}}, numerics=oa_numerics)
+        upstream_gem = oa_geometry.frontend_gems[oa_id]
+        upstream_grid = oa_geometry.frontend_geometry['numerical_domains'][oa_id]
+        upstream_map = oa_geometry.frontend_geometry['electrode_bindings'][oa_id]
+        upstream_members = list(iter_geometry_members(oa_design))
+        upstream_samples = oa_geometry.frontend_geometry['raw_physical_samples'][oa_id]
     source = assembly.components[mr_id].source_design
     contract = source["contract"]
     analyzer = _domain(domains["analyzer"], contract)
@@ -446,11 +523,22 @@ def compile_complete_mr_geometry(
         + ") }"
     ]
     assets = {
-        oa_id: oa_geometry.frontend_gems[oa_id],
+        oa_id: upstream_gem,
         mr_id + "_analyzer": _wrap_gem(analyzer, body),
         mr_id + "_detector": _wrap_gem(detector, detector_body),
     }
-    if len(assets) != 3:
+    rf_geometry = None
+    if rf:
+        rf_id = rf[0]
+        local_rf = compile_assembly_layout(plan['recipe'], plan['components'], local_scope={
+            'instance_ids':[rf_id], 'research_scope':'RF geometry asset within selected RF–IP–MR assembly',
+            'boundary_assumptions':'Geometry asset only; no field boundary or coupling is asserted'})
+        rf_numerics = {'component_domains':{rf_id:copy.deepcopy(domains['multipole'])}}
+        if rf_id in mappings: rf_numerics['electrode_group_native_ids']={rf_id:copy.deepcopy(mappings[rf_id])}
+        rf_geometry = compile_independent_multipoles(
+            {'composition_plan':local_rf,'components_resolved':{rf_id:components[rf_id]}}, numerics=rf_numerics)
+        assets[rf_id] = rf_geometry.frontend_gems[rf_id]
+    if len(assets) != (4 if rf else 3):
         raise ValueError("asset identities collide")
     identities = {
         name: {
@@ -459,11 +547,14 @@ def compile_complete_mr_geometry(
         }
         for name in selected
     }
+    if is_ip:
+        for name in selected:
+            identities[name]['source_content_sha256'] = _content_sha256(assembly.components[name].source_design)
     frontend = {
-        "role": "simion_oa_mr_complete_geometry",
+        "role": "simion_ip_mr_complete_geometry" if is_ip else "simion_oa_mr_complete_geometry",
         "composition_plan": plan,
         "numerical_domains": {
-            oa_id: oa_geometry.frontend_geometry["numerical_domains"][oa_id],
+            oa_id: upstream_grid,
             mr_id + "_analyzer": analyzer,
             mr_id + "_detector": detector,
         },
@@ -478,7 +569,7 @@ def compile_complete_mr_geometry(
             mr_id + "_detector": poses[mr_id],
         },
         "electrode_bindings": {
-            oa_id: oa_geometry.frontend_geometry["electrode_bindings"][oa_id],
+            oa_id: upstream_map,
             mr_id: mr_map,
         },
         "electrode_group_roles": {
@@ -488,7 +579,7 @@ def compile_complete_mr_geometry(
             }
         },
         "physical_members": {
-            oa_id: list(iter_geometry_members(oa_design)),
+            oa_id: upstream_members,
             mr_id: members + [detector_member],
         },
         "physical_cutouts": {
@@ -502,7 +593,7 @@ def compile_complete_mr_geometry(
             }
         },
         "raw_physical_samples": {
-            oa_id: oa_geometry.frontend_geometry["raw_physical_samples"][oa_id],
+            oa_id: upstream_samples,
             mr_id + "_analyzer": _mr_samples(mr_design, mr_map, analyzer, members),
             mr_id + "_detector": _detector_samples(
                 mr_design["detector"], mr_map[detector_group], detector
@@ -511,11 +602,27 @@ def compile_complete_mr_geometry(
         "raw_witness_scope": {
             "analyzer": "one represented mirror metal anchor and one conservative vacuum anchor; remaining members and native namespace unverified",
             "detector": "one represented detector metal anchor and one conservative vacuum anchor; full native namespace unverified",
-            "limitations": "polygon-only mirror anchors and unrepresentable grid anchors are refused; no field or native qualification",
+            "limitations": "unrepresentable or ambiguous grid anchors are refused; no field or native qualification",
         },
         "source_status": "not_requested",
         "field_status": "not_solved",
     }
+    if is_ip:
+        frontend['electrode_group_roles'][oa_id] = {
+            row['electrode_group_id']: row['role']
+            for row in plan['components'][oa_id]['component_electrodes']
+        }
+    if rf:
+        rf_id=rf[0]
+        frontend['numerical_domains'][rf_id]=rf_geometry.frontend_geometry['numerical_domains'][rf_id]
+        frontend['asset_components'][rf_id]=rf_id
+        frontend['asset_poses'][rf_id]=poses[rf_id]
+        frontend['electrode_bindings'][rf_id]=rf_geometry.frontend_geometry['electrode_bindings'][rf_id]
+        frontend['electrode_group_roles'][rf_id]={row['electrode_group_id']:row['role']
+            for row in plan['components'][rf_id]['component_electrodes']}
+        snapshot=dict(composition_plan=plan,components_resolved=components,components_source=assembly.components_source)
+        frontend['physical_members'][rf_id]=[row for row in assembly_geometry_members(snapshot) if row['instance_id']==rf_id]
+        frontend['raw_physical_samples'][rf_id]=rf_geometry.frontend_geometry['raw_physical_samples'][rf_id]
     return CompiledSimionGeometry(
         assets, frontend, (), identities, copy.deepcopy(components)
     )

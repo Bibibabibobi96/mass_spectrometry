@@ -68,7 +68,7 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
-    if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_rf_oa_geometry"}:
+    if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry"}:
         return _plan_joint_geometry_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry"}:
         return _plan_rf_geometry_build(compiled, root, seed_record, path_resource)
@@ -151,9 +151,27 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
     geometry = compiled.frontend_geometry
     rf_ip = geometry["role"] == "simion_rf_ip_geometry"
     rf_oa = geometry["role"] == "simion_rf_oa_geometry"
+    ip_mr = geometry["role"] == "simion_ip_mr_complete_geometry"
     single_parent = rf_ip or rf_oa
     names = list(compiled.frontend_gems)
-    count = 1 if single_parent else 3
+    count = 1 if single_parent else len(names) if ip_mr else 3
+    if ip_mr and count not in (3, 4):
+        raise ValueError("IP–MR geometry requires three or four complete local assets")
+    if ip_mr:
+        plan = geometry['composition_plan']
+        projects = {name:plan['components'][name]['project_id'] for name in plan['scope']['instance_ids']}
+        ips = [name for name,project in projects.items() if project == 'dual_pressure_rectilinear_ion_processor']
+        mrs = [name for name,project in projects.items() if project == 'parallel_mirror_dual_stripe_mr_tof']
+        rfs = [name for name,project in projects.items() if project == 'rf_multipole_ion_optics']
+        if len(ips) != 1 or len(mrs) != 1 or len(rfs) != count-3 or len(projects) != count-1:
+            raise ValueError('IP–MR geometry selected components differ')
+        expected = {ips[0]:ips[0],mrs[0]+'_analyzer':mrs[0],mrs[0]+'_detector':mrs[0]}
+        if rfs: expected[rfs[0]] = rfs[0]
+        if geometry['asset_components'] != expected or set(names) != set(expected):
+            raise ValueError('IP–MR geometry asset roles differ')
+        poses = {row['instance_id']:row['transform'] for row in plan['recipe']['instances']}
+        if geometry['asset_poses'] != {asset:poses[component] for asset,component in expected.items()}:
+            raise ValueError('IP–MR geometry asset poses differ')
     if len(names) != count or (seed_record.get("bytes"), str(seed_record.get("sha256", "")).lower()) != STRUCTURAL_SEEDS[count]:
         raise ValueError("joint geometry requires the exact asset count and reviewed structural seed")
     _absolute(Path(seed_record["path"]))
@@ -225,8 +243,8 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
     materializations[str(control)] = render_restart_fly2([])
     seed = root/"simion/geometry/iob_seed"/(str(count)+"_instance_seed.iob")
     iob, spec = root/"simion/geometry/geometry.iob", root/"inputs/geometry_iob.lua"
-    role = "rf_oa_geometry_iob_build" if rf_oa else "rf_ip_geometry_iob_build" if rf_ip else "oa_mr_geometry_iob_build"
-    marker = "RF_OA_GEOMETRY_IOB" if rf_oa else "RF_IP_GEOMETRY_IOB" if rf_ip else "OA_MR_GEOMETRY_IOB"
+    role = "rf_oa_geometry_iob_build" if rf_oa else "rf_ip_geometry_iob_build" if rf_ip else "ip_mr_geometry_iob_build" if ip_mr else "oa_mr_geometry_iob_build"
+    marker = "RF_OA_GEOMETRY_IOB" if rf_oa else "RF_IP_GEOMETRY_IOB" if rf_ip else "IP_MR_GEOMETRY_IOB" if ip_mr else "OA_MR_GEOMETRY_IOB"
     materializations[str(spec)] = "return "+lua_value(dict(schema_version=1, role=role, instances=instances,
         seed_iob=str(seed), output_iob=str(iob), empty_particle_control=str(control),
         bootstrap_paths=[str(seed.parent/f"iob_seed_placeholder_{i:02d}.pa0") for i in range(1,count+1)]))+"\n"
@@ -297,6 +315,8 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     from .model import model_geometry, render_model_configuration
 
     compiled = model_geometry(model)
+    if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
+        raise ValueError('IP–MR prepared model is not supported yet')
     root = _native_ascii(run_directory)
     joint_ip = compiled.frontend_geometry.get('role') == 'simion_rf_ip_geometry'
     independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}

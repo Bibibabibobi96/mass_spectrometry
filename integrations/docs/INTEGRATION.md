@@ -1158,7 +1158,8 @@ records are retained in workspace
 This permits the provisional IP–MR geometry case to proceed, not an upstream
 multipole, full-field, insulation, native flight or convergence qualification.
 LP80 fields and trajectories are not reused as LP60 results. The public mixed
-geometry/model/field/tracking stages still require implementation and acceptance.
+geometry compiler and geometry-only native plan now support IP–MR and optional
+complete RF–IP–MR. Native construction, model, field and tracking acceptance remain open.
 The user selected the simplest existing supported complete upstream instance,
 without adding historical shells, endcaps or plates. The selected bare octupole
 request is the versioned `rf_oatof_functional_v1` multipole already consumed by
@@ -1178,6 +1179,14 @@ its heavy GATE. Its full author requests and pair evidence are in workspace
 `.tools/phase04-codex-takeover-20261109/v87-rf-ip-mr-lp60-clearance-root-r1`.
 This confirms this selected layout only; common field domains, attached
 source/gas/observations and continuous native propagation still require validation.
+
+The public geometry integration passed eight focused software tests in 147.066
+seconds (152.334 guarded wall), with the full source and checkout unchanged.
+They cover all canonical members and source identities, actual three/four-slot
+plans, Lua IOB build/reopen with inert native APIs, malformed asset/count refusals
+and preserved RF–IP/OA–MR behavior. These local PA assets are unsolved geometry,
+not a coupled field. Public model/field/tracking execution remains explicitly
+unsupported until its actual implementation; no native solver ran in this check.
 
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source

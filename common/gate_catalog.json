@@ -1471,6 +1471,7 @@
               "common/contracts/test_platform_capabilities.py",
               "common/contracts/test_simion_geometry_compiler.py",
               "common/contracts/test_joint_geometry_plan.py",
+              "common/contracts/test_ip_mr_geometry.py",
               "common/contracts/test_joint_ip_model.py",
               "common/contracts/test_oa_mr_model.py",
               "common/contracts/test_rf_oa_geometry_iob.py",

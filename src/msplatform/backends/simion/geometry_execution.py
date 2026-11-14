@@ -37,7 +37,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     if not isinstance(compiled, CompiledSimionGeometry):
         raise TypeError("SIMION geometry requires a compiled scientific geometry")
     verify_record("geometry structural seed", dict(seed_record))
-    independent_rf = compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_rf_oa_geometry"}
+    independent_rf = compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry"}
     names = GEOMETRY_RESOURCES[:4] if independent_rf else GEOMETRY_RESOURCES
     sources = {name: native_resource_path(name) for name in names}
     sources["native_run_path.lua"] = resource_path("native_run_path.lua")

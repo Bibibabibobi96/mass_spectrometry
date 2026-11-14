@@ -82,6 +82,16 @@ def _joint_physical_samples(rf_design: dict, ip_design: dict, rf_map: dict, ip_m
         if any(_inside_ip_electrode(e, local) for e in electrodes):
             raise ValueError("RF metal or vacuum witness overlaps IP metal")
         samples.append({**sample, "gu": world_gu})
+    samples.extend(_ip_physical_samples(ip_design, ip_map, ip_translation, box, cells, dimensions))
+    samples.append(dict(label="declared_grounded_pa_face", gu=[0,0,0], electrode_id=0, metal=True))
+    return samples
+
+
+def _ip_physical_samples(ip_design: dict, ip_map: dict, ip_translation: tuple, box: dict,
+                         cells: dict, dimensions: dict) -> list[dict]:
+    """Find the existing one represented, unambiguous interior node per IP group."""
+    electrodes = ip_design['projection']['electrodes']
+    samples = []
     for index, electrode in enumerate(electrodes):
         found = None
         for shape in electrode["solids"]:
@@ -103,7 +113,6 @@ def _joint_physical_samples(rf_design: dict, ip_design: dict, rf_map: dict, ip_m
         if found is None:
             raise ValueError("no represented unambiguous IP metal witness: "+electrode["name"])
         samples.append(dict(label="ip_"+electrode["name"], gu=found, electrode_id=ip_map[electrode["name"]], metal=True))
-    samples.append(dict(label="declared_grounded_pa_face", gu=[0,0,0], electrode_id=0, metal=True))
     return samples
 
 def compile_ip_assembly_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> CompiledSimionGeometry:
