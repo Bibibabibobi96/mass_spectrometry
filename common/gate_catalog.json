@@ -2900,6 +2900,10 @@
               {
                 "exact": "src/msplatform/workflows/single_reflection_flight/frontend_fields.py",
                 "reason": "single_reflection_frontend_producer_changed"
+              },
+              {
+                "regex": "^src/msplatform/workflows/single_reflection_flight/(?:prepare\\.py|downstream_fields\\.py|request_v11\\.schema\\.json)$",
+                "reason": "single_reflection_explicit_backend_numerics_changed"
               }
             ],
             "modules": [
@@ -2921,6 +2925,7 @@
               "integrations/tests/test_single_reflection_native_evidence.py",
               "integrations/tests/test_single_reflection_owner_recovery.py",
               "integrations/tests/test_single_reflection_preparation.py",
+              "integrations/tests/test_sfi_preparation_numerics.py",
               "integrations/tests/test_single_reflection_program.py",
               "integrations/tests/test_single_reflection_pulse.py",
               "integrations/tests/test_single_reflection_request_versions.py",

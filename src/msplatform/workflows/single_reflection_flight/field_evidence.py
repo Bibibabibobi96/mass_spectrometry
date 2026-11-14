@@ -27,8 +27,8 @@ def _field_observation(preparation: dict, source: list[dict], provenance: dict,
     if 'native_field_observation' not in document:
         return None
     request = _read(_small_record(preparation['input_records']['request'],'native field observation request'))
-    if type(request.get('schema_version')) is not int or request['schema_version'] != 10:
-        raise ValueError('native field observation is an explicit request10 validation capability')
+    if type(request.get('schema_version')) is not int or request['schema_version'] not in (10, 11):
+        raise ValueError('native field observation is an explicit request10/request11 validation capability')
     instances,_ = native_frontend_instances(geometry['composition_plan'])
     ids = [int(row['particle_id']) for row in source]
     spec = validate_native_field_observation(document['native_field_observation'],particle_ids=ids,

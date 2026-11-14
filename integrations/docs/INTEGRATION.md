@@ -1411,13 +1411,28 @@ Standalone OA consumers now import canonical installed two-zone and bare three-z
 
 ### Installed single-reflection preparation
 
+Request 11 supplies `numerics.geometry_build` and `numerics.detector_marker`
+explicitly, alongside the existing frontend numerical domains. Canonical TOF
+components contain physical geometry rather than SIMION build settings; preparation
+and downstream planning bind the selected numerical request without changing the
+source or frozen component. The existing backend compiler and physical detector
+checks remain authoritative. Missing numerical inputs, unknown settings, invalid
+steps and noninteger native targets are rejected before native execution.
+
+The four focused numerical-request regressions passed through the public Changed
+selector. A stable 43-test batch also passed preparation, downstream planning,
+declared request versions and the recorded-birth managed-owner consumer with an
+inert native leaf. These checks do not establish ordinary installed request11
+acceptance, native field coverage or trajectory qualification. Existing request9/10
+records retain their declared interpretation; neither schema is rewritten.
+
 `msplatform.workflows.single_reflection_flight.prepare.prepare(request_path, run)` owns the
-existing explicit-provider preparation, with the same request9/request10 data semantics.
+explicit-provider preparation, including request11's separate backend numerics.
 Its `python -m msplatform.workflows.single_reflection_flight.prepare --request ... --run ...`
 entry consumes the same request in an already managed `run/inputs` directory. It freezes and
 verifies author inputs, prepares GEM/field specifications, and projects the complete original
 birth/release or recorded timed source; it does not create a second run owner or execute a solver.
-The two versioned schemas now ship with that package. The root preparation/pulse/source and
+The versioned schemas ship with that package. The root preparation/pulse/source and
 geometry/fields bridge files were retired with their active callers and frozen package selection.
 
 Pure recorded-state/producer adapters live in `msplatform.results`, without execution imports.

@@ -35,8 +35,8 @@ def _field_observation_definition(preparation: dict, source: dict, provenance: d
     document = _read(_verified(record,'field observation validation contract',run))
     if 'native_field_observation' not in document: return None
     request = _read(_verified(preparation['input_records']['request'],'field observation request',run))
-    if type(request.get('schema_version')) is not int or request['schema_version'] != 10:
-        raise ValueError('applied-field evidence requires an explicit request10 declaration')
+    if type(request.get('schema_version')) is not int or request['schema_version'] not in (10, 11):
+        raise ValueError('applied-field evidence requires an explicit request10/request11 declaration')
     geometry = _read(_verified(preparation['outputs']['frontend_geometry'],'observation geometry',run))
     from msplatform.backends.simion.frontend import native_frontend_instances
     instances,_ = native_frontend_instances(geometry['composition_plan'])

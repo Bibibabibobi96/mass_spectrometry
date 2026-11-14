@@ -40,6 +40,7 @@ verify_record = partial(_verify_record, retention_classifier=classify_file)
 
 SCHEMA = Path(__file__).with_name("request_v9.schema.json")
 SCHEMA_V10 = Path(__file__).with_name("request_v10.schema.json")
+SCHEMA_V11 = Path(__file__).with_name("request_v11.schema.json")
 ROLE = "instrument_assembly_single_reflection_preparation_request"
 FROZEN_NAMES = {
     "validation_contract": "functional_validation.json",
@@ -78,19 +79,20 @@ def validate_preparation_request(request: dict) -> int:
     """Validate the declared request version without converting or changing it.
 
     Version9 retains its original schema; version10 uses canonical group IDs
-    and SIMION integer targets. Provider group/domain coverage and the actual
+    and SIMION integer targets. Version11 takes backend geometry numerics from
+    the request, leaving the canonical component unchanged. Provider coverage and the actual
     supported native chain are checked later against frozen provider inputs.
     """
     if not isinstance(request, dict) or type(request.get("schema_version")) is not int:
         raise ValueError("preparation request requires an explicit integer schema_version")
     version = request["schema_version"]
-    if version not in (9, 10):
+    if version not in (9, 10, 11):
         raise ValueError("unsupported preparation request schema_version")
-    validate_schema(request, SCHEMA if version == 9 else SCHEMA_V10)
-    if version == 10 and any(type(target) is not int
+    validate_schema(request, {9: SCHEMA, 10: SCHEMA_V10, 11: SCHEMA_V11}[version])
+    if version >= 10 and any(type(target) is not int
             for provider in request["providers"]["instances"].values()
             for target in provider["electrode_bindings"].values()):
-        raise ValueError("version10 native electrode targets must be strict integers")
+        raise ValueError(f"version{version} native electrode targets must be strict integers")
     return version
 
 
@@ -211,7 +213,7 @@ def prepare(request_path: Path, run: Path) -> dict:
     shutil.copyfile(record_path(request["composition_plan"], base_dir=request_path.parent), parent_path)
     verify_record("composition_plan", {**request["composition_plan"], "path": str(parent_path)})
     parent = _read(parent_path)
-    allowed_plans = (5,) if request_version == 10 else (3, 4)
+    allowed_plans = (5,) if request_version >= 10 else (3, 4)
     if type(parent.get("schema_version")) is not int or parent["schema_version"] not in allowed_plans:
         raise ValueError(f"request{request_version} requires composition plan version {allowed_plans}")
     plan = derive_assembly_scope(parent, local_scope=request.get("local_scope"))
@@ -280,13 +282,13 @@ def prepare(request_path: Path, run: Path) -> dict:
         or not {
             "geometry_mm",
             "coordinate_convention",
-            "simion_geometry_build",
-            "simion_detector_marker",
             "particle_source",
         }
         <= oatof.keys()
     ):
         raise ValueError("oaTOF provider must be its complete final resolved design")
+    if request_version < 11 and not {"simion_geometry_build", "simion_detector_marker"} <= oatof.keys():
+        raise ValueError("legacy oaTOF preparation requires its embedded backend numerical settings")
     release_spec = None
     restart_selection = None
     restart_source_geometry = None
@@ -370,14 +372,17 @@ def prepare(request_path: Path, run: Path) -> dict:
     if isinstance(epoch, bool) or not isinstance(epoch, (int, float)) or not math.isfinite(epoch):
         raise ValueError("canonical instrument epoch must be finite")
     variant = instances[oatof_id]["geometry"]["accelerator_variant"]
-    if request_version == 10:
+    if request_version >= 10:
         from msplatform.backends.simion.compiler import compile_geometry
         geometry_domains = {name: {key: value for key, value in domain.items() if key != 'refine_convergence_v'}
                             for name, domain in request['numerics']['frontend_domains'].items()}
+        native_settings = (request['numerics'] if request_version == 11 else
+                           {'geometry_build': oatof['simion_geometry_build'],
+                            'detector_marker': oatof['simion_detector_marker']})
         compiled = compile_geometry(
             {'composition_plan': plan, 'components_resolved': {**multipoles, oatof_id: oatof}},
-            numerics={'frontend_domains': geometry_domains, 'geometry_build': oatof['simion_geometry_build'],
-                'detector_marker': oatof['simion_detector_marker'],
+            numerics={'frontend_domains': geometry_domains, 'geometry_build': native_settings['geometry_build'],
+                'detector_marker': native_settings['detector_marker'],
                 'electrode_group_native_ids': {key: value['electrode_bindings'] for key, value in instances.items()}})
         gems, geometry = compiled.frontend_gems, compiled.frontend_geometry
     else:
@@ -423,7 +428,8 @@ def prepare(request_path: Path, run: Path) -> dict:
         variant_id=variant,
         pulse_voltage_policy_id=request["pulse_voltage_policy_id"],
         flight=request.get("flight"),
-        **request["numerics"],
+        **{key: value for key, value in request["numerics"].items()
+           if key not in {'geometry_build', 'detector_marker'}},
     )
     reuse_members = request["providers"].get("frontend_field_reuse_members")
     if reuse_members is not None:

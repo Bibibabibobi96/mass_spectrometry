@@ -170,10 +170,26 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
     resolved = _read(provider_path)
     if resolved.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("a complete final oaTOF resolved contract is required")
-    g, b, m = (resolved[k] for k in ("geometry_mm", "simion_geometry_build", "simion_detector_marker"))
+    from .prepare import validate_preparation_request
+    request_record = preparation['input_records'].get('request')
+    request = None
+    if request_record is not None:
+        verify_record('frozen downstream numerical request', request_record)
+        request = _read(record_path(request_record))
+    g = resolved['geometry_mm']
+    if request is not None and request.get('schema_version') == 11:
+        validate_preparation_request(request)
+        b, m = (request['numerics'][key] for key in ('geometry_build', 'detector_marker'))
+    else:
+        # Existing standalone downstream receipts bind their complete numerical
+        # provider directly; they do not require an unrelated preparation request.
+        if not {'simion_geometry_build', 'simion_detector_marker'} <= resolved.keys():
+            raise ValueError('neutral oaTOF downstream preparation requires its explicit request11 numerics')
+        b, m = (resolved[key] for key in ('simion_geometry_build', 'simion_detector_marker'))
     rings, v = resolved["rings"], resolved["electrodes_V"]
     _validate_provider_inputs(g, b, m, rings, v)
-    physical = resolve_physical_geometry(resolved)
+    backend_view = dict(resolved, simion_geometry_build=b, simion_detector_marker=m)
+    physical = resolve_physical_geometry(backend_view)
     face = physical["detector_active_face"]
     if m["active_plane_z_mm"] != face["center_mm"][2] or m["active_radius_mm"] != face["radius_mm"]:
         raise ValueError("numerical detector marker differs from the physical detector active face")
@@ -300,7 +316,7 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
                          f"budget={field_limits['transient_run_directory_bytes']}. "
                          "Headers, logs and process overhead are excluded.")
     directory.mkdir(parents=True)
-    projection_path.write_text("return " + _lua_value(dict(resolved, physical_geometry=physical)) + "\n",
+    projection_path.write_text("return " + _lua_value(dict(backend_view, physical_geometry=physical)) + "\n",
                                encoding="utf-8", newline="\n")
     audit_output = directory / "native_audit.json"
     audit_spec = directory / "native_audit.lua"
