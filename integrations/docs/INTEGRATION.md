@@ -591,6 +591,22 @@ fail explicitly. Runtime coverage, FEM/domain convergence, actual callbacks and
 continuous-flight acceptance remain separate open requirements; small scalar
 exports and inert-owner tests cannot establish them.
 
+The committed `0e5a86f8` candidate passed the complete ordinary-installation
+parent with independent direct-wheel and sdist-rebuilt-wheel environments.
+Both installed SFI scalar-owner probes passed with inert native leaves,
+author-tree access denied, exact frozen basis references, resource restoration,
+input protection and whole-unit recovery. The retained build capture contains
+589 source/fixture records, including 551 package-source entries; these are
+distinct counts. The parent took 1058.438 seconds and the guarded run 1062.949
+seconds, with all 2974 checkout records, HEAD, index and status unchanged and
+the shared GATE released. A concurrent small private validation means this is
+not a single-workload performance baseline. Evidence is retained at workspace
+`.tools/phase04-codex-takeover-20261109/v87-sfi-installed-full-agent7-r3`.
+The earlier origin-mismatched launcher and incorrect outer-manifest probe
+expectation remain recorded as failed attempts. This installed successor does
+not supply native Fly, whole-flight coverage, convergence or final Repository
+acceptance, and does not cover later refinement-window changes.
+
 The current Program generator no longer emits its unreachable, literal-zero
 pre-pulse screening branches. Continuous RF stepping, original births, full-flight
 callbacks, recorded-state consumers and the analyzer's partial-scope contract are
