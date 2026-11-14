@@ -2057,6 +2057,62 @@ finally:
     ip_prism_held.rename(ip_prism_path)
 assert ip_prism_path.read_bytes()==ip_prism_bytes
 
+# Synthetic scalar PAs exercise the installed support path, not FEM or native fields.
+import struct
+from msplatform.backends.comsol import assembly_scalar_fill as installed_scalar_fill
+from msplatform.backends.simion.standalone_pa_composition import PaHeader
+scalar_fill_path = pathlib.Path(installed_scalar_fill.__file__).resolve()
+assert scalar_fill_path == pathlib.Path(sysconfig.get_path('purelib')).resolve()/'msplatform/backends/comsol/assembly_scalar_fill.py'
+scalar_rod = next(m for m in installed_comsol_projection['members']
+                  if m['instance_id']=='multipole' and m['shape']['kind']=='rod')
+scalar_shape, scalar_pose = scalar_rod['shape'], scalar_rod['transform']
+scalar_local = [*scalar_shape['center_xy_mm'],(scalar_shape['z_min_mm']+scalar_shape['z_max_mm'])/2]
+scalar_center = [scalar_pose['translation_mm'][i]+sum(scalar_pose['rotation'][i][j]*scalar_local[j] for j in range(3)) for i in range(3)]
+scalar_pitch = scalar_shape['radius_mm']
+scalar_grid = dict(frame_id=installed_comsol_projection['assembly_frame_id'],
+    origin_mm=[v-scalar_pitch for v in scalar_center],pitch_mm=[scalar_pitch]*3,dimensions=[3]*3,point_count=27)
+scalar_request = dict(group_voltages=[dict(instance_id=g['instance_id'],electrode_group_id=g['electrode_group_id'],
+    voltage_v=17. if (g['instance_id'],g['electrode_group_id'])==(scalar_rod['instance_id'],scalar_rod['electrode_group_id']) else 0.)
+    for g in installed_comsol_projection['electrode_groups']])
+scalar_dir = root/('installed-scalar-support-'+sys.argv[2]); scalar_dir.mkdir()
+scalar_input, scalar_mask, scalar_output, scalar_outmask = [scalar_dir/name for name in ('v.pa','mask.pa','filled.pa','filled_mask.pa')]
+scalar_values=[0.]*27; scalar_values[0]=-0.; scalar_masks=[1.]*27; scalar_masks[13]=0.; scalar_masks[16]=0.
+scalar_input.write_bytes(PaHeader(-2,1,200.,3,3,3,1<<28,*([scalar_pitch]*3)).pack()+struct.pack('<27d',*scalar_values))
+scalar_mask.write_bytes(PaHeader(-2,1,1.,3,3,3,1<<28,*([scalar_pitch]*3)).pack()+struct.pack('<27d',*scalar_masks))
+scalar_before=(scalar_input.read_bytes(),scalar_mask.read_bytes())
+with patch('subprocess.Popen',side_effect=AssertionError('scalar support launched a process')):
+    scalar_report=installed_scalar_fill.fill_invalid_scalar_pa(scalar_input,scalar_mask,scalar_output,scalar_outmask,
+        projection=installed_comsol_projection,request=scalar_request,grid=scalar_grid,chunk_nodes=7)
+scalar_out=scalar_output.read_bytes(); scalar_mask_out=scalar_outmask.read_bytes()
+assert scalar_report['status']=='success' and scalar_report['qualification'] is False
+assert struct.unpack_from('<d',scalar_out,56+13*8)[0]==17. and struct.unpack_from('<d',scalar_mask_out,56+13*8)[0]==1.
+assert struct.unpack_from('<d',scalar_mask_out,56+16*8)[0]==0.
+assert scalar_out[56:72]==scalar_before[0][56:72] and scalar_out[56:64]==struct.pack('<d',-0.)
+assert (scalar_input.read_bytes(),scalar_mask.read_bytes())==scalar_before
+scalar_fill_bytes=scalar_fill_path.read_bytes(); scalar_fill_held=scalar_fill_path.with_suffix('.scalar-held')
+assert not scalar_fill_held.exists(); scalar_fill_path.rename(scalar_fill_held)
+try:
+    scalar_missing_child=r"""import importlib.abc,json,os,pathlib,sys
+blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+def deny(event,args):
+ if event=='open' and args and isinstance(args[0],(str,bytes)):
+  p=pathlib.Path(os.fsdecode(args[0])).resolve()
+  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author path accessed')
+sys.addaudithook(deny)
+class Deny(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import '+fullname)
+sys.meta_path.insert(0,Deny())
+import msplatform.backends.comsol.assembly_scalar_fill
+"""
+    scalar_missing=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',scalar_missing_child,
+        json.dumps([str(p) for p in blocked_source_roots])],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert scalar_missing.returncode!=0 and not scalar_missing.stdout,scalar_missing.stderr
+    assert scalar_missing.stderr.splitlines()[-1:]==["ModuleNotFoundError: No module named 'msplatform.backends.comsol.assembly_scalar_fill'"],scalar_missing.stderr
+finally:
+    scalar_fill_held.rename(scalar_fill_path)
+assert scalar_fill_path.read_bytes()==scalar_fill_bytes
+
 assert len(actual_components['oatof'].assembly_interface['component_electrodes']) == 42
 assert len(actual_geometry.downstream_specs) == 3 and all(actual_geometry.frontend_gems.values())
 # Explicit inert RF wire fixture exercises the installed parser, not SIMION.

@@ -180,13 +180,30 @@ grid before publishing `scalar_field_samples`. This is a sampled stationary
 workpoint, not a dynamic response basis, collision geometry, continuous-flight
 FieldBundle or convergence qualification.
 
+The default remains a masked vacuum export. Explicit
+`fill_conductor_interiors=True` additionally fills only invalid nodes strictly
+inside one canonical solid conductor with its frozen Dirichlet voltage. Existing
+valid samples remain byte-for-byte unchanged. Vacuum, boundaries, ideal surfaces
+and unsupported shapes stay invalid; conflicting conductor groups fail. The
+output header voltage bound increases only when an actual fill requires it.
+This is analytic conductor support, not an additional FEM observation.
+
+The managed stage retains the raw PA pair and native report, publishes a separate
+support report bound to the projection, request, grid and solution, and selects
+the filled pair only after complete validation. Failure retains owned partial
+staging evidence and publishes no samples product. Selected Python support files
+are recorded and guarded before and after consumption; their copied sources are
+provenance evidence, while the installed implementation executes.
+
 The shared sampling loop also serves the retained MR corridor exporter. That
 consumer keeps its explicit half-domain `abs(x)` mapping and conductor-fill
 policy, and freezes the helper with its other native resources. Assembly export
-does not inherit either policy. Focused tests and fake-MATLAB checks cover their
-separation. Both ordinary wheel/sdist consumers also check the stage resources,
+does not inherit that coordinate mapping or implicit fill policy. Focused tests
+and fake-MATLAB checks cover their separation. Both previously accepted ordinary wheel/sdist consumers check the stage resources,
 model/solution/grid validators and missing-sampler refusal from site-packages.
-Native export and complete installed stage execution remain separate requirements.
+The new optional support path has focused source and managed inert-child coverage;
+its ordinary installation and native acceptance remain pending. Native export
+and complete installed stage execution remain separate requirements.
 
 ## 正式启动入口
 

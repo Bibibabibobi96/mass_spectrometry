@@ -8,6 +8,7 @@ import math
 
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members
+from msplatform.components.shape_query import oa_witness_contains as _inside, oa_witness_extent as _extent
 from msplatform.components.orthogonal_accelerator.two_zone_geometry import ShieldedRectangularEnclosure
 from .bare_three_zone_component import render_bare_three_zone_electrode_body
 from .compiler import CompiledSimionGeometry, _content_sha256
@@ -15,37 +16,6 @@ from .numerics import normalize_cell_mm_xyz
 from .physical_samples import sample_node
 from .rf_electrode_mapping import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
 from .two_zone_candidate import ResolvedClosedTwoZoneElectrodes, render_closed_two_zone_electrode_body
-
-
-def _extent(shape):
-    kind = shape['kind']
-    if kind == 'difference':
-        return _extent(shape['base'])
-    if kind == 'union':
-        extents = [_extent(part) for part in shape['parts']]
-        return [(min(e[a][0] for e in extents), max(e[a][1] for e in extents)) for a in range(3)]
-    center = shape['center_mm']
-    size = shape['size_mm'] if kind == 'box' else [2*shape['radius_mm'], 2*shape['radius_mm'], shape['height_mm']]
-    return [(c-s/2, c+s/2) for c, s in zip(center, size, strict=True)]
-
-
-def _inside(shape, point, *, boundary=False):
-    kind = shape['kind']
-    if kind == 'difference':
-        return _inside(shape['base'], point, boundary=boundary) and not any(
-            _inside(tool, point, boundary=True) for tool in shape['tools'])
-    if kind == 'union':
-        return any(_inside(part, point, boundary=boundary) for part in shape['parts'])
-    bounds = _extent(shape)
-    if not all((math.isclose(p,lo,rel_tol=0.,abs_tol=32*math.ulp(max(1.,abs(lo)))) if lo==hi
-                else lo <= p <= hi if boundary else lo < p < hi)
-               for p, (lo, hi) in zip(point, bounds, strict=True)):
-        return False
-    if kind == 'box':
-        return True
-    x, y, _ = shape['center_mm']
-    radius2 = (point[0]-x)**2 + (point[1]-y)**2
-    return radius2 <= shape['radius_mm']**2 if boundary else radius2 < shape['radius_mm']**2
 
 
 def _samples(members, mapping, domain):

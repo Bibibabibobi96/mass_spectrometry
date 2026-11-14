@@ -630,6 +630,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m",
+          "reason": "assembly_scalar_sampler_changed"
+        },
+        {
           "exact": "integrations/tests/test_ip_compiler.py",
           "reason": "joint_geometry_fixture_changed"
         },
@@ -1371,6 +1375,54 @@
               "common/contracts/test_python_dependency_contract.py",
               "common/contracts/test_installed_scientific_core.py",
               "common/contracts/test_scientific_core_boundaries.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/components/shape_query.py",
+                "reason": "assembly_scalar_shape_query_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_shape_query.py",
+              "common/contracts/test_assembly_scalar_fill.py",
+              "common/contracts/test_scalar_pa_fill.py",
+              "common/contracts/test_assembly_scalar_owner_fill.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/assembly_scalar_fill.py",
+                "reason": "assembly_scalar_fill_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_assembly_scalar_fill.py",
+              "common/contracts/test_scalar_pa_fill.py",
+              "common/contracts/test_assembly_scalar_owner_fill.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/assembly_field_export.py",
+                "reason": "assembly_scalar_export_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m",
+                "reason": "assembly_scalar_sampler_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_comsol_world_scalar_contract.py",
+              "common/contracts/test_comsol_world_scalar_managed.py",
+              "common/contracts/test_assembly_scalar_owner_fill.py",
+              "common/contracts/test_installed_scientific_core.py"
             ],
             "dependency_profile": "locked"
           },

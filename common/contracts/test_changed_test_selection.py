@@ -2371,6 +2371,36 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 
 
 
+    def test_scalar_support_changes_select_actual_consumers(self) -> None:
+        paths = ['src/msplatform/components/shape_query.py',
+                 'src/msplatform/backends/comsol/assembly_scalar_fill.py',
+                 'src/msplatform/backends/comsol/assembly_field_export.py',
+                 'src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m']
+        selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        fill = {'common/contracts/test_assembly_scalar_fill.py', 'common/contracts/test_scalar_pa_fill.py',
+                'common/contracts/test_assembly_scalar_owner_fill.py'}
+        self.assertTrue((fill | {'common/contracts/test_shape_query.py', 'common/contracts/test_oa_geometry_compiler.py',
+                                 'common/contracts/test_installed_scientific_core.py'}) <= set(selected[0]['Modules']))
+        self.assertTrue((fill | {'common/contracts/test_installed_scientific_core.py'}) <= set(selected[1]['Modules']))
+        for row in selected[2:]:
+            self.assertTrue({'common/contracts/test_comsol_world_scalar_contract.py',
+                             'common/contracts/test_comsol_world_scalar_managed.py',
+                             'common/contracts/test_assembly_scalar_owner_fill.py',
+                             'common/contracts/test_installed_scientific_core.py'} <= set(row['Modules']))
+        self.assertTrue({'common/contracts/test_python_dependency_contract.py',
+                         'common/contracts/test_scientific_core_boundaries.py'} <= set(selected[2]['Modules']))
+        script = (
+            '. ' + powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1') + '; '
+            "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq 'common_contracts')[0]; "
+            "if(-not(Get-ChangedRouteReason -Route $r -Paths @('" + paths[3] + "'))){throw 'missing helper route'}"
+        )
+        result = subprocess.run(['pwsh','-NoProfile','-Command',script], cwd=REPO_ROOT,
+                                capture_output=True,text=True,encoding='utf-8',timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        oa = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration',
+            paths=['src/msplatform/backends/simion/oa_compiler.py'])])[0]
+        self.assertIn('integrations/tests/test_rf_oa_compiler.py', oa['Modules'])
+
     def test_shared_geometry_changes_select_cad_and_comsol_consumers(self) -> None:
         paths = ["src/msplatform/components/geometry_members.py",
                  "src/msplatform/backends/comsol/assembly_geometry.py",

@@ -1,6 +1,7 @@
 """Export a saved Assembly stationary solution as masked world scalar samples."""
 from __future__ import annotations
 
+import importlib
 import json
 import math
 from collections.abc import Mapping
@@ -116,8 +117,10 @@ def resolve_model_source_manifests(source: Any) -> tuple[dict[str, Any], dict[st
         raise ValueError('borrowed model is not an exact failed producer output')
     return current, origin
 
-def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any) -> Any:
-    """Export one verified stationary workpoint; no solve or flight qualification."""
+def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False) -> Any:
+    """Export one verified stationary workpoint; optionally fill strict conductor interiors."""
+    if type(fill_conductor_interiors) is not bool:
+        raise ValueError('fill_conductor_interiors must be an explicit boolean')
     source = open_artifact(solution, expected_kind='field_solution')
     metadata = source.metadata
     if (metadata.get('backend') != 'comsol' or metadata.get('scope') != 'single_stationary_workpoint'
@@ -131,6 +134,10 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
     projection = json.loads(source.data_path('projection').read_text(encoding='utf-8-sig'))
     baseline = json.loads(source.data_path('reopen_geometry').read_text(encoding='utf-8-sig'))
     resolved = validate_grid(grid, projection, observed)
+    if fill_conductor_interiors:
+        from msplatform.backends.comsol.assembly_scalar_fill import InvalidNodeClassifier
+        request = json.loads(source.data_path('request').read_text(encoding='utf-8-sig'))
+        InvalidNodeClassifier(projection, request, resolved)
     geometry_validation = json.loads(source.data_path('geometry_validation').read_text(encoding='utf-8-sig'))
     position_sanity = geometry_validation.get('position_mm')
     if type(position_sanity) not in (int, float) or not math.isfinite(position_sanity) or position_sanity < 0:
@@ -150,12 +157,12 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
         source_refs.append({'manifest_record': origin})
     result = run_managed_stage(context, descriptor=dict(project='instrument_assembly', mode='world_scalar_export', software=['COMSOL', 'MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__comsol__assembly-scalar-' + uuid4().hex[:12],
-        payload=dict(action='export_assembly_world_scalar', grid=resolved, stage_policy=stage),
+        payload=dict(action='export_assembly_world_scalar', grid=resolved, stage_policy=stage, fill_conductor_interiors=fill_conductor_interiors),
         committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
         retention=stage['artifact_retention'], source_references=source_refs,
         expected_operation_ids=('export_world_scalar',), operation_dependencies={},
         action=partial(execute_export, source=source, manifest_record=reference, grid=resolved,
-                       baseline=baseline, solution_identity=dict(observed), writer_authority=writer_authority, writer=writer, limits=stage['limits'], origin_manifest=origin),
+                       baseline=baseline, solution_identity=dict(observed), writer_authority=writer_authority, writer=writer, limits=stage['limits'], origin_manifest=origin, fill_conductor_interiors=fill_conductor_interiors),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'), use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api)
     return open_artifact({'manifest': result['manifest'], 'product_id': 'samples'}, expected_kind='scalar_field_samples')
@@ -164,10 +171,13 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
 def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, Any], grid: Mapping[str, Any],
                    baseline: Mapping[str, Any], solution_identity: Mapping[str, Any], writer_authority: Mapping[str, Any],
                    writer: Mapping[str, Any], limits: Mapping[str, Any],
-                   origin_manifest: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                   origin_manifest: Mapping[str, Any] | None = None,
+                   fill_conductor_interiors: bool = False) -> dict[str, Any]:
     """Freeze small authorities and guard the borrowed saved model during export."""
     if session.expected_operation_ids != ('export_world_scalar',):
         raise ValueError('scalar export requires exactly one saved-solution operation')
+    if type(fill_conductor_interiors) is not bool:
+        raise ValueError('fill_conductor_interiors must be an explicit boolean')
     launcher, sources = freeze_native_sources(session, _NATIVE_SOURCES)
     session.add_input('field_solution_manifest', dict(manifest_record, retention_role='required_evidence'))
     origin_guard = []
@@ -194,6 +204,13 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
             raise ValueError('frozen solution authority differs: ' + name)
         session.add_input('solution_' + name, record)
         frozen[name] = record
+    support_code = []
+    if fill_conductor_interiors:
+        from msplatform.backends.comsol.assembly_scalar_fill import InvalidNodeClassifier
+        projection = json.loads(Path(frozen['projection']['path']).read_text(encoding='utf-8-sig'))
+        request = json.loads(Path(frozen['request']['path']).read_text(encoding='utf-8-sig'))
+        InvalidNodeClassifier(projection, request, grid)
+        support_code = _freeze_support_sources(session)
     session.add_input('pa_writer_source_manifest', dict(writer_authority, retention_role='required_evidence'))
     session.add_input('pa_writer_source', dict(writer, retention_role='required_evidence'))
     manifest_copy = session.declare_file(session.input_dir / 'writer' / 'source-manifest.json', 'required_evidence')
@@ -227,7 +244,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         'fid=fopen(' + matlab_text(report) + ",'w','n','UTF-8');\n"
         "assert(fid>=0); cleanup=onCleanup(@() fclose(fid)); fprintf(fid,'%s',jsonencode(result));\n",
         encoding='utf-8', newline='\n')
-    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, file_record(task, 'required_evidence'), model]
+    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, file_record(task, 'required_evidence'), model, *support_code]
     host = json.dumps({name: str(getattr(session.context, name)) for name in ('workspace', 'python_executable', 'host_state_path', 'policy_path')})
     args = ['-NoProfile', '-File', str(launcher), '-HostContextJson', host, '-WorkingDirectory', str(session.run_dir),
         '-ComsolLauncherPath', str(session.context.tools['comsol_launcher']), '-MatlabRootPath', str(session.context.tools['matlab_root']),
@@ -253,17 +270,78 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
     _check_report(row, grid=grid, baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
     for path in outputs:
         _validate_scalar_pa(path, grid)
-    records = dict(field_v=file_record(outputs[0], 'solver_native_binary'), field_valid=file_record(outputs[1], 'solver_native_binary'),
+    published_outputs = list(outputs)
+    support_record = None
+    if fill_conductor_interiors:
+        support_path = session.declare_file(session.result_dir / 'scalar_conductor_support.json', 'required_evidence')
+        filled = [session.declare_file(output_dir / name, 'solver_native_binary') for name in ('field_v_filled.pa', 'field_valid_filled.pa')]
+        try:
+            for record in support_code: verify_record('scalar support code before fill', record)
+            from msplatform.backends.comsol.assembly_scalar_fill import fill_invalid_scalar_pa
+            primary = None
+            try:
+                support = fill_invalid_scalar_pa(*outputs, *filled, projection=projection, request=request, grid=grid, chunk_nodes=grid['block_points'])
+            except BaseException as failure:
+                primary = failure
+                raise
+            finally:
+                try:
+                    for record in support_code: verify_record('scalar support code after fill', record)
+                except BaseException as failure:
+                    if primary is None: raise
+                    primary.add_note('scalar support post-check failed: ' + repr(failure))
+            for path in filled: _validate_scalar_pa(path, grid)
+            write_json_atomic(support_path, dict(schema_version=1, role='assembly_scalar_conductor_support',
+                grid=grid_record, projection=frozen['projection'], request=frozen['request'],
+                field_solution_manifest=manifest_record, result=support))
+            support_record = file_record(support_path, 'required_evidence')
+            published_outputs = filled
+        except BaseException as error:
+            prior = list(getattr(error, 'failure_output_paths', ()))
+            error.failure_output_paths = [*prior, *(path for path in [*outputs, *filled, report, support_path] if path.is_file())]
+            raise
+    records = dict(field_v=file_record(published_outputs[0], 'solver_native_binary'), field_valid=file_record(published_outputs[1], 'solver_native_binary'),
                    grid=grid_record, field_solution_manifest=manifest_record, writer=writer_copy, writer_manifest=manifest_frozen,
                    projection=frozen['projection'], request=frozen['request'], geometry_validation=frozen['geometry_validation'], reopen_geometry=frozen['reopen_geometry'],
                    reopen_solution=frozen['reopen_solution'], report=file_record(report, 'required_evidence'))
+    if support_record is not None:
+        records.update(sampled_field_v=file_record(outputs[0], 'solver_native_binary'),
+                       sampled_field_valid=file_record(outputs[1], 'solver_native_binary'), conductor_support=support_record)
     metadata = dict(backend='comsol', scope='assembly_world_scalar_samples', field_status='sampled',
                     scientific_qualification='not_granted', frame_id=grid['frame_id'], compute_calls_requested=0)
-    return dict(status='success', summary=metadata, output_paths=[*map(str, outputs), str(report)],
-        required_output_paths=[*map(str, outputs), str(report)], retention_preserve_paths=[],
+    if support_record is not None:
+        metadata['conductor_support_policy'] = 'unique_dirichlet_solid_interiors'
+    result_paths = [*outputs, *([*published_outputs, support_path] if support_record is not None else []), report]
+    return dict(status='success', summary=metadata, output_paths=list(map(str, result_paths)),
+        required_output_paths=list(map(str, result_paths)), retention_preserve_paths=[],
         manifest_extra_fields=dict(products=dict(samples=dict(schema_version=1, kind='scalar_field_samples',
             status='complete', metadata=metadata, data=records))))
 
+
+def _freeze_support_sources(session: Any) -> list[dict[str, Any]]:
+    """Record only the actual selected small Python support source files."""
+    names = ('msplatform.backends.comsol.assembly_scalar_fill', 'msplatform.components.shape_query',
+             'msplatform.contracts.rigid_transform', 'msplatform.backends.simion.standalone_pa_composition',
+             'msplatform.backends.simion.collision_overlay')
+    records = []
+    for index, name in enumerate(names):
+        module = importlib.import_module(name)
+        src = Path(module.__file__).resolve(strict=True)
+        if src.suffix != '.py' or not src.is_file():
+            raise ValueError('scalar support module source is unavailable: ' + name)
+        original = file_record(src, 'required_evidence')
+        verify_record('scalar support original', original)
+        target = session.declare_file(session.input_dir / 'scalar_support' / str(index) / src.name, 'required_evidence')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(src, target)
+        frozen = file_record(target, 'required_evidence')
+        if any(original[key] != frozen[key] for key in ('bytes', 'sha256')):
+            raise ValueError('scalar support frozen source differs: ' + name)
+        verify_record('scalar support frozen', frozen)
+        session.add_input('scalar_support_original_' + str(index), original)
+        session.add_input('scalar_support_frozen_' + str(index), frozen)
+        records.extend((original, frozen))
+    return records
 
 def _validate_scalar_pa(path: Path, grid: Mapping[str, Any]) -> None:
     """Verify an actual ordinary non-refinable planar PA against the selected grid."""

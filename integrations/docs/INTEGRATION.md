@@ -315,6 +315,17 @@ attempt is separately managed; no native scalar-export acceptance is claimed yet
 The controlled grid retains the original `detector_parent_vacuum` point and does
 not alter geometry or replace the historical errors.
 
+Optional scalar conductor support now uses canonical solid interiors and frozen
+Dirichlet voltages, preserving valid sampled bytes and leaving unsupported or
+boundary nodes invalid. Raw FEM samples/report and the separate analytic support
+report remain distinct. The integrated source batch passed 42 parent tests
+(96 successful records, no skips) in 62.248 seconds with source identities fixed.
+It includes the real managed owner with an inert child for default/filled output,
+late invalid-mask failure and support-source tamper; it does not run COMSOL.
+The installed probe is prepared but not yet accepted for this successor. Native
+conductor support, complete domain coverage and field/trajectory qualification
+remain open; no historical error or physical geometry was changed.
+
 The full [ordinary-installation parent](../../common/contracts/test_installed_scientific_core.py)
 passed on candidate `812c20f3` plus test source
 `f535f4b6940bfc27fba2cf2fad64556360617cce63c6180482f48c3416105d00`
