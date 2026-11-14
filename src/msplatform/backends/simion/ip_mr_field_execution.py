@@ -203,11 +203,12 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
                   'build_geometry_iob.lua','iob_core.lua')
     resources={name:native_resource_path(name) for name in native_names}
     resources['native_run_path.lua']=resource_path('native_run_path.lua')
-    import importlib
+    from . import (ip_mr_field_execution, ip_mr_collision_lineage, ip_mr_collision_priority,
+                   ip_mr_scalar_binding, scalar_sample_binding, field_closure)
     code_guards=[]
-    for name in ('ip_mr_field_execution','ip_mr_collision_lineage','ip_mr_collision_priority',
-                 'ip_mr_scalar_binding','scalar_sample_binding','field_closure'):
-        module=importlib.import_module('msplatform.backends.simion.'+name)
+    for module in (ip_mr_field_execution, ip_mr_collision_lineage, ip_mr_collision_priority,
+                   ip_mr_scalar_binding, scalar_sample_binding, field_closure):
+        name=module.__name__.rsplit('.',1)[-1]
         path=Path(module.__file__).resolve(strict=True)
         original=file_record(path,'required_evidence')
         target=owned(frozen/(name+'.py'),'required_evidence');target.parent.mkdir(parents=True,exist_ok=True)
